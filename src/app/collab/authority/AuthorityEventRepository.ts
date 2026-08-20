@@ -1,4 +1,4 @@
-import { type CollabMemberId } from '@claudian/collab-protocol';
+import { type CollabMemberId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -26,18 +26,15 @@ function eventError(reason: string): CollabError {
   });
 }
 
-const EVENT_ID_KEYS = new Set([
+const EVENT_OPAQUE_ID_KEYS = new Set([
   'commentId',
   'discardedRequestId',
   'invitationId',
-  'memberId',
-  'projectId',
   'requestId',
-  'targetMemberId',
   'ticketId',
   'transferId',
 ]);
-const EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const EVENT_MEMBER_ID_KEYS = new Set(['memberId', 'targetMemberId']);
 const EVENT_TOKEN_KEYS = new Set(['phase']);
 const EVENT_TOKEN_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
@@ -46,12 +43,20 @@ function sanitizeAuthorityEventPayload(
 ): Readonly<Record<string, unknown>> {
   const payload: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (EVENT_ID_KEYS.has(key)) {
+    if (EVENT_OPAQUE_ID_KEYS.has(key)) {
       if (value === null && key === 'discardedRequestId') payload[key] = value;
-      if (typeof value === 'string' && EVENT_ID_PATTERN.test(value)) payload[key] = value;
+      if (isCollabOpaqueId(value)) payload[key] = value;
       continue;
     }
-    if (key === 'headOid' && typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value)) {
+    if (EVENT_MEMBER_ID_KEYS.has(key)) {
+      if (isCollabMemberId(value)) payload[key] = value;
+      continue;
+    }
+    if (key === 'projectId') {
+      if (isCollabProjectId(value)) payload[key] = value;
+      continue;
+    }
+    if (key === 'headOid' && isCollabGitOid(value)) {
       payload[key] = value;
       continue;
     }
@@ -77,6 +82,9 @@ export class AuthorityEventRepository {
     connection: AuthorityDatabaseConnection,
     input: AuthorityEventAppendInput,
   ): AuthorityEventRecord {
+    if (input.actorMemberId !== null && !isCollabMemberId(input.actorMemberId)) {
+      throw eventError('authority-event-actor-invalid');
+    }
     if (!/^[a-z][a-z0-9.-]{0,99}$/.test(input.kind)) {
       throw eventError('authority-event-kind-invalid');
     }

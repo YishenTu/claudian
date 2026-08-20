@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabMemberId, CollabProjectId, CollabResolvingTicketExpectation } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabMemberId, type CollabProjectId, type CollabResolvingTicketExpectation, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import {
@@ -8,9 +8,6 @@ import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestT
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 export type AcceptOperationState = 'prepared' | 'ref_updated' | 'completed';
 
@@ -84,25 +81,24 @@ function decodeOperation(
   assertTimestamp(row.updated_at);
   if (
     typeof operationId !== 'string'
-    || !ID_PATTERN.test(operationId)
+    || !isCollabOpaqueId(operationId)
     || (
       completionActorMemberId !== null
-      && (typeof completionActorMemberId !== 'string' || !ID_PATTERN.test(completionActorMemberId))
+      && (typeof completionActorMemberId !== 'string' || !isCollabMemberId(completionActorMemberId))
     )
     || typeof requestId !== 'string'
-    || !ID_PATTERN.test(requestId)
+    || !isCollabOpaqueId(requestId)
     || typeof expectedMainOid !== 'string'
-    || !OID_PATTERN.test(expectedMainOid)
+    || !isCollabGitOid(expectedMainOid)
     || typeof expectedHeadOid !== 'string'
-    || !OID_PATTERN.test(expectedHeadOid)
+    || !isCollabGitOid(expectedHeadOid)
     || typeof expectedRequestRevision !== 'number'
     || !Number.isSafeInteger(expectedRequestRevision)
     || expectedRequestRevision < 0
     || (typeof resultCommitOid !== 'string' && resultCommitOid !== null)
-    || (typeof resultCommitOid === 'string' && !OID_PATTERN.test(resultCommitOid))
+    || (typeof resultCommitOid === 'string' && !isCollabGitOid(resultCommitOid))
     || (state !== 'prepared' && state !== 'ref_updated' && state !== 'completed')
-    || typeof idempotencyKey !== 'string'
-    || idempotencyKey.length === 0
+    || !isCollabOpaqueId(idempotencyKey)
   ) {
     throw repositoryError('authority-integrity-error', 'accept-operation-row-invalid');
   }
@@ -155,7 +151,7 @@ function decodeResolvingTicketExpectations(
     const revision = record.revision;
     if (
       typeof ticketId !== 'string'
-      || !ID_PATTERN.test(ticketId)
+      || !isCollabOpaqueId(ticketId)
       || ticketId <= previousTicketId
       || typeof revision !== 'number'
       || !Number.isSafeInteger(revision)
@@ -219,7 +215,7 @@ export class AcceptOperationRepository {
     const row = connection.get(
       'SELECT project_id FROM project WHERE singleton = 1',
     );
-    if (!row || typeof row.project_id !== 'string' || !ID_PATTERN.test(row.project_id)) {
+    if (!row || !isCollabProjectId(row.project_id)) {
       throw repositoryError('authority-integrity-error', 'accept-project-invalid');
     }
     return row.project_id;
@@ -316,7 +312,7 @@ export class AcceptOperationRepository {
       .sort((left, right) => left.ticketId.localeCompare(right.ticketId));
     if (
       sortedExpected.some((entry, index) => (
-        !ID_PATTERN.test(entry.ticketId)
+        !isCollabOpaqueId(entry.ticketId)
         || !Number.isSafeInteger(entry.revision)
         || entry.revision < 1
         || (index > 0 && sortedExpected[index - 1]?.ticketId === entry.ticketId)

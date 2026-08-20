@@ -53,11 +53,16 @@ export class TicketDetailSession {
   }
 
   matches(state: CollabTicketDetailViewState): boolean {
-    return this.state?.projectId === state.projectId;
+    return this.state?.projectId === state.projectId
+      && this.state.ticketId === state.ticketId;
   }
 
   async open(state: CollabTicketDetailViewState): Promise<void> {
     if (this.destroyed) return;
+    if (this.matches(state) && this.panel) {
+      await this.panel.refresh();
+      return;
+    }
     this.ticketReferences.cancel();
     this.state = state;
     this.options.rootEl.replaceChildren();
@@ -93,8 +98,7 @@ export class TicketDetailSession {
   }
 
   refresh(): Promise<void> {
-    const state = this.state;
-    return state ? this.open(state) : Promise.resolve();
+    return this.panel?.refresh().then(() => undefined) ?? Promise.resolve();
   }
 
   destroy(): void {

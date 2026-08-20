@@ -7,7 +7,7 @@ import {
   rm,
 } from 'node:fs/promises';
 
-import { type CollabOperationId } from '@claudian/collab-protocol';
+import { type CollabOperationId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import {
   ensureCollabVaultDirectory,
@@ -26,8 +26,6 @@ type ConflictPathOwner = Pick<
   'ensurePrivateStateContainer' | 'getConflictDirectoryPath'
 >;
 
-const SAFE_OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
 function storeError(
   code: 'operation-failed' | 'workspace-boundary-invalid',
   reason: string,
@@ -40,7 +38,7 @@ function storeError(
 }
 
 function requireOperationId(operationId: CollabOperationId): void {
-  if (!SAFE_OPERATION_ID.test(operationId)) {
+  if (!isCollabOpaqueId(operationId)) {
     throw storeError('workspace-boundary-invalid', 'conflict-operation-id-invalid');
   }
 }
@@ -105,7 +103,7 @@ export class ConflictScratchStore {
     }
     const operationIds: string[] = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.isSymbolicLink() || !SAFE_OPERATION_ID.test(entry.name)) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || !isCollabOpaqueId(entry.name)) {
         throw storeError(
           'workspace-boundary-invalid',
           'conflict-operation-entry-invalid',

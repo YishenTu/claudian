@@ -9,6 +9,8 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
+import { isCollabOpaqueId } from '@claudian/collab-protocol';
+
 import {
   type CollabFilesystemDiagnosticSink,
   createCollabFileExclusively,
@@ -210,7 +212,7 @@ export class CollabWorkspaceService {
     workspacePath: string,
     operationId: string,
   ): Promise<CollabWorkspaceCleanupPaths> {
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(operationId)) {
+    if (!isCollabOpaqueId(operationId)) {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const projectPath = await this.resolveManagedProjectPath(workspacePath);
@@ -336,7 +338,7 @@ export class CollabWorkspaceService {
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(operationId)) {
+    if (!isCollabOpaqueId(operationId)) {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const projectPath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
@@ -644,7 +646,7 @@ export class CollabWorkspaceService {
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(operationId)) {
+    if (!isCollabOpaqueId(operationId)) {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const sourcePath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
@@ -672,7 +674,7 @@ export class CollabWorkspaceService {
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(operationId)) {
+    if (!isCollabOpaqueId(operationId)) {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const sourcePath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);

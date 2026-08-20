@@ -22,7 +22,7 @@ import {
   type ProjectOperationPolicy,
 } from '@/app/collab/ProjectOperationAdmission';
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
-import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAcknowledgeManagerResponsibilityRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabFeatureFoundationPort {
@@ -67,12 +67,8 @@ export interface CollabLanHostPort {
 }
 
 export interface CollabMembershipPort {
-  acknowledgeManagerResponsibility(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
-    options?: CollabOperationOptions,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
   cancelManagerResponsibilityOffer(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
+    request: CollabCancelManagerResponsibilityOfferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary>;
   createInvitation(
@@ -81,10 +77,6 @@ export interface CollabMembershipPort {
   ): Promise<CollabInvitationView>;
   createManagerResponsibilityOffer(
     request: CollabCreateManagerResponsibilityOfferRequest,
-    options?: CollabOperationOptions,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
-  declineManagerResponsibility(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary>;
   listMembers(
@@ -1523,26 +1515,8 @@ class CollabFeatureServiceCore {
     );
   }
 
-  async acknowledgeManagerResponsibility(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>> {
-    return this.runMembershipMutation(
-      membership => membership.acknowledgeManagerResponsibility(request, options),
-    );
-  }
-
-  async declineManagerResponsibility(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>> {
-    return this.runMembershipMutation(
-      membership => membership.declineManagerResponsibility(request, options),
-    );
-  }
-
   async cancelManagerResponsibilityOffer(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
+    request: CollabCancelManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>> {
     return this.runMembershipMutation(
@@ -2185,20 +2159,6 @@ export class CollabFeatureService implements CollabFeaturePort {
     () => args[0].projectId,
     'active',
     () => this.core.createManagerResponsibilityOffer(...args),
-  );
-  acknowledgeManagerResponsibility: CollabFeaturePort[
-    'acknowledgeManagerResponsibility'
-  ] = (...args) => this.project(
-    () => args[0].projectId,
-    'active',
-    () => this.core.acknowledgeManagerResponsibility(...args),
-  );
-  declineManagerResponsibility: CollabFeaturePort[
-    'declineManagerResponsibility'
-  ] = (...args) => this.project(
-    () => args[0].projectId,
-    'active',
-    () => this.core.declineManagerResponsibility(...args),
   );
   cancelManagerResponsibilityOffer: CollabFeaturePort[
     'cancelManagerResponsibilityOffer'

@@ -876,22 +876,10 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
-  it('advances the event cursor through a merged membership update without regression', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot, {
-      now: () => new Date('2026-08-08T01:00:00.000Z'),
-    });
-    await repository.saveMembership(membershipRecord());
+  it('does not expose a cursor-only membership projection mutator', () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
 
-    await expect(repository.updateMembershipEventSequence(PROJECT_ID, 4))
-      .resolves.toMatchObject({
-        authority: { endpoint: 'https://192.168.1.20:54545' },
-        lastEventSequence: 4,
-        updatedAt: '2026-08-08T01:00:00.000Z',
-      });
-    await expect(repository.updateMembershipEventSequence(PROJECT_ID, 2))
-      .resolves.toMatchObject({ lastEventSequence: 4 });
-    await expect(repository.loadMembership(PROJECT_ID))
-      .resolves.toMatchObject({ lastEventSequence: 4 });
+    expect(repository).not.toHaveProperty('updateMembershipEventSequence');
   });
 
   it('projects promotion and demotion monotonically with the event cursor', async () => {

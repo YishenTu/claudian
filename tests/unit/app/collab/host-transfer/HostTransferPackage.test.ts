@@ -63,6 +63,37 @@ describe('HostTransferPackage', () => {
     })).toThrow();
   });
 
+  it('applies Project, Member, transfer, and Git OID boundaries by semantic field', () => {
+    const value = manifest();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      projectId: `p${'a'.repeat(63)}`,
+      targetHostMemberId: `m${'a'.repeat(63)}`,
+      transferId: `t${'a'.repeat(127)}`,
+    })).not.toThrow();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      projectId: `p${'a'.repeat(64)}`,
+    })).toThrow();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      targetHostMemberId: `m${'a'.repeat(64)}`,
+    })).toThrow();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      transferId: `t${'a'.repeat(128)}`,
+    })).toThrow();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      authorityMainOid: 'a'.repeat(64),
+      gitObjectFormat: 'sha256',
+    })).not.toThrow();
+    expect(() => decodeHostTransferPackageManifest({
+      ...value,
+      authorityMainOid: 'A'.repeat(40),
+    })).toThrow();
+  });
+
   it.each([8, 9, 10] as const)(
     'accepts schema %s only through the explicit incoming recovery decoder',
     authoritySchemaVersion => {

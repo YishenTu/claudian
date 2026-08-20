@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, open, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabGitOid, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -54,7 +54,6 @@ export interface CreateHostTransferPackageManifestInput {
 
 export type HostTransferArtifactKind = 'git-bundle' | 'authority-snapshot';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_KEYS = [
   'schemaVersion',
@@ -89,10 +88,6 @@ function packageError(
 function exactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
   const present = Object.keys(value);
   return present.length === keys.length && present.every(key => keys.includes(key));
-}
-
-function assertId(value: string, reason: string): void {
-  if (!ID_PATTERN.test(value)) throw packageError(reason);
 }
 
 function assertTimestamp(value: string): void {
@@ -137,9 +132,15 @@ function assertManifest(
   ) {
     throw packageError('host-transfer-manifest-version-invalid');
   }
-  assertId(manifest.projectId, 'host-transfer-manifest-project-invalid');
-  assertId(manifest.transferId, 'host-transfer-manifest-transfer-invalid');
-  assertId(manifest.targetHostMemberId, 'host-transfer-manifest-target-invalid');
+  if (!isCollabProjectId(manifest.projectId)) {
+    throw packageError('host-transfer-manifest-project-invalid');
+  }
+  if (!isCollabOpaqueId(manifest.transferId)) {
+    throw packageError('host-transfer-manifest-transfer-invalid');
+  }
+  if (!isCollabMemberId(manifest.targetHostMemberId)) {
+    throw packageError('host-transfer-manifest-target-invalid');
+  }
   if (!Number.isSafeInteger(manifest.sourceAuthorityGeneration) || manifest.sourceAuthorityGeneration < 0) {
     throw packageError('host-transfer-manifest-generation-invalid');
   }
@@ -151,8 +152,8 @@ function assertManifest(
   }
   const expectedOidLength = manifest.gitObjectFormat === 'sha1' ? 40 : 64;
   if (
-    manifest.authorityMainOid.length !== expectedOidLength
-    || !/^[0-9a-f]+$/.test(manifest.authorityMainOid)
+    !isCollabGitOid(manifest.authorityMainOid)
+    || manifest.authorityMainOid.length !== expectedOidLength
   ) {
     throw packageError('host-transfer-manifest-main-oid-invalid');
   }

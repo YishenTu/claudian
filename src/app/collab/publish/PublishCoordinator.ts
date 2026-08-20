@@ -2,9 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { type CollabChangeRequest, type CollabFileChangeKind, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
-import type {
-  CollabPublicationOperationRecord,
-  CollabPublicationStateRecord,
+import {
+  type CollabPublicationOperationRecord,
+  type CollabPublicationStateRecord,
+  decodeCollabPublicationStateRecord,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabConfirmPublishRequest, type CollabConflictDescriptor, type CollabOperationPhase, type CollabPublicationReview, type CollabPublishOutcome, type CollabPublishRequest, type CollabResult } from '@/core/collab';
@@ -459,7 +460,6 @@ export class PublishCoordinator {
       ...state,
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: descriptor.startingPersonalOid,
         createdAt: timestamp,
         currentMainOid: null,
@@ -575,7 +575,6 @@ export class PublishCoordinator {
         ...state,
         operation: {
           candidateOid: null,
-          confirmed: false,
           contributionHeadOid,
           createdAt: timestamp,
           currentMainOid: null,
@@ -697,7 +696,6 @@ export class PublishCoordinator {
         }
         state = this.transition(state, operation, {
           candidateOid: null,
-          confirmed: false,
           contributionHeadOid,
           currentMainOid: null,
           phase: 'captured',
@@ -766,7 +764,6 @@ export class PublishCoordinator {
       await this.candidates.assertRetained(context, this.candidateInput(operation), signal);
       await this.assertStateExact(state);
       const confirmed = this.transition(state, operation, {
-        confirmed: true,
         phase: 'confirmed',
       });
       await this.publicationState.save(confirmed);
@@ -836,7 +833,6 @@ export class PublishCoordinator {
       }
       const confirmed = this.transition(state, operation, {
         candidateOid: operation.contributionHeadOid,
-        confirmed: true,
         currentMainOid,
         phase: 'confirmed',
       });
@@ -1067,7 +1063,6 @@ export class PublishCoordinator {
       baseMainOid: previous.currentMainOid ?? state.baseMainOid,
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: headOid,
         createdAt: timestamp,
         currentMainOid: null,
@@ -1232,11 +1227,11 @@ export class PublishCoordinator {
     update: Partial<CollabPublicationOperationRecord>,
   ): CollabPublicationStateRecord {
     const updatedAt = this.now().toISOString();
-    return {
+    return decodeCollabPublicationStateRecord({
       ...state,
       operation: { ...operation, ...update, updatedAt },
       updatedAt,
-    };
+    });
   }
 
   private personalRefProblem(snapshot: PublishRepositorySnapshot): CollabError | null {

@@ -154,6 +154,39 @@ describe('PendingMembershipService', () => {
     })).rejects.toMatchObject({ code: 'authentication-failed' });
   });
 
+  it('accepts maximum opaque identities through invitation and join persistence', async () => {
+    const opaqueId = `o${'a'.repeat(127)}`;
+    const invitation = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: opaqueId,
+      projectId: PROJECT_ID,
+    });
+    const pending = await service.createJoinAttempt(invitation.invitationSecret, {
+      displayName: 'Member',
+      joinAttemptId: opaqueId,
+      projectId: PROJECT_ID,
+    }, { remoteAddress: '127.0.0.2' });
+
+    await expect(service.activateJoinAttempt(pending.memberCredential, {
+      idempotencyKey: opaqueId,
+      joinAttemptId: opaqueId,
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({
+      currentMember: { id: pending.member.id, status: 'active' },
+    });
+  });
+
+  it('rejects oversized opaque and Project identities at the service boundary', async () => {
+    await expect(service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: `o${'a'.repeat(128)}`,
+      projectId: PROJECT_ID,
+    })).rejects.toMatchObject({ code: 'operation-failed' });
+
+    await expect(service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'valid-key',
+      projectId: `p${'a'.repeat(64)}`,
+    })).rejects.toMatchObject({ code: 'operation-failed' });
+  });
+
   it('activates idempotently and restricts snapshots to active members', async () => {
     const invitation = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-1',

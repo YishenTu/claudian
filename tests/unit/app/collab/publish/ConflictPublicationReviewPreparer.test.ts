@@ -37,7 +37,6 @@ describe('ConflictPublicationReviewPreparer', () => {
     );
     expect(fixture.state.value.operation).toMatchObject({
       candidateOid: CANDIDATE,
-      confirmed: false,
       currentMainOid: MAIN,
       phase: 'review-ready',
       updatedAt: UPDATED_AT,
@@ -87,7 +86,6 @@ function capturedState(): CollabPublicationStateRecord {
     baseMainOid: '0'.repeat(40),
     operation: {
       candidateOid: null,
-      confirmed: false,
       contributionHeadOid: CONTRIBUTION,
       createdAt: CREATED_AT,
       currentMainOid: null,

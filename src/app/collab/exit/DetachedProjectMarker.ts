@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { LocalCleanupPurpose } from './LocalCleanupRecord';
 
@@ -12,7 +12,6 @@ export interface DetachedProjectMarker {
   readonly createdAt: CollabIsoTimestamp;
   readonly nonce: string;
 }
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const NONCE = /^[A-Za-z0-9_-]{43}$/;
 const KEYS = new Set(['schemaVersion', 'projectId', 'memberId', 'cleanupOperationId', 'purpose', 'createdAt', 'nonce']);
 export function decodeDetachedProjectMarker(value: unknown): DetachedProjectMarker {
@@ -27,12 +26,20 @@ export function decodeDetachedProjectMarker(value: unknown): DetachedProjectMark
   const createdAt = get('createdAt', 64, /^\d{4}-\d{2}-\d{2}T/);
   if (!Number.isFinite(Date.parse(createdAt)) || new Date(createdAt).toISOString() !== createdAt) throw new TypeError('Invalid createdAt');
   if (record.purpose !== 'leave' && record.purpose !== 'retire') throw new TypeError('Invalid purpose');
+  const cleanupOperationId = record.cleanupOperationId;
+  const memberId = record.memberId;
+  const projectId = record.projectId;
+  if (
+    !isCollabOpaqueId(cleanupOperationId)
+    || !isCollabMemberId(memberId)
+    || !isCollabProjectId(projectId)
+  ) throw new TypeError('Invalid detached Project identity');
   return {
-    cleanupOperationId: get('cleanupOperationId', 128, ID),
+    cleanupOperationId,
     createdAt,
-    memberId: get('memberId', 64, ID),
+    memberId,
     nonce: get('nonce', 43, NONCE),
-    projectId: get('projectId', 64, ID),
+    projectId,
     purpose: record.purpose,
     schemaVersion: 1,
   };

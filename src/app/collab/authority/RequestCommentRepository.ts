@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import { decodeAuthorityChangeRequest } from '@/app/collab/authority/RequestEnsureRepository';
 import {
@@ -7,8 +7,6 @@ import {
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 function commentError(reason: string): CollabError {
   return new CollabError({
@@ -25,7 +23,7 @@ export class RequestCommentRepository {
     connection: AuthorityDatabaseConnection,
     requestId: string,
   ): number {
-    if (!ID_PATTERN.test(requestId)) {
+    if (!isCollabOpaqueId(requestId)) {
       throw commentError('request-comment-request-id-invalid');
     }
     const count = connection.get(
@@ -49,9 +47,9 @@ export class RequestCommentRepository {
     },
   ): { readonly comment: CollabComment; readonly request: CollabChangeRequest } {
     if (
-      !ID_PATTERN.test(input.authorMemberId)
-      || !ID_PATTERN.test(input.commentId)
-      || !ID_PATTERN.test(input.requestId)
+      !isCollabMemberId(input.authorMemberId)
+      || !isCollabOpaqueId(input.commentId)
+      || !isCollabOpaqueId(input.requestId)
     ) {
       throw commentError('request-comment-input-invalid');
     }

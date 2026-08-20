@@ -1,11 +1,10 @@
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 export interface ProjectRetirementPrepareInput {
@@ -58,8 +57,12 @@ function retirementError(
   });
 }
 
-function assertId(value: string, reason: string): void {
-  if (!ID_PATTERN.test(value)) throw retirementError('authority-integrity-error', reason);
+function assertId(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  reason: string,
+): void {
+  if (!predicate(value)) throw retirementError('authority-integrity-error', reason);
 }
 
 function assertTimestamp(value: string, reason: string): void {
@@ -89,6 +92,8 @@ function proofFromRow(
     throw retirementError('authority-integrity-error', 'host-transition-proof-invalid');
   }
   assertTimestamp(issuedAt, 'host-transition-proof-invalid');
+  const transferId = requiredText(row, 'transfer_id');
+  assertId(transferId, isCollabOpaqueId, 'host-transition-proof-invalid');
   return {
     issuedAt,
     nextCaCertificatePem: requiredText(row, 'next_ca_certificate_pem'),
@@ -98,7 +103,7 @@ function proofFromRow(
     schemaVersion: 1,
     signature: requiredText(row, 'signature'),
     signatureAlgorithm,
-    transferId: requiredText(row, 'transfer_id'),
+    transferId,
   };
 }
 
@@ -109,12 +114,12 @@ export class ProjectRetirementRepository {
     connection: AuthorityDatabaseConnection,
     input: ProjectRetirementPrepareInput,
   ): PreparedProjectRetirement {
-    assertId(input.actorMemberId, 'retirement-actor-invalid');
-    assertId(input.expectedHostMemberId, 'retirement-host-invalid');
-    assertId(input.managerActorMemberId, 'retirement-manager-invalid');
-    assertId(input.operationId, 'retirement-operation-invalid');
-    assertId(input.projectId, 'retirement-project-invalid');
-    assertId(input.idempotencyKey, 'retirement-idempotency-invalid');
+    assertId(input.actorMemberId, isCollabMemberId, 'retirement-actor-invalid');
+    assertId(input.expectedHostMemberId, isCollabMemberId, 'retirement-host-invalid');
+    assertId(input.managerActorMemberId, isCollabMemberId, 'retirement-manager-invalid');
+    assertId(input.operationId, isCollabOpaqueId, 'retirement-operation-invalid');
+    assertId(input.projectId, isCollabProjectId, 'retirement-project-invalid');
+    assertId(input.idempotencyKey, isCollabOpaqueId, 'retirement-idempotency-invalid');
     assertTimestamp(input.updatedAt, 'retirement-timestamp-invalid');
     if (!DIGEST_PATTERN.test(input.requestFingerprint)) {
       throw retirementError('authority-integrity-error', 'retirement-fingerprint-invalid');

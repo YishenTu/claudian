@@ -315,7 +315,6 @@ describe('PublishCoordinator', () => {
     expect(fixture.requests.calls).toEqual([]);
     expect(fixture.state.current.operation).toMatchObject({
       candidateOid: CANDIDATE,
-      confirmed: false,
       phase: 'review-ready',
     });
 
@@ -448,7 +447,6 @@ describe('PublishCoordinator', () => {
     });
 
     expect(fixture.state.current.operation).toMatchObject({
-      confirmed: false,
       phase: 'review-ready',
     });
     expect(fixture.candidates.apply).not.toHaveBeenCalled();
@@ -516,7 +514,6 @@ describe('PublishCoordinator', () => {
 
     expect(fixture.state.current.operation).toMatchObject({
       candidateOid: null,
-      confirmed: false,
       contributionHeadOid: LOCAL,
       currentMainOid: null,
       operationId: 'operation-a',
@@ -532,7 +529,6 @@ describe('PublishCoordinator', () => {
       ...fixture.state.current,
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: LOCAL,
         createdAt: NOW,
         currentMainOid: null,
@@ -579,7 +575,6 @@ describe('PublishCoordinator', () => {
       ...fixture.state.current,
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: LOCAL,
         createdAt: NOW,
         currentMainOid: null,
@@ -611,7 +606,6 @@ describe('PublishCoordinator', () => {
       ...fixture.state.current,
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: LOCAL,
         createdAt: NOW,
         currentMainOid: null,

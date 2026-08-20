@@ -1,4 +1,9 @@
 import {
+  isCollabGitOid,
+  isCollabOpaqueId,
+  isCollabProjectId,
+} from '@claudian/collab-protocol';
+import {
   ItemView,
   MarkdownRenderer,
   type ViewStateResult,
@@ -36,8 +41,7 @@ import { t } from '@/i18n/i18n';
 
 export const COLLAB_DETAIL_VIEW_TYPE = 'claudian-collab-detail';
 
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const WORKING_TREE_SNAPSHOT_ID_PATTERN = /^[0-9a-f]{64}$/;
 
 export type {
   CollabConflictDetailViewState,
@@ -105,11 +109,8 @@ function parseState(value: unknown): CollabDetailViewState {
   const state = value as Record<string, unknown>;
   if (state.kind === 'ticket') {
     if (
-      typeof state.projectId !== 'string'
-      || !ID_PATTERN.test(state.projectId)
-      || (state.ticketId !== undefined && (
-        typeof state.ticketId !== 'string' || !ID_PATTERN.test(state.ticketId)
-      ))
+      !isCollabProjectId(state.projectId)
+      || (state.ticketId !== undefined && !isCollabOpaqueId(state.ticketId))
     ) {
       throw viewError('review-view-state-invalid');
     }
@@ -121,13 +122,11 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (state.kind === 'conflict') {
     if (
-      typeof state.projectId !== 'string'
-      || !ID_PATTERN.test(state.projectId)
-      || typeof state.operationId !== 'string'
-      || !ID_PATTERN.test(state.operationId)
+      !isCollabProjectId(state.projectId)
+      || !isCollabOpaqueId(state.operationId)
       || (state.location !== 'my-changes' && state.location !== 'request')
       || (state.location === 'request' && (
-        typeof state.requestId !== 'string' || !ID_PATTERN.test(state.requestId)
+        !isCollabOpaqueId(state.requestId)
       ))
       || (state.location === 'my-changes' && state.requestId !== undefined)
     ) {
@@ -143,18 +142,12 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (state.kind === 'publication') {
     if (
-      typeof state.projectId !== 'string'
-      || !ID_PATTERN.test(state.projectId)
-      || typeof state.operationId !== 'string'
-      || !ID_PATTERN.test(state.operationId)
-      || typeof state.currentMainOid !== 'string'
-      || !OID_PATTERN.test(state.currentMainOid)
-      || typeof state.candidateOid !== 'string'
-      || !OID_PATTERN.test(state.candidateOid)
-      || typeof state.comparisonBaseOid !== 'string'
-      || !OID_PATTERN.test(state.comparisonBaseOid)
-      || typeof state.comparisonTargetOid !== 'string'
-      || !OID_PATTERN.test(state.comparisonTargetOid)
+      !isCollabProjectId(state.projectId)
+      || !isCollabOpaqueId(state.operationId)
+      || !isCollabGitOid(state.currentMainOid)
+      || !isCollabGitOid(state.candidateOid)
+      || !isCollabGitOid(state.comparisonBaseOid)
+      || !isCollabGitOid(state.comparisonTargetOid)
       || (state.selectedPath !== undefined && !isSafePath(state.selectedPath))
     ) {
       throw viewError('review-view-state-invalid');
@@ -172,14 +165,11 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (state.kind === 'working-tree') {
     if (
-      typeof state.projectId !== 'string'
-      || !ID_PATTERN.test(state.projectId)
-      || typeof state.baseOid !== 'string'
-      || !OID_PATTERN.test(state.baseOid)
-      || typeof state.headOid !== 'string'
-      || !OID_PATTERN.test(state.headOid)
+      !isCollabProjectId(state.projectId)
+      || !isCollabGitOid(state.baseOid)
+      || !isCollabGitOid(state.headOid)
       || typeof state.snapshotId !== 'string'
-      || !OID_PATTERN.test(state.snapshotId)
+      || !WORKING_TREE_SNAPSHOT_ID_PATTERN.test(state.snapshotId)
       || (state.selectedPath !== undefined && !isSafePath(state.selectedPath))
     ) {
       throw viewError('review-view-state-invalid');
@@ -195,18 +185,12 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (
     state.kind !== 'request'
-    || typeof state.projectId !== 'string'
-    || !ID_PATTERN.test(state.projectId)
-    || typeof state.requestId !== 'string'
-    || !ID_PATTERN.test(state.requestId)
-    || typeof state.comparisonBaseOid !== 'string'
-    || !OID_PATTERN.test(state.comparisonBaseOid)
-    || typeof state.comparisonTargetOid !== 'string'
-    || !OID_PATTERN.test(state.comparisonTargetOid)
-    || typeof state.reviewedMainOid !== 'string'
-    || !OID_PATTERN.test(state.reviewedMainOid)
-    || typeof state.reviewedHeadOid !== 'string'
-    || !OID_PATTERN.test(state.reviewedHeadOid)
+    || !isCollabProjectId(state.projectId)
+    || !isCollabOpaqueId(state.requestId)
+    || !isCollabGitOid(state.comparisonBaseOid)
+    || !isCollabGitOid(state.comparisonTargetOid)
+    || !isCollabGitOid(state.reviewedMainOid)
+    || !isCollabGitOid(state.reviewedHeadOid)
     || (state.selectedPath !== undefined && !isSafePath(state.selectedPath))
   ) {
     throw viewError('review-view-state-invalid');
@@ -327,6 +311,10 @@ export class CollabDetailView extends ItemView {
 
   private async loadTicket(state: CollabTicketDetailViewState): Promise<void> {
     this.diffSession.clear();
+    if (this.ticketSession && !this.ticketSession.matches(state)) {
+      this.ticketSession.destroy();
+      this.ticketSession = null;
+    }
     const session = this.ticketSession ?? new TicketDetailSession({
       navigate: next => this.leaf.setViewState({
         active: true,

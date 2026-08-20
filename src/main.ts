@@ -7,6 +7,7 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from 'obsidian';
 
@@ -641,21 +642,7 @@ export default class ClaudianPlugin extends Plugin {
           projectSetup: feature,
           resolveGit: rescan => this.resolveCollabGit(rescan),
           ticketFocus: {
-            read: () => {
-              const leaf = this.app.workspace.getLeavesOfType(
-                COLLAB_DETAIL_VIEW_TYPE,
-              )[0];
-              const state = leaf?.getViewState().state;
-              if (
-                state?.kind !== 'ticket'
-                || typeof state.projectId !== 'string'
-                || typeof state.ticketId !== 'string'
-              ) return null;
-              return {
-                projectId: state.projectId,
-                ticketId: state.ticketId,
-              };
-            },
+            read: () => this.readCollabTicketFocus(),
             subscribe: listener => {
               const layoutChange = this.app.workspace.on('layout-change', listener);
               const activeLeafChange = this.app.workspace.on(
@@ -676,6 +663,25 @@ export default class ClaudianPlugin extends Plugin {
       errorText: t('collab.panel.loadFailed'),
       loadingText: t('collab.panel.loading'),
     });
+  }
+
+  private readCollabTicketFocus(): {
+    readonly projectId: string;
+    readonly ticketId: string;
+  } | null {
+    const leaf = this.app.workspace.getMostRecentLeaf();
+    const viewState = leaf?.getViewState();
+    if (viewState?.type !== COLLAB_DETAIL_VIEW_TYPE) return null;
+    const state = viewState.state;
+    if (
+      state?.kind !== 'ticket'
+      || !isCollabProjectId(state.projectId)
+      || !isCollabOpaqueId(state.ticketId)
+    ) return null;
+    return {
+      projectId: state.projectId,
+      ticketId: state.ticketId,
+    };
   }
 
   private getCollabFeatureService(): Promise<CollabFeatureService | null> {

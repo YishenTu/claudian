@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import {
   type AuthorityKeysetCursor,
@@ -7,9 +7,6 @@ import {
 } from '@/app/collab/authority/AuthorityKeysetPage';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 export interface PendingTicketRelationInput {
   readonly relationId: string;
@@ -49,9 +46,9 @@ function decodeRelation(
   const state = row.state;
   if (
     typeof id !== 'string'
-    || !ID_PATTERN.test(id)
+    || !isCollabOpaqueId(id)
     || typeof ticketId !== 'string'
-    || !ID_PATTERN.test(ticketId)
+    || !isCollabOpaqueId(ticketId)
     || typeof ticketNumber !== 'number'
     || !Number.isSafeInteger(ticketNumber)
     || ticketNumber < 1
@@ -61,7 +58,7 @@ function decodeRelation(
     || !Number.isSafeInteger(ticketRevision)
     || ticketRevision < 1
     || typeof commitOid !== 'string'
-    || !OID_PATTERN.test(commitOid)
+    || !isCollabGitOid(commitOid)
     || (kind !== 'references' && kind !== 'resolves')
     || (state !== 'pending' && state !== 'accepted')
   ) {
@@ -92,7 +89,7 @@ export class RequestTicketRelationRepository {
     connection: AuthorityDatabaseConnection,
     requestId: CollabRequestId,
   ): readonly CollabRequestTicketRelation[] {
-    if (!ID_PATTERN.test(requestId)) {
+    if (!isCollabOpaqueId(requestId)) {
       throw relationError('ticket-relation-request-id-invalid');
     }
     return connection.all(
@@ -114,9 +111,9 @@ export class RequestTicketRelationRepository {
     },
   ): { readonly changed: boolean; readonly relations: readonly CollabRequestTicketRelation[] } {
     if (
-      !ID_PATTERN.test(input.actorMemberId)
-      || !ID_PATTERN.test(input.requestId)
-      || !OID_PATTERN.test(input.commitOid)
+      !isCollabMemberId(input.actorMemberId)
+      || !isCollabOpaqueId(input.requestId)
+      || !isCollabGitOid(input.commitOid)
       || input.relations.length > COLLAB_LIMITS.maxRequestTicketRelations
     ) {
       throw relationError('ticket-relation-input-invalid');
@@ -125,8 +122,8 @@ export class RequestTicketRelationRepository {
     const desired = new Map<CollabTicketId, PendingTicketRelationInput>();
     for (const relation of input.relations) {
       if (
-        !ID_PATTERN.test(relation.relationId)
-        || !ID_PATTERN.test(relation.ticketId)
+        !isCollabOpaqueId(relation.relationId)
+        || !isCollabOpaqueId(relation.ticketId)
         || (relation.kind !== 'references' && relation.kind !== 'resolves')
         || desired.has(relation.ticketId)
       ) {
@@ -195,7 +192,7 @@ export class RequestTicketRelationRepository {
     connection: AuthorityDatabaseConnection,
     requestId: CollabRequestId,
   ): void {
-    if (!ID_PATTERN.test(requestId)) {
+    if (!isCollabOpaqueId(requestId)) {
       throw relationError('ticket-relation-request-id-invalid');
     }
     connection.run(
@@ -209,7 +206,7 @@ export class RequestTicketRelationRepository {
     connection: AuthorityDatabaseConnection,
     ticketId: CollabTicketId,
   ): boolean {
-    if (!ID_PATTERN.test(ticketId)) {
+    if (!isCollabOpaqueId(ticketId)) {
       throw relationError('ticket-relation-ticket-id-invalid');
     }
     return connection.get(
@@ -224,7 +221,7 @@ export class RequestTicketRelationRepository {
     connection: AuthorityDatabaseConnection,
     requestId: CollabRequestId,
   ): void {
-    if (!ID_PATTERN.test(requestId)) {
+    if (!isCollabOpaqueId(requestId)) {
       throw relationError('ticket-relation-request-id-invalid');
     }
     const fullTicket = connection.get(
@@ -242,7 +239,7 @@ export class RequestTicketRelationRepository {
     if (!fullTicket) return;
     if (
       typeof fullTicket.ticket_id !== 'string'
-      || !ID_PATTERN.test(fullTicket.ticket_id)
+      || !isCollabOpaqueId(fullTicket.ticket_id)
       || typeof fullTicket.accepted_count !== 'number'
       || !Number.isSafeInteger(fullTicket.accepted_count)
     ) {
@@ -265,7 +262,7 @@ export class RequestTicketRelationRepository {
       readonly requestId: CollabRequestId;
     },
   ): readonly CollabRequestTicketRelation[] {
-    if (!ID_PATTERN.test(input.requestId) || !OID_PATTERN.test(input.acceptedMergeOid)) {
+    if (!isCollabOpaqueId(input.requestId) || !isCollabGitOid(input.acceptedMergeOid)) {
       throw relationError('ticket-relation-accept-input-invalid');
     }
     timestamp(input.acceptedAt);
@@ -287,7 +284,7 @@ export class RequestTicketRelationRepository {
       readonly maxUtf8Bytes?: number;
     },
   ): AuthorityKeysetPage<CollabTicketAcceptedRelation> {
-    if (!ID_PATTERN.test(ticketId)) {
+    if (!isCollabOpaqueId(ticketId)) {
       throw relationError('ticket-relation-ticket-id-invalid');
     }
     const rows = connection.all(
@@ -313,14 +310,14 @@ export class RequestTicketRelationRepository {
       const acceptedMergeOid = row.accepted_merge_oid;
       if (
         typeof id !== 'string'
-        || !ID_PATTERN.test(id)
+        || !isCollabOpaqueId(id)
         || typeof requestId !== 'string'
-        || !ID_PATTERN.test(requestId)
+        || !isCollabOpaqueId(requestId)
         || (kind !== 'references' && kind !== 'resolves')
         || typeof commitOid !== 'string'
-        || !OID_PATTERN.test(commitOid)
+        || !isCollabGitOid(commitOid)
         || typeof acceptedMergeOid !== 'string'
-        || !OID_PATTERN.test(acceptedMergeOid)
+        || !isCollabGitOid(acceptedMergeOid)
       ) {
         throw relationError('accepted-ticket-relation-row-invalid');
       }

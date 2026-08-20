@@ -165,11 +165,6 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
     targetMemberId: 'member-a',
   };
   return {
-    acknowledgeManagerResponsibility: jest.fn().mockResolvedValue({
-      ...offer,
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
-      status: 'acknowledged',
-    }),
     cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue({
       ...offer,
       status: 'cancelled',
@@ -179,10 +174,6 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
       expiresAt: '2026-08-08T01:00:00.000Z',
     }),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(offer),
-    declineManagerResponsibility: jest.fn().mockResolvedValue({
-      ...offer,
-      status: 'declined',
-    }),
     listMembers: jest.fn().mockResolvedValue(authoritySnapshot().members),
     removeMember: jest.fn().mockResolvedValue(undefined),
     revokeInvitation: jest.fn().mockResolvedValue(undefined),
@@ -1115,14 +1106,6 @@ describe('CollabFeatureService', () => {
       purpose: 'manager-promotion',
       targetMemberId: 'member-a',
     })).resolves.toMatchObject({ status: 'success', value: { offerId: 'offer-a' } });
-    await expect(service.acknowledgeManagerResponsibility({
-      offerId: 'offer-a',
-      projectId: 'project-alpha',
-    })).resolves.toMatchObject({ status: 'success', value: { status: 'acknowledged' } });
-    await expect(service.declineManagerResponsibility({
-      offerId: 'offer-a',
-      projectId: 'project-alpha',
-    })).resolves.toMatchObject({ status: 'success', value: { status: 'declined' } });
     await expect(service.cancelManagerResponsibilityOffer({
       offerId: 'offer-a',
       projectId: 'project-alpha',
@@ -1155,7 +1138,7 @@ describe('CollabFeatureService', () => {
     expect(transfers.createHostTransfer).toHaveBeenCalledTimes(1);
     expect(retirement.finalizeRetiredProject).toHaveBeenCalledTimes(1);
     expect((foundation.local.projects.loadIndex as jest.Mock).mock.calls.length)
-      .toBe(initialReads + 11);
+      .toBe(initialReads + 9);
   });
 
   it('projects Retired lifecycle without requiring the detached Git directory', async () => {
@@ -1297,8 +1280,6 @@ describe('CollabFeatureService', () => {
       ['removeMember', [projectRequest]],
       ['leaveProject', [projectRequest]],
       ['createManagerResponsibilityOffer', [projectRequest]],
-      ['acknowledgeManagerResponsibility', [projectRequest]],
-      ['declineManagerResponsibility', [projectRequest]],
       ['cancelManagerResponsibilityOffer', [projectRequest]],
       ['promoteManager', [projectRequest]],
       ['demoteManager', [projectRequest]],

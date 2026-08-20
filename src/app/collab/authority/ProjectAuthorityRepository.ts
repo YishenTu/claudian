@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF, type CollabMemberId, collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabMemberId, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type {
   AuthorityDatabaseConnection,
@@ -34,8 +34,12 @@ function projectError(reason: string): CollabError {
   });
 }
 
-function assertId(value: string, field: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value)) {
+function assertId(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  field: string,
+): void {
+  if (!predicate(value)) {
     throw projectError(`${field}-invalid`);
   }
 }
@@ -69,8 +73,8 @@ export class ProjectAuthorityRepository {
     connection: AuthorityDatabaseConnection,
     input: ProjectAuthorityInitializeInput,
   ): void {
-    assertId(input.projectId, 'project-id');
-    assertId(input.hostMemberId, 'host-member-id');
+    assertId(input.projectId, isCollabProjectId, 'project-id');
+    assertId(input.hostMemberId, isCollabMemberId, 'host-member-id');
     assertText(input.name, 'project-name', 200);
     assertText(input.hostDisplayName, 'host-display-name', 200);
     assertTimestamp(input.createdAt);
@@ -149,8 +153,8 @@ export class ProjectAuthorityRepository {
       snapshotGeneration: generation,
       state,
     };
-    assertId(project.projectId, 'project-id');
-    assertId(project.hostMemberId, 'host-member-id');
+    assertId(project.projectId, isCollabProjectId, 'project-id');
+    assertId(project.hostMemberId, isCollabMemberId, 'host-member-id');
     assertText(project.name, 'project-name', 200);
     assertTimestamp(project.createdAt);
     return project;

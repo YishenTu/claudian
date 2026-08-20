@@ -5,7 +5,14 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 
-import { type CollabMember, type CollabMemberStatus } from '@claudian/collab-protocol';
+import {
+  type CollabMember,
+  type CollabMemberStatus,
+  isCollabGitOid,
+  isCollabMemberId,
+  isCollabOpaqueId,
+  isCollabProjectId,
+} from '@claudian/collab-protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -43,8 +50,6 @@ const JOIN_FAILURE_LIMIT = 5;
 const JOIN_RATE_INITIAL_DELAY_MS = 250;
 const JOIN_RATE_MAX_DELAY_MS = 30_000;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 interface PendingMembershipDatabase {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
@@ -129,8 +134,10 @@ function requestFingerprint(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
 }
 
-function assertId(value: string, field: string): void {
-  if (!ID_PATTERN.test(value)) throw serviceError('operation-failed', `${field}-invalid`);
+function assertOpaqueId(value: string, field: string): void {
+  if (!isCollabOpaqueId(value)) {
+    throw serviceError('operation-failed', `${field}-invalid`);
+  }
 }
 
 function assertProject(inputProjectId: string, projectId: string): void {
@@ -211,7 +218,7 @@ export class PendingMembershipService {
       }
       return replay.invitation;
     }
-    assertId(request.idempotencyKey, 'idempotency-key');
+    assertOpaqueId(request.idempotencyKey, 'idempotency-key');
     const host = this.options.getHostEndpoint();
     const invitation = this.invitationCodec().createInvitation({
       caFingerprint: host.caFingerprint,
@@ -270,7 +277,7 @@ export class PendingMembershipService {
     if (actor.member.role !== 'manager') {
       throw serviceError('authorization-denied', 'manager-role-required');
     }
-    assertId(request.idempotencyKey, 'idempotency-key');
+    assertOpaqueId(request.idempotencyKey, 'idempotency-key');
     const createdAt = this.now().toISOString();
     const fingerprint = requestFingerprint(request);
     await this.authority.database.mutate(connection => {
@@ -326,7 +333,7 @@ export class PendingMembershipService {
   ): Promise<CollabJoinAttempt> {
     await this.garbageCollectExpiredPending();
     const project = await this.requireProject(request.projectId);
-    assertId(request.joinAttemptId, 'join-attempt-id');
+    assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
     const displayName = assertDisplayName(request.displayName);
     const rateKey = `${request.projectId}:${options.remoteAddress}`;
     await this.enforceJoinRateLimit(rateKey);
@@ -396,8 +403,8 @@ export class PendingMembershipService {
     request: ActivateJoinAttemptRequest,
   ): Promise<CollabProjectSnapshot> {
     const project = await this.requireProject(request.projectId);
-    assertId(request.joinAttemptId, 'join-attempt-id');
-    assertId(request.idempotencyKey, 'idempotency-key');
+    assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
+    assertOpaqueId(request.idempotencyKey, 'idempotency-key');
     await this.authenticateMemberCredential(memberCredential, ['pending', 'active']);
     const mainOid = await this.readMainOid();
     const now = this.now();
@@ -576,7 +583,8 @@ export class PendingMembershipService {
 
   private createValidId(kind: 'invitation' | 'member'): string {
     const id = this.createId(kind);
-    assertId(id, `${kind}-id`);
+    const valid = kind === 'member' ? isCollabMemberId(id) : isCollabOpaqueId(id);
+    if (!valid) throw serviceError('operation-failed', `${kind}-id-invalid`);
     return id;
   }
 
@@ -638,7 +646,9 @@ export class PendingMembershipService {
   }
 
   private async requireProject(projectId: string) {
-    assertId(projectId, 'project-id');
+    if (!isCollabProjectId(projectId)) {
+      throw serviceError('operation-failed', 'project-id-invalid');
+    }
     const project = await this.authority.database.read(connection => (
       this.authority.projects.get(connection)
     ));
@@ -657,7 +667,7 @@ export class PendingMembershipService {
 
   private async readMainOid(): Promise<string> {
     const oid = await this.options.readMainOid();
-    if (!OID_PATTERN.test(oid)) {
+    if (!isCollabGitOid(oid)) {
       throw serviceError('operation-failed', 'main-oid-invalid');
     }
     return oid;

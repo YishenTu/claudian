@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import {
   type AuthorityKeysetCursor,
@@ -9,8 +9,6 @@ import { decodeAuthorityChangeRequest } from '@/app/collab/authority/RequestEnsu
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface AuthorityRequestRecord {
   readonly personalRef: string;
@@ -45,11 +43,11 @@ export function decodeAuthorityComment(
   const body = row.body;
   if (
     typeof id !== 'string'
-    || !ID_PATTERN.test(id)
+    || !isCollabOpaqueId(id)
     || typeof requestId !== 'string'
-    || !ID_PATTERN.test(requestId)
+    || !isCollabOpaqueId(requestId)
     || typeof authorMemberId !== 'string'
-    || !ID_PATTERN.test(authorMemberId)
+    || !isCollabMemberId(authorMemberId)
     || typeof body !== 'string'
     || body.length === 0
   ) {
@@ -83,7 +81,7 @@ export class RequestQueryRepository {
     connection: AuthorityDatabaseConnection,
     requestId: string,
   ): AuthorityRequestRecord | null {
-    if (!ID_PATTERN.test(requestId)) throw queryError('request-query-id-invalid');
+    if (!isCollabOpaqueId(requestId)) throw queryError('request-query-id-invalid');
     const row = connection.get(`${REQUEST_SELECT}
       WHERE r.request_id = ?
       GROUP BY r.request_id`, [requestId]);
@@ -109,7 +107,7 @@ export class RequestQueryRepository {
       readonly maxUtf8Bytes?: number;
     },
   ): AuthorityKeysetPage<CollabComment> {
-    if (!ID_PATTERN.test(requestId)) throw queryError('request-query-id-invalid');
+    if (!isCollabOpaqueId(requestId)) throw queryError('request-query-id-invalid');
     const rows = connection.all(
       `SELECT comment_id, request_id, author_member_id, body, created_at
        FROM comments

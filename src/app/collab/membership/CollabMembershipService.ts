@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabMember, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMember, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
 import type {
   CollabLocalMembershipRecord,
@@ -30,7 +30,7 @@ import type {
   CollabManagerResponsibilityOfferSummary,
   CollabProjectSnapshot,
 } from '@/core/collab';
-import { type CollabAcknowledgeManagerResponsibilityRequest, type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDeclineManagerResponsibilityRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest } from '@/core/collab';
+import { type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -107,6 +107,11 @@ export interface CollabMembershipSafetyContext {
 interface MembershipSession {
   readonly client: CollabMembershipControlClientPort;
   readonly membership: CollabLocalMembershipRecord;
+}
+
+interface ManagerResponsibilityReconciliationRequest {
+  readonly offerId: CollabOperationId;
+  readonly projectId: CollabProjectId;
 }
 
 function membershipError(
@@ -271,17 +276,8 @@ export class CollabMembershipService {
     return summary;
   }
 
-  async acknowledgeManagerResponsibility(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabManagerResponsibilityOfferSummary> {
-    return this.safety.managerResponsibilityOperations.run(request.projectId, () => (
-      this.acknowledgeManagerResponsibilityUnlocked(request, options)
-    ));
-  }
-
   private async acknowledgeManagerResponsibilityUnlocked(
-    request: CollabAcknowledgeManagerResponsibilityRequest,
+    request: ManagerResponsibilityReconciliationRequest,
     options: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
     if (await this.safety.pendingLeaves.load(request.projectId)) {
@@ -354,7 +350,7 @@ export class CollabMembershipService {
       return offer;
     }
     if (await this.safety.pendingLeaves.load(snapshot.project.id)) {
-      const declined = await this.declineManagerResponsibility({
+      const declined = await this.declineManagerResponsibilityUnlocked({
         offerId: offer.offerId,
         projectId: snapshot.project.id,
       }, options);
@@ -367,8 +363,8 @@ export class CollabMembershipService {
     }, options);
   }
 
-  async declineManagerResponsibility(
-    request: CollabDeclineManagerResponsibilityRequest,
+  private async declineManagerResponsibilityUnlocked(
+    request: ManagerResponsibilityReconciliationRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary> {
     const session = await this.loadSession(request.projectId);

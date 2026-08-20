@@ -1,4 +1,4 @@
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabOpaqueId } from '@claudian/collab-protocol';
 import { type RawData,WebSocket } from 'ws';
 
 import { COLLAB_CONTROL_ROUTE_PREFIX } from '@/app/collab/lan/LanCollabConstants';
@@ -9,7 +9,6 @@ import {
 
 const MIN_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export type ProjectEventInvalidation =
   | {
@@ -212,8 +211,7 @@ export class ProjectEventClient {
     const requestId = event.payload.requestId;
     if (
       (event.kind === 'request-updated' || event.kind === 'comment-added')
-      && typeof requestId === 'string'
-      && ID_PATTERN.test(requestId)
+      && isCollabOpaqueId(requestId)
     ) {
       return { kind: 'request', requestId, sequence: event.sequence };
     }

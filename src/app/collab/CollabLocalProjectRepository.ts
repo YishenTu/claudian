@@ -1,6 +1,6 @@
 import { lstat, readdir, readFile, rm } from 'node:fs/promises';
 
-import { type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import {
   type CollabFilesystemDiagnosticSink,
@@ -47,7 +47,7 @@ const LEGACY_AUTHORITY_ROOT_ENTRIES = new Set([
   'collab.db.tmp',
   'repository.git',
 ]);
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const PROJECT_DIRECTORY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MEMBER_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT_PATTERN = /^(?:[A-Fa-f0-9]{64}|(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2})$/;
 
@@ -202,10 +202,9 @@ function requireTimestamp(record: UnknownRecord, key: string): CollabIsoTimestam
 }
 
 function requireProjectId(record: UnknownRecord, key = 'id'): CollabProjectId {
-  return requireString(record, key, {
-    maxLength: 64,
-    pattern: PROJECT_ID_PATTERN,
-  });
+  const value = requireString(record, key, { maxLength: 64 });
+  if (!isCollabProjectId(value)) throw new TypeError(`Invalid ${key}`);
+  return value;
 }
 
 function requireWorkspacePath(record: UnknownRecord): string {
@@ -218,7 +217,7 @@ function requireWorkspacePath(record: UnknownRecord): string {
   const projectDirectoryName = workspacePath.slice(separatorIndex + 1);
   if (
     !parseCollabProjectsFolder(projectsFolder).ok
-    || !PROJECT_ID_PATTERN.test(projectDirectoryName)
+    || !PROJECT_DIRECTORY_PATTERN.test(projectDirectoryName)
   ) {
     throw new TypeError('Invalid workspacePath');
   }
@@ -390,10 +389,8 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   }
 
   const projectId = requireProjectId(value.project);
-  const memberId = requireString(value.member, 'id', {
-    maxLength: 64,
-    pattern: PROJECT_ID_PATTERN,
-  });
+  const memberId = requireString(value.member, 'id', { maxLength: 64 });
+  if (!isCollabMemberId(memberId)) throw new TypeError('Invalid Member id');
   const authorityKind = value.authority.kind;
   if (authorityKind !== 'lan') throw new TypeError('Invalid authority kind');
   const role = value.member.role;
@@ -893,8 +890,8 @@ export class CollabLocalProjectRepository {
       });
       return entries.sort((left, right) => left.name.localeCompare(right.name)).flatMap(entry => {
         if (/^\..+\.json\.[0-9a-f-]+\.tmp$/.test(entry.name)) return [];
-        const match = /^([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.json$/.exec(entry.name);
-        if (!match || !entry.isFile() || entry.isSymbolicLink()) {
+        const match = /^(.+)\.json$/.exec(entry.name);
+        if (!match || !isCollabProjectId(match[1]) || !entry.isFile() || entry.isSymbolicLink()) {
           throw localRecordError('retirement-acknowledgement-directory-invalid', 'retirement');
         }
         return [match[1]];
@@ -971,21 +968,6 @@ export class CollabLocalProjectRepository {
     });
   }
 
-  updateMembershipEventSequence(
-    projectId: CollabProjectId,
-    sequence: number,
-  ): Promise<CollabLocalMembershipRecord> {
-    this.requireProjectId(projectId);
-    if (!Number.isSafeInteger(sequence) || sequence < 0) {
-      return Promise.reject(localRecordError(
-        'local-event-sequence-invalid',
-        'membership',
-        projectId,
-      ));
-    }
-    return this.updateMembershipProjectionFields(projectId, { sequence });
-  }
-
   updateMembershipProjection(
     projectId: CollabProjectId,
     memberId: CollabMemberId,
@@ -993,7 +975,7 @@ export class CollabLocalProjectRepository {
     sequence: number,
   ): Promise<CollabLocalMembershipRecord> {
     this.requireProjectId(projectId);
-    if (!PROJECT_ID_PATTERN.test(memberId)) {
+    if (!isCollabMemberId(memberId)) {
       return Promise.reject(localRecordError(
         'local-membership-member-invalid',
         'membership',
@@ -1024,8 +1006,8 @@ export class CollabLocalProjectRepository {
   private updateMembershipProjectionFields(
     projectId: CollabProjectId,
     projection: {
-      readonly memberId?: CollabMemberId;
-      readonly role?: CollabRole;
+      readonly memberId: CollabMemberId;
+      readonly role: CollabRole;
       readonly sequence: number;
     },
   ): Promise<CollabLocalMembershipRecord> {
@@ -1045,7 +1027,7 @@ export class CollabLocalProjectRepository {
       if (membership.project.id !== projectId) {
         throw localRecordError('local-record-corrupt', 'membership', projectId);
       }
-      if (projection.memberId && projection.memberId !== membership.member.id) {
+      if (projection.memberId !== membership.member.id) {
         throw localRecordError(
           'local-membership-member-mismatch',
           'membership',
@@ -1053,17 +1035,16 @@ export class CollabLocalProjectRepository {
         );
       }
       if (projection.sequence < membership.lastEventSequence) return membership;
-      const role = projection.role ?? membership.member.role;
       if (
         projection.sequence === membership.lastEventSequence
-        && role === membership.member.role
+        && projection.role === membership.member.role
       ) {
         return membership;
       }
       const updated = {
         ...membership,
         lastEventSequence: projection.sequence,
-        member: { ...membership.member, role },
+        member: { ...membership.member, role: projection.role },
         updatedAt: this.now().toISOString(),
       };
       await this.ensurePrivateProjectDirectory(projectId);
@@ -1122,7 +1103,7 @@ export class CollabLocalProjectRepository {
           }
           continue;
         }
-        if (!PROJECT_ID_PATTERN.test(entry.name)) {
+        if (!isCollabProjectId(entry.name)) {
           throw localRecordError('local-project-directory-invalid', kind, entry.name);
         }
         const projectId = entry.name;
@@ -1304,8 +1285,8 @@ export class CollabLocalProjectRepository {
         if (entry.name === 'index.json' || /^\..+\.[0-9a-f-]+\.tmp$/.test(entry.name)) {
           continue;
         }
-        const match = /^([A-Za-z0-9][A-Za-z0-9_-]{0,63})\.json$/.exec(entry.name);
-        if (!match || !entry.isFile() || entry.isSymbolicLink()) {
+        const match = /^(.+)\.json$/.exec(entry.name);
+        if (!match || !isCollabProjectId(match[1]) || !entry.isFile() || entry.isSymbolicLink()) {
           throw localRecordError('retirement-tombstone-directory-invalid', 'retirement-tombstone');
         }
         discovered.push(match[1]);
@@ -1667,7 +1648,7 @@ export class CollabLocalProjectRepository {
   }
 
   private requireProjectId(projectId: CollabProjectId): void {
-    if (!PROJECT_ID_PATTERN.test(projectId)) {
+    if (!isCollabProjectId(projectId)) {
       throw localRecordError('project-id-invalid', 'index');
     }
   }

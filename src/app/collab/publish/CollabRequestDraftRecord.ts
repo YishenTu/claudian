@@ -1,4 +1,4 @@
-import { type CollabGitOid, type CollabProjectId, type CollabRequestId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabProjectId, type CollabRequestId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
@@ -20,8 +20,6 @@ export interface CollabRequestDraftRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const KEYS = new Set([
   'baseRequestRevision',
   'createdAt',
@@ -52,17 +50,6 @@ function requiredString(
     || (pattern && !pattern.test(field))
   ) throw new TypeError(`Invalid ${key}`);
   return field;
-}
-
-function optionalString(
-  value: UnknownRecord,
-  key: string,
-  maxLength: number,
-  pattern: RegExp,
-): string | undefined {
-  return value[key] === undefined
-    ? undefined
-    : requiredString(value, key, maxLength, pattern);
 }
 
 function timestamp(value: UnknownRecord, key: string): string {
@@ -100,21 +87,33 @@ export function decodeCollabRequestDraftRecord(value: unknown): CollabRequestDra
     && syncState !== 'syncing'
     && syncState !== 'needs-attention'
   ) throw new TypeError('Invalid syncState');
+  const projectId = requiredString(value, 'projectId', 64);
+  const requestId = value.requestId === undefined
+    ? undefined
+    : requiredString(value, 'requestId', 128);
+  const targetHeadOid = value.targetHeadOid === undefined
+    ? undefined
+    : requiredString(value, 'targetHeadOid', 64);
+  if (
+    !isCollabProjectId(projectId)
+    || (requestId !== undefined && !isCollabOpaqueId(requestId))
+    || (targetHeadOid !== undefined && !isCollabGitOid(targetHeadOid))
+  ) throw new TypeError('Invalid request draft identity');
   return {
     ...(baseRequestRevision === undefined
       ? {}
       : { baseRequestRevision: Number(baseRequestRevision) }),
     createdAt: timestamp(value, 'createdAt'),
     description,
-    projectId: requiredString(value, 'projectId', 64, ID_PATTERN),
+    projectId,
     ...(value.requestId === undefined
       ? {}
-      : { requestId: optionalString(value, 'requestId', 128, ID_PATTERN)! }),
+      : { requestId }),
     schemaVersion: COLLAB_REQUEST_DRAFT_SCHEMA_VERSION,
     syncState,
     ...(value.targetHeadOid === undefined
       ? {}
-      : { targetHeadOid: optionalString(value, 'targetHeadOid', 64, OID_PATTERN)! }),
+      : { targetHeadOid }),
     updatedAt: timestamp(value, 'updatedAt'),
   };
 }

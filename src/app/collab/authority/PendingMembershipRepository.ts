@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -68,8 +68,14 @@ function assertTimestamp(value: string, field: string): void {
   }
 }
 
-function assertId(value: string, field: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value)) {
+function assertMemberId(value: string, field: string): void {
+  if (!isCollabMemberId(value)) {
+    throw membershipError(`${field}-invalid`);
+  }
+}
+
+function assertOpaqueId(value: string, field: string): void {
+  if (!isCollabOpaqueId(value)) {
     throw membershipError(`${field}-invalid`);
   }
 }
@@ -87,6 +93,8 @@ function decodeMember(row: Readonly<Record<string, unknown>>): AuthorityMemberCr
   if (
     (role !== 'manager' && role !== 'member')
     || !isMemberStatus(status)
+    || !isCollabMemberId(id)
+    || (joinAttemptId !== null && !isCollabOpaqueId(joinAttemptId))
     || personalRef !== collabMemberRef(id)
   ) {
     throw membershipError('authority-member-row-invalid');
@@ -123,14 +131,18 @@ function decodeInvitation(
   const createdAt = text(row, 'created_at')!;
   const expiresAt = text(row, 'expires_at')!;
   const revokedAt = text(row, 'revoked_at', true);
+  const createdByMemberId = text(row, 'created_by_member_id')!;
+  const invitationId = text(row, 'invitation_id')!;
+  assertMemberId(createdByMemberId, 'invitation-creator-id');
+  assertOpaqueId(invitationId, 'invitation-id');
   assertTimestamp(createdAt, 'invitation-created-at');
   assertTimestamp(expiresAt, 'invitation-expires-at');
   if (revokedAt !== null) assertTimestamp(revokedAt, 'invitation-revoked-at');
   return {
     createdAt,
-    createdByMemberId: text(row, 'created_by_member_id')!,
+    createdByMemberId,
     expiresAt,
-    id: text(row, 'invitation_id')!,
+    id: invitationId,
     revokedAt,
     tokenHash: bytes(row, 'token_hash'),
   };
@@ -192,8 +204,8 @@ export class PendingMembershipRepository {
     connection: AuthorityDatabaseConnection,
     input: CreateAuthorityInvitationInput,
   ): AuthorityInvitationRecord {
-    assertId(input.invitationId, 'invitation-id');
-    assertId(input.createdByMemberId, 'invitation-creator-id');
+    assertOpaqueId(input.invitationId, 'invitation-id');
+    assertMemberId(input.createdByMemberId, 'invitation-creator-id');
     assertTimestamp(input.createdAt, 'invitation-created-at');
     assertTimestamp(input.expiresAt, 'invitation-expires-at');
     if (input.tokenHash.byteLength !== 32) {
@@ -258,7 +270,7 @@ export class PendingMembershipRepository {
     connection: AuthorityDatabaseConnection,
     joinAttemptId: string,
   ): AuthorityMemberCredentialRecord | null {
-    assertId(joinAttemptId, 'join-attempt-id');
+    assertOpaqueId(joinAttemptId, 'join-attempt-id');
     const row = connection.get(`
       SELECT ${MEMBER_COLUMNS}
       FROM members
@@ -271,8 +283,8 @@ export class PendingMembershipRepository {
     connection: AuthorityDatabaseConnection,
     input: CreatePendingMembershipInput,
   ): AuthorityMemberCredentialRecord {
-    assertId(input.memberId, 'member-id');
-    assertId(input.joinAttemptId, 'join-attempt-id');
+    assertMemberId(input.memberId, 'member-id');
+    assertOpaqueId(input.joinAttemptId, 'join-attempt-id');
     assertTimestamp(input.createdAt, 'member-created-at');
     if (
       input.displayName.trim().length === 0
@@ -308,7 +320,7 @@ export class PendingMembershipRepository {
     memberId: CollabMemberId,
     credentialHash: Uint8Array,
   ): AuthorityMemberCredentialRecord {
-    assertId(memberId, 'member-id');
+    assertMemberId(memberId, 'member-id');
     if (credentialHash.byteLength !== 32) {
       throw membershipError('member-credential-hash-invalid');
     }
@@ -330,7 +342,7 @@ export class PendingMembershipRepository {
     memberId: CollabMemberId,
     activatedAt: string,
   ): AuthorityMemberCredentialRecord {
-    assertId(memberId, 'member-id');
+    assertMemberId(memberId, 'member-id');
     assertTimestamp(activatedAt, 'member-activated-at');
     connection.run(
       `UPDATE members
@@ -374,7 +386,7 @@ export class PendingMembershipRepository {
     memberIds: readonly CollabMemberId[],
   ): void {
     for (const memberId of memberIds) {
-      assertId(memberId, 'member-id');
+      assertMemberId(memberId, 'member-id');
       connection.run(
         "DELETE FROM members WHERE member_id = ? AND status = 'pending'",
         [memberId],

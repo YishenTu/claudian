@@ -29,7 +29,6 @@ describe('CollabPublicationStateRecord', () => {
     const value = record({
       operation: {
         candidateOid: OID.candidate,
-        confirmed: false,
         contributionHeadOid: OID.contribution,
         createdAt: '2026-08-09T00:00:00.000Z',
         currentMainOid: OID.main,
@@ -43,10 +42,9 @@ describe('CollabPublicationStateRecord', () => {
     expect(JSON.stringify(value)).not.toContain('/Users/');
   });
 
-  it('requires confirmation from the confirmed phase onward', () => {
+  it('uses phase as the sole confirmation authority and rejects the legacy boolean', () => {
     const operation = {
       candidateOid: OID.candidate,
-      confirmed: false,
       contributionHeadOid: OID.contribution,
       createdAt: '2026-08-09T00:00:00.000Z',
       currentMainOid: OID.main,
@@ -55,17 +53,17 @@ describe('CollabPublicationStateRecord', () => {
       updatedAt: '2026-08-09T00:01:00.000Z',
     };
 
-    expect(() => decodeCollabPublicationStateRecord(record({ operation }))).toThrow();
-    expect(decodeCollabPublicationStateRecord(record({
-      operation: { ...operation, confirmed: true },
-    })).operation?.confirmed).toBe(true);
+    expect(decodeCollabPublicationStateRecord(record({ operation })).operation)
+      .toMatchObject({ phase: 'confirmed' });
+    expect(() => decodeCollabPublicationStateRecord(record({
+      operation: { ...operation, confirmed: true } as never,
+    }))).toThrow();
   });
 
   it('allows captured state only before main and candidate are known', () => {
     const captured = record({
       operation: {
         candidateOid: null,
-        confirmed: false,
         contributionHeadOid: OID.contribution,
         createdAt: '2026-08-09T00:00:00.000Z',
         currentMainOid: null,
@@ -95,7 +93,6 @@ describe('CollabPublicationStateRecord', () => {
       ...record(),
       operation: {
         candidateOid: OID.candidate,
-        confirmed: false,
         contributionHeadOid: OID.contribution,
         createdAt: '2026-08-09T00:00:00.000Z',
         currentMainOid: OID.main,

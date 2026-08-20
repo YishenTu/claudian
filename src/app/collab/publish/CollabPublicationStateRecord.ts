@@ -1,4 +1,4 @@
-import { type CollabGitOid, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 export const COLLAB_PUBLICATION_STATE_SCHEMA_VERSION = 1 as const;
 
@@ -9,16 +9,30 @@ export type CollabPublicationOperationPhase =
   | 'applied'
   | 'pushed';
 
-export interface CollabPublicationOperationRecord {
-  readonly candidateOid: CollabGitOid | null;
-  readonly confirmed: boolean;
+interface CollabPublicationOperationCommon {
   readonly contributionHeadOid: CollabGitOid;
   readonly createdAt: string;
-  readonly currentMainOid: CollabGitOid | null;
   readonly operationId: CollabOperationId;
-  readonly phase: CollabPublicationOperationPhase;
   readonly updatedAt: string;
 }
+
+interface CollabCapturedPublicationOperationRecord
+  extends CollabPublicationOperationCommon {
+  readonly candidateOid: null;
+  readonly currentMainOid: null;
+  readonly phase: 'captured';
+}
+
+interface CollabPreparedPublicationOperationRecord
+  extends CollabPublicationOperationCommon {
+  readonly candidateOid: CollabGitOid;
+  readonly currentMainOid: CollabGitOid;
+  readonly phase: Exclude<CollabPublicationOperationPhase, 'captured'>;
+}
+
+export type CollabPublicationOperationRecord =
+  | CollabCapturedPublicationOperationRecord
+  | CollabPreparedPublicationOperationRecord;
 
 export interface CollabPublicationStateRecord {
   readonly baseMainOid: CollabGitOid;
@@ -30,8 +44,6 @@ export interface CollabPublicationStateRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const STATE_KEYS = new Set([
   'baseMainOid',
   'operation',
@@ -41,7 +53,6 @@ const STATE_KEYS = new Set([
 ]);
 const OPERATION_KEYS = new Set([
   'candidateOid',
-  'confirmed',
   'contributionHeadOid',
   'createdAt',
   'currentMainOid',
@@ -90,7 +101,9 @@ function timestampField(value: UnknownRecord, key: string): string {
 }
 
 function oidField(value: UnknownRecord, key: string): CollabGitOid {
-  return stringField(value, key, 64, OID_PATTERN);
+  const field = stringField(value, key, 64);
+  if (!isCollabGitOid(field)) throw new TypeError(`Invalid ${key}`);
+  return field;
 }
 
 function nullableOidField(value: UnknownRecord, key: string): CollabGitOid | null {
@@ -114,29 +127,39 @@ function decodeOperation(value: unknown): CollabPublicationOperationRecord | nul
   if (value === null) return null;
   if (!isRecord(value)) throw new TypeError('Invalid publication operation');
   exactKeys(value, OPERATION_KEYS);
-  const confirmed = value.confirmed;
-  if (typeof confirmed !== 'boolean') throw new TypeError('Invalid confirmed state');
   const phase = phaseField(value.phase);
   const candidateOid = nullableOidField(value, 'candidateOid');
   const currentMainOid = nullableOidField(value, 'currentMainOid');
   if (
-    ((phase === 'captured' || phase === 'review-ready') && confirmed)
-    || ((phase === 'confirmed' || phase === 'applied' || phase === 'pushed') && !confirmed)
-    || (phase === 'captured' && (candidateOid !== null || currentMainOid !== null))
+    (phase === 'captured' && (candidateOid !== null || currentMainOid !== null))
     || (phase !== 'captured' && (candidateOid === null || currentMainOid === null))
   ) {
-    throw new TypeError('Publication confirmation phase mismatch');
+    throw new TypeError('Publication phase state mismatch');
   }
-  return {
-    candidateOid,
-    confirmed,
-    contributionHeadOid: oidField(value, 'contributionHeadOid'),
-    createdAt: timestampField(value, 'createdAt'),
-    currentMainOid,
-    operationId: stringField(value, 'operationId', 128, ID_PATTERN),
-    phase,
-    updatedAt: timestampField(value, 'updatedAt'),
-  };
+  const contributionHeadOid = oidField(value, 'contributionHeadOid');
+  const createdAt = timestampField(value, 'createdAt');
+  const operationId = stringField(value, 'operationId', 128);
+  const updatedAt = timestampField(value, 'updatedAt');
+  if (!isCollabOpaqueId(operationId)) throw new TypeError('Invalid operationId');
+  return phase === 'captured'
+    ? {
+        candidateOid: null,
+        contributionHeadOid,
+        createdAt,
+        currentMainOid: null,
+        operationId,
+        phase,
+        updatedAt,
+      }
+    : {
+        candidateOid: candidateOid!,
+        contributionHeadOid,
+        createdAt,
+        currentMainOid: currentMainOid!,
+        operationId,
+        phase,
+        updatedAt,
+      };
 }
 
 export function decodeCollabPublicationStateRecord(
@@ -150,10 +173,12 @@ export function decodeCollabPublicationStateRecord(
   }
   exactKeys(value, STATE_KEYS);
   const operation = decodeOperation(value.operation);
+  const projectId = stringField(value, 'projectId', 64);
+  if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   return {
     baseMainOid: oidField(value, 'baseMainOid'),
     operation,
-    projectId: stringField(value, 'projectId', 64, ID_PATTERN),
+    projectId,
     schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
     updatedAt: timestampField(value, 'updatedAt'),
   };

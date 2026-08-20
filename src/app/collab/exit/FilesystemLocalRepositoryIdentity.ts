@@ -1,14 +1,13 @@
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { collabMemberRef } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { LocalCleanupGitIdentityPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
 import type { GitLocalRepositoryIdentity } from '@/app/collab/git/GitRepositoryService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const MAX_CONFIG_BYTES = 64 * 1024;
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 function identityError(reason: string): CollabError {
   return new CollabError({
@@ -29,8 +28,8 @@ export class FilesystemLocalRepositoryIdentity implements LocalCleanupGitIdentit
     expected: GitLocalRepositoryIdentity,
   ): Promise<void> {
     if (
-      !SAFE_ID.test(expected.memberId)
-      || !SAFE_ID.test(expected.projectId)
+      !isCollabMemberId(expected.memberId)
+      || !isCollabProjectId(expected.projectId)
       || expected.personalRef !== collabMemberRef(expected.memberId)
     ) {
       throw identityError('collab-local-config-id-invalid');

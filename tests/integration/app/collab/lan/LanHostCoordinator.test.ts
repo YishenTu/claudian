@@ -103,25 +103,36 @@ function readPinnedUrl(url: string, ca: string): Promise<string> {
 function membershipAccess(
   projects: CollabLocalProjectRepository,
 ): { readonly projection: CollabClientProjection; readonly service: CollabMembershipService } {
+  const membership = { service: null as CollabMembershipService | null };
   const projection = new CollabClientProjection(
     projects,
     new LocalProjectControlPort(projects),
+    {
+      managerResponsibility: {
+        reconcileSnapshot: snapshot => {
+          if (!membership.service) throw new Error('Membership service unavailable');
+          return membership.service.reconcileManagerResponsibilitySnapshot(snapshot);
+        },
+      },
+    },
   );
+  const service = new CollabMembershipService(projects, {
+    readCoordinationSnapshot: (projectId, options) => (
+      projection.readSnapshot(projectId, options)
+    ),
+  }, {}, {
+    managerReceipts: {
+      load: async () => null,
+      remove: async () => false,
+      save: async () => undefined,
+    },
+    managerResponsibilityOperations: new ManagerResponsibilityOperationCoordinator(),
+    pendingLeaves: { load: async () => null },
+  });
+  membership.service = service;
   return {
     projection,
-    service: new CollabMembershipService(projects, {
-      readCoordinationSnapshot: (projectId, options) => (
-        projection.readSnapshot(projectId, options)
-      ),
-    }, {}, {
-      managerReceipts: {
-        load: async () => null,
-        remove: async () => false,
-        save: async () => undefined,
-      },
-      managerResponsibilityOperations: new ManagerResponsibilityOperationCoordinator(),
-      pendingLeaves: { load: async () => null },
-    }),
+    service,
   };
 }
 
@@ -544,10 +555,7 @@ describe('LanHostCoordinator production transport', () => {
       purpose: 'manager-promotion',
       targetMemberId: join.joinAttempt.member.id,
     });
-    await memberAccess.service.acknowledgeManagerResponsibility({
-      offerId: memberOffer.offerId,
-      projectId: PROJECT_ID,
-    });
+    await memberAccess.projection.readSnapshot(PROJECT_ID);
     await hostAccess.service.promoteManager({
       managerResponsibilityOfferId: memberOffer.offerId,
       projectId: PROJECT_ID,

@@ -9,7 +9,7 @@ import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import type { Duplex } from 'node:stream';
 
-import { type CollabMember, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMember, type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminService';
@@ -75,7 +75,7 @@ const HOST_LOCK_PATH = '.claudian/collab/lan-host.lock';
 const HOST_LOCK_MAX_BYTES = 1_024;
 const LISTENER_CLOSE_TIMEOUT_MS = 500;
 const HOST_ADDRESS_CHECK_INTERVAL_MS = 2_000;
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const HOST_LOCK_NONCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ACTIVE_HOST_LOCK_NONCES = (() => {
   const key = Symbol.for('claudian.collab.active-host-lock-nonces');
   const scope = window as unknown as Record<PropertyKey, unknown>;
@@ -340,7 +340,7 @@ function parseHostLock(contents: string): HostLockRecord {
     || value === null
     || Array.isArray(value)
     || typeof (value as Record<string, unknown>).nonce !== 'string'
-    || !PROJECT_ID_PATTERN.test((value as Record<string, string>).nonce)
+    || !HOST_LOCK_NONCE_PATTERN.test((value as Record<string, string>).nonce)
     || typeof (value as Record<string, unknown>).pid !== 'number'
     || !Number.isSafeInteger((value as Record<string, number>).pid)
     || (value as Record<string, number>).pid < 1
@@ -700,7 +700,7 @@ export class LanHostCoordinator {
     projectId: CollabProjectId,
   ): Promise<CollabHostSession & { endpoint: string }> {
     this.assertOpen();
-    if (!PROJECT_ID_PATTERN.test(projectId)) {
+    if (!isCollabProjectId(projectId)) {
       throw hostError('project-not-found', 'host-project-id-invalid');
     }
     if (this.terminalizingProjects.has(projectId) || this.terminalProjects.has(projectId)) {

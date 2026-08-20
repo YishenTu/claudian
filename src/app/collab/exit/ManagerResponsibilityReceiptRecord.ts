@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type {
   CollabManagerResponsibilityOfferStatus,
@@ -23,7 +23,6 @@ export interface ManagerResponsibilityReceiptRecord {
 }
 
 type Value = Readonly<Record<string, unknown>>;
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'offerId', 'sourceManagerMemberId', 'targetMemberId', 'purpose', 'status', 'offeredAt', 'expiresAt', 'acknowledgedAt', 'updatedAt']);
 const STATUSES = new Set(['offered', 'acknowledged', 'consumed', 'declined', 'cancelled', 'expired']);
 function input(value: unknown): Value {
@@ -32,9 +31,13 @@ function input(value: unknown): Value {
   if (Object.keys(result).length !== KEYS.size || Object.keys(result).some(key => !KEYS.has(key))) throw new TypeError('Unexpected Manager receipt field');
   return result;
 }
-function id(value: Value, key: string, max = 128): string {
+function id(
+  value: Value,
+  key: string,
+  predicate: (candidate: unknown) => candidate is string,
+): string {
   const field = value[key];
-  if (typeof field !== 'string' || field.length > max || !ID.test(field)) throw new TypeError(`Invalid ${key}`);
+  if (!predicate(field)) throw new TypeError(`Invalid ${key}`);
   return field;
 }
 function time(value: Value, key: string, nullable = false): string | null {
@@ -72,14 +75,14 @@ export function decodeManagerResponsibilityReceiptRecord(value: unknown): Manage
     acknowledgedAt,
     expiresAt,
     kind: 'manager-responsibility-receipt',
-    offerId: id(record, 'offerId'),
+    offerId: id(record, 'offerId', isCollabOpaqueId),
     offeredAt,
-    projectId: id(record, 'projectId', 64),
+    projectId: id(record, 'projectId', isCollabProjectId),
     purpose: purpose as CollabManagerResponsibilityPurpose,
     schemaVersion: COLLAB_MANAGER_RESPONSIBILITY_RECEIPT_SCHEMA_VERSION,
-    sourceManagerMemberId: id(record, 'sourceManagerMemberId', 64),
+    sourceManagerMemberId: id(record, 'sourceManagerMemberId', isCollabMemberId),
     status: status as CollabManagerResponsibilityOfferStatus,
-    targetMemberId: id(record, 'targetMemberId', 64),
+    targetMemberId: id(record, 'targetMemberId', isCollabMemberId),
     updatedAt,
   };
 }

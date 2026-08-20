@@ -8,7 +8,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabOperationId, type CollabProjectId, isCollabGitOid } from '@claudian/collab-protocol';
 
 import { NodeSqlJsSnapshotStore } from '@/app/collab/authority/SqlJsSnapshotStore';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -554,8 +554,8 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
   private parseRefLines(output: string, allowHead: boolean): ReadonlyMap<string, string> {
     const refs = new Map<string, string>();
     for (const line of output.trim().split(/\r?\n/).filter(Boolean)) {
-      const match = /^([0-9a-f]{40}|[0-9a-f]{64}) (HEAD|refs\/heads\/[A-Za-z0-9._/-]+)$/.exec(line);
-      if (!match || (!allowHead && match[2] === 'HEAD')) {
+      const match = /^(\S+) (HEAD|refs\/heads\/[A-Za-z0-9._/-]+)$/.exec(line);
+      if (!match || !isCollabGitOid(match[1]) || (!allowHead && match[2] === 'HEAD')) {
         throw packageError('host-transfer-target-git-ref-output-invalid');
       }
       if (match[2] !== 'HEAD') refs.set(match[2], match[1]);

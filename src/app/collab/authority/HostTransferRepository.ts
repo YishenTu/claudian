@@ -1,4 +1,4 @@
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
@@ -9,7 +9,6 @@ import type { HostTransferActivationCertificate } from '@/app/collab/host-transf
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -69,8 +68,12 @@ function timestamp(value: string, reason: string): void {
   }
 }
 
-function identity(value: string, reason: string): void {
-  if (!ID_PATTERN.test(value)) throw repositoryError(reason);
+function identity(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  reason: string,
+): void {
+  if (!predicate(value)) throw repositoryError(reason);
 }
 
 function decodeActivation(value: string | null): HostTransferActivationCertificate | null {
@@ -82,9 +85,9 @@ function decodeActivation(value: string | null): HostTransferActivationCertifica
       || typeof decoded !== 'object'
       || decoded.schemaVersion !== 1
       || decoded.signatureAlgorithm !== 'rsa-pss-sha256'
-      || !ID_PATTERN.test(decoded.projectId)
-      || !ID_PATTERN.test(decoded.transferId)
-      || !ID_PATTERN.test(decoded.targetHostMemberId)
+      || !isCollabProjectId(decoded.projectId)
+      || !isCollabOpaqueId(decoded.transferId)
+      || !isCollabMemberId(decoded.targetHostMemberId)
       || !DIGEST_PATTERN.test(decoded.targetCaFingerprint)
       || !DIGEST_PATTERN.test(decoded.manifestDigest)
       || typeof decoded.signature !== 'string'
@@ -116,9 +119,9 @@ function decodeRow(row: Readonly<Record<string, unknown>>): HostTransferAuthorit
   const offeredAt = text(row, 'offered_at')!;
   const expiresAt = text(row, 'expires_at')!;
   const updatedAt = text(row, 'updated_at')!;
-  identity(transferId, 'host-transfer-id-invalid');
-  identity(sourceHostMemberId, 'host-transfer-source-invalid');
-  identity(targetHostMemberId, 'host-transfer-target-invalid');
+  identity(transferId, isCollabOpaqueId, 'host-transfer-id-invalid');
+  identity(sourceHostMemberId, isCollabMemberId, 'host-transfer-source-invalid');
+  identity(targetHostMemberId, isCollabMemberId, 'host-transfer-target-invalid');
   timestamp(offeredAt, 'host-transfer-offered-time-invalid');
   timestamp(expiresAt, 'host-transfer-expiry-invalid');
   timestamp(updatedAt, 'host-transfer-updated-time-invalid');
@@ -258,7 +261,7 @@ export class HostTransferRepository {
     connection: AuthorityDatabaseConnection,
     transferId: CollabOperationId,
   ): HostTransferAuthorityRecord | null {
-    identity(transferId, 'host-transfer-id-invalid');
+    identity(transferId, isCollabOpaqueId, 'host-transfer-id-invalid');
     const row = connection.get(`${SELECT_TRANSFER} WHERE transfer_id = ?`, [transferId]);
     return row ? decodeRow(row) : null;
   }
@@ -310,8 +313,8 @@ export class HostTransferRepository {
     if (context.hostMemberId !== input.actorMemberId) {
       throw repositoryError('host-transfer-host-required', 'authorization-denied');
     }
-    identity(input.transferId, 'host-transfer-id-invalid');
-    identity(input.targetHostMemberId, 'host-transfer-target-invalid');
+    identity(input.transferId, isCollabOpaqueId, 'host-transfer-id-invalid');
+    identity(input.targetHostMemberId, isCollabMemberId, 'host-transfer-target-invalid');
     timestamp(input.offeredAt, 'host-transfer-offered-time-invalid');
     timestamp(input.expiresAt, 'host-transfer-expiry-invalid');
     if (input.expiresAt <= input.offeredAt) throw repositoryError('host-transfer-expiry-invalid');
@@ -619,8 +622,8 @@ export class HostTransferRepository {
     projectId: CollabProjectId,
     actorMemberId: CollabMemberId,
   ): HostTransferContext {
-    identity(projectId, 'host-transfer-project-invalid');
-    identity(actorMemberId, 'host-transfer-actor-invalid');
+    identity(projectId, isCollabProjectId, 'host-transfer-project-invalid');
+    identity(actorMemberId, isCollabMemberId, 'host-transfer-actor-invalid');
     const project = connection.get(
       'SELECT project_id, host_member_id, state FROM project WHERE singleton = 1',
     );
@@ -654,7 +657,7 @@ export class HostTransferRepository {
     readonly idempotencyKey: string;
     readonly requestFingerprint: string;
   }): void {
-    identity(input.actorMemberId, 'host-transfer-idempotency-actor-invalid');
+    identity(input.actorMemberId, isCollabMemberId, 'host-transfer-idempotency-actor-invalid');
     if (
       input.idempotencyKey.length < 1
       || input.idempotencyKey.length > 128

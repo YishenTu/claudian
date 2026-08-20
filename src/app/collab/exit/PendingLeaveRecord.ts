@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { CollabLocalCleanupChoice } from '@/core/collab';
 import { parseCollabProjectsFolder } from '@/core/collab';
@@ -42,8 +42,7 @@ export interface PendingLeaveRecord {
 }
 
 type RecordValue = Readonly<Record<string, unknown>>;
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const MEMBER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const WORKSPACE_CHILD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const KEYS = new Set([
@@ -103,7 +102,7 @@ function workspace(value: RecordValue): string {
   if (
     split <= 0
     || !parseCollabProjectsFolder(result.slice(0, split)).ok
-    || !MEMBER_ID.test(result.slice(split + 1))
+    || !WORKSPACE_CHILD_PATTERN.test(result.slice(split + 1))
   ) throw new TypeError('Invalid workspacePath');
   return result;
 }
@@ -125,18 +124,13 @@ function authorityReplay(
     throw new TypeError('Invalid authorityReplay');
   }
   const offerId = replay.managerResponsibilityOfferId;
-  if (offerId !== null && (typeof offerId !== 'string' || !ID.test(offerId))) {
+  if (offerId !== null && !isCollabOpaqueId(offerId)) {
     throw new TypeError('Invalid managerResponsibilityOfferId');
   }
   return {
-    expectedHostMemberId: text(
-      replay,
-      'expectedHostMemberId',
-      64,
-      MEMBER_ID,
-    ),
+    expectedHostMemberId: memberId(replay, 'expectedHostMemberId'),
     idempotencyManagerMemberId: schemaVersion === 1
-      ? text(replay, 'expectedManagerMemberId', 64, MEMBER_ID)
+      ? memberId(replay, 'expectedManagerMemberId')
       : nullableMemberId(replay.idempotencyManagerMemberId),
     managerResponsibilityOfferId: offerId,
   };
@@ -144,10 +138,28 @@ function authorityReplay(
 
 function nullableMemberId(value: unknown): CollabMemberId | null {
   if (value === null) return null;
-  if (typeof value !== 'string' || !MEMBER_ID.test(value)) {
+  if (!isCollabMemberId(value)) {
     throw new TypeError('Invalid idempotencyManagerMemberId');
   }
   return value;
+}
+
+function memberId(value: RecordValue, key: string): CollabMemberId {
+  const result = text(value, key, 64);
+  if (!isCollabMemberId(result)) throw new TypeError(`Invalid ${key}`);
+  return result;
+}
+
+function opaqueId(value: RecordValue, key: string): string {
+  const result = text(value, key, 128);
+  if (!isCollabOpaqueId(result)) throw new TypeError(`Invalid ${key}`);
+  return result;
+}
+
+function projectId(value: RecordValue): CollabProjectId {
+  const result = text(value, 'projectId', 64);
+  if (!isCollabProjectId(result)) throw new TypeError('Invalid projectId');
+  return result;
 }
 
 export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
@@ -183,17 +195,17 @@ export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
     hostCaCertificatePem: certificate,
     hostCaFingerprint: text(input, 'hostCaFingerprint', 64, FINGERPRINT),
     hostEndpoint: endpoint(input),
-    idempotencyKey: text(input, 'idempotencyKey', 128, ID),
+    idempotencyKey: opaqueId(input, 'idempotencyKey'),
     kind: 'pending-leave',
     localCleanupComplete: input.localCleanupComplete,
     localRole: input.localRole,
     memberCredential: text(input, 'memberCredential', 43, CREDENTIAL),
-    memberId: text(input, 'memberId', 64, MEMBER_ID),
-    operationId: text(input, 'operationId', 128, ID),
+    memberId: memberId(input, 'memberId'),
+    operationId: opaqueId(input, 'operationId'),
     phase,
     projectCreatedAt,
     projectName: text(input, 'projectName', 200),
-    projectId: text(input, 'projectId', 64, MEMBER_ID),
+    projectId: projectId(input),
     schemaVersion: COLLAB_PENDING_LEAVE_SCHEMA_VERSION,
     updatedAt,
     workspacePath: workspace(input),

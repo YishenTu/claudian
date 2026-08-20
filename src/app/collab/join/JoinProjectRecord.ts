@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 
-import type { CollabMemberId, CollabOperationId, CollabProjectId, CollabRole } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { parseCollabProjectsFolder } from '@/core/collab';
 
@@ -43,7 +43,6 @@ export interface JoinProjectRecord {
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
@@ -57,6 +56,7 @@ function requiredString(
   field: string,
   maxLength: number,
   pattern?: RegExp,
+  predicate?: (candidate: unknown) => candidate is string,
 ): string {
   const candidate = value[field];
   if (
@@ -64,6 +64,7 @@ function requiredString(
     || candidate.length === 0
     || candidate.length > maxLength
     || (pattern && !pattern.test(candidate))
+    || (predicate && !predicate(candidate))
   ) {
     throw new TypeError(`Invalid ${field}`);
   }
@@ -75,10 +76,11 @@ function nullableString(
   field: string,
   maxLength: number,
   pattern?: RegExp,
+  predicate?: (candidate: unknown) => candidate is string,
 ): string | null {
   return value[field] === null
     ? null
-    : requiredString(value, field, maxLength, pattern);
+    : requiredString(value, field, maxLength, pattern, predicate);
 }
 
 function timestamp(value: UnknownRecord, field: string, nullable = false): string | null {
@@ -158,15 +160,14 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   if (typeof projectsFolder !== 'string' || !parseCollabProjectsFolder(projectsFolder).ok) {
     throw new TypeError('Invalid Projects folder');
   }
-  const projectId = requiredString(value, 'projectId', 64, SAFE_ID_PATTERN);
-  const operationId = requiredString(value, 'operationId', 64, SAFE_ID_PATTERN);
-  const joinAttemptId = requiredString(value, 'joinAttemptId', 64, SAFE_ID_PATTERN);
+  const projectId = requiredString(value, 'projectId', 64, undefined, isCollabProjectId);
+  const operationId = requiredString(value, 'operationId', 128, undefined, isCollabOpaqueId);
+  const joinAttemptId = requiredString(value, 'joinAttemptId', 128, undefined, isCollabOpaqueId);
   const slug = requiredString(value, 'slug', 64, SAFE_SLUG_PATTERN);
   const stagingDirectoryName = requiredString(
     value,
     'stagingDirectoryName',
-    96,
-    /^\.claudian-join-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+    143,
   );
   if (
     operationId !== joinAttemptId
@@ -182,7 +183,7 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
     64 * 1024,
   );
   const memberCredential = nullableString(value, 'memberCredential', 43, CREDENTIAL_PATTERN);
-  const memberId = nullableString(value, 'memberId', 64, SAFE_ID_PATTERN);
+  const memberId = nullableString(value, 'memberId', 64, undefined, isCollabMemberId);
   const membershipExpiresAt = timestamp(value, 'membershipExpiresAt', true);
   const projectName = nullableString(value, 'projectName', 200);
   const memberRole = value.memberRole;

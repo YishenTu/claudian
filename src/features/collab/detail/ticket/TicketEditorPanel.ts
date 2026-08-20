@@ -1,6 +1,6 @@
 import type { CollabTicketAcceptedRelation, CollabTicketComment, CollabTicketDetail } from '@claudian/collab-protocol';
 
-import type { CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabFeaturePort, CollabProjectSnapshot, CollabUpdateTicketContentRequest } from '@/core/collab';
+import type { CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabFeaturePort, CollabProjectSnapshot, CollabResult, CollabUpdateTicketContentRequest } from '@/core/collab';
 import {
   CollabCommentComposer,
   renderCollabComment,
@@ -8,6 +8,7 @@ import {
 import {
   MarkdownDraftEditor,
   type MarkdownDraftMemberSuggestion,
+  type MarkdownDraftSelection,
   type MarkdownDraftTicketSuggestion,
 } from '@/features/collab/shared/markdown/MarkdownDraftEditor';
 import { renderMarkdownWithTicketReferences } from '@/features/collab/shared/markdown/MarkdownTicketReferences';
@@ -50,11 +51,53 @@ type TicketActivity =
     readonly relation: CollabTicketAcceptedRelation;
   };
 
+interface MarkdownDraftState {
+  readonly mode: 'edit' | 'preview';
+  readonly selection: MarkdownDraftSelection;
+  readonly value: string;
+}
+
+interface TicketCreateDraft {
+  readonly body: MarkdownDraftState;
+  readonly focusedField: string | null;
+  readonly kind: 'create';
+  readonly title: string;
+}
+
+interface TicketEditDraft {
+  readonly body: MarkdownDraftState;
+  readonly expectedRevision: number;
+  readonly title: string;
+}
+
+interface TicketDetailDraft {
+  readonly comment: MarkdownDraftState | null;
+  readonly edit: TicketEditDraft | null;
+  readonly focusedField: string | null;
+  readonly kind: 'detail';
+}
+
+type TicketPanelDraft = TicketCreateDraft | TicketDetailDraft;
+
+interface PendingTicketMutationAcknowledgement {
+  readonly contentRevision: number | undefined;
+  readonly intentId: string | undefined;
+  readonly kind: TicketMutationKind;
+  readonly submittedDraft: TicketPanelDraft | null;
+}
+
 export class TicketEditorPanel {
   private controller: AbortController | null = null;
   private destroyed = false;
-  private generation = 0;
+  private editExpectedRevision: number | null = null;
+  private readonly markdownEditorsByField = new Map<string, MarkdownDraftEditor>();
   private readonly markdownEditors = new Set<MarkdownDraftEditor>();
+  private mutationInFlight: TicketMutationKind | null = null;
+  private pendingMutationAcknowledgement: PendingTicketMutationAcknowledgement | null = null;
+  private readGeneration = 0;
+  private refreshLoop: Promise<boolean> | null = null;
+  private refreshRequested = false;
+  private retainedDraft: TicketPanelDraft | null = null;
 
   constructor(
     private readonly rootEl: HTMLElement,
@@ -62,12 +105,40 @@ export class TicketEditorPanel {
   ) {}
 
   async open(): Promise<boolean> {
+    this.retainedDraft = null;
+    return this.load(null, false);
+  }
+
+  async refresh(): Promise<boolean> {
+    if (this.destroyed) return false;
+    this.refreshRequested = true;
+    this.refreshLoop ??= this.runRefreshLoop().finally(() => {
+      this.refreshLoop = null;
+    });
+    return this.refreshLoop;
+  }
+
+  private async runRefreshLoop(): Promise<boolean> {
+    let loaded = false;
+    while (this.refreshRequested && !this.destroyed) {
+      this.refreshRequested = false;
+      const draft = this.currentDraft();
+      this.retainedDraft = draft;
+      loaded = await this.load(draft, true);
+    }
+    return loaded;
+  }
+
+  private async load(
+    draft: TicketPanelDraft | null,
+    refreshing: boolean,
+  ): Promise<boolean> {
     if (this.destroyed) return false;
     this.cancel();
-    const generation = ++this.generation;
+    const generation = ++this.readGeneration;
     const controller = new AbortController();
     this.controller = controller;
-    this.renderMessage(t('collab.tickets.loading'));
+    if (!refreshing) this.renderMessage(t('collab.tickets.loading'));
     const [snapshotResult, ticketResult] = await Promise.all([
       this.options.port.readSnapshot(this.options.projectId, {
         signal: controller.signal,
@@ -80,18 +151,32 @@ export class TicketEditorPanel {
         )
         : Promise.resolve(null),
     ]);
-    if (controller.signal.aborted || generation !== this.generation || this.destroyed) {
+    if (controller.signal.aborted || generation !== this.readGeneration || this.destroyed) {
       return false;
     }
     if (
       snapshotResult.status !== 'success'
       || (ticketResult !== null && ticketResult.status !== 'success')
     ) {
-      this.renderMessage(t('collab.tickets.loadFailed'), true);
+      if (!refreshing) this.renderMessage(t('collab.tickets.loadFailed'), true);
       return false;
     }
+    const latestDraft = refreshing ? this.currentDraft() : draft;
+    const acknowledgement = this.pendingMutationAcknowledgement;
+    const renderedDraft = acknowledgement
+      ? this.draftAfterMutation(
+        latestDraft,
+        acknowledgement.submittedDraft,
+        acknowledgement.kind,
+        acknowledgement.contentRevision,
+      )
+      : latestDraft;
+    this.retainedDraft = renderedDraft;
     if (ticketResult === null) {
-      this.renderCreate(snapshotResult.value);
+      this.renderCreate(
+        snapshotResult.value,
+        renderedDraft?.kind === 'create' ? renderedDraft : null,
+      );
     } else {
       const coordination = ticketResult.value.stale
         ? {
@@ -101,8 +186,18 @@ export class TicketEditorPanel {
           syncState: { ...snapshotResult.value.syncState, status: 'offline' as const },
         }
         : snapshotResult.value;
-      this.renderDetail(ticketResult.value.detail, coordination);
+      this.renderDetail(
+        ticketResult.value.detail,
+        coordination,
+        renderedDraft?.kind === 'detail' ? renderedDraft : null,
+      );
       this.options.onDetailLoaded?.(ticketResult.value.detail);
+    }
+    if (acknowledgement && this.pendingMutationAcknowledgement === acknowledgement) {
+      this.pendingMutationAcknowledgement = null;
+      this.mutationInFlight = null;
+      this.options.mutationIntents.clear(acknowledgement.kind, acknowledgement.intentId);
+      this.syncMutationPresentation();
     }
     return true;
   }
@@ -110,12 +205,16 @@ export class TicketEditorPanel {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.refreshRequested = false;
     this.cancel();
     this.destroyMarkdownEditors();
     this.rootEl.replaceChildren();
   }
 
-  private renderCreate(coordination: CollabCoordinationSnapshot): void {
+  private renderCreate(
+    coordination: CollabCoordinationSnapshot,
+    draft: TicketCreateDraft | null,
+  ): void {
     if (!this.isWritable(coordination)) {
       this.renderOfflineReadOnly(t('collab.tickets.offlineCreateUnavailable'));
       return;
@@ -125,12 +224,14 @@ export class TicketEditorPanel {
     const form = this.rootEl.createEl('form', { cls: 'claudian-collab-ticket-editor' });
     form.createEl('h2', { text: t('collab.tickets.createTitle') });
     const title = this.textInput(form, t('collab.tickets.title'), 'ticket-title');
+    title.value = draft?.title ?? '';
     const body = this.markdownEditor(
       form,
       t('collab.tickets.body'),
       'ticket-body',
-      '',
+      draft?.body.value ?? '',
       snapshot,
+      draft?.body,
     );
     title.required = true;
     const status = form.createDiv({
@@ -157,12 +258,14 @@ export class TicketEditorPanel {
         title: title.value,
       }, submit, status);
     });
+    this.syncMutationPresentation();
+    this.restoreFocus(draft?.focusedField ?? null);
   }
 
   private renderDetail(
     detail: CollabTicketDetail,
     coordination: CollabCoordinationSnapshot,
-    editing = false,
+    draft: TicketDetailDraft | null = null,
   ): void {
     this.resetRoot();
     const snapshot = coordination.snapshot;
@@ -172,6 +275,7 @@ export class TicketEditorPanel {
     const canEdit = writable
       && (current.role === 'manager' || ticket.authorMemberId === current.id);
     const canChangeStatus = canEdit;
+    const editing = canEdit && draft?.edit !== null && draft?.edit !== undefined;
     const editor = this.rootEl.createDiv({ cls: 'claudian-collab-ticket-editor' });
     if (!writable) {
       editor.createDiv({
@@ -233,19 +337,39 @@ export class TicketEditorPanel {
         cls: 'claudian-collab-ticket-edit',
         text: t('common.edit'),
       });
-      edit.addEventListener('click', () => this.renderDetail(detail, coordination, true));
+      edit.addEventListener('click', () => {
+        this.editExpectedRevision = ticket.revision;
+        const comment = this.captureMarkdownDraft('ticket-comment');
+        this.renderDetail(detail, coordination, {
+          comment,
+          edit: {
+            body: {
+              mode: 'edit',
+              selection: { anchor: detail.body.length, head: detail.body.length },
+              value: detail.body,
+            },
+            expectedRevision: ticket.revision,
+            title: ticket.title,
+          },
+          focusedField: null,
+          kind: 'detail',
+        });
+      });
     }
 
-    if (editing) {
+    if (editing && draft?.edit) {
+      const editDraft = draft.edit;
+      this.editExpectedRevision = editDraft.expectedRevision;
       const title = this.textInput(editor, t('collab.tickets.title'), 'ticket-title');
       title.required = true;
-      title.value = ticket.title;
+      title.value = editDraft.title;
       const body = this.markdownEditor(
         editor,
         t('collab.tickets.body'),
         'ticket-body',
-        detail.body,
+        editDraft.body.value,
         snapshot,
+        editDraft.body,
       );
       const editActions = editor.createDiv({ cls: 'claudian-collab-ticket-edit-actions' });
       const save = editActions.createEl('button', {
@@ -257,10 +381,10 @@ export class TicketEditorPanel {
         if (!title.reportValidity() || !this.requireMarkdown(body)) return;
         void this.updateContent({
           body: body.getValue(),
-          expectedRevision: ticket.revision,
+          expectedRevision: editDraft.expectedRevision,
           intentId: this.options.mutationIntents.intent('content', {
             body: body.getValue(),
-            expectedRevision: ticket.revision,
+            expectedRevision: editDraft.expectedRevision,
             projectId: this.options.projectId,
             ticketId: ticket.id,
             title: title.value,
@@ -276,14 +400,24 @@ export class TicketEditorPanel {
       });
       cancel.addEventListener('click', () => {
         this.options.mutationIntents.discard('content');
-        this.renderDetail(detail, coordination);
+        this.editExpectedRevision = null;
+        const nextDraft: TicketDetailDraft = {
+          comment: this.captureMarkdownDraft('ticket-comment') ?? draft.comment,
+          edit: null,
+          focusedField: this.focusedField(),
+          kind: 'detail',
+        };
+        this.retainedDraft = nextDraft;
+        this.renderDetail(detail, coordination, nextDraft);
       });
     } else {
       const bodyPreview = editor.createDiv({ cls: 'claudian-collab-ticket-markdown' });
       this.renderMarkdown(detail.body, bodyPreview);
     }
 
-    this.renderActivity(editor, detail, snapshot, mutationStatus, writable);
+    this.renderActivity(editor, detail, snapshot, mutationStatus, writable, draft?.comment ?? null);
+    this.syncMutationPresentation();
+    this.restoreFocus(draft?.focusedField ?? null);
   }
 
   private renderActivity(
@@ -292,6 +426,7 @@ export class TicketEditorPanel {
     snapshot: CollabProjectSnapshot,
     mutationStatus: HTMLElement,
     writable: boolean,
+    commentDraft: MarkdownDraftState | null,
   ): void {
     const activity = editor.createDiv({ cls: 'claudian-collab-ticket-activity' });
     const entries = this.activityEntries(detail);
@@ -358,6 +493,8 @@ export class TicketEditorPanel {
       ticketSuggestions: this.ticketSuggestions(snapshot),
     });
     this.markdownEditors.add(composer.editor);
+    this.markdownEditorsByField.set('ticket-comment', composer.editor);
+    if (commentDraft) this.restoreMarkdownDraft(composer.editor, commentDraft);
   }
 
   private activityEntries(detail: CollabTicketDetail): readonly TicketActivity[] {
@@ -396,16 +533,18 @@ export class TicketEditorPanel {
     button: HTMLButtonElement,
     status: HTMLElement,
   ): Promise<void> {
-    const generation = this.generation;
-    button.disabled = true;
+    if (this.mutationInFlight) return;
+    this.mutationInFlight = 'create';
+    this.syncMutationPresentation();
     status.setText(t('collab.tickets.saving'));
     const result = await this.options.port.createTicket(request);
-    if (this.destroyed || generation !== this.generation) return;
+    if (this.destroyed) return;
     if (result.status !== 'success') {
-      button.disabled = false;
-      status.setText(t('collab.tickets.saveFailed'));
+      this.mutationInFlight = null;
+      this.syncMutationPresentation(true);
       return;
     }
+    this.mutationInFlight = null;
     await this.options.onCreated(result.value.ticket.id);
     this.options.mutationIntents.clear('create', request.intentId);
   }
@@ -421,6 +560,7 @@ export class TicketEditorPanel {
       () => this.options.port.updateTicketContent(request),
       'content',
       request.intentId,
+      value => value.revision,
     );
   }
 
@@ -440,6 +580,7 @@ export class TicketEditorPanel {
       ),
       'status',
       request.intentId,
+      value => value.revision,
     );
   }
 
@@ -468,24 +609,38 @@ export class TicketEditorPanel {
     );
   }
 
-  private async mutate(
+  private async mutate<T>(
     control: HTMLButtonElement | HTMLSelectElement,
     status: HTMLElement,
-    mutation: () => Promise<{ readonly status: string }>,
+    mutation: () => Promise<CollabResult<T>>,
     intentKind: TicketMutationKind,
     intentId: string | undefined,
+    contentRevision?: (value: T) => number,
   ): Promise<void> {
-    const generation = this.generation;
-    control.disabled = true;
+    if (this.mutationInFlight) return;
+    const submittedDraft = this.currentDraft();
+    this.retainedDraft = submittedDraft;
+    this.mutationInFlight = intentKind;
+    if (!control.disabled) {
+      control.dataset.mutationDisabled = 'true';
+      control.disabled = true;
+    }
+    this.syncMutationPresentation();
     status.setText(t('collab.tickets.saving'));
     const result = await mutation();
-    if (this.destroyed || generation !== this.generation) return;
+    if (this.destroyed) return;
     if (result.status !== 'success') {
-      control.disabled = false;
-      status.setText(t('collab.tickets.saveFailed'));
+      this.mutationInFlight = null;
+      this.syncMutationPresentation(true);
       return;
     }
-    if (await this.open()) this.options.mutationIntents.clear(intentKind, intentId);
+    this.pendingMutationAcknowledgement = {
+      contentRevision: contentRevision?.(result.value),
+      intentId,
+      kind: intentKind,
+      submittedDraft,
+    };
+    await this.load(submittedDraft, true);
   }
 
   private textInput(root: HTMLElement, labelText: string, field: string): HTMLInputElement {
@@ -502,6 +657,7 @@ export class TicketEditorPanel {
     field: string,
     initialValue: string,
     snapshot: CollabProjectSnapshot,
+    draft?: MarkdownDraftState,
   ): MarkdownDraftEditor {
     const fieldEl = root.createDiv({ cls: 'claudian-collab-ticket-field' });
     const headerEl = fieldEl.createDiv({ cls: 'claudian-collab-ticket-field-header' });
@@ -511,6 +667,7 @@ export class TicketEditorPanel {
     const editor = new MarkdownDraftEditor(editorEl, {
       actionName: field,
       ariaLabel: labelText,
+      ...(draft ? { initialMode: draft.mode } : {}),
       initialValue,
       ...(this.options.onOpenTicket ? { onOpenTicket: this.options.onOpenTicket } : {}),
       placeholder: labelText,
@@ -520,6 +677,8 @@ export class TicketEditorPanel {
       toolbarEl,
     });
     this.markdownEditors.add(editor);
+    this.markdownEditorsByField.set(field, editor);
+    if (draft) editor.setSelection(draft.selection.anchor, draft.selection.head);
     return editor;
   }
 
@@ -548,7 +707,7 @@ export class TicketEditorPanel {
   }
 
   private cancel(): void {
-    this.generation += 1;
+    this.readGeneration += 1;
     this.controller?.abort();
     this.controller = null;
   }
@@ -556,6 +715,159 @@ export class TicketEditorPanel {
   private destroyMarkdownEditors(): void {
     for (const editor of this.markdownEditors) editor.destroy();
     this.markdownEditors.clear();
+    this.markdownEditorsByField.clear();
+  }
+
+  private captureDraft(): TicketPanelDraft | null {
+    return this.options.ticketId
+      ? this.captureDetailDraft()
+      : this.captureCreateDraft();
+  }
+
+  private captureCreateDraft(): TicketCreateDraft | null {
+    const title = this.rootEl.querySelector<HTMLInputElement>(
+      '[data-field="ticket-title"]',
+    );
+    const body = this.captureMarkdownDraft('ticket-body');
+    if (!title || !body) return null;
+    return {
+      body,
+      focusedField: this.focusedField(),
+      kind: 'create',
+      title: title.value,
+    };
+  }
+
+  private captureDetailDraft(): TicketDetailDraft | null {
+    const comment = this.captureMarkdownDraft('ticket-comment');
+    const title = this.rootEl.querySelector<HTMLInputElement>(
+      '[data-field="ticket-title"]',
+    );
+    const body = this.captureMarkdownDraft('ticket-body');
+    const edit = title && body && this.editExpectedRevision !== null
+      ? {
+        body,
+        expectedRevision: this.editExpectedRevision,
+        title: title.value,
+      }
+      : null;
+    if (!comment && !edit) return null;
+    return {
+      comment,
+      edit,
+      focusedField: this.focusedField(),
+      kind: 'detail',
+    };
+  }
+
+  private captureMarkdownDraft(field: string): MarkdownDraftState | null {
+    const editor = this.markdownEditorsByField.get(field);
+    if (!editor) return null;
+    return {
+      mode: editor.getMode(),
+      selection: editor.getSelection(),
+      value: editor.getValue(),
+    };
+  }
+
+  private draftAfterMutation(
+    draft: TicketPanelDraft | null,
+    submittedDraft: TicketPanelDraft | null,
+    kind: TicketMutationKind,
+    contentRevision: number | undefined,
+  ): TicketPanelDraft | null {
+    if (!draft || draft.kind !== 'detail') return null;
+    const submitted = submittedDraft?.kind === 'detail' ? submittedDraft : null;
+    const comment = kind === 'comment'
+      && draft.comment
+      && submitted?.comment
+      && draft.comment.value === submitted.comment.value
+      ? null
+      : draft.comment;
+    const editWasSubmitted = kind === 'content'
+      && draft.edit
+      && submitted?.edit
+      && draft.edit.title === submitted.edit.title
+      && draft.edit.body.value === submitted.edit.body.value
+      && draft.edit.expectedRevision === submitted.edit.expectedRevision;
+    const edit = editWasSubmitted
+      ? null
+      : draft.edit
+        && (kind === 'content' || kind === 'status')
+        && contentRevision !== undefined
+        ? { ...draft.edit, expectedRevision: contentRevision }
+        : draft.edit;
+    const next = {
+      ...draft,
+      comment,
+      edit,
+    };
+    return next.comment || next.edit ? next : null;
+  }
+
+  private currentDraft(fallback = this.retainedDraft): TicketPanelDraft | null {
+    const visible = this.captureDraft();
+    if (!visible) return fallback;
+    if (visible.kind === 'detail' && fallback?.kind === 'detail') {
+      return {
+        ...visible,
+        comment: visible.comment ?? fallback.comment,
+        edit: visible.edit ?? fallback.edit,
+      };
+    }
+    return visible;
+  }
+
+  private focusedField(): string | null {
+    const active = this.rootEl.ownerDocument.activeElement;
+    if (!(active instanceof HTMLElement) || !this.rootEl.contains(active)) return null;
+    const field = active.closest<HTMLElement>('[data-field]');
+    return field?.dataset.field ?? null;
+  }
+
+  private restoreFocus(field: string | null): void {
+    if (!field) return;
+    const editor = this.markdownEditorsByField.get(field);
+    if (editor) {
+      editor.focus();
+      return;
+    }
+    this.rootEl.querySelector<HTMLElement>(`[data-field="${field}"]`)?.focus();
+  }
+
+  private restoreMarkdownDraft(
+    editor: MarkdownDraftEditor,
+    draft: MarkdownDraftState,
+  ): void {
+    editor.setValue(draft.value);
+    editor.setMode(draft.mode);
+    editor.setSelection(draft.selection.anchor, draft.selection.head);
+  }
+
+  private syncMutationPresentation(failed = false): void {
+    const selectors: Record<TicketMutationKind, string> = {
+      comment: '[data-action="submit-ticket-comment"]',
+      content: '[data-action="save-ticket"]',
+      create: 'form button[type="submit"]',
+      status: '[data-action="toggle-ticket-status"]',
+    };
+    for (const selector of Object.values(selectors)) {
+      const control = this.rootEl.querySelector<HTMLButtonElement>(selector);
+      if (!control) continue;
+      if (this.mutationInFlight && !control.disabled) {
+        control.dataset.mutationDisabled = 'true';
+        control.disabled = true;
+      } else if (control.dataset.mutationDisabled === 'true') {
+        delete control.dataset.mutationDisabled;
+        control.disabled = false;
+      }
+    }
+    const status = this.rootEl.querySelector<HTMLElement>(
+      '.claudian-collab-ticket-editor-status',
+    );
+    if (!status) return;
+    if (this.mutationInFlight) status.setText(t('collab.tickets.saving'));
+    else if (failed) status.setText(t('collab.tickets.saveFailed'));
   }
 
   private resetRoot(): void {

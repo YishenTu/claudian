@@ -5,7 +5,7 @@ import {
   X509Certificate,
 } from 'node:crypto';
 
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { LanTlsHostCaSigner } from '@/app/collab/lan/LanTlsIdentity';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
@@ -14,7 +14,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const TRANSITION_DOMAIN = 'claudian-collab-host-transition-v1\n';
 const ACTIVATION_DOMAIN = 'claudian-collab-host-activation-v1\n';
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{64,2048}$/;
 
@@ -61,8 +60,12 @@ function trustError(reason: string): CollabError {
   });
 }
 
-function assertId(value: string, reason: string): void {
-  if (!ID_PATTERN.test(value)) throw trustError(reason);
+function assertId(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  reason: string,
+): void {
+  if (!predicate(value)) throw trustError(reason);
 }
 
 function assertTimestamp(value: string, reason: string): void {
@@ -165,8 +168,8 @@ export class HostTrustTransitionService {
     signer: LanTlsHostCaSigner,
     input: SignHostTransitionInput,
   ): Promise<CollabHostTrustTransitionProof> {
-    assertId(input.projectId, 'host-proof-project-invalid');
-    assertId(input.transferId, 'host-proof-transfer-invalid');
+    assertId(input.projectId, isCollabProjectId, 'host-proof-project-invalid');
+    assertId(input.transferId, isCollabOpaqueId, 'host-proof-transfer-invalid');
     assertTimestamp(input.issuedAt, 'host-proof-time-invalid');
     const previousCa = normalizeCaCertificate(
       signer.caCertificatePem,
@@ -202,8 +205,8 @@ export class HostTrustTransitionService {
     if (proof.schemaVersion !== 1 || proof.signatureAlgorithm !== 'rsa-pss-sha256') {
       throw trustError('host-proof-shape-invalid');
     }
-    assertId(proof.projectId, 'host-proof-project-invalid');
-    assertId(proof.transferId, 'host-proof-transfer-invalid');
+    assertId(proof.projectId, isCollabProjectId, 'host-proof-project-invalid');
+    assertId(proof.transferId, isCollabOpaqueId, 'host-proof-transfer-invalid');
     assertTimestamp(proof.issuedAt, 'host-proof-time-invalid');
     assertFingerprint(proof.previousCaFingerprint, 'host-proof-previous-fingerprint-invalid');
     assertFingerprint(proof.nextCaFingerprint, 'host-proof-next-fingerprint-invalid');
@@ -241,7 +244,7 @@ export class HostTrustTransitionService {
   }
 
   verifyChain(input: VerifyHostTransitionChainInput): string {
-    assertId(input.projectId, 'host-proof-project-invalid');
+    assertId(input.projectId, isCollabProjectId, 'host-proof-project-invalid');
     if (input.expectedCurrentCaFingerprint !== undefined) {
       assertFingerprint(
         input.expectedCurrentCaFingerprint,
@@ -282,9 +285,9 @@ export class HostTrustTransitionService {
     signer: LanTlsHostCaSigner,
     input: SignHostActivationInput,
   ): Promise<HostTransferActivationCertificate> {
-    assertId(input.projectId, 'host-activation-project-invalid');
-    assertId(input.transferId, 'host-activation-transfer-invalid');
-    assertId(input.targetHostMemberId, 'host-activation-target-invalid');
+    assertId(input.projectId, isCollabProjectId, 'host-activation-project-invalid');
+    assertId(input.transferId, isCollabOpaqueId, 'host-activation-transfer-invalid');
+    assertId(input.targetHostMemberId, isCollabMemberId, 'host-activation-target-invalid');
     assertFingerprint(input.targetCaFingerprint, 'host-activation-ca-invalid');
     assertDigest(input.manifestDigest, 'host-activation-manifest-invalid');
     assertTimestamp(input.cutoverAt, 'host-activation-time-invalid');
@@ -315,9 +318,9 @@ export class HostTrustTransitionService {
     if (certificate.schemaVersion !== 1 || certificate.signatureAlgorithm !== 'rsa-pss-sha256') {
       throw trustError('host-activation-shape-invalid');
     }
-    assertId(certificate.projectId, 'host-activation-project-invalid');
-    assertId(certificate.transferId, 'host-activation-transfer-invalid');
-    assertId(certificate.targetHostMemberId, 'host-activation-target-invalid');
+    assertId(certificate.projectId, isCollabProjectId, 'host-activation-project-invalid');
+    assertId(certificate.transferId, isCollabOpaqueId, 'host-activation-transfer-invalid');
+    assertId(certificate.targetHostMemberId, isCollabMemberId, 'host-activation-target-invalid');
     assertFingerprint(certificate.targetCaFingerprint, 'host-activation-ca-invalid');
     assertDigest(certificate.manifestDigest, 'host-activation-manifest-invalid');
     assertTimestamp(certificate.cutoverAt, 'host-activation-time-invalid');

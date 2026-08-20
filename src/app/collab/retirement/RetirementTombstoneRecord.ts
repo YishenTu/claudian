@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { decodeLanCollabHostTrustTransitionProof } from '@/app/collab/lan/LanCollabHostTrustTransitionProof';
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';
@@ -25,7 +25,6 @@ export interface RetirementTombstoneRecord {
   readonly formerMembers: readonly RetirementTombstoneMember[];
 }
 type Value = Readonly<Record<string, unknown>>;
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'retiredAt', 'expiresAt', 'result', 'replay', 'hostTransitionProofs', 'formerMembers']);
 function exact(value: unknown, keys: ReadonlySet<string>, name: string): Value {
@@ -48,7 +47,8 @@ function timestamp(value: Value, key: string, nullable = false): string | null {
 export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombstoneRecord {
   const record = exact(value, KEYS, 'retirement tombstone');
   if (record.schemaVersion !== 1 || record.kind !== 'retirement-tombstone' || !Array.isArray(record.hostTransitionProofs) || !Array.isArray(record.formerMembers) || record.hostTransitionProofs.length > 64 || record.formerMembers.length === 0 || record.formerMembers.length > 10_000) throw new TypeError('Invalid retirement tombstone');
-  const projectId = text(record, 'projectId', 64, ID);
+  const projectId = text(record, 'projectId', 64);
+  if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   const retiredAt = timestamp(record, 'retiredAt')!;
   const expiresAt = timestamp(record, 'expiresAt')!;
   if (Date.parse(expiresAt) - Date.parse(retiredAt) !== 30 * 24 * 60 * 60 * 1000) throw new TypeError('Invalid tombstone expiry');
@@ -64,10 +64,12 @@ export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombs
     const member = exact(value, new Set(['memberId', 'credentialHash', 'acknowledgedAt']), 'former Member');
     const acknowledgedAt = timestamp(member, 'acknowledgedAt', true);
     if (acknowledgedAt !== null && (acknowledgedAt < retiredAt || acknowledgedAt > expiresAt)) throw new TypeError('Invalid acknowledgement time');
+    const memberId = text(member, 'memberId', 64);
+    if (!isCollabMemberId(memberId)) throw new TypeError('Invalid memberId');
     return {
       acknowledgedAt,
       credentialHash: text(member, 'credentialHash', 64, DIGEST),
-      memberId: text(member, 'memberId', 64, ID),
+      memberId,
     };
   });
   if (new Set(formerMembers.map(member => member.memberId)).size !== formerMembers.length) throw new TypeError('Duplicate former Member');
@@ -78,8 +80,16 @@ export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombs
     kind: 'retirement-tombstone',
     projectId,
     replay: {
-      actorMemberId: text(replay, 'actorMemberId', 64, ID),
-      idempotencyKey: text(replay, 'idempotencyKey', 128, ID),
+      actorMemberId: (() => {
+        const actorMemberId = text(replay, 'actorMemberId', 64);
+        if (!isCollabMemberId(actorMemberId)) throw new TypeError('Invalid actorMemberId');
+        return actorMemberId;
+      })(),
+      idempotencyKey: (() => {
+        const idempotencyKey = text(replay, 'idempotencyKey', 128);
+        if (!isCollabOpaqueId(idempotencyKey)) throw new TypeError('Invalid idempotencyKey');
+        return idempotencyKey;
+      })(),
       requestFingerprint: text(replay, 'requestFingerprint', 64, DIGEST),
     },
     result: { projectId, retiredAt },

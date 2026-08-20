@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabMemberId, type CollabProjectId, type CollabRequestTicketRelation } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabMemberId, type CollabProjectId, type CollabRequestTicketRelation, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import {
   type PendingTicketRelationInput,
@@ -6,9 +6,6 @@ import {
 } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 export interface ActiveRequestMember {
   readonly memberId: CollabMemberId;
@@ -87,11 +84,11 @@ export function decodeAuthorityChangeRequest(
   const description = text(row, 'description')!;
   const revision = row.revision;
   if (
-    !ID_PATTERN.test(id)
-    || !ID_PATTERN.test(memberId)
-    || !OID_PATTERN.test(firstBaseOid)
-    || !OID_PATTERN.test(latestHeadOid)
-    || (mergedOid !== null && !OID_PATTERN.test(mergedOid))
+    !isCollabOpaqueId(id)
+    || !isCollabMemberId(memberId)
+    || !isCollabGitOid(firstBaseOid)
+    || !isCollabGitOid(latestHeadOid)
+    || (mergedOid !== null && !isCollabGitOid(mergedOid))
     || (status !== 'open' && status !== 'merged' && status !== 'discarded')
     || typeof commentCount !== 'number'
     || !Number.isSafeInteger(commentCount)
@@ -138,7 +135,7 @@ export class RequestEnsureRepository {
     projectId: CollabProjectId,
     memberId: CollabMemberId,
   ): ActiveRequestMember {
-    if (!ID_PATTERN.test(projectId) || !ID_PATTERN.test(memberId)) {
+    if (!isCollabProjectId(projectId) || !isCollabMemberId(memberId)) {
       throw requestError('authority-integrity-error', 'request-identity-invalid');
     }
     const row = connection.get(
@@ -185,7 +182,7 @@ export class RequestEnsureRepository {
     connection: AuthorityDatabaseConnection,
     requestId: string,
   ): CollabChangeRequest | null {
-    if (!ID_PATTERN.test(requestId)) {
+    if (!isCollabOpaqueId(requestId)) {
       throw requestError('authority-integrity-error', 'request-identity-invalid');
     }
     const row = connection.get(`${REQUEST_SELECT}
@@ -204,10 +201,10 @@ export class RequestEnsureRepository {
     input: EnsureAuthorityRequestInput,
   ): EnsureAuthorityRequestResult {
     if (
-      !ID_PATTERN.test(input.requestId)
-      || !ID_PATTERN.test(input.memberId)
-      || !OID_PATTERN.test(input.firstBaseOid)
-      || !OID_PATTERN.test(input.headOid)
+      !isCollabOpaqueId(input.requestId)
+      || !isCollabMemberId(input.memberId)
+      || !isCollabGitOid(input.firstBaseOid)
+      || !isCollabGitOid(input.headOid)
       || typeof input.description !== 'string'
     ) {
       throw requestError('authority-integrity-error', 'request-input-invalid');

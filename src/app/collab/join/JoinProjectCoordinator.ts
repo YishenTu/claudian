@@ -6,7 +6,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { collabMemberRef, type CollabOperationId } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabOperationId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import type {
   CollabGitFoundation,
@@ -103,7 +103,6 @@ interface ActiveJoinIntent {
   readonly controller: AbortController;
 }
 
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const INDEX_MODE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) 0\t(.+)$/;
 
@@ -307,7 +306,7 @@ export class JoinProjectCoordinator {
         const projectsFolder = parsedProjectsFolder.value;
         await this.foundation.local.workspace.claimProjectsFolder(projectsFolder);
         const joinAttemptId = this.createJoinAttemptId();
-        if (!SAFE_ID_PATTERN.test(joinAttemptId)) {
+        if (!isCollabOpaqueId(joinAttemptId)) {
           throw joinError('operation-failed', 'join-attempt-id-invalid');
         }
         const slug = await this.claimSlug(
@@ -832,7 +831,7 @@ export class JoinProjectCoordinator {
   }
 
   private async findPending(operationId: string): Promise<JoinProjectRecord | null> {
-    if (!SAFE_ID_PATTERN.test(operationId)) return null;
+    if (!isCollabOpaqueId(operationId)) return null;
     const projectIds = await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: JoinProjectRecord | null = null;

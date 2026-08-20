@@ -347,46 +347,21 @@ describe('CollabMembershipService', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it('does not acknowledge Manager responsibility while an offline Leave is pending', async () => {
-    const control = client();
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership({
-        member: {
-          credential: Buffer.alloc(32, 1).toString('base64url'),
-          displayName: 'Target',
-          id: 'member-target',
-          personalRef: 'refs/heads/members/member-target',
-          role: 'member',
-        },
-      })),
-    }, {
-      readCoordinationSnapshot: jest.fn(),
-    }, { createClient: () => control }, safetyContext({
-      pendingLeaves: { load: jest.fn().mockResolvedValue({ phase: 'queued' }) },
-    }));
-
-    await expect(service.acknowledgeManagerResponsibility({
-      offerId: 'offer-one',
-      projectId: 'project-alpha',
-    })).rejects.toMatchObject({
-      code: 'manager-responsibility-pending',
-      safeContext: { reason: 'manager-responsibility-target-leaving' },
-    });
-    expect(control.getManagerResponsibilityOffer).not.toHaveBeenCalled();
-    expect(control.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
-  });
-
   it('recovers a lost Manager acknowledgement response without sending another mutation', async () => {
     const control = client();
-    const acknowledged = {
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
+    const offered = {
       expiresAt: '2026-08-08T00:10:00.000Z',
       offeredAt: '2026-08-08T00:00:00.000Z',
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
       sourceManagerMemberId: 'member-manager',
-      status: 'acknowledged' as const,
+      status: 'offered' as const,
       targetMemberId: 'member-target',
+    };
+    const acknowledged = {
+      ...offered,
+      acknowledgedAt: '2026-08-08T00:01:00.000Z',
+      status: 'acknowledged' as const,
     };
     control.getManagerResponsibilityOffer.mockResolvedValue(acknowledged);
     const receipts = {
@@ -410,10 +385,19 @@ describe('CollabMembershipService', () => {
       managerReceipts: receipts,
     }));
 
-    await expect(service.acknowledgeManagerResponsibility({
-      offerId: 'offer-one',
-      projectId: 'project-alpha',
-    })).resolves.toEqual(acknowledged);
+    const projected = {
+      ...coordination().snapshot,
+      currentMember: {
+        ...coordination().snapshot.currentMember,
+        id: 'member-target',
+        personalRef: 'refs/heads/members/member-target',
+        role: 'member' as const,
+      },
+      managerResponsibilityOffer: offered,
+    };
+
+    await expect(service.reconcileManagerResponsibilitySnapshot(projected))
+      .resolves.toEqual(acknowledged);
     expect(control.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
     expect(receipts.save).toHaveBeenCalledWith('project-alpha', acknowledged);
   });

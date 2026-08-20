@@ -1,4 +1,4 @@
-import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { parseCollabProjectsFolder } from '@/core/collab';
 
@@ -34,10 +34,8 @@ export interface CollabProjectSetupRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const SAFE_CHILD_PATTERN = /^[A-Za-z0-9._-]{1,120}$/;
+const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -97,22 +95,21 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
   }
   const initialCommitOid = value.initialCommitOid;
   if (initialCommitOid !== null && (
-    typeof initialCommitOid !== 'string' || !OID_PATTERN.test(initialCommitOid)
+    !isCollabGitOid(initialCommitOid)
   )) {
     throw new TypeError('Invalid setup commit');
   }
-  const projectId = stringField(value, 'projectId', 64, SAFE_ID_PATTERN);
+  const projectId = stringField(value, 'projectId', 64);
+  if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   const cloneDirectoryName = stringField(
     value,
     'cloneDirectoryName',
     120,
-    SAFE_CHILD_PATTERN,
   );
   const seedDirectoryName = stringField(
     value,
     'seedDirectoryName',
     120,
-    SAFE_CHILD_PATTERN,
   );
   if (
     cloneDirectoryName !== `.claudian-clone-${projectId}`
@@ -126,15 +123,23 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
     initialCommitOid,
     memberCredential: stringField(value, 'memberCredential', 43, CREDENTIAL_PATTERN),
     memberDisplayName: stringField(value, 'memberDisplayName', 200),
-    memberId: stringField(value, 'memberId', 64, SAFE_ID_PATTERN),
+    memberId: (() => {
+      const memberId = stringField(value, 'memberId', 64);
+      if (!isCollabMemberId(memberId)) throw new TypeError('Invalid memberId');
+      return memberId;
+    })(),
     name: stringField(value, 'name', 200),
-    operationId: stringField(value, 'operationId', 128, SAFE_CHILD_PATTERN),
+    operationId: (() => {
+      const operationId = stringField(value, 'operationId', 128);
+      if (!isCollabOpaqueId(operationId)) throw new TypeError('Invalid operationId');
+      return operationId;
+    })(),
     phase,
     projectId,
     projectsFolder,
     schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
     seedDirectoryName,
-    slug: stringField(value, 'slug', 64, SAFE_ID_PATTERN),
+    slug: stringField(value, 'slug', 64, SAFE_SLUG_PATTERN),
     updatedAt: timestampField(value, 'updatedAt'),
     ...(legacy || value.legacySetupRecord === true
       ? { legacySetupRecord: true as const }

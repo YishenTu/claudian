@@ -10,7 +10,7 @@ import {
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 
-import { collabMemberRef } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabGitOid } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { parseConflictTextMerge } from '@/app/collab/conflicts/ConflictTextMerge';
@@ -26,7 +26,6 @@ import { type CollabConflictDescriptor, type CollabConflictEntry, type CollabCon
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const STAGE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) ([123])\t(.+)$/;
 const SCRATCH_BRANCH = 'refs/heads/resolution';
 const RESULT_REF = 'refs/heads/resolved';
@@ -393,7 +392,7 @@ export class ConflictScratchGitRepository {
       maxStdoutBytes: 128,
     });
     const treeOid = treeResult.stdout.toString('utf8').trim();
-    if (!OID_PATTERN.test(treeOid)) {
+    if (!isCollabGitOid(treeOid)) {
       throw scratchError('repository-invalid', 'conflict-result-tree-invalid');
     }
     const existing = await this.git.resolveRef(scratchPath, RESULT_REF);
@@ -424,7 +423,7 @@ export class ConflictScratchGitRepository {
     beforeMutation?: () => Promise<void>,
   ): Promise<void> {
     throwIfCancelled(signal);
-    if (!OID_PATTERN.test(resultOid)) {
+    if (!isCollabGitOid(resultOid)) {
       throw scratchError('repository-invalid', 'conflict-result-oid-invalid');
     }
     const scratchResult = await this.git.resolveRef(scratchPath, RESULT_REF);
@@ -521,7 +520,7 @@ export class ConflictScratchGitRepository {
       maxStdoutBytes: 128,
     });
     const oid = result.stdout.toString('utf8').trim();
-    if (!OID_PATTERN.test(oid)) {
+    if (!isCollabGitOid(oid)) {
       throw scratchError('repository-invalid', 'conflict-merge-head-invalid');
     }
     return oid;
@@ -629,7 +628,7 @@ export class ConflictScratchGitRepository {
       maxStdoutBytes: 128,
     });
     const treeOid = result.stdout.toString('utf8').trim();
-    if (!OID_PATTERN.test(treeOid)) {
+    if (!isCollabGitOid(treeOid)) {
       throw scratchError('repository-invalid', 'conflict-result-tree-invalid');
     }
     return treeOid;

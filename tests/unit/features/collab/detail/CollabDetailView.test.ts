@@ -62,6 +62,48 @@ describe('CollabDetailView', () => {
     expect(port.readTicket).not.toHaveBeenCalled();
   });
 
+  it('validates restored detail identifiers by their semantic contracts', async () => {
+    const port = detailPort(requestReview());
+    port.isDetailAdmissionOpen.mockReturnValue(false);
+    const view = createView(port, diffPort(), objectUrlPort());
+    const projectId = `p${'a'.repeat(63)}`;
+    const ticketId = `t${'b'.repeat(127)}`;
+
+    await expect(view.setState({
+      kind: 'ticket',
+      projectId,
+      ticketId,
+    }, { history: false })).resolves.toBeUndefined();
+    await expect(view.setState({
+      kind: 'ticket',
+      projectId: `p${'a'.repeat(64)}`,
+    }, { history: false })).rejects.toBeInstanceOf(CollabError);
+    await expect(view.setState({
+      kind: 'ticket',
+      projectId,
+      ticketId: `t${'b'.repeat(128)}`,
+    }, { history: false })).rejects.toBeInstanceOf(CollabError);
+  });
+
+  it('distinguishes Git OIDs from the working-tree snapshot digest', async () => {
+    const port = detailPort(requestReview());
+    port.isDetailAdmissionOpen.mockReturnValue(false);
+    const view = createView(port, diffPort(), objectUrlPort());
+    const state = {
+      baseOid: 'a'.repeat(40),
+      headOid: 'b'.repeat(64),
+      kind: 'working-tree' as const,
+      projectId: 'project-a',
+      snapshotId: 'c'.repeat(64),
+    };
+
+    await expect(view.setState(state, { history: false })).resolves.toBeUndefined();
+    await expect(view.setState({
+      ...state,
+      snapshotId: 'c'.repeat(40),
+    }, { history: false })).rejects.toBeInstanceOf(CollabError);
+  });
+
   it('loads normally once admission is open', async () => {
     const review = requestReview();
     const port = detailPort(review);
@@ -1982,7 +2024,7 @@ describe('CollabDetailView', () => {
     expect(order).toEqual(['coordination', 'review']);
   });
 
-  it('preserves a Ticket create intent across invalidation-driven panel replacement', async () => {
+  it('preserves a Ticket create draft and intent across invalidation refresh', async () => {
     const port = detailPort(requestReview());
     port.createTicket.mockResolvedValue({
       error: new CollabError({ code: 'operation-failed' }),
@@ -1997,25 +2039,32 @@ describe('CollabDetailView', () => {
     await view.onOpen();
     await view.setState({ kind: 'ticket', projectId: 'project-a' }, { history: false });
 
-    const submitDraft = () => {
-      view.contentEl.querySelector<HTMLInputElement>(
-        '[data-field="ticket-title"]',
-      )!.value = 'Retry after invalidation';
-      setMarkdownValue(
-        view.contentEl.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
-        'Same Ticket body',
-      );
-      view.contentEl.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event(
-        'submit',
-        { bubbles: true, cancelable: true },
-      ));
-    };
-
-    submitDraft();
+    view.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="ticket-title"]',
+    )!.value = 'Retry after invalidation';
+    setMarkdownValue(
+      view.contentEl.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Same Ticket body',
+    );
+    view.contentEl.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event(
+      'submit',
+      { bubbles: true, cancelable: true },
+    ));
     await nextTurn();
     invalidate();
     await nextTurn();
-    submitDraft();
+
+    expect(view.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="ticket-title"]',
+    )?.value).toBe('Retry after invalidation');
+    expect(markdownValue(
+      view.contentEl.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+    )).toBe('Same Ticket body');
+
+    view.contentEl.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event(
+      'submit',
+      { bubbles: true, cancelable: true },
+    ));
     await nextTurn();
 
     expect(port.createTicket).toHaveBeenCalledTimes(2);

@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -41,7 +41,6 @@ const MANIFEST_FILE = 'manifest.json';
 const PROOF_FILE = 'proof.json';
 const BUNDLE_FILE = 'authority.bundle';
 const SNAPSHOT_FILE = 'authority.db';
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 interface PackageOwner {
@@ -344,7 +343,7 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
   }
 
   private assertIdentity(projectId: string, transferId: string): void {
-    if (!ID_PATTERN.test(projectId) || !ID_PATTERN.test(transferId)) {
+    if (!isCollabProjectId(projectId) || !isCollabOpaqueId(transferId)) {
       throw preparationError('host-transfer-package-identity-invalid');
     }
   }

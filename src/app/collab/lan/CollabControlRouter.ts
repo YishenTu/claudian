@@ -119,9 +119,11 @@ function parseProjectUrl(rawUrl: string | undefined): {
   if (url.hash.length > 0) {
     throw routerError('protocol-payload-invalid', 'control-url-query-forbidden');
   }
-  const match = /^\/v(\d+)\/projects\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/(.+)$/
+  const match = /^\/v(\d+)\/projects\/([^/]+)\/(.+)$/
     .exec(url.pathname);
-  if (!match) throw routerError('project-not-found', 'control-route-not-found');
+  if (!match || !isCollabProjectId(match[2])) {
+    throw routerError('project-not-found', 'control-route-not-found');
+  }
   const protocolVersion = Number(match[1]);
   if (!Number.isSafeInteger(protocolVersion)) {
     throw routerError('project-not-found', 'control-route-not-found');

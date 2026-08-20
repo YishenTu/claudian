@@ -112,8 +112,6 @@ export interface CollabControlOperationMatch {
   readonly parameters: Readonly<Record<string, string>>;
 }
 
-const ROUTE_PARAMETER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
 export function matchCollabControlOperation(
   method: string | undefined,
   segments: readonly string[],
@@ -133,7 +131,9 @@ export function matchCollabControlOperation(
       if (part.startsWith(':')) {
         const name = part.slice(1);
         if (
-          !ROUTE_PARAMETER_PATTERN.test(actual)
+          !(name === 'memberId'
+            ? isCollabMemberId(actual)
+            : isCollabOpaqueId(actual))
           || (name === 'offerId' && actual === 'current')
         ) {
           matches = false;
@@ -149,3 +149,4 @@ export function matchCollabControlOperation(
   }
   return null;
 }
+import { isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';

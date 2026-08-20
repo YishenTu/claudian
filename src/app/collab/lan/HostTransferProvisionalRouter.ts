@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import {
   HOST_TRANSFER_MAX_AUTHORITY_SNAPSHOT_BYTES,
@@ -20,11 +20,10 @@ import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanColla
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const HOST_TRANSFER_ROUTE_PREFIX = `/v${COLLAB_HOST_TRANSFER_PROTOCOL_VERSION}/host-transfers`;
-const ROUTE_PATTERN = new RegExp(`^${HOST_TRANSFER_ROUTE_PREFIX}/([A-Za-z0-9][A-Za-z0-9_-]{0,127})/(probe|stage|activate|cancel|complete|confirm)$`);
+const ROUTE_PATTERN = new RegExp(`^${HOST_TRANSFER_ROUTE_PREFIX}/([^/]+)/(probe|stage|activate|cancel|complete|confirm)$`);
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_ACTIVATION_BYTES = 16 * 1024;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface HostTransferProvisionalRegistration {
   readonly coordinator: Pick<
@@ -97,9 +96,9 @@ function activationCertificate(value: unknown): HostTransferActivationCertificat
     Object.keys(record).length !== expectedKeys.length
     || Object.keys(record).some(key => !expectedKeys.includes(key))
     || record.schemaVersion !== 1
-    || typeof record.projectId !== 'string' || !ID_PATTERN.test(record.projectId)
-    || typeof record.transferId !== 'string' || !ID_PATTERN.test(record.transferId)
-    || typeof record.targetHostMemberId !== 'string' || !ID_PATTERN.test(record.targetHostMemberId)
+    || !isCollabProjectId(record.projectId)
+    || !isCollabOpaqueId(record.transferId)
+    || !isCollabMemberId(record.targetHostMemberId)
     || typeof record.targetCaFingerprint !== 'string' || !DIGEST_PATTERN.test(record.targetCaFingerprint)
     || typeof record.manifestDigest !== 'string' || !DIGEST_PATTERN.test(record.manifestDigest)
     || typeof record.cutoverAt !== 'string'
@@ -153,7 +152,7 @@ export function hostTransferProvisionalPath(
   transferId: CollabOperationId,
   action: 'activate' | 'cancel' | 'complete' | 'confirm' | 'probe' | 'stage',
 ): string {
-  if (!ID_PATTERN.test(transferId)) throw routeError('host-transfer-route-invalid');
+  if (!isCollabOpaqueId(transferId)) throw routeError('host-transfer-route-invalid');
   return `${HOST_TRANSFER_ROUTE_PREFIX}/${transferId}/${action}`;
 }
 
@@ -165,7 +164,10 @@ export class HostTransferProvisionalRouter {
   }
 
   register(registration: HostTransferProvisionalRegistration): () => void {
-    if (!ID_PATTERN.test(registration.projectId) || !ID_PATTERN.test(registration.transferId)) {
+    if (
+      !isCollabProjectId(registration.projectId)
+      || !isCollabOpaqueId(registration.transferId)
+    ) {
       throw routeError('host-transfer-registration-invalid');
     }
     if ((registration.receiverCredential === undefined)

@@ -249,7 +249,6 @@ describe('ReconciliationCoordinator', () => {
       ...publicationState.current,
       operation: {
         candidateOid: '5'.repeat(40),
-        confirmed: false,
         contributionHeadOid: PERSONAL,
         createdAt: '2026-08-08T00:00:00.000Z',
         currentMainOid: MAIN,

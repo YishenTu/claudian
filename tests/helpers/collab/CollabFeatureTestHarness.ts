@@ -64,8 +64,6 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'removeMember',
   'leaveProject',
   'createManagerResponsibilityOffer',
-  'acknowledgeManagerResponsibility',
-  'declineManagerResponsibility',
   'cancelManagerResponsibilityOffer',
   'promoteManager',
   'demoteManager',
@@ -187,11 +185,9 @@ function defaultLocalExit(): CollabLocalExitPort {
 
 function defaultMembership(): CollabMembershipPort {
   return {
-    acknowledgeManagerResponsibility: () => unexpected('acknowledgeManagerResponsibility'),
     cancelManagerResponsibilityOffer: () => unexpected('cancelManagerResponsibilityOffer'),
     createInvitation: () => unexpected('createInvitation'),
     createManagerResponsibilityOffer: () => unexpected('createManagerResponsibilityOffer'),
-    declineManagerResponsibility: () => unexpected('declineManagerResponsibility'),
     listMembers: () => Promise.resolve([]),
     removeMember: () => Promise.resolve(),
     revokeInvitation: () => Promise.resolve(),

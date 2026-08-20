@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -13,7 +13,6 @@ import type { IncomingHostTransferCoordinator } from '@/app/collab/host-transfer
 import type { HostTransferProvisionalRegistration } from '@/app/collab/lan/HostTransferProvisionalRouter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const RECEIVER_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 interface IncomingMembership {
@@ -286,7 +285,7 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
   }
 
   private assertIdentity(projectId: string, transferId: string): void {
-    if (!ID_PATTERN.test(projectId) || !ID_PATTERN.test(transferId)) {
+    if (!isCollabProjectId(projectId) || !isCollabOpaqueId(transferId)) {
       throw preparationError('host-transfer-target-identity-invalid');
     }
   }

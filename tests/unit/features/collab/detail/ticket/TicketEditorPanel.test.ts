@@ -134,6 +134,625 @@ describe('TicketEditorPanel', () => {
     });
   });
 
+  it('preserves edit and comment drafts across an authority refresh', async () => {
+    const detail = ticketDetail();
+    const refreshed = {
+      ...detail,
+      body: 'Remote body',
+      ticket: {
+        ...detail.ticket,
+        revision: 4,
+        title: 'Remote title',
+      },
+    };
+    const port = ticketPort();
+    port.readTicket
+      .mockResolvedValueOnce(ticketRead(detail))
+      .mockResolvedValue(ticketRead(refreshed));
+    port.updateTicketContent.mockResolvedValue({
+      status: 'success',
+      value: { ...refreshed.ticket, revision: 5 },
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    const body = root.querySelector<HTMLElement>('[data-field="ticket-body"]')!;
+    setMarkdownValue(body, 'Local body');
+    body.parentElement?.querySelector<HTMLButtonElement>(
+      '[data-action="preview-ticket-body"]',
+    )?.click();
+    const comment = root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!;
+    setMarkdownValue(comment, 'Local comment');
+    root.querySelector<HTMLButtonElement>('[data-action="preview-ticket-comment"]')?.click();
+
+    await panel.refresh();
+
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Local body');
+    expect(root.querySelector<HTMLElement>(
+      '[data-field="ticket-body"] .claudian-collab-markdown-draft-editor',
+    )?.hidden).toBe(true);
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!))
+      .toBe('Local comment');
+    expect(root.querySelector<HTMLElement>(
+      '[data-field="ticket-comment"] .claudian-collab-markdown-draft-editor',
+    )?.hidden).toBe(true);
+
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    await nextTurn();
+    expect(port.updateTicketContent).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'Local body',
+      expectedRevision: 3,
+      title: 'Local title',
+    }));
+  });
+
+  it('renders the latest draft state when typing continues during an authority refresh', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['readSnapshot']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    const root = document.createElement('div');
+    document.body.append(root);
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    port.readSnapshot.mockImplementationOnce(() => pending.promise);
+
+    const refresh = panel.refresh();
+    const title = root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!;
+    const body = root.querySelector<HTMLElement>('[data-field="ticket-body"]')!;
+    title.value = 'Typed during refresh';
+    setMarkdownValue(body, 'Newest body');
+    markdownEditor(body).dispatch({ selection: { anchor: 4 } });
+    body.parentElement?.querySelector<HTMLButtonElement>(
+      '[data-action="preview-ticket-body"]',
+    )?.click();
+    title.focus();
+
+    pending.resolve({ status: 'success', value: coordination() });
+    await refresh;
+
+    const refreshedBody = root.querySelector<HTMLElement>('[data-field="ticket-body"]')!;
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Typed during refresh');
+    expect(markdownValue(refreshedBody)).toBe('Newest body');
+    expect(markdownEditor(refreshedBody).state.selection.main.anchor).toBe(4);
+    expect(refreshedBody.querySelector<HTMLElement>(
+      '.claudian-collab-markdown-draft-editor',
+    )?.hidden)
+      .toBe(true);
+    expect(document.activeElement).toBe(
+      root.querySelector<HTMLInputElement>('[data-field="ticket-title"]'),
+    );
+    root.remove();
+  });
+
+  it('does not restore an edit cancelled while an authority refresh is pending', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['readSnapshot']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    const comment = root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!;
+    setMarkdownValue(comment, 'Comment changed during content edit');
+    markdownEditor(comment).dispatch({ selection: { anchor: 7 } });
+    root.querySelector<HTMLButtonElement>('[data-action="preview-ticket-comment"]')!.click();
+    port.readSnapshot.mockImplementationOnce(() => pending.promise);
+
+    const refresh = panel.refresh();
+    root.querySelector<HTMLButtonElement>('[data-action="cancel-ticket-edit"]')!.click();
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+
+    pending.resolve({ status: 'success', value: coordination() });
+    await refresh;
+
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+    expect(root.querySelector('[data-action="edit-ticket"]')).not.toBeNull();
+    const retainedComment = root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!;
+    expect(markdownValue(retainedComment)).toBe('Comment changed during content edit');
+    expect(markdownEditor(retainedComment).state.selection.main.anchor).toBe(7);
+    expect(retainedComment.querySelector<HTMLElement>(
+      '.claudian-collab-markdown-draft-editor',
+    )?.hidden).toBe(true);
+  });
+
+  it('clears only the completed comment draft after refreshing Ticket detail', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.addTicketComment.mockResolvedValue({
+      status: 'success',
+      value: {
+        authorMemberId: 'member-a',
+        body: 'Submitted comment',
+        createdAt: COMMENTED_EARLY_AT,
+        id: 'comment-success',
+        ticketId: detail.ticket.id,
+      },
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Local body',
+    );
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!,
+      'Submitted comment',
+    );
+
+    root.querySelector<HTMLButtonElement>('[data-action="submit-ticket-comment"]')!.click();
+    await nextTurn();
+
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Local body');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!))
+      .toBe('');
+  });
+
+  it('keeps an admitted edit mutation pending across a background refresh', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['updateTicketContent']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.updateTicketContent.mockReturnValue(pending.promise);
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Local body',
+    );
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+
+    await panel.refresh();
+
+    expect(root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')?.disabled)
+      .toBe(true);
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+
+    pending.resolve({
+      error: new CollabError({ code: 'operation-failed' }),
+      status: 'failure',
+    });
+    await nextTurn();
+
+    expect(root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')?.disabled)
+      .toBe(false);
+    expect(root.querySelector('.claudian-collab-ticket-editor-status')?.textContent)
+      .toBe('The Ticket could not be saved.');
+  });
+
+  it('preserves and rebases content edited after an earlier save was admitted', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['updateTicketContent']
+    >>>();
+    const port = ticketPort();
+    port.readTicket
+      .mockResolvedValueOnce(ticketRead(detail))
+      .mockResolvedValue(ticketRead({
+        ...detail,
+        ticket: { ...detail.ticket, revision: 4 },
+      }));
+    port.updateTicketContent
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({
+        error: new CollabError({ code: 'operation-failed' }),
+        status: 'failure',
+      });
+    const root = document.createElement('div');
+    document.body.append(root);
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Submitted';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Submitted body',
+    );
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+
+    const title = root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!;
+    const body = root.querySelector<HTMLElement>('[data-field="ticket-body"]')!;
+    title.value = 'Newer local title';
+    setMarkdownValue(body, 'Newer local body');
+    markdownEditor(body).dispatch({ selection: { anchor: 5 } });
+    body.parentElement?.querySelector<HTMLButtonElement>(
+      '[data-action="preview-ticket-body"]',
+    )?.click();
+    title.focus();
+
+    pending.resolve({
+      status: 'success',
+      value: { ...detail.ticket, revision: 4, title: 'Submitted' },
+    });
+    await nextTurn();
+
+    const retainedBody = root.querySelector<HTMLElement>('[data-field="ticket-body"]')!;
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Newer local title');
+    expect(markdownValue(retainedBody)).toBe('Newer local body');
+    expect(markdownEditor(retainedBody).state.selection.main.anchor).toBe(5);
+    expect(retainedBody.querySelector<HTMLElement>(
+      '.claudian-collab-markdown-draft-editor',
+    )?.hidden)
+      .toBe(true);
+    expect(document.activeElement).toBe(
+      root.querySelector<HTMLInputElement>('[data-field="ticket-title"]'),
+    );
+
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    expect(port.updateTicketContent).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: 'Newer local body',
+      expectedRevision: 4,
+      title: 'Newer local title',
+    }));
+    const [firstRequest] = port.updateTicketContent.mock.calls[0]!;
+    const [secondRequest] = port.updateTicketContent.mock.calls[1]!;
+    expect(secondRequest.intentId).not.toBe(firstRequest.intentId);
+    root.remove();
+  });
+
+  it('consumes a successful content acknowledgement through a superseding refresh', async () => {
+    const detail = ticketDetail();
+    const supersededRead = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['readSnapshot']
+    >>>();
+    const refreshed = {
+      ...detail,
+      body: 'Submitted body',
+      ticket: { ...detail.ticket, revision: 4, title: 'Submitted' },
+    };
+    const port = ticketPort();
+    port.readTicket
+      .mockResolvedValueOnce(ticketRead(detail))
+      .mockResolvedValue(ticketRead(refreshed));
+    port.updateTicketContent
+      .mockResolvedValueOnce({ status: 'success', value: refreshed.ticket })
+      .mockResolvedValue({
+        error: new CollabError({ code: 'operation-failed' }),
+        status: 'failure',
+      });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Submitted';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Submitted body',
+    );
+    port.readSnapshot
+      .mockImplementationOnce(() => supersededRead.promise)
+      .mockResolvedValue({ status: 'success', value: coordination() });
+
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Newer title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Newer body',
+    );
+
+    await panel.refresh();
+    supersededRead.resolve({ status: 'success', value: coordination() });
+    await nextTurn();
+
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Newer title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Newer body');
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    expect(port.updateTicketContent).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: 'Newer body',
+      expectedRevision: 4,
+      title: 'Newer title',
+    }));
+    const [firstRequest] = port.updateTicketContent.mock.calls[0]!;
+    const [secondRequest] = port.updateTicketContent.mock.calls[1]!;
+    expect(secondRequest.intentId).not.toBe(firstRequest.intentId);
+  });
+
+  it('clears unchanged content after its acknowledgement read is superseded', async () => {
+    const detail = ticketDetail();
+    const supersededRead = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['readSnapshot']
+    >>>();
+    const refreshed = {
+      ...detail,
+      body: 'Submitted body',
+      ticket: { ...detail.ticket, revision: 4, title: 'Submitted' },
+    };
+    const port = ticketPort();
+    port.readTicket
+      .mockResolvedValueOnce(ticketRead(detail))
+      .mockResolvedValue(ticketRead(refreshed));
+    port.updateTicketContent.mockResolvedValue({
+      status: 'success',
+      value: refreshed.ticket,
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Submitted';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Submitted body',
+    );
+    port.readSnapshot
+      .mockImplementationOnce(() => supersededRead.promise)
+      .mockResolvedValue({ status: 'success', value: coordination() });
+
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await panel.refresh();
+    supersededRead.resolve({ status: 'success', value: coordination() });
+    await nextTurn();
+
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+    expect(root.querySelector('[data-action="edit-ticket"]')).not.toBeNull();
+  });
+
+  it('preserves a newer comment written after an earlier comment was admitted', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['addTicketComment']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.addTicketComment
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({
+        error: new CollabError({ code: 'operation-failed' }),
+        status: 'failure',
+      });
+    const root = document.createElement('div');
+    document.body.append(root);
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const comment = root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!;
+    setMarkdownValue(comment, 'Submitted comment');
+    root.querySelector<HTMLButtonElement>('[data-action="submit-ticket-comment"]')!.click();
+
+    setMarkdownValue(comment, 'Newer comment');
+    markdownEditor(comment).dispatch({ selection: { anchor: 6 } });
+    root.querySelector<HTMLButtonElement>('[data-action="preview-ticket-comment"]')!.click();
+
+    pending.resolve({
+      status: 'success',
+      value: {
+        authorMemberId: 'member-a',
+        body: 'Submitted comment',
+        createdAt: COMMENTED_EARLY_AT,
+        id: 'comment-success',
+        ticketId: detail.ticket.id,
+      },
+    });
+    await nextTurn();
+
+    const retainedComment = root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!;
+    expect(markdownValue(retainedComment)).toBe('Newer comment');
+    expect(markdownEditor(retainedComment).state.selection.main.anchor).toBe(6);
+    expect(retainedComment.querySelector<HTMLElement>(
+      '.claudian-collab-markdown-draft-editor',
+    )?.hidden)
+      .toBe(true);
+
+    root.querySelector<HTMLButtonElement>('[data-action="submit-ticket-comment"]')!.click();
+    expect(port.addTicketComment).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: 'Newer comment',
+    }));
+    const [firstRequest] = port.addTicketComment.mock.calls[0]!;
+    const [secondRequest] = port.addTicketComment.mock.calls[1]!;
+    expect(secondRequest.intentId).not.toBe(firstRequest.intentId);
+    root.remove();
+  });
+
+  it('coalesces repeated background refresh requests into one follow-up read', async () => {
+    const detail = ticketDetail();
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['readSnapshot']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    port.readSnapshot
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValue({ status: 'success', value: coordination() });
+
+    const first = panel.refresh();
+    const second = panel.refresh();
+    const third = panel.refresh();
+
+    expect(port.readSnapshot).toHaveBeenCalledTimes(2);
+    pending.resolve({ status: 'success', value: coordination() });
+    await Promise.all([first, second, third]);
+    expect(port.readSnapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it('retains drafts while refreshed authority temporarily becomes read-only', async () => {
+    const detail = ticketDetail();
+    const online = coordination();
+    const offline: CollabCoordinationSnapshot = {
+      ...online,
+      source: 'cache',
+      stale: true,
+      syncState: { ...online.syncState, status: 'offline' },
+    };
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.readSnapshot
+      .mockResolvedValueOnce({ status: 'success', value: online })
+      .mockResolvedValueOnce({ status: 'success', value: offline })
+      .mockResolvedValue({ status: 'success', value: online });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Local body',
+    );
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!,
+      'Local comment',
+    );
+
+    await panel.refresh();
+    expect(root.querySelector('[data-state="ticket-offline-read-only"]')).not.toBeNull();
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+    expect(root.querySelector('[data-field="ticket-comment"]')).toBeNull();
+
+    await panel.refresh();
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Local body');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!))
+      .toBe('Local comment');
+  });
+
+  it('retains a hidden edit draft through repeated online permission refreshes', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.readSnapshot
+      .mockResolvedValueOnce({ status: 'success', value: coordination() })
+      .mockResolvedValueOnce({ status: 'success', value: coordination('member-b', 'member') })
+      .mockResolvedValueOnce({ status: 'success', value: coordination('member-b', 'member') })
+      .mockResolvedValue({ status: 'success', value: coordination() });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Local body',
+    );
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!,
+      'Local comment',
+    );
+
+    await panel.refresh();
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!))
+      .toBe('Local comment');
+    await panel.refresh();
+    expect(root.querySelector('[data-field="ticket-title"]')).toBeNull();
+    await panel.refresh();
+
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Local body');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!))
+      .toBe('Local comment');
+  });
+
   it('updates Open/Closed status directly from its control', async () => {
     const detail = ticketDetail();
     const port = ticketPort();
@@ -168,6 +787,52 @@ describe('TicketEditorPanel', () => {
     });
   });
 
+  it('rebases an open content draft after a successful status change', async () => {
+    const detail = ticketDetail();
+    const closed = {
+      ...detail,
+      ticket: { ...detail.ticket, revision: 4, status: 'closed' as const },
+    };
+    const port = ticketPort();
+    port.readTicket
+      .mockResolvedValueOnce(ticketRead(detail))
+      .mockResolvedValue(ticketRead(closed));
+    port.closeTicket.mockResolvedValue({ status: 'success', value: closed.ticket });
+    port.updateTicketContent.mockResolvedValue({
+      error: new CollabError({ code: 'operation-failed' }),
+      status: 'failure',
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    root.querySelector<HTMLButtonElement>('[data-action="edit-ticket"]')!.click();
+    root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')!.value = 'Local title';
+    setMarkdownValue(
+      root.querySelector<HTMLElement>('[data-field="ticket-body"]')!,
+      'Local body',
+    );
+
+    root.querySelector<HTMLButtonElement>('[data-action="toggle-ticket-status"]')!.click();
+    await nextTurn();
+
+    expect(root.querySelector<HTMLInputElement>('[data-field="ticket-title"]')?.value)
+      .toBe('Local title');
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!))
+      .toBe('Local body');
+    root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
+    expect(port.updateTicketContent).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'Local body',
+      expectedRevision: 4,
+      title: 'Local title',
+    }));
+  });
+
   it('reuses the create intent when retrying the same draft after a lost response', async () => {
     const detail = ticketDetail();
     const port = ticketPort();
@@ -194,6 +859,8 @@ describe('TicketEditorPanel', () => {
 
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await nextTurn();
+    const retry = root.querySelector<HTMLButtonElement>('form button[type="submit"]')!;
+    expect(retry.disabled).toBe(false);
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await nextTurn();
 
@@ -201,6 +868,51 @@ describe('TicketEditorPanel', () => {
     const secondIntent = port.createTicket.mock.calls[1]?.[0].intentId;
     expect(firstIntent).toEqual(expect.any(String));
     expect(secondIntent).toBe(firstIntent);
+  });
+
+  it('does not unlock an authority-disabled status control after mutation failure', async () => {
+    const detail = ticketDetail();
+    const online = coordination();
+    const offline: CollabCoordinationSnapshot = {
+      ...online,
+      source: 'cache',
+      stale: true,
+      syncState: { ...online.syncState, status: 'offline' },
+    };
+    const pending = deferred<Awaited<ReturnType<
+      TicketEditorPanelOptions['port']['closeTicket']
+    >>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValue(ticketRead(detail));
+    port.readSnapshot
+      .mockResolvedValueOnce({ status: 'success', value: online })
+      .mockResolvedValue({ status: 'success', value: offline });
+    port.closeTicket.mockReturnValue(pending.promise);
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(),
+      port,
+      projectId: 'project-a',
+      renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+
+    root.querySelector<HTMLButtonElement>('[data-action="toggle-ticket-status"]')!.click();
+    await panel.refresh();
+    expect(root.querySelector<HTMLButtonElement>(
+      '[data-action="toggle-ticket-status"]',
+    )?.disabled).toBe(true);
+
+    pending.resolve({
+      error: new CollabError({ code: 'operation-failed' }),
+      status: 'failure',
+    });
+    await nextTurn();
+
+    expect(root.querySelector<HTMLButtonElement>(
+      '[data-action="toggle-ticket-status"]',
+    )?.disabled).toBe(true);
   });
 
   it('reuses the comment intent when retrying the same draft after a lost response', async () => {

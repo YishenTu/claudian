@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -23,7 +23,6 @@ import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const OFFER_TTL_MS = 10 * 60 * 1_000;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface ManagerResponsibilityDatabasePort {
   mutate<T>(
@@ -100,12 +99,12 @@ function decodeSummary(value: unknown): CollabManagerResponsibilityOfferSummary 
     keys.length !== expectedKeys.length
     || keys.some((key, index) => key !== expectedKeys[index])
     || typeof response.offerId !== 'string'
-    || !ID_PATTERN.test(response.offerId)
+    || !isCollabOpaqueId(response.offerId)
     || (response.purpose !== 'manager-promotion' && response.purpose !== 'manager-leave')
     || typeof response.sourceManagerMemberId !== 'string'
-    || !ID_PATTERN.test(response.sourceManagerMemberId)
+    || !isCollabMemberId(response.sourceManagerMemberId)
     || typeof response.targetMemberId !== 'string'
-    || !ID_PATTERN.test(response.targetMemberId)
+    || !isCollabMemberId(response.targetMemberId)
     || typeof response.status !== 'string'
     || !statuses.has(response.status)
     || !isTimestamp(response.offeredAt)

@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import {
   ensureCollabVaultDirectory,
@@ -21,7 +21,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PENDING_LEAVE_DIRECTORY = '.claudian/collab/pending-leaves';
 const RETIRED_CLEANUP_DIRECTORY = '.claudian/collab/retired-cleanups';
-const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 export interface PendingLeaveJournalPort {
   list(): Promise<readonly PendingLeaveRecord[]>;
@@ -46,7 +45,7 @@ function journalError(reason: string): CollabError {
 }
 
 function recordPath(directory: string, projectId: CollabProjectId, reason: string): string {
-  if (!PROJECT_ID.test(projectId)) throw journalError(reason);
+  if (!isCollabProjectId(projectId)) throw journalError(reason);
   return `${directory}/${projectId}.json`;
 }
 
@@ -86,7 +85,7 @@ class PendingLeaveJournal implements PendingLeaveJournalPort {
     for (const name of names.sort()) {
       if (!name.endsWith('.json')) continue;
       const projectId = name.slice(0, -5);
-      if (!PROJECT_ID.test(projectId)) throw journalError('pending-leave-name-invalid');
+      if (!isCollabProjectId(projectId)) throw journalError('pending-leave-name-invalid');
       const record = await this.load(projectId);
       if (record) records.push(record);
     }
@@ -198,7 +197,7 @@ class RetiredCleanupJournal implements RetiredCleanupJournalPort {
     return entries.flatMap(entry => {
       if (!entry.isFile() || !entry.name.endsWith('.json')) return [];
       const projectId = entry.name.slice(0, -'.json'.length);
-      return PROJECT_ID.test(projectId) ? [projectId] : [];
+      return isCollabProjectId(projectId) ? [projectId] : [];
     }).sort();
   }
 }

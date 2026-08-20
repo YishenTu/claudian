@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type AcceptRequest, type AcceptResponse, COLLAB_MAIN_REF, type CollabMemberId, type CollabRequestTicketRelation } from '@claudian/collab-protocol';
+import { type AcceptRequest, type AcceptResponse, COLLAB_MAIN_REF, type CollabMemberId, type CollabRequestTicketRelation, isCollabGitOid } from '@claudian/collab-protocol';
 
 import {
   AcceptOperationRepository,
@@ -53,7 +53,6 @@ const ACCEPT_IDENTITY = Object.freeze({
   email: 'collab@claudian.local',
   name: 'Claudian Collab',
 });
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 function acceptError(
   code:
@@ -108,7 +107,7 @@ function decodeStoredRelations(value: unknown): readonly CollabRequestTicketRela
       || !Number.isSafeInteger(relation.ticketRevision)
       || relation.ticketRevision < 1
       || typeof relation.commitOid !== 'string'
-      || !OID_PATTERN.test(relation.commitOid)
+      || !isCollabGitOid(relation.commitOid)
       || (relation.kind !== 'references' && relation.kind !== 'resolves')
       || (relation.state !== 'pending' && relation.state !== 'accepted')
     ) {
@@ -132,7 +131,7 @@ function decodeResponse(value: unknown): AcceptResponse {
   const mergeCommitOid = source.mergeCommitOid;
   if (
     typeof mainOid !== 'string'
-    || !OID_PATTERN.test(mainOid)
+    || !isCollabGitOid(mainOid)
     || typeof mergeCommitOid !== 'string'
     || mainOid !== mergeCommitOid
   ) {

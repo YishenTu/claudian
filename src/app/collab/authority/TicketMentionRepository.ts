@@ -1,9 +1,7 @@
-import { type CollabMemberId, type CollabTicketId, parseCollabMemberMentions } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabTicketId, isCollabMemberId, isCollabOpaqueId, parseCollabMemberMentions } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 function mentionError(reason: string): CollabError {
   return new CollabError({
@@ -64,7 +62,7 @@ export class TicketMentionRepository {
     connection: AuthorityDatabaseConnection,
     memberId: CollabMemberId,
   ): void {
-    if (!ID_PATTERN.test(memberId)) throw mentionError('ticket-mention-member-id-invalid');
+    if (!isCollabMemberId(memberId)) throw mentionError('ticket-mention-member-id-invalid');
     connection.run(
       'DELETE FROM ticket_mentions WHERE mentioned_member_id = ?',
       [memberId],
@@ -90,7 +88,7 @@ export class TicketMentionRepository {
     const targets = activeMembers.map(row => {
       if (
         typeof row.member_id !== 'string'
-        || !ID_PATTERN.test(row.member_id)
+        || !isCollabMemberId(row.member_id)
         || typeof row.display_name !== 'string'
         || row.display_name.trim().length === 0
       ) {
@@ -116,7 +114,7 @@ export class TicketMentionRepository {
   }
 
   private assertSource(ticketId: string, sourceId: string, createdAt: string): void {
-    if (!ID_PATTERN.test(ticketId) || !ID_PATTERN.test(sourceId)) {
+    if (!isCollabOpaqueId(ticketId) || !isCollabOpaqueId(sourceId)) {
       throw mentionError('ticket-mention-source-id-invalid');
     }
     assertTimestamp(createdAt);

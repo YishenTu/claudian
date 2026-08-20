@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
 
 export type HostResourceCloseReason =
@@ -59,7 +60,7 @@ export class HostResourceRegistry {
     memberId: string,
     close: HostResourceCloser,
   ): () => void {
-    if (!ID_PATTERN.test(projectId) || !ID_PATTERN.test(memberId)) {
+    if (!isCollabProjectId(projectId) || !isCollabMemberId(memberId)) {
       throw resourceError('operation-failed', 'host-resource-identity-invalid');
     }
     const id = randomUUID();

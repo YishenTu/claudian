@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { type CollabMemberId } from '@claudian/collab-protocol';
+import { type CollabMemberId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -62,9 +62,6 @@ function serviceError(reason: string, cause?: unknown): CollabError {
   });
 }
 
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
 function decodePromote(value: unknown, request: PromoteManagerRequest): PromoteManagerResponse {
   const response = exactRecord(value, [
     'managerSetGeneration',
@@ -73,9 +70,9 @@ function decodePromote(value: unknown, request: PromoteManagerRequest): PromoteM
   ], 'membership-promotion-response-invalid');
   if (
     typeof response.projectId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.projectId)
+    || !isCollabProjectId(response.projectId)
     || typeof response.promotedMemberId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.promotedMemberId)
+    || !isCollabMemberId(response.promotedMemberId)
     || !isGeneration(response.managerSetGeneration)
     || response.projectId !== request.projectId
     || response.promotedMemberId !== request.targetMemberId
@@ -97,9 +94,9 @@ function decodeDemote(value: unknown, request: DemoteManagerRequest): DemoteMana
   ], 'membership-demotion-response-invalid');
   if (
     typeof response.projectId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.projectId)
+    || !isCollabProjectId(response.projectId)
     || typeof response.demotedMemberId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.demotedMemberId)
+    || !isCollabMemberId(response.demotedMemberId)
     || !isGeneration(response.managerSetGeneration)
     || response.projectId !== request.projectId
     || response.demotedMemberId !== request.targetMemberId
@@ -129,14 +126,14 @@ function decodeTermination(
   ], 'membership-termination-response-invalid');
   if (
     typeof response.projectId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.projectId)
+    || !isCollabProjectId(response.projectId)
     || typeof response.memberId !== 'string'
-    || !MEMBER_ID_PATTERN.test(response.memberId)
+    || !isCollabMemberId(response.memberId)
     || (response.status !== 'left' && response.status !== 'revoked')
     || (typeof response.discardedRequestId !== 'string'
       && response.discardedRequestId !== null)
     || (typeof response.discardedRequestId === 'string'
-      && !REQUEST_ID_PATTERN.test(response.discardedRequestId))
+      && !isCollabOpaqueId(response.discardedRequestId))
     || response.projectId !== expected.projectId
     || response.memberId !== expected.memberId
     || response.status !== expected.status

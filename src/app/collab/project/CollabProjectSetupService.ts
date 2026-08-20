@@ -6,7 +6,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { SqlJsMutationResult } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -113,8 +113,12 @@ function validateText(value: string, field: string): string {
   return trimmed;
 }
 
-function validateGeneratedId(value: string, field: string, maxLength = 64): string {
-  if (!new RegExp(`^[A-Za-z0-9][A-Za-z0-9_-]{0,${maxLength - 1}}$`).test(value)) {
+function validateGeneratedId(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  field: string,
+): string {
+  if (!predicate(value)) {
     throw setupError('operation-failed', `${field}-invalid`, ['open-diagnostics']);
   }
   return value;
@@ -201,12 +205,20 @@ export class CollabProjectSetupService {
       const projectsFolder = parsedProjectsFolder.value;
       await this.foundation.local.workspace.claimProjectsFolder(projectsFolder);
       throwIfCancelled(options.signal);
-      const projectId = validateGeneratedId(this.createId('project'), 'project-id');
-      const memberId = validateGeneratedId(this.createId('member'), 'member-id');
+      const projectId = validateGeneratedId(
+        this.createId('project'),
+        isCollabProjectId,
+        'project-id',
+      );
+      const memberId = validateGeneratedId(
+        this.createId('member'),
+        isCollabMemberId,
+        'member-id',
+      );
       const operationId = validateGeneratedId(
         this.createId('operation'),
+        isCollabOpaqueId,
         'operation-id',
-        128,
       );
       const credential = this.createCredential();
       if (!/^[A-Za-z0-9_-]{43}$/.test(credential)) {

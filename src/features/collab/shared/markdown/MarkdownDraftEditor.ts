@@ -126,6 +126,10 @@ export class MarkdownDraftEditor {
     return { anchor: selection.anchor, head: selection.head };
   }
 
+  getMode(): 'edit' | 'preview' {
+    return this.mode;
+  }
+
   getValue(): string {
     return this.view?.state.doc.toString() ?? this.value;
   }

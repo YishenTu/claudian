@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabMemberId, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabMemberId, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import {
   authorityDetailPageBudgets,
@@ -9,8 +9,6 @@ import {
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface TicketListCursor {
   readonly ticketNumber: number;
@@ -52,7 +50,7 @@ export function decodeTicketSummary(
   const closedByMemberId = row.closed_by_member_id;
   if (
     typeof id !== 'string'
-    || !ID_PATTERN.test(id)
+    || !isCollabOpaqueId(id)
     || typeof number !== 'number'
     || !Number.isSafeInteger(number)
     || number < 1
@@ -60,7 +58,7 @@ export function decodeTicketSummary(
     || title.length === 0
     || (status !== 'open' && status !== 'closed')
     || typeof authorMemberId !== 'string'
-    || !ID_PATTERN.test(authorMemberId)
+    || !isCollabMemberId(authorMemberId)
     || typeof revision !== 'number'
     || !Number.isSafeInteger(revision)
     || revision < 1
@@ -73,7 +71,7 @@ export function decodeTicketSummary(
     || commentCount < 0
     || commentCount > COLLAB_LIMITS.maxTicketComments
     || (closedByMemberId !== null && (
-      typeof closedByMemberId !== 'string' || !ID_PATTERN.test(closedByMemberId)
+      typeof closedByMemberId !== 'string' || !isCollabMemberId(closedByMemberId)
     ))
     || (status === 'open' && (closedAt !== undefined || closedByMemberId !== null))
     || (status === 'closed' && (closedAt === undefined || closedByMemberId === null))
@@ -104,11 +102,11 @@ export function decodeTicketComment(
   const body = row.body;
   if (
     typeof id !== 'string'
-    || !ID_PATTERN.test(id)
+    || !isCollabOpaqueId(id)
     || typeof ticketId !== 'string'
-    || !ID_PATTERN.test(ticketId)
+    || !isCollabOpaqueId(ticketId)
     || typeof authorMemberId !== 'string'
-    || !ID_PATTERN.test(authorMemberId)
+    || !isCollabMemberId(authorMemberId)
     || typeof body !== 'string'
     || body.length === 0
   ) {
@@ -144,7 +142,7 @@ export class TicketRepository {
     connection: AuthorityDatabaseConnection,
     ticketId: CollabTicketId,
   ): CollabTicketSummary | null {
-    if (!ID_PATTERN.test(ticketId)) throw ticketError('ticket-id-invalid');
+    if (!isCollabOpaqueId(ticketId)) throw ticketError('ticket-id-invalid');
     const row = connection.get(`${TICKET_SELECT} WHERE ticket_id = ?`, [ticketId]);
     return row ? decodeTicketSummary(row) : null;
   }
@@ -241,7 +239,7 @@ export class TicketRepository {
     connection: AuthorityDatabaseConnection,
     ticketId: CollabTicketId,
   ): boolean {
-    if (!ID_PATTERN.test(ticketId)) throw ticketError('ticket-id-invalid');
+    if (!isCollabOpaqueId(ticketId)) throw ticketError('ticket-id-invalid');
     return connection.get(
       `SELECT ao.operation_id
        FROM accept_operations ao
@@ -313,8 +311,8 @@ export class TicketRepository {
     },
   ): CollabTicketDetail {
     if (
-      !ID_PATTERN.test(input.ticketId)
-      || !ID_PATTERN.test(input.authorMemberId)
+      !isCollabOpaqueId(input.ticketId)
+      || !isCollabMemberId(input.authorMemberId)
     ) {
       throw ticketError('ticket-create-input-invalid');
     }
@@ -407,7 +405,7 @@ export class TicketRepository {
       readonly maxUtf8Bytes?: number;
     },
   ): AuthorityKeysetPage<CollabTicketComment> {
-    if (!ID_PATTERN.test(ticketId)) throw ticketError('ticket-id-invalid');
+    if (!isCollabOpaqueId(ticketId)) throw ticketError('ticket-id-invalid');
     const rows = connection.all(
       `SELECT comment_id, ticket_id, author_member_id, body, created_at
        FROM ticket_comments

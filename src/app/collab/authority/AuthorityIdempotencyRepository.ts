@@ -1,4 +1,4 @@
-import { type CollabIdempotencyKey, type CollabMemberId } from '@claudian/collab-protocol';
+import { type CollabIdempotencyKey, type CollabMemberId, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { type CollabOperationKind } from '@/core/collab';
@@ -127,12 +127,8 @@ export class AuthorityIdempotencyRepository {
 
 function assertLookupInput(input: AuthorityIdempotencyLookupInput): void {
   if (
-    !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(input.actorMemberId)
-    || input.key.length === 0
-    || input.key.length > 200
-    || input.key.includes('\u0000')
-    || input.key.includes('\r')
-    || input.key.includes('\n')
+    !isCollabMemberId(input.actorMemberId)
+    || !isCollabOpaqueId(input.key)
     || !COLLAB_OPERATION_KINDS.has(input.operationKind)
     || !/^[a-f0-9]{64}$/.test(input.requestFingerprint)
   ) {

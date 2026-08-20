@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CollabParsedTicketReference, type CollabRequestTicketRelation, type EnsureMyRequestRequest, type EnsureMyRequestResponse, parseCollabTicketReferences, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabParsedTicketReference, type CollabRequestTicketRelation, type EnsureMyRequestRequest, type EnsureMyRequestResponse, isCollabGitOid, isCollabOpaqueId, parseCollabTicketReferences, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse } from '@claudian/collab-protocol';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -84,7 +84,9 @@ function decodeStoredRelations(value: unknown): readonly CollabRequestTicketRela
     const relation = entry as Readonly<Record<string, unknown>>;
     if (
       typeof relation.id !== 'string'
+      || !isCollabOpaqueId(relation.id)
       || typeof relation.ticketId !== 'string'
+      || !isCollabOpaqueId(relation.ticketId)
       || typeof relation.ticketNumber !== 'number'
       || !Number.isSafeInteger(relation.ticketNumber)
       || relation.ticketNumber < 1
@@ -93,7 +95,7 @@ function decodeStoredRelations(value: unknown): readonly CollabRequestTicketRela
       || !Number.isSafeInteger(relation.ticketRevision)
       || relation.ticketRevision < 1
       || typeof relation.commitOid !== 'string'
-      || !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(relation.commitOid)
+      || !isCollabGitOid(relation.commitOid)
       || (relation.kind !== 'references' && relation.kind !== 'resolves')
       || (relation.state !== 'pending' && relation.state !== 'accepted')
     ) {
@@ -113,7 +115,7 @@ function decodeResponse(value: unknown): EnsureMyRequestResponse {
     throw serviceError('request-idempotency-response-invalid');
   }
   const row = request as Readonly<Record<string, unknown>>;
-  if (typeof mainOid !== 'string' || !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(mainOid)) {
+  if (!isCollabGitOid(mainOid)) {
     throw serviceError('request-idempotency-response-invalid');
   }
   return {

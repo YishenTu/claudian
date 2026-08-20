@@ -1,4 +1,10 @@
 import {
+  isCollabMemberId,
+  isCollabOpaqueId,
+  isCollabProjectId,
+} from '@claudian/collab-protocol';
+
+import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
@@ -25,9 +31,6 @@ import type {
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 import { type CollabInvitationView } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface MembershipControlTransport {
   requestWithMember<T>(
@@ -139,12 +142,26 @@ function decodeError(field: string): CollabError {
   });
 }
 
-function id(value: unknown, field: string, pattern = MEMBER_ID_PATTERN): string {
-  if (typeof value !== 'string' || !pattern.test(value)) {
+function semanticId(
+  value: unknown,
+  field: string,
+  predicate: (candidate: unknown) => candidate is string,
+): string {
+  if (!predicate(value)) {
     throw decodeError(field);
   }
   return value;
 }
+
+const memberId = (value: unknown, field: string): string => (
+  semanticId(value, field, isCollabMemberId)
+);
+const opaqueId = (value: unknown, field: string): string => (
+  semanticId(value, field, isCollabOpaqueId)
+);
+const projectId = (value: unknown, field: string): string => (
+  semanticId(value, field, isCollabProjectId)
+);
 
 export function decodePromoteManagerResponse(
   value: unknown,
@@ -266,7 +283,7 @@ export class MembershipControlClient {
   constructor(private readonly transport: MembershipControlTransport) {}
 
   confirmEndpoint(input: ConfirmEndpointInput): Promise<ConfirmEndpointResponse> {
-    id(input.projectId, 'projectId');
+    projectId(input.projectId, 'projectId');
     return this.transport.requestWithMember({
       decode: value => decodeRefreshEndpointResponse(value, {
         caFingerprint: input.caFingerprint,
@@ -281,7 +298,7 @@ export class MembershipControlClient {
   }
 
   createInvitation(input: CreateInvitationInput): Promise<CollabInvitationView> {
-    id(input.projectId, 'projectId');
+    projectId(input.projectId, 'projectId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -297,7 +314,7 @@ export class MembershipControlClient {
   }
 
   refreshEndpoint(input: RefreshEndpointInput): Promise<RefreshEndpointResponse> {
-    id(input.projectId, 'projectId');
+    projectId(input.projectId, 'projectId');
     if (input.invitation.projectId !== input.projectId) {
       throw decodeError('invitation.projectId');
     }
@@ -316,8 +333,8 @@ export class MembershipControlClient {
   }
 
   revokeInvitation(input: RevokeInvitationInput): Promise<void> {
-    id(input.projectId, 'projectId');
-    id(input.memberId, 'memberId');
+    projectId(input.projectId, 'projectId');
+    memberId(input.memberId, 'memberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -334,9 +351,9 @@ export class MembershipControlClient {
   }
 
   promoteManager(input: PromoteManagerInput): Promise<PromoteManagerResponse> {
-    id(input.projectId, 'projectId');
-    id(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId', REQUEST_ID_PATTERN);
-    id(input.targetMemberId, 'targetMemberId');
+    projectId(input.projectId, 'projectId');
+    opaqueId(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId');
+    memberId(input.targetMemberId, 'targetMemberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -357,8 +374,8 @@ export class MembershipControlClient {
   }
 
   demoteManager(input: DemoteManagerInput): Promise<DemoteManagerResponse> {
-    id(input.projectId, 'projectId');
-    id(input.targetMemberId, 'targetMemberId');
+    projectId(input.projectId, 'projectId');
+    memberId(input.targetMemberId, 'targetMemberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -378,8 +395,8 @@ export class MembershipControlClient {
   }
 
   removeMember(input: RemoveMemberInput): Promise<MembershipTerminationResponse> {
-    id(input.projectId, 'projectId');
-    id(input.memberId, 'memberId');
+    projectId(input.projectId, 'projectId');
+    memberId(input.memberId, 'memberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -400,14 +417,14 @@ export class MembershipControlClient {
   }
 
   leaveProject(input: LeaveProjectInput): Promise<MembershipTerminationResponse> {
-    id(input.projectId, 'projectId');
-    id(input.expectedMemberId, 'expectedMemberId');
-    id(input.expectedHostMemberId, 'expectedHostMemberId');
+    projectId(input.projectId, 'projectId');
+    memberId(input.expectedMemberId, 'expectedMemberId');
+    memberId(input.expectedHostMemberId, 'expectedHostMemberId');
     if (input.idempotencyManagerMemberId !== null) {
-      id(input.idempotencyManagerMemberId, 'idempotencyManagerMemberId');
+      memberId(input.idempotencyManagerMemberId, 'idempotencyManagerMemberId');
     }
     if (input.managerResponsibilityOfferId !== undefined) {
-      id(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId', REQUEST_ID_PATTERN);
+      opaqueId(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId');
     }
     return this.transport.requestWithMember({
       body: {
@@ -438,8 +455,8 @@ export class MembershipControlClient {
   createManagerResponsibilityOffer(
     input: CreateManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    id(input.projectId, 'projectId');
-    id(input.targetMemberId, 'targetMemberId');
+    projectId(input.projectId, 'projectId');
+    memberId(input.targetMemberId, 'targetMemberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
@@ -463,7 +480,7 @@ export class MembershipControlClient {
   getCurrentManagerResponsibilityOffer(
     input: Omit<GetManagerResponsibilityOfferInput, 'offerId'>,
   ): Promise<CollabManagerResponsibilityOfferSummary | null> {
-    id(input.projectId, 'projectId');
+    projectId(input.projectId, 'projectId');
     return this.transport.requestWithMember({
       decode: value => lifecycleResponse('getCurrentManagerResponsibilityOffer', value),
       method: COLLAB_CONTROL_OPERATION_BINDINGS.getCurrentManagerResponsibilityOffer.method,
@@ -474,8 +491,8 @@ export class MembershipControlClient {
   getManagerResponsibilityOffer(
     input: GetManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    id(input.projectId, 'projectId');
-    id(input.offerId, 'offerId', REQUEST_ID_PATTERN);
+    projectId(input.projectId, 'projectId');
+    opaqueId(input.offerId, 'offerId');
     return this.transport.requestWithMember({
       decode: value => assertOfferContext(
         lifecycleResponse('getManagerResponsibilityOffer', value),
@@ -503,8 +520,8 @@ export class MembershipControlClient {
   cancelManagerResponsibilityOffer(
     input: CancelManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    id(input.projectId, 'projectId');
-    id(input.offerId, 'offerId', REQUEST_ID_PATTERN);
+    projectId(input.projectId, 'projectId');
+    opaqueId(input.offerId, 'offerId');
     const body: CancelManagerResponsibilityOfferRequest = {
       idempotencyKey: input.idempotencyKey,
       offerId: input.offerId,
@@ -528,9 +545,9 @@ export class MembershipControlClient {
     action: 'acknowledge' | 'decline',
     input: ManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    id(input.projectId, 'projectId');
-    id(input.offerId, 'offerId', REQUEST_ID_PATTERN);
-    id(input.expectedTargetMemberId, 'expectedTargetMemberId');
+    projectId(input.projectId, 'projectId');
+    opaqueId(input.offerId, 'offerId');
+    memberId(input.expectedTargetMemberId, 'expectedTargetMemberId');
     const body: AcknowledgeManagerResponsibilityRequest = {
       expectedTargetMemberId: input.expectedTargetMemberId,
       idempotencyKey: input.idempotencyKey,

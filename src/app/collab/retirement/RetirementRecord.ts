@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { CollabLocalCleanupStatus } from '@/core/collab';
 
@@ -22,7 +22,6 @@ export interface RetirementRecord {
   readonly updatedAt: CollabIsoTimestamp;
 }
 type Value = Readonly<Record<string, unknown>>;
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'memberId', 'retiredAt', 'cleanupOperationId', 'cleanupStatus', 'acknowledgementStatus', 'acknowledgedAt', 'memberCredential', 'hostEndpoint', 'hostCaCertificatePem', 'hostCaFingerprint', 'createdAt', 'updatedAt']);
@@ -68,10 +67,18 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
   const createdAt = timestamp(record, 'createdAt')!;
   const updatedAt = timestamp(record, 'updatedAt')!;
   if (createdAt < retiredAt || updatedAt < createdAt || (acknowledgedAt !== null && acknowledgedAt < retiredAt)) throw new TypeError('Invalid retirement timestamps');
+  const cleanupOperationId = field(record, 'cleanupOperationId', 128);
+  const memberId = field(record, 'memberId', 64);
+  const projectId = field(record, 'projectId', 64);
+  if (
+    !isCollabOpaqueId(cleanupOperationId)
+    || !isCollabMemberId(memberId)
+    || !isCollabProjectId(projectId)
+  ) throw new TypeError('Invalid retirement identity');
   return {
     acknowledgedAt,
     acknowledgementStatus,
-    cleanupOperationId: field(record, 'cleanupOperationId', 128, ID),
+    cleanupOperationId,
     cleanupStatus,
     createdAt,
     hostCaCertificatePem,
@@ -79,8 +86,8 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     hostEndpoint,
     kind: 'retirement',
     memberCredential,
-    memberId: field(record, 'memberId', 64, ID),
-    projectId: field(record, 'projectId', 64, ID),
+    memberId,
+    projectId,
     retiredAt,
     schemaVersion: 1,
     updatedAt,

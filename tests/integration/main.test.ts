@@ -171,6 +171,7 @@ describe('ClaudianPlugin', () => {
         on: jest.fn().mockReturnValue({ id: 'workspace-event' }),
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
+        getMostRecentLeaf: jest.fn().mockReturnValue(null),
         getRightLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
@@ -343,6 +344,63 @@ describe('ClaudianPlugin', () => {
         .toBeNull();
       expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
         .toBeNull();
+    });
+
+    it('derives Ticket focus from the most-recent root leaf', async () => {
+      await plugin.onload();
+      const first = {
+        getViewState: () => ({
+          state: { kind: 'ticket', projectId: 'project-a', ticketId: 'ticket-a' },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      };
+      const second = {
+        getViewState: () => ({
+          state: { kind: 'ticket', projectId: 'project-a', ticketId: 'ticket-b' },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([first, second]);
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue(second);
+
+      expect((plugin as any).readCollabTicketFocus()).toEqual({
+        projectId: 'project-a',
+        ticketId: 'ticket-b',
+      });
+
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+        getViewState: () => ({ state: {}, type: 'markdown' }),
+      });
+      expect((plugin as any).readCollabTicketFocus()).toBeNull();
+
+      for (const state of [
+        { kind: 'ticket', projectId: 'bad project', ticketId: 'ticket-a' },
+        { kind: 'ticket', projectId: `p${'a'.repeat(64)}`, ticketId: 'ticket-a' },
+        { kind: 'ticket', projectId: 'project-a', ticketId: 'bad.ticket' },
+        { kind: 'ticket', projectId: 'project-a', ticketId: `t${'a'.repeat(128)}` },
+      ]) {
+        mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+          getViewState: () => ({ state, type: COLLAB_DETAIL_VIEW_TYPE }),
+        });
+        expect((plugin as any).readCollabTicketFocus()).toBeNull();
+      }
+
+      const maximumProjectId = `p${'a'.repeat(63)}`;
+      const maximumTicketId = `t${'a'.repeat(127)}`;
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+        getViewState: () => ({
+          state: {
+            kind: 'ticket',
+            projectId: maximumProjectId,
+            ticketId: maximumTicketId,
+          },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      });
+      expect((plugin as any).readCollabTicketFocus()).toEqual({
+        projectId: maximumProjectId,
+        ticketId: maximumTicketId,
+      });
     });
 
     it('keeps restored Collab detail subscriptions inert while Collab is disabled', async () => {

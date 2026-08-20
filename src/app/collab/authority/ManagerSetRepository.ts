@@ -1,9 +1,7 @@
-import { type CollabMemberId } from '@claudian/collab-protocol';
+import { type CollabMemberId, isCollabMemberId } from '@claudian/collab-protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 export interface AuthorityManagerSet {
   readonly generation: number;
@@ -36,7 +34,7 @@ function managerSetError(
 }
 
 function assertMemberId(value: string): void {
-  if (!MEMBER_ID_PATTERN.test(value)) {
+  if (!isCollabMemberId(value)) {
     throw managerSetError('authority-integrity-error', 'manager-member-id-invalid');
   }
 }

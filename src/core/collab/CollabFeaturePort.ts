@@ -349,15 +349,10 @@ export interface CollabCreateManagerResponsibilityOfferRequest {
   intentId?: string;
 }
 
-export interface CollabAcknowledgeManagerResponsibilityRequest {
+export interface CollabCancelManagerResponsibilityOfferRequest {
   projectId: CollabProjectId;
   offerId: CollabOperationId;
 }
-
-export type CollabDeclineManagerResponsibilityRequest =
-  CollabAcknowledgeManagerResponsibilityRequest;
-export type CollabCancelManagerResponsibilityOfferRequest =
-  CollabAcknowledgeManagerResponsibilityRequest;
 
 export interface CollabCreateHostTransferRequest {
   projectId: CollabProjectId;
@@ -432,8 +427,6 @@ export interface CollabFeaturePort {
   removeMember(request: CollabRemoveMemberRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   leaveProject(request: CollabLeaveProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   createManagerResponsibilityOffer(request: CollabCreateManagerResponsibilityOfferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>>;
-  acknowledgeManagerResponsibility(request: CollabAcknowledgeManagerResponsibilityRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>>;
-  declineManagerResponsibility(request: CollabDeclineManagerResponsibilityRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>>;
   cancelManagerResponsibilityOffer(request: CollabCancelManagerResponsibilityOfferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>>;
   promoteManager(request: CollabPromoteManagerRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   demoteManager(request: CollabDemoteManagerRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;

@@ -1,4 +1,4 @@
-import { collabMemberRef, type CollabOperationId } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabOperationId, isCollabGitOid, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -15,8 +15,6 @@ import type {
 } from '@/app/collab/publish/PublishCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
-const OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CANDIDATE_IDENTITY = Object.freeze({
   email: 'collab@claudian.local',
   name: 'Claudian Collab',
@@ -67,12 +65,12 @@ function candidateError(
 }
 
 function requireOid(value: string, reason: string): string {
-  if (!OID_PATTERN.test(value)) throw candidateError('repository-invalid', reason);
+  if (!isCollabGitOid(value)) throw candidateError('repository-invalid', reason);
   return value;
 }
 
 export function publicationCandidateRef(operationId: CollabOperationId): string {
-  if (!OPERATION_ID_PATTERN.test(operationId)) {
+  if (!isCollabOpaqueId(operationId)) {
     throw candidateError('repository-invalid', 'publication-operation-id-invalid');
   }
   return `refs/claudian/publications/${operationId}`;
@@ -277,7 +275,7 @@ export class NativeGitPublicationCandidateRepository {
     });
     const [treeOid, parents, ...extra] = result.stdout.toString('utf8').trim().split(/\r?\n/);
     return extra.length === 0
-      && OID_PATTERN.test(treeOid ?? '')
+      && isCollabGitOid(treeOid)
       && (expectedTreeOid === null || treeOid === expectedTreeOid)
       && parents === `${contributionHeadOid} ${currentMainOid}`;
   }

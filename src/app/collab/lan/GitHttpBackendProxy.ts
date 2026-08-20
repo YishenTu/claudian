@@ -6,7 +6,7 @@ import { lstat, realpath, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 
-import { collabMemberRef } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {
@@ -30,7 +30,6 @@ import {
   type WindowsCmdShimSpawnSpec,
 } from '@/utils/windowsCmdShim';
 
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAX_CGI_HEADER_BYTES = 32 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
 const DEFAULT_GLOBAL_CHILD_LIMIT = 8;
@@ -287,7 +286,7 @@ export class GitHttpBackendProxy {
   async enable(): Promise<void> {
     if (this.closed) throw proxyError('operation-failed', 'git-proxy-closed');
     if (
-      !SAFE_ID_PATTERN.test(this.options.projectId)
+      !isCollabProjectId(this.options.projectId)
       || !path.isAbsolute(this.options.authorityDirectory)
       || !path.isAbsolute(this.options.emptyConfigPath)
       || !path.isAbsolute(this.options.gitExecutablePath)

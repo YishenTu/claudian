@@ -568,18 +568,94 @@ test('collab protocol registry and contract constants exist only in the package'
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
-test('LAN wire decoders consume protocol-owned ID and Git OID predicates', () => {
-  for (const relativePath of [
-    'src/app/collab/lan/LanCollabEvent.ts',
-    'src/app/collab/lan/LanCollabGeneralControlCodecs.ts',
-    'src/app/collab/lan/LanCollabLifecycleCodecs.ts',
-    'src/app/collab/lan/LanCollabProjectSnapshotCodec.ts',
-  ]) {
-    const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
-    assert.equal(source.includes('[A-Za-z0-9][A-Za-z0-9_-]{0,63}'), false, relativePath);
-    assert.equal(source.includes('[A-Za-z0-9][A-Za-z0-9_-]{0,127}'), false, relativePath);
-    assert.equal(source.includes('(?:[0-9a-f]{40}|[0-9a-f]{64})'), false, relativePath);
+test('active Collab consumers use protocol-owned semantic identity predicates', () => {
+  const entries = [
+    ...listTypeScriptFiles(path.join(appRoot, 'collab')),
+    ...listTypeScriptFiles(path.join(featuresRoot, 'collab')),
+  ].map(file => ({
+    file: path.relative(process.cwd(), file),
+    source: fs.readFileSync(file, 'utf8'),
+  }));
+
+  // These are application-owned filesystem slugs, directory names, and a Host lock nonce.
+  assert.deepEqual(inspectForbiddenSymbolInventory(
+    entries,
+    /\[A-Za-z0-9\]\[A-Za-z0-9_-\]\{0,63\}/,
+    new Map([
+      ['src/app/collab/CollabLocalProjectRepository.ts', 1],
+      ['src/app/collab/exit/PendingLeaveRecord.ts', 1],
+      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
+      ['src/app/collab/join/JoinProjectRecord.ts', 1],
+      ['src/app/collab/lan/LanHostCoordinator.ts', 1],
+      ['src/app/collab/project/CollabProjectSetupRecord.ts', 1],
+    ]),
+  ), []);
+
+  // These are application-owned workspace and Host-transfer staging directory names.
+  assert.deepEqual(inspectForbiddenSymbolInventory(
+    entries,
+    /\[A-Za-z0-9\]\[A-Za-z0-9_-\]\{0,127\}/,
+    new Map([
+      ['src/app/collab/exit/LocalCleanupRecord.ts', 1],
+      ['src/app/collab/host-transfer/HostTransferRecoveryRecord.ts', 1],
+    ]),
+  ), []);
+
+  // Native Git machine-output parsers retain their exact subprocess grammar.
+  assert.deepEqual(inspectForbiddenSymbolInventory(
+    entries,
+    /\[0-9a-f\]\{40\}\(\?:\[0-9a-f\]\{24\}\)\?/,
+    new Map([
+      ['src/app/collab/conflicts/ConflictScratchGitRepository.ts', 1],
+      ['src/app/collab/git/GitRepositoryService.ts', 10],
+      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
+    ]),
+  ), []);
+
+  // Agent Runtime v5 owns a frozen declarative JSON-schema descriptor, not a runtime validator.
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /\(\?:\[0-9a-f\]\{40\}\|\[0-9a-f\]\{64\}\)/,
+    new Map([['src/app/agent-runtime/AgentRuntimeMethodRegistry.ts', 1]]),
+  ), []);
+});
+
+test('Collab application barrel exposes only composition values', () => {
+  const barrelPath = path.join(appRoot, 'collab', 'index.ts');
+  const source = fs.readFileSync(barrelPath, 'utf8');
+  assert.doesNotMatch(source, /export\s+\*/);
+
+  const sourceFile = ts.createSourceFile(
+    barrelPath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const runtimeExports = [];
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExportDeclaration(statement) || !statement.exportClause) continue;
+    if (!ts.isNamedExports(statement.exportClause)) continue;
+    for (const element of statement.exportClause.elements) {
+      if (!statement.isTypeOnly && !element.isTypeOnly) runtimeExports.push(element.name.text);
+    }
   }
+  assert.deepEqual(runtimeExports.sort(), [
+    'ClaudianCollabService',
+    'CollabFeatureService',
+    'CollabProjectSetupService',
+    'createCollabFeatureSubcomposition',
+  ].sort());
+});
+
+test('superseded Collab state authorities stay removed', () => {
+  assert.deepEqual(findMatches(
+    [path.join(appRoot, 'collab')],
+    /\bupdateMembershipEventSequence\b/,
+  ), []);
+  assert.deepEqual(findMatches(
+    [path.join(appRoot, 'collab', 'publish')],
+    /\bconfirmed\s*:/,
+  ), []);
 });
 
 test('production consumes protocol-owned canonical Collab Git refs', () => {

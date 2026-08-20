@@ -187,10 +187,10 @@ describe('M5 review and Accept gate', () => {
       purpose: 'manager-promotion',
       targetMemberId: managerMembership.member.id,
     }), 'Manager responsibility offer');
-    unwrap(await managerFeature.acknowledgeManagerResponsibility({
-      offerId: responsibility.offerId,
-      projectId,
-    }), 'Manager responsibility acknowledgement');
+    unwrap(
+      await managerFeature.readSnapshot(projectId),
+      'Automatic Manager responsibility reconciliation',
+    );
     unwrap(await hostFeature.promoteManager({
       managerResponsibilityOfferId: responsibility.offerId,
       projectId,

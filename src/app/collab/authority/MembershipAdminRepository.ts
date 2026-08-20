@@ -1,4 +1,4 @@
-import { type CollabMemberId, type CollabMemberStatus, type CollabOperationId, type CollabProjectId, type CollabRole } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabMemberStatus, type CollabOperationId, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { ManagerResponsibilityRepository } from '@/app/collab/authority/ManagerResponsibilityRepository';
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
@@ -11,8 +11,6 @@ import type {
   PromoteManagerResponse,
 } from '@/app/collab/lan/LanCollabControlOperations';
 import { CollabError, type CollabRecoveryAction } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 export interface MembershipAdminContext {
   readonly actorRole: CollabRole;
@@ -47,8 +45,14 @@ function membershipError(
   });
 }
 
-function assertIdentity(value: string, reason: string): void {
-  if (!ID_PATTERN.test(value)) {
+function assertMemberId(value: string, reason: string): void {
+  if (!isCollabMemberId(value)) {
+    throw membershipError('authority-integrity-error', reason);
+  }
+}
+
+function assertProjectId(value: string, reason: string): void {
+  if (!isCollabProjectId(value)) {
     throw membershipError('authority-integrity-error', reason);
   }
 }
@@ -77,7 +81,7 @@ export class MembershipAdminRepository {
       readonly targetMemberId: CollabMemberId;
     },
   ): PromoteManagerResponse {
-    assertIdentity(input.targetMemberId, 'membership-target-id-invalid');
+    assertMemberId(input.targetMemberId, 'membership-target-id-invalid');
     assertTimestamp(input.consumedAt);
     this.requireActiveActor(connection, input.projectId, input.actorMemberId);
     const managerSet = this.managerSet.requireActiveManager(connection, input.actorMemberId);
@@ -111,7 +115,7 @@ export class MembershipAdminRepository {
       readonly targetMemberId: CollabMemberId;
     },
   ): DemoteManagerResponse {
-    assertIdentity(input.targetMemberId, 'membership-target-id-invalid');
+    assertMemberId(input.targetMemberId, 'membership-target-id-invalid');
     assertTimestamp(input.demotedAt);
     this.requireActiveActor(connection, input.projectId, input.actorMemberId);
     const managerSet = this.managerSet.requireActiveManager(connection, input.actorMemberId);
@@ -144,8 +148,8 @@ export class MembershipAdminRepository {
       readonly terminatedAt: string;
     },
   ): MembershipLeaveResult {
-    assertIdentity(input.expectedMemberId, 'membership-expected-member-id-invalid');
-    assertIdentity(input.expectedHostMemberId, 'membership-expected-host-id-invalid');
+    assertMemberId(input.expectedMemberId, 'membership-expected-member-id-invalid');
+    assertMemberId(input.expectedHostMemberId, 'membership-expected-host-id-invalid');
     assertTimestamp(input.terminatedAt);
     const context = this.requireActiveActor(connection, input.projectId, input.actorMemberId);
     if (input.expectedMemberId !== input.actorMemberId) {
@@ -258,7 +262,7 @@ export class MembershipAdminRepository {
       readonly terminatedAt: string;
     },
   ): MembershipTerminationResponse {
-    assertIdentity(input.targetMemberId, 'membership-target-id-invalid');
+    assertMemberId(input.targetMemberId, 'membership-target-id-invalid');
     assertTimestamp(input.terminatedAt);
     const context = this.requireActiveActor(connection, input.projectId, input.actorMemberId);
     if (input.status === 'revoked') {
@@ -304,8 +308,8 @@ export class MembershipAdminRepository {
     projectId: CollabProjectId,
     actorMemberId: CollabMemberId,
   ): MembershipAdminContext {
-    assertIdentity(projectId, 'membership-project-id-invalid');
-    assertIdentity(actorMemberId, 'membership-actor-id-invalid');
+    assertProjectId(projectId, 'membership-project-id-invalid');
+    assertMemberId(actorMemberId, 'membership-actor-id-invalid');
     const row = connection.get(
       `SELECT
         p.project_id, p.state AS project_state, p.host_member_id,

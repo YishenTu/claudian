@@ -1,4 +1,4 @@
-import { type CollabMemberId, type CollabOperationId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -8,8 +8,6 @@ import type {
 } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const NONTERMINAL_STATUSES = new Set(['offered', 'acknowledged']);
 
 export interface ConsumeManagerResponsibilityInput {
@@ -61,8 +59,12 @@ function responsibilityError(
   });
 }
 
-function assertId(value: string, pattern: RegExp, reason: string): void {
-  if (!pattern.test(value)) {
+function assertId(
+  value: string,
+  predicate: (candidate: unknown) => candidate is string,
+  reason: string,
+): void {
+  if (!predicate(value)) {
     throw responsibilityError('authority-integrity-error', reason);
   }
 }
@@ -112,13 +114,13 @@ function decodeRecord(
   ) {
     throw responsibilityError('authority-integrity-error', 'manager-responsibility-row-invalid');
   }
-  assertId(offerId, OPERATION_ID_PATTERN, 'manager-responsibility-offer-id-invalid');
+  assertId(offerId, isCollabOpaqueId, 'manager-responsibility-offer-id-invalid');
   assertId(
     sourceManagerMemberId,
-    MEMBER_ID_PATTERN,
+    isCollabMemberId,
     'manager-responsibility-source-id-invalid',
   );
-  assertId(targetMemberId, MEMBER_ID_PATTERN, 'manager-responsibility-target-id-invalid');
+  assertId(targetMemberId, isCollabMemberId, 'manager-responsibility-target-id-invalid');
   assertTimestamp(offeredAt, 'manager-responsibility-offered-at-invalid');
   assertTimestamp(expiresAt, 'manager-responsibility-expires-at-invalid');
   assertTimestamp(updatedAt, 'manager-responsibility-updated-at-invalid');
@@ -192,13 +194,13 @@ export class ManagerResponsibilityRepository {
       readonly targetMemberId: CollabMemberId;
     },
   ): CollabManagerResponsibilityOfferSummary {
-    assertId(input.offerId, OPERATION_ID_PATTERN, 'manager-responsibility-offer-id-invalid');
+    assertId(input.offerId, isCollabOpaqueId, 'manager-responsibility-offer-id-invalid');
     assertId(
       input.sourceManagerMemberId,
-      MEMBER_ID_PATTERN,
+      isCollabMemberId,
       'manager-responsibility-source-id-invalid',
     );
-    assertId(input.targetMemberId, MEMBER_ID_PATTERN, 'manager-responsibility-target-id-invalid');
+    assertId(input.targetMemberId, isCollabMemberId, 'manager-responsibility-target-id-invalid');
     assertTimestamp(input.offeredAt, 'manager-responsibility-offered-at-invalid');
     assertTimestamp(input.expiresAt, 'manager-responsibility-expires-at-invalid');
     if (
@@ -266,7 +268,7 @@ export class ManagerResponsibilityRepository {
     connection: AuthorityDatabaseConnection,
     offerId: CollabOperationId,
   ): CollabManagerResponsibilityOfferSummary | null {
-    assertId(offerId, OPERATION_ID_PATTERN, 'manager-responsibility-offer-id-invalid');
+    assertId(offerId, isCollabOpaqueId, 'manager-responsibility-offer-id-invalid');
     const row = connection.get(
       `SELECT ${OFFER_COLUMNS}
        FROM manager_responsibility_offers
@@ -280,7 +282,7 @@ export class ManagerResponsibilityRepository {
     connection: AuthorityDatabaseConnection,
     actorMemberId: CollabMemberId,
   ): CollabManagerResponsibilityOfferSummary | null {
-    assertId(actorMemberId, MEMBER_ID_PATTERN, 'manager-responsibility-actor-id-invalid');
+    assertId(actorMemberId, isCollabMemberId, 'manager-responsibility-actor-id-invalid');
     const row = connection.get(
       `SELECT ${OFFER_COLUMNS}
        FROM manager_responsibility_offers
@@ -404,7 +406,7 @@ export class ManagerResponsibilityRepository {
       readonly memberId: CollabMemberId;
     },
   ): number {
-    assertId(input.memberId, MEMBER_ID_PATTERN, 'manager-responsibility-member-id-invalid');
+    assertId(input.memberId, isCollabMemberId, 'manager-responsibility-member-id-invalid');
     return this.cancelMatchingNonterminal(connection, input.cancelledAt, input.memberId);
   }
 
@@ -526,7 +528,7 @@ export class ManagerResponsibilityRepository {
     connection: AuthorityDatabaseConnection,
     offerId: CollabOperationId,
   ): ManagerResponsibilityOfferRecord {
-    assertId(offerId, OPERATION_ID_PATTERN, 'manager-responsibility-offer-id-invalid');
+    assertId(offerId, isCollabOpaqueId, 'manager-responsibility-offer-id-invalid');
     const row = connection.get(
       `SELECT ${OFFER_COLUMNS}
        FROM manager_responsibility_offers

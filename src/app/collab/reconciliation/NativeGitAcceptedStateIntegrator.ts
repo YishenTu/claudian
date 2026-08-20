@@ -6,6 +6,7 @@ import {
   COLLAB_MEMBER_REF_PREFIX,
   collabMemberRef,
   type CollabOperationId,
+  isCollabGitOid,
 } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
@@ -38,7 +39,6 @@ import { type CollabConflictEntry } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const TEXT_EXTENSIONS = new Set([
   '.canvas', '.css', '.csv', '.html', '.js', '.json', '.jsx', '.md',
   '.markdown', '.mermaid', '.svg', '.ts', '.tsx', '.txt', '.xml',
@@ -76,7 +76,7 @@ function throwIfCancelled(signal?: AbortSignal): void {
 }
 
 function requireOid(oid: string | null, reason: string): string {
-  if (!oid || !OID_PATTERN.test(oid)) {
+  if (!isCollabGitOid(oid)) {
     throw integrationError('repository-invalid', reason);
   }
   return oid;
@@ -362,7 +362,7 @@ export class NativeGitAcceptedStateIntegrator implements
       signal,
     });
     const fields = parseGitNulFields(result.stdout);
-    if (!fields[0] || !OID_PATTERN.test(fields[0])) {
+    if (!isCollabGitOid(fields[0])) {
       throw integrationError('repository-invalid', 'reconciliation-merge-output-invalid');
     }
     const conflictPaths = [...new Set(fields.slice(1).filter(Boolean))].sort();

@@ -54,8 +54,6 @@ describe('CollabFeaturePort', () => {
       removeMember: true,
       leaveProject: true,
       createManagerResponsibilityOffer: true,
-      acknowledgeManagerResponsibility: true,
-      declineManagerResponsibility: true,
       cancelManagerResponsibilityOffer: true,
       promoteManager: true,
       demoteManager: true,
@@ -71,6 +69,12 @@ describe('CollabFeaturePort', () => {
 
     expect(Object.keys(methodCoverage)).toEqual(TEST_COLLAB_FEATURE_PORT_METHODS);
     expect(TEST_COLLAB_FEATURE_PORT_METHODS).not.toContain('shutdown');
+    expect(TEST_COLLAB_FEATURE_PORT_METHODS).not.toContain(
+      'acknowledgeManagerResponsibility',
+    );
+    expect(TEST_COLLAB_FEATURE_PORT_METHODS).not.toContain(
+      'declineManagerResponsibility',
+    );
   });
 
   it('keeps decision-free conflict inspection and file versions provider-neutral', () => {

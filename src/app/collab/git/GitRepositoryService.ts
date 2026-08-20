@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabFileChangeKind, collabMemberRef } from '@claudian/collab-protocol';
+import { type CollabFileChangeKind, collabMemberRef, isCollabGitOid, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import {
@@ -26,12 +26,10 @@ import {
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SAFE_REMOTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export function collabStoppedHostRemoteUrl(projectId: string): string {
-  if (!SAFE_ID_PATTERN.test(projectId)) {
+  if (!isCollabProjectId(projectId)) {
     throw repositoryError('repository-invalid', 'collab-project-id-invalid');
   }
   return `https://127.0.0.1:1/claudian-collab/host-stopped/${projectId}`;
@@ -184,7 +182,7 @@ function repositoryError(
 }
 
 function assertOid(oid: string): void {
-  if (!OID_PATTERN.test(oid)) {
+  if (!isCollabGitOid(oid)) {
     throw repositoryError('repository-invalid', 'git-oid-invalid');
   }
 }
@@ -322,7 +320,7 @@ export function parseGitWorkingTreeState(output: Uint8Array): GitWorkingTreeStat
     seen.add(field);
     switch (field) {
       case 'branch.oid':
-        if (value !== '(initial)' && !OID_PATTERN.test(value)) {
+        if (value !== '(initial)' && !isCollabGitOid(value)) {
           throw machineOutputError('git-status-branch-oid-malformed');
         }
         headOid = value === '(initial)' ? null : value;
@@ -745,7 +743,7 @@ export class GitRepositoryService {
     config: GitLocalRepositoryConfig,
   ): Promise<void> {
     await this.inspectRepository(repositoryPath);
-    if (!SAFE_ID_PATTERN.test(config.memberId) || !SAFE_ID_PATTERN.test(config.projectId)) {
+    if (!isCollabMemberId(config.memberId) || !isCollabProjectId(config.projectId)) {
       throw repositoryError('repository-invalid', 'collab-local-config-id-invalid');
     }
     assertRef(config.personalRef);
@@ -780,7 +778,7 @@ export class GitRepositoryService {
     if (repository.bare) {
       throw repositoryError('repository-invalid', 'collab-local-repository-is-bare');
     }
-    if (!SAFE_ID_PATTERN.test(expected.memberId) || !SAFE_ID_PATTERN.test(expected.projectId)) {
+    if (!isCollabMemberId(expected.memberId) || !isCollabProjectId(expected.projectId)) {
       throw repositoryError('repository-invalid', 'collab-local-config-id-invalid');
     }
     assertRef(expected.personalRef);
@@ -1455,7 +1453,7 @@ export class GitRepositoryService {
       && input.branch !== 'main'
       && (
         !input.branch.startsWith('members/')
-        || !SAFE_ID_PATTERN.test(input.branch.slice('members/'.length))
+        || !isCollabMemberId(input.branch.slice('members/'.length))
       )
     ) {
       throw repositoryError('repository-invalid', 'git-clone-branch-invalid');

@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 export const COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION = 1 as const;
 export type HostTransferRecoveryDirection = 'incoming' | 'outgoing';
@@ -35,7 +35,6 @@ export interface HostTransferRecoveryRecord {
   readonly updatedAt: CollabIsoTimestamp;
 }
 type Value = Readonly<Record<string, unknown>>;
-const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const PHASES: readonly HostTransferRecoveryPhase[] = ['offered', 'accepted', 'quiescing', 'staged', 'authority-relinquished', 'target-active', 'completed', 'cancelled', 'declined', 'expired'];
@@ -69,7 +68,8 @@ export function decodeHostTransferRecoveryRecord(value: unknown): HostTransferRe
   const direction = record.direction;
   const phase = record.phase;
   if ((direction !== 'incoming' && direction !== 'outgoing') || typeof phase !== 'string' || !PHASES.includes(phase as HostTransferRecoveryPhase)) throw new TypeError('Invalid Host transfer state');
-  const transferId = text(record, 'transferId', 128, ID);
+  const transferId = text(record, 'transferId', 128);
+  if (!isCollabOpaqueId(transferId)) throw new TypeError('Invalid transferId');
   const targetEndpoint = endpoint(record);
   const targetCaCertificatePem = nullable(record, 'targetCaCertificatePem', 64 * 1024);
   const targetCaFingerprint = nullable(record, 'targetCaFingerprint', 64, DIGEST);
@@ -133,6 +133,16 @@ export function decodeHostTransferRecoveryRecord(value: unknown): HostTransferRe
   const createdAt = time(record, 'createdAt');
   const updatedAt = time(record, 'updatedAt');
   if (updatedAt < createdAt) throw new TypeError('Invalid Host transfer timestamps');
+  const projectId = text(record, 'projectId', 64);
+  const sourceHostMemberId = text(record, 'sourceHostMemberId', 64);
+  const targetHostMemberId = text(record, 'targetHostMemberId', 64);
+  if (
+    !isCollabProjectId(projectId)
+    || !isCollabMemberId(sourceHostMemberId)
+    || !isCollabMemberId(targetHostMemberId)
+  ) {
+    throw new TypeError('Invalid Host transfer identity');
+  }
   return {
     activationCertificate,
     createdAt,
@@ -140,16 +150,16 @@ export function decodeHostTransferRecoveryRecord(value: unknown): HostTransferRe
     kind: 'host-transfer-recovery',
     manifestDigest,
     phase: phase as HostTransferRecoveryPhase,
-    projectId: text(record, 'projectId', 64, ID),
+    projectId,
     receiverCredential,
     receiverCredentialHash,
     schemaVersion: 1,
-    sourceHostMemberId: text(record, 'sourceHostMemberId', 64, ID),
+    sourceHostMemberId,
     stagingDirectoryName,
     targetCaCertificatePem,
     targetCaFingerprint,
     targetEndpoint,
-    targetHostMemberId: text(record, 'targetHostMemberId', 64, ID),
+    targetHostMemberId,
     targetTerminalResponseReceived,
     transferId,
     updatedAt,

@@ -1,4 +1,4 @@
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { type CollabConflictDescriptor, type CollabConflictEntry } from '@/core/collab';
@@ -24,8 +24,6 @@ export interface ConflictResolutionRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const CONFLICT_KINDS = new Set([
   'text',
   'binary',
@@ -67,7 +65,21 @@ function timestampField(value: UnknownRecord, key: string): string {
 }
 
 function oidField(value: UnknownRecord, key: string): string {
-  return stringField(value, key, 64, OID_PATTERN);
+  const field = stringField(value, key, 64);
+  if (!isCollabGitOid(field)) throw new TypeError(`Invalid ${key}`);
+  return field;
+}
+
+function opaqueIdField(value: UnknownRecord, key: string): string {
+  const field = stringField(value, key, 128);
+  if (!isCollabOpaqueId(field)) throw new TypeError(`Invalid ${key}`);
+  return field;
+}
+
+function projectIdField(value: UnknownRecord, key: string): string {
+  const field = stringField(value, key, 64);
+  if (!isCollabProjectId(field)) throw new TypeError(`Invalid ${key}`);
+  return field;
 }
 
 function relativePathField(value: UnknownRecord, key: string): string {
@@ -123,8 +135,8 @@ function decodeDescriptor(value: unknown): CollabConflictDescriptor {
   return {
     conflicts,
     mergeBaseOid: oidField(value, 'mergeBaseOid'),
-    operationId: stringField(value, 'operationId', 128, SAFE_ID_PATTERN),
-    projectId: stringField(value, 'projectId', 64, SAFE_ID_PATTERN),
+    operationId: opaqueIdField(value, 'operationId'),
+    projectId: projectIdField(value, 'projectId'),
     startingMainOid: oidField(value, 'startingMainOid'),
     startingPersonalOid: oidField(value, 'startingPersonalOid'),
   };
@@ -150,8 +162,8 @@ export function decodeConflictResolutionRecord(value: unknown): ConflictResoluti
   ) {
     throw new TypeError('Invalid conflict resolution record');
   }
-  const operationId = stringField(value, 'operationId', 128, SAFE_ID_PATTERN);
-  const projectId = stringField(value, 'projectId', 64, SAFE_ID_PATTERN);
+  const operationId = opaqueIdField(value, 'operationId');
+  const projectId = projectIdField(value, 'projectId');
   const descriptor = decodeDescriptor(value.descriptor);
   if (descriptor.operationId !== operationId || descriptor.projectId !== projectId) {
     throw new TypeError('Conflict resolution identity mismatch');

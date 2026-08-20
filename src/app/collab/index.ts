@@ -1,28 +1,21 @@
-export * from './ClaudianCollabService';
-export * from './CollabFeatureService';
-export * from './CollabFeatureSubcomposition';
-export * from './CollabLocalProjectRepository';
-export * from './CollabPathPolicy';
-export * from './CollabWorkspaceService';
-export * from './discovery';
-export * from './exit/FilesystemLocalRepositoryIdentity';
-export * from './exit/LocalExitStores';
-export * from './exit/LocalProjectCleanupCoordinator';
-export * from './exit/LocalProjectExitCoordinator';
-export * from './exit/PendingLeaveAuthorityService';
-export * from './exit/PendingLeaveWorker';
-export * from './exit/RetiredProjectFinalizer';
-export * from './host-transfer/CollabHostTransferService';
-export * from './host-transfer/HostTransferOperationIdentity';
-export * from './host-transfer/HostTrustTransitionService';
-export * from './join/JoinProjectCoordinator';
-export * from './join/JoinProjectRecord';
-export * from './lan/LanHostCoordinator';
-export * from './membership';
-export * from './project';
-export * from './publish/CollabPublicationService';
-export * from './reconnect';
-export * from './reconnect/LanHostTransitionProofClient';
-export * from './retirement/RetirementAcknowledgementWorker';
-export * from './retirement/RetirementClientHandler';
-export * from './retirement/RetirementLocalRecovery';
+export {
+  ClaudianCollabService,
+  type ClaudianCollabServiceOptions,
+  type CollabAuthorityFoundation,
+  type CollabGitFoundation,
+  type CollabLocalFoundation,
+} from './ClaudianCollabService';
+export {
+  CollabFeatureService,
+  type CollabFeatureServiceOptions,
+} from './CollabFeatureService';
+export {
+  type CollabFeatureSubcomposition,
+  type CollabFeatureSubcompositionOptions,
+  createCollabFeatureSubcomposition,
+} from './CollabFeatureSubcomposition';
+export {
+  type CollabProjectFoundationPort,
+  CollabProjectSetupService,
+  type CollabProjectSetupServiceOptions,
+} from './project/CollabProjectSetupService';

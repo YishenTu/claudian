@@ -40,7 +40,7 @@ export function parseGitHttpRoute(method: string, rawUrl: string): ParsedGitHttp
   const querySeparator = rawUrl.indexOf('?');
   const pathname = querySeparator === -1 ? rawUrl : rawUrl.slice(0, querySeparator);
   const queryString = querySeparator === -1 ? '' : rawUrl.slice(querySeparator + 1);
-  const match = /^\/v1\/git\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/repository\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(
+  const match = /^\/v1\/git\/([^/]+)\/repository\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(
     pathname,
   );
   if (!match || !isCollabProjectId(match[1])) {
