@@ -150,7 +150,7 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
     config: catalog.getDropdownConfig(),
     discovery: new ProviderCommandDiscoveryStore(async signal =>
       normalizeProviderCommandDiscoveryItems(
-        await catalog.listDropdownEntries({ includeBuiltIns: false, signal }),
+        await catalog.listDropdownEntries({ includeBuiltIns: true, signal }),
       ),
     ),
   };
