@@ -2024,23 +2024,27 @@ describe('ClaudianView tab controls', () => {
       conversationId: 'local',
       id: 'tab-local',
       state: {
-        attention: { kind: 'review', since: 10 },
+        attention: { kind: 'review', outcome: 'completed', since: 10 },
         isStreaming: false,
       },
     };
     const crossViewTab = {
       state: {
-        attention: { kind: 'review', since: 5 },
+        attention: { kind: 'review', outcome: 'error', since: 5 },
         isStreaming: false,
       },
     };
     const otherView = {
-      getTabManager: () => ({ getTab: () => crossViewTab }),
+      getTabManager: () => ({
+        getTab: () => crossViewTab,
+        isTabWorking: () => false,
+      }),
     };
     const view = Object.create(ClaudianView.prototype) as any;
     view.tabManager = {
       getActiveTab: () => activeTab,
       getAllTabs: () => [activeTab, localTab],
+      isTabWorking: (tabId: string) => tabId === 'tab-active',
     };
     view.plugin = {
       findConversationAcrossViews: (id: string) => id === 'cross'
@@ -2051,9 +2055,12 @@ describe('ClaudianView tab controls', () => {
     expect(view.getHistoryConversationStatus('active').attention)
       .toEqual({ kind: 'action-required', since: 20 });
     expect(view.getHistoryConversationStatus('local').attention)
-      .toEqual({ kind: 'review', since: 10 });
+      .toEqual({ kind: 'review', outcome: 'completed', since: 10 });
     expect(view.getHistoryConversationStatus('cross').attention)
-      .toEqual({ kind: 'review', since: 5 });
+      .toEqual({ kind: 'review', outcome: 'error', since: 5 });
+    expect(view.getHistoryConversationStatus('active').isRunning).toBe(true);
+    expect(view.getHistoryConversationStatus('local').isRunning).toBe(false);
+    expect(view.getHistoryConversationStatus('cross').isRunning).toBe(false);
     expect(view.getHistoryConversationStatus('closed').attention).toBeUndefined();
   });
 
@@ -2384,10 +2391,15 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(createTab).toHaveBeenCalledTimes(1);
     expect(tabManagerCallbacks).not.toHaveProperty('onPersistedStateChanged');
 
-    tabManagerCallbacks.onTabAttentionChanged('tab-1', { kind: 'review', since: 1 });
+    tabManagerCallbacks.onTabAttentionChanged('tab-1', {
+      kind: 'review',
+      outcome: 'completed',
+      since: 1,
+    });
+    tabManagerCallbacks.onTabWorkChanged('tab-1');
 
-    expect(view.updateTabBar).toHaveBeenCalledTimes(1);
-    expect(view.notifyConversationNavigationChanged).toHaveBeenCalledTimes(1);
+    expect(view.updateTabBar).toHaveBeenCalledTimes(2);
+    expect(view.notifyConversationNavigationChanged).toHaveBeenCalledTimes(2);
   });
 
   it('abandons deferred restoration when view shutdown begins', async () => {

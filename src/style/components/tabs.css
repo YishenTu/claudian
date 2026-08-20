@@ -94,6 +94,10 @@
   border-color: var(--color-green);
 }
 
+.claudian-tab-badge-review-error {
+  border-color: var(--color-orange);
+}
+
 .claudian-tab-badge-action-required {
   border-color: var(--text-error);
 }

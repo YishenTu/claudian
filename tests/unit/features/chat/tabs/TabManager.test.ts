@@ -14,7 +14,9 @@ const mockTabs: any[] = [];
 const mockCreateTab = jest.fn((options: Record<string, any>) => createMockTab(options));
 const mockCreateTabRuntime = jest.fn(async (options: Record<string, any>) => {
   const captureReviewableSettlement = options.captureReviewableSettlement
-    ? () => options.captureReviewableSettlement(tab)
+    ? (outcome: 'completed' | 'error' = 'completed') => (
+        options.captureReviewableSettlement(tab, outcome)
+      )
     : undefined;
   const tab = mockCreateTab({
     ...options,
@@ -27,6 +29,7 @@ const mockChooseForkTarget = jest.fn();
 function createMockTab(options: Record<string, any>): any {
   let intentAdmissionPauseDepth = 0;
   const session = {
+    activeTurn: null,
     userOwnershipRevision: 0,
     get acceptsIntents() {
       return intentAdmissionPauseDepth === 0;
@@ -47,6 +50,7 @@ function createMockTab(options: Record<string, any>): any {
     draftModel: options.conversation ? null : 'claude-default',
     executionCoordinator: {
       copyInputsForFork: jest.fn().mockResolvedValue(undefined),
+      hasBackgroundWork: false,
       notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
       state: 'absent',
@@ -67,6 +71,11 @@ function createMockTab(options: Record<string, any>): any {
       messages: [],
       markReviewRequired: jest.fn(),
       requiresAction: false,
+    },
+    services: {
+      subagentManager: {
+        hasActiveAsyncSubagents: jest.fn().mockReturnValue(false),
+      },
     },
     controllers: {
       conversationController: {
@@ -272,13 +281,52 @@ describe('TabManager provider execution orchestration', () => {
     const tab = await manager.createTab();
     Object.defineProperty(tab!.state, 'attention', {
       configurable: true,
-      value: { kind: 'review', since: 123 },
+      value: { kind: 'review', outcome: 'completed', since: 123 },
     });
 
     expect(manager.getTabBarItems()).toEqual([
       expect.objectContaining({
-        attention: { kind: 'review', since: 123 },
+        attention: { kind: 'review', outcome: 'completed', since: 123 },
         id: tab!.id,
+      }),
+    ]);
+  });
+
+  it.each([
+    ['foreground streaming', (tab: any) => { tab.state.isStreaming = true; }],
+    ['turn orchestration', (tab: any) => { tab.session.activeTurn = Promise.resolve(); }],
+    ['provider background work', (tab: any) => { tab.executionCoordinator.hasBackgroundWork = true; }],
+    ['async subagent work', (tab: any) => {
+      tab.services.subagentManager.hasActiveAsyncSubagents.mockReturnValue(true);
+    }],
+  ])('projects %s as working in tab bar items', async (_source, makeWorking) => {
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+
+    makeWorking(tab);
+
+    expect(manager.getTabBarItems()).toEqual([
+      expect.objectContaining({ id: tab!.id, isWorking: true }),
+    ]);
+  });
+
+  it('keeps an unread result while projecting later work as active', async () => {
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    Object.defineProperty(tab!.state, 'attention', {
+      configurable: true,
+      value: { kind: 'review', outcome: 'completed', since: 123 },
+    });
+    Object.defineProperty(tab!.executionCoordinator, 'hasBackgroundWork', {
+      configurable: true,
+      value: true,
+    });
+
+    expect(manager.getTabBarItems()).toEqual([
+      expect.objectContaining({
+        attention: { kind: 'review', outcome: 'completed', since: 123 },
+        id: tab!.id,
+        isWorking: true,
       }),
     ]);
   });
@@ -368,11 +416,11 @@ describe('TabManager provider execution orchestration', () => {
     const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
     const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
 
-    activeSettlement()();
-    backgroundSettlement()();
+    activeSettlement('completed')();
+    backgroundSettlement('error')();
 
     expect(active!.state.markReviewRequired).not.toHaveBeenCalled();
-    expect(background!.state.markReviewRequired).toHaveBeenCalledTimes(1);
+    expect(background!.state.markReviewRequired).toHaveBeenCalledWith('error');
   });
 
   it('uses activity at completion and invalidates review after activation', async () => {
@@ -381,8 +429,8 @@ describe('TabManager provider execution orchestration', () => {
     const background = await manager.createTab(null, undefined, { activate: false });
     const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
     const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
-    const reportActiveCompletion = activeSettlement();
-    const reportBackgroundCompletion = backgroundSettlement();
+    const reportActiveCompletion = activeSettlement('completed');
+    const reportBackgroundCompletion = backgroundSettlement('completed');
 
     await manager.switchToTab(background!.id);
     await manager.switchToTab(active!.id);

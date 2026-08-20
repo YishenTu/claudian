@@ -341,9 +341,13 @@ describe('ChatState', () => {
 
       chatState.markReviewRequired();
 
-      expect(chatState.attention).toEqual({ kind: 'review', since: 123 });
+      expect(chatState.attention).toEqual({ kind: 'review', outcome: 'completed', since: 123 });
       expect(chatState.requiresAction).toBe(false);
-      expect(onAttentionChanged).toHaveBeenCalledWith({ kind: 'review', since: 123 });
+      expect(onAttentionChanged).toHaveBeenCalledWith({
+        kind: 'review',
+        outcome: 'completed',
+        since: 123,
+      });
 
       chatState.acknowledgeReview();
 
@@ -393,7 +397,11 @@ describe('ChatState', () => {
       chatState.markReviewRequired();
       chatState.endActionRequired('approval-1');
 
-      expect(chatState.attention).toEqual({ kind: 'review', since: 200 });
+      expect(chatState.attention).toEqual({
+        kind: 'review',
+        outcome: 'completed',
+        since: 200,
+      });
     });
 
     it('restores existing review after action-required attention settles', () => {
@@ -406,7 +414,11 @@ describe('ChatState', () => {
       chatState.beginActionRequired('approval-1');
       chatState.endActionRequired('approval-1');
 
-      expect(chatState.attention).toEqual({ kind: 'review', since: 100 });
+      expect(chatState.attention).toEqual({
+        kind: 'review',
+        outcome: 'completed',
+        since: 100,
+      });
     });
 
     it('acknowledges review hidden beneath action-required attention', () => {
@@ -444,8 +456,47 @@ describe('ChatState', () => {
       chatState.markReviewRequired();
       chatState.markReviewRequired();
 
-      expect(chatState.attention).toEqual({ kind: 'review', since: 100 });
+      expect(chatState.attention).toEqual({
+        kind: 'review',
+        outcome: 'completed',
+        since: 100,
+      });
       expect(onAttentionChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('upgrades unread completion attention when a later result fails', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200);
+      const chatState = new ChatState();
+
+      chatState.markReviewRequired('completed');
+      chatState.markReviewRequired('error');
+
+      expect(chatState.attention).toEqual({
+        kind: 'review',
+        outcome: 'error',
+        since: 100,
+      });
+    });
+
+    it('restores the strongest unread outcome after action-required settles', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200)
+        .mockReturnValueOnce(300);
+      const chatState = new ChatState();
+
+      chatState.markReviewRequired('completed');
+      chatState.beginActionRequired('approval-1');
+      chatState.markReviewRequired('error');
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toEqual({
+        kind: 'review',
+        outcome: 'error',
+        since: 100,
+      });
     });
 
     it('clears visible attention and pending action tokens', () => {

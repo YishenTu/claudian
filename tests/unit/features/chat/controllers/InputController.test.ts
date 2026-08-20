@@ -196,7 +196,11 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     ensureExecutionInitialized: jest.fn().mockResolvedValue(true),
     ...dependencyOverrides,
     ...(typeof onReviewableSettlement === 'function'
-      ? { captureReviewableSettlement: () => onReviewableSettlement as () => void }
+      ? {
+          captureReviewableSettlement: jest.fn(
+            () => onReviewableSettlement as () => void,
+          ),
+        }
       : {}),
   } as unknown as InputControllerDeps;
   return {
@@ -1465,6 +1469,7 @@ describe('InputController coordinator execution', () => {
 
     await fixture.controller.sendMessage({ content: 'finish this' });
 
+    expect(fixture.deps.captureReviewableSettlement).toHaveBeenCalledWith('completed');
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });
 
@@ -1480,6 +1485,7 @@ describe('InputController coordinator execution', () => {
 
     await fixture.controller.sendMessage({ content: 'finish this' });
 
+    expect(fixture.deps.captureReviewableSettlement).toHaveBeenCalledWith('error');
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });
 

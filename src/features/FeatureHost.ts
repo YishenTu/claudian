@@ -17,6 +17,7 @@ export interface FeatureTabManagerHost {
   canCreateTab(): boolean;
   getAllTabs(): AssembledTabRuntime[];
   getTab(tabId: TabId): AssembledTabRuntime | null;
+  isTabWorking(tabId: TabId): boolean;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
   primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;

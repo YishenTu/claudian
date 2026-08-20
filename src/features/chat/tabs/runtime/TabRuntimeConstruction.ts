@@ -6,7 +6,7 @@ import type { FeatureHost } from '../../../FeatureHost';
 import type { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '../../rendering/MessageRenderer';
 import type { ChatState } from '../../state/ChatState';
-import type { TabAttention } from '../../state/types';
+import type { TabAttention, TabReviewOutcome } from '../../state/types';
 import type { ForkContext } from '../TabForking';
 import type { TabSession } from '../TabSession';
 import type {
@@ -38,6 +38,7 @@ export interface TabRuntimeConstructionContext {
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
   openConversation?: (conversationId: string) => Promise<void>;
   onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
+  onWorkChanged?: (tab: AssembledTabRuntime) => void;
   onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
   onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
   onConversationIdChanged?: (
@@ -49,7 +50,10 @@ export interface TabRuntimeConstructionContext {
     providerId: ProviderId,
   ) => void | Promise<void>;
   onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
-  captureReviewableSettlement?: (tab: AssembledTabRuntime) => () => void;
+  captureReviewableSettlement?: (
+    tab: AssembledTabRuntime,
+    outcome: TabReviewOutcome,
+  ) => () => void;
   registerCleanup: (resource: string, cleanup: TabRuntimeCleanup) => void;
   resourceOwner: TabRuntimeResourceOwner;
 }
@@ -66,7 +70,7 @@ export interface TabRuntimeShellBundle extends TabProviderContext {
   hydrationState: AssembledTabRuntime['hydrationState'];
   readonly executionCoordinator: ChatExecutionCoordinator;
   readonly providerCatalogResolver: ProviderCatalogResolver;
-  readonly captureReviewableSettlement: (() => () => void) | null;
+  readonly captureReviewableSettlement: ((outcome: TabReviewOutcome) => () => void) | null;
   readonly state: ChatState;
   readonly dom: TabDOMElements;
 }

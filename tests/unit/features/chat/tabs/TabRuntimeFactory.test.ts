@@ -400,6 +400,32 @@ describe('Tab provider execution ownership', () => {
     expect(coordinatorInstances).toHaveLength(1);
   });
 
+  it('publishes work changes from turn, provider-background, and async-subagent owners', async () => {
+    const onWorkChanged = jest.fn();
+    const tab = await createTestTab({
+      plugin: createPlugin(),
+      containerEl: createMockEl() as any,
+      onWorkChanged,
+    });
+
+    tab.session.activeTurn = Promise.resolve();
+    tab.session.activeTurn = null;
+    coordinatorDeps[0].onBackgroundWorkChanged?.(true);
+    tab.services.subagentManager.refreshAsyncSubagent({
+      asyncStatus: 'running',
+      description: 'Background',
+      id: 'task-1',
+      isExpanded: false,
+      mode: 'async',
+      prompt: '',
+      status: 'running',
+      toolCalls: [],
+    });
+
+    expect(onWorkChanged).toHaveBeenCalledTimes(4);
+    expect(onWorkChanged).toHaveBeenCalledWith(tab);
+  });
+
   it('lets later navigation override bottom auto-scroll intent', async () => {
     const plugin = createPlugin();
     plugin.settings.keyboardNavigation = {
@@ -1982,10 +2008,11 @@ describe('Tab provider execution ownership', () => {
   it('routes async subagent completion without transcript mutation', async () => {
     const plugin = createPlugin();
     const onReviewableSettlement = jest.fn();
+    const captureReviewableSettlement = jest.fn(() => onReviewableSettlement);
     const tab = await createTestTab({
       plugin,
       containerEl: createMockEl() as any,
-      captureReviewableSettlement: () => onReviewableSettlement,
+      captureReviewableSettlement,
     });
     const handleAsyncSubagentCompletion = jest.fn().mockResolvedValue(true);
     tab.controllers.streamController = { handleAsyncSubagentCompletion } as any;
@@ -2015,6 +2042,7 @@ describe('Tab provider execution ownership', () => {
       type: 'async_subagent_completion',
     });
     expect(tab.controllers.conversationController!.save).toHaveBeenCalledWith(true);
+    expect(captureReviewableSettlement).toHaveBeenCalledWith(tab, 'completed');
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });
 
