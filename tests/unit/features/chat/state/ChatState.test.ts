@@ -760,3 +760,14 @@ describe('ChatState', () => {
     });
   });
 });
+
+describe('ChatState observers', () => {
+  it('isolates observer failures while continuing notification', () => {
+    const state = new ChatState();
+    const received = jest.fn();
+    state.observeMessages(() => { throw new Error('observer failure'); });
+    state.observeMessages(received);
+    expect(() => { state.messages = []; }).not.toThrow();
+    expect(received).toHaveBeenCalledTimes(1);
+  });
+});

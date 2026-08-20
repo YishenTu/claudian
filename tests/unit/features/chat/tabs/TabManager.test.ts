@@ -47,7 +47,7 @@ function createMockTab(options: Record<string, any>): any {
   const tab = {
     id: options.tabId ?? `tab-${mockTabs.length + 1}`,
     conversationId: options.conversation?.id ?? null,
-    draftModel: options.conversation ? null : 'claude-default',
+    draftModel: options.conversation ? null : (options.draftModel ?? 'claude-default'),
     executionCoordinator: {
       copyInputsForFork: jest.fn().mockResolvedValue(undefined),
       hasBackgroundWork: false,
@@ -57,7 +57,7 @@ function createMockTab(options: Record<string, any>): any {
     },
     hydrationState: options.conversation ? 'idle' : 'ready',
     lifecycleState: options.lifecycleState ?? 'cold',
-    providerId: options.conversation?.providerId ?? 'claude',
+    providerId: options.conversation?.providerId ?? options.draftProviderId ?? 'claude',
     session,
     captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state: {
@@ -88,6 +88,7 @@ function createMockTab(options: Record<string, any>): any {
       },
       inputController: {
         resumeQueuedTurnAfterIntentAdmission: jest.fn(),
+        sendMessage: jest.fn().mockResolvedValue(undefined),
       },
     },
     dom: {
@@ -97,6 +98,7 @@ function createMockTab(options: Record<string, any>): any {
     ui: {
       externalContextSelector: {
         getExternalContexts: jest.fn().mockReturnValue([]),
+        setExternalContexts: jest.fn(),
       },
     },
   };
@@ -2573,5 +2575,222 @@ describe('TabManager provider execution orchestration', () => {
     })).rejects.toThrow('fork state failed');
 
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
+  });
+});
+
+
+describe('provider-neutral continuation handoff', () => {
+  beforeEach(() => {
+    mockTabs.length = 0;
+    jest.clearAllMocks();
+    mockCreateTab.mockImplementation((options) => createMockTab(options));
+    mockCreateTabRuntime.mockImplementation(async (options: Record<string, any>) => {
+      const runtimeRef: { tab?: any } = {};
+      const captureReviewableSettlement = options.captureReviewableSettlement
+        ? (outcome: 'completed' | 'error' = 'completed') => (
+            options.captureReviewableSettlement(runtimeRef.tab, outcome)
+          )
+        : undefined;
+      const tab = mockCreateTab({ ...options, captureReviewableSettlement });
+      runtimeRef.tab = tab;
+      return tab;
+    });
+  });
+
+  it('creates a new inherited draft and auto-sends a local capsule when the source is idle', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    source!.state.messages = [
+      { id: 'u', role: 'user', content: 'Finish task', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: 'Current state', timestamp: 2 },
+    ];
+
+    await (manager as any).requestContinuationInNewTab(source);
+
+    const target = manager.getActiveTab()!;
+    expect(target.id).not.toBe(source!.id);
+    expect(target.draftModel).toBe(source!.draftModel);
+    expect(target.controllers.inputController.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('Finish task'),
+    }));
+  });
+
+  it('inherits the source provider together with a duplicate model id', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    source!.providerId = 'codex';
+    source!.draftModel = 'shared-model';
+
+    await (manager as any).requestContinuationInNewTab(source);
+
+    const target = manager.getActiveTab()!;
+    expect(target.providerId).toBe('codex');
+    expect(target.draftModel).toBe('shared-model');
+    expect(mockCreateTabRuntime.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      draftModel: 'shared-model',
+      draftProviderId: 'codex',
+    }));
+  });
+
+  it('publishes admission changes through the manager-owned continuation observer seam', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    const factoryOptions = mockCreateTabRuntime.mock.calls[0]?.[0];
+    const observer = jest.fn();
+    const removeObserver = factoryOptions.observeContinuationPending(source!.id, observer);
+    source!.state.isStreaming = true;
+
+    await (manager as any).requestContinuationInNewTab(source);
+
+    expect(factoryOptions.isContinuationPending(source)).toBe(true);
+    expect(observer).toHaveBeenCalled();
+
+    source!.state.isStreaming = false;
+    await (manager as any).runPendingContinuation(source!.id);
+
+    expect(factoryOptions.isContinuationPending(source)).toBe(false);
+    expect(observer.mock.calls.length).toBeGreaterThanOrEqual(3);
+    removeObserver();
+  });
+
+  it('queues exactly one continuation until a busy source settles', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    source!.state.isStreaming = true;
+
+    await (manager as any).requestContinuationInNewTab(source);
+    await (manager as any).requestContinuationInNewTab(source);
+    expect(manager.getTabCount()).toBe(1);
+
+    source!.state.isStreaming = false;
+    await (manager as any).runPendingContinuation(source!.id);
+    expect(manager.getTabCount()).toBe(2);
+  });
+
+  it('drops a queued continuation when its source runtime is gone', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    source!.state.isStreaming = true;
+    await (manager as any).requestContinuationInNewTab(source);
+
+    (manager as any).tabs.delete(source!.id);
+    source!.state.isStreaming = false;
+    await (manager as any).runPendingContinuation(source!.id);
+
+    expect(manager.getTabCount()).toBe(0);
+    expect((manager as any).pendingContinuations.has(source!.id)).toBe(false);
+  });
+
+  it('discards a pristine target through discardTab when the source dies during admission', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    const targetAssembly = deferred<any>();
+    let targetOptions: Record<string, any> | null = null;
+    mockCreateTabRuntime.mockImplementationOnce((options) => {
+      targetOptions = options;
+      return targetAssembly.promise;
+    });
+    const discard = jest.spyOn(manager, 'discardTab').mockResolvedValue(true);
+
+    const continuation = (manager as any).requestContinuationInNewTab(source);
+    (manager as any).tabs.delete(source!.id);
+    source!.lifecycleState = 'closing';
+    const capturedTargetOptions = targetOptions as unknown as Record<string, any>;
+    const target = createMockTab({
+      ...capturedTargetOptions,
+      draftModel: source!.draftModel,
+    });
+    targetAssembly.resolve(target);
+
+    await continuation;
+
+    expect(discard).toHaveBeenCalledWith(target.id);
+    expect(target.controllers.inputController.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('discards an unsent target and restores the live source after setup failure', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    mockCreateTab.mockImplementationOnce((options) => {
+      const target = createMockTab(options);
+      target.ui.externalContextSelector.setExternalContexts.mockImplementation(() => {
+        throw new Error('setup failed');
+      });
+      return target;
+    });
+
+    await (manager as any).requestContinuationInNewTab(source);
+
+    expect(manager.getActiveTab()).toBe(source);
+    expect(manager.getTabCount()).toBe(1);
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining('source tab was restored'));
+  });
+
+  it('preserves the target and reports uncertainty when send invocation rejects', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    const factoryOptions = mockCreateTabRuntime.mock.calls[0]?.[0];
+    const observer = jest.fn();
+    factoryOptions.observeContinuationPending(source!.id, observer);
+    mockCreateTab.mockImplementationOnce((options) => {
+      const target = createMockTab(options);
+      target.controllers.inputController.sendMessage.mockRejectedValueOnce(new Error('uncertain send'));
+      return target;
+    });
+
+    await (manager as any).requestContinuationInNewTab(source);
+
+    expect(manager.getTabCount()).toBe(2);
+    expect(manager.getActiveTab()?.id).not.toBe(source!.id);
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining('may have started'));
+    expect(Notice).not.toHaveBeenCalledWith(expect.stringContaining('left unchanged'));
+    expect(factoryOptions.isContinuationPending(source)).toBe(false);
+    expect(observer.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('fences continuation metadata after the source closes while send is in flight', async () => {
+    const { manager } = createManager();
+    const source = await manager.createTab();
+    const factoryOptions = mockCreateTabRuntime.mock.calls[0]?.[0];
+    const observer = jest.fn();
+    factoryOptions.observeContinuationPending(source!.id, observer);
+    const send = deferred<void>();
+    mockCreateTab.mockImplementationOnce((options) => {
+      const target = createMockTab(options);
+      target.controllers.inputController.sendMessage.mockImplementationOnce(() => send.promise);
+      return target;
+    });
+
+    const continuation = (manager as any).requestContinuationInNewTab(source);
+    while (manager.getTabCount() < 2) await Promise.resolve();
+    const target = manager.getActiveTab()!;
+    while (!(target.controllers.inputController.sendMessage as jest.Mock).mock.calls.length) {
+      await Promise.resolve();
+    }
+    await manager.discardTab(source!.id);
+    send.reject(new Error('uncertain send'));
+    await continuation;
+
+    expect(manager.getTab(source!.id)).toBeNull();
+    expect(manager.getTab(target.id)).toBe(target);
+    expect((manager as any).pendingContinuations.has(source!.id)).toBe(false);
+    expect((manager as any).continuationAdmissions.has(source!.id)).toBe(false);
+    expect(factoryOptions.isContinuationPending(source)).toBe(false);
+    expect(observer.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('clears continuation-only metadata during destroy', async () => {
+    const { manager } = createManager();
+    const observer = jest.fn();
+    (manager as any).pendingContinuations.add('queued-only');
+    (manager as any).continuationAdmissions.add('admitted-only');
+    (manager as any).continuationStateObservers.set('queued-only', new Set([observer]));
+
+    await manager.destroy();
+
+    expect((manager as any).pendingContinuations.size).toBe(0);
+    expect((manager as any).continuationAdmissions.size).toBe(0);
+    expect((manager as any).continuationStateObservers.size).toBe(0);
+    expect(observer).toHaveBeenCalled();
   });
 });

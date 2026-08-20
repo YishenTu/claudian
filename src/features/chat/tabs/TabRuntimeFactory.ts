@@ -42,6 +42,7 @@ export interface TabRuntimeFactoryOptions {
   conversation?: Conversation;
   tabId?: TabId;
   draftModel?: string | null;
+  draftProviderId?: ProviderId;
   lifecycleState?: Extract<
     AssembledTabRuntime['lifecycleState'],
     'provisional' | 'cold'
@@ -69,6 +70,9 @@ export interface TabRuntimeFactoryOptions {
     providerId: ProviderId,
   ) => void | Promise<void>;
   onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
+  onContinueInNewTab?: (tab: AssembledTabRuntime) => void | Promise<void>;
+  isContinuationPending?: (tab: AssembledTabRuntime) => boolean;
+  observeContinuationPending?: (tabId: TabId, observer: () => void) => () => void;
   captureReviewableSettlement?: (
     tab: AssembledTabRuntime,
     outcome: TabReviewOutcome,

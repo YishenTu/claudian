@@ -1,4 +1,3 @@
-import { getEnabledProviderForModel } from '../../../core/providers/modelRouting';
 import type { ProviderId } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import type { FeatureHost } from '../../FeatureHost';
@@ -13,13 +12,6 @@ function getStoredConversationProviderId(
     if (conversation?.providerId) {
       return conversation.providerId;
     }
-  }
-
-  if (tab.conversationId === null && tab.draftModel) {
-    return getEnabledProviderForModel(
-      tab.draftModel,
-      plugin.settings,
-    );
   }
 
   return tab.providerId;

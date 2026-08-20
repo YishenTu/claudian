@@ -51,6 +51,8 @@ export class ChatState {
   private state: ChatStateData;
   private _callbacks: ChatStateCallbacks;
   private readonly pendingActionIds = new Set<string>();
+  private readonly messageObservers = new Set<() => void>();
+  private readonly usageObservers = new Set<() => void>();
   private pendingReview: {
     outcome: TabReviewOutcome;
     since: number;
@@ -82,16 +84,19 @@ export class ChatState {
   set messages(value: ChatMessage[]) {
     this.state.messages = value;
     this._callbacks.onMessagesChanged?.();
+    this.notifyObservers(this.messageObservers);
   }
 
   addMessage(msg: ChatMessage): void {
     this.state.messages.push(msg);
     this._callbacks.onMessagesChanged?.();
+    this.notifyObservers(this.messageObservers);
   }
 
   clearMessages(): void {
     this.state.messages = [];
     this._callbacks.onMessagesChanged?.();
+    this.notifyObservers(this.messageObservers);
   }
 
   truncateAt(messageId: string): number {
@@ -100,6 +105,7 @@ export class ChatState {
     const removed = this.state.messages.length - idx;
     this.state.messages = this.state.messages.slice(0, idx);
     this._callbacks.onMessagesChanged?.();
+    this.notifyObservers(this.messageObservers);
     return removed;
   }
 
@@ -279,6 +285,27 @@ export class ChatState {
   set usage(value: UsageInfo | null) {
     this.state.usage = value;
     this._callbacks.onUsageChanged?.(value);
+    this.notifyObservers(this.usageObservers);
+  }
+
+  observeMessages(observer: () => void): () => void {
+    this.messageObservers.add(observer);
+    return () => this.messageObservers.delete(observer);
+  }
+
+  observeUsage(observer: () => void): () => void {
+    this.usageObservers.add(observer);
+    return () => this.usageObservers.delete(observer);
+  }
+
+  private notifyObservers(observers: ReadonlySet<() => void>): void {
+    for (const observer of observers) {
+      try {
+        observer();
+      } catch {
+        // Observers are presentation-only and must not make state mutations fail.
+      }
+    }
   }
 
   get ignoreUsageUpdates(): boolean {

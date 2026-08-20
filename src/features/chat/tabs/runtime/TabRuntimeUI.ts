@@ -28,6 +28,7 @@ import { NavigationSidebar } from '../../ui/NavigationSidebar';
 import { StatusPanel } from '../../ui/StatusPanel';
 import { autoResizeTextarea } from '../../ui/textareaResize';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
+import { createContinuationAction } from '../ContinuationAction';
 import { getTabProviderId } from '../providerResolution';
 import { commitProvisionalTab } from '../TabLifecycle';
 import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
@@ -515,6 +516,33 @@ export function buildTabRuntimeUI(
     contextUsageMeter: toolbar.contextUsageMeter,
     navigationSidebar,
   };
+
+  if (options.onContinueInNewTab) {
+    const continuationAction = createContinuationAction(
+      dom.navRowEl,
+      shell.state,
+      () => {
+        const runtime = runtimeRef.current();
+        if (runtime) return options.onContinueInNewTab?.(runtime);
+      },
+      () => {
+        const runtime = runtimeRef.current();
+        return runtime ? (options.isContinuationPending?.(runtime) ?? false) : false;
+      },
+    );
+    const removeMessageObserver = shell.state.observeMessages(() => continuationAction.refresh());
+    const removeUsageObserver = shell.state.observeUsage(() => continuationAction.refresh());
+    const removePendingObserver = options.observeContinuationPending?.(
+      shell.id,
+      () => continuationAction.refresh(),
+    ) ?? (() => undefined);
+    options.registerCleanup('tab continuation action', () => {
+      removeMessageObserver();
+      removeUsageObserver();
+      removePendingObserver();
+      continuationAction.buttonEl.remove();
+    });
+  }
 
   ui.externalContextSelector.setOnChange(() => {
     ui.fileContextManager.preScanExternalContexts();

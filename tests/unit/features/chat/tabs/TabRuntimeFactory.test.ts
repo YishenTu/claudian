@@ -35,6 +35,7 @@ interface MockCoordinator {
   bindConversation: jest.Mock;
   cancel: jest.Mock;
   dispose: jest.Mock;
+  execute: jest.Mock;
   isEventContextCurrent: jest.Mock;
   notifyMayCool: jest.Mock;
   prepare: jest.Mock;
@@ -52,6 +53,11 @@ jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
       dispose: jest.fn().mockImplementation(() => coordinatorDisposeError
         ? Promise.reject(coordinatorDisposeError)
         : Promise.resolve()),
+      execute: jest.fn().mockResolvedValue({
+        accepted: false,
+        planCompleted: false,
+        status: 'cancelled',
+      }),
       isEventContextCurrent: jest.fn().mockReturnValue(true),
       notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
@@ -399,6 +405,107 @@ describe('Tab provider execution ownership', () => {
 
     expect(tab.executionCoordinator).toBe(coordinatorInstances[0]);
     expect(coordinatorInstances).toHaveLength(1);
+  });
+
+  it('keeps an explicit enabled provider for a draft model shared by providers', async () => {
+    const registry = ProviderRegistry as jest.Mocked<typeof ProviderRegistry>;
+    const baseConfig = registry.getChatUIConfig('claude');
+    const codexConfig = {
+      ...baseConfig,
+      getModelOptions: jest.fn().mockReturnValue([
+        { label: 'Shared', value: 'shared-model' },
+      ]),
+    };
+    (registry.getChatUIConfig as jest.Mock).mockImplementation((providerId: string) => (
+      providerId === 'codex' ? codexConfig : baseConfig
+    ));
+    (registry.isEnabled as jest.Mock).mockReturnValue(true);
+    try {
+      const plugin = createPlugin({
+        createConversation: jest.fn().mockResolvedValue({
+          ...createConversation(),
+          id: 'continuation-conversation',
+          providerId: 'codex',
+          selectedModel: 'shared-model',
+        }),
+        renameConversation: jest.fn().mockResolvedValue(undefined),
+        updateConversation: jest.fn().mockResolvedValue(undefined),
+      });
+      plugin.settings.enableAutoTitleGeneration = false;
+      const tab = await createTestTab({
+        plugin,
+        containerEl: createMockEl() as any,
+        draftModel: 'shared-model',
+        draftProviderId: 'codex',
+      });
+
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe('shared-model');
+
+      await tab.controllers.inputController.sendMessage({ content: 'Continue' });
+
+      expect(tab.providerId).toBe('codex');
+      expect(ensureInitialized).toHaveBeenCalledWith(
+        plugin.providerHost,
+        'codex',
+        'tab-execution',
+      );
+    } finally {
+      (registry.getChatUIConfig as jest.Mock).mockReturnValue(baseConfig);
+      (registry.isEnabled as jest.Mock).mockReturnValue(true);
+    }
+  });
+
+  it('fails closed when an explicit draft provider is disabled or does not expose the model', async () => {
+    const registry = ProviderRegistry as jest.Mocked<typeof ProviderRegistry>;
+    const baseConfig = registry.getChatUIConfig('claude');
+    (registry.isEnabled as jest.Mock).mockImplementation((providerId: string) => providerId !== 'codex');
+    try {
+      await expect(createTestTab({
+        plugin: createPlugin(),
+        containerEl: createMockEl() as any,
+        draftModel: 'shared-model',
+        draftProviderId: 'codex',
+      })).rejects.toThrow('provider/model selection is not currently available');
+    } finally {
+      (registry.getChatUIConfig as jest.Mock).mockReturnValue(baseConfig);
+      (registry.isEnabled as jest.Mock).mockReturnValue(true);
+    }
+  });
+
+  it('refreshes continuation DOM state immediately from the manager observer seam', async () => {
+    const completion = deferred<void>();
+    let observer: (() => void) | null = null;
+    let pending = false;
+    const tab = await createTestTab({
+      plugin: createPlugin(),
+      containerEl: createMockEl() as any,
+      isContinuationPending: () => pending,
+      observeContinuationPending: (_tabId, nextObserver) => {
+        observer = nextObserver;
+        return () => { observer = null; };
+      },
+      onContinueInNewTab: async () => {
+        pending = true;
+        observer?.();
+        await completion.promise;
+        pending = false;
+        observer?.();
+      },
+    });
+    const button = tab.dom.navRowEl.querySelector('.claudian-continue-new-tab-button') as any;
+
+    expect(button).not.toBeNull();
+    button.click();
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+
+    completion.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-busy')).toBe('false');
   });
 
   it('publishes work changes from turn, provider-background, and async-subagent owners', async () => {

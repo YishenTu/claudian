@@ -20,6 +20,7 @@ import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
+import { buildContinuationCapsule, selectRelevantExternalRoots } from './ContinuationCapsule';
 import { getTabProviderId } from './providerResolution';
 import type { ForkContext } from './TabForking';
 import {
@@ -31,6 +32,7 @@ import {
   getTabTitle,
 } from './TabLifecycle';
 import {
+  getTabSelectedModel,
   onProviderAvailabilityChanged,
   refreshTabWorkspaceServices,
 } from './TabProviderState';
@@ -55,6 +57,7 @@ function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
 type CreateTabOptions = {
   activate?: boolean;
   draftModel?: string;
+  draftProviderId?: ProviderId;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;
 };
 
@@ -169,6 +172,10 @@ export class TabManager implements TabManagerInterface {
   private shutdownDrainPromise: Promise<void> | null = null;
   private destroyed = false;
   private shutdownSnapshotOpen = false;
+  /** One deferred handoff per source tab; it is never persisted or provider-owned. */
+  private pendingContinuations = new Set<TabId>();
+  private continuationAdmissions = new Set<TabId>();
+  private continuationStateObservers = new Map<TabId, Set<() => void>>();
 
   constructor(
     plugin: FeatureHost,
@@ -270,6 +277,7 @@ export class TabManager implements TabManagerInterface {
         conversation: conversation ?? undefined,
         tabId: runtimeTabId,
         ...(typeof draftModel === 'string' ? { draftModel } : {}),
+        ...(options.draftProviderId ? { draftProviderId: options.draftProviderId } : {}),
         lifecycleState,
         getProviderCatalogConfig: runtime => this.getProviderCatalogConfig(runtime),
         isRuntimeLive: runtime => this.isTabAlive(runtime),
@@ -286,11 +294,15 @@ export class TabManager implements TabManagerInterface {
         onStreamingChanged: (runtime, isStreaming) => {
           if (!this.isTabStateMutable(runtime)) return;
           this.callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);
-          if (!isStreaming) runtime.session.executionCoordinator.notifyMayCool();
+          if (!isStreaming) {
+            runtime.session.executionCoordinator.notifyMayCool();
+            void this.runPendingContinuation(runtime.id);
+          }
         },
         onWorkChanged: runtime => {
           if (!this.isTabStateMutable(runtime)) return;
           this.callbacks.onTabWorkChanged?.(runtime.id);
+          void this.runPendingContinuation(runtime.id);
         },
         onRewindingChanged: (runtime, isRewinding) => {
           if (!this.isTabStateMutable(runtime)) return;
@@ -330,6 +342,12 @@ export class TabManager implements TabManagerInterface {
           if (!this.isTabStateMutable(runtime)) return;
           this.callbacks.onTabDraftChanged?.(runtime.id, draftModel);
         },
+        onContinueInNewTab: runtime => this.requestContinuationInNewTab(runtime),
+        isContinuationPending: runtime => this.pendingContinuations.has(runtime.id)
+          || this.continuationAdmissions.has(runtime.id),
+        observeContinuationPending: (tabId, observer) => (
+          this.observeContinuationPending(tabId, observer)
+        ),
         onCommandContextChanged: runtime => {
           this.bumpTabCommandContextRevision(runtime.id);
         },
@@ -1097,6 +1115,134 @@ export class TabManager implements TabManagerInterface {
       if (!this.isTabAlive(tab)) return;
       void this.switchToTab(tab.id);
     });
+  }
+
+  /** Provider-neutral compact continuation. The provider sees it only as a new user turn. */
+  private async requestContinuationInNewTab(source: AssembledTabRuntime): Promise<void> {
+    if (!this.isTabAlive(source) || this.pendingContinuations.has(source.id) || this.continuationAdmissions.has(source.id)) return;
+    if (this.isTabWorking(source.id)) {
+      this.setContinuationQueued(source.id, true);
+      return;
+    }
+    await this.createContinuationTarget(source);
+  }
+
+  private async runPendingContinuation(sourceTabId: TabId): Promise<void> {
+    if (!this.pendingContinuations.has(sourceTabId)) return;
+    const source = this.tabs.get(sourceTabId);
+    if (!source || !this.isTabAlive(source)) {
+      this.setContinuationQueued(sourceTabId, false);
+      return;
+    }
+    if (this.isTabWorking(source.id) || this.continuationAdmissions.has(source.id)) return;
+    await this.createContinuationTarget(source);
+  }
+
+  private async createContinuationTarget(source: AssembledTabRuntime): Promise<void> {
+    if (!this.isTabAlive(source) || this.destroyed || this.continuationAdmissions.has(source.id)) return;
+    this.setContinuationAdmission(source.id, true);
+    this.setContinuationQueued(source.id, false);
+    let target: AssembledTabRuntime | null = null;
+    let sendInvoked = false;
+    try {
+      // Capture only after all source work settles so the capsule is latest-state-wins.
+      if (this.isTabWorking(source.id)) {
+        this.setContinuationQueued(source.id, true);
+        return;
+      }
+      const capsule = buildContinuationCapsule({ messages: source.state.messages, todos: source.state.currentTodos });
+      let sourceModel = source.draftModel;
+      try { sourceModel = getTabSelectedModel(source, this.plugin) ?? source.draftModel; } catch { /* blank draft remains explicit */ }
+      if (!sourceModel) {
+        new Notice('Could not continue in a new tab because the source model is unavailable.');
+        return;
+      }
+      target = await this.createTab(null, undefined, {
+        activate: true, draftModel: sourceModel, draftProviderId: source.providerId,
+      });
+      if (!target || !this.isTabAlive(target)) return;
+      if (!this.isTabAlive(source)) {
+        await this.discardPristineContinuationTarget(target);
+        return;
+      }
+      const roots = source.ui.externalContextSelector.getExternalContexts();
+      target.ui.externalContextSelector.setExternalContexts(selectRelevantExternalRoots(roots, source.state.messages));
+      if (!this.isTabAlive(source)) {
+        await this.discardPristineContinuationTarget(target);
+        return;
+      }
+      sendInvoked = true;
+      await target.controllers.inputController.sendMessage({ content: capsule });
+    } catch {
+      if (sendInvoked) {
+        new Notice('Sending the continuation may have started. The new tab was kept so you can inspect it before retrying.');
+      } else {
+        if (target) await this.discardPristineContinuationTarget(target).catch(() => false);
+        const sourceRestored = await this.restoreContinuationSource(source);
+        new Notice(sourceRestored
+          ? 'Could not prepare the continuation tab. The source tab was restored.'
+          : 'Could not prepare the continuation tab. No message was sent.');
+      }
+    } finally {
+      this.setContinuationAdmission(source.id, false);
+    }
+  }
+
+  private async discardPristineContinuationTarget(target: AssembledTabRuntime): Promise<boolean> {
+    if (
+      !this.isTabAlive(target)
+      || target.conversationId !== null
+      || target.state.messages.length > 0
+      || this.isTabWorking(target.id)
+    ) return false;
+    return await this.discardTab(target.id);
+  }
+
+  private async restoreContinuationSource(source: AssembledTabRuntime): Promise<boolean> {
+    if (!this.isTabAlive(source) || this.destroyed) return false;
+    if (this.activeTabId !== source.id) {
+      try {
+        await this.switchToTab(source.id);
+      } catch {
+        return false;
+      }
+    }
+    return this.activeTabId === source.id;
+  }
+
+  private observeContinuationPending(tabId: TabId, observer: () => void): () => void {
+    let observers = this.continuationStateObservers.get(tabId);
+    if (!observers) {
+      observers = new Set();
+      this.continuationStateObservers.set(tabId, observers);
+    }
+    observers.add(observer);
+    return () => {
+      observers?.delete(observer);
+      if (observers?.size === 0) this.continuationStateObservers.delete(tabId);
+    };
+  }
+
+  private setContinuationQueued(tabId: TabId, queued: boolean): void {
+    this.setContinuationState(this.pendingContinuations, tabId, queued);
+  }
+
+  private setContinuationAdmission(tabId: TabId, admitted: boolean): void {
+    this.setContinuationState(this.continuationAdmissions, tabId, admitted);
+  }
+
+  private setContinuationState(set: Set<TabId>, tabId: TabId, active: boolean): void {
+    const changed = active ? !set.has(tabId) : set.has(tabId);
+    if (!changed) return;
+    if (active) set.add(tabId);
+    else set.delete(tabId);
+    for (const observer of this.continuationStateObservers.get(tabId) ?? []) {
+      try {
+        observer();
+      } catch {
+        // Presentation observers must not affect continuation admission.
+      }
+    }
   }
 
   // ============================================
@@ -2112,6 +2258,8 @@ export class TabManager implements TabManagerInterface {
   }
 
   private releaseTabRuntimeMetadata(tabId: TabId): readonly unknown[] {
+    this.setContinuationQueued(tabId, false);
+    this.setContinuationAdmission(tabId, false);
     const errors: unknown[] = [];
     try {
       this.cancelProviderRuntimeCommandWarmup(tabId);
@@ -2394,6 +2542,9 @@ export class TabManager implements TabManagerInterface {
     const tabs = Array.from(this.tabs.values());
     const metadataTabIds = new Set<TabId>([
       ...tabs.map(tab => tab.id),
+      ...this.pendingContinuations,
+      ...this.continuationAdmissions,
+      ...this.continuationStateObservers.keys(),
       ...this.providerRuntimeCommandWarmups.keys(),
       ...this.providerRuntimeCommandCache.keys(),
       ...this.providerCommandDiscoveryStores.keys(),
@@ -2413,6 +2564,9 @@ export class TabManager implements TabManagerInterface {
     }
     const finalMetadataTabIds = new Set<TabId>([
       ...tabs.map(tab => tab.id),
+      ...this.pendingContinuations,
+      ...this.continuationAdmissions,
+      ...this.continuationStateObservers.keys(),
       ...this.providerRuntimeCommandWarmups.keys(),
       ...this.providerRuntimeCommandCache.keys(),
       ...this.providerCommandDiscoveryStores.keys(),
@@ -2429,6 +2583,9 @@ export class TabManager implements TabManagerInterface {
     this.providerCommandDiscoveryStores.clear();
     this.tabCommandContextRevisions.clear();
     this.tabActivationRevisions.clear();
+    this.pendingContinuations.clear();
+    this.continuationAdmissions.clear();
+    this.continuationStateObservers.clear();
     this.closingTabIds.clear();
     this.activeTabId = null;
     this.committedActiveTabId = null;

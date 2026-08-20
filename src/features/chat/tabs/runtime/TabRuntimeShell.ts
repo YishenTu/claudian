@@ -1,7 +1,10 @@
 import { Notice } from 'obsidian';
 
 import type { ProviderInteractionPort } from '../../../../core/execution';
-import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
+import {
+  findProviderModelOption,
+  resolveNewConversationModel,
+} from '../../../../core/providers/conversationModel';
 import { getEnabledProviderForModel } from '../../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
@@ -67,10 +70,22 @@ export function buildTabRuntimeShell(
   const newConversationModel = !isBound && !restoredDraftModel
     ? resolveNewConversationModel(plugin.settings)
     : null;
+  const explicitDraftProviderId = options.draftProviderId;
+  const explicitDraftModel = !isBound && explicitDraftProviderId
+    ? (
+        restoredDraftModel
+        && ProviderRegistry.isEnabled(explicitDraftProviderId, plugin.settings)
+        && findProviderModelOption(explicitDraftProviderId, restoredDraftModel, plugin.settings)
+      )
+    : null;
+  if (!isBound && explicitDraftProviderId && !explicitDraftModel) {
+    throw new Error('The requested draft provider/model selection is not currently available');
+  }
   const draftModel = isBound
     ? null
-    : (restoredDraftModel || newConversationModel?.model || null);
+    : (explicitDraftModel || restoredDraftModel || newConversationModel?.model || null);
   const initialProviderId = conversation?.providerId
+    ?? explicitDraftProviderId
     ?? newConversationModel?.providerId
     ?? (draftModel
       ? getEnabledProviderForModel(draftModel, plugin.settings)

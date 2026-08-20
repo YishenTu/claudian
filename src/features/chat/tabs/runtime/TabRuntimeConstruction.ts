@@ -30,6 +30,8 @@ export interface TabRuntimeConstructionContext {
   conversation?: Conversation;
   tabId?: TabId;
   draftModel?: string | null;
+  /** Explicit provider paired with a continuation draft model; never inferred across providers. */
+  draftProviderId?: ProviderId;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;
   getProviderCatalogConfig: (
     tab: TabProviderCatalogContext,
@@ -54,6 +56,9 @@ export interface TabRuntimeConstructionContext {
     providerId: ProviderId,
   ) => void | Promise<void>;
   onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
+  onContinueInNewTab?: (tab: AssembledTabRuntime) => void | Promise<void>;
+  isContinuationPending?: (tab: AssembledTabRuntime) => boolean;
+  observeContinuationPending?: (tabId: TabId, observer: () => void) => () => void;
   captureReviewableSettlement?: (
     tab: AssembledTabRuntime,
     outcome: TabReviewOutcome,

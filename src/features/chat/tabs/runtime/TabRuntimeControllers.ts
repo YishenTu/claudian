@@ -2,7 +2,6 @@ import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
-import { getEnabledProviderForModel } from '../../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { getVaultPath } from '../../../../utils/path';
@@ -79,10 +78,6 @@ export function buildTabRuntimeControllers(
     }
 
     try {
-      if (tab.conversationId === null && tab.draftModel) {
-        tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
-      }
-
       await initializeTabExecution(tab, plugin);
       if (isClosingLifecycleState(tab.lifecycleState)) {
         return false;
