@@ -38,6 +38,7 @@ test('source lint matches strict Obsidian and type-aware review policy', async (
     'eslint-comments/require-description',
     'obsidianmd/detach-leaves',
     'obsidianmd/hardcoded-config-path',
+    'obsidianmd/settings-tab/no-deprecated-display',
   ]) {
     assert.equal(config.rules[rule]?.[0], 2, `${rule} must be an error`);
   }

@@ -1,4 +1,4 @@
-import type { App, Plugin } from 'obsidian';
+import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import {
@@ -145,7 +145,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private activeTab: SettingsTabId = 'general';
   private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
-  private displayGeneration = 0;
+  private renderGeneration = 0;
   private readonly agentSkillCoordinator: AgentSkillManagementCoordinator;
 
   constructor(app: App, plugin: FeatureHost & Plugin) {
@@ -157,19 +157,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
     );
   }
 
-  /**
-   * Declarative settings definitions for Obsidian 1.13.0+ settings search.
-   * Claudian still builds its settings imperatively in display(); this empty
-   * array satisfies the contract so the tab is registered in search.
-   */
-  getSettingDefinitions(): never[] {
-    return [];
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [{
+      name: 'Claudian',
+      searchable: false,
+      render: setting => this.renderSettings(setting.settingEl),
+    }];
   }
 
-  display(): void {
-    const displayGeneration = ++this.displayGeneration;
+  private renderSettings(containerEl: HTMLElement): () => void {
+    const renderGeneration = ++this.renderGeneration;
     this.agentSkillCoordinator.resetSubscriptions();
-    const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('claudian-settings');
     this.refreshTitleModelOptions = null;
@@ -221,7 +219,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           'settings-tab',
         );
         await ProviderWorkspaceRegistry.prepareSettings(providerId);
-        if (displayGeneration !== this.displayGeneration) return;
+        if (renderGeneration !== this.renderGeneration) return;
         providerContent.empty();
         const renderer = ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId);
         if (!renderer) {
@@ -246,7 +244,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           ),
         });
       } catch (error) {
-        if (displayGeneration !== this.displayGeneration) return;
+        if (renderGeneration !== this.renderGeneration) return;
         renderedProviderIds.delete(providerId);
         providerContent.empty();
         const message = error instanceof Error ? error.message : 'Unknown error';
@@ -321,6 +319,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
     if (this.activeTab === 'collab') {
       activateCollabTab();
     }
+
+    return () => {
+      if (renderGeneration !== this.renderGeneration) return;
+      this.renderGeneration += 1;
+      this.agentSkillCoordinator.resetSubscriptions();
+      this.refreshTitleModelOptions = null;
+    };
   }
 
   private renderGeneralTab(container: HTMLElement): void {
@@ -721,7 +726,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private renderCollabTab(container: HTMLElement): () => void {
-    const displayGeneration = this.displayGeneration;
+    const renderGeneration = this.renderGeneration;
     let requestGeneration = 0;
     let checkTimer: number | null = null;
 
@@ -806,7 +811,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         status = 'unavailable';
       }
       if (
-        displayGeneration !== this.displayGeneration
+        renderGeneration !== this.renderGeneration
         || generation !== requestGeneration
       ) {
         return;

@@ -249,6 +249,26 @@ function findContainerByClass(root: MockContainer, className: string): MockConta
   return null;
 }
 
+function renderSettingsTab(
+  tab: ClaudianSettingTab,
+  container = createContainer(),
+): MockContainer {
+  const [definition] = tab.getSettingDefinitions();
+  if (
+    !definition
+    || !('render' in definition)
+    || typeof definition.render !== 'function'
+  ) {
+    throw new Error('Expected a declarative settings renderer');
+  }
+
+  definition.render(
+    { settingEl: container } as never,
+    {} as never,
+  );
+  return container;
+}
+
 describe('ClaudianSettingTab display settings', () => {
   beforeEach(() => {
     mockRenderedSettingNames.length = 0;
@@ -256,6 +276,24 @@ describe('ClaudianSettingTab display settings', () => {
     mockGitStatusElements.length = 0;
     mockToggleChanges.clear();
     mockTextChanges.clear();
+  });
+
+  it('renders the custom settings surface through a declarative definition', () => {
+    const { tab } = createTab(true);
+    const container = createContainer();
+    const [definition] = tab.getSettingDefinitions();
+
+    expect(definition).toEqual(expect.objectContaining({
+      name: 'Claudian',
+      searchable: false,
+    }));
+    expect(Object.hasOwn(ClaudianSettingTab.prototype, 'display')).toBe(false);
+
+    renderSettingsTab(tab, container);
+
+    expect(container.empty).toHaveBeenCalledTimes(1);
+    expect(container.addClass).toHaveBeenCalledWith('claudian-settings');
+    expect(findContainer(container, t('settings.tabs.general'))).not.toBeNull();
   });
 
   it('renders the dual-pane position only while dual-pane mode is enabled', () => {
@@ -449,13 +487,11 @@ describe('ClaudianSettingTab display settings', () => {
     jest.spyOn(ProviderWorkspaceRegistry, 'prepareSettings').mockResolvedValue(undefined);
     jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab, plugin } = createTab(true);
-    (tab as any).containerEl = createContainer();
-
-    tab.display();
+    renderSettingsTab(tab);
     expect(ensureInitialized).not.toHaveBeenCalled();
 
     (tab as any).activeTab = 'providers';
-    tab.display();
+    renderSettingsTab(tab);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -480,10 +516,9 @@ describe('ClaudianSettingTab display settings', () => {
     jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab } = createTab(true);
     const container = createContainer();
-    (tab as any).containerEl = container;
     (tab as any).activeTab = 'providers';
 
-    tab.display();
+    renderSettingsTab(tab, container);
     await Promise.resolve();
     await Promise.resolve();
     findContainer(container, 'CODEX')?.click();

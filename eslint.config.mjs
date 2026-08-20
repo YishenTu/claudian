@@ -92,6 +92,7 @@ const stagedObsidianRules = {
   'obsidianmd/prefer-window-timers': obsidianRuleSeverity,
   'obsidianmd/regex-lookbehind': obsidianRuleSeverity,
   'obsidianmd/sample-names': obsidianRuleSeverity,
+  'obsidianmd/settings-tab/no-deprecated-display': obsidianRuleSeverity,
   'obsidianmd/settings-tab/no-manual-html-headings': obsidianRuleSeverity,
   'obsidianmd/settings-tab/no-problematic-settings-headings': obsidianRuleSeverity,
   'obsidianmd/ui/sentence-case': [

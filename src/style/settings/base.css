@@ -85,6 +85,13 @@
 }
 
 /* Settings page - remove separator lines from setting items */
+.setting-item.claudian-settings {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border-top: none;
+}
+
 .claudian-settings .setting-item {
   border-top: none;
 }
