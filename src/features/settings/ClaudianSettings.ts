@@ -10,7 +10,11 @@ import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettin
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
 import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
-import type { ChatViewPlacement, DualPaneSide } from '../../core/types/settings';
+import type {
+  ChatViewPlacement,
+  DualPaneSide,
+  TabRestoreMode,
+} from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import { AgentSkillSettings } from '../../shared/settings/AgentSkillSettings';
@@ -297,6 +301,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             await this.plugin.mutateSettings((settings) => {
               settings.chatViewPlacement = value as ChatViewPlacement;
+            });
+          });
+      });
+
+    new Setting(container)
+      .setName(t('settings.tabRestoreMode.name'))
+      .setDesc(t('settings.tabRestoreMode.desc'))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('none', t('settings.tabRestoreMode.none'))
+          .addOption('active', t('settings.tabRestoreMode.active'))
+          .addOption('all', t('settings.tabRestoreMode.all'))
+          .setValue(this.plugin.settings.tabRestoreMode)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.tabRestoreMode = value as TabRestoreMode;
             });
           });
       });

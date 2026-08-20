@@ -135,6 +135,7 @@ describe('ClaudianPlugin', () => {
         },
       },
       workspace: {
+        layoutReady: true,
         on: jest.fn().mockReturnValue({ id: 'workspace-event' }),
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
@@ -262,6 +263,57 @@ describe('ClaudianPlugin', () => {
       expect(completedBeforeHistoryScan).toBe(true);
       expect(didLoadRestoredMetadata).toBe(true);
       expect(cachedConversation?.title).toBe(restoredMetadata.title);
+    });
+
+    it('loads metadata requested by a view-scoped tab workspace', async () => {
+      const restoredMetadata = {
+        id: 'view-restored-conversation',
+        providerId: 'claude' as const,
+        title: 'View restored conversation',
+        createdAt: 1,
+        lastActivityAt: 2,
+      };
+      const loadSourceSpy = mockMetadataSources(restoredMetadata);
+
+      await plugin.onload();
+      expect(plugin.getCachedConversation(restoredMetadata.id)).toBeNull();
+
+      await plugin.ensureConversationMetadataLoaded([restoredMetadata.id]);
+
+      expect(plugin.getCachedConversation(restoredMetadata.id)?.title)
+        .toBe(restoredMetadata.title);
+      expect(loadSourceSpy).toHaveBeenCalledWith(restoredMetadata.id);
+      loadSourceSpy.mockRestore();
+    });
+
+    it('discards stale global tab state after a view-scoped restore succeeds', async () => {
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          activeTabId: 'legacy-tab',
+          openTabs: [{ conversationId: null, tabId: 'legacy-tab' }],
+        },
+      });
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        getViewState: jest.fn().mockReturnValue({
+          state: {
+            tabWorkspace: {
+              version: 1,
+              activeTabId: 'view-tab',
+              openTabs: [{ conversationId: null, tabId: 'view-tab' }],
+            },
+          },
+        }),
+      }]);
+      await plugin.onload();
+      const clearLegacyState = jest.spyOn(plugin.storage, 'clearTabManagerState')
+        .mockResolvedValue(undefined);
+
+      await expect(plugin.claimLegacyTabManagerState()).resolves.toBeNull();
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
+
+      await plugin.completeLegacyTabManagerStateMigration();
+
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
     });
 
     it('publishes the remaining conversation metadata after layout readiness', async () => {

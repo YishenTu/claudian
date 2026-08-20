@@ -33,11 +33,13 @@ export function isClosingLifecycleState(
   return state === 'closing';
 }
 
-export function commitProvisionalTab(tab: AssembledTabRuntime): void {
+export function commitProvisionalTab(tab: AssembledTabRuntime): boolean {
   tab.session.claimUserOwnership();
   if (tab.lifecycleState === 'provisional') {
     tab.lifecycleState = 'cold';
+    return true;
   }
+  return false;
 }
 
 export function activateTab(tab: AssembledTabRuntime): void {

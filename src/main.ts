@@ -25,6 +25,7 @@ import {
   SettingsPostCommitError,
 } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
+import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
 import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from './core/bootstrap/storage';
 import {
@@ -43,6 +44,7 @@ import {
 } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
 import type {
+  AppTabManagerState,
   ProviderCliResolutionContext,
   ProviderId,
 } from './core/providers/types';
@@ -147,6 +149,7 @@ export default class ClaudianPlugin extends Plugin {
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private isUnloading = false;
   private applicationShutdownPromise: Promise<void> | null = null;
+  private tabWorkspaceMigrationCoordinator!: TabWorkspaceMigrationCoordinator;
 
   get executionPersistence(): ChatExecutionPersistence {
     return this.conversationRepository;
@@ -419,6 +422,11 @@ export default class ClaudianPlugin extends Plugin {
     this.hasLoadedAllSessionMetadata = false;
     const sharedStorage = new SharedStorageService(this);
     this.storage = sharedStorage;
+    this.tabWorkspaceMigrationCoordinator = new TabWorkspaceMigrationCoordinator(
+      sharedStorage,
+      this.app.workspace,
+      isClaudianView,
+    );
     try {
       await deleteLegacyMcpConfig(sharedStorage.getAdapter());
     } catch {
@@ -1431,6 +1439,56 @@ export default class ClaudianPlugin extends Plugin {
 
   getConversationList(): ConversationMeta[] {
     return this.conversationRepository.list();
+  }
+
+  async ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void> {
+    const missingIds = Array.from(new Set(conversationIds)).filter(
+      id => !this.conversationRepository.getCachedConversation(id),
+    );
+    if (missingIds.length === 0) return;
+
+    const records = (await Promise.all(
+      missingIds.map(id => this.storage.sessions.load(id)),
+    )).filter((record): record is SessionMetadataReadResult => record !== null);
+    if (records.length === 0) return;
+
+    const entries = records.map(({ metadata, needsMigration, source }) => ({
+      conversation: this.createConversationMetadataShell(metadata),
+      needsMigration,
+      source,
+    }));
+    const shells = entries.map(({ conversation }) => conversation);
+    const invalidatedIds = new Set(
+      ProviderSettingsCoordinator.invalidateConversationSessions(
+        shells,
+        Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
+      ).map(({ id }) => id),
+    );
+    await this.conversationRepository.adoptMetadataConversations(entries);
+    this.conversationRepository.registerHistoricalModelRecoverySources(shells);
+    await this.conversationRepository.persistConversations(
+      Array.from(invalidatedIds)
+        .map(id => this.conversationRepository.getCachedConversation(id))
+        .filter((conversation): conversation is Conversation => conversation !== null),
+    );
+  }
+
+  registerTabWorkspaceStateDelivery(
+    view: ClaudianView,
+    hasViewScopedState: boolean,
+  ) {
+    return this.tabWorkspaceMigrationCoordinator.registerStateDelivery(
+      view,
+      hasViewScopedState,
+    );
+  }
+
+  async claimLegacyTabManagerState(): Promise<AppTabManagerState | null> {
+    return this.tabWorkspaceMigrationCoordinator.claimLegacyState();
+  }
+
+  async completeLegacyTabManagerStateMigration(): Promise<void> {
+    await this.tabWorkspaceMigrationCoordinator.completeMigration();
   }
 
   getView(): ClaudianView | null {

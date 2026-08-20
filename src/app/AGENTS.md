@@ -20,6 +20,7 @@
 | `SettingsCoordinator` | Serialization of settings mutations, rollback before failed persistence, and post-commit publication ordering |
 | `ChatModelSelectionCoordinator` | Application-wide ordering and durable settings commits for explicit future-tab model-seed intents |
 | `PinnedLinkedNotePathCoordinator` | Pinned linked-note path mutation, folder-descendant rewrite, deduplication, and deletion cleanup through ordered settings transactions |
+| `TabWorkspaceMigrationCoordinator` | Cross-leaf coordination of actual Obsidian view-state delivery and the one-time claim and cleanup of legacy plugin-global tab state |
 | `ClaudianProviderHost` | Typed delegation to application capabilities; it owns no duplicate settings, storage, view, or execution state |
 
 Storage adapters own I/O mechanics, not domain decisions. Callers decide what state is valid; adapters merge and persist it without inventing conversation, tab, provider, or settings semantics.
@@ -29,10 +30,13 @@ Storage adapters own I/O mechanics, not domain decisions. Callers decide what st
 - `ConversationRepository` is the source of truth for Claudian's current in-memory conversation projection. Feature code must request conversation mutations through `FeatureHost` instead of mutating cached conversations independently.
 - Claudian metadata and accepted-input ledgers are durable Claudian state.
 - Provider session IDs, resume checkpoints, and opaque `providerState` may be interpreted only by provider snapshots or typed provider history/state helpers. Generic app code may store those opaque values but must not infer or rewrite their fields.
-- `AppTabManagerState` is a separate current-tab snapshot. New writes retain only the active tab identity and conversation binding; legacy multi-tab snapshots are restored as the active entry only. It must not duplicate conversation messages, provider state, draft content, or runtime objects.
+- Persisted tab workspaces are view-scoped shells owned by the chat feature. Application storage exposes the former plugin-global `AppTabManagerState` only as a one-time migration source; it must not become a second live tab-state authority.
+- Legacy tab migration decisions use state actually delivered to live views. A live view's synthesized `getState()` output is not evidence that Obsidian restored a view-scoped snapshot; deferred leaves may contribute their serialized leaf state directly.
+- Once the aggregate leaf declarations include any view-scoped snapshot, including a deferred leaf, the migration coordinator retires the legacy global snapshot so it cannot become eligible again after that leaf is removed.
+- Before a view restores conversation-backed tab shells, the application conversation repository must adopt metadata for every conversation selected by the restore policy. Deferred history scanning remains responsible for all other sessions.
 - `Conversation.modelRecoverySource` is a read-only native locator used only to recover missing historical model metadata. It must never be treated as a resumable provider binding, and a successful recovery or fresh provider session retires it.
 - `Conversation.currentNote` is a vault-relative full path. Vault rename events must rewrite matching note paths, including descendants for folder renames, through `ConversationRepository` rather than presentation code.
-- `SharedStorageService.setTabManagerState()` must preserve unrelated plugin data when updating the tab-layout snapshot.
+- Legacy tab-state reads and cleanup must preserve unrelated plugin data.
 - Settings changes must go through `SettingsCoordinator` or the application mutation APIs so persistence, rollback, provider reconciliation, and publication remain ordered.
 - Provider model-option changes reconcile affected durable conversation selections through `ConversationRepository` before views refresh. Providers and features may publish the change but must not rewrite cached conversations themselves.
 - Environment changes that can alter model options use the same provider model-option reconciliation boundary; direct model-selector refresh is not an allowed shortcut.

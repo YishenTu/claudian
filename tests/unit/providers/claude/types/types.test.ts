@@ -85,6 +85,10 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.enableFilePane).toBe(true);
       expect(DEFAULT_SETTINGS.dualPaneSide).toBe('right');
     });
+
+    it('should restore all retained tabs by default', () => {
+      expect(DEFAULT_SETTINGS.tabRestoreMode).toBe('all');
+    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -126,6 +130,7 @@ describe('types.ts', () => {
         enableDualPane: true,
         enableFilePane: true,
         dualPaneSide: 'right',
+        tabRestoreMode: 'all',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -184,6 +189,7 @@ describe('types.ts', () => {
         enableDualPane: true,
         enableFilePane: true,
         dualPaneSide: 'right',
+        tabRestoreMode: 'active',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -243,6 +249,7 @@ describe('types.ts', () => {
         enableDualPane: false,
         enableFilePane: false,
         dualPaneSide: 'left',
+        tabRestoreMode: 'none',
         hiddenProviderCommands: {
           claude: [],
           codex: [],

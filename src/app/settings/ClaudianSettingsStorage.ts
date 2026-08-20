@@ -24,6 +24,8 @@ import {
   type HiddenProviderCommands,
   type ProviderConfigMap,
   type StoredChatModelSelection,
+  TAB_RESTORE_MODES,
+  type TabRestoreMode,
 } from '../../core/types/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
@@ -118,11 +120,19 @@ function normalizeDualPaneSide(value: unknown): DualPaneSide {
     : DEFAULT_CLAUDIAN_SETTINGS.dualPaneSide;
 }
 
-function shouldPersistDualPaneNormalization(
+function normalizeTabRestoreMode(value: unknown): TabRestoreMode {
+  return typeof value === 'string'
+    && (TAB_RESTORE_MODES as readonly string[]).includes(value)
+    ? value as TabRestoreMode
+    : DEFAULT_CLAUDIAN_SETTINGS.tabRestoreMode;
+}
+
+function shouldPersistChatViewNormalization(
   stored: Record<string, unknown>,
   enableDualPane: boolean,
   enableFilePane: boolean,
   dualPaneSide: DualPaneSide,
+  tabRestoreMode: TabRestoreMode,
 ): boolean {
   return (
     'enableDualPane' in stored
@@ -133,6 +143,9 @@ function shouldPersistDualPaneNormalization(
   ) || (
     'dualPaneSide' in stored
     && stored.dualPaneSide !== dualPaneSide
+  ) || (
+    'tabRestoreMode' in stored
+    && stored.tabRestoreMode !== tabRestoreMode
   );
 }
 
@@ -393,6 +406,7 @@ export class ClaudianSettingsStorage {
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
     const enableFilePane = normalizeEnableFilePane(stored.enableFilePane);
     const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
+    const tabRestoreMode = normalizeTabRestoreMode(stored.tabRestoreMode);
     const legacyProviderSettings = {
       ...stored,
       hiddenProviderCommands,
@@ -413,6 +427,7 @@ export class ClaudianSettingsStorage {
       enableDualPane,
       enableFilePane,
       dualPaneSide,
+      tabRestoreMode,
       lastSelectedChatModel,
     };
 
@@ -446,11 +461,12 @@ export class ClaudianSettingsStorage {
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
       || shouldPersistChatViewPlacementMigration(stored, chatViewPlacement)
-      || shouldPersistDualPaneNormalization(
+      || shouldPersistChatViewNormalization(
         stored,
         enableDualPane,
         enableFilePane,
         dualPaneSide,
+        tabRestoreMode,
       )
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       || (

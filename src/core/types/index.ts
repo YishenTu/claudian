@@ -40,6 +40,7 @@ export {
   type SessionManagerSort,
   type SlashCommand,
   type StoredChatModelSelection,
+  type TabRestoreMode,
 } from './settings';
 
 // Diff types

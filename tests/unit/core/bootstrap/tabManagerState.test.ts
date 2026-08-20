@@ -1,4 +1,82 @@
-import { normalizeTabManagerState } from '@/core/bootstrap/tabManagerState';
+import {
+  decodeTabWorkspaceViewState,
+  normalizeTabManagerState,
+  resolveTabRestorePlan,
+} from '@/core/bootstrap/tabManagerState';
+
+describe('decodeTabWorkspaceViewState', () => {
+  it('decodes a complete versioned view workspace', () => {
+    expect(decodeTabWorkspaceViewState({
+      version: 1,
+      activeTabId: 'tab-2',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-2' },
+      ],
+      expandedTitleTabIds: ['tab-2'],
+    })).toEqual({
+      activeTabId: 'tab-2',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-2' },
+      ],
+      expandedTitleTabIds: ['tab-2'],
+    });
+  });
+
+  it.each([
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1' },
+        { conversationId: null, tabId: 'tab-1' },
+      ],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1' },
+        { conversationId: 42, tabId: 'tab-2' },
+      ],
+    },
+    {
+      version: 1,
+      activeTabId: 'missing-tab',
+      openTabs: [{ conversationId: null, tabId: 'tab-1' }],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [{ conversationId: null, tabId: 'tab-1' }],
+      expandedTitleTabIds: ['missing-tab'],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1' },
+        { conversationId: '   ', tabId: 'tab-2' },
+      ],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1' },
+        { conversationId: null, draftModel: '\t', tabId: 'tab-2' },
+      ],
+    },
+    {
+      version: 1,
+      activeTabId: '  ',
+      openTabs: [{ conversationId: null, tabId: '  ' }],
+    },
+  ])('rejects the entire malformed versioned workspace', (state) => {
+    expect(decodeTabWorkspaceViewState(state)).toBeNull();
+  });
+});
 
 describe('normalizeTabManagerState', () => {
   it('preserves valid expanded title tab ids', () => {
@@ -32,5 +110,58 @@ describe('normalizeTabManagerState', () => {
     });
 
     expect(result?.expandedTitleTabIds).toEqual(['tab-2', 'tab-1']);
+  });
+
+  it('deduplicates tab ids while preserving the first valid tab order', () => {
+    const result = normalizeTabManagerState({
+      openTabs: [
+        { tabId: 'tab-1', conversationId: 'conv-1' },
+        { tabId: 'tab-1', conversationId: 'conv-2' },
+        { tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' },
+      ],
+      activeTabId: 'tab-2',
+    });
+
+    expect(result?.openTabs).toEqual([
+      { tabId: 'tab-1', conversationId: 'conv-1' },
+      { tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' },
+    ]);
+  });
+});
+
+describe('resolveTabRestorePlan', () => {
+  const state = {
+    openTabs: [
+      { tabId: 'tab-1', conversationId: 'conv-1' },
+      { tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' },
+    ],
+    activeTabId: 'tab-2',
+    expandedTitleTabIds: ['tab-1', 'tab-2'],
+  };
+
+  it('returns an empty plan for a fresh startup', () => {
+    expect(resolveTabRestorePlan(state, 'none')).toEqual({
+      openTabs: [],
+      activeTabId: null,
+    });
+  });
+
+  it('selects only the last active retained tab', () => {
+    expect(resolveTabRestorePlan(state, 'active')).toEqual({
+      openTabs: [{ tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' }],
+      activeTabId: 'tab-2',
+      expandedTitleTabIds: ['tab-2'],
+    });
+  });
+
+  it('preserves all retained tabs and their order', () => {
+    expect(resolveTabRestorePlan(state, 'all')).toEqual(state);
+  });
+
+  it('returns an empty active plan when its target is missing', () => {
+    expect(resolveTabRestorePlan({ ...state, activeTabId: 'missing' }, 'active')).toEqual({
+      openTabs: [],
+      activeTabId: null,
+    });
   });
 });

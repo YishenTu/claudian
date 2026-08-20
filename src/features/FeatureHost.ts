@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { ProviderHost } from '../core/providers/ProviderHost';
-import type { ProviderId } from '../core/providers/types';
+import type { AppTabManagerState, ProviderId } from '../core/providers/types';
 import type {
   ClaudianSettings,
   Conversation,
@@ -12,6 +12,11 @@ import type {
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
 import type { AssembledTabRuntime, TabId, TabManagerViewHost } from './chat/tabs/types';
+
+export interface TabWorkspaceStateDeliveryRegistration {
+  readonly declarationsReady: boolean;
+  readonly waitUntilDeclarationsReady: Promise<void>;
+}
 
 export interface FeatureTabManagerHost {
   canCreateTab(): boolean;
@@ -82,6 +87,13 @@ export interface FeatureHost {
   getCachedConversation(id: string): Conversation | null;
   getConversationSync(id: string): Conversation | null;
   getConversationList(): ConversationMeta[];
+  ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void>;
+  registerTabWorkspaceStateDelivery(
+    view: FeatureViewHost,
+    hasViewScopedState: boolean,
+  ): TabWorkspaceStateDeliveryRegistration;
+  claimLegacyTabManagerState(): Promise<AppTabManagerState | null>;
+  completeLegacyTabManagerStateMigration(): Promise<void>;
 
   getView(): FeatureViewHost | null;
   getAllViews(): FeatureViewHost[];

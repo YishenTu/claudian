@@ -288,6 +288,13 @@
       "name": "Ativar modo de painel duplo",
       "desc": "Mostrar automaticamente o gerenciador de sessões ao lado do chat quando a visualização tiver pelo menos 600 px de largura."
     },
+    "tabRestoreMode": {
+      "name": "Restaurar abas ao iniciar",
+      "desc": "Escolher quais abas de chat mantidas serão reabertas ao carregar uma visualização do Claudian.",
+      "none": "Iniciar um novo chat",
+      "active": "Restaurar a última aba",
+      "all": "Restaurar todas as abas"
+    },
     "enableFilePane": {
       "name": "Ativar painel de arquivos",
       "desc": "Mostrar uma aba Arquivos no gerenciador de sessões do modo de painel duplo."

@@ -1,6 +1,13 @@
-import type { EventRef, TFile, WorkspaceLeaf } from 'obsidian';
+import type { EventRef, TFile, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Menu, Notice, Scope, setIcon } from 'obsidian';
 
+import {
+  decodeTabWorkspaceViewState,
+  resolveTabRestorePlan,
+  TAB_WORKSPACE_VIEW_STATE_KEY,
+  TAB_WORKSPACE_VIEW_STATE_VERSION,
+  type TabWorkspaceViewState,
+} from '../../core/bootstrap/tabManagerState';
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import {
@@ -17,7 +24,11 @@ import {
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
 import { getVaultFileByPath, revealWorkspaceLeaf } from '../../utils/obsidianCompat';
-import type { FeatureHost, FeatureTabManagerHost } from '../FeatureHost';
+import type {
+  FeatureHost,
+  FeatureTabManagerHost,
+  TabWorkspaceStateDeliveryRegistration,
+} from '../FeatureHost';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
@@ -26,7 +37,6 @@ import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIc
 import { getTabProviderId } from './tabs/providerResolution';
 import { TabBar } from './tabs/TabBar';
 import { sendTabInputMessageFromExplicitEnterShortcut } from './tabs/TabInputEvents';
-import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
 import { updatePlanModeUI } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
@@ -116,6 +126,15 @@ export class ClaudianView extends ItemView {
   // Debouncing for tab bar updates
   private pendingTabBarUpdate: ScheduledAnimationFrame | null = null;
   private tabStatePersistence: TabStatePersistenceCoordinator | null = null;
+  private hasTabWorkspaceViewState = false;
+  private pendingTabWorkspaceState: AppTabManagerState | null = null;
+  private persistedTabWorkspaceState: AppTabManagerState | null = null;
+  private tabWorkspaceStateDelivery: TabWorkspaceStateDeliveryRegistration | null = null;
+  private initializedTabWorkspaceLifecycleRevision = -1;
+  private tabWorkspaceInitialization: {
+    lifecycleRevision: number;
+    promise: Promise<void>;
+  } | null = null;
   private shutdownSnapshotPromise: Promise<void> | null = null;
   private viewLifecycleRevision = 0;
   private viewShutdownStarted = false;
@@ -157,6 +176,58 @@ export class ClaudianView extends ItemView {
 
   getIcon(): string {
     return 'bot';
+  }
+
+  getState(): Record<string, unknown> {
+    const state = this.captureTabWorkspaceState(this.tabManager)
+      ?? this.persistedTabWorkspaceState
+      ?? this.pendingTabWorkspaceState;
+    if (!state) return {};
+
+    const tabWorkspace: TabWorkspaceViewState = {
+      version: TAB_WORKSPACE_VIEW_STATE_VERSION,
+      ...state,
+    };
+    return { [TAB_WORKSPACE_VIEW_STATE_KEY]: tabWorkspace };
+  }
+
+  async setState(state: unknown, _result: ViewStateResult): Promise<void> {
+    const record = state && typeof state === 'object' && !Array.isArray(state)
+      ? state as Record<string, unknown>
+      : null;
+    const hasTabWorkspaceViewState = record !== null
+      && TAB_WORKSPACE_VIEW_STATE_KEY in record;
+    this.hasTabWorkspaceViewState = hasTabWorkspaceViewState;
+    this.pendingTabWorkspaceState = null;
+
+    if (hasTabWorkspaceViewState && record) {
+      this.pendingTabWorkspaceState = decodeTabWorkspaceViewState(
+        record[TAB_WORKSPACE_VIEW_STATE_KEY],
+      );
+    }
+
+    const registration = this.plugin.registerTabWorkspaceStateDelivery(
+      this,
+      this.hasTabWorkspaceViewState,
+    );
+    this.tabWorkspaceStateDelivery = registration;
+    const lifecycleRevision = this.viewLifecycleRevision ?? 0;
+
+    if (this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision) {
+      if (this.hasTabWorkspaceViewState) {
+        void this.plugin.completeLegacyTabManagerStateMigration().catch(() => undefined);
+      }
+      return;
+    }
+
+    if (registration.declarationsReady) {
+      await this.initializeTabWorkspace(lifecycleRevision);
+      return;
+    }
+
+    void registration.waitUntilDeclarationsReady
+      .then(() => this.initializeTabWorkspace(lifecycleRevision))
+      .catch(() => undefined);
   }
 
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
@@ -281,7 +352,10 @@ export class ClaudianView extends ItemView {
         tabStatePersistence?.dispose();
       }
       tabStatePersistence = new TabStatePersistenceCoordinator(
-        state => this.plugin.storage.setTabManagerState(state),
+        async (state) => {
+          this.persistedTabWorkspaceState = state;
+          await this.plugin.app.workspace.requestSaveLayout();
+        },
       );
     }
     this.tabStatePersistence = tabStatePersistence;
@@ -310,12 +384,15 @@ export class ClaudianView extends ItemView {
           this.updateInputLocation();
           this.syncProviderBrandColor();
         },
+        onRetainedTabAdmitted: () => {
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+        },
         onActiveTabChanged: () => {
           this.updateTabBar();
           this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.syncProviderBrandColor();
-          this.persistCurrentTabState(tabManager, tabStatePersistence);
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
         },
         onTabSwitched: () => {
           this.updateTabBar();
@@ -327,7 +404,10 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.notifyConversationNavigationChanged();
           this.updateInputLocation();
-          this.persistCurrentTabState(tabManager, tabStatePersistence);
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+        },
+        onTabRetained: () => {
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
         },
         onTabStreamingChanged: () => {
           this.updateTabBar();
@@ -348,11 +428,15 @@ export class ClaudianView extends ItemView {
             this.notifyConversationNavigationChanged();
             this.syncProviderBrandColor();
           }
-          this.persistCurrentTabState(tabManager, tabStatePersistence);
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+        },
+        onTabDraftChanged: () => {
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
         },
         onTabProviderChanged: () => {
           this.updateTabBar();
           this.syncProviderBrandColor();
+          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
         },
       }
     );
@@ -364,13 +448,23 @@ export class ClaudianView extends ItemView {
     );
 
     this.wireEventHandlers();
-    await this.restoreCurrentTab(lifecycleRevision);
-    if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
-    this.syncProviderBrandColor();
-    this.attachNavRowContentToInputFooter();
-    this.updateInputLocation();
-    this.updateTabBarVisibility();
-    this.startSessionSidebarLayoutObserver();
+    const reopeningState = previousLifecycleWasClosing
+      ? this.persistedTabWorkspaceState
+      : null;
+    if (reopeningState) {
+      await this.initializeTabWorkspace(lifecycleRevision, reopeningState);
+      return;
+    }
+
+    const stateDelivery = this.tabWorkspaceStateDelivery;
+    if (!stateDelivery) return;
+    if (stateDelivery.declarationsReady) {
+      await this.initializeTabWorkspace(lifecycleRevision);
+      return;
+    }
+    void stateDelivery.waitUntilDeclarationsReady
+      .then(() => this.initializeTabWorkspace(lifecycleRevision))
+      .catch(() => undefined);
   }
 
   async onClose() {
@@ -463,7 +557,7 @@ export class ClaudianView extends ItemView {
       // Teardown reports drain failures; identity persistence must still be attempted.
     }
     try {
-      await this.flushCurrentTabState(tabManager, tabStatePersistence);
+      await this.flushTabWorkspaceState(tabManager, tabStatePersistence);
     } catch {
       // The storage boundary reports persistence failures. Teardown must still complete.
     } finally {
@@ -537,6 +631,7 @@ export class ClaudianView extends ItemView {
         void this.handleTabClose(tabId);
       },
       onNewTab: () => this.requestNewTab(),
+      onTitleExpansionChanged: () => this.persistTabWorkspaceState(),
     });
 
     const navActionsEl = wrapper.createDiv({ cls: 'claudian-input-nav-actions' });
@@ -1523,7 +1618,7 @@ export class ClaudianView extends ItemView {
 
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       if (tab.conversationId === conversationId) {
-        commitProvisionalTab(tab);
+        this.tabManager?.retainTab(tab.id);
       }
     }
   }
@@ -1612,7 +1707,7 @@ export class ClaudianView extends ItemView {
         tab.conversationId
         && this.plugin.getConversationSync(tab.conversationId)?.isPinned
       ) {
-        commitProvisionalTab(tab);
+        this.tabManager?.retainTab(tab.id);
       }
     }
   }
@@ -2012,7 +2107,7 @@ export class ClaudianView extends ItemView {
 
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       if (tab.conversationId === conversationId) {
-        commitProvisionalTab(tab);
+        this.tabManager?.retainTab(tab.id);
       }
     }
   }
@@ -2099,7 +2194,7 @@ export class ClaudianView extends ItemView {
         if (!activeTab) return;
         const providerId = getTabProviderId(activeTab, this.plugin);
         if (!ProviderRegistry.getCapabilities(providerId).supportsPlanMode) return;
-        commitProvisionalTab(activeTab);
+        this.tabManager?.retainTab(activeTab.id);
         const current = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
           this.plugin.settings,
           providerId,
@@ -2204,60 +2299,131 @@ export class ClaudianView extends ItemView {
       && (this.viewLifecycleRevision ?? 0) === revision;
   }
 
-  private async restoreCurrentTab(
+  private async initializeTabWorkspace(
+    lifecycleRevision: number,
+    reopeningState?: AppTabManagerState,
+  ): Promise<void> {
+    if (
+      !this.isViewLifecycleCurrent(lifecycleRevision)
+      || !this.tabManager
+      || this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision
+    ) return;
+
+    const currentInitialization = this.tabWorkspaceInitialization;
+    if (currentInitialization?.lifecycleRevision === lifecycleRevision) {
+      await currentInitialization.promise;
+      return;
+    }
+
+    const promise = (async () => {
+      await this.restoreTabWorkspace(lifecycleRevision, reopeningState);
+      if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
+
+      this.initializedTabWorkspaceLifecycleRevision = lifecycleRevision;
+      this.syncProviderBrandColor();
+      this.attachNavRowContentToInputFooter();
+      this.updateInputLocation();
+      this.updateTabBarVisibility();
+      this.startSessionSidebarLayoutObserver();
+    })();
+    this.tabWorkspaceInitialization = { lifecycleRevision, promise };
+
+    try {
+      await promise;
+    } finally {
+      if (this.tabWorkspaceInitialization?.promise === promise) {
+        this.tabWorkspaceInitialization = null;
+      }
+    }
+  }
+
+  private async restoreTabWorkspace(
     lifecycleRevision = this.viewLifecycleRevision ?? 0,
+    reopeningState?: AppTabManagerState,
   ): Promise<void> {
     const tabManager = this.tabManager;
     if (!tabManager) return;
 
-    const persistedState = await this.plugin.storage.getTabManagerState();
+    let usedLegacyState = false;
+    let persistedState = reopeningState
+      ?? (this.hasTabWorkspaceViewState ? this.pendingTabWorkspaceState : null);
+    if (reopeningState === undefined && !this.hasTabWorkspaceViewState) {
+      persistedState = await this.plugin.claimLegacyTabManagerState();
+      usedLegacyState = persistedState !== null;
+    }
     if (
       !this.isViewLifecycleCurrent(lifecycleRevision)
       || this.tabManager !== tabManager
     ) return;
-    const currentTab = persistedState?.openTabs.find(
-      tab => tab.tabId === persistedState.activeTabId,
-    );
-    if (currentTab) {
-      await tabManager.createTab(currentTab.conversationId, currentTab.tabId);
-      return;
-    }
 
-    await tabManager.createTab();
+    const restorePlan = reopeningState === undefined
+      ? resolveTabRestorePlan(persistedState, this.plugin.settings.tabRestoreMode)
+      : reopeningState;
+    const conversationIds = Array.from(new Set(
+      restorePlan.openTabs
+        .map(({ conversationId }) => conversationId)
+        .filter((id): id is string => id !== null),
+    ));
+    if (conversationIds.length > 0) {
+      await this.plugin.ensureConversationMetadataLoaded(conversationIds);
+    }
+    if (
+      !this.isViewLifecycleCurrent(lifecycleRevision)
+      || this.tabManager !== tabManager
+    ) return;
+
+    await tabManager.restoreState(restorePlan);
+    this.tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
+    this.pendingTabWorkspaceState = null;
+
+    if (usedLegacyState) {
+      try {
+        await this.flushTabWorkspaceState(tabManager, this.tabStatePersistence);
+        await this.plugin.completeLegacyTabManagerStateMigration();
+      } catch {
+        // Keep the legacy snapshot available when view-state persistence fails.
+      }
+    } else if (reopeningState === undefined && this.hasTabWorkspaceViewState) {
+      await this.plugin.completeLegacyTabManagerStateMigration().catch(() => undefined);
+    }
   }
 
-  private persistCurrentTabState(
-    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+  private persistTabWorkspaceState(
+    tabManager: Pick<TabManager, 'getPersistedState'> | null = this.tabManager,
     persistence: Pick<TabStatePersistenceCoordinator, 'update'> | null = this.tabStatePersistence,
   ): void {
-    const state = this.getPersistedCurrentTabState(tabManager);
-    if (state) persistence?.update(state);
+    const state = this.captureTabWorkspaceState(tabManager);
+    if (!state) return;
+    this.persistedTabWorkspaceState = state;
+    persistence?.update(state);
   }
 
-  getPersistedCurrentTabState(
-    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+  private captureTabWorkspaceState(
+    tabManager: Pick<TabManager, 'getPersistedState'> | null,
   ): AppTabManagerState | null {
-    const activeTab = tabManager?.getActiveTab();
-    if (!activeTab) return null;
+    const state = tabManager?.getPersistedState();
+    if (!state) return null;
 
+    const retainedTabIds = new Set(state.openTabs.map(tab => tab.tabId));
+    const expandedTitleTabIds = (this.tabBar?.getExpandedTitleTabIds() ?? [])
+      .filter(tabId => retainedTabIds.has(tabId));
     return {
-      openTabs: [{
-        tabId: activeTab.id,
-        conversationId: activeTab.conversationId,
-      }],
-      activeTabId: activeTab.id,
+      ...state,
+      ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
     };
   }
 
-  /** Flushes the current tab identity before view or plugin shutdown. */
-  async flushCurrentTabState(
-    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+  /** Flushes the retained working set before view or plugin shutdown. */
+  async flushTabWorkspaceState(
+    tabManager: Pick<TabManager, 'getPersistedState'> | null = this.tabManager,
     persistence: Pick<TabStatePersistenceCoordinator, 'flush' | 'update'> | null = (
       this.tabStatePersistence
     ),
   ): Promise<void> {
-    const state = this.getPersistedCurrentTabState(tabManager);
-    if (!state || !persistence) return;
+    if (!persistence) return;
+    const state = this.captureTabWorkspaceState(tabManager);
+    if (!state) return;
+    this.persistedTabWorkspaceState = state;
     persistence.update(state);
     await persistence.flush();
   }
@@ -2282,7 +2448,7 @@ export class ClaudianView extends ItemView {
     const inputEl = activeTab?.dom.inputEl;
     if (!inputEl || !text) return false;
 
-    commitProvisionalTab(activeTab);
+    this.tabManager?.retainTab(activeTab.id);
 
     const currentValue = inputEl.value;
     const separator = currentValue && !/\s$/.test(currentValue) ? ' ' : '';

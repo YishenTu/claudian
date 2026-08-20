@@ -1,11 +1,8 @@
 import type { App } from 'obsidian';
-import { Notice } from 'obsidian';
 
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../../../app/settings/ClaudianSettingsStorage';
 import { SESSIONS_PATH, SessionStorage } from '../../../core/bootstrap/SessionStorage';
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
-import { normalizeTabManagerState } from '../../../core/bootstrap/tabManagerState';
-import type { AppTabManagerState } from '../../../core/providers/types';
 import { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   SlashCommand,
@@ -22,10 +19,6 @@ import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 
 export const CLAUDE_PATH = '.claude';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 export interface CombinedSettings {
   cc: CCSettings;
   claudian: StoredClaudianSettings;
@@ -33,8 +26,6 @@ export interface CombinedSettings {
 
 interface StorageServicePlugin {
   readonly app: App;
-  loadData(): Promise<unknown>;
-  saveData(data: unknown): Promise<void>;
 }
 
 export class StorageService {
@@ -46,11 +37,9 @@ export class StorageService {
   readonly agents: AgentVaultStorage;
 
   private adapter: VaultFileAdapter;
-  private plugin: StorageServicePlugin;
   private app: App;
 
   constructor(plugin: StorageServicePlugin, adapter?: VaultFileAdapter) {
-    this.plugin = plugin;
     this.app = plugin.app;
     this.adapter = adapter ?? new VaultFileAdapter(this.app);
     this.ccSettings = new CCSettingsStorage(this.adapter);
@@ -121,28 +110,4 @@ export class StorageService {
     return this.claudianSettings.load();
   }
 
-  async getTabManagerState(): Promise<TabManagerPersistedState | null> {
-    try {
-      const data: unknown = await this.plugin.loadData();
-      if (isRecord(data) && data.tabManagerState) {
-        return normalizeTabManagerState(data.tabManagerState);
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  async setTabManagerState(state: TabManagerPersistedState): Promise<void> {
-    try {
-      const loaded: unknown = await this.plugin.loadData();
-      const data = isRecord(loaded) ? loaded : {};
-      data.tabManagerState = state;
-      await this.plugin.saveData(data);
-    } catch {
-      new Notice('Failed to save tab layout');
-    }
-  }
 }
-
-export type TabManagerPersistedState = AppTabManagerState;

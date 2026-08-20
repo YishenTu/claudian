@@ -288,6 +288,13 @@
       "name": "Zwei-Spalten-Modus aktivieren",
       "desc": "Den Sitzungsmanager automatisch neben dem Chat anzeigen, wenn die Ansicht mindestens 600 px breit ist."
     },
+    "tabRestoreMode": {
+      "name": "Tabs beim Start wiederherstellen",
+      "desc": "Auswählen, welche beibehaltenen Chat-Tabs beim Laden einer Claudian-Ansicht erneut geöffnet werden.",
+      "none": "Neuen Chat starten",
+      "active": "Letzten Tab wiederherstellen",
+      "all": "Alle Tabs wiederherstellen"
+    },
     "enableFilePane": {
       "name": "Dateibereich aktivieren",
       "desc": "Im Sitzungsmanager des Zwei-Spalten-Modus einen Tab „Dateien“ anzeigen."

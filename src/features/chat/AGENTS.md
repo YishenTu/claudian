@@ -15,7 +15,7 @@
 
 | Component | Authority |
 | --- | --- |
-| `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
+| `TabManager` | Runtime-tab membership, active-tab selection, create/switch/close operations, and capture/restoration of the retained tab working set |
 | `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
 | `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
 | `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
@@ -28,11 +28,11 @@
 | `ChatState` | Transient per-tab message projection, stream state, queued input, render state, and conversation-operation flags |
 | `TabStatePersistenceCoordinator` | Debouncing, snapshotting, ordering, retry retention, and flushing of tab-layout writes |
 | `TabBar` | Expanded-title presentation state for the current view |
-| `ClaudianView` | View assembly, rendered DOM placement, presentation coordination, layout-mode navigation, and assembly of the persisted current-tab snapshot |
+| `ClaudianView` | View assembly, rendered DOM placement, presentation coordination, layout-mode navigation, startup restore-policy application, and view-scoped tab-state publication |
 
 `TabSession` stores lifecycle values, while lifecycle operations in `TabLifecycle` and `TabManager` perform the transitions. Controllers, renderers, and UI components must request those operations instead of assigning lifecycle state themselves.
 
-`TabStatePersistenceCoordinator` owns write sequencing, not semantic tab state. It receives the active tab identity assembled by `ClaudianView`; it must not infer, add, or remove runtime tabs.
+`TabStatePersistenceCoordinator` owns write sequencing, not semantic tab state. It receives retained-tab snapshots captured by `TabManager` plus view presentation metadata assembled by `ClaudianView`; it must not infer, add, or remove runtime tabs.
 
 ## State Model
 
@@ -42,8 +42,13 @@ Keep these layers independent:
    - Claudian's in-memory conversation projection, metadata, input ledger, and provider resume snapshot are coordinated by the application conversation repository.
    - Provider-native transcripts remain provider-owned replay sources and are read-only.
 2. **Persisted tab shell**
-   - `AppTabManagerState` currently stores only the active tab ID and its conversation binding. Legacy multi-tab snapshots are restored as the current tab only.
-   - Runtime tab membership, blank drafts, and expanded-title presentation are intentionally discarded on plugin reload. The snapshot must not contain DOM, controllers, hydrated messages, pending turns, execution sessions, or provider-native state.
+   - Each Claudian view persists its retained tab working set, tab order, last active retained tab, conversation bindings, unbound-tab model seeds, and expanded-title tab IDs in Obsidian view state.
+   - The startup restore policy is `none | active | all`; it is independent from responsive single- or dual-pane presentation. Missing settings default to `all`.
+   - `provisional` previews, unsent composer content, DOM, controllers, hydrated messages, pending turns, execution sessions, and provider-native state are never persisted.
+   - Restored tabs always enter as `cold`. Restore admits inactive tabs first and performs one final activation so restoration cannot warm background tabs accidentally.
+   - The former plugin-global tab snapshot is a migration source for one primary view only, never concurrent live authority.
+   - `ClaudianView.onOpen()` may assemble the runtime shell, but initial tab restoration waits for Obsidian's `setState()` delivery. A same-instance reopen instead restores the finalized shutdown snapshot so an older delivered layout cannot replace it.
+   - Versioned view-state decoding is fail-closed: one malformed tab, duplicate ID, invalid active target, or invalid expanded-title target rejects the entire view snapshot. Permissive normalization is reserved for the legacy plugin-global migration source.
 3. **Runtime tab state**
    - `TabSession`, `ChatState`, controllers, renderers, and DOM exist only for the current view runtime. An unbound tab snapshots its own provider/model draft when created.
    - Hydration state is independent from both active-tab selection and provider execution state.
@@ -65,6 +70,7 @@ provisional | cold | warm | closing
 - A retained or restored tab without provider execution resources is `cold`, including an unbound draft.
 - Acquiring and preparing provider execution resources changes a retained tab to `warm`. The warm pool may return an idle tab to `cold` without closing the tab or conversation.
 - Returning from dual mode discards provisional previews, except that the active preview is retained when no cold or warm tab exists. Cold and warm tabs remain available to the single-panel tab bar.
+- Entering dual mode preserves the retained working set unchanged. Reload restoration likewise restores retained membership regardless of the responsive layout that becomes visible afterward.
 - Closing changes any live tab to `closing`, prevents new hydration work, saves when required, disposes execution resources, and removes the tab from `TabManager`.
 - `TabHydrationState` (`idle | loading | ready | failed`) is orthogonal to this lifecycle. Do not infer execution state from hydration, visibility, or active selection.
 
@@ -80,12 +86,13 @@ Tab activation and conversation hydration do not themselves authorize creation o
 
 - Runtime tab creation is unlimited. The configured `maxWarmAgentProcesses` limit applies only to warm execution owners and is normalized to the supported 5-10 range.
 - `TabManager` admits a tab to runtime membership and calls `onTabCreated` only after structural assembly succeeds. Construction readiness means UI, controllers, renderer, coordinator, and input wiring are installed; it does not imply hydration, activation, conversation binding, or warm provider execution.
+- `onRetainedTabAdmitted` publishes newly created retained membership only after the admission transaction succeeds. Inactive admission must use this signal for view-state persistence; provisional admission must not publish it.
 - Tab IDs are reserved before asynchronous assembly. Admission callbacks and activation are one transaction: failure must remove and destroy the assembled runtime, release its metadata, and restore the previous active owner.
 - A close reservation synchronously pauses the tab session's intent admission, fences duplicate close requests, and remains reversible through fallible replacement admission and, for the active tab, successor activation and active-tab publication. Required runtime state callbacks and command-context invalidation remain accepted until those prerequisites succeed and lifecycle becomes terminal `closing`; failed preflight resumes intent admission, while failed successor switching restores and republishes the predecessor before resuming intent admission.
 - Each queued tab-switch request owns its completion and failure. A switch requested by tab admission must await its real activation attempt so callback failure rolls that admission back instead of escaping through an unrelated earlier switch.
 - `TabManager.destroy()` is terminal: new or in-flight tab assembly must not enter membership afterward, runtime-retained intents must revalidate their source tab before manager or view work, and overlapping close requests must not repeat persistence, callbacks, or teardown side effects.
 - Fork operations capture the source tab and exact conversation binding before their first asynchronous source lookup or target prompt. Revalidate that lease after every await and copy accepted-input state by the captured conversation ID, never the coordinator's current binding.
-- View shutdown closes intent admission, invalidates and joins conversation navigation and tab switching, then keeps terminal conversation-binding callbacks open while every admitted tab cancels and drains active/background work. Only that complete quiescence boundary may flush and seal the final tab identity. A reopen overlapping it reuses the same persistence coordinator and awaits the closing snapshot before restoration.
+- View shutdown closes intent admission, invalidates and joins conversation navigation and tab switching, then keeps terminal conversation-binding callbacks open while every admitted tab cancels and drains active/background work. Only that complete quiescence boundary may flush and seal the final tab identity. A reopen overlapping it reuses the same persistence coordinator, awaits the closing snapshot, and restores that finalized snapshot rather than legacy or older delivered state.
 - `AssembledTabRuntime` keeps required structural references stable after publication, including while `closing` and after resource disposal. Operational availability is expressed by lifecycle state and read-only resource state; teardown authority remains internal and must not null required references.
 - Construction builders under `tabs/runtime/` are internal to `TabRuntimeFactory` and return complete shell, service, UI, controller/renderer, and input-binding bundles. They may depend on focused tab-domain modules but never import the factory, manager, or view. Every acquired resource must register rollback immediately; rollback and teardown are idempotent, best-effort, and continue after individual cleanup failures.
 - Cooling an idle tab must preserve its runtime tab, conversation binding, hydrated UI state, and resumable provider snapshot.

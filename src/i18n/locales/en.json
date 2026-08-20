@@ -288,6 +288,13 @@
       "name": "Enable dual-pane mode",
       "desc": "Automatically show the session manager beside the chat when the view is at least 600 px wide."
     },
+    "tabRestoreMode": {
+      "name": "Restore tabs on startup",
+      "desc": "Choose which retained chat tabs reopen when a Claudian view loads.",
+      "none": "Start a new chat",
+      "active": "Restore last tab",
+      "all": "Restore all tabs"
+    },
     "enableFilePane": {
       "name": "Enable file pane",
       "desc": "Show a Files tab in the dual-pane session manager."

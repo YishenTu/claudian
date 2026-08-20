@@ -67,6 +67,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.enableDualPane).toBe(true);
       expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
+      expect(result.tabRestoreMode).toBe('all');
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
@@ -301,6 +302,30 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.enableDualPane).toBe(true);
       expect(writtenContent.enableFilePane).toBe(true);
       expect(writtenContent.dualPaneSide).toBe('right');
+    });
+
+    it('normalizes invalid tab restore modes', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        tabRestoreMode: 'last-window',
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.tabRestoreMode).toBe('all');
+      expect(writtenContent.tabRestoreMode).toBe('all');
+    });
+
+    it('preserves a valid tab restore mode', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        tabRestoreMode: 'active',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.tabRestoreMode).toBe('active');
     });
 
     it('should strip legacy blocklist fields from loaded data', async () => {

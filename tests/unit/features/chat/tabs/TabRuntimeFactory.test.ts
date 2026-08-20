@@ -9,6 +9,7 @@ import type {
   ChatExecutionEventContext,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 import {
+  commitProvisionalTab,
   destroyTab,
   drainTabForShutdownSnapshot,
   registerTabRuntimeResourceOwner,
@@ -284,6 +285,9 @@ async function createTestTab(
     getProviderCatalogConfig: assembly.getProviderCatalogConfig ?? (() => null),
     isRuntimeLive: options.isRuntimeLive
       ?? (runtime => runtime.lifecycleState !== 'closing'),
+    retainTab: options.retainTab ?? (runtime => {
+      commitProvisionalTab(runtime);
+    }),
     forkRequestCallback: assembly.forkRequestCallback,
     onProviderChanged: assembly.onProviderChanged
       ? (_tab, providerId) => assembly.onProviderChanged!(providerId)
@@ -1007,7 +1011,12 @@ describe('Tab provider execution ownership', () => {
       observe: jest.fn(),
     })) as unknown as typeof ResizeObserver;
     const plugin = createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    const onDraftModelChanged = jest.fn();
+    const tab = await createTestTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      onDraftModelChanged,
+    });
     const modelOptions = Array.from(
       tab.dom.inputWrapper.querySelectorAll(
         '.claudian-model-option',
@@ -1025,6 +1034,7 @@ describe('Tab provider execution ownership', () => {
       providerId: 'claude',
       model: 'claude-alternate',
     });
+    expect(onDraftModelChanged).toHaveBeenCalledWith(tab, 'claude-alternate');
     globalThis.ResizeObserver = originalResizeObserver;
   });
 
@@ -1448,10 +1458,14 @@ describe('Tab provider execution ownership', () => {
 
   it('commits a provisional preview to cold state when the user types', async () => {
     const plugin = createPlugin();
+    const retainTab = jest.fn((runtime) => {
+      commitProvisionalTab(runtime);
+    });
     const tab = await createTestTab({
       plugin,
       containerEl: createMockEl() as any,
       lifecycleState: 'provisional',
+      retainTab,
     });
     expect(tab.session.userOwnershipRevision).toBe(0);
 
@@ -1460,6 +1474,7 @@ describe('Tab provider execution ownership', () => {
 
     expect(tab.lifecycleState).toBe('cold');
     expect(tab.session.userOwnershipRevision).toBe(1);
+    expect(retainTab).toHaveBeenCalledWith(tab);
   });
 
   it('records user ownership when a retained cold tab is edited', async () => {

@@ -28,7 +28,6 @@ import { StatusPanel } from '../../ui/StatusPanel';
 import { autoResizeTextarea } from '../../ui/textareaResize';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
-import { commitProvisionalTab } from '../TabLifecycle';
 import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
 import {
   applyProviderUIGating,
@@ -284,6 +283,7 @@ function buildInputToolbar(
 
         syncSlashCommandDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
         onUserModified();
+        options.onDraftModelChanged?.(tab, tab.draftModel);
         await uiConfig.prepareModelMetadata?.(
           model,
           getProviderSettingsSnapshotWithModel(plugin.settings, newProvider, model),
@@ -434,7 +434,7 @@ export function buildTabRuntimeUI(
 ): TabUIComponents {
   const { dom } = shell;
   const { plugin } = options;
-  const onUserModified = (): void => commitProvisionalTab(runtimeRef.requirePublished());
+  const onUserModified = (): void => options.retainTab(runtimeRef.requirePublished());
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
       autoResizeTextarea(dom.inputEl);

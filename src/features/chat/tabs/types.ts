@@ -278,6 +278,12 @@ export interface TabManagerCallbacks {
   /** Called when a tab is closed. */
   onTabClosed?: (tabId: TabId) => void;
 
+  /** Called when a replaceable preview becomes part of the retained working set. */
+  onTabRetained?: (tabId: TabId) => void;
+
+  /** Called after a newly created retained tab completes admission. */
+  onRetainedTabAdmitted?: (tabId: TabId) => void;
+
   /** Called when tab streaming state changes. */
   onTabStreamingChanged?: (tabId: TabId, isStreaming: boolean) => void;
 
@@ -292,6 +298,9 @@ export interface TabManagerCallbacks {
 
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;
+
+  /** Called when the selected model for a blank retained tab changes. */
+  onTabDraftChanged?: (tabId: TabId, draftModel: string | null) => void;
 
   /** Called when the active provider changes within a tab (blank tab model selection). */
   onTabProviderChanged?: (tabId: TabId, providerId: ProviderId) => void;
