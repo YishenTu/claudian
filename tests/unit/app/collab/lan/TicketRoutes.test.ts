@@ -13,6 +13,7 @@ function route(
     authorization: `Bearer ${CREDENTIAL}`,
     body: {},
     idempotencyKey: null,
+    lifecycle: { execute: jest.fn() },
     method: 'GET',
     projectId: 'project-a',
     query: { status: 'open' },

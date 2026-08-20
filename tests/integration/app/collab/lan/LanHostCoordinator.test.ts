@@ -12,6 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { COLLAB_LIMITS } from '@claudian/collab-protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 
@@ -19,6 +20,7 @@ import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventR
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { ManagerResponsibilityService } from '@/app/collab/authority/ManagerResponsibilityService';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
+import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
@@ -138,6 +140,7 @@ describe('LanHostCoordinator production transport', () => {
   let advertisementStop: jest.Mock;
   let addressMonitorClose: jest.Mock;
   let checkHostAddress: () => Promise<void>;
+  let issueServerIdentity: (address: string) => Promise<LanTlsServerIdentity>;
   let privateAddresses: readonly string[];
   let outgoingHostTransfer: {
     close?: jest.Mock;
@@ -173,6 +176,16 @@ describe('LanHostCoordinator production transport', () => {
     },
   });
 
+  const hostedControlCapabilities = () => ({
+    lifecycle: {
+      createRetirementCoordinator: () => ({ retireProject: jest.fn() }),
+      getCurrentHostTransfer: jest.fn().mockResolvedValue(null),
+      getCurrentManagerResponsibilityOffer: jest.fn().mockResolvedValue(null),
+    } as never,
+    requests: {} as never,
+    tickets: {} as never,
+  });
+
   beforeAll(async () => {
     SQL = await initSqlJs();
     tlsFixtureRoot = await mkdtemp(path.join(tmpdir(), 'claudian-lan-host-tls-'));
@@ -203,6 +216,7 @@ describe('LanHostCoordinator production transport', () => {
     advertiseProject = jest.fn(async () => ({ stop: advertisementStop }));
     addressMonitorClose = jest.fn();
     checkHostAddress = async () => undefined;
+    issueServerIdentity = address => sharedTlsIdentity.issueServerIdentity(address);
     privateAddresses = ['127.0.0.1'];
     outgoingHostTransfer = null;
     root = await mkdtemp(path.join(tmpdir(), 'claudian-lan-host-'));
@@ -285,6 +299,10 @@ describe('LanHostCoordinator production transport', () => {
         const unsupportedLifecycle = jest.fn(async () => {
           throw new Error('Unexpected lifecycle operation');
         });
+        const requestQueries = new RequestQueryService(
+          authorityDatabase,
+          { inspect: unsupportedLifecycle } as never,
+        );
         return {
           authority: { database: authorityDatabase, events, idempotency, projects },
           authorityDirectory,
@@ -324,6 +342,14 @@ describe('LanHostCoordinator production transport', () => {
             ),
           },
           readMainOid: async () => MAIN_OID,
+          requests: {
+            accept: unsupportedLifecycle,
+            createComment: unsupportedLifecycle,
+            ensure: unsupportedLifecycle,
+            read: requestQueries.read.bind(requestQueries),
+            readComments: requestQueries.readComments.bind(requestQueries),
+            updateMetadata: unsupportedLifecycle,
+          },
           ...(outgoingHostTransfer ? { outgoingHostTransfer: {
             cancelBeforeRelinquishment: jest.fn(),
             close: outgoingHostTransfer.close ?? jest.fn().mockResolvedValue(undefined),
@@ -340,7 +366,9 @@ describe('LanHostCoordinator production transport', () => {
         };
       },
       portCandidates: [occupiedPort, 0],
-      tlsIdentity: sharedTlsIdentity,
+      tlsIdentity: {
+        issueServerIdentity: (address: string) => issueServerIdentity(address),
+      } as unknown as LanTlsIdentity,
       vaultRoot: root,
     });
   });
@@ -411,7 +439,7 @@ describe('LanHostCoordinator production transport', () => {
         memberCredential: string;
       } }>(value),
       method: 'POST',
-      path: `/v7/projects/${PROJECT_ID}/join-attempts`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts`,
     }, invitation.invitationSecret);
     const activated = await client.requestWithMember({
       body: {
@@ -422,7 +450,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => envelopeData<{ currentMember: { status: string } }>(value),
       idempotencyKey: 'activate-alpha',
       method: 'POST',
-      path: `/v7/projects/${PROJECT_ID}/join-attempts/join-alpha/activate`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts/join-alpha/activate`,
     }, join.joinAttempt.memberCredential);
 
     expect(activated.currentMember.status).toBe('active');
@@ -430,7 +458,7 @@ describe('LanHostCoordinator production transport', () => {
       body: { invitation, projectId: PROJECT_ID },
       decode: value => envelopeData<{ caFingerprint: string; endpoint: string }>(value),
       method: 'POST',
-      path: `/v7/projects/${PROJECT_ID}/endpoint-refresh`,
+      path: `/v9/projects/${PROJECT_ID}/endpoint-refresh`,
     }, join.joinAttempt.memberCredential)).resolves.toEqual({
       caFingerprint: invitation.caFingerprint,
       endpoint: host.endpoint,
@@ -479,7 +507,7 @@ describe('LanHostCoordinator production transport', () => {
     const hostAccess = membershipAccess(localProjects);
     const memberAccess = membershipAccess(memberProjects);
     const events = new WebSocket(
-      `${host.endpoint.replace('https:', 'wss:')}/v7/projects/${PROJECT_ID}/events`,
+      `${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`,
       {
         ca: hostCa,
         headers: { authorization: `Bearer ${join.joinAttempt.memberCredential}` },
@@ -487,7 +515,7 @@ describe('LanHostCoordinator production transport', () => {
       },
     );
     const hostEvents = new WebSocket(
-      `${host.endpoint.replace('https:', 'wss:')}/v7/projects/${PROJECT_ID}/events`,
+      `${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`,
       {
         ca: hostCa,
         headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
@@ -534,7 +562,7 @@ describe('LanHostCoordinator production transport', () => {
       member: { role: 'manager' },
     });
     await expect(memberAccess.service.createInvitation(PROJECT_ID)).resolves.toMatchObject({
-      encodedInvitation: expect.stringMatching(/^claudian-collab:v7:/),
+      encodedInvitation: expect.stringMatching(/^claudian-collab:v9:/),
     });
     await expect(memberAccess.service.removeMember({
       memberId: 'member-host',
@@ -586,7 +614,7 @@ describe('LanHostCoordinator production transport', () => {
     await expect(client.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: `/v7/projects/${PROJECT_ID}/snapshot`,
+      path: `/v9/projects/${PROJECT_ID}/snapshot`,
     }, join.joinAttempt.memberCredential)).rejects.toMatchObject({
       code: 'membership-revoked',
     });
@@ -625,7 +653,7 @@ describe('LanHostCoordinator production transport', () => {
       invitation: { revoked_at: expect.any(String) },
       member: { status: 'revoked' },
     });
-    await expect(fetch(`${host.endpoint}/v7/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
   });
 
@@ -820,7 +848,7 @@ describe('LanHostCoordinator production transport', () => {
       throw new Error('Missing Host CA fixture');
     }
     const response = JSON.parse(await readPinnedUrl(
-      `${host.endpoint}/v7/projects/${PROJECT_ID}/snapshot`,
+      `${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`,
       membership.authority.hostCaCertificatePem,
     )) as { error?: { code?: string } };
 
@@ -923,6 +951,161 @@ describe('LanHostCoordinator production transport', () => {
     expect(cancel).toHaveBeenCalledWith(PROJECT_ID, 'transfer-provisional');
   });
 
+  it('traverses bounded activity pages larger than one LAN response', async () => {
+    await coordinator.startProject(PROJECT_ID);
+    const control = new LocalProjectControlPort(localProjects);
+    const created = await control.createTicket({
+      body: 'Paged Ticket',
+      projectId: PROJECT_ID,
+      title: 'Paged Ticket',
+    }, 'ticket-paged-comments');
+    const requestId = 'request-paged-comments';
+    const headOid = 'b'.repeat(40);
+    const mergeOid = 'c'.repeat(40);
+    const ticketBodies = Array.from({ length: 8 }, (_value, index) => (
+      `${index}${'\u0001'.repeat(COLLAB_LIMITS.maxTicketCommentBytes - 1)}`
+    ));
+    const requestBodies = Array.from({ length: 8 }, (_value, index) => (
+      `${index}${'\u0001'.repeat(COLLAB_LIMITS.maxCommentBytes - 1)}`
+    ));
+
+    await authorityDatabase.mutate(connection => {
+      connection.run(
+        `INSERT INTO change_requests (
+          request_id, member_id, status, first_base_oid, latest_head_oid,
+          merged_oid, description, revision, created_at, updated_at
+        ) VALUES (?, 'member-host', 'open', ?, ?, NULL, 'Paged request', 1, ?, ?)`,
+        [requestId, MAIN_OID, headOid, '2026-08-08T00:01:00.000Z', '2026-08-08T00:01:00.000Z'],
+      );
+      for (const [index, body] of ticketBodies.entries()) {
+        const createdAt = new Date(Date.UTC(2026, 7, 8, 0, 2, index)).toISOString();
+        connection.run(
+          `INSERT INTO ticket_comments (
+            comment_id, ticket_id, author_member_id, body, created_at
+          ) VALUES (?, ?, 'member-host', ?, ?)`,
+          [`ticket-comment-${index}`, created.ticket.id, body, createdAt],
+        );
+      }
+      connection.run(
+        'UPDATE tickets SET comment_count = ? WHERE ticket_id = ?',
+        [ticketBodies.length, created.ticket.id],
+      );
+      for (const [index, body] of requestBodies.entries()) {
+        const createdAt = new Date(Date.UTC(2026, 7, 8, 0, 3, index)).toISOString();
+        connection.run(
+          `INSERT INTO comments (
+            comment_id, request_id, author_member_id, body, created_at
+          ) VALUES (?, ?, 'member-host', ?, ?)`,
+          [`request-comment-${index}`, requestId, body, createdAt],
+        );
+      }
+      for (let index = 0; index <= COLLAB_LIMITS.maxRelationsPerPage; index += 1) {
+        const acceptedRequestId = `accepted-request-${index}`;
+        const acceptedAt = new Date(Date.UTC(2026, 7, 8, 0, 4) + index * 1_000)
+          .toISOString();
+        connection.run(
+          `INSERT INTO change_requests (
+            request_id, member_id, status, first_base_oid, latest_head_oid,
+            merged_oid, description, revision, created_at, updated_at
+          ) VALUES (?, 'member-host', 'merged', ?, ?, ?, 'Accepted', 1, ?, ?)`,
+          [acceptedRequestId, MAIN_OID, headOid, mergeOid, acceptedAt, acceptedAt],
+        );
+        connection.run(
+          `INSERT INTO request_ticket_relations (
+            relation_id, request_id, ticket_id, commit_oid, kind, state,
+            created_by_member_id, created_at, updated_at, accepted_at, accepted_merge_oid
+          ) VALUES (?, ?, ?, ?, 'references', 'accepted', 'member-host', ?, ?, ?, ?)`,
+          [
+            `accepted-relation-${index}`,
+            acceptedRequestId,
+            created.ticket.id,
+            headOid,
+            acceptedAt,
+            acceptedAt,
+            acceptedAt,
+            mergeOid,
+          ],
+        );
+      }
+    });
+
+    const firstTicketPage = await control.readTicketPage(PROJECT_ID, created.ticket.id)
+      .catch(error => {
+        throw new Error('Ticket first-page traversal failed', { cause: error });
+      });
+    expect(firstTicketPage.comments.nextCursor).toBeDefined();
+    expect(firstTicketPage.acceptedRelations.nextCursor).toBeDefined();
+    expect(Buffer.byteLength(JSON.stringify(firstTicketPage.comments), 'utf8'))
+      .toBeLessThanOrEqual(COLLAB_LIMITS.commentPageMaxUtf8Bytes);
+    expect(Buffer.byteLength(JSON.stringify(firstTicketPage.acceptedRelations), 'utf8'))
+      .toBeLessThanOrEqual(COLLAB_LIMITS.relationPageMaxUtf8Bytes);
+
+    const completeTicket = await control.readTicket(
+      PROJECT_ID,
+      created.ticket.id,
+    ).catch(error => {
+      throw new Error('Ticket continuation traversal failed', { cause: error });
+    });
+    expect(completeTicket.comments.comments.map(comment => comment.body)).toEqual(ticketBodies);
+    expect(completeTicket.acceptedRelations.acceptedRelations).toHaveLength(
+      COLLAB_LIMITS.maxRelationsPerPage + 1,
+    );
+    expect(Buffer.byteLength(JSON.stringify(completeTicket.comments), 'utf8'))
+      .toBeGreaterThan(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes);
+
+    const requestBodiesSeen: string[] = [];
+    let requestCursor: string | undefined;
+    let requestPageCount = 0;
+    do {
+      const page = await control.listRequestComments(PROJECT_ID, requestId, {
+        ...(requestCursor ? { cursor: requestCursor } : {}),
+        limit: COLLAB_LIMITS.maxCommentPageSize,
+      }).catch(error => {
+        throw new Error('Request-comment continuation traversal failed', { cause: error });
+      });
+      expect(Buffer.byteLength(JSON.stringify(page), 'utf8'))
+        .toBeLessThanOrEqual(COLLAB_LIMITS.commentPageMaxUtf8Bytes);
+      requestBodiesSeen.push(...page.comments.map(comment => comment.body));
+      requestCursor = page.nextCursor;
+      requestPageCount += 1;
+    } while (requestCursor);
+    expect(requestPageCount).toBeGreaterThan(1);
+    expect(requestBodiesSeen).toEqual(requestBodies);
+    expect(Buffer.byteLength(JSON.stringify({ comments: requestBodiesSeen }), 'utf8'))
+      .toBeGreaterThan(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes);
+  }, 30_000);
+
+  it('reads a maximal-body Ticket detail through the real Host and client', async () => {
+    await coordinator.startProject(PROJECT_ID);
+    const control = new LocalProjectControlPort(localProjects);
+    const projection = new CollabClientProjection(localProjects, control);
+    await projection.readSnapshot(PROJECT_ID);
+
+    // Quotes maximize escaping for this body while remaining valid Markdown;
+    // control characters below exercise the six-byte JSON escape worst case.
+    const body = '"'.repeat(COLLAB_LIMITS.maxTicketBodyBytes);
+    const created = await control.createTicket({
+      body,
+      projectId: PROJECT_ID,
+      title: 'Maximal Ticket',
+    }, 'ticket-maximal-detail');
+    const bodies = ['\u0001'.repeat(COLLAB_LIMITS.maxTicketCommentBytes)];
+    await control.addTicketComment({
+      body: bodies[0]!,
+      projectId: PROJECT_ID,
+      ticketId: created.ticket.id,
+    }, 'maximal-comment-escaped');
+
+    const projected = await projection.readTicket(PROJECT_ID, created.ticket.id);
+    expect(projected.source).toBe('online');
+    expect(projected.detail.body).toBe(body);
+    expect(projected.detail.comments.comments.map(comment => comment.body)).toEqual(bodies);
+    expect(new Set(projected.detail.comments.comments.map(comment => comment.id)).size)
+      .toBe(bodies.length);
+
+    projection.dispose();
+  }, 30_000);
+
   it('replays lost-response Ticket mutations and serves prior reads after disconnect', async () => {
     await coordinator.startProject(PROJECT_ID);
     const control = new LocalProjectControlPort(localProjects);
@@ -963,7 +1146,7 @@ describe('LanHostCoordinator production transport', () => {
       source: 'online',
     });
     await expect(projection.readTicket(PROJECT_ID, first.ticket.id)).resolves.toMatchObject({
-      detail: { comments: [expect.objectContaining({ id: firstComment.id })] },
+      detail: { comments: { comments: [expect.objectContaining({ id: firstComment.id })] } },
       source: 'online',
     });
 
@@ -977,7 +1160,7 @@ describe('LanHostCoordinator production transport', () => {
       source: 'cache',
     });
     await expect(projection.readTicket(PROJECT_ID, first.ticket.id)).resolves.toMatchObject({
-      detail: { comments: [expect.objectContaining({ id: firstComment.id })] },
+      detail: { comments: { comments: [expect.objectContaining({ id: firstComment.id })] } },
       source: 'cache',
     });
     projection.dispose();
@@ -1026,7 +1209,7 @@ describe('LanHostCoordinator production transport', () => {
       `${nextEndpoint}/v1/git/${PROJECT_ID}/repository.git/info/refs?service=git-upload-pack`,
       ca,
     )).resolves.toBe('git-ready');
-    await expect(fetch(`${first.endpoint}/v7/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${first.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
     await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
       authority: {
@@ -1044,6 +1227,164 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
     });
     expect(advertisementStop).toHaveBeenCalledTimes(1);
+  }, 30_000);
+
+  it('closes cleanly when unload begins during an address rebind', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) return;
+    const first = await coordinator.startProject(PROJECT_ID);
+
+    privateAddresses = [nextAddress];
+    let identityRequested!: () => void;
+    let releaseIdentity!: () => void;
+    const requested = new Promise<void>(resolve => { identityRequested = resolve; });
+    const gate = new Promise<void>(resolve => { releaseIdentity = resolve; });
+    const base = issueServerIdentity;
+    issueServerIdentity = address => {
+      if (address !== nextAddress) return base(address);
+      identityRequested();
+      return gate.then(() => base(address));
+    };
+
+    const rebind = checkHostAddress();
+    await requested;
+    const closing = coordinator.close();
+    releaseIdentity();
+    await expect(rebind).rejects.toMatchObject({ code: 'not-initialized' });
+    await closing;
+
+    const internals = coordinator as unknown as {
+      hostLock: unknown;
+      listener: unknown;
+    };
+    expect(internals.listener).toBeNull();
+    expect(internals.hostLock).toBeNull();
+    expect(advertiseProject).toHaveBeenCalledTimes(1);
+    expect(advertisementStop).toHaveBeenCalled();
+    await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { endpoint: first.endpoint },
+    });
+    await expect(access(path.join(root, '.claudian', 'collab', 'lan-host.lock')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30_000);
+
+  it('closes the superseded listener when unload interrupts a rebind mid-advertisement', async () => {
+    const nextAddress = listPrivateIpv4Addresses()
+      .find(address => address !== '127.0.0.1');
+    if (!nextAddress) return;
+    const first = await coordinator.startProject(PROJECT_ID);
+    const firstPort = Number(new URL(first.endpoint).port);
+
+    privateAddresses = [nextAddress];
+    let rebindAdvertiseReached!: () => void;
+    let releaseRebindAdvertise!: () => void;
+    const reached = new Promise<void>(resolve => { rebindAdvertiseReached = resolve; });
+    const gate = new Promise<void>(resolve => { releaseRebindAdvertise = resolve; });
+    // Installed after the initial start: the first call through this mock is
+    // the rebind re-advertising the hosted Project on the new endpoint. The
+    // replacement listener has already been promoted at that point.
+    advertiseProject.mockImplementation(() => {
+      rebindAdvertiseReached();
+      return gate.then(() => ({ stop: advertisementStop }));
+    });
+
+    const rebind = checkHostAddress();
+    await reached;
+    const closing = coordinator.close();
+    releaseRebindAdvertise();
+    await expect(rebind).rejects.toMatchObject({ code: 'not-initialized' });
+    await closing;
+
+    // The interrupted rebind must not leave the superseded listener bound.
+    await expect(new Promise<void>((resolve, reject) => {
+      const probe = createServer();
+      probe.once('error', reject);
+      probe.listen(firstPort, '127.0.0.1', () => {
+        probe.close(() => resolve());
+      });
+    })).resolves.toBeUndefined();
+    await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { endpoint: first.endpoint },
+    });
+    await expect(access(path.join(root, '.claudian', 'collab', 'lan-host.lock')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30_000);
+
+  it('closes cleanly when unload begins during a terminal responder start', async () => {
+    let identityRequested!: () => void;
+    let releaseIdentity!: () => void;
+    const requested = new Promise<void>(resolve => { identityRequested = resolve; });
+    const gate = new Promise<void>(resolve => { releaseIdentity = resolve; });
+    const base = issueServerIdentity;
+    issueServerIdentity = address => {
+      identityRequested();
+      return gate.then(() => base(address));
+    };
+
+    const terminalService = { getRetirement: jest.fn() };
+    const starting = coordinator.startTerminalProject({
+      projectId: PROJECT_ID,
+      service: terminalService as never,
+    });
+    await requested;
+    const closing = coordinator.close();
+    releaseIdentity();
+    await expect(starting).rejects.toMatchObject({ code: 'not-initialized' });
+    await closing;
+
+    const internals = coordinator as unknown as {
+      hostLock: unknown;
+      listener: unknown;
+      terminalProjects: Map<string, unknown>;
+    };
+    expect(internals.listener).toBeNull();
+    expect(internals.hostLock).toBeNull();
+    expect(internals.terminalProjects.size).toBe(0);
+    expect(advertiseProject).not.toHaveBeenCalled();
+    await expect(access(path.join(root, '.claudian', 'collab', 'lan-host.lock')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30_000);
+
+  it('closes cleanly when unload begins during a provisional Host-transfer start', async () => {
+    let identityRequested!: () => void;
+    let releaseIdentity!: () => void;
+    const requested = new Promise<void>(resolve => { identityRequested = resolve; });
+    const gate = new Promise<void>(resolve => { releaseIdentity = resolve; });
+    const base = issueServerIdentity;
+    issueServerIdentity = address => {
+      identityRequested();
+      return gate.then(() => base(address));
+    };
+
+    const starting = coordinator.startProvisionalTransfer({
+      coordinator: {
+        activate: jest.fn().mockResolvedValue(undefined),
+        cancel: jest.fn().mockResolvedValue({}),
+        complete: jest.fn().mockResolvedValue(undefined),
+        confirm: jest.fn().mockResolvedValue({}),
+        stage: jest.fn().mockResolvedValue(undefined),
+      },
+      projectId: PROJECT_ID,
+      receiverCredential: Buffer.alloc(32, 6).toString('base64url'),
+      transferId: 'transfer-close-race',
+    });
+    await requested;
+    const closing = coordinator.close();
+    releaseIdentity();
+    await expect(starting).rejects.toMatchObject({ code: 'not-initialized' });
+    await closing;
+
+    const internals = coordinator as unknown as {
+      hostLock: unknown;
+      listener: unknown;
+      provisionalTransfers: { size: number };
+    };
+    expect(internals.listener).toBeNull();
+    expect(internals.hostLock).toBeNull();
+    expect(internals.provisionalTransfers.size).toBe(0);
+    expect(advertiseProject).not.toHaveBeenCalled();
+    await expect(access(path.join(root, '.claudian', 'collab', 'lan-host.lock')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
   }, 30_000);
 
   it('keeps the current listener alive while network interfaces are temporarily absent', async () => {
@@ -1099,7 +1440,7 @@ describe('LanHostCoordinator production transport', () => {
         memberCredential: string;
       } }>(value),
       method: 'POST',
-      path: `/v7/projects/${PROJECT_ID}/join-attempts`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts`,
     }, firstInvitation.invitationSecret);
     await firstClient.requestWithMember({
       body: {
@@ -1110,7 +1451,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => envelopeData(value),
       idempotencyKey: 'activate-roaming-member',
       method: 'POST',
-      path: `/v7/projects/${PROJECT_ID}/join-attempts/join-roaming-member/activate`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts/join-roaming-member/activate`,
     }, joined.joinAttempt.memberCredential);
 
     const memberRoot = path.join(root, 'roaming-member-device');
@@ -1319,6 +1660,7 @@ describe('LanHostCoordinator production transport', () => {
             },
             authorityDirectory: path.join(root, 'alpha'),
             git: gitRuntime(),
+            ...hostedControlCapabilities(),
             readMainOid: async () => MAIN_OID,
             validate: async () => undefined,
           }
@@ -1331,6 +1673,7 @@ describe('LanHostCoordinator production transport', () => {
             },
             authorityDirectory: betaDirectory,
             git: gitRuntime(),
+            ...hostedControlCapabilities(),
             readMainOid: async () => MAIN_OID,
             validate: async () => undefined,
           },
@@ -1345,10 +1688,10 @@ describe('LanHostCoordinator production transport', () => {
 
       await coordinator.stopProject(PROJECT_ID);
       await expect(coordinator.createInvitation(betaId)).resolves.toMatchObject({
-        encodedInvitation: expect.stringMatching(/^claudian-collab:v7:/),
+        encodedInvitation: expect.stringMatching(/^claudian-collab:v9:/),
       });
       await coordinator.stopProject(betaId);
-      await expect(fetch(`${alpha.endpoint}/v7/projects/${betaId}/snapshot`))
+      await expect(fetch(`${alpha.endpoint}/v9/projects/${betaId}/snapshot`))
         .rejects.toThrow();
     } finally {
       await betaDatabase.close();
@@ -1373,7 +1716,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
       status: 'stopped',
     });
-    await expect(fetch(`${host.endpoint}/v7/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
   });
 
@@ -1445,6 +1788,7 @@ describe('LanHostCoordinator production transport', () => {
           new SqlJsProjectEventSource(authorityDatabase, PROJECT_ID),
         ),
         git: gitRuntime(),
+        ...hostedControlCapabilities(),
         readMainOid: async () => MAIN_OID,
         validate: async () => undefined,
       }),
@@ -1466,7 +1810,7 @@ describe('LanHostCoordinator production transport', () => {
       expect(await authorityDatabase.read(connection => connection.get(
         'SELECT revoked_at FROM invitations ORDER BY created_at DESC LIMIT 1',
       ))).toEqual({ revoked_at: expect.any(String) });
-      expect(invitation.encodedInvitation).toMatch(/^claudian-collab:v7:/);
+      expect(invitation.encodedInvitation).toMatch(/^claudian-collab:v9:/);
     } finally {
       await coordinator.stopProject(PROJECT_ID);
       await new Promise<void>(resolve => {

@@ -2,22 +2,17 @@ import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
 
 import { RequestQueryGitPolicy } from '@/app/collab/authority/RequestQueryGitPolicy';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
 const MAIN = '1'.repeat(40);
 const HEAD = '2'.repeat(40);
 
 describe('RequestQueryGitPolicy', () => {
-  it('reviews the exact request head against current main and classifies binary paths', async () => {
+  it('resolves the exact review condition without computing a raw changed-file manifest', async () => {
     const git = fakeGit();
     git.resolveRefs.mockResolvedValue(new Map([
       [COLLAB_MAIN_REF, MAIN],
       ['refs/heads/members/member-a', HEAD],
     ]));
-    git.listChangedFiles.mockResolvedValue([
-      { kind: 'modified', path: 'README.md' },
-      { kind: 'renamed', path: 'image-new.png', previousPath: 'image.png' },
-    ]);
     git.mergeTree.mockResolvedValue({ kind: 'conflicting', treeOid: null });
 
     const result = await new RequestQueryGitPolicy('/repo.git', git).inspect({
@@ -31,19 +26,9 @@ describe('RequestQueryGitPolicy', () => {
       COLLAB_MAIN_REF,
       'refs/heads/members/member-a',
     ]);
-    expect(git.listChangedFiles).toHaveBeenCalledWith('/repo.git', MAIN, HEAD);
     expect(git.mergeTree).toHaveBeenCalledWith('/repo.git', MAIN, HEAD);
+    expect(git.listChangedFiles).not.toHaveBeenCalled();
     expect(result).toEqual({
-      changedFiles: [
-        { binary: false, kind: 'modified', largeForReview: false, path: 'README.md' },
-        {
-          binary: true,
-          kind: 'renamed',
-          largeForReview: false,
-          path: 'image-new.png',
-          previousPath: 'image.png',
-        },
-      ],
       currentMainOid: MAIN,
       reviewCondition: 'conflicting',
       reviewedHeadOid: HEAD,
@@ -63,25 +48,6 @@ describe('RequestQueryGitPolicy', () => {
       personalRef: 'refs/heads/members/member-a',
       projectId: 'project-a',
     })).resolves.toMatchObject({ reviewCondition: 'stale' });
-  });
-
-  it('rejects changed-path overflow instead of returning a partial review', async () => {
-    const git = fakeGit();
-    git.resolveRefs.mockResolvedValue(new Map([
-      [COLLAB_MAIN_REF, MAIN],
-      ['refs/heads/members/member-a', HEAD],
-    ]));
-    git.listChangedFiles.mockResolvedValue(Array.from(
-      { length: CLAUDIAN_COLLAB_LIMITS.maxChangedPaths + 1 },
-      (_, index) => ({ kind: 'modified' as const, path: `file-${index}.md` }),
-    ));
-
-    await expect(new RequestQueryGitPolicy('/repo.git', git).inspect({
-      firstBaseOid: MAIN,
-      latestHeadOid: HEAD,
-      personalRef: 'refs/heads/members/member-a',
-      projectId: 'project-a',
-    })).rejects.toMatchObject({ code: 'quota-exceeded' });
   });
 });
 

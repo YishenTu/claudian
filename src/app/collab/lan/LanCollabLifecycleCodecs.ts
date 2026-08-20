@@ -1,4 +1,4 @@
-import { type CollabDecodeResult, CollabError } from '@claudian/collab-protocol';
+import { type CollabDecodeResult, CollabError, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type {
   LanCollabControlOperationMap,
@@ -12,9 +12,6 @@ type LifecycleResponse<Operation extends LanCollabLifecycleControlOperation> =
   LanCollabControlOperationMap[Operation]['response'];
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SHA256_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CERTIFICATE_PATTERN = /^-----BEGIN CERTIFICATE-----\n(?:[A-Za-z0-9+/=]{1,64}\n)+-----END CERTIFICATE-----\n?$/;
@@ -43,18 +40,6 @@ function hasExactKeys(
     && Object.keys(value).every(key => allowed.has(key));
 }
 
-function isProjectId(value: unknown): value is string {
-  return typeof value === 'string' && PROJECT_ID_PATTERN.test(value);
-}
-
-function isMemberId(value: unknown): value is string {
-  return typeof value === 'string' && MEMBER_ID_PATTERN.test(value);
-}
-
-function isOpaqueId(value: unknown): value is string {
-  return typeof value === 'string' && OPAQUE_ID_PATTERN.test(value);
-}
-
 function isIsoTimestamp(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const milliseconds = Date.parse(value);
@@ -81,7 +66,7 @@ function isCertificatePem(value: unknown): value is string {
 }
 
 function isMutationContext(value: UnknownRecord): boolean {
-  return isProjectId(value.projectId) && isOpaqueId(value.idempotencyKey);
+  return isCollabProjectId(value.projectId) && isCollabOpaqueId(value.idempotencyKey);
 }
 
 function validRequest(
@@ -95,64 +80,64 @@ function validRequest(
         'expectedHostMemberId', 'idempotencyManagerMemberId',
       ], ['managerResponsibilityOfferId'])
         && isMutationContext(input)
-        && isMemberId(input.expectedMemberId)
-        && isMemberId(input.expectedHostMemberId)
+        && isCollabMemberId(input.expectedMemberId)
+        && isCollabMemberId(input.expectedHostMemberId)
         && (input.idempotencyManagerMemberId === null
-          || isMemberId(input.idempotencyManagerMemberId))
+          || isCollabMemberId(input.idempotencyManagerMemberId))
         && (input.managerResponsibilityOfferId === undefined
-          || isOpaqueId(input.managerResponsibilityOfferId));
+          || isCollabOpaqueId(input.managerResponsibilityOfferId));
     case 'createManagerResponsibilityOffer':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'purpose', 'targetMemberId',
       ])
         && isMutationContext(input)
         && (input.purpose === 'manager-promotion' || input.purpose === 'manager-leave')
-        && isMemberId(input.targetMemberId);
+        && isCollabMemberId(input.targetMemberId);
     case 'getCurrentManagerResponsibilityOffer':
     case 'getHostTransitions':
-      return hasExactKeys(input, ['projectId']) && isProjectId(input.projectId);
+      return hasExactKeys(input, ['projectId']) && isCollabProjectId(input.projectId);
     case 'getManagerResponsibilityOffer':
       return hasExactKeys(input, ['projectId', 'offerId'])
-        && isProjectId(input.projectId)
-        && isOpaqueId(input.offerId);
+        && isCollabProjectId(input.projectId)
+        && isCollabOpaqueId(input.offerId);
     case 'acknowledgeManagerResponsibility':
     case 'declineManagerResponsibility':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'offerId', 'expectedTargetMemberId',
       ])
         && isMutationContext(input)
-        && isOpaqueId(input.offerId)
-        && isMemberId(input.expectedTargetMemberId);
+        && isCollabOpaqueId(input.offerId)
+        && isCollabMemberId(input.expectedTargetMemberId);
     case 'cancelManagerResponsibilityOffer':
       return hasExactKeys(input, ['projectId', 'idempotencyKey', 'offerId'])
         && isMutationContext(input)
-        && isOpaqueId(input.offerId);
+        && isCollabOpaqueId(input.offerId);
     case 'promoteManager':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'targetMemberId',
         'managerResponsibilityOfferId',
       ])
         && isMutationContext(input)
-        && isMemberId(input.targetMemberId)
-        && isOpaqueId(input.managerResponsibilityOfferId);
+        && isCollabMemberId(input.targetMemberId)
+        && isCollabOpaqueId(input.managerResponsibilityOfferId);
     case 'demoteManager':
       return hasExactKeys(input, ['projectId', 'idempotencyKey', 'targetMemberId'])
         && isMutationContext(input)
-        && isMemberId(input.targetMemberId);
+        && isCollabMemberId(input.targetMemberId);
     case 'createHostTransfer':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'expectedHostMemberId', 'targetMemberId',
       ])
         && isMutationContext(input)
-        && isMemberId(input.expectedHostMemberId)
-        && isMemberId(input.targetMemberId);
+        && isCollabMemberId(input.expectedHostMemberId)
+        && isCollabMemberId(input.targetMemberId);
     case 'acceptHostTransfer':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'transferId', 'targetEndpoint',
         'targetCaCertificatePem', 'targetCaFingerprint', 'receiverCredential',
       ])
         && isMutationContext(input)
-        && isOpaqueId(input.transferId)
+        && isCollabOpaqueId(input.transferId)
         && isHttpsEndpoint(input.targetEndpoint)
         && isCertificatePem(input.targetCaCertificatePem)
         && typeof input.targetCaFingerprint === 'string'
@@ -164,22 +149,22 @@ function validRequest(
         'projectId', 'idempotencyKey', 'transferId', 'expectedTargetMemberId',
       ])
         && isMutationContext(input)
-        && isOpaqueId(input.transferId)
-        && isMemberId(input.expectedTargetMemberId);
+        && isCollabOpaqueId(input.transferId)
+        && isCollabMemberId(input.expectedTargetMemberId);
     case 'cancelHostTransfer':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'transferId', 'expectedHostMemberId',
       ])
         && isMutationContext(input)
-        && isOpaqueId(input.transferId)
-        && isMemberId(input.expectedHostMemberId);
+        && isCollabOpaqueId(input.transferId)
+        && isCollabMemberId(input.expectedHostMemberId);
     case 'retireProject':
       return hasExactKeys(input, [
         'projectId', 'idempotencyKey', 'managerActorMemberId', 'expectedHostMemberId',
       ])
         && isMutationContext(input)
-        && isMemberId(input.managerActorMemberId)
-        && isMemberId(input.expectedHostMemberId);
+        && isCollabMemberId(input.managerActorMemberId)
+        && isCollabMemberId(input.expectedHostMemberId);
     case 'acknowledgeRetirement':
       return hasExactKeys(input, ['projectId', 'idempotencyKey', 'retiredAt'])
         && isMutationContext(input)
@@ -202,9 +187,9 @@ export function decodeLanCollabLifecycleOperationRequest<
 function isMembershipTermination(value: unknown): boolean {
   return isRecord(value)
     && hasExactKeys(value, ['discardedRequestId', 'memberId', 'projectId', 'status'])
-    && (value.discardedRequestId === null || isOpaqueId(value.discardedRequestId))
-    && isMemberId(value.memberId)
-    && isProjectId(value.projectId)
+    && (value.discardedRequestId === null || isCollabOpaqueId(value.discardedRequestId))
+    && isCollabMemberId(value.memberId)
+    && isCollabProjectId(value.projectId)
     && (value.status === 'left' || value.status === 'revoked');
 }
 
@@ -213,10 +198,10 @@ function isManagerOffer(value: unknown): boolean {
     'offerId', 'purpose', 'sourceManagerMemberId', 'targetMemberId',
     'status', 'offeredAt', 'expiresAt',
   ], ['acknowledgedAt'])) return false;
-  return isOpaqueId(value.offerId)
+  return isCollabOpaqueId(value.offerId)
     && (value.purpose === 'manager-promotion' || value.purpose === 'manager-leave')
-    && isMemberId(value.sourceManagerMemberId)
-    && isMemberId(value.targetMemberId)
+    && isCollabMemberId(value.sourceManagerMemberId)
+    && isCollabMemberId(value.targetMemberId)
     && typeof value.status === 'string'
     && ['offered', 'acknowledged', 'consumed', 'declined', 'cancelled', 'expired']
       .includes(value.status)
@@ -231,8 +216,8 @@ function isManagerRoleMutation(
 ): boolean {
   return isRecord(value)
     && hasExactKeys(value, ['projectId', memberField, 'managerSetGeneration'])
-    && isMemberId(value[memberField])
-    && isProjectId(value.projectId)
+    && isCollabMemberId(value[memberField])
+    && isCollabProjectId(value.projectId)
     && typeof value.managerSetGeneration === 'number'
     && Number.isSafeInteger(value.managerSetGeneration)
     && value.managerSetGeneration >= 0;
@@ -243,8 +228,8 @@ function isHostTransfer(value: unknown): boolean {
     'transferId', 'targetMemberId', 'phase', 'offeredAt', 'expiresAt',
     'canAccept', 'canDecline', 'canCancel',
   ])) return false;
-  return isOpaqueId(value.transferId)
-    && isMemberId(value.targetMemberId)
+  return isCollabOpaqueId(value.transferId)
+    && isCollabMemberId(value.targetMemberId)
     && typeof value.phase === 'string'
     && [
       'offered', 'accepted', 'transferring', 'recovery-required',
@@ -278,18 +263,18 @@ function validResponse(
     case 'retireProject':
       return isRecord(input)
         && hasExactKeys(input, ['projectId', 'retiredAt'])
-        && isProjectId(input.projectId)
+        && isCollabProjectId(input.projectId)
         && isIsoTimestamp(input.retiredAt);
     case 'acknowledgeRetirement':
       return isRecord(input)
         && hasExactKeys(input, ['projectId', 'retiredAt', 'acknowledgedAt'])
-        && isProjectId(input.projectId)
+        && isCollabProjectId(input.projectId)
         && isIsoTimestamp(input.retiredAt)
         && isIsoTimestamp(input.acknowledgedAt);
     case 'getHostTransitions':
       if (!isRecord(input)
         || !hasExactKeys(input, ['projectId', 'proofs'])
-        || !isProjectId(input.projectId)
+        || !isCollabProjectId(input.projectId)
         || !Array.isArray(input.proofs)
         || input.proofs.length > 64) return false;
       return input.proofs.every((proof) => {

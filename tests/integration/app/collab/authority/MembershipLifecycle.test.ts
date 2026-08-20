@@ -173,7 +173,13 @@ describe('Membership lifecycle', () => {
       projectId: 'project-alpha',
     });
     const administration = new MembershipAdminService(authority, { now: () => NOW });
-    const hosted = new HostedProjectControlService(membership, undefined, administration);
+    const hosted = new HostedProjectControlService(
+      membership,
+      {} as never,
+      administration,
+      {} as never,
+      {} as never,
+    );
     const request = {
       expectedHostMemberId: 'member-host',
       expectedMemberId: joining.member.id,

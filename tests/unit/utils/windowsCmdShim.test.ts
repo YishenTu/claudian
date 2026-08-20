@@ -56,4 +56,42 @@ describe('windowsCmdShim', () => {
     await expect(termination).resolves.toBe(true);
     expect(proc.kill).not.toHaveBeenCalled();
   });
+
+  it('settles after a bounded deadline with a direct kill when taskkill never emits', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const proc = { kill: jest.fn().mockReturnValue(true), pid: 4312 };
+    const taskkill = new EventEmitter();
+    const spawnProcess = jest.fn().mockReturnValue(taskkill);
+
+    const termination = terminateSpawnedProcessTree(
+      proc,
+      'SIGTERM',
+      spawnProcess,
+      { args: [], command: 'git.exe', killProcessTree: true },
+      { taskkillTimeoutMs: 20 },
+    );
+
+    await expect(termination).resolves.toBe(true);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('does not fire the deadline fallback after a normal taskkill completion', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const proc = { kill: jest.fn().mockReturnValue(true), pid: 4312 };
+    const taskkill = new EventEmitter();
+    const spawnProcess = jest.fn().mockReturnValue(taskkill);
+
+    const termination = terminateSpawnedProcessTree(
+      proc,
+      'SIGTERM',
+      spawnProcess,
+      { args: [], command: 'git.exe', killProcessTree: true },
+      { taskkillTimeoutMs: 20 },
+    );
+    taskkill.emit('close', 0);
+    await expect(termination).resolves.toBe(true);
+
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(proc.kill).not.toHaveBeenCalled();
+  });
 });

@@ -17,7 +17,6 @@ import type {
 type SlashValue =
   | {
     readonly command: SlashCommand;
-    readonly insertPrefix: string;
     readonly kind: 'command';
   }
   | { readonly kind: 'retry' };
@@ -217,7 +216,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
           kind: 'value',
           label: `/${command.name}`,
           replacement: `/${command.name} `,
-          value: { command: slashCommand, insertPrefix: '/', kind: 'command' } satisfies SlashValue,
+          value: { command: slashCommand, kind: 'command' } satisfies SlashValue,
         });
       }
     }
@@ -250,7 +249,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
         kind: 'value',
         label: `${entry.displayPrefix}${entry.name}`,
         replacement: `${entry.insertPrefix}${entry.name} `,
-        value: { command, insertPrefix: entry.insertPrefix, kind: 'command' } satisfies SlashValue,
+        value: { command, kind: 'command' } satisfies SlashValue,
       });
     }
     return items;

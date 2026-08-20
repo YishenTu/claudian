@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabGitOid, CollabIsoTimestamp, CollabMember, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestDetail, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketComment, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMember, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestDetail, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian/collab-protocol';
 
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -11,7 +11,6 @@ import type {
 import type {
   CollabAuthoritySyncState,
   CollabConflictDescriptor,
-  CollabConflictEntry,
   CollabGitStatus,
   CollabLocalCleanupChoice,
   CollabLocalProjectSummary,
@@ -184,29 +183,9 @@ export interface CollabReconciliationOutcome {
   headOid: CollabGitOid;
 }
 
-interface CollabConflictSideDecision {
-  path: CollabRelativePath;
-}
-
-export type CollabConflictDecision =
-  | (CollabConflictSideDecision & {
-    choice: 'keep-personal' | 'use-accepted';
-  })
-  | (CollabConflictSideDecision & {
-    choice: 'use-manual-draft';
-    draft: string;
-  })
-  | (CollabConflictSideDecision & {
-    choice: 'use-agent-proposal';
-    proposal: string;
-  });
-
 export interface CollabConflictSession {
-  decisions: readonly CollabConflictDecision[];
   descriptor: CollabConflictDescriptor;
-  pending: readonly CollabConflictEntry[];
   publicationReview?: CollabPublicationReview;
-  resolvedPaths: readonly CollabRelativePath[];
 }
 
 export interface CollabConflictFileRequest {
@@ -259,12 +238,6 @@ export type CollabConflictFileContent =
     path: CollabRelativePath;
   };
 
-export interface CollabResolveConflictRequest {
-  operationId: CollabOperationId;
-  decisions: readonly CollabConflictDecision[];
-  finalize: boolean;
-}
-
 export interface CollabInvitationView {
   encodedInvitation: string;
   expiresAt: CollabIsoTimestamp;
@@ -286,6 +259,11 @@ export interface CollabAddCommentRequest {
 export interface CollabListTicketsRequest {
   projectId: CollabProjectId;
   status: CollabTicketStatus;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface CollabCommentPageQuery {
   cursor?: string;
   limit?: number;
 }
@@ -467,4 +445,35 @@ export interface CollabFeaturePort {
   finalizeRetiredProject(request: CollabFinalizeRetiredProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   retryProjectCleanup(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription;
+}
+
+export interface CollabBoundedQueryPort {
+  listRequestComments(
+    projectId: CollabProjectId,
+    requestId: CollabRequestId,
+    query?: CollabCommentPageQuery,
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabCommentPage>>;
+  listTicketAcceptedRelations(
+    projectId: CollabProjectId,
+    ticketId: CollabTicketId,
+    query?: CollabCommentPageQuery,
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabTicketAcceptedRelationPage>>;
+  listTicketComments(
+    projectId: CollabProjectId,
+    ticketId: CollabTicketId,
+    query?: CollabCommentPageQuery,
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabTicketCommentPage>>;
+  prepareReview(
+    projectId: CollabProjectId,
+    requestId: CollabRequestId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabRequestReview>>;
+  readTicket(
+    projectId: CollabProjectId,
+    ticketId: CollabTicketId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabTicketDetailProjection>>;
 }

@@ -39,6 +39,7 @@ export interface GitCommandRunnerOptions {
   readonly baseEnvironment?: NodeJS.ProcessEnv;
   readonly emptyConfigPath: string;
   readonly executablePath: string;
+  readonly taskkillTimeoutMs?: number;
   readonly terminationGraceMs?: number;
 }
 
@@ -287,10 +288,12 @@ export function parseGitNulFields(output: Uint8Array): readonly string[] {
 export class GitCommandRunner {
   private readonly activeProcesses = new Set<ChildProcessWithoutNullStreams>();
   private readonly baseEnvironment: NodeJS.ProcessEnv;
+  private readonly taskkillTimeoutMs: number | undefined;
   private readonly terminationGraceMs: number;
 
   constructor(private readonly options: GitCommandRunnerOptions) {
     this.baseEnvironment = { ...(options.baseEnvironment ?? process.env) };
+    this.taskkillTimeoutMs = options.taskkillTimeoutMs;
     this.terminationGraceMs = options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS;
   }
 
@@ -363,7 +366,13 @@ export class GitCommandRunner {
         if (failureKind !== null) return;
         failureKind = kind;
         try {
-          terminationTask = terminateSpawnedProcessTree(child, 'SIGTERM', spawn, spawnSpec);
+          terminationTask = terminateSpawnedProcessTree(
+            child,
+            'SIGTERM',
+            spawn,
+            spawnSpec,
+            { taskkillTimeoutMs: this.taskkillTimeoutMs },
+          );
         } catch {
           // The SIGKILL fallback below remains authoritative.
         }

@@ -1,4 +1,4 @@
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -59,8 +59,7 @@ export function decodeLanCollabEvent(input: unknown): LanCollabEventDecodeResult
     Object.keys(event).length !== expected.length
     || !expected.every(key => Object.hasOwn(event, key))
     || event.protocolVersion !== COLLAB_CONTROL_PROTOCOL_VERSION
-    || typeof event.projectId !== 'string'
-    || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(event.projectId)
+    || !isCollabProjectId(event.projectId)
     || typeof event.sequence !== 'number'
     || !Number.isSafeInteger(event.sequence)
     || event.sequence < 0

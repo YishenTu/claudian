@@ -58,8 +58,16 @@ describe('ManagerResponsibilityService', () => {
       });
       insertMember(connection, 'member-a', 4);
       insertMember(connection, 'member-b', 5);
+      insertMember(connection, 'member-c', 6);
+      insertMember(connection, 'member-d', 7);
     });
-    connected = new Set(['member-a', 'member-b', 'member-host']);
+    connected = new Set([
+      'member-a',
+      'member-b',
+      'member-c',
+      'member-d',
+      'member-host',
+    ]);
     presence = {
       hasAuthenticatedPresence: (projectId, memberId) => (
         projectId === 'project-alpha' && connected.has(memberId)
@@ -112,11 +120,7 @@ describe('ManagerResponsibilityService', () => {
       idempotency: connection.get(
         "SELECT COUNT(*) AS count FROM idempotency_results WHERE operation_kind = 'manager-responsibility'",
       )?.count,
-      sourceGeneration: connection.get(
-        'SELECT source_manager_generation FROM manager_responsibility_offers WHERE offer_id = ?',
-        [created.offerId],
-      )?.source_manager_generation,
-    }))).resolves.toEqual({ events: 1, idempotency: 1, sourceGeneration: 1 });
+    }))).resolves.toEqual({ events: 1, idempotency: 1 });
   });
 
   it('requires current Manager authority and authenticated target presence', async () => {
@@ -180,7 +184,7 @@ describe('ManagerResponsibilityService', () => {
     })).rejects.toMatchObject({ code: 'authorization-denied' });
   });
 
-  it('rejects acknowledgement after a concurrent Manager-set generation change', async () => {
+  it('keeps a disjoint promotion valid after an unrelated Manager-set change', async () => {
     const offer = await createOffer(service, 'stale-generation');
     await promoteForSetup(database, 'member-b');
 
@@ -189,14 +193,36 @@ describe('ManagerResponsibilityService', () => {
       idempotencyKey: 'offer-stale-generation-ack',
       offerId: offer.offerId,
       projectId: 'project-alpha',
-    })).rejects.toMatchObject({
-      code: 'stale-project-selection',
-      safeContext: { reason: 'manager-responsibility-generation-changed' },
-    });
+    })).resolves.toMatchObject({ status: 'acknowledged' });
     await expect(database.read(connection => connection.get(
       'SELECT status FROM manager_responsibility_offers WHERE offer_id = ?',
       [offer.offerId],
-    ))).resolves.toEqual({ status: 'offered' });
+    ))).resolves.toEqual({ status: 'acknowledged' });
+  });
+
+  it('allows disjoint Managers and targets to hold promotion offers concurrently', async () => {
+    await promoteForSetup(database, 'member-a');
+    await promoteForSetup(database, 'member-b');
+
+    const first = await service.create('member-a', {
+      idempotencyKey: 'offer-disjoint-a',
+      projectId: 'project-alpha',
+      purpose: 'manager-promotion',
+      targetMemberId: 'member-c',
+    });
+    const second = await service.create('member-b', {
+      idempotencyKey: 'offer-disjoint-b',
+      projectId: 'project-alpha',
+      purpose: 'manager-promotion',
+      targetMemberId: 'member-d',
+    });
+
+    expect(first).toMatchObject({ sourceManagerMemberId: 'member-a', targetMemberId: 'member-c' });
+    expect(second).toMatchObject({ sourceManagerMemberId: 'member-b', targetMemberId: 'member-d' });
+    await expect(database.read(connection => connection.get(
+      `SELECT COUNT(*) AS count FROM manager_responsibility_offers
+       WHERE status IN ('offered', 'acknowledged')`,
+    ))).resolves.toEqual({ count: 2 });
   });
 
   it('projects an offer only to its source and target', async () => {

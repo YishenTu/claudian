@@ -24,7 +24,7 @@ export interface HostTransferArtifactIdentity {
 export interface HostTransferPackageManifest {
   readonly schemaVersion: typeof HOST_TRANSFER_MANIFEST_SCHEMA_VERSION;
   readonly protocolVersion: typeof COLLAB_HOST_TRANSFER_PROTOCOL_VERSION;
-  readonly authoritySchemaVersion: 8 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
+  readonly authoritySchemaVersion: 8 | 9 | 10 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
   readonly sourceAuthorityGeneration: number;
@@ -125,7 +125,14 @@ function assertManifest(
     || manifest.protocolVersion !== COLLAB_HOST_TRANSFER_PROTOCOL_VERSION
     || (
       manifest.authoritySchemaVersion !== COLLAB_AUTHORITY_SCHEMA_VERSION
-      && (!allowLegacyAuthority || manifest.authoritySchemaVersion !== 8)
+      && (
+        !allowLegacyAuthority
+        || (
+          manifest.authoritySchemaVersion !== 8
+          && manifest.authoritySchemaVersion !== 9
+          && manifest.authoritySchemaVersion !== 10
+        )
+      )
     )
   ) {
     throw packageError('host-transfer-manifest-version-invalid');

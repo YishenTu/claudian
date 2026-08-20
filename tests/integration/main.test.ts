@@ -534,6 +534,58 @@ describe('ClaudianPlugin', () => {
       plugin.onunload();
     });
 
+    it('keeps an enabled restored Collab detail leaf inert until layout readiness detaches it', async () => {
+      enableCollab();
+      await plugin.onload();
+      const requireCollabFeatureService = jest.spyOn(
+        plugin as unknown as { requireCollabFeatureService(): Promise<unknown> },
+        'requireCollabFeatureService',
+      );
+      const factory = (plugin.registerView as jest.Mock).mock.calls.find(
+        call => call[0] === COLLAB_DETAIL_VIEW_TYPE,
+      )?.[1] as ((leaf: unknown) => {
+        getState(): Record<string, unknown>;
+        onOpen(): Promise<void>;
+        setState(state: unknown, result: { history: boolean }): Promise<void>;
+      }) | undefined;
+      expect(factory).toBeDefined();
+
+      const globals = globalThis as Record<string, unknown>;
+      const previousActiveDocument = globals.activeDocument;
+      const previousMutationObserver = globals.MutationObserver;
+      globals.activeDocument = { body: { classList: { contains: () => false } } };
+      globals.MutationObserver = class {
+        observe(): void {}
+        disconnect(): void {}
+      };
+      try {
+        const restored = factory!({ detach: jest.fn() });
+        const state = {
+          kind: 'ticket',
+          projectId: 'project-a',
+          ticketId: 'ticket-a',
+        };
+        await restored.setState(state, { history: false });
+        await restored.onOpen();
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(restored.getState()).toEqual(state);
+        expect(requireCollabFeatureService).not.toHaveBeenCalled();
+        expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+          .toBeNull();
+      } finally {
+        globals.activeDocument = previousActiveDocument;
+        globals.MutationObserver = previousMutationObserver;
+      }
+
+      const afterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      afterLayout?.();
+      expect(mockApp.workspace.detachLeavesOfType)
+        .toHaveBeenCalledWith(COLLAB_DETAIL_VIEW_TYPE);
+      plugin.onunload();
+    });
+
     it('restores saved Collab Hosts after layout readiness without blocking onload', async () => {
       enableCollab();
       const restoreLifecycle = jest.fn().mockResolvedValue(undefined);

@@ -32,24 +32,12 @@ describe('ConflictResolution integration', () => {
     if (vaultRoot) await rm(vaultRoot, { force: true, recursive: true });
   });
 
-  it('recreates interrupted decisions and retains the result for final review', async () => {
+  it('recreates derived scratch state and retains the working-tree result for review', async () => {
     const harness = await createHarness();
 
     await expect(harness.coordinator.start(harness.descriptor)).resolves.toMatchObject({
       status: 'success',
-      value: { pending: [{ path: 'note.md' }], resolvedPaths: [] },
-    });
-    await expect(harness.coordinator.resolve({
-      decisions: [{ choice: 'use-manual-draft', draft: 'resolved\n', path: 'note.md' }],
-      finalize: false,
-      operationId: harness.descriptor.operationId,
-    })).resolves.toMatchObject({
-      status: 'success',
-      value: {
-        decisions: [{ choice: 'use-manual-draft', draft: 'resolved\n', path: 'note.md' }],
-        pending: [],
-        resolvedPaths: ['note.md'],
-      },
+      value: { descriptor: harness.descriptor },
     });
     await expect(harness.coordinator.readFile({
       operationId: harness.descriptor.operationId,
@@ -82,21 +70,16 @@ describe('ConflictResolution integration', () => {
     const resumed = harness.createCoordinator();
     await expect(resumed.read(harness.descriptor.operationId)).resolves.toMatchObject({
       status: 'success',
-      value: { pending: [], resolvedPaths: ['note.md'] },
+      value: { descriptor: harness.descriptor },
     });
     await expect(readFile(path.join(harness.context.repositoryPath, 'note.md'), 'utf8'))
       .resolves.toBe('personal\n');
 
-    await expect(resumed.resolve({
-      decisions: [],
-      finalize: true,
-      operationId: harness.descriptor.operationId,
-    })).resolves.toMatchObject({
+    await expect(resumed.prepareWorkingTreeResolution(harness.descriptor))
+      .resolves.toMatchObject({
       status: 'success',
       value: {
-        pending: [],
         publicationReview: expect.objectContaining({ kind: 'publication' }),
-        resolvedPaths: ['note.md'],
       },
     });
     const resultOid = await harness.git.resolveRef(
@@ -124,13 +107,9 @@ describe('ConflictResolution integration', () => {
   it('recovers when result retention completed before state finalization', async () => {
     const harness = await createHarness();
     await harness.coordinator.start(harness.descriptor);
-    await harness.coordinator.resolve({
-      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
-      finalize: false,
-      operationId: harness.descriptor.operationId,
-    });
     const record = (await harness.store.load(harness.descriptor.operationId))!;
     const scratchPath = await harness.store.repositoryPath(harness.descriptor.operationId);
+    await harness.scratch.resolveWithPersonalVersions(scratchPath, harness.descriptor);
     const resultOid = await harness.scratch.createResolutionCommit(
       scratchPath,
       harness.descriptor,
@@ -148,11 +127,8 @@ describe('ConflictResolution integration', () => {
       resultOid,
     );
 
-    await expect(harness.createCoordinator().resolve({
-      decisions: [],
-      finalize: true,
-      operationId: harness.descriptor.operationId,
-    })).resolves.toMatchObject({ status: 'success' });
+    await expect(harness.createCoordinator().prepareWorkingTreeResolution(harness.descriptor))
+      .resolves.toMatchObject({ status: 'success' });
     expect(await harness.git.resolveRef(
       harness.context.repositoryPath,
       harness.context.personalRef,

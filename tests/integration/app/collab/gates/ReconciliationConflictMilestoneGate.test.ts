@@ -151,7 +151,7 @@ describe('M6 publish conflict gate', () => {
       await memberBFeature.readConflict(operationId),
       'Conflict session',
     );
-    expect(session.pending).toEqual(expect.arrayContaining([
+    expect(session.descriptor.conflicts).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'text', path: 'agent.md' }),
       expect.objectContaining({ kind: 'text', path: 'manual.md' }),
       expect.objectContaining({ kind: 'binary', path: 'image.bin' }),

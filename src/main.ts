@@ -867,11 +867,8 @@ export default class ClaudianPlugin extends Plugin {
       await this.activateCollabSurface();
       return;
     }
-    const projects = await feature.listProjects();
-    if (projects.status !== 'success') return;
-    for (const project of projects.value) {
-      const operationId = await feature.getPendingSetupOperationId(project.id);
-      if (!operationId) continue;
+    const operationIds = await feature.listPendingSetupOperationIds();
+    for (const operationId of operationIds) {
       const result = await feature.resumeSetup({ operationId });
       new Notice(result.status === 'success'
         ? t('collab.notices.setupReady', { name: result.value.name })
@@ -883,6 +880,7 @@ export default class ClaudianPlugin extends Plugin {
 
   private createCollabDetailViewPort(): CollabDetailViewPort {
     return {
+      isDetailAdmissionOpen: () => this.collabLayoutReady,
       acceptRequest: async (...args) => (
         (await this.requireCollabFeatureService()).acceptRequest(...args)
       ),

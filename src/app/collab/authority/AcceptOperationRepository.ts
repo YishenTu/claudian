@@ -374,6 +374,7 @@ export class AcceptOperationRepository {
       throw repositoryError('stale-request-metadata', 'accept-request-revision-changed');
     }
     this.validateResolvingTickets(connection, request, input.expectedResolvingTickets);
+    this.relations.assertAcceptCapacity(connection, input.requestId);
     connection.run(
       `INSERT INTO accept_operations (
         operation_id, request_id, expected_main_oid, expected_head_oid,
@@ -445,6 +446,7 @@ export class AcceptOperationRepository {
         'accept-operation-already-incomplete',
       );
     }
+    this.relations.assertAcceptCapacity(connection, input.requestId);
     connection.run(
       `INSERT INTO accept_operations (
         operation_id, request_id, expected_main_oid, expected_head_oid,
@@ -497,6 +499,7 @@ export class AcceptOperationRepository {
     if (!operation.resultCommitOid) {
       throw repositoryError('authority-integrity-error', 'accept-result-missing');
     }
+    this.relations.assertAcceptCapacity(connection, operation.requestId);
     this.relations.acceptPending(connection, {
       acceptedAt: updatedAt,
       acceptedMergeOid: operation.resultCommitOid,

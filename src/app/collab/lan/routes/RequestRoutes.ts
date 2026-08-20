@@ -6,14 +6,12 @@ import {
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
+import { decodeRoutePageQuery } from '@/app/collab/lan/routes/RoutePageQuery';
 import type {
   CollabControlRouteHandler,
   CollabControlRouteRequest,
 } from '@/app/collab/lan/routes/RouteTypes';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 function routeError(reason: string): CollabError {
   return new CollabError({
@@ -62,13 +60,7 @@ function parseCommentRequest(request: CollabControlRouteRequest, requestId: stri
 
 function parseAcceptRequest(request: CollabControlRouteRequest, requestId: string) {
   if (!isRecord(request.body)) throw routeError('request-accept-body-invalid');
-  const expectedResolvingTickets = parseResolvingTicketExpectations(
-    request.body.expectedResolvingTickets,
-  );
-  const decoded = decode('acceptRequest', {
-    ...request.body,
-    expectedResolvingTickets,
-  });
+  const decoded = decode('acceptRequest', request.body);
   if (
     decoded.projectId !== request.projectId
     || decoded.requestId !== requestId
@@ -77,32 +69,6 @@ function parseAcceptRequest(request: CollabControlRouteRequest, requestId: strin
     throw routeError('request-accept-payload-invalid');
   }
   return decoded;
-}
-
-function parseResolvingTicketExpectations(value: unknown) {
-  if (!Array.isArray(value) || value.length > CLAUDIAN_COLLAB_LIMITS.maxRequestTicketRelations) {
-    throw routeError('request-accept-ticket-expectations-invalid');
-  }
-  const seen = new Set<string>();
-  return value.map(entry => {
-    if (!isRecord(entry)) {
-      throw routeError('request-accept-ticket-expectations-invalid');
-    }
-    const ticketId = entry.ticketId;
-    const revision = entry.revision;
-    if (
-      typeof ticketId !== 'string'
-      || !ID_PATTERN.test(ticketId)
-      || seen.has(ticketId)
-      || typeof revision !== 'number'
-      || !Number.isSafeInteger(revision)
-      || revision < 1
-    ) {
-      throw routeError('request-accept-ticket-expectations-invalid');
-    }
-    seen.add(ticketId);
-    return { revision, ticketId };
-  });
 }
 
 function parseMetadataRequest(request: CollabControlRouteRequest, requestId: string) {
@@ -130,12 +96,6 @@ export const handleRequestRoute: CollabControlRouteHandler = async request => {
   if (match.operation === 'updateMyRequestMetadata' && requestId) {
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    if (!request.service.updateMyRequestMetadata) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'request-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.updateMyRequestMetadata(
         memberCredential,
@@ -146,12 +106,6 @@ export const handleRequestRoute: CollabControlRouteHandler = async request => {
 
   if (match.operation === 'getRequest' && requestId) {
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    if (!request.service.readRequest) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'request-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.readRequest(memberCredential, {
         projectId: request.projectId,
@@ -160,15 +114,23 @@ export const handleRequestRoute: CollabControlRouteHandler = async request => {
     };
   }
 
+  if (match.operation === 'listRequestComments' && requestId) {
+    const memberCredential = requireOperationCredential(request.authorization, match.operation);
+    return {
+      data: await request.service.listRequestComments(
+        memberCredential,
+        decode('listRequestComments', {
+          ...decodeRoutePageQuery(request, 'request-comment-page-query-invalid'),
+          projectId: request.projectId,
+          requestId,
+        }),
+      ),
+    };
+  }
+
   if (match.operation === 'acceptRequest' && requestId) {
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    if (!request.service.acceptRequest) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'request-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.acceptRequest(
         memberCredential,
@@ -180,12 +142,6 @@ export const handleRequestRoute: CollabControlRouteHandler = async request => {
   if (match.operation === 'createComment' && requestId) {
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    if (!request.service.createComment) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'request-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.createComment(
         memberCredential,
@@ -197,12 +153,6 @@ export const handleRequestRoute: CollabControlRouteHandler = async request => {
   if (match.operation !== 'ensureMyRequest') return null;
   if (!request.idempotencyKey) throw routeError('idempotency-key-required');
   const memberCredential = requireOperationCredential(request.authorization, match.operation);
-  if (!request.service.ensureMyRequest) {
-    throw new CollabError({
-      code: 'operation-failed',
-      safeContext: { reason: 'request-service-unavailable' },
-    });
-  }
   return {
     data: await request.service.ensureMyRequest(
       memberCredential,

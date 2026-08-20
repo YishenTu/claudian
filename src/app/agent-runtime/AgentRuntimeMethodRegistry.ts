@@ -1,6 +1,6 @@
 import { type CollabChangedFile, type CollabChangeRequest, type CollabComment, type CollabMember, type CollabRequestTicketRelation, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
 
-import { type CollabConflictEntry, type CollabConflictFileContent, type CollabConflictOpaqueVersion, type CollabFeaturePort, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabPublishOutcome, type CollabResult, type CollabReviewFileContent } from '@/core/collab';
+import { type CollabBoundedQueryPort, type CollabConflictEntry, type CollabConflictFileContent, type CollabConflictOpaqueVersion, type CollabFeaturePort, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabPublishOutcome, type CollabResult, type CollabReviewFileContent } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -51,17 +51,17 @@ export type CollabAgentPort = Pick<
   | 'readProjectSelection'
   | 'inspectProject'
   | 'readSnapshot'
-  | 'prepareReview'
   | 'readReviewFile'
   | 'readWorkingTreeReviewFile'
   | 'readConflict'
   | 'readConflictFile'
   | 'listTickets'
   | 'publish'
-  | 'readTicket'
   | 'reopenTicket'
   | 'updateTicketContent'
->;
+> & { readonly boundedQueries: CollabAgentQueryPort };
+
+export type CollabAgentQueryPort = CollabBoundedQueryPort;
 
 export type ResolveCollabAgentPort = () => Promise<CollabAgentPort | null>;
 
@@ -117,8 +117,8 @@ const RELATIVE_PATH = Object.freeze({
   type: 'string' as const,
 });
 
-const TICKET_CURSOR = Object.freeze({
-  maxLength: 2048,
+const SHARED_PAGE_CURSOR = Object.freeze({
+  maxLength: CLAUDIAN_COLLAB_LIMITS.maxPageCursorUtf16,
   minLength: 1,
   pattern: CONTROL_FREE_PATTERN,
   type: 'string' as const,
@@ -219,6 +219,23 @@ const pathParam = () => param(
   true,
   RELATIVE_PATH,
 );
+
+const sharedPageParams = (
+  owner: AgentRuntimeParameterDescriptor,
+  noun: string,
+  defaultLimit: number,
+  maximum: number,
+): readonly AgentRuntimeParameterDescriptor[] => Object.freeze([
+  projectIdParam(),
+  owner,
+  param('cursor', `Opaque cursor returned by a previous ${noun} page.`, false, SHARED_PAGE_CURSOR),
+  param('limit', `Maximum ${noun} entries to return.`, false, {
+    default: defaultLimit,
+    maximum,
+    minimum: 1,
+    type: 'integer',
+  }),
+]);
 
 const requestRevisionParam = (name = 'expectedRequestRevision') => param(
   name,
@@ -329,7 +346,12 @@ const METHOD_DEFINITIONS = {
         enum: Object.freeze(['open', 'closed']),
         type: 'string',
       }),
-      param('cursor', 'Opaque cursor returned by a previous Ticket page.', false, TICKET_CURSOR),
+      param(
+        'cursor',
+        'Opaque cursor returned by a previous Ticket page.',
+        false,
+        SHARED_PAGE_CURSOR,
+      ),
       param('limit', 'Maximum Tickets to return.', false, {
         default: CLAUDIAN_COLLAB_LIMITS.defaultTicketPageSize,
         maximum: CLAUDIAN_COLLAB_LIMITS.maxTicketPageSize,
@@ -362,26 +384,97 @@ const METHOD_DEFINITIONS = {
     ),
   },
   'collab.tickets.get': {
-    description: 'Read one Ticket body, comments, and accepted Request relations.',
+    description: 'Read one Ticket body and first bounded activity pages.',
     parameters: Object.freeze([projectIdParam(), ticketIdParam()]),
-    resultDescription: 'Complete Ticket detail with source and staleness.',
+    resultDescription: 'Ticket detail with bounded comments, relations, and continuation cursors.',
     execute: async (params, context, signal) => withCollab(
       context,
       signal,
       async collab => mapCollabResult(
-        await collab.readTicket(
+        await collab.boundedQueries.readTicket(
           stringParam(params, 'projectId'),
           stringParam(params, 'ticketId'),
           operationOptions(signal),
         ),
         projection => ({
-          acceptedRelations: projection.detail.acceptedRelations.map(toTicketAcceptedRelation),
+          acceptedRelations: projection.detail.acceptedRelations.acceptedRelations
+            .map(toTicketAcceptedRelation),
           body: projection.detail.body,
-          comments: projection.detail.comments.map(toTicketComment),
+          comments: projection.detail.comments.comments.map(toTicketComment),
+          ...(projection.detail.comments.nextCursor === undefined
+            ? {}
+            : { nextCommentCursor: projection.detail.comments.nextCursor }),
+          ...(projection.detail.acceptedRelations.nextCursor === undefined
+            ? {}
+            : {
+              nextAcceptedRelationCursor: projection.detail.acceptedRelations.nextCursor,
+            }),
           projectId: stringParam(params, 'projectId'),
           source: projection.source,
           stale: projection.stale,
           ticket: toTicketSummary(projection.detail.ticket),
+        }),
+      ),
+    ),
+  },
+  'collab.tickets.comments.list': {
+    description: 'List one bounded page of immutable Ticket comments.',
+    parameters: sharedPageParams(
+      ticketIdParam(),
+      'Ticket comment',
+      CLAUDIAN_COLLAB_LIMITS.defaultCommentPageSize,
+      CLAUDIAN_COLLAB_LIMITS.maxCommentPageSize,
+    ),
+    resultDescription: 'Ticket comments and an optional continuation cursor.',
+    execute: async (params, context, signal) => withCollab(
+      context,
+      signal,
+      async collab => mapCollabResult(
+        await collab.boundedQueries.listTicketComments(
+          stringParam(params, 'projectId'),
+          stringParam(params, 'ticketId'),
+          {
+            ...(params.cursor === undefined ? {} : { cursor: stringParam(params, 'cursor') }),
+            ...(params.limit === undefined ? {} : { limit: numberParam(params, 'limit') }),
+          },
+          operationOptions(signal),
+        ),
+        page => ({
+          comments: page.comments.map(toTicketComment),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+          projectId: stringParam(params, 'projectId'),
+          ticketId: stringParam(params, 'ticketId'),
+        }),
+      ),
+    ),
+  },
+  'collab.tickets.relations.list': {
+    description: 'List one bounded page of accepted Request relations for a Ticket.',
+    parameters: sharedPageParams(
+      ticketIdParam(),
+      'accepted relation',
+      CLAUDIAN_COLLAB_LIMITS.maxRelationsPerPage,
+      CLAUDIAN_COLLAB_LIMITS.maxRelationsPerPage,
+    ),
+    resultDescription: 'Accepted relations and an optional continuation cursor.',
+    execute: async (params, context, signal) => withCollab(
+      context,
+      signal,
+      async collab => mapCollabResult(
+        await collab.boundedQueries.listTicketAcceptedRelations(
+          stringParam(params, 'projectId'),
+          stringParam(params, 'ticketId'),
+          {
+            ...(params.cursor === undefined ? {} : { cursor: stringParam(params, 'cursor') }),
+            ...(params.limit === undefined ? {} : { limit: numberParam(params, 'limit') }),
+          },
+          operationOptions(signal),
+        ),
+        page => ({
+          acceptedRelations: page.acceptedRelations.map(toTicketAcceptedRelation),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+          projectId: stringParam(params, 'projectId'),
+          ticketId: stringParam(params, 'ticketId'),
         }),
       ),
     ),
@@ -410,21 +503,24 @@ const METHOD_DEFINITIONS = {
     ),
   },
   'collab.requests.get': {
-    description: 'Read one change Request with comments and changed-file manifest.',
+    description: 'Read one change Request with a bounded comment page and changed-file manifest.',
     parameters: Object.freeze([projectIdParam(), requestIdParam()]),
-    resultDescription: 'Exact Request metadata, comments, and effective review comparison.',
+    resultDescription: 'Exact Request metadata, bounded comments, continuation cursor, and effective review comparison.',
     execute: async (params, context, signal) => withCollab(
       context,
       signal,
       async collab => mapCollabResult(
-        await collab.prepareReview(
+        await collab.boundedQueries.prepareReview(
           stringParam(params, 'projectId'),
           stringParam(params, 'requestId'),
           operationOptions(signal),
         ),
         review => ({
           changedFiles: review.files.map(toChangedFile),
-          comments: review.detail.comments.map(toComment),
+          comments: review.detail.comments.comments.map(toComment),
+          ...(review.detail.comments.nextCursor === undefined
+            ? {}
+            : { nextCommentCursor: review.detail.comments.nextCursor }),
           comparisonBaseOid: review.comparisonBaseOid,
           comparisonKind: review.comparisonKind,
           comparisonTargetOid: review.comparisonTargetOid,
@@ -433,6 +529,37 @@ const METHOD_DEFINITIONS = {
           request: toChangeRequest(review.detail.request),
           reviewedHeadOid: review.detail.reviewedHeadOid,
           reviewCondition: review.detail.reviewCondition,
+        }),
+      ),
+    ),
+  },
+  'collab.requests.comments.list': {
+    description: 'List one bounded page of immutable Request comments.',
+    parameters: sharedPageParams(
+      requestIdParam(),
+      'Request comment',
+      CLAUDIAN_COLLAB_LIMITS.defaultCommentPageSize,
+      CLAUDIAN_COLLAB_LIMITS.maxCommentPageSize,
+    ),
+    resultDescription: 'Request comments and an optional continuation cursor.',
+    execute: async (params, context, signal) => withCollab(
+      context,
+      signal,
+      async collab => mapCollabResult(
+        await collab.boundedQueries.listRequestComments(
+          stringParam(params, 'projectId'),
+          stringParam(params, 'requestId'),
+          {
+            ...(params.cursor === undefined ? {} : { cursor: stringParam(params, 'cursor') }),
+            ...(params.limit === undefined ? {} : { limit: numberParam(params, 'limit') }),
+          },
+          operationOptions(signal),
+        ),
+        page => ({
+          comments: page.comments.map(toComment),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+          projectId: stringParam(params, 'projectId'),
+          requestId: stringParam(params, 'requestId'),
         }),
       ),
     ),
@@ -797,7 +924,11 @@ async function readRequestFile(
   const projectId = stringParam(params, 'projectId');
   const requestId = stringParam(params, 'requestId');
   const path = stringParam(params, 'path');
-  const prepared = await collab.prepareReview(projectId, requestId, operationOptions(signal));
+  const prepared = await collab.boundedQueries.prepareReview(
+    projectId,
+    requestId,
+    operationOptions(signal),
+  );
   if (prepared.status !== 'success') return mapCollabFailure(prepared);
   const file = prepared.value.files.find(entry => entry.path === path);
   if (!file) return invalidPath(projectId, path);
@@ -1031,13 +1162,10 @@ function toConflictGetResult(
   return {
     conflict: {
       conflicts: inspection.conflict.descriptor.conflicts.map(toConflictEntry),
-      decisions: [],
       location: ownership.location,
       mergeBaseOid: inspection.conflict.descriptor.mergeBaseOid,
       operationId: inspection.conflict.descriptor.operationId,
-      pending: inspection.conflict.descriptor.conflicts.map(toConflictEntry),
       ...(ownership.requestId === undefined ? {} : { requestId: ownership.requestId }),
-      resolvedPaths: [],
       startingMainOid: inspection.conflict.descriptor.startingMainOid,
       startingPersonalOid: inspection.conflict.descriptor.startingPersonalOid,
     },
@@ -1179,9 +1307,9 @@ function toTicketCreateResult(
   detail: CollabTicketDetail,
 ): AgentRuntimeTicketCreateResult {
   return {
-    acceptedRelations: detail.acceptedRelations.map(toTicketAcceptedRelation),
+    acceptedRelations: detail.acceptedRelations.acceptedRelations.map(toTicketAcceptedRelation),
     body: detail.body,
-    comments: detail.comments.map(toTicketComment),
+    comments: detail.comments.comments.map(toTicketComment),
     projectId,
     ticket: toTicketSummary(detail.ticket),
   };

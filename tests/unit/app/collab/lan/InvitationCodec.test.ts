@@ -41,8 +41,27 @@ describe('InvitationCodec', () => {
     expect(Buffer.from(invitation.invitationSecret, 'base64url')).toHaveLength(32);
 
     const encoded = codec.encode(invitation);
-    expect(encoded).toMatch(/^claudian-collab:v7:[A-Za-z0-9_-]+$/);
+    expect(encoded).toMatch(/^claudian-collab:v9:[A-Za-z0-9_-]+$/);
     expect(codec.decode(encoded)).toEqual(invitation);
+  });
+
+  it('rejects invitation and Project IDs outside their owning grammars', () => {
+    const codec = new InvitationCodec(options());
+    for (const field of [
+      { invitationId: 'invite.dotted', projectId: 'project-alpha' },
+      { invitationId: 'invite-alpha', projectId: 'project.dotted' },
+      { invitationId: 'invite-alpha', projectId: `p${'a'.repeat(64)}` },
+    ]) {
+      expect(() => codec.validateInvitation({
+        caFingerprint: FINGERPRINT,
+        endpoint: 'https://127.0.0.1:54545',
+        expiresAt: '2026-08-08T00:15:00.000Z',
+        invitationId: field.invitationId,
+        invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
+        projectId: field.projectId,
+        protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+      })).toThrow(expect.objectContaining({ code: 'invitation-invalid' }));
+    }
   });
 
   it('rotates full-entropy secrets and compares only their SHA-256 digests', () => {
@@ -122,7 +141,7 @@ describe('InvitationCodec', () => {
     };
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
 
-    expect(() => codec.decode(`claudian-collab:v7:${encodedPayload}`)).toThrow(
+    expect(() => codec.decode(`claudian-collab:v9:${encodedPayload}`)).toThrow(
       expect.objectContaining({ code: 'invitation-invalid' }),
     );
     expect(() => codec.decode(`claudian-collab:v3:${encodedPayload}`)).toThrow(
@@ -130,7 +149,7 @@ describe('InvitationCodec', () => {
     );
   });
 
-  it('keeps interactive decoding strict v7 while privately normalizing a stored v6 Join', () => {
+  it('keeps interactive decoding strict v9 while privately normalizing a stored v7 Join', () => {
     const codec = new InvitationCodec(options());
     const legacyPayload = {
       caFingerprint: FINGERPRINT,
@@ -139,10 +158,10 @@ describe('InvitationCodec', () => {
       invitationId: 'invite-alpha',
       invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
       projectId: 'project-alpha',
-      protocolVersion: 6,
+      protocolVersion: 7,
     };
     const encodedPayload = Buffer.from(JSON.stringify(legacyPayload)).toString('base64url');
-    const encodedInvitation = `claudian-collab:v6:${encodedPayload}`;
+    const encodedInvitation = `claudian-collab:v7:${encodedPayload}`;
 
     expect(() => codec.decode(encodedInvitation)).toThrow(expect.objectContaining({
       code: 'protocol-version-unsupported',
@@ -153,7 +172,7 @@ describe('InvitationCodec', () => {
     });
   });
 
-  it('fails closed when a stored v6 Join prefix and payload version do not match', () => {
+  it('fails closed when a stored v7 Join prefix and payload version do not match', () => {
     const codec = new InvitationCodec(options());
     const payload = {
       caFingerprint: FINGERPRINT,
@@ -167,7 +186,7 @@ describe('InvitationCodec', () => {
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
 
     expect(() => codec.decodePendingJoinRecovery(
-      `claudian-collab:v6:${encodedPayload}`,
+      `claudian-collab:v7:${encodedPayload}`,
     )).toThrow(expect.objectContaining({ code: 'protocol-version-unsupported' }));
   });
 });

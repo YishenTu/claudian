@@ -1,6 +1,7 @@
+import { isCollabProjectId } from '@claudian/collab-protocol';
+
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const GIT_ROUTE_PREFIX = '/v1/git/';
 
 export type CollabGitService = 'git-upload-pack' | 'git-receive-pack';
@@ -42,7 +43,7 @@ export function parseGitHttpRoute(method: string, rawUrl: string): ParsedGitHttp
   const match = /^\/v1\/git\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/repository\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(
     pathname,
   );
-  if (!match || !PROJECT_ID_PATTERN.test(match[1])) {
+  if (!match || !isCollabProjectId(match[1])) {
     throw routeError('git-route-invalid');
   }
   const suffix = match[2];

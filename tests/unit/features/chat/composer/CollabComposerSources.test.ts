@@ -40,6 +40,33 @@ describe('Collab composer sources', () => {
     expect(folder?.label).toBe("Member's Changes");
   });
 
+  it('resolves the current selection inside every folder load', async () => {
+    let selection: CollabComposerSelection | null = {
+      projectId: 'project-1',
+      projectName: 'Project One',
+    };
+    const references = createReferences({
+      getSelection: jest.fn(async () => selection),
+      listMemberChanges: jest.fn(async (projectId: string) => ({
+        items: [{
+          currentMember: false,
+          displayName: `Member of ${projectId}`,
+          memberId: 'member-1',
+          requestId: 'request-1',
+        }],
+        source: 'online' as const,
+        stale: false,
+      })),
+    });
+    const folder = new CollabMemberChangesFolder(references);
+    const [root] = await folder.getRootItems(new AbortController().signal);
+
+    selection = { projectId: 'project-2', projectName: 'Project Two' };
+    const items = await root!.load('', new AbortController().signal);
+
+    expect(items[0]?.label).toBe('Member of project-2');
+  });
+
   it('inserts a pure-text Member Changes reference and disables duplicate names', async () => {
     const collection: CollabComposerReferenceCollection<{
       currentMember: boolean;

@@ -16,22 +16,21 @@ export class CollabMemberChangesFolder {
       inputPrefix: "Member's Changes/",
       kind: 'folder',
       label: "Member's Changes",
-      load: (query, folderSignal) => this.loadMembers(
-        selection.projectId,
-        query,
-        folderSignal,
-      ),
+      load: (query, folderSignal) => this.loadMembers(query, folderSignal),
     }];
   }
 
   private async loadMembers(
-    projectId: string,
     query: string,
     signal: AbortSignal,
   ): Promise<readonly ComposerDropdownValueItem[]> {
-    const collection = await this.references.listMemberChanges(projectId, signal);
+    // Resolve the selection inside every load: a Project switch while the
+    // folder is open loads the newly selected Project's Members.
     const selection = await this.references.getSelection(signal);
-    if (selection?.projectId !== projectId) {
+    if (!selection) return [];
+    const collection = await this.references.listMemberChanges(selection.projectId, signal);
+    const current = await this.references.getSelection(signal);
+    if (current?.projectId !== selection.projectId) {
       throw new DOMException('The selected Collab Project changed.', 'AbortError');
     }
     const normalizedQuery = query.toLocaleLowerCase();

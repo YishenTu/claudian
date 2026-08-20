@@ -28,7 +28,6 @@ interface ManagerResponsibilityOfferRecord {
   readonly offerId: CollabOperationId;
   readonly purpose: CollabManagerResponsibilityPurpose;
   readonly sourceManagerMemberId: CollabMemberId;
-  readonly sourceManagerGeneration: number;
   readonly status: CollabManagerResponsibilityOfferSummary['status'];
   readonly targetMemberId: CollabMemberId;
   readonly updatedAt: string;
@@ -93,7 +92,6 @@ function decodeRecord(
   const offerId = text(row, 'offer_id')!;
   const purpose = text(row, 'purpose');
   const sourceManagerMemberId = text(row, 'source_manager_member_id')!;
-  const sourceManagerGeneration = row.source_manager_generation;
   const targetMemberId = text(row, 'target_member_id')!;
   const status = text(row, 'status');
   const offeredAt = text(row, 'offered_at')!;
@@ -111,9 +109,6 @@ function decodeRecord(
       && status !== 'cancelled'
       && status !== 'expired'
     )
-    || typeof sourceManagerGeneration !== 'number'
-    || !Number.isSafeInteger(sourceManagerGeneration)
-    || sourceManagerGeneration < 0
   ) {
     throw responsibilityError('authority-integrity-error', 'manager-responsibility-row-invalid');
   }
@@ -153,7 +148,6 @@ function decodeRecord(
     offeredAt,
     offerId,
     purpose,
-    sourceManagerGeneration,
     sourceManagerMemberId,
     status,
     targetMemberId,
@@ -179,7 +173,7 @@ function toSummary(
 }
 
 const OFFER_COLUMNS = `
-  offer_id, purpose, source_manager_member_id, source_manager_generation,
+  offer_id, purpose, source_manager_member_id,
   target_member_id, status,
   offered_at, expires_at, acknowledged_at, consumed_at, updated_at
 `;
@@ -195,7 +189,6 @@ export class ManagerResponsibilityRepository {
       readonly offerId: CollabOperationId;
       readonly purpose: CollabManagerResponsibilityPurpose;
       readonly sourceManagerMemberId: CollabMemberId;
-      readonly sourceManagerGeneration: number;
       readonly targetMemberId: CollabMemberId;
     },
   ): CollabManagerResponsibilityOfferSummary {
@@ -211,13 +204,15 @@ export class ManagerResponsibilityRepository {
     if (
       input.sourceManagerMemberId === input.targetMemberId
       || (input.purpose !== 'manager-promotion' && input.purpose !== 'manager-leave')
-      || !Number.isSafeInteger(input.sourceManagerGeneration)
-      || input.sourceManagerGeneration < 0
       || Date.parse(input.expiresAt) <= Date.parse(input.offeredAt)
     ) {
       throw responsibilityError('authority-integrity-error', 'manager-responsibility-input-invalid');
     }
-    const existing = this.findNonterminal(connection);
+    const existing = this.findParticipantConflict(
+      connection,
+      input.sourceManagerMemberId,
+      input.targetMemberId,
+    );
     if (existing) {
       throw responsibilityError(
         'manager-responsibility-pending',
@@ -229,12 +224,6 @@ export class ManagerResponsibilityRepository {
       connection,
       input.sourceManagerMemberId,
     );
-    if (managerSet.generation !== input.sourceManagerGeneration) {
-      throw responsibilityError(
-        'stale-project-selection',
-        'manager-responsibility-generation-changed',
-      );
-    }
     if (input.purpose === 'manager-leave' && managerSet.managerMemberIds.length !== 1) {
       throw responsibilityError(
         'stale-project-selection',
@@ -256,15 +245,14 @@ export class ManagerResponsibilityRepository {
     }
     connection.run(
       `INSERT INTO manager_responsibility_offers (
-        offer_id, purpose, source_manager_member_id, source_manager_generation,
+        offer_id, purpose, source_manager_member_id,
         target_member_id, status,
         offered_at, expires_at, acknowledged_at, consumed_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 'offered', ?, ?, NULL, NULL, ?)`,
+      ) VALUES (?, ?, ?, ?, 'offered', ?, ?, NULL, NULL, ?)`,
       [
         input.offerId,
         input.purpose,
         input.sourceManagerMemberId,
-        input.sourceManagerGeneration,
         input.targetMemberId,
         input.offeredAt,
         input.expiresAt,
@@ -340,17 +328,7 @@ export class ManagerResponsibilityRepository {
         record,
       );
     }
-    this.requireActiveTarget(connection, record.targetMemberId);
-    const currentManagerSet = this.managerSet.read(connection);
-    if (
-      !currentManagerSet.managerMemberIds.includes(record.sourceManagerMemberId)
-      || currentManagerSet.generation !== record.sourceManagerGeneration
-    ) {
-      throw responsibilityError(
-        'stale-project-selection',
-        'manager-responsibility-generation-changed',
-      );
-    }
+    this.requireValidParticipants(connection, record);
     connection.run(
       `UPDATE manager_responsibility_offers
        SET status = 'acknowledged', acknowledged_at = ?, updated_at = ?
@@ -419,13 +397,6 @@ export class ManagerResponsibilityRepository {
     return toSummary(this.requireById(connection, record.offerId));
   }
 
-  cancelAllNonterminal(
-    connection: AuthorityDatabaseConnection,
-    cancelledAt: string,
-  ): number {
-    return this.cancelMatchingNonterminal(connection, cancelledAt);
-  }
-
   cancelRelatedNonterminal(
     connection: AuthorityDatabaseConnection,
     input: {
@@ -458,17 +429,7 @@ export class ManagerResponsibilityRepository {
         record,
       );
     }
-    this.requireActiveTarget(connection, record.targetMemberId);
-    const currentManagerSet = this.managerSet.read(connection);
-    if (
-      !currentManagerSet.managerMemberIds.includes(record.sourceManagerMemberId)
-      || currentManagerSet.generation !== record.sourceManagerGeneration
-    ) {
-      throw responsibilityError(
-        'stale-project-selection',
-        'manager-responsibility-generation-changed',
-      );
-    }
+    this.requireValidParticipants(connection, record);
     connection.run(
       `UPDATE manager_responsibility_offers
        SET status = 'consumed', consumed_at = ?, updated_at = ?
@@ -478,14 +439,26 @@ export class ManagerResponsibilityRepository {
     return toSummary(this.requireById(connection, record.offerId));
   }
 
-  private findNonterminal(
+  private findParticipantConflict(
     connection: AuthorityDatabaseConnection,
+    sourceManagerMemberId: CollabMemberId,
+    targetMemberId: CollabMemberId,
   ): ManagerResponsibilityOfferRecord | null {
     const row = connection.get(
       `SELECT ${OFFER_COLUMNS}
        FROM manager_responsibility_offers
        WHERE status IN ('offered', 'acknowledged')
+         AND (
+           source_manager_member_id IN (?, ?)
+           OR target_member_id IN (?, ?)
+         )
        LIMIT 1`,
+      [
+        sourceManagerMemberId,
+        targetMemberId,
+        sourceManagerMemberId,
+        targetMemberId,
+      ],
     );
     return row ? decodeRecord(row) : null;
   }
@@ -528,6 +501,23 @@ export class ManagerResponsibilityRepository {
       throw responsibilityError(
         'stale-project-selection',
         'manager-responsibility-target-role-changed',
+      );
+    }
+  }
+
+  private requireValidParticipants(
+    connection: AuthorityDatabaseConnection,
+    record: ManagerResponsibilityOfferRecord,
+  ): void {
+    const managerSet = this.managerSet.requireActiveManager(
+      connection,
+      record.sourceManagerMemberId,
+    );
+    this.requireActiveTarget(connection, record.targetMemberId);
+    if (record.purpose === 'manager-leave' && managerSet.managerMemberIds.length !== 1) {
+      throw responsibilityError(
+        'stale-project-selection',
+        'manager-responsibility-successor-not-required',
       );
     }
   }

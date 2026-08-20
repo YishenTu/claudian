@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
 
 import { type AuthorityEventRecord,AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -12,7 +12,6 @@ import type { CollabRetirementResult } from '@/core/collab';
 const OPEN_READY_STATE = 1;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const MAX_REPLAY_EVENTS = 500;
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export interface ProjectEventSocket {
   readonly readyState: number;
@@ -57,14 +56,14 @@ function eventPayload(record: AuthorityEventRecord): Readonly<Record<string, unk
   if (
     (record.kind.startsWith('request.') || record.kind === 'comment.created')
     && typeof requestId === 'string'
-    && ID_PATTERN.test(requestId)
+    && isCollabOpaqueId(requestId)
   ) {
     return { requestId };
   }
   if (
     record.kind.startsWith('membership.')
     && typeof memberId === 'string'
-    && ID_PATTERN.test(memberId)
+    && isCollabMemberId(memberId)
   ) {
     return { memberId };
   }
@@ -148,7 +147,7 @@ export class ProjectEventHub {
   }
 
   hasAuthenticatedPresence(projectId: string, memberId: string): boolean {
-    if (projectId !== this.projectId || !ID_PATTERN.test(memberId)) return false;
+    if (projectId !== this.projectId || !isCollabMemberId(memberId)) return false;
     return [...this.connections].some(connection => (
       connection.memberId === memberId
       && connection.socket.readyState === OPEN_READY_STATE
@@ -178,7 +177,7 @@ export class ProjectEventHub {
   ): Promise<void> {
     if (
       this.closed
-      || !ID_PATTERN.test(memberId)
+      || !isCollabMemberId(memberId)
       || !Number.isSafeInteger(lastSequence)
       || lastSequence < 0
     ) {

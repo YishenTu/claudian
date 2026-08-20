@@ -5,6 +5,8 @@ import type {
   ServerResponse,
 } from 'node:http';
 
+import { isCollabProjectId } from '@claudian/collab-protocol';
+
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   matchCollabControlOperation,
@@ -29,12 +31,12 @@ import type {
   CollabControlProjectService,
   CollabControlRouteRequest,
   CollabControlRouteResult,
+  CollabTerminalControlRouteRequest,
   CollabTerminalProjectService,
 } from '@/app/collab/lan/routes/RouteTypes';
 import { handleTicketRoute } from '@/app/collab/lan/routes/TicketRoutes';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_CONTROL_URL_LENGTH = 2_048;
 
@@ -58,7 +60,7 @@ export interface CollabControlAdmissionPort {
 }
 
 interface RegisteredProject {
-  readonly routing?: CollabActiveProjectRouting;
+  readonly routing: CollabActiveProjectRouting;
   readonly service: CollabControlProjectService;
 }
 
@@ -191,7 +193,22 @@ function writeJson(
   body: unknown,
 ): void {
   if (response.headersSent || response.destroyed) return;
-  const bytes = Buffer.from(JSON.stringify(body), 'utf8');
+  let bytes = Buffer.from(JSON.stringify(body), 'utf8');
+  if (bytes.length > COLLAB_CONTROL_MAX_BODY_BYTES) {
+    // Final-serialization backstop: contract-bounded pages always fit, so an
+    // oversized body is a producer defect and must fail closed rather than
+    // emit a response the client will reject mid-stream.
+    statusCode = 500;
+    bytes = Buffer.from(JSON.stringify({
+      error: new CollabError({
+        code: 'operation-failed',
+        recoveryActions: ['open-diagnostics'],
+        safeContext: { reason: 'control-response-too-large' },
+      }).toJSON(),
+      protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+      requestId: requestIdValue,
+    }), 'utf8');
+  }
   response.writeHead(statusCode, {
     'cache-control': 'no-store',
     'content-length': String(bytes.length),
@@ -320,9 +337,9 @@ export class CollabControlRouter {
   registerProject(
     projectId: string,
     service: CollabControlProjectService,
-    routing?: CollabActiveProjectRouting,
+    routing: CollabActiveProjectRouting,
   ): void {
-    if (!PROJECT_ID_PATTERN.test(projectId)) {
+    if (!isCollabProjectId(projectId)) {
       throw routerError('operation-failed', 'host-project-id-invalid');
     }
     const existing = this.projects.get(projectId);
@@ -330,7 +347,7 @@ export class CollabControlRouter {
       throw routerError('operation-failed', 'host-project-already-registered');
     }
     this.projects.set(projectId, {
-      ...(routing ? { routing } : {}),
+      routing,
       service,
     });
   }
@@ -343,7 +360,7 @@ export class CollabControlRouter {
     projectId: string,
     service: CollabTerminalProjectService,
   ): void {
-    if (!PROJECT_ID_PATTERN.test(projectId)) {
+    if (!isCollabProjectId(projectId)) {
       throw routerError('operation-failed', 'host-project-id-invalid');
     }
     const existing = this.terminalProjects.get(projectId);
@@ -404,7 +421,6 @@ export class CollabControlRouter {
           query: route.query,
           remoteAddress: normalizeRemoteAddress(request.socket.remoteAddress),
           segments: route.segments,
-          service: terminal.service as unknown as CollabControlProjectService,
           lifecycle: terminal.lifecycle,
         }, terminal.service);
         invokeAfterResponseFlush(response, result.afterResponseFlushed);
@@ -420,7 +436,7 @@ export class CollabControlRouter {
         authorization: singleHeader(request.headers, 'authorization'),
         body,
         idempotencyKey: singleHeader(request.headers, 'idempotency-key'),
-        ...(registered.routing ? { lifecycle: registered.routing.lifecycle } : {}),
+        lifecycle: registered.routing.lifecycle,
         method: request.method ?? '',
         ...(operationMatch ? { operationMatch } : {}),
         projectId: route.projectId,
@@ -436,7 +452,7 @@ export class CollabControlRouter {
       const requiresOuterAdmission = operationBinding
         ? operationBinding.admission === 'active' && !lifecycleRoute
         : !lifecycleRoute;
-      const result = registered.routing?.admission && requiresOuterAdmission
+      const result = registered.routing.admission && requiresOuterAdmission
         ? await registered.routing.admission.run(dispatch)
         : await dispatch();
       if (!result) throw routerError('project-not-found', 'control-route-not-found');
@@ -495,7 +511,7 @@ export class CollabControlRouter {
       credential,
       ['active'],
     );
-    const authenticated = registered.routing?.admission
+    const authenticated = registered.routing.admission
       ? await registered.routing.admission.run(authenticate)
       : await authenticate();
     return { lastSequence, memberId: authenticated.member.id, projectId: route.projectId };
@@ -518,7 +534,7 @@ export class CollabControlRouter {
   }
 
   private async dispatchTerminal(
-    request: CollabControlRouteRequest,
+    request: CollabTerminalControlRouteRequest,
     terminal: CollabTerminalProjectService,
   ): Promise<CollabControlRouteResult> {
     const operation = request.operationMatch?.operation;

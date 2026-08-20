@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type ChangeTicketStatusRequest, type CollabMemberId, type CollabRole, type CollabTicketComment, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type ListTicketsRequest, type UpdateTicketContentRequest } from '@claudian/collab-protocol';
+import { type ChangeTicketStatusRequest, type CollabMemberId, type CollabRole, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type ListTicketsRequest, type UpdateTicketContentRequest } from '@claudian/collab-protocol';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
+import { decodeAuthorityKeysetCursor, trimAuthorityKeysetPage } from '@/app/collab/authority/AuthorityKeysetPage';
 import { RequestEnsureRepository } from '@/app/collab/authority/RequestEnsureRepository';
 import type {
   AuthorityDatabaseConnection,
@@ -91,6 +92,7 @@ function storedSummary(value: unknown): CollabTicketSummary {
   }
   const row = value as Readonly<Record<string, unknown>>;
   return decodeTicketSummary({
+    accepted_relation_count: row.acceptedRelationCount,
     author_member_id: row.authorMemberId,
     closed_at: row.closedAt ?? null,
     closed_by_member_id: row.closedByMemberId ?? null,
@@ -124,19 +126,29 @@ function storedDetail(value: unknown): CollabTicketDetail {
     throw ticketError('protocol-payload-invalid', 'stored-ticket-detail-invalid');
   }
   const record = value as Readonly<Record<string, unknown>>;
+  const comments = record.comments as Readonly<Record<string, unknown>> | undefined;
+  const acceptedRelations = record.acceptedRelations as
+    | Readonly<Record<string, unknown>>
+    | undefined;
   if (
     typeof record.body !== 'string'
-    || !Array.isArray(record.comments)
-    || !Array.isArray(record.acceptedRelations)
-    || record.comments.length !== 0
-    || record.acceptedRelations.length !== 0
+    || !comments
+    || Array.isArray(comments)
+    || !Array.isArray(comments.comments)
+    || comments.comments.length !== 0
+    || comments.nextCursor !== undefined
+    || !acceptedRelations
+    || Array.isArray(acceptedRelations)
+    || !Array.isArray(acceptedRelations.acceptedRelations)
+    || acceptedRelations.acceptedRelations.length !== 0
+    || acceptedRelations.nextCursor !== undefined
   ) {
     throw ticketError('protocol-payload-invalid', 'stored-ticket-detail-invalid');
   }
   return {
-    acceptedRelations: [],
+    acceptedRelations: { acceptedRelations: [] },
     body: record.body,
-    comments: [],
+    comments: { comments: [] },
     ticket: storedSummary(record.ticket),
   };
 }
@@ -206,18 +218,19 @@ export class TicketService {
         limit: limit + 1,
         status: request.status,
       });
-      const tickets = rows.slice(0, limit);
-      const last = tickets.at(-1);
+      // Bound the page by serialized bytes as well as count: a count-only
+      // page of maximal summaries could exceed the transport envelope.
+      const page = trimAuthorityKeysetPage(
+        rows,
+        limit,
+        CLAUDIAN_COLLAB_LIMITS.ticketPageMaxUtf8Bytes,
+        ticket => ({ createdAt: ticket.updatedAt, id: String(ticket.number) }),
+        key => encodeCursor({ ticketNumber: Number(key.id), updatedAt: key.createdAt }),
+        'tickets',
+      );
       return {
-        tickets,
-        ...(rows.length > limit && last
-          ? {
-            nextCursor: encodeCursor({
-              ticketNumber: last.number,
-              updatedAt: last.updatedAt,
-            }),
-          }
-          : {}),
+        tickets: page.items,
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
       };
     });
   }
@@ -232,6 +245,68 @@ export class TicketService {
       const detail = this.tickets.detail(connection, ticketId);
       if (!detail) throw ticketError('ticket-not-found', 'ticket-detail-missing');
       return detail;
+    });
+  }
+
+  async listComments(
+    actorMemberId: CollabMemberId,
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<CollabTicketCommentPage> {
+    const limit = query.limit ?? CLAUDIAN_COLLAB_LIMITS.defaultCommentPageSize;
+    if (
+      !Number.isSafeInteger(limit)
+      || limit < 1
+      || limit > CLAUDIAN_COLLAB_LIMITS.maxCommentPageSize
+    ) {
+      throw ticketError('protocol-payload-invalid', 'ticket-comment-page-limit-invalid');
+    }
+    const cursor = decodeAuthorityKeysetCursor(query.cursor, 'ticket-comment-cursor-invalid');
+    return this.database.read(connection => {
+      this.requireActor(connection, projectId, actorMemberId);
+      if (!this.tickets.find(connection, ticketId)) {
+        throw ticketError('ticket-not-found', 'ticket-detail-missing');
+      }
+      const page = this.tickets.listCommentsPage(connection, ticketId, {
+        ...(cursor ? { after: cursor } : {}),
+        limit,
+      });
+      return {
+        comments: page.items,
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    });
+  }
+
+  async listAcceptedRelations(
+    actorMemberId: CollabMemberId,
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<CollabTicketAcceptedRelationPage> {
+    const limit = query.limit ?? CLAUDIAN_COLLAB_LIMITS.maxRelationsPerPage;
+    if (
+      !Number.isSafeInteger(limit)
+      || limit < 1
+      || limit > CLAUDIAN_COLLAB_LIMITS.maxRelationsPerPage
+    ) {
+      throw ticketError('protocol-payload-invalid', 'ticket-relation-page-limit-invalid');
+    }
+    const cursor = decodeAuthorityKeysetCursor(query.cursor, 'ticket-relation-cursor-invalid');
+    return this.database.read(connection => {
+      this.requireActor(connection, projectId, actorMemberId);
+      if (!this.tickets.find(connection, ticketId)) {
+        throw ticketError('ticket-not-found', 'ticket-detail-missing');
+      }
+      const page = this.tickets.listAcceptedForTicketPage(connection, ticketId, {
+        ...(cursor ? { after: cursor } : {}),
+        limit,
+      });
+      return {
+        acceptedRelations: page.items,
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
     });
   }
 

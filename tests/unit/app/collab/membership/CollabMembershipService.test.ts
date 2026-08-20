@@ -106,12 +106,6 @@ function client(): jest.Mocked<CollabMembershipControlClientPort> {
     createManagerResponsibilityOffer: jest.fn(),
     declineManagerResponsibility: jest.fn(),
     getManagerResponsibilityOffer: jest.fn(),
-    leaveProject: jest.fn().mockResolvedValue({
-      discardedRequestId: null,
-      memberId: 'member-manager',
-      projectId: 'project-alpha',
-      status: 'left',
-    }),
     removeMember: jest.fn().mockResolvedValue({
       discardedRequestId: 'request-member-a',
       memberId: 'member-a',
@@ -208,11 +202,6 @@ describe('CollabMembershipService', () => {
       memberId: 'member-a',
       projectId: 'project-alpha',
     });
-    await service.leaveProject({
-      cleanupChoice: 'keep-files',
-      managerResponsibilityOfferId: 'offer-leave',
-      projectId: 'project-alpha',
-    });
 
     expect(control.promoteManager).toHaveBeenCalledWith({
       idempotencyKey: 'promote-manager-key',
@@ -233,16 +222,7 @@ describe('CollabMembershipService', () => {
       memberId: 'member-a',
       projectId: 'project-alpha',
     });
-    expect(control.leaveProject).toHaveBeenCalledWith({
-      expectedHostMemberId: 'member-host',
-      expectedMemberId: 'member-manager',
-      idempotencyKey: 'leave-project-key',
-      idempotencyManagerMemberId: null,
-      memberCredential: membershipRecord.member.credential,
-      managerResponsibilityOfferId: 'offer-leave',
-      projectId: 'project-alpha',
-    });
-    expect(snapshot.readCoordinationSnapshot).toHaveBeenCalledTimes(4);
+    expect(snapshot.readCoordinationSnapshot).toHaveBeenCalledTimes(3);
   });
 
   it('reuses a caller mutation intent after a lost administration response', async () => {
@@ -365,43 +345,6 @@ describe('CollabMembershipService', () => {
       projectId: 'project-alpha',
     })).rejects.toMatchObject({ code: 'host-stopped' });
     expect(createClient).not.toHaveBeenCalled();
-  });
-
-  it('submits Leave without inferring Manager count and still blocks the current Host', async () => {
-    const membershipRecord = membership();
-    const control = client();
-    const managerSnapshot = coordination();
-    const snapshot: jest.Mocked<CollabMembershipSnapshotPort> = {
-      readCoordinationSnapshot: jest.fn().mockResolvedValue(managerSnapshot),
-    };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membershipRecord),
-    }, snapshot, { createClient: () => control }, safetyContext());
-
-    await expect(service.settleLeave({
-      idempotencyKey: 'leave-one',
-      projectId: 'project-alpha',
-    })).resolves.toMatchObject({ status: 'left' });
-    expect(control.leaveProject).toHaveBeenCalledWith(expect.objectContaining({
-      idempotencyManagerMemberId: null,
-    }));
-
-    snapshot.readCoordinationSnapshot.mockResolvedValue({
-      ...managerSnapshot,
-      snapshot: {
-        ...managerSnapshot.snapshot,
-        project: {
-          ...managerSnapshot.snapshot.project,
-          hostMemberId: 'member-manager',
-        },
-      },
-    });
-    await expect(service.settleLeave({
-      idempotencyKey: 'leave-two',
-      managerResponsibilityOfferId: 'offer-one',
-      projectId: 'project-alpha',
-    })).rejects.toMatchObject({ code: 'host-transfer-pending' });
-    expect(control.leaveProject).toHaveBeenCalledTimes(1);
   });
 
   it('does not acknowledge Manager responsibility while an offline Leave is pending', async () => {

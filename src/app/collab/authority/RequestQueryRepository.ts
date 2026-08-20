@@ -1,5 +1,10 @@
-import { type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
 
+import {
+  type AuthorityKeysetCursor,
+  type AuthorityKeysetPage,
+  trimAuthorityKeysetPage,
+} from '@/app/collab/authority/AuthorityKeysetPage';
 import { decodeAuthorityChangeRequest } from '@/app/collab/authority/RequestEnsureRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -95,17 +100,38 @@ export class RequestQueryRepository {
     };
   }
 
-  listComments(
+  listCommentsPage(
     connection: AuthorityDatabaseConnection,
     requestId: string,
-  ): readonly CollabComment[] {
+    query: {
+      readonly after?: AuthorityKeysetCursor;
+      readonly limit: number;
+      readonly maxUtf8Bytes?: number;
+    },
+  ): AuthorityKeysetPage<CollabComment> {
     if (!ID_PATTERN.test(requestId)) throw queryError('request-query-id-invalid');
-    return connection.all(
+    const rows = connection.all(
       `SELECT comment_id, request_id, author_member_id, body, created_at
        FROM comments
        WHERE request_id = ?
-       ORDER BY created_at, comment_id`,
-      [requestId],
+         AND (created_at > ? OR (created_at = ? AND comment_id > ?))
+       ORDER BY created_at, comment_id
+       LIMIT ?`,
+      [
+        requestId,
+        query.after?.createdAt ?? '',
+        query.after?.createdAt ?? '',
+        query.after?.id ?? '',
+        query.limit + 1,
+      ],
     ).map(decodeAuthorityComment);
+    return trimAuthorityKeysetPage(
+      rows,
+      query.limit,
+      query.maxUtf8Bytes ?? COLLAB_LIMITS.commentPageMaxUtf8Bytes,
+      comment => ({ createdAt: comment.createdAt, id: comment.id }),
+      undefined,
+      'comments',
+    );
   }
 }

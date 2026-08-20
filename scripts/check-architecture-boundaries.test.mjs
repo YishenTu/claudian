@@ -568,6 +568,20 @@ test('collab protocol registry and contract constants exist only in the package'
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
+test('LAN wire decoders consume protocol-owned ID and Git OID predicates', () => {
+  for (const relativePath of [
+    'src/app/collab/lan/LanCollabEvent.ts',
+    'src/app/collab/lan/LanCollabGeneralControlCodecs.ts',
+    'src/app/collab/lan/LanCollabLifecycleCodecs.ts',
+    'src/app/collab/lan/LanCollabProjectSnapshotCodec.ts',
+  ]) {
+    const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+    assert.equal(source.includes('[A-Za-z0-9][A-Za-z0-9_-]{0,63}'), false, relativePath);
+    assert.equal(source.includes('[A-Za-z0-9][A-Za-z0-9_-]{0,127}'), false, relativePath);
+    assert.equal(source.includes('(?:[0-9a-f]{40}|[0-9a-f]{64})'), false, relativePath);
+  }
+});
+
 test('production consumes protocol-owned canonical Collab Git refs', () => {
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /refs\/heads\/main/,

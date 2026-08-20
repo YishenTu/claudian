@@ -11,6 +11,7 @@ import path from 'node:path';
 import { COLLAB_MAIN_REF, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
 import { NodeSqlJsSnapshotStore } from '@/app/collab/authority/SqlJsSnapshotStore';
+import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -268,7 +269,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       || finalSnapshotIdentity.byteCount !== input.manifest.authoritySnapshot.byteCount
       || finalSnapshotIdentity.sha256 !== input.manifest.authoritySnapshot.sha256
     ) throw packageError('host-transfer-target-artifact-drift');
-    if (input.manifest.authoritySchemaVersion === 8) {
+    if (input.manifest.authoritySchemaVersion !== COLLAB_AUTHORITY_SCHEMA_VERSION) {
       await this.snapshots.validateRecoveryMigration({
         bytes: authorityBytes,
         manifest: input.manifest,
@@ -357,7 +358,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       || finalSnapshotIdentity.byteCount !== manifest.authoritySnapshot.byteCount
       || finalSnapshotIdentity.sha256 !== manifest.authoritySnapshot.sha256
     ) throw packageError('host-transfer-target-artifact-drift');
-    if (manifest.authoritySchemaVersion === 8) {
+    if (manifest.authoritySchemaVersion !== COLLAB_AUTHORITY_SCHEMA_VERSION) {
       await this.snapshots.validateRecoveryMigration({
         bytes: snapshotBytes,
         manifest,

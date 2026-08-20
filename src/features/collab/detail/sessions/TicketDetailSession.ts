@@ -1,8 +1,10 @@
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import type {
   CollabDetailViewPort,
   CollabTicketDetailViewState,
 } from '@/features/collab/detail/CollabDetailContracts';
+import {
+  TicketReferenceResolver,
+} from '@/features/collab/detail/sessions/TicketReferenceResolver';
 import {
   TicketEditorPanel,
   type TicketMutationKind,
@@ -31,8 +33,11 @@ export class TicketDetailSession {
   private readonly mutationIntents = new MutationIntentStore<TicketMutationKind>();
   private panel: TicketEditorPanel | null = null;
   private state: CollabTicketDetailViewState | null = null;
+  private readonly ticketReferences: TicketReferenceResolver;
 
-  constructor(private readonly options: TicketDetailSessionOptions) {}
+  constructor(private readonly options: TicketDetailSessionOptions) {
+    this.ticketReferences = new TicketReferenceResolver(options.port);
+  }
 
   get displayText(): string {
     const state = this.state;
@@ -53,6 +58,7 @@ export class TicketDetailSession {
 
   async open(state: CollabTicketDetailViewState): Promise<void> {
     if (this.destroyed) return;
+    this.ticketReferences.cancel();
     this.state = state;
     this.options.rootEl.replaceChildren();
     this.panel?.destroy();
@@ -72,7 +78,7 @@ export class TicketDetailSession {
       },
       ...(this.options.openTicketInNewTab ? {
         onOpenTicket: (ticketNumber: number) => this.openTicketReference(
-          state.projectId,
+          state,
           ticketNumber,
         ),
       } : {}),
@@ -94,6 +100,7 @@ export class TicketDetailSession {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.ticketReferences.cancel();
     this.panel?.destroy();
     this.panel = null;
     this.mutationIntents.clearAll();
@@ -106,32 +113,17 @@ export class TicketDetailSession {
       && this.state.ticketId === state.ticketId;
   }
 
-  private async openTicketReference(projectId: string, ticketNumber: number): Promise<void> {
-    const openTicket = this.options.openTicketInNewTab;
-    if (!openTicket) return;
-    const ticketId = await this.findTicketId(projectId, ticketNumber);
-    if (ticketId) await openTicket(projectId, ticketId);
-  }
-
-  private async findTicketId(projectId: string, ticketNumber: number): Promise<string | null> {
-    for (const status of ['open', 'closed'] as const) {
-      let cursor: string | undefined;
-      const visitedCursors = new Set<string>();
-      do {
-        const result = await this.options.port.listTickets({
-          ...(cursor ? { cursor } : {}),
-          limit: CLAUDIAN_COLLAB_LIMITS.maxTicketPageSize,
-          projectId,
-          status,
-        });
-        if (result.status !== 'success') break;
-        const match = result.value.page.tickets.find(ticket => ticket.number === ticketNumber);
-        if (match) return match.id;
-        cursor = result.value.page.nextCursor;
-        if (cursor && visitedCursors.has(cursor)) break;
-        if (cursor) visitedCursors.add(cursor);
-      } while (cursor);
-    }
-    return null;
+  private async openTicketReference(
+    state: CollabTicketDetailViewState,
+    ticketNumber: number,
+  ): Promise<void> {
+    const openTicketInNewTab = this.options.openTicketInNewTab;
+    if (!openTicketInNewTab) return;
+    await this.ticketReferences.openReference(
+      state.projectId,
+      ticketNumber,
+      openTicketInNewTab,
+      () => this.isCurrent(state),
+    );
   }
 }

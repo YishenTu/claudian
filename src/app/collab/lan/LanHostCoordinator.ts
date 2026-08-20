@@ -118,7 +118,7 @@ export interface LanHostProjectRuntime {
     ): Promise<void>;
   };
   readonly git: LanHostGitRuntime;
-  readonly lifecycle?: Omit<HostedLifecycleControlPort, 'retireProject'> & {
+  readonly lifecycle: Omit<HostedLifecycleControlPort, 'retireProject'> & {
     createRetirementCoordinator(input: {
       readonly admission: {
         quiesceAndDrain(projectId: CollabProjectId): Promise<void>;
@@ -161,8 +161,8 @@ export interface LanHostProjectRuntime {
   };
   readonly readMainOid: () => Promise<string>;
   readonly retireAuthority?: () => Promise<void>;
-  readonly requests?: HostedRequestControlPort;
-  readonly tickets?: HostedTicketControlPort;
+  readonly requests: HostedRequestControlPort;
+  readonly tickets: HostedTicketControlPort;
   readonly validate: () => Promise<void>;
 }
 
@@ -460,6 +460,7 @@ export class LanHostCoordinator {
       if (firstListenerOwner) await this.acquireHostLock();
       try {
         if (!this.listener) this.listener = await this.startListener();
+        this.assertOpen();
         this.provisionalTransfers.register(registration);
         return {
           caCertificatePem: this.listener.caCertificatePem,
@@ -603,6 +604,7 @@ export class LanHostCoordinator {
       if (firstListenerOwner) await this.acquireHostLock();
       try {
         if (!this.listener) this.listener = await this.startListener();
+        this.assertOpen();
         const listener = this.listener;
         this.registerTerminalProject(runtime);
         const terminal = this.terminalProjects.get(runtime.projectId)!;
@@ -663,6 +665,19 @@ export class LanHostCoordinator {
             firstError ??= error;
           });
         }
+        // The queue is the final resource authority: queued work that began
+        // before close() may have published replacement listeners, endpoint
+        // persistence, advertisements, or provisional transfers after
+        // beginShutdown captured its drains. Tear down the current state.
+        for (const [, project] of hosted) {
+          await project.advertisement?.stop().catch(error => {
+            firstError ??= error;
+          });
+        }
+        this.provisionalTransfers.clear();
+        await this.closeListenerAndLock().catch(error => {
+          firstError ??= error;
+        });
         for (const drain of [
           ...started.gitDrains,
           started.resourceDrain,
@@ -839,52 +854,50 @@ export class LanHostCoordinator {
       ) {
         await admission.quiesceAndDrain('transferred');
       }
-      const hostTransferLifecycle = openedRuntime.lifecycle && openedRuntime.outgoingHostTransfer
+      const hostTransferLifecycle = openedRuntime.outgoingHostTransfer
         ? new HostTransferLifecycleOrchestrator(
             openedRuntime.lifecycle,
             openedRuntime.outgoingHostTransfer,
           )
         : null;
-      const lifecycle = openedRuntime.lifecycle
-        ? {
-            ...openedRuntime.lifecycle,
-            ...(hostTransferLifecycle ? {
-              acceptHostTransfer: hostTransferLifecycle.acceptHostTransfer.bind(
-                hostTransferLifecycle,
-              ),
-              cancelHostTransfer: hostTransferLifecycle.cancelHostTransfer.bind(
-                hostTransferLifecycle,
-              ),
-            } : {}),
-            ...openedRuntime.lifecycle.createRetirementCoordinator({
-              admission: {
-                quiesceAndDrain: async () => {
-                  await this.beginRetirement(projectId);
-                  try {
-                    await admission.quiesceAndDrain('retired');
-                  } catch (error) {
-                    await this.resumeRetirement(projectId).catch(() => undefined);
-                    throw error;
-                  }
-                },
-                resume: async () => {
-                  admission.reopen();
-                  await this.resumeRetirement(projectId);
-                },
-              },
-              activateTerminal: async terminal => {
-                await this.startTerminalProject({ projectId, service: terminal });
-              },
-              deliver: async result => {
-                // Delivery is best-effort; durable terminal fallback remains authoritative.
-                await openedRuntime.events?.publishRetirement?.(result);
-              },
-              teardown: async () => {
-                await this.retireActiveProject(projectId, admission);
-              },
-            }),
-          }
-        : undefined;
+      const lifecycle = {
+        ...openedRuntime.lifecycle,
+        ...(hostTransferLifecycle ? {
+          acceptHostTransfer: hostTransferLifecycle.acceptHostTransfer.bind(
+            hostTransferLifecycle,
+          ),
+          cancelHostTransfer: hostTransferLifecycle.cancelHostTransfer.bind(
+            hostTransferLifecycle,
+          ),
+        } : {}),
+        ...openedRuntime.lifecycle.createRetirementCoordinator({
+          admission: {
+            quiesceAndDrain: async () => {
+              await this.beginRetirement(projectId);
+              try {
+                await admission.quiesceAndDrain('retired');
+              } catch (error) {
+                await this.resumeRetirement(projectId).catch(() => undefined);
+                throw error;
+              }
+            },
+            resume: async () => {
+              admission.reopen();
+              await this.resumeRetirement(projectId);
+            },
+          },
+          activateTerminal: async terminal => {
+            await this.startTerminalProject({ projectId, service: terminal });
+          },
+          deliver: async result => {
+            // Delivery is best-effort; durable terminal fallback remains authoritative.
+            await openedRuntime.events?.publishRetirement?.(result);
+          },
+          teardown: async () => {
+            await this.retireActiveProject(projectId, admission);
+          },
+        }),
+      };
       const controlService = new HostedProjectControlService(
         service,
         openedRuntime.requests,
@@ -1413,6 +1426,7 @@ export class LanHostCoordinator {
   }
 
   private async rebindListenerIfNeeded(): Promise<void> {
+    this.assertOpen();
     const previous = this.listener;
     if (!previous || (this.hostedProjects.size === 0 && this.terminalProjects.size === 0)) {
       return;
@@ -1429,7 +1443,9 @@ export class LanHostCoordinator {
     }
     const next = await this.startListener();
     const originals: CollabLocalMembershipRecord[] = [];
+    let promoted = false;
     try {
+      this.assertOpen();
       for (const projectId of this.hostedProjects.keys()) {
         const membership = await this.requireHostMembership(projectId);
         originals.push(membership);
@@ -1444,31 +1460,40 @@ export class LanHostCoordinator {
           },
           updatedAt: this.now().toISOString(),
         });
+        this.assertOpen();
+      }
+      this.listener = next;
+      this.listenerFailure = null;
+      promoted = true;
+      for (const [projectId, hosted] of this.hostedProjects) {
+        await hosted.advertisement?.stop().catch(() => undefined);
+        hosted.advertisement = await this.options.discovery?.advertiseProject({
+          caFingerprint: next.caFingerprint,
+          endpoint: next.endpoint,
+          projectId,
+        }).catch(() => undefined);
+        this.assertOpen();
+      }
+      for (const [projectId, terminal] of this.terminalProjects) {
+        await terminal.advertisement?.stop().catch(() => undefined);
+        terminal.advertisement = await this.options.discovery?.advertiseProject({
+          caFingerprint: next.caFingerprint,
+          endpoint: next.endpoint,
+          projectId,
+        }).catch(() => undefined);
+        this.assertOpen();
       }
     } catch (error) {
       for (const membership of originals) {
         await this.options.localProjects.saveMembership(membership).catch(() => undefined);
       }
+      if (this.listener === next) this.listener = null;
+      // Once promoted, the superseded listener is referenced nowhere else: a
+      // close() racing this rebind tears down only the current listener, so
+      // the previous one must be closed here.
+      if (promoted) await this.closeListener(previous);
       await this.closeListener(next);
       throw error;
-    }
-    this.listener = next;
-    this.listenerFailure = null;
-    for (const [projectId, hosted] of this.hostedProjects) {
-      await hosted.advertisement?.stop().catch(() => undefined);
-      hosted.advertisement = await this.options.discovery?.advertiseProject({
-        caFingerprint: next.caFingerprint,
-        endpoint: next.endpoint,
-        projectId,
-      }).catch(() => undefined);
-    }
-    for (const [projectId, terminal] of this.terminalProjects) {
-      await terminal.advertisement?.stop().catch(() => undefined);
-      terminal.advertisement = await this.options.discovery?.advertiseProject({
-        caFingerprint: next.caFingerprint,
-        endpoint: next.endpoint,
-        projectId,
-      }).catch(() => undefined);
     }
     await this.closeListener(previous);
   }

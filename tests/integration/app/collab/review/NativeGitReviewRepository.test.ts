@@ -132,8 +132,7 @@ describe('NativeGitReviewRepository integration', () => {
 
 function requestDetail(mainOid: string, headOid: string): CollabRequestDetail {
   return {
-    changedFiles: [],
-    comments: [],
+    comments: { comments: [] },
     currentMainOid: mainOid,
     request: {
       commentCount: 0,

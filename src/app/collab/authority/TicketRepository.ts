@@ -1,5 +1,11 @@
-import { type CollabMemberId, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabMemberId, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary } from '@claudian/collab-protocol';
 
+import {
+  authorityDetailPageBudgets,
+  type AuthorityKeysetCursor,
+  type AuthorityKeysetPage,
+  trimAuthorityKeysetPage,
+} from '@/app/collab/authority/AuthorityKeysetPage';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -41,6 +47,7 @@ export function decodeTicketSummary(
   const authorMemberId = row.author_member_id;
   const revision = row.revision;
   const commentCount = row.comment_count;
+  const acceptedRelationCount = row.accepted_relation_count;
   const closedAt = timestamp(row.closed_at, true);
   const closedByMemberId = row.closed_by_member_id;
   if (
@@ -57,9 +64,14 @@ export function decodeTicketSummary(
     || typeof revision !== 'number'
     || !Number.isSafeInteger(revision)
     || revision < 1
+    || typeof acceptedRelationCount !== 'number'
+    || !Number.isSafeInteger(acceptedRelationCount)
+    || acceptedRelationCount < 0
+    || acceptedRelationCount > COLLAB_LIMITS.maxTicketAcceptedRelations
     || typeof commentCount !== 'number'
     || !Number.isSafeInteger(commentCount)
     || commentCount < 0
+    || commentCount > COLLAB_LIMITS.maxTicketComments
     || (closedByMemberId !== null && (
       typeof closedByMemberId !== 'string' || !ID_PATTERN.test(closedByMemberId)
     ))
@@ -69,6 +81,7 @@ export function decodeTicketSummary(
     throw ticketError('ticket-row-invalid');
   }
   return {
+    acceptedRelationCount,
     authorMemberId,
     commentCount,
     createdAt: timestamp(row.created_at)!,
@@ -113,7 +126,13 @@ export function decodeTicketComment(
 const TICKET_SELECT = `SELECT
   ticket_number, ticket_id, title, status, author_member_id,
   revision, comment_count, created_at, updated_at,
-  closed_at, closed_by_member_id
+  closed_at, closed_by_member_id,
+  (
+    SELECT COUNT(*)
+    FROM request_ticket_relations accepted
+    WHERE accepted.ticket_id = tickets.ticket_id
+      AND accepted.state = 'accepted'
+  ) AS accepted_relation_count
 FROM tickets`;
 
 export class TicketRepository {
@@ -249,10 +268,36 @@ export class TicketRepository {
     if (typeof body !== 'string' || body.length === 0) {
       throw ticketError('ticket-body-invalid');
     }
+    // Embedded first pages share what the measured fixed part leaves of the
+    // shared detail budget, so the whole detail fits one transport envelope.
+    const budgets = authorityDetailPageBudgets(
+      Buffer.byteLength(JSON.stringify({ body, ticket }), 'utf8'),
+      true,
+    );
+    const acceptedRelations = this.relations.listAcceptedForTicketPage(
+      connection,
+      ticketId,
+      {
+        limit: COLLAB_LIMITS.maxRelationsPerPage,
+        maxUtf8Bytes: budgets.relationsMaxUtf8Bytes,
+      },
+    );
+    const comments = this.listCommentsPage(connection, ticketId, {
+      limit: COLLAB_LIMITS.defaultCommentPageSize,
+      maxUtf8Bytes: budgets.commentsMaxUtf8Bytes,
+    });
     return {
-      acceptedRelations: this.relations.listAcceptedForTicket(connection, ticketId),
+      acceptedRelations: {
+        acceptedRelations: acceptedRelations.items,
+        ...(acceptedRelations.nextCursor
+          ? { nextCursor: acceptedRelations.nextCursor }
+          : {}),
+      },
       body,
-      comments: this.listComments(connection, ticketId),
+      comments: {
+        comments: comments.items,
+        ...(comments.nextCursor ? { nextCursor: comments.nextCursor } : {}),
+      },
       ticket,
     };
   }
@@ -353,17 +398,51 @@ export class TicketRepository {
     return { comment: decodeTicketComment(comment), ticket };
   }
 
-  listComments(
+  listCommentsPage(
     connection: AuthorityDatabaseConnection,
     ticketId: CollabTicketId,
-  ): readonly CollabTicketComment[] {
-    return connection.all(
+    query: {
+      readonly after?: AuthorityKeysetCursor;
+      readonly limit: number;
+      readonly maxUtf8Bytes?: number;
+    },
+  ): AuthorityKeysetPage<CollabTicketComment> {
+    if (!ID_PATTERN.test(ticketId)) throw ticketError('ticket-id-invalid');
+    const rows = connection.all(
       `SELECT comment_id, ticket_id, author_member_id, body, created_at
        FROM ticket_comments
        WHERE ticket_id = ?
-       ORDER BY created_at, comment_id`,
-      [ticketId],
+         AND (created_at > ? OR (created_at = ? AND comment_id > ?))
+       ORDER BY created_at, comment_id
+       LIMIT ?`,
+      [
+        ticketId,
+        query.after?.createdAt ?? '',
+        query.after?.createdAt ?? '',
+        query.after?.id ?? '',
+        query.limit + 1,
+      ],
     ).map(decodeTicketComment);
+    return trimAuthorityKeysetPage(
+      rows,
+      query.limit,
+      query.maxUtf8Bytes ?? COLLAB_LIMITS.commentPageMaxUtf8Bytes,
+      comment => ({ createdAt: comment.createdAt, id: comment.id }),
+      undefined,
+      'comments',
+    );
+  }
+
+  listAcceptedForTicketPage(
+    connection: AuthorityDatabaseConnection,
+    ticketId: CollabTicketId,
+    query: {
+      readonly after?: AuthorityKeysetCursor;
+      readonly limit: number;
+      readonly maxUtf8Bytes?: number;
+    },
+  ): AuthorityKeysetPage<CollabTicketAcceptedRelation> {
+    return this.relations.listAcceptedForTicketPage(connection, ticketId, query);
   }
 
   changeStatus(

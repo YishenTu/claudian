@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { COLLAB_LIMITS } from '@claudian/collab-protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -199,9 +200,204 @@ describe('TicketService', () => {
     }
     await expect(service.read('member-author', 'project-alpha', created.ticket.id))
       .resolves.toMatchObject({
-        comments: [],
+        comments: { comments: [] },
         ticket: { commentCount: 0, revision: 1, status: 'open' },
       });
+  });
+
+  it('pages Ticket comments deterministically without loss or duplication', async () => {
+    const created = await createTicket();
+    for (let index = 1; index <= 5; index += 1) {
+      await service.comment('member-other', {
+        body: `Note ${index}`,
+        idempotencyKey: `comment-${index}`,
+        projectId: 'project-alpha',
+        ticketId: created.ticket.id,
+      });
+    }
+
+    const first = await service.listComments('member-author', 'project-alpha', created.ticket.id, {
+      limit: 2,
+    });
+    expect(first.comments.map(comment => comment.body)).toEqual(['Note 1', 'Note 2']);
+    expect(first.nextCursor).toBeDefined();
+    const second = await service.listComments('member-author', 'project-alpha', created.ticket.id, {
+      cursor: first.nextCursor,
+      limit: 2,
+    });
+    expect(second.comments.map(comment => comment.body)).toEqual(['Note 3', 'Note 4']);
+    const third = await service.listComments('member-author', 'project-alpha', created.ticket.id, {
+      cursor: second.nextCursor,
+      limit: 2,
+    });
+    expect(third.comments.map(comment => comment.body)).toEqual(['Note 5']);
+    expect(third.nextCursor).toBeUndefined();
+
+    const all = [...first.comments, ...second.comments, ...third.comments];
+    expect(new Set(all.map(comment => comment.id)).size).toBe(5);
+
+    const detail = await service.read('member-author', 'project-alpha', created.ticket.id);
+    expect(detail.comments.comments.length).toBeGreaterThan(0);
+    expect(detail.comments.comments[0]?.body).toBe('Note 1');
+  });
+
+  it('pages accepted Ticket relations with stable cursors', async () => {
+    const created = await createTicket();
+    await database.mutate(connection => {
+      for (let index = 1; index <= 3; index += 1) {
+        connection.run(
+          `INSERT INTO change_requests (
+            request_id, member_id, status, first_base_oid, latest_head_oid,
+            merged_oid, created_at, updated_at
+          ) VALUES (?, 'member-author', 'merged', ?, ?, ?, ?, ?)`,
+          [
+            `request-${index}`,
+            'a'.repeat(40),
+            'b'.repeat(40),
+            'c'.repeat(40),
+            CREATED_AT,
+            CREATED_AT,
+          ],
+        );
+        connection.run(
+          `INSERT INTO request_ticket_relations (
+            relation_id, request_id, ticket_id, commit_oid, kind, state,
+            created_by_member_id, created_at, updated_at,
+            accepted_at, accepted_merge_oid
+          ) VALUES (?, ?, ?, ?, 'resolves', 'accepted', 'member-author', ?, ?, ?, ?)`,
+          [
+            `relation-${index}`,
+            `request-${index}`,
+            created.ticket.id,
+            'b'.repeat(40),
+            CREATED_AT,
+            CREATED_AT,
+            `2026-08-10T00:0${index}:00.000Z`,
+            'c'.repeat(40),
+          ],
+        );
+      }
+    });
+
+    const first = await service.listAcceptedRelations(
+      'member-author',
+      'project-alpha',
+      created.ticket.id,
+      { limit: 2 },
+    );
+    expect(first.acceptedRelations.map(relation => relation.id))
+      .toEqual(['relation-1', 'relation-2']);
+    expect(first.nextCursor).toBeDefined();
+    const second = await service.listAcceptedRelations(
+      'member-author',
+      'project-alpha',
+      created.ticket.id,
+      { cursor: first.nextCursor, limit: 2 },
+    );
+    expect(second.acceptedRelations.map(relation => relation.id)).toEqual(['relation-3']);
+    expect(second.nextCursor).toBeUndefined();
+
+    const detail = await service.read('member-author', 'project-alpha', created.ticket.id);
+    expect(detail.acceptedRelations.acceptedRelations.map(relation => relation.id))
+      .toEqual(['relation-1', 'relation-2', 'relation-3']);
+    expect(detail.acceptedRelations.nextCursor).toBeUndefined();
+  });
+
+  it('keeps a maximal Ticket detail within the shared serialized detail budget', async () => {
+    // Maximal escaped body plus five maximal control-character comments: the
+    // complete thread is far beyond one envelope after JSON serialization.
+    const body = '"'.repeat(COLLAB_LIMITS.maxTicketBodyBytes);
+    expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(COLLAB_LIMITS.maxTicketBodyBytes);
+    const created = await service.create('member-author', {
+      body,
+      idempotencyKey: 'create-ticket',
+      projectId: 'project-alpha',
+      title: 'Maximal ticket',
+    });
+    const commentBody = '\u0001'.repeat(COLLAB_LIMITS.maxTicketCommentBytes - 2);
+    expect(Buffer.byteLength(commentBody, 'utf8'))
+      .toBeLessThanOrEqual(COLLAB_LIMITS.maxTicketCommentBytes);
+    for (let index = 1; index <= 5; index += 1) {
+      await service.comment('member-other', {
+        body: `${index}-${commentBody}`,
+        idempotencyKey: `comment-${index}`,
+        projectId: 'project-alpha',
+        ticketId: created.ticket.id,
+      });
+    }
+
+    const detail = await service.read('member-author', 'project-alpha', created.ticket.id);
+    expect(Buffer.byteLength(JSON.stringify(detail), 'utf8'))
+      .toBeLessThanOrEqual(COLLAB_LIMITS.detailMaxUtf8Bytes);
+    expect(detail.comments.nextCursor).toBeDefined();
+    expect(detail.comments.comments.length).toBeLessThan(5);
+
+    const seen = [...detail.comments.comments];
+    let cursor = detail.comments.nextCursor;
+    while (cursor) {
+      const page = await service.listComments(
+        'member-author',
+        'project-alpha',
+        created.ticket.id,
+        { cursor, limit: COLLAB_LIMITS.maxCommentPageSize },
+      );
+      seen.push(...page.comments);
+      cursor = page.nextCursor;
+    }
+    expect(seen.map(comment => comment.body.slice(0, 1))).toEqual(['1', '2', '3', '4', '5']);
+    expect(new Set(seen.map(comment => comment.id)).size).toBe(5);
+  });
+
+  it('bounds Ticket list pages by serialized UTF-8 bytes', async () => {
+    // Control characters are valid title content and expand sixfold in JSON,
+    // forcing the count-maximal result across multiple byte-bounded pages.
+    const title = '\u0001'.repeat(COLLAB_LIMITS.maxTicketTitleUtf16);
+    for (let index = 1; index <= 100; index += 1) {
+      await service.create('member-author', {
+        body: `Body ${index}`,
+        idempotencyKey: `create-${index}`,
+        projectId: 'project-alpha',
+        title,
+      });
+    }
+
+    const numbers: number[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page: Awaited<ReturnType<typeof service.list>> = await service.list(
+        'member-author',
+        {
+          ...(cursor ? { cursor } : {}),
+          limit: COLLAB_LIMITS.maxTicketPageSize,
+          projectId: 'project-alpha',
+          status: 'all',
+        },
+      );
+      pages += 1;
+      expect(Buffer.byteLength(JSON.stringify(page), 'utf8'))
+        .toBeLessThanOrEqual(COLLAB_LIMITS.ticketPageMaxUtf8Bytes + 512);
+      expect(page.tickets.length).toBeGreaterThan(0);
+      numbers.push(...page.tickets.map(ticket => ticket.number));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(pages).toBeGreaterThan(1);
+    expect(new Set(numbers).size).toBe(100);
+    expect([...numbers].sort((left, right) => right - left)).toEqual(numbers);
+  });
+
+  it('rejects invalid Ticket page cursors fail-closed', async () => {
+    const created = await createTicket();
+    await expect(service.listComments('member-author', 'project-alpha', created.ticket.id, {
+      cursor: 'not-a-cursor',
+    })).rejects.toMatchObject({ code: 'protocol-payload-invalid' });
+    await expect(service.listAcceptedRelations(
+      'member-author',
+      'project-alpha',
+      created.ticket.id,
+      { cursor: 'not-a-cursor' },
+    )).rejects.toMatchObject({ code: 'protocol-payload-invalid' });
   });
 
   it('records runtime-detected member mentions from descriptions and comments', async () => {

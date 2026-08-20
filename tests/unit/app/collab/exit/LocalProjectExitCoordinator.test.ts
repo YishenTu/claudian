@@ -120,6 +120,9 @@ function setup(
       },
       memberRole: record.member.role,
     })),
+    resolveLeaveHost: jest.fn(async input => {
+      throw input.failure;
+    }),
     settleLeave: jest.fn(async (_input): Promise<MembershipTerminationResponse> => {
       order.push('authority');
       return {
@@ -245,19 +248,62 @@ describe('LocalProjectExitCoordinator', () => {
     expect(projects.purgePrivateState).toHaveBeenCalledWith('project-alpha');
     expect(pending.records.size).toBe(0);
     expect(authority.settleLeave).toHaveBeenCalledWith(expect.objectContaining({
-      idempotencyKey: 'leave-stable',
       pending: expect.objectContaining({
         authorityReplay: {
           expectedHostMemberId: 'member-host',
           idempotencyManagerMemberId: null,
           managerResponsibilityOfferId: null,
         },
+        idempotencyKey: 'leave-stable',
       }),
     }));
     expect(cleanup.cleanup).toHaveBeenCalledWith(expect.objectContaining({
       choice: 'keep-files',
       operationId: 'leave-stable',
     }), {});
+  });
+
+  it('persists verified moved-Host continuity before retrying a credentialed read', async () => {
+    const { authority, coordinator, pending } = setup();
+    authority.resolveLeaveHost.mockResolvedValueOnce({
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n',
+      caFingerprint: 'b'.repeat(64),
+      endpoint: 'https://10.0.0.8:54545',
+      projectId: 'project-alpha',
+    });
+    authority.prepareLeave.mockRejectedValueOnce(new CollabError({
+      code: 'endpoint-unreachable',
+    }));
+    authority.prepareLeave.mockImplementationOnce(async input => {
+      expect(input.pending).toMatchObject({
+        hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n',
+        hostCaFingerprint: 'b'.repeat(64),
+        hostEndpoint: 'https://10.0.0.8:54545',
+      });
+      expect(pending.records.get('project-alpha')).toMatchObject({
+        hostCaFingerprint: 'b'.repeat(64),
+        hostEndpoint: 'https://10.0.0.8:54545',
+      });
+      return {
+        authorityReplay: {
+          expectedHostMemberId: 'member-host',
+          idempotencyManagerMemberId: null,
+          managerResponsibilityOfferId: null,
+        },
+        memberRole: 'member',
+      };
+    });
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).resolves.toEqual({ status: 'complete' });
+
+    expect(authority.resolveLeaveHost).toHaveBeenCalledWith(expect.objectContaining({
+      failure: expect.objectContaining({ code: 'endpoint-unreachable' }),
+      pending: expect.objectContaining({ hostCaFingerprint: 'a'.repeat(64) }),
+    }));
+    expect(authority.prepareLeave).toHaveBeenCalledTimes(2);
   });
 
   it('queues an ordinary offline Leave and performs local cleanup', async () => {
@@ -650,7 +696,7 @@ describe('LocalProjectExitCoordinator', () => {
       failed: [],
     });
     expect(authority.settleLeave).toHaveBeenCalledTimes(2);
-    expect(authority.settleLeave.mock.calls.map(call => call[0].idempotencyKey))
+    expect(authority.settleLeave.mock.calls.map(call => call[0].pending.idempotencyKey))
       .toEqual(['leave-stable', 'leave-stable']);
     expect(authority.prepareLeave).toHaveBeenCalledTimes(1);
     expect(pending.records.size).toBe(0);

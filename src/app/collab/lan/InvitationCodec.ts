@@ -5,6 +5,8 @@ import {
 } from 'node:crypto';
 import { isIP } from 'node:net';
 
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+
 import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
   COLLAB_INVITATION_TTL_MS,
@@ -13,9 +15,8 @@ import {
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const INVITATION_PREFIX = 'claudian-collab';
-const LEGACY_PENDING_JOIN_PROTOCOL_VERSION = 6;
+const LEGACY_PENDING_JOIN_PROTOCOL_VERSION = 7;
 const MAX_ENCODED_INVITATION_LENGTH = 8 * 1024;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -228,10 +229,10 @@ export class InvitationCodec {
     const decoded = decodeLanCollabInvitation(invitation);
     if (decoded.status !== 'ok') throw decoded.error;
     const value = decoded.value;
-    if (!OPAQUE_ID_PATTERN.test(value.invitationId)) {
+    if (!isCollabOpaqueId(value.invitationId)) {
       throw invitationError('invitation-id-invalid', { field: 'invitationId' });
     }
-    if (!OPAQUE_ID_PATTERN.test(value.projectId)) {
+    if (!isCollabProjectId(value.projectId)) {
       throw invitationError('project-id-invalid', { field: 'projectId' });
     }
     const endpoint = this.normalizeEndpoint(value.endpoint);

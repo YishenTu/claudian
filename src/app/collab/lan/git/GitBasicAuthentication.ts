@@ -1,11 +1,10 @@
 import { TextDecoder } from 'node:util';
 
-import { type CollabMemberStatus } from '@claudian/collab-protocol';
+import { type CollabMemberStatus, isCollabMemberId } from '@claudian/collab-protocol';
 
 import type { CollabGitService } from '@/app/collab/lan/git/GitHttpRoute';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
@@ -59,7 +58,7 @@ function decodeBasicAuthorization(authorization: string | null): {
   }
   const memberId = decoded.slice(0, separator);
   const credential = decoded.slice(separator + 1);
-  if (!MEMBER_ID_PATTERN.test(memberId) || !CREDENTIAL_PATTERN.test(credential)) {
+  if (!isCollabMemberId(memberId) || !CREDENTIAL_PATTERN.test(credential)) {
     throw authenticationError('git-basic-auth-invalid');
   }
   return { credential, memberId };

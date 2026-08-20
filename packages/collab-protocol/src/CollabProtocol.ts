@@ -3,13 +3,16 @@ import { CollabError } from './CollabError';
 import type {
   CollabChangeRequest,
   CollabComment,
+  CollabCommentPage,
   CollabGitOid,
   CollabIdempotencyKey,
   CollabProjectId,
   CollabRequestDetail,
   CollabRequestId,
   CollabResolvingTicketExpectation,
+  CollabTicketAcceptedRelationPage,
   CollabTicketComment,
+  CollabTicketCommentPage,
   CollabTicketDetail,
   CollabTicketId,
   CollabTicketPage,
@@ -69,6 +72,27 @@ export interface CreateCommentResponse {
 export interface ListTicketsRequest {
   projectId: CollabProjectId;
   status: CollabTicketStatus | 'all';
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ListRequestCommentsRequest {
+  projectId: CollabProjectId;
+  requestId: CollabRequestId;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ListTicketCommentsRequest {
+  projectId: CollabProjectId;
+  ticketId: CollabTicketId;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ListTicketAcceptedRelationsRequest {
+  projectId: CollabProjectId;
+  ticketId: CollabTicketId;
   cursor?: string;
   limit?: number;
 }
@@ -145,6 +169,10 @@ export interface CollabControlOperationDefinition<Request, Response> {
 
 export interface CollabControlOperationMap {
   getRequest: CollabControlOperationDefinition<GetRequestRequest, CollabRequestDetail>;
+  listRequestComments: CollabControlOperationDefinition<
+    ListRequestCommentsRequest,
+    CollabCommentPage
+  >;
   ensureMyRequest: CollabControlOperationDefinition<
     EnsureMyRequestRequest,
     EnsureMyRequestResponse
@@ -152,6 +180,14 @@ export interface CollabControlOperationMap {
   createComment: CollabControlOperationDefinition<CreateCommentRequest, CreateCommentResponse>;
   listTickets: CollabControlOperationDefinition<ListTicketsRequest, CollabTicketPage>;
   getTicket: CollabControlOperationDefinition<GetTicketRequest, CollabTicketDetail>;
+  listTicketComments: CollabControlOperationDefinition<
+    ListTicketCommentsRequest,
+    CollabTicketCommentPage
+  >;
+  listTicketAcceptedRelations: CollabControlOperationDefinition<
+    ListTicketAcceptedRelationsRequest,
+    CollabTicketAcceptedRelationPage
+  >;
   createTicket: CollabControlOperationDefinition<CreateTicketRequest, CreateTicketResponse>;
   updateTicketContent: CollabControlOperationDefinition<
     UpdateTicketContentRequest,

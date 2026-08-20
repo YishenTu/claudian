@@ -49,6 +49,8 @@ describe('multi-Manager membership lifecycle', () => {
       });
       insertMember(connection, 'member-a', 2);
       insertMember(connection, 'member-b', 3);
+      insertMember(connection, 'member-c', 4);
+      insertMember(connection, 'member-d', 5);
     });
   });
 
@@ -153,12 +155,81 @@ describe('multi-Manager membership lifecycle', () => {
       members: [
         { member_id: 'member-a', role: 'member', status: 'revoked' },
         { member_id: 'member-b', role: 'member', status: 'left' },
+        { member_id: 'member-c', role: 'member', status: 'active' },
+        { member_id: 'member-d', role: 'member', status: 'active' },
         { member_id: 'member-host', role: 'manager', status: 'active' },
       ],
     });
     expect(durableNotifications).toEqual([
       'member-a:revoked',
       'member-b:left',
+    ]);
+  });
+
+  it('consumes disjoint promotion offers across unrelated Manager-set changes', async () => {
+    const authority = {
+      database,
+      events: new AuthorityEventRepository(),
+      idempotency: new AuthorityIdempotencyRepository(),
+    };
+    let nextOfferId = 0;
+    const responsibilities = new ManagerResponsibilityService({
+      ...authority,
+      presence: { hasAuthenticatedPresence: () => true },
+    }, {
+      createOfferId: () => `offer-disjoint-${++nextOfferId}`,
+      now: () => new Date(NOW),
+    });
+    const administration = new MembershipAdminService(authority, {
+      now: () => new Date(NOW),
+      presence: { hasAuthenticatedPresence: () => true },
+    });
+    await promote(responsibilities, administration, {
+      sourceMemberId: 'member-host',
+      suffix: 'setup-a',
+      targetMemberId: 'member-a',
+    });
+    await promote(responsibilities, administration, {
+      sourceMemberId: 'member-host',
+      suffix: 'setup-b',
+      targetMemberId: 'member-b',
+    });
+
+    const first = await acknowledgedOffer(responsibilities, {
+      purpose: 'manager-promotion',
+      sourceMemberId: 'member-a',
+      suffix: 'disjoint-c',
+      targetMemberId: 'member-c',
+    });
+    const second = await acknowledgedOffer(responsibilities, {
+      purpose: 'manager-promotion',
+      sourceMemberId: 'member-b',
+      suffix: 'disjoint-d',
+      targetMemberId: 'member-d',
+    });
+    await administration.promoteManager('member-a', {
+      idempotencyKey: 'promote-disjoint-c',
+      managerResponsibilityOfferId: first.offerId,
+      projectId: 'project-three',
+      targetMemberId: 'member-c',
+    });
+    await administration.promoteManager('member-b', {
+      idempotencyKey: 'promote-disjoint-d',
+      managerResponsibilityOfferId: second.offerId,
+      projectId: 'project-three',
+      targetMemberId: 'member-d',
+    });
+
+    await expect(database.read(connection => connection.all(
+      `SELECT member_id FROM members
+       WHERE role = 'manager' AND status = 'active'
+       ORDER BY member_id`,
+    ))).resolves.toEqual([
+      { member_id: 'member-a' },
+      { member_id: 'member-b' },
+      { member_id: 'member-c' },
+      { member_id: 'member-d' },
+      { member_id: 'member-host' },
     ]);
   });
 });

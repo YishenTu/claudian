@@ -3,6 +3,9 @@ import {
   CollabError as SharedCollabError,
   type CollabMember,
   collabMemberRef,
+  isCollabMemberId,
+  isCollabOpaqueId,
+  isCollabProjectId,
 } from '@claudian/collab-protocol';
 
 import {
@@ -18,8 +21,6 @@ import { decodeLanCollabEnvelopeData } from '@/app/collab/lan/LanCollabEnvelope'
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
-const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type CollabGeneralControlOperation =
@@ -64,16 +65,8 @@ function hasExactKeys(value: UnknownRecord, keys: readonly string[]): boolean {
     && actual.every((key, index) => key === expected[index]);
 }
 
-function isSafeId(value: unknown): value is string {
-  return typeof value === 'string' && SAFE_ID_PATTERN.test(value);
-}
-
-function isOpaqueId(value: unknown): value is string {
-  return typeof value === 'string' && OPAQUE_ID_PATTERN.test(value);
-}
-
 function isMutationContext(value: UnknownRecord): boolean {
-  return isSafeId(value.projectId) && isOpaqueId(value.idempotencyKey);
+  return isCollabProjectId(value.projectId) && isCollabOpaqueId(value.idempotencyKey);
 }
 
 export function decodeCollabGeneralOperationRequest<
@@ -96,29 +89,29 @@ export function decodeCollabGeneralOperationRequest<
   }
   switch (operation) {
     case 'createJoinAttempt':
-      if (!isSafeId(input.projectId)) return invalid('projectId-invalid');
+      if (!isCollabProjectId(input.projectId)) return invalid('projectId-invalid');
       if (
         typeof input.displayName !== 'string'
         || input.displayName.length === 0
         || input.displayName.length > 200
       ) return invalid('displayName-invalid');
-      if (!isSafeId(input.joinAttemptId)) return invalid('joinAttemptId-invalid');
+      if (!isCollabOpaqueId(input.joinAttemptId)) return invalid('joinAttemptId-invalid');
       break;
     case 'activateJoinAttempt':
-      if (!isSafeId(input.projectId)) return invalid('projectId-invalid');
-      if (!isSafeId(input.joinAttemptId)) return invalid('joinAttemptId-invalid');
-      if (!isOpaqueId(input.idempotencyKey)) return invalid('idempotencyKey-invalid');
+      if (!isCollabProjectId(input.projectId)) return invalid('projectId-invalid');
+      if (!isCollabOpaqueId(input.joinAttemptId)) return invalid('joinAttemptId-invalid');
+      if (!isCollabOpaqueId(input.idempotencyKey)) return invalid('idempotencyKey-invalid');
       break;
     case 'getSnapshot':
     case 'confirmEndpoint':
-      if (!isSafeId(input.projectId)) return invalid('projectId-invalid');
+      if (!isCollabProjectId(input.projectId)) return invalid('projectId-invalid');
       break;
     case 'createInvitation':
     case 'revokeInvitation':
       if (!isMutationContext(input)) return invalid('mutation-request-mismatch');
       break;
     case 'refreshEndpoint': {
-      if (!isSafeId(input.projectId)) return invalid('endpoint-refresh-request-invalid');
+      if (!isCollabProjectId(input.projectId)) return invalid('endpoint-refresh-request-invalid');
       const invitation = decodeLanCollabInvitation(input.invitation);
       if (invitation.status !== 'ok') return invalid('invitation-invalid');
       if (invitation.value.projectId !== input.projectId) {
@@ -131,7 +124,7 @@ export function decodeCollabGeneralOperationRequest<
         return invalid('membership-mutation-request-invalid');
       }
       if (!isMutationContext(input)) return invalid('membership-mutation-request-mismatch');
-      if (!isSafeId(input.memberId)) return invalid('membership-removal-request-invalid');
+      if (!isCollabMemberId(input.memberId)) return invalid('membership-removal-request-invalid');
       break;
   }
   return { status: 'ok', value: input as unknown as GeneralRequest<Operation> };
@@ -146,14 +139,16 @@ function string(
   value: UnknownRecord,
   field: string,
   maxLength: number,
-  pattern?: RegExp,
+  validation?: RegExp | ((candidate: unknown) => boolean),
 ): string {
   const candidate = value[field];
   if (
     typeof candidate !== 'string'
     || candidate.length === 0
     || candidate.length > maxLength
-    || (pattern && !pattern.test(candidate))
+    || (validation && (validation instanceof RegExp
+      ? !validation.test(candidate)
+      : !validation(candidate)))
   ) throw decodeError(field);
   return candidate;
 }
@@ -168,7 +163,7 @@ function isoTimestamp(value: UnknownRecord, field: string): string {
 
 function member(value: unknown): CollabMember {
   const source = record(value, 'member');
-  const id = string(source, 'id', 64, SAFE_ID_PATTERN);
+  const id = string(source, 'id', 64, isCollabMemberId);
   const personalRef = string(source, 'personalRef', 256);
   const role = source.role;
   const status = source.status;
@@ -204,10 +199,10 @@ export function decodeJoinAttemptResponse(value: unknown): CreateJoinAttemptResp
   const attempt = record(data.joinAttempt, 'joinAttempt');
   return { joinAttempt: {
     expiresAt: isoTimestamp(attempt, 'expiresAt'),
-    id: string(attempt, 'id', 64, SAFE_ID_PATTERN),
+    id: string(attempt, 'id', 128, isCollabOpaqueId),
     member: member(attempt.member),
     memberCredential: string(attempt, 'memberCredential', 43, CREDENTIAL_PATTERN),
-    projectId: string(attempt, 'projectId', 64, SAFE_ID_PATTERN),
+    projectId: string(attempt, 'projectId', 64, isCollabProjectId),
   } };
 }
 
@@ -216,7 +211,7 @@ export function decodeMembershipTerminationResponse(
 ): MembershipTerminationResponse {
   const data = record(envelopeData(value), 'data');
   const discardedRequestId = data.discardedRequestId;
-  if (discardedRequestId !== null && !isOpaqueId(discardedRequestId)) {
+  if (discardedRequestId !== null && !isCollabOpaqueId(discardedRequestId)) {
     throw decodeError('discardedRequestId');
   }
   if (data.status !== 'left' && data.status !== 'revoked') {
@@ -224,8 +219,8 @@ export function decodeMembershipTerminationResponse(
   }
   return {
     discardedRequestId,
-    memberId: string(data, 'memberId', 64, SAFE_ID_PATTERN),
-    projectId: string(data, 'projectId', 64, SAFE_ID_PATTERN),
+    memberId: string(data, 'memberId', 64, isCollabMemberId),
+    projectId: string(data, 'projectId', 64, isCollabProjectId),
     status: data.status,
   };
 }

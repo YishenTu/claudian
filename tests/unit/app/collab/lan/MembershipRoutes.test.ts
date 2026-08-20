@@ -18,6 +18,7 @@ function route(
       targetMemberId: 'member-a',
     },
     idempotencyKey: 'promote-key',
+    lifecycle: { execute: jest.fn() },
     method: 'POST',
     projectId: 'project-a',
     query: {},

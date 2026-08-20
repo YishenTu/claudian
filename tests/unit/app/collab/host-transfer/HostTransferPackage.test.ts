@@ -63,10 +63,12 @@ describe('HostTransferPackage', () => {
     })).toThrow();
   });
 
-  it('accepts schema 8 only through the explicit incoming recovery decoder', () => {
+  it.each([8, 9, 10] as const)(
+    'accepts schema %s only through the explicit incoming recovery decoder',
+    authoritySchemaVersion => {
     const legacy = {
       ...manifest(),
-      authoritySchemaVersion: 8,
+      authoritySchemaVersion,
     };
     const serialized = JSON.stringify(legacy);
 
@@ -75,7 +77,8 @@ describe('HostTransferPackage', () => {
     expect(digestHostTransferPackageManifest(
       parseHostTransferRecoveryPackageManifest(serialized),
     )).toBe(createHash('sha256').update(serialized, 'utf8').digest('hex'));
-  });
+    },
+  );
 
   it('streams an exact artifact atomically and replays only identical bytes', async () => {
     const bytes = Buffer.from('streamed authority package');

@@ -153,6 +153,9 @@ describe('SqlJsProjectDatabase', () => {
     const primaryPath = path.join(authorityDirectory, 'collab.db');
     const versionThree = new SQL.Database(await readFile(primaryPath));
     versionThree.run(`
+      DROP TRIGGER comments_request_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_update;
       DROP TABLE ticket_mentions;
       PRAGMA user_version = 3;
     `);
@@ -181,7 +184,7 @@ describe('SqlJsProjectDatabase', () => {
         'created_at',
       ],
       mentionTable: 'ticket_mentions',
-      version: 9,
+      version: COLLAB_AUTHORITY_SCHEMA_VERSION,
     });
     await migrated.close();
   });
@@ -225,6 +228,9 @@ describe('SqlJsProjectDatabase', () => {
     const primaryPath = path.join(authorityDirectory, 'collab.db');
     const versionSix = new SQL.Database(await readFile(primaryPath));
     versionSix.run(`
+      DROP TRIGGER comments_request_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_update;
       ALTER TABLE comments ADD COLUMN anchor_path TEXT;
       INSERT INTO comments (
         comment_id, request_id, author_member_id, body, created_at, anchor_path
@@ -263,7 +269,7 @@ describe('SqlJsProjectDatabase', () => {
       ],
       comment: null,
       generalComment: { body: 'General request comment' },
-      version: 9,
+      version: COLLAB_AUTHORITY_SCHEMA_VERSION,
     });
     await migrated.close();
   });
@@ -516,7 +522,12 @@ describe('SqlJsProjectDatabase', () => {
 
     const primaryPath = path.join(authorityDirectory, 'collab.db');
     const legacy = new SQL.Database(await readFile(primaryPath));
-    legacy.run('PRAGMA user_version = 0');
+    legacy.run(`
+      DROP TRIGGER comments_request_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_update;
+      PRAGMA user_version = 0;
+    `);
     await writeFile(primaryPath, legacy.export());
     legacy.close();
 

@@ -1,3 +1,4 @@
+import { COLLAB_LIMITS } from '@claudian/collab-protocol';
 import type { Database, SqlValue } from 'sql.js';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -592,6 +593,66 @@ const AUTHORITY_SCHEMA_V9_MANAGER_RESPONSIBILITY_SQL = `
   );
 `;
 
+const AUTHORITY_SCHEMA_V10_MANAGER_RESPONSIBILITY_SQL = `
+  CREATE TABLE manager_responsibility_offers_v10 (
+    offer_id TEXT PRIMARY KEY CHECK(
+      length(offer_id) BETWEEN 1 AND 128
+      AND substr(offer_id, 1, 1) GLOB '[A-Za-z0-9]'
+      AND offer_id NOT GLOB '*[^A-Za-z0-9_-]*'
+    ),
+    purpose TEXT NOT NULL CHECK(purpose IN ('manager-promotion', 'manager-leave')),
+    source_manager_member_id TEXT NOT NULL REFERENCES members(member_id),
+    target_member_id TEXT NOT NULL REFERENCES members(member_id),
+    status TEXT NOT NULL CHECK(status IN (
+      'offered', 'acknowledged', 'consumed', 'declined', 'cancelled', 'expired'
+    )),
+    offered_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    consumed_at TEXT,
+    updated_at TEXT NOT NULL,
+    CHECK(source_manager_member_id != target_member_id),
+    CHECK(expires_at > offered_at),
+    CHECK(
+      (status = 'offered' AND acknowledged_at IS NULL AND consumed_at IS NULL)
+      OR (status = 'acknowledged' AND acknowledged_at IS NOT NULL AND consumed_at IS NULL)
+      OR (status = 'consumed' AND acknowledged_at IS NOT NULL AND consumed_at IS NOT NULL)
+      OR (status IN ('declined', 'cancelled', 'expired') AND consumed_at IS NULL)
+    )
+  );
+`;
+
+const AUTHORITY_SCHEMA_V11_FINITE_COLLECTION_TRIGGERS = `
+  CREATE TRIGGER comments_request_capacity_insert
+    BEFORE INSERT ON comments
+    WHEN (
+      SELECT COUNT(*) FROM comments WHERE request_id = NEW.request_id
+    ) >= ${COLLAB_LIMITS.maxRequestComments}
+    BEGIN
+      SELECT RAISE(ABORT, 'request comment capacity exceeded');
+    END;
+
+  CREATE TRIGGER request_ticket_relations_accepted_capacity_insert
+    BEFORE INSERT ON request_ticket_relations
+    WHEN NEW.state = 'accepted' AND (
+      SELECT COUNT(*) FROM request_ticket_relations
+      WHERE ticket_id = NEW.ticket_id AND state = 'accepted'
+    ) >= ${COLLAB_LIMITS.maxTicketAcceptedRelations}
+    BEGIN
+      SELECT RAISE(ABORT, 'accepted ticket relation capacity exceeded');
+    END;
+
+  CREATE TRIGGER request_ticket_relations_accepted_capacity_update
+    BEFORE UPDATE OF state ON request_ticket_relations
+    WHEN OLD.state = 'pending' AND NEW.state = 'accepted' AND (
+      SELECT COUNT(*) FROM request_ticket_relations
+      WHERE ticket_id = NEW.ticket_id AND state = 'accepted'
+    ) >= ${COLLAB_LIMITS.maxTicketAcceptedRelations}
+    BEGIN
+      SELECT RAISE(ABORT, 'accepted ticket relation capacity exceeded');
+    END;
+`;
+
 function pragmaNumber(database: Database, pragma: string): number {
   const result = database.exec(pragma);
   const value = result[0]?.values[0]?.[0];
@@ -623,7 +684,11 @@ function indexExists(database: Database, index: string): boolean {
   `).length === 1;
 }
 
-function schemaSql(database: Database, type: 'index' | 'table', name: string): string | null {
+function schemaSql(
+  database: Database,
+  type: 'index' | 'table' | 'trigger',
+  name: string,
+): string | null {
   const value = firstColumn(database, `
     SELECT sql FROM sqlite_master WHERE type = '${type}' AND name = '${name}'
   `)[0];
@@ -639,7 +704,7 @@ function normalizeSchemaSql(sql: string): string {
 
 function hasExactSchemaSql(
   database: Database,
-  type: 'index' | 'table',
+  type: 'index' | 'table' | 'trigger',
   name: string,
   expected: string,
 ): boolean {
@@ -768,6 +833,180 @@ function repairAndAssertAuthorityV9Schema(database: Database): boolean {
   return repaired;
 }
 
+function authorityV10SchemaIsComplete(database: Database): boolean {
+  return hasExactColumns(database, 'manager_responsibility_offers', [
+    'offer_id',
+    'purpose',
+    'source_manager_member_id',
+    'target_member_id',
+    'status',
+    'offered_at',
+    'expires_at',
+    'acknowledged_at',
+    'consumed_at',
+    'updated_at',
+  ])
+    && hasExactSchemaSql(
+      database,
+      'table',
+      'manager_responsibility_offers',
+      AUTHORITY_SCHEMA_V10_MANAGER_RESPONSIBILITY_SQL.replace(
+        'manager_responsibility_offers_v10',
+        'manager_responsibility_offers',
+      ),
+    )
+    && hasExactSchemaSql(
+      database,
+      'index',
+      'manager_responsibility_one_nonterminal_source',
+      `
+        CREATE UNIQUE INDEX manager_responsibility_one_nonterminal_source
+        ON manager_responsibility_offers(source_manager_member_id)
+        WHERE status IN ('offered', 'acknowledged')
+      `,
+    )
+    && hasExactSchemaSql(
+      database,
+      'index',
+      'manager_responsibility_one_nonterminal_target',
+      `
+        CREATE UNIQUE INDEX manager_responsibility_one_nonterminal_target
+        ON manager_responsibility_offers(target_member_id)
+        WHERE status IN ('offered', 'acknowledged')
+      `,
+    )
+    && !indexExists(database, 'manager_responsibility_one_nonterminal')
+    && authorityV9SchemaIsCompleteExceptManagerResponsibilities(database);
+}
+
+function authorityV9SchemaIsCompleteExceptManagerResponsibilities(database: Database): boolean {
+  return hasExactColumns(database, 'project', [
+    'singleton',
+    'project_id',
+    'name',
+    'state',
+    'host_member_id',
+    'manager_set_generation',
+    'main_ref',
+    'created_at',
+    'snapshot_generation',
+  ])
+    && hasExactColumns(database, 'accept_operations', [
+      'operation_id',
+      'request_id',
+      'expected_main_oid',
+      'expected_head_oid',
+      'result_commit_oid',
+      'state',
+      'idempotency_key',
+      'created_at',
+      'updated_at',
+      'expected_request_revision',
+      'expected_resolving_tickets_json',
+      'completion_actor_member_id',
+    ])
+    && hasExactSchemaSql(
+      database,
+      'table',
+      'project',
+      AUTHORITY_SCHEMA_V9_PROJECT_SQL.replace('project_v9', 'project'),
+    )
+    && hasExactSchemaSql(
+      database,
+      'table',
+      'accept_operations',
+      AUTHORITY_SCHEMA_V9_ACCEPT_SQL.replace('accept_operations_v9', 'accept_operations'),
+    )
+    && hasExactMemberUniqueIndexes(database);
+}
+
+function repairAndAssertAuthorityV10Schema(database: Database): boolean {
+  const repaired = indexExists(database, 'members_one_active_manager');
+  if (repaired) database.run('DROP INDEX members_one_active_manager');
+  if (!authorityV10SchemaIsComplete(database)) {
+    throw new Error('Authority V10 Manager schema is incomplete');
+  }
+  return repaired;
+}
+
+function finiteCollectionCapacityIsValid(database: Database): boolean {
+  return firstColumn(database, `
+    SELECT request_id
+    FROM comments
+    GROUP BY request_id
+    HAVING COUNT(*) > ${COLLAB_LIMITS.maxRequestComments}
+    LIMIT 1
+  `).length === 0
+    && firstColumn(database, `
+      SELECT ticket_id
+      FROM request_ticket_relations
+      WHERE state = 'accepted'
+      GROUP BY ticket_id
+      HAVING COUNT(*) > ${COLLAB_LIMITS.maxTicketAcceptedRelations}
+      LIMIT 1
+    `).length === 0;
+}
+
+function authorityV11SchemaIsComplete(database: Database): boolean {
+  return authorityV10SchemaIsComplete(database)
+    && hasExactSchemaSql(
+      database,
+      'trigger',
+      'comments_request_capacity_insert',
+      `
+        CREATE TRIGGER comments_request_capacity_insert
+        BEFORE INSERT ON comments
+        WHEN (
+          SELECT COUNT(*) FROM comments WHERE request_id = NEW.request_id
+        ) >= ${COLLAB_LIMITS.maxRequestComments}
+        BEGIN
+          SELECT RAISE(ABORT, 'request comment capacity exceeded');
+        END
+      `,
+    )
+    && hasExactSchemaSql(
+      database,
+      'trigger',
+      'request_ticket_relations_accepted_capacity_insert',
+      `
+        CREATE TRIGGER request_ticket_relations_accepted_capacity_insert
+        BEFORE INSERT ON request_ticket_relations
+        WHEN NEW.state = 'accepted' AND (
+          SELECT COUNT(*) FROM request_ticket_relations
+          WHERE ticket_id = NEW.ticket_id AND state = 'accepted'
+        ) >= ${COLLAB_LIMITS.maxTicketAcceptedRelations}
+        BEGIN
+          SELECT RAISE(ABORT, 'accepted ticket relation capacity exceeded');
+        END
+      `,
+    )
+    && hasExactSchemaSql(
+      database,
+      'trigger',
+      'request_ticket_relations_accepted_capacity_update',
+      `
+        CREATE TRIGGER request_ticket_relations_accepted_capacity_update
+        BEFORE UPDATE OF state ON request_ticket_relations
+        WHEN OLD.state = 'pending' AND NEW.state = 'accepted' AND (
+          SELECT COUNT(*) FROM request_ticket_relations
+          WHERE ticket_id = NEW.ticket_id AND state = 'accepted'
+        ) >= ${COLLAB_LIMITS.maxTicketAcceptedRelations}
+        BEGIN
+          SELECT RAISE(ABORT, 'accepted ticket relation capacity exceeded');
+        END
+      `,
+    )
+    && finiteCollectionCapacityIsValid(database);
+}
+
+function repairAndAssertAuthorityV11Schema(database: Database): boolean {
+  const repaired = repairAndAssertAuthorityV10Schema(database);
+  if (!authorityV11SchemaIsComplete(database)) {
+    throw new Error('Authority V11 finite collection schema is incomplete');
+  }
+  return repaired;
+}
+
 function applyAuthoritySchemaV3(database: Database): void {
   const requestColumns = tableColumns(database, 'change_requests');
   const presentRequestColumns = AUTHORITY_SCHEMA_V3_REQUEST_COLUMNS.filter(column => (
@@ -838,12 +1077,21 @@ function applyAuthoritySchemaV8(database: Database): void {
 function applyAuthoritySchemaV9(database: Database): void {
   const projectColumns = tableColumns(database, 'project');
   const acceptColumns = tableColumns(database, 'accept_operations');
-  if (
+  const responsibilityColumns = tableColumns(database, 'manager_responsibility_offers');
+  const hasMultiManagerProjectSchema = (
     projectColumns.has('manager_set_generation')
     && !projectColumns.has('manager_member_id')
     && !projectColumns.has('manager_generation')
     && acceptColumns.has('completion_actor_member_id')
+  );
+  if (
+    hasMultiManagerProjectSchema
+    && !responsibilityColumns.has('source_manager_generation')
   ) {
+    repairAndAssertAuthorityV10Schema(database);
+    return;
+  }
+  if (hasMultiManagerProjectSchema) {
     repairAndAssertAuthorityV9Schema(database);
     return;
   }
@@ -943,6 +1191,66 @@ function applyAuthoritySchemaV9(database: Database): void {
   database.run('ALTER TABLE project_v9 RENAME TO project');
 }
 
+function applyAuthoritySchemaV10(database: Database): void {
+  const columns = tableColumns(database, 'manager_responsibility_offers');
+  if (!columns.has('source_manager_generation')) {
+    repairAndAssertAuthorityV10Schema(database);
+    return;
+  }
+  if (!authorityV9SchemaIsComplete(database)) {
+    throw new Error('Authority V9 Manager schema is incomplete');
+  }
+  database.run(AUTHORITY_SCHEMA_V10_MANAGER_RESPONSIBILITY_SQL);
+  database.run(`
+    INSERT INTO manager_responsibility_offers_v10 (
+      offer_id, purpose, source_manager_member_id, target_member_id, status,
+      offered_at, expires_at, acknowledged_at, consumed_at, updated_at
+    )
+    SELECT
+      offer_id, purpose, source_manager_member_id, target_member_id, status,
+      offered_at, expires_at, acknowledged_at, consumed_at, updated_at
+    FROM manager_responsibility_offers
+  `);
+  database.run('DROP TABLE manager_responsibility_offers');
+  database.run(
+    'ALTER TABLE manager_responsibility_offers_v10 RENAME TO manager_responsibility_offers',
+  );
+  database.run(`
+    CREATE UNIQUE INDEX manager_responsibility_one_nonterminal_source
+    ON manager_responsibility_offers(source_manager_member_id)
+    WHERE status IN ('offered', 'acknowledged')
+  `);
+  database.run(`
+    CREATE UNIQUE INDEX manager_responsibility_one_nonterminal_target
+    ON manager_responsibility_offers(target_member_id)
+    WHERE status IN ('offered', 'acknowledged')
+  `);
+}
+
+function applyAuthoritySchemaV11(database: Database): void {
+  repairAndAssertAuthorityV10Schema(database);
+  if (!finiteCollectionCapacityIsValid(database)) {
+    throw new Error('Authority V11 finite collection invariant failed');
+  }
+  if (authorityV11SchemaIsComplete(database)) return;
+  if (
+    schemaSql(database, 'trigger', 'comments_request_capacity_insert') !== null
+    || schemaSql(
+      database,
+      'trigger',
+      'request_ticket_relations_accepted_capacity_insert',
+    ) !== null
+    || schemaSql(
+      database,
+      'trigger',
+      'request_ticket_relations_accepted_capacity_update',
+    ) !== null
+  ) {
+    throw new Error('Authority V11 finite collection schema is incomplete');
+  }
+  database.run(AUTHORITY_SCHEMA_V11_FINITE_COLLECTION_TRIGGERS);
+}
+
 export function applyAuthorityMigrations(database: Database): boolean {
   const version = pragmaNumber(database, 'PRAGMA user_version');
   if (version > COLLAB_AUTHORITY_SCHEMA_VERSION) {
@@ -951,7 +1259,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
   if (version === COLLAB_AUTHORITY_SCHEMA_VERSION) {
     database.run('BEGIN IMMEDIATE');
     try {
-      const repaired = repairAndAssertAuthorityV9Schema(database);
+      const repaired = repairAndAssertAuthorityV11Schema(database);
       database.run('COMMIT');
       return repaired;
     } catch (error) {
@@ -968,7 +1276,9 @@ export function applyAuthorityMigrations(database: Database): boolean {
     if (version < 7) applyAuthoritySchemaV7(database);
     if (version < 8) applyAuthoritySchemaV8(database);
     if (version < 9) applyAuthoritySchemaV9(database);
-    repairAndAssertAuthorityV9Schema(database);
+    if (version < 10) applyAuthoritySchemaV10(database);
+    if (version < 11) applyAuthoritySchemaV11(database);
+    repairAndAssertAuthorityV11Schema(database);
     database.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION}`);
     database.run('COMMIT');
   } catch (error) {
@@ -982,9 +1292,10 @@ export function applyAuthorityMigrations(database: Database): boolean {
  * Migrates one already-authenticated in-memory Host-transfer authority image.
  * The caller remains responsible for artifact identity and digest validation.
  */
-export function migrateAuthorityV8DatabaseToV9(database: Database): number {
-  if (pragmaNumber(database, 'PRAGMA user_version') !== 8) {
-    throw new RangeError('Host transfer authority schema is not version 8');
+export function migrateLegacyAuthorityDatabaseToCurrent(database: Database): number {
+  const version = pragmaNumber(database, 'PRAGMA user_version');
+  if (version !== 8 && version !== 9 && version !== 10) {
+    throw new RangeError('Host transfer authority schema is not a supported legacy version');
   }
   applyAuthorityMigrations(database);
   return assertAuthorityDatabaseIntegrity(database, {
@@ -1007,6 +1318,10 @@ export function assertAuthorityDatabaseIntegrity(
     throw new Error('Authority foreign key check failed');
   }
 
+  if (!finiteCollectionCapacityIsValid(database)) {
+    throw new Error('Authority finite collection invariant failed');
+  }
+
   if (firstColumn(database, `
     SELECT request_id FROM change_requests
     WHERE typeof(revision) != 'integer' OR revision < 0
@@ -1024,6 +1339,23 @@ export function assertAuthorityDatabaseIntegrity(
     LIMIT 1
   `).length > 0) {
     throw new Error('Authority Manager responsibility invariant failed');
+  }
+  if (firstColumn(database, `
+    SELECT participant_id
+    FROM (
+      SELECT source_manager_member_id AS participant_id
+      FROM manager_responsibility_offers
+      WHERE status IN ('offered', 'acknowledged')
+      UNION ALL
+      SELECT target_member_id AS participant_id
+      FROM manager_responsibility_offers
+      WHERE status IN ('offered', 'acknowledged')
+    )
+    GROUP BY participant_id
+    HAVING COUNT(*) > 1
+    LIMIT 1
+  `).length > 0) {
+    throw new Error('Authority Manager responsibility participant invariant failed');
   }
   if (firstColumn(database, `
     SELECT transfer_id FROM host_transition_proofs

@@ -1,7 +1,11 @@
-import { type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId } from '@claudian/collab-protocol';
 
+import {
+  type AuthorityKeysetCursor,
+  type AuthorityKeysetPage,
+  trimAuthorityKeysetPage,
+} from '@/app/collab/authority/AuthorityKeysetPage';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -113,7 +117,7 @@ export class RequestTicketRelationRepository {
       !ID_PATTERN.test(input.actorMemberId)
       || !ID_PATTERN.test(input.requestId)
       || !OID_PATTERN.test(input.commitOid)
-      || input.relations.length > CLAUDIAN_COLLAB_LIMITS.maxRequestTicketRelations
+      || input.relations.length > COLLAB_LIMITS.maxRequestTicketRelations
     ) {
       throw relationError('ticket-relation-input-invalid');
     }
@@ -216,6 +220,43 @@ export class RequestTicketRelationRepository {
     ) !== null;
   }
 
+  assertAcceptCapacity(
+    connection: AuthorityDatabaseConnection,
+    requestId: CollabRequestId,
+  ): void {
+    if (!ID_PATTERN.test(requestId)) {
+      throw relationError('ticket-relation-request-id-invalid');
+    }
+    const fullTicket = connection.get(
+      `SELECT pending.ticket_id, COUNT(accepted.relation_id) AS accepted_count
+       FROM request_ticket_relations pending
+       LEFT JOIN request_ticket_relations accepted
+         ON accepted.ticket_id = pending.ticket_id
+        AND accepted.state = 'accepted'
+       WHERE pending.request_id = ? AND pending.state = 'pending'
+       GROUP BY pending.ticket_id
+       HAVING COUNT(accepted.relation_id) >= ?
+       LIMIT 1`,
+      [requestId, COLLAB_LIMITS.maxTicketAcceptedRelations],
+    );
+    if (!fullTicket) return;
+    if (
+      typeof fullTicket.ticket_id !== 'string'
+      || !ID_PATTERN.test(fullTicket.ticket_id)
+      || typeof fullTicket.accepted_count !== 'number'
+      || !Number.isSafeInteger(fullTicket.accepted_count)
+    ) {
+      throw relationError('accepted-ticket-relation-count-invalid');
+    }
+    throw new CollabError({
+      code: 'quota-exceeded',
+      safeContext: {
+        limit: COLLAB_LIMITS.maxTicketAcceptedRelations,
+        quota: 'maxTicketAcceptedRelations',
+      },
+    });
+  }
+
   acceptPending(
     connection: AuthorityDatabaseConnection,
     input: {
@@ -237,21 +278,34 @@ export class RequestTicketRelationRepository {
     return this.listForRequest(connection, input.requestId);
   }
 
-  listAcceptedForTicket(
+  listAcceptedForTicketPage(
     connection: AuthorityDatabaseConnection,
     ticketId: CollabTicketId,
-  ): readonly CollabTicketAcceptedRelation[] {
+    query: {
+      readonly after?: AuthorityKeysetCursor;
+      readonly limit: number;
+      readonly maxUtf8Bytes?: number;
+    },
+  ): AuthorityKeysetPage<CollabTicketAcceptedRelation> {
     if (!ID_PATTERN.test(ticketId)) {
       throw relationError('ticket-relation-ticket-id-invalid');
     }
-    return connection.all(
+    const rows = connection.all(
       `SELECT relation_id, request_id, kind, commit_oid,
         accepted_merge_oid, accepted_at
        FROM request_ticket_relations
        WHERE ticket_id = ? AND state = 'accepted'
-       ORDER BY accepted_at, relation_id`,
-      [ticketId],
-    ).map(row => {
+         AND (accepted_at > ? OR (accepted_at = ? AND relation_id > ?))
+       ORDER BY accepted_at, relation_id
+       LIMIT ?`,
+      [
+        ticketId,
+        query.after?.createdAt ?? '',
+        query.after?.createdAt ?? '',
+        query.after?.id ?? '',
+        query.limit + 1,
+      ],
+    ).map((row): CollabTicketAcceptedRelation => {
       const id = row.relation_id;
       const requestId = row.request_id;
       const kind = row.kind;
@@ -279,5 +333,13 @@ export class RequestTicketRelationRepository {
         requestId,
       };
     });
+    return trimAuthorityKeysetPage(
+      rows,
+      query.limit,
+      query.maxUtf8Bytes ?? COLLAB_LIMITS.relationPageMaxUtf8Bytes,
+      relation => ({ createdAt: relation.acceptedAt, id: relation.id }),
+      undefined,
+      'acceptedRelations',
+    );
   }
 }

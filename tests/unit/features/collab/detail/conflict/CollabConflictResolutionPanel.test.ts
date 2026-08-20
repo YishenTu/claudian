@@ -192,7 +192,6 @@ function defaultSession(): CollabConflictSession {
     { kind: 'directory-file', path: 'docs' },
   ];
   return {
-    decisions: [],
     descriptor: {
       conflicts,
       mergeBaseOid: BASE,
@@ -201,8 +200,6 @@ function defaultSession(): CollabConflictSession {
       startingMainOid: MAIN,
       startingPersonalOid: PERSONAL,
     },
-    pending: conflicts,
-    resolvedPaths: [],
   };
 }
 

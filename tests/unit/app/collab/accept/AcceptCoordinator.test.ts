@@ -6,7 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, COLLAB_MAIN_REF } from '@claudian/collab-protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -297,6 +297,53 @@ describe('AcceptCoordinator', () => {
         payload_json: JSON.stringify({ requestId: 'request-one', ticketId: 'ticket-one' }),
       },
     });
+  });
+
+  it('rejects a Ticket accepted-relation overflow before touching Git', async () => {
+    await database.mutate(connection => {
+      insertTicketRelation(connection);
+      for (let index = 0; index < COLLAB_LIMITS.maxTicketAcceptedRelations; index += 1) {
+        const requestId = `accepted-request-${index}`;
+        connection.run(
+          `INSERT INTO change_requests (
+            request_id, member_id, status, first_base_oid, latest_head_oid,
+            merged_oid, description, revision, created_at, updated_at
+          ) VALUES (?, 'member-a', 'merged', ?, ?, ?, 'Accepted', 1, ?, ?)`,
+          [requestId, MAIN, HEAD, RESULT, CREATED_AT, CREATED_AT],
+        );
+        connection.run(
+          `INSERT INTO request_ticket_relations (
+            relation_id, request_id, ticket_id, commit_oid, kind, state,
+            created_by_member_id, created_at, updated_at, accepted_at,
+            accepted_merge_oid
+          ) VALUES (?, ?, 'ticket-one', ?, 'references', 'accepted',
+            'member-a', ?, ?, ?, ?)`,
+          [
+            `accepted-relation-${index}`,
+            requestId,
+            HEAD,
+            CREATED_AT,
+            CREATED_AT,
+            CREATED_AT,
+            RESULT,
+          ],
+        );
+      }
+    });
+
+    await expect(createCoordinator().accept('member-host', {
+      ...input(),
+      expectedResolvingTickets: [{ revision: 1, ticketId: 'ticket-one' }],
+    })).rejects.toMatchObject({
+      code: 'quota-exceeded',
+      safeContext: {
+        limit: COLLAB_LIMITS.maxTicketAcceptedRelations,
+        quota: 'maxTicketAcceptedRelations',
+      },
+    });
+    expect(git.commitTree).not.toHaveBeenCalled();
+    expect(git.compareAndSwapRef).not.toHaveBeenCalled();
+    expect(await operationCount()).toBe(0);
   });
 
   it('rejects a stale resolving Ticket set or revision before touching Git', async () => {

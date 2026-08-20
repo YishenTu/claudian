@@ -211,7 +211,7 @@ describe('M5 review and Accept gate', () => {
     expect(firstManagerReview).toMatchObject({
       canAccept: true,
       detail: {
-        comments: [{ id: comment.id }],
+        comments: { comments: [{ id: comment.id }] },
         request: { commentCount: 1 },
         reviewCondition: 'clean',
       },
@@ -327,7 +327,7 @@ describe('M5 review and Accept gate', () => {
       await managerFeature.readRequest(projectId, requestId),
       'Merged request',
     )).toMatchObject({
-      comments: [{ id: comment.id }],
+      comments: { comments: [{ id: comment.id }] },
       request: {
         commentCount: 1,
         description: secondDescription,
@@ -339,10 +339,12 @@ describe('M5 review and Accept gate', () => {
       'Referenced Ticket after Accept',
     )).toMatchObject({
       detail: {
-        acceptedRelations: [{
-          commitOid: secondPublish.localHeadOid,
-          kind: 'references',
-        }],
+        acceptedRelations: {
+          acceptedRelations: [{
+            commitOid: secondPublish.localHeadOid,
+            kind: 'references',
+          }],
+        },
         ticket: { status: 'open' },
       },
       source: 'online',
@@ -352,10 +354,12 @@ describe('M5 review and Accept gate', () => {
       'Resolved Ticket after Accept',
     )).toMatchObject({
       detail: {
-        acceptedRelations: [{
-          commitOid: secondPublish.localHeadOid,
-          kind: 'resolves',
-        }],
+        acceptedRelations: {
+          acceptedRelations: [{
+            commitOid: secondPublish.localHeadOid,
+            kind: 'resolves',
+          }],
+        },
         ticket: { status: 'closed' },
       },
       source: 'online',

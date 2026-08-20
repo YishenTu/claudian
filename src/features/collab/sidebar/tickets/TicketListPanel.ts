@@ -29,6 +29,7 @@ export interface TicketFocusPort {
 export class TicketListPanel {
   private active = false;
   private destroyed = false;
+  private dirty = true;
   private readonly focusSubscription: { dispose(): void } | null;
   private listRevision = 0;
   private readonly readTasks = new LatestTaskScope();
@@ -44,15 +45,21 @@ export class TicketListPanel {
       if (!this.destroyed) this.syncFocusedTicket();
     }) ?? null;
     this.subscription = options.port.subscribe(() => {
-      if (this.active && !this.destroyed) void this.refresh();
+      if (this.destroyed) return;
+      this.dirty = true;
+      if (this.active) void this.refresh();
     });
   }
 
   setActive(active: boolean): void {
     if (this.destroyed) return;
     this.active = active;
-    if (active) void this.refresh();
-    else this.cancel();
+    if (active) {
+      if (this.dirty) void this.refresh();
+    } else {
+      if (this.readTasks.active) this.dirty = true;
+      this.cancel();
+    }
   }
 
   destroy(): void {
@@ -87,6 +94,7 @@ export class TicketListPanel {
           signal: task.signal,
         });
       if (!this.isCurrent(task, revision)) return;
+      if (result.status === 'success') this.dirty = false;
       const ticketReadOnly = result.status === 'success' && result.value.stale;
       const readOnly = ticketReadOnly || (snapshotResult?.status === 'success'
         ? snapshotResult.value.source === 'cache' || snapshotResult.value.stale

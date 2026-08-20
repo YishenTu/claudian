@@ -2,6 +2,9 @@ import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@c
 
 import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
+import {
+  collabReviewSourceKey,
+} from '@/features/collab/handoff/CollabReviewSourceKey';
 import { renderCollabChangedFileList } from '@/features/collab/shared/CollabChangedFileList';
 import {
   TeamReviewLoader,
@@ -626,14 +629,11 @@ export class TeamChangesPanel {
     request: CollabChangeRequest,
     coordination: CollabCoordinationSnapshot,
   ): string {
-    return [
-      this.project.id,
-      request.id,
-      request.latestHeadOid,
-      coordination.snapshot.project.mainOid,
-      request.updatedAt,
-      request.commentCount,
-    ].join(':');
+    return collabReviewSourceKey(this.project.id, request, {
+      currentMemberId: coordination.snapshot.currentMember.id,
+      currentMemberRole: coordination.snapshot.currentMember.role,
+      mainOid: coordination.snapshot.project.mainOid,
+    });
   }
 
   private conflictFor(request: CollabChangeRequest): OwnRequestConflict | null {

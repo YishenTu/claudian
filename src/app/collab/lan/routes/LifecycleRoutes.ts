@@ -8,9 +8,8 @@ import type {
 } from '@/app/collab/lan/LanCollabControlOperations';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
-  CollabControlRouteHandler,
-  CollabControlRouteRequest,
   CollabControlRouteResult,
+  CollabLifecycleRouteRequest,
 } from '@/app/collab/lan/routes/RouteTypes';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -52,13 +51,6 @@ function routeError(reason: string): CollabError {
   });
 }
 
-function unavailable(operation: CollabLifecycleControlOperation): CollabError {
-  return new CollabError({
-    code: 'operation-failed',
-    safeContext: { operation, reason: 'lifecycle-service-unavailable' },
-  });
-}
-
 function decode<Operation extends CollabLifecycleControlOperation>(
   operation: Operation,
   input: unknown,
@@ -70,7 +62,7 @@ function decode<Operation extends CollabLifecycleControlOperation>(
 
 function decodeMutation<Operation extends CollabLifecycleControlOperation>(
   operation: Operation,
-  request: CollabControlRouteRequest,
+  request: CollabLifecycleRouteRequest,
 ) {
   if (!request.idempotencyKey) throw routeError('idempotency-key-required');
   const decoded = decode(operation, request.body);
@@ -88,16 +80,17 @@ function requirePathId(actual: string | undefined, expected: string, reason: str
 }
 
 function execute<Operation extends CollabLifecycleControlOperation>(
-  request: CollabControlRouteRequest,
+  request: CollabLifecycleRouteRequest,
   credential: string | null,
   operation: Operation,
   input: ReturnType<typeof decode<Operation>>,
 ): Promise<CollabControlRouteResult> {
-  if (!request.lifecycle) throw unavailable(operation);
   return request.lifecycle.execute({ credential, operation, request: input });
 }
 
-export const handleLifecycleRoute: CollabControlRouteHandler = async request => {
+export async function handleLifecycleRoute(
+  request: CollabLifecycleRouteRequest,
+): Promise<CollabControlRouteResult | null> {
   const sharedMatch = request.operationMatch;
   const match = sharedMatch
     && COLLAB_CONTROL_OPERATION_BINDINGS[sharedMatch.operation].family === 'lifecycle'
@@ -179,4 +172,4 @@ export const handleLifecycleRoute: CollabControlRouteHandler = async request => 
       return execute(request, credential, match.operation, input);
     }
   }
-};
+}

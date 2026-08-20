@@ -1,6 +1,10 @@
 import type { CollabChangeRequest } from '@claudian/collab-protocol';
 
 import type { CollabCoordinationSnapshot, CollabPublicationReview, CollabRequestReview } from '@/core/collab';
+import {
+  type CollabReviewSourceIdentity,
+  collabReviewSourceKey,
+} from '@/features/collab/handoff/CollabReviewSourceKey';
 
 export interface CollabPreparedReviewIdentity {
   readonly comparisonBaseOid: string;
@@ -67,16 +71,12 @@ function requestSourceKey(
   request: CollabChangeRequest,
   coordination: CollabCoordinationSnapshot,
 ): string {
-  return [
-    projectId,
-    request.id,
-    coordination.snapshot.project.mainOid,
-    request.latestHeadOid,
-    request.updatedAt,
-    request.commentCount,
-    coordination.snapshot.currentMember.id,
-    coordination.snapshot.currentMember.role,
-  ].join(':');
+  const source: CollabReviewSourceIdentity = {
+    currentMemberId: coordination.snapshot.currentMember.id,
+    currentMemberRole: coordination.snapshot.currentMember.role,
+    mainOid: coordination.snapshot.project.mainOid,
+  };
+  return collabReviewSourceKey(projectId, request, source);
 }
 
 function publicationIdentityKey(identity: CollabPreparedPublicationReviewIdentity): string {
@@ -94,19 +94,19 @@ function mergeReviewComments(
   retained: CollabRequestReview,
   incoming: CollabRequestReview,
 ): CollabRequestReview {
-  const comments = [...incoming.detail.comments];
+  const comments = [...incoming.detail.comments.comments];
   const commentIds = new Set(comments.map(comment => comment.id));
-  for (const comment of retained.detail.comments) {
+  for (const comment of retained.detail.comments.comments) {
     if (commentIds.has(comment.id)) continue;
     commentIds.add(comment.id);
     comments.push(comment);
   }
-  if (comments.length === incoming.detail.comments.length) return incoming;
+  if (comments.length === incoming.detail.comments.comments.length) return incoming;
   return {
     ...incoming,
     detail: {
       ...incoming.detail,
-      comments,
+      comments: { comments },
       request: {
         ...incoming.detail.request,
         commentCount: Math.max(

@@ -60,12 +60,12 @@ describe('Project exit foundation gate', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('freezes the v7/v2/v9 contract and strict lifecycle envelopes', () => {
+  it('freezes the v9/v2/v11 contract and strict lifecycle envelopes', () => {
     expect({
       authority: COLLAB_AUTHORITY_SCHEMA_VERSION,
       local: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       protocol: COLLAB_CONTROL_PROTOCOL_VERSION,
-    }).toEqual({ authority: 9, local: 2, protocol: 7 });
+    }).toEqual({ authority: 11, local: 2, protocol: 9 });
     expect(lanCollabControlOperationCodec('leaveProject').decodeRequest({
       expectedHostMemberId: 'member-host',
       expectedMemberId: 'member-target',
@@ -86,7 +86,7 @@ describe('Project exit foundation gate', () => {
     });
   });
 
-  it('binds Manager responsibility to the private role generation', async () => {
+  it('keeps responsibility validity participant-scoped instead of generation-bound', async () => {
     const service = new ManagerResponsibilityService({
       database,
       events: new AuthorityEventRepository(),
@@ -104,10 +104,9 @@ describe('Project exit foundation gate', () => {
       targetMemberId: 'member-target',
     });
 
-    await expect(database.read(connection => connection.get(`
-      SELECT source_manager_generation FROM manager_responsibility_offers
-      WHERE offer_id = 'offer-foundation'
-    `))).resolves.toEqual({ source_manager_generation: 0 });
+    await expect(database.read(connection => connection.all(`
+      PRAGMA table_info(manager_responsibility_offers)
+    `).map(column => column.name))).resolves.not.toContain('source_manager_generation');
   });
 
   it('exposes only legal Host transfer progression and no rollback after cutover', () => {

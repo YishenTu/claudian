@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
 
 import { decodeAuthorityChangeRequest } from '@/app/collab/authority/RequestEnsureRepository';
 import {
@@ -20,6 +20,23 @@ function commentError(reason: string): CollabError {
 
 export class RequestCommentRepository {
   private readonly relations = new RequestTicketRelationRepository();
+
+  private countForRequest(
+    connection: AuthorityDatabaseConnection,
+    requestId: string,
+  ): number {
+    if (!ID_PATTERN.test(requestId)) {
+      throw commentError('request-comment-request-id-invalid');
+    }
+    const count = connection.get(
+      'SELECT COUNT(*) AS count FROM comments WHERE request_id = ?',
+      [requestId],
+    )?.count;
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+      throw commentError('request-comment-count-invalid');
+    }
+    return count;
+  }
 
   create(
     connection: AuthorityDatabaseConnection,
@@ -44,6 +61,15 @@ export class RequestCommentRepository {
     );
     if (!requestRow || requestRow.status !== 'open') {
       throw new CollabError({ code: 'request-not-open', recoveryActions: ['retry'] });
+    }
+    if (this.countForRequest(connection, input.requestId) >= COLLAB_LIMITS.maxRequestComments) {
+      throw new CollabError({
+        code: 'quota-exceeded',
+        safeContext: {
+          limit: COLLAB_LIMITS.maxRequestComments,
+          quota: 'maxRequestComments',
+        },
+      });
     }
     connection.run(
       `INSERT INTO comments (

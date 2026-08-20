@@ -32,6 +32,20 @@ describe('CollabPreparedReviewCache', () => {
     }))).toBeNull();
   });
 
+  it('invalidates a prepared request when only the revision changes', () => {
+    const cache = new CollabPreparedReviewCache();
+    const request = changeRequest();
+    const review = requestReview(request);
+    const snapshot = coordination(request);
+    cache.store({ coordination: snapshot, review });
+
+    expect(cache.readRequest('project-a', request, snapshot)).not.toBeNull();
+    expect(cache.readRequest('project-a', {
+      ...request,
+      revision: request.revision + 1,
+    }, coordination({ ...request, revision: request.revision + 1 }))).toBeNull();
+  });
+
   it('does not reuse Manager review authority after the current role changes', () => {
     const cache = new CollabPreparedReviewCache();
     const request = changeRequest();
@@ -80,8 +94,7 @@ function requestReview(request: CollabChangeRequest): CollabRequestReview {
     comparisonKind: 'candidate',
     comparisonTargetOid: TREE,
     detail: {
-      changedFiles: [],
-      comments: [],
+      comments: { comments: [] },
       currentMainOid: MAIN,
       request,
       reviewCondition: 'clean',

@@ -38,97 +38,47 @@ const DESCRIPTOR = {
 };
 
 describe('ConflictResolutionCoordinator', () => {
-  it('creates a ready resumable scratch session from an immutable descriptor', async () => {
+  it('creates one decision-free resumable scratch session', async () => {
     const { git, store, subject } = createSubject();
 
-    await expect(subject.start(DESCRIPTOR)).resolves.toMatchObject({
-      status: 'success',
-      value: {
-        pending: DESCRIPTOR.conflicts,
-        resolvedPaths: [],
-      },
-    });
-    expect(store.value).toMatchObject({ phase: 'ready', descriptor: DESCRIPTOR });
-    expect(store.value).not.toHaveProperty('scratchPath');
-    expect(git.prepare).toHaveBeenCalledTimes(1);
-  });
-
-  it('recreates invalid scratch state and replays durable decisions on restart', async () => {
-    const { git, store, subject } = createSubject();
-    store.value = record({
-      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
-      phase: 'ready',
-    });
-    git.prepared = false;
-
-    await expect(subject.read('operation-a')).resolves.toMatchObject({
-      status: 'success',
-      value: { resolvedPaths: ['note.md'] },
-    });
-    expect(store.recreateRepository).toHaveBeenCalledTimes(1);
-    expect(git.applyDecision).toHaveBeenCalledWith(
-      '/scratch/repository',
-      DESCRIPTOR,
-      { choice: 'keep-personal', path: 'note.md' },
-      [],
-    );
-  });
-
-  it('discovers the one durable Project conflict after application restart', async () => {
-    const { store, subject } = createSubject();
-    store.value = record();
-
-    await expect(subject.findProject(CONTEXT.projectId)).resolves.toMatchObject({
+    await expect(subject.start(DESCRIPTOR)).resolves.toEqual({
       status: 'success',
       value: { descriptor: DESCRIPTOR },
     });
-    await expect(subject.findProject('project-b')).resolves.toEqual({
-      status: 'success',
-      value: null,
-    });
+    expect(store.value).toMatchObject({ descriptor: DESCRIPTOR, phase: 'ready' });
+    expect(store.value).not.toHaveProperty('decisions');
+    expect(git.prepare).toHaveBeenCalledTimes(1);
   });
 
-  it('persists reviewed decisions but does not finalize without explicit Apply', async () => {
+  it('recreates invalid derived scratch state without replaying local choices', async () => {
     const { git, store, subject } = createSubject();
     store.value = record();
+    git.prepared = false;
 
-    await expect(subject.resolve({
-      decisions: [{ choice: 'use-manual-draft', draft: 'resolved\n', path: 'note.md' }],
-      finalize: false,
-      operationId: 'operation-a',
-    })).resolves.toMatchObject({
+    await expect(subject.read('operation-a')).resolves.toEqual({
       status: 'success',
-      value: {
-        pending: [{ kind: 'binary', path: 'image.bin' }],
-        resolvedPaths: ['note.md'],
-      },
+      value: { descriptor: DESCRIPTOR },
     });
-    expect(store.value?.decisions).toEqual([
-      { choice: 'use-manual-draft', draft: 'resolved\n', path: 'note.md' },
-    ]);
-    expect(git.createResolutionCommit).not.toHaveBeenCalled();
-    expect(git.retainResultForPublication).not.toHaveBeenCalled();
+    expect(store.recreateRepository).toHaveBeenCalledTimes(1);
+    expect(git.prepare).toHaveBeenCalledTimes(1);
+    expect(git.resolveWithPersonalVersions).not.toHaveBeenCalled();
   });
 
-  it('commits, retains, and prepares final review without applying the result', async () => {
+  it('uses the committed working tree as the sole resolution input', async () => {
     const { git, publication, safety, store, subject } = createSubject();
     store.value = record();
 
-    await expect(subject.resolve({
-      decisions: [
-        { choice: 'use-agent-proposal', path: 'note.md', proposal: 'proposal\n' },
-        { choice: 'use-accepted', path: 'image.bin' },
-      ],
-      finalize: true,
-      operationId: 'operation-a',
-    })).resolves.toMatchObject({
+    await expect(subject.prepareWorkingTreeResolution(DESCRIPTOR)).resolves.toMatchObject({
       status: 'success',
       value: {
-        pending: [],
+        descriptor: DESCRIPTOR,
         publicationReview: expect.objectContaining({ candidateOid: RESULT }),
-        resolvedPaths: ['note.md', 'image.bin'],
       },
     });
+    expect(git.resolveWithPersonalVersions).toHaveBeenCalledWith(
+      '/scratch/repository',
+      DESCRIPTOR,
+    );
     expect(git.createResolutionCommit).toHaveBeenCalledWith(
       '/scratch/repository',
       DESCRIPTOR,
@@ -152,32 +102,7 @@ describe('ConflictResolutionCoordinator', () => {
     expect(store.remove).toHaveBeenCalledWith('operation-a');
   });
 
-  it('uses the committed working-tree version for every remaining selectable conflict', async () => {
-    const { git, store, subject } = createSubject();
-    store.value = record();
-
-    await expect(subject.prepareWorkingTreeResolution(DESCRIPTOR)).resolves.toMatchObject({
-      status: 'success',
-      value: {
-        publicationReview: expect.objectContaining({ candidateOid: RESULT }),
-      },
-    });
-
-    expect(git.applyDecision).toHaveBeenNthCalledWith(1,
-      '/scratch/repository',
-      DESCRIPTOR,
-      { choice: 'keep-personal', path: 'note.md' },
-      [],
-    );
-    expect(git.applyDecision).toHaveBeenNthCalledWith(2,
-      '/scratch/repository',
-      DESCRIPTOR,
-      { choice: 'keep-personal', path: 'image.bin' },
-      ['note.md'],
-    );
-  });
-
-  it('keeps blocking collisions readable until Project files change', async () => {
+  it('keeps blocking collisions readable until the working tree changes', async () => {
     const { git, store, subject } = createSubject();
     const descriptor = {
       ...DESCRIPTOR,
@@ -188,130 +113,43 @@ describe('ConflictResolutionCoordinator', () => {
     };
     store.value = record();
 
-    const result = await subject.prepareWorkingTreeResolution(descriptor);
-    expect(result).toMatchObject({
+    await expect(subject.prepareWorkingTreeResolution(descriptor)).resolves.toEqual({
       status: 'success',
-      value: {
-        descriptor,
-      },
+      value: { descriptor },
     });
-    expect(result.status === 'success' && result.value.publicationReview).toBeUndefined();
-
-    expect(store.value).toMatchObject({
-      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
-      descriptor,
-    });
+    expect(store.value).toMatchObject({ descriptor, phase: 'ready' });
+    expect(git.resolveWithPersonalVersions).not.toHaveBeenCalled();
     expect(git.createResolutionCommit).not.toHaveBeenCalled();
   });
 
-  it('resumes a committed result without rebuilding or creating another commit', async () => {
+  it('resumes a committed result without rebuilding it', async () => {
     const { git, store, subject } = createSubject();
-    store.value = record({
-      decisions: [
-        { choice: 'keep-personal', path: 'note.md' },
-        { choice: 'use-accepted', path: 'image.bin' },
-      ],
-      phase: 'committed',
-      resultCommitOid: RESULT,
-    });
+    store.value = record({ phase: 'committed', resultCommitOid: RESULT });
 
-    await expect(subject.resolve({
-      decisions: [],
-      finalize: true,
-      operationId: 'operation-a',
-    })).resolves.toMatchObject({ status: 'success' });
+    await expect(subject.prepareWorkingTreeResolution(DESCRIPTOR))
+      .resolves.toMatchObject({ status: 'success' });
     expect(git.prepare).not.toHaveBeenCalled();
+    expect(git.resolveWithPersonalVersions).not.toHaveBeenCalled();
     expect(git.createResolutionCommit).not.toHaveBeenCalled();
     expect(git.retainResultForPublication).toHaveBeenCalled();
   });
 
-  it('reads immutable text versions after a saved decision for UI restart', async () => {
+  it('maps stale committed recovery and pre-progress cancellation safely', async () => {
     const { git, store, subject } = createSubject();
-    store.value = record({
-      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
-    });
-
-    await expect(subject.readFile({
-      operationId: 'operation-a',
-      path: 'note.md',
-    })).resolves.toEqual({
-      status: 'success',
-      value: {
-        accepted: { path: 'note.md', text: 'accepted\n' },
-        base: { path: 'note.md', text: 'base\n' },
-        kind: 'text',
-        path: 'note.md',
-        personal: { path: 'note.md', text: 'personal\n' },
-        segments: [{
-          accepted: 'accepted\n',
-          base: 'base\n',
-          id: 'hunk-1',
-          kind: 'conflict',
-          personal: 'personal\n',
-        }],
-      },
-    });
-    expect(git.readBlobAtPath).toHaveBeenCalledWith(
-      '/scratch/repository',
-      PERSONAL,
-      'note.md',
-    );
-  });
-
-  it('returns product-safe binary side metadata without exposing blob bytes', async () => {
-    const { git, store, subject } = createSubject();
-    store.value = record();
-    git.readBlobAtPath.mockImplementation(async (_path, _oid, filePath) => (
-      filePath === 'image.bin' ? Buffer.from([1, 2, 3]) : null
-    ));
-
-    await expect(subject.readFile({
-      operationId: 'operation-a',
-      path: 'image.bin',
-    })).resolves.toEqual({
-      status: 'success',
-      value: {
-        accepted: { bytes: 3, exists: true, path: 'image.bin' },
-        base: { bytes: 3, exists: true, path: 'image.bin' },
-        kind: 'binary',
-        path: 'image.bin',
-        personal: { bytes: 3, exists: true, path: 'image.bin' },
-      },
-    });
-    expect(JSON.stringify(await subject.readFile({
-      operationId: 'operation-a',
-      path: 'image.bin',
-    }))).not.toContain('"data"');
-  });
-
-  it('maps stale finalization and cancellation without leaking local paths', async () => {
-    const { git, store, subject } = createSubject();
-    store.value = record({
-      decisions: [
-        { choice: 'keep-personal', path: 'note.md' },
-        { choice: 'use-accepted', path: 'image.bin' },
-      ],
-      phase: 'committed',
-      resultCommitOid: RESULT,
-    });
+    store.value = record({ phase: 'committed', resultCommitOid: RESULT });
     git.retainResultForPublication.mockRejectedValueOnce(new CollabError({
       code: 'working-tree-busy',
       safeContext: { reason: 'conflict-project-state-changed' },
     }));
 
-    const stale = await subject.resolve({
-      decisions: [],
-      finalize: true,
-      operationId: 'operation-a',
-    });
+    const stale = await subject.prepareWorkingTreeResolution(DESCRIPTOR);
     expect(stale).toMatchObject({ staleKind: 'working-copy', status: 'stale' });
     expect(JSON.stringify(stale)).not.toContain('/vault/');
 
     const controller = new AbortController();
     controller.abort();
-    await expect(subject.read('operation-a', {
-      signal: controller.signal,
-    })).resolves.toEqual({ durableProgress: false, status: 'cancelled' });
+    await expect(subject.read('operation-a', { signal: controller.signal }))
+      .resolves.toEqual({ durableProgress: false, status: 'cancelled' });
   });
 });
 
@@ -320,7 +158,6 @@ function record(
 ): ConflictResolutionRecord {
   return {
     createdAt: '2026-08-08T00:00:00.000Z',
-    decisions: [],
     descriptor: DESCRIPTOR,
     operationId: DESCRIPTOR.operationId,
     phase: 'ready',
@@ -354,21 +191,11 @@ function createSubject() {
   const git = {
     get prepared() { return gitState.prepared; },
     set prepared(value: boolean) { gitState.prepared = value; },
-    applyDecision: jest.fn(async () => ({
-      acceptedMainOid: MAIN,
-      personalOid: PERSONAL,
-      stages: [],
-    })),
-    retainResultForPublication: jest.fn(async () => undefined),
     createResolutionCommit: jest.fn(async () => RESULT),
     inspect: jest.fn(async () => ({
       acceptedMainOid: MAIN,
       personalOid: PERSONAL,
-      stages: [
-        { mode: '100644' as const, oid: BASE, path: 'note.md', stage: 1 as const },
-        { mode: '100644' as const, oid: PERSONAL, path: 'note.md', stage: 2 as const },
-        { mode: '100644' as const, oid: MAIN, path: 'note.md', stage: 3 as const },
-      ],
+      stages: [],
     })),
     isPrepared: jest.fn(async () => gitState.prepared),
     prepare: jest.fn(async () => ({
@@ -383,19 +210,14 @@ function createSubject() {
     ): Promise<Buffer | null> => Buffer.from(
       oid === BASE ? 'base\n' : oid === PERSONAL ? 'personal\n' : 'accepted\n',
     )),
-    readStage: jest.fn(async (
-      _scratchPath,
-      _inspection,
-      _path,
-      stage,
-    ) => Buffer.from(stage === 1 ? 'base\n' : stage === 2 ? 'personal\n' : 'accepted\n')),
-    readTextMergeSegments: jest.fn(async () => [{
-      accepted: 'accepted\n',
-      base: 'base\n',
-      id: 'hunk-1',
-      kind: 'conflict' as const,
-      personal: 'personal\n',
-    }]),
+    readStage: jest.fn(),
+    readTextMergeSegments: jest.fn(async () => []),
+    resolveWithPersonalVersions: jest.fn(async () => ({
+      acceptedMainOid: MAIN,
+      personalOid: PERSONAL,
+      stages: [],
+    })),
+    retainResultForPublication: jest.fn(async () => undefined),
   } satisfies ConflictScratchGitPort & { prepared: boolean };
   const safety = {
     assertSafe: jest.fn(async () => undefined),
@@ -423,5 +245,5 @@ function createSubject() {
     publication,
     { now: () => new Date('2026-08-08T00:00:00.000Z') },
   );
-  return { git, projects, publication, safety, store, subject };
+  return { git, publication, safety, store, subject };
 }

@@ -22,7 +22,7 @@ import {
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { publicationCandidateRef } from '@/app/collab/publish/NativeGitPublicationCandidateRepository';
 import type { PublishProjectContext } from '@/app/collab/publish/PublishCoordinator';
-import { type CollabConflictDecision, type CollabConflictDescriptor, type CollabConflictEntry, type CollabConflictTextSegment } from '@/core/collab';
+import { type CollabConflictDescriptor, type CollabConflictEntry, type CollabConflictTextSegment } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -315,56 +315,22 @@ export class ConflictScratchGitRepository {
     }
   }
 
-  async applyDecision(
+  async resolveWithPersonalVersions(
     scratchPath: string,
     descriptor: CollabConflictDescriptor,
-    decision: CollabConflictDecision,
-    resolvedPaths: readonly string[] = [],
   ): Promise<ConflictScratchInspection> {
-    const conflict = descriptor.conflicts.find(entry => entry.path === decision.path);
-    if (!conflict || resolvedPaths.includes(decision.path)) {
-      throw scratchError('repository-invalid', 'conflict-decision-path-invalid');
-    }
-    if (conflict.kind === 'directory-file' || conflict.kind === 'portability') {
-      throw scratchError('content-conflict', 'conflict-decision-kind-blocked');
-    }
-    if (
-      (decision.choice === 'use-manual-draft' || decision.choice === 'use-agent-proposal')
-      && conflict.kind !== 'text'
-    ) {
-      throw scratchError('content-conflict', 'conflict-text-decision-not-supported');
-    }
-    const inspection = await this.inspect(scratchPath, descriptor, resolvedPaths);
-    const paths = this.conflictPaths(conflict);
-    const selectedStage = decision.choice === 'keep-personal'
-      ? 2
-      : decision.choice === 'use-accepted'
-        ? 3
-        : null;
-    const selectedPath = decision.choice === 'keep-personal'
-      ? (conflict.personalPath ?? conflict.path)
-      : decision.choice === 'use-accepted'
-        ? (conflict.acceptedPath ?? conflict.path)
-        : conflict.path;
-    let contents: Buffer | null;
-    let mode: ConflictIndexStage['mode'] = '100644';
-    if (selectedStage === null) {
-      if (
-        decision.choice !== 'use-manual-draft'
-        && decision.choice !== 'use-agent-proposal'
-      ) {
-        throw scratchError('repository-invalid', 'conflict-text-decision-invalid');
+    const resolvedPaths: string[] = [];
+    for (const conflict of descriptor.conflicts) {
+      if (conflict.kind === 'directory-file' || conflict.kind === 'portability') {
+        throw scratchError('content-conflict', 'conflict-working-tree-resolution-blocked');
       }
-      contents = Buffer.from(
-        decision.choice === 'use-manual-draft' ? decision.draft : decision.proposal,
-        'utf8',
-      );
-      if (contents.byteLength > CLAUDIAN_COLLAB_LIMITS.maxBlobBytes) {
-        throw scratchError('quota-exceeded', 'conflict-resolution-too-large');
-      }
-    } else {
+      const inspection = await this.inspect(scratchPath, descriptor, resolvedPaths);
+      const paths = this.conflictPaths(conflict);
+      const selectedPath = conflict.personalPath ?? conflict.path;
+      let contents: Buffer | null;
+      let mode: ConflictIndexStage['mode'] = '100644';
       const entry = inspection.stages.find(stage => (
-        stage.stage === selectedStage
+        stage.stage === 2
         && (stage.path === selectedPath || stage.path === conflict.path)
       ));
       if (!entry) {
@@ -378,35 +344,32 @@ export class ConflictScratchGitRepository {
           scratchPath,
           inspection,
           entry.path,
-          selectedStage,
+          2,
         );
       }
-    }
 
-    for (const conflictPath of paths) {
-      await this.removeScratchFile(scratchPath, conflictPath);
+      for (const conflictPath of paths) {
+        await this.removeScratchFile(scratchPath, conflictPath);
+      }
+      if (contents !== null) {
+        await this.writeScratchFile(scratchPath, selectedPath, contents, mode);
+      }
+      const stageTargets = [...new Set([
+        ...inspection.stages
+          .filter(stage => paths.includes(stage.path))
+          .map(stage => stage.path),
+        ...(contents === null ? [] : [selectedPath]),
+      ])].sort();
+      if (stageTargets.length === 0) {
+        throw scratchError('repository-invalid', 'conflict-stage-target-missing');
+      }
+      await this.runner.run({
+        args: ['add', '-A', '--', ...stageTargets],
+        cwd: scratchPath,
+      });
+      resolvedPaths.push(conflict.path);
     }
-    if (contents !== null) {
-      await this.writeScratchFile(scratchPath, selectedPath, contents, mode);
-    }
-    const stageTargets = [...new Set([
-      ...inspection.stages
-        .filter(stage => paths.includes(stage.path))
-        .map(stage => stage.path),
-      ...(contents === null ? [] : [selectedPath]),
-    ])].sort();
-    if (stageTargets.length === 0) {
-      throw scratchError('repository-invalid', 'conflict-stage-target-missing');
-    }
-    await this.runner.run({
-      args: ['add', '-A', '--', ...stageTargets],
-      cwd: scratchPath,
-    });
-    return this.inspect(
-      scratchPath,
-      descriptor,
-      [...resolvedPaths, decision.path],
-    );
+    return this.inspect(scratchPath, descriptor, resolvedPaths);
   }
 
   async createResolutionCommit(
@@ -418,7 +381,7 @@ export class ConflictScratchGitRepository {
       new Set(resolvedPaths).size !== descriptor.conflicts.length
       || descriptor.conflicts.some(conflict => !resolvedPaths.includes(conflict.path))
     ) {
-      throw scratchError('content-conflict', 'conflict-decisions-incomplete');
+      throw scratchError('content-conflict', 'conflict-resolution-incomplete');
     }
     const inspection = await this.inspect(scratchPath, descriptor, resolvedPaths);
     if (inspection.stages.length !== 0) {

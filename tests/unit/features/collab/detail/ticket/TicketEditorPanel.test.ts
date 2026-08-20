@@ -363,11 +363,13 @@ describe('TicketEditorPanel', () => {
   it('orders accepted references and comments together from oldest to newest', async () => {
     const detail: CollabTicketDetail = {
       ...ticketDetail(),
-      acceptedRelations: [{
-        ...ticketDetail().acceptedRelations[0]!,
-        acceptedAt: ACCEPTED_AT,
-      }],
-      comments: [{
+      acceptedRelations: {
+        acceptedRelations: [{
+          ...ticketDetail().acceptedRelations.acceptedRelations[0]!,
+          acceptedAt: ACCEPTED_AT,
+        }],
+      },
+      comments: { comments: [{
         authorMemberId: 'member-a',
         body: 'Late comment',
         createdAt: COMMENTED_LATE_AT,
@@ -380,6 +382,7 @@ describe('TicketEditorPanel', () => {
         id: 'comment-early',
         ticketId: 'ticket-a',
       }],
+      },
     };
     const port = ticketPort();
     port.readTicket.mockResolvedValue(ticketRead(detail));
@@ -410,8 +413,8 @@ describe('TicketEditorPanel', () => {
   it('hides an empty Activity heading while keeping the comment composer', async () => {
     const detail: CollabTicketDetail = {
       ...ticketDetail(),
-      acceptedRelations: [],
-      comments: [],
+      acceptedRelations: { acceptedRelations: [] },
+      comments: { comments: [] },
     };
     const port = ticketPort();
     port.readTicket.mockResolvedValue(ticketRead(detail));
@@ -479,13 +482,14 @@ describe('TicketEditorPanel', () => {
     const detail: CollabTicketDetail = {
       ...ticketDetail(),
       body: 'Description references #17.',
-      comments: [{
+      comments: { comments: [{
         authorMemberId: 'member-a',
         body: 'Comment references #17.',
         createdAt: COMMENTED_EARLY_AT,
         id: 'comment-a',
         ticketId: 'ticket-a',
       }],
+      },
     };
     const port = ticketPort();
     port.readTicket.mockResolvedValue(ticketRead(detail));
@@ -742,17 +746,20 @@ function ticketPort(): jest.Mocked<TicketEditorPanelOptions['port']> {
 
 function ticketDetail(): CollabTicketDetail {
   return {
-    acceptedRelations: [{
-      acceptedAt: ACCEPTED_AT,
-      acceptedMergeOid: 'b'.repeat(40),
-      commitOid: 'a'.repeat(40),
-      id: 'relation-a',
-      kind: 'resolves',
-      requestId: 'request-a',
-    }],
+    acceptedRelations: {
+      acceptedRelations: [{
+        acceptedAt: ACCEPTED_AT,
+        acceptedMergeOid: 'b'.repeat(40),
+        commitOid: 'a'.repeat(40),
+        id: 'relation-a',
+        kind: 'resolves',
+        requestId: 'request-a',
+      }],
+    },
     body: 'Ticket body',
-    comments: [],
+    comments: { comments: [] },
     ticket: {
+      acceptedRelationCount: 1,
       authorMemberId: 'member-a',
       commentCount: 0,
       createdAt: CREATED_AT,

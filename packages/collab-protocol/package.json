@@ -1,6 +1,6 @@
 {
   "name": "@claudian/collab-protocol",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Canonical shared Collab wire contract: opaque IDs, transport-neutral DTOs, executable codecs, operation registry, safe errors, shared limits, Git ref semantics, and version policy.",
   "license": "MIT",
   "type": "commonjs",

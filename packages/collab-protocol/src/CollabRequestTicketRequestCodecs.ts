@@ -11,6 +11,9 @@ import type {
   EnsureMyRequestRequest,
   GetRequestRequest,
   GetTicketRequest,
+  ListRequestCommentsRequest,
+  ListTicketAcceptedRelationsRequest,
+  ListTicketCommentsRequest,
   ListTicketsRequest,
   UpdateMyRequestMetadataRequest,
   UpdateTicketContentRequest,
@@ -32,6 +35,9 @@ export type CollabRequestTicketOperation =
   | 'ensureMyRequest'
   | 'getRequest'
   | 'getTicket'
+  | 'listRequestComments'
+  | 'listTicketAcceptedRelations'
+  | 'listTicketComments'
   | 'listTickets'
   | 'reopenTicket'
   | 'updateMyRequestMetadata'
@@ -68,6 +74,18 @@ function isRevision(value: unknown, minimum = 0): value is number {
   return typeof value === 'number'
     && Number.isSafeInteger(value)
     && value >= minimum;
+}
+
+function isPageQuery(
+  value: Readonly<Record<string, unknown>>,
+  maxLimit = COLLAB_LIMITS.maxCommentPageSize,
+): boolean {
+  return (value.cursor === undefined
+      || (typeof value.cursor === 'string'
+        && value.cursor.length > 0
+        && value.cursor.length <= COLLAB_LIMITS.maxPageCursorUtf16))
+    && (value.limit === undefined
+      || (isRevision(value.limit, 1) && value.limit <= maxLimit));
 }
 
 function mutationContext(value: Readonly<Record<string, unknown>>): boolean {
@@ -167,16 +185,49 @@ function decodeRequestTicketRequest(
       return hasExactKeys(input, ['projectId', 'status'], ['cursor', 'limit'])
         && isCollabProjectId(input.projectId)
         && (input.status === 'open' || input.status === 'closed' || input.status === 'all')
-        && (input.cursor === undefined
-          || (typeof input.cursor === 'string' && input.cursor.length <= 512))
-        && (input.limit === undefined
-          || (isRevision(input.limit, 1) && input.limit <= COLLAB_LIMITS.maxTicketPageSize))
+        && isPageQuery(input, COLLAB_LIMITS.maxTicketPageSize)
         ? {
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
           ...(input.limit === undefined ? {} : { limit: input.limit }),
           projectId: input.projectId,
           status: input.status,
         } as ListTicketsRequest
+        : null;
+    case 'listRequestComments':
+      return hasExactKeys(input, ['projectId', 'requestId'], ['cursor', 'limit'])
+        && isCollabProjectId(input.projectId)
+        && isCollabOpaqueId(input.requestId)
+        && isPageQuery(input)
+        ? {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          ...(input.limit === undefined ? {} : { limit: input.limit }),
+          projectId: input.projectId,
+          requestId: input.requestId,
+        } as ListRequestCommentsRequest
+        : null;
+    case 'listTicketComments':
+      return hasExactKeys(input, ['projectId', 'ticketId'], ['cursor', 'limit'])
+        && isCollabProjectId(input.projectId)
+        && isCollabOpaqueId(input.ticketId)
+        && isPageQuery(input)
+        ? {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          ...(input.limit === undefined ? {} : { limit: input.limit }),
+          projectId: input.projectId,
+          ticketId: input.ticketId,
+        } as ListTicketCommentsRequest
+        : null;
+    case 'listTicketAcceptedRelations':
+      return hasExactKeys(input, ['projectId', 'ticketId'], ['cursor', 'limit'])
+        && isCollabProjectId(input.projectId)
+        && isCollabOpaqueId(input.ticketId)
+        && isPageQuery(input, COLLAB_LIMITS.maxRelationsPerPage)
+        ? {
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          ...(input.limit === undefined ? {} : { limit: input.limit }),
+          projectId: input.projectId,
+          ticketId: input.ticketId,
+        } as ListTicketAcceptedRelationsRequest
         : null;
     case 'getTicket':
       return hasExactKeys(input, ['projectId', 'ticketId'])
@@ -258,6 +309,9 @@ const INVALID_REASONS = {
   ensureMyRequest: 'request-ensure-payload-invalid',
   getRequest: 'request-read-payload-invalid',
   getTicket: 'ticket-read-payload-invalid',
+  listRequestComments: 'request-comment-page-query-invalid',
+  listTicketAcceptedRelations: 'ticket-relation-page-query-invalid',
+  listTicketComments: 'ticket-comment-page-query-invalid',
   listTickets: 'ticket-list-query-invalid',
   reopenTicket: 'ticket-mutation-payload-invalid',
   updateMyRequestMetadata: 'request-metadata-payload-invalid',

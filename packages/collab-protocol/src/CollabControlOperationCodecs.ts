@@ -9,10 +9,13 @@ import {
 } from './CollabRequestTicketRequestCodecs';
 import {
   decodeAcceptResponse,
+  decodeCommentPageResponse,
   decodeCreateCommentResponse,
   decodeCreateTicketResponse,
   decodeEnsureMyRequestResponse,
   decodeRequestDetailResponse,
+  decodeTicketAcceptedRelationPageResponse,
+  decodeTicketCommentPageResponse,
   decodeTicketCommentResponse,
   decodeTicketDetailResponse,
   decodeTicketMutationResponse,
@@ -46,10 +49,14 @@ function decodeRequest(
 function decodeResponse(operation: CollabControlOperation, input: unknown): unknown {
   switch (operation) {
     case 'getRequest': return decodeRequestDetailResponse(input);
+    case 'listRequestComments': return decodeCommentPageResponse(input);
     case 'ensureMyRequest': return decodeEnsureMyRequestResponse(input);
     case 'createComment': return decodeCreateCommentResponse(input);
     case 'listTickets': return decodeTicketPageResponse(input);
     case 'getTicket': return decodeTicketDetailResponse(input);
+    case 'listTicketComments': return decodeTicketCommentPageResponse(input);
+    case 'listTicketAcceptedRelations':
+      return decodeTicketAcceptedRelationPageResponse(input);
     case 'createTicket': return decodeCreateTicketResponse(input);
     case 'updateTicketContent': return decodeTicketMutationResponse(input);
     case 'createTicketComment': return decodeTicketCommentResponse(input);
@@ -74,10 +81,13 @@ function codec<Operation extends CollabControlOperation>(
 
 export const COLLAB_CONTROL_OPERATION_CODECS = Object.freeze({
   getRequest: codec('getRequest'),
+  listRequestComments: codec('listRequestComments'),
   ensureMyRequest: codec('ensureMyRequest'),
   createComment: codec('createComment'),
   listTickets: codec('listTickets'),
   getTicket: codec('getTicket'),
+  listTicketComments: codec('listTicketComments'),
+  listTicketAcceptedRelations: codec('listTicketAcceptedRelations'),
   createTicket: codec('createTicket'),
   updateTicketContent: codec('updateTicketContent'),
   createTicketComment: codec('createTicketComment'),

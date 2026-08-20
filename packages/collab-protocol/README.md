@@ -29,10 +29,22 @@ filesystem behavior; and no `IngressPrincipal` or other deployment-ingress
 contracts.
 
 The current registry contains only the decision-complete, transport-neutral
-request, Ticket, metadata, and Accept operations. Existing LAN v7 Join,
-invitation, endpoint, membership lifecycle, Host-transfer, retirement, Project
-snapshot, and HTTP bindings remain application-owned. The exact Cloud snapshot
-and route catalog require a separate product-level contract decision.
+request, Ticket, metadata, and Accept operations. Detail DTOs embed the first
+page of their comments and accepted relations; `listRequestComments`,
+`listTicketComments`, and `listTicketAcceptedRelations` page the remainder
+with stable opaque cursors, and producers bound pages by the shared count and
+UTF-8 byte limits. Producers size embedded first pages against the measured
+fixed part of the detail so the whole detail stays within
+`detailMaxUtf8Bytes`, including JSON escaping. JSON adapters accept the shared
+`maxJsonPayloadUtf8Bytes` cap so every valid bounded request, page, and detail
+has one compatible final-serialization limit. Request comments and Ticket
+accepted relations also have shared authority-enforced total limits; summary
+counts let complete consumers reject partial or cross-snapshot assembly.
+Existing LAN v9 Join,
+invitation, endpoint, membership
+lifecycle, Host-transfer, retirement, Project snapshot, and HTTP bindings
+remain application-owned. The exact Cloud snapshot and route catalog require
+a separate product-level contract decision.
 
 ## Usage
 
@@ -60,9 +72,9 @@ Package SemVer and the wire-protocol version are independent concepts.
 - **Package version** (this `package.json`): pre-1.0. Minor releases may add or
   break TypeScript API; patch releases are behavior-preserving fixes. The
   package version never signals wire compatibility by itself.
-- **Wire version** (`COLLAB_PROTOCOL_VERSION`): currently `1`. The supported
-  range is exactly `[1, 1]`. This is independent from the existing application
-  LAN control version `7`. Any change to an envelope, DTO, or operation
+- **Wire version** (`COLLAB_PROTOCOL_VERSION`): currently `3`. The supported
+  range is exactly `[3, 3]`. This is independent from the existing application
+  LAN control version `9`. Any change to an envelope, DTO, or operation
   payload shape, or to the operation inventory, is wire-breaking and requires
   a new wire-protocol version.
 

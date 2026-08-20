@@ -1,3 +1,6 @@
+import type {
+  HostTransitionProofClientPort,
+} from '@/app/collab/HostTransitionCandidateResolver';
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   collabControlOperationPath,
@@ -8,9 +11,6 @@ import {
   type CollabTrustedEndpointCandidate,
 } from '@/app/collab/lan/CollabHttpClient';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import type {
-  HostTransitionProofClientPort,
-} from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

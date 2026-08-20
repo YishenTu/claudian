@@ -46,32 +46,44 @@ export class RetirementLocalRecovery {
   ) {}
 
   async resume(options: CollabOperationOptions = {}): Promise<void> {
-    const [index, acknowledgementProjectIds] = await Promise.all([
+    const [index, journalProjectIds, acknowledgementProjectIds] = await Promise.all([
       this.store.loadIndex(),
+      this.cleanupRecords.listProjectIds(),
       this.store.listRetirementAcknowledgementProjectIds(),
     ]);
     const indexed = new Set(index.projects.map(project => project.id));
+    const journaled = new Set(journalProjectIds);
     const acknowledgementOnly = new Set(acknowledgementProjectIds);
     let firstError: unknown;
     for (const project of index.projects) {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
-      const retirement = await this.store.loadRetirementRecord(project.id).catch(error => {
+      const [retirement, pendingLeave, cleanupRecord] = await Promise.all([
+        this.store.loadRetirementRecord(project.id),
+        journaled.has(project.id) ? this.pendingLeaves.load(project.id) : Promise.resolve(null),
+        journaled.has(project.id) ? this.cleanupRecords.load(project.id) : Promise.resolve(null),
+      ]).catch(error => {
         firstError ??= error;
-        return null;
+        return [null, null, null] as const;
       });
-      if (project.lifecycle === 'retired' && acknowledgementOnly.has(project.id)) {
-        await this.finishAppliedFinalization(project.id, options).catch(error => {
+      if (
+        project.lifecycle === 'retired'
+        && cleanupRecord?.purpose === 'retire'
+        && cleanupRecord.phase === 'choice-applied'
+      ) {
+        await this.finalizer.finalize({
+          choice: cleanupRecord.choice,
+          projectId: project.id,
+        }, options).catch(error => {
           firstError ??= error;
         });
         continue;
       }
-      if (project.lifecycle !== 'retired' && retirement === null) continue;
+      if (retirement === null && (pendingLeave || project.lifecycle !== 'retired')) continue;
       await this.handler.resume(project.id).catch(error => {
         firstError ??= error;
       });
     }
 
-    const journalProjectIds = await this.cleanupRecords.listProjectIds();
     for (const projectId of journalProjectIds) {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       if (indexed.has(projectId)) continue;
@@ -90,6 +102,15 @@ export class RetirementLocalRecovery {
         continue;
       }
       if (pendingLeave || !cleanupRecord) continue;
+      if (cleanupRecord.purpose === 'retire' && cleanupRecord.phase === 'choice-applied') {
+        await this.finalizer.finalize({
+          choice: cleanupRecord.choice,
+          projectId,
+        }, options).catch(error => {
+          firstError ??= error;
+        });
+        continue;
+      }
       if (cleanupRecord.purpose !== 'retire' || cleanupRecord.phase !== 'choice-applied') {
         firstError ??= new CollabError({
           code: 'durable-progress-recovery-required',
@@ -98,12 +119,6 @@ export class RetirementLocalRecovery {
         });
         continue;
       }
-      await this.finalizer.finalize({
-        choice: cleanupRecord.choice,
-        projectId,
-      }, options).catch(error => {
-        firstError ??= error;
-      });
     }
     if (firstError instanceof Error) throw firstError;
     if (firstError) {
@@ -115,18 +130,4 @@ export class RetirementLocalRecovery {
     }
   }
 
-  private async finishAppliedFinalization(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions,
-  ): Promise<void> {
-    const record = await this.cleanupRecords.load(projectId);
-    if (!record || record.purpose !== 'retire' || record.phase !== 'choice-applied') {
-      throw new CollabError({
-        code: 'durable-progress-recovery-required',
-        recoveryActions: ['resume', 'open-diagnostics'],
-        safeContext: { reason: 'retired-finalization-journal-missing' },
-      });
-    }
-    await this.finalizer.finalize({ choice: record.choice, projectId }, options);
-  }
 }

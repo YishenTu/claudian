@@ -27,6 +27,12 @@ type SpawnProcess = (
   options: { stdio: 'ignore'; windowsHide: true },
 ) => unknown;
 
+export const WINDOWS_TASKKILL_TERMINATION_TIMEOUT_MS = 10_000;
+
+export interface TerminateSpawnedProcessTreeOptions {
+  readonly taskkillTimeoutMs?: number;
+}
+
 export function resolveWindowsCmdShimSpawnSpec(
   spec: Pick<WindowsCmdShimSpawnSpec, 'args' | 'command'>
     & Partial<Pick<WindowsCmdShimSpawnSpec, 'killProcessTree'>>,
@@ -87,6 +93,7 @@ export async function terminateSpawnedProcessTree(
   signal: NodeJS.Signals | number | undefined,
   spawnProcess: SpawnProcess,
   spawnSpec?: WindowsCmdShimSpawnSpec | null,
+  options?: TerminateSpawnedProcessTreeOptions,
 ): Promise<boolean> {
   if (
     process.platform !== 'win32'
@@ -114,6 +121,7 @@ export async function terminateSpawnedProcessTree(
     const settle = (result: boolean): void => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timer);
       resolve(result);
     };
     const fallback = (): void => {
@@ -123,6 +131,10 @@ export async function terminateSpawnedProcessTree(
         settle(false);
       }
     };
+    const timer = window.setTimeout(
+      fallback,
+      options?.taskkillTimeoutMs ?? WINDOWS_TASKKILL_TERMINATION_TIMEOUT_MS,
+    );
     taskkill.once('error', fallback);
     taskkill.once('close', code => {
       if (code === 0) settle(true);

@@ -21,6 +21,7 @@ function route(
       projectId: 'project-a',
     },
     idempotencyKey: 'publish-key',
+    lifecycle: { execute: jest.fn() },
     method: 'PUT',
     projectId: 'project-a',
     query: {},

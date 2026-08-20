@@ -18,6 +18,7 @@ describe('CollabReviewService', () => {
     const review = requestReview(detail);
     const control: CollabReviewControlPort = {
       readRequest: jest.fn().mockResolvedValue(detail),
+      readRequestPage: jest.fn().mockResolvedValue(detail),
     };
     const projects: CollabReviewProjectPort = {
       load: jest.fn().mockResolvedValue(projectContext()),
@@ -33,6 +34,9 @@ describe('CollabReviewService', () => {
     expect(control.readRequest).toHaveBeenCalledWith('project-a', 'request-a', {});
     expect(repository.prepare).toHaveBeenCalledWith(projectContext(), detail, undefined);
     expect(projects.revalidate).toHaveBeenCalledWith(projectContext());
+
+    await expect(service.preparePage('project-a', 'request-a')).resolves.toEqual(review);
+    expect(control.readRequestPage).toHaveBeenCalledWith('project-a', 'request-a', {});
   });
 
   it('revalidates the Project before reading one exact selected file', async () => {
@@ -52,6 +56,7 @@ describe('CollabReviewService', () => {
     };
     const service = new CollabReviewService({
       readRequest: jest.fn(),
+      readRequestPage: jest.fn(),
     }, projects, repository);
     const request = {
       comparisonBaseOid: MAIN,
@@ -82,6 +87,7 @@ describe('CollabReviewService', () => {
     };
     const service = new CollabReviewService({
       readRequest: jest.fn().mockResolvedValue(detail),
+      readRequestPage: jest.fn().mockResolvedValue(detail),
     }, projects, repository);
 
     await expect(service.prepare('project-a', 'request-a')).resolves.toMatchObject({
@@ -115,8 +121,7 @@ function file() {
 
 function requestDetail(): CollabRequestDetail {
   return {
-    changedFiles: [file()],
-    comments: [],
+    comments: { comments: [] },
     currentMainOid: MAIN,
     request: {
       commentCount: 0,

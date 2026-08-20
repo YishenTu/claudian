@@ -20,10 +20,6 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
-  decodePendingLeaveRecord,
-  type PendingLeaveRecord,
-} from '@/app/collab/exit/PendingLeaveRecord';
-import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
 import {
@@ -192,29 +188,6 @@ describe('CollabLocalProjectRepository', () => {
 
   it('persists lifecycle records and discovers tombstones without an active Project', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const pendingLeave: PendingLeaveRecord = {
-      authorityReplay: null,
-      schemaVersion: 2,
-      kind: 'pending-leave',
-      projectId: PROJECT_ID,
-      memberId: 'member-alice',
-      operationId: 'leave-one',
-      idempotencyKey: 'leave-one',
-      cleanupChoice: 'keep-files',
-      cleanupMarkerNonce: 'n'.repeat(43),
-      localCleanupComplete: false,
-      localRole: 'member',
-      phase: 'queued',
-      memberCredential: MEMBER_CREDENTIAL,
-      hostEndpoint: 'https://192.168.1.20:54545',
-      hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
-      hostCaFingerprint: 'a'.repeat(64),
-      projectCreatedAt: '2026-08-12T00:00:00.000Z',
-      projectName: 'Project Alpha',
-      createdAt: '2026-08-13T00:00:00.000Z',
-      updatedAt: '2026-08-13T00:00:00.000Z',
-      workspacePath: 'workspace/project-alpha',
-    };
     const tombstone: RetirementTombstoneRecord = {
       schemaVersion: 1,
       kind: 'retirement-tombstone',
@@ -235,34 +208,63 @@ describe('CollabLocalProjectRepository', () => {
       }],
     };
 
-    await repository.saveLifecycleProjectDocument(
-      PROJECT_ID,
-      'pending-leave',
-      pendingLeave,
-      decodePendingLeaveRecord,
-    );
     await repository.saveRetirementTombstone(tombstone);
     await repository.removeProject(PROJECT_ID);
 
     const restarted = new CollabLocalProjectRepository(vaultRoot);
-    await expect(restarted.loadLifecycleProjectDocument(
-      PROJECT_ID,
-      'pending-leave',
-      decodePendingLeaveRecord,
-    )).resolves.toEqual(pendingLeave);
     await expect(restarted.listRetirementTombstoneProjectIds()).resolves.toEqual([
       PROJECT_ID,
     ]);
     await expect(restarted.loadRetirementTombstone(PROJECT_ID)).resolves.toEqual(tombstone);
 
-    await restarted.removeLifecycleProjectDocument(PROJECT_ID, 'pending-leave');
     await restarted.removeRetirementTombstone(PROJECT_ID);
-    await expect(restarted.loadLifecycleProjectDocument(
-      PROJECT_ID,
-      'pending-leave',
-      decodePendingLeaveRecord,
-    )).resolves.toBeNull();
     await expect(restarted.listRetirementTombstoneProjectIds()).resolves.toEqual([]);
+  });
+
+  it('discovers no tombstones on empty state without writing to the filesystem', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+
+    await expect(repository.listRetirementTombstoneProjectIds()).resolves.toEqual([]);
+    await expect(stat(path.join(vaultRoot, '.claudian'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('discovers valid tombstones when a legacy index is corrupt', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const tombstone: RetirementTombstoneRecord = {
+      expiresAt: '2026-09-12T00:00:00.000Z',
+      formerMembers: [{
+        acknowledgedAt: null,
+        credentialHash: 'c'.repeat(64),
+        memberId: 'member-alice',
+      }],
+      hostTransitionProofs: [],
+      kind: 'retirement-tombstone',
+      projectId: PROJECT_ID,
+      replay: {
+        actorMemberId: 'member-alice',
+        idempotencyKey: 'retire-one',
+        requestFingerprint: 'b'.repeat(64),
+      },
+      result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
+      retiredAt: '2026-08-13T00:00:00.000Z',
+      schemaVersion: 1,
+    };
+    await repository.saveRetirementTombstone(tombstone);
+    await writeFile(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'retirement-tombstones',
+      'index.json',
+    ), 'not json');
+
+    const restarted = new CollabLocalProjectRepository(vaultRoot);
+    await expect(restarted.listRetirementTombstoneProjectIds()).resolves.toEqual([
+      PROJECT_ID,
+    ]);
+    await expect(restarted.loadRetirementTombstone(PROJECT_ID)).resolves.toEqual(tombstone);
   });
 
   it('rediscovers a tombstone when a crash happens before its index update', async () => {
@@ -287,13 +289,15 @@ describe('CollabLocalProjectRepository', () => {
       schemaVersion: 1,
     };
     await repository.saveRetirementTombstone(tombstone);
-    await rm(path.join(
+    // The physical tombstone file is the sole recovery authority: no index is
+    // written, so a crash after the file commit is always recoverable.
+    await expect(stat(path.join(
       vaultRoot,
       '.claudian',
       'collab',
       'retirement-tombstones',
       'index.json',
-    ));
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
 
     const restarted = new CollabLocalProjectRepository(vaultRoot);
     await expect(restarted.listRetirementTombstoneProjectIds()).resolves.toEqual([
@@ -441,6 +445,7 @@ describe('CollabLocalProjectRepository', () => {
       cleanupStatus: 'pending',
       lifecycle: 'retired',
       retiredAt: retirement.retiredAt,
+      updatedAt: '2026-08-12T00:00:00.000Z',
     }));
     await repository.saveMembership(membershipRecord());
     await repository.saveLifecycleProjectDocument(
@@ -467,6 +472,14 @@ describe('CollabLocalProjectRepository', () => {
       'retirement',
       decodeRetirementRecord,
     )).resolves.toEqual(retirement);
+    await expect(repository.loadIndex()).resolves.toMatchObject({
+      projects: [{
+        cleanupStatus: retirement.cleanupStatus,
+        id: PROJECT_ID,
+        retiredAt: retirement.retiredAt,
+        updatedAt: retirement.updatedAt,
+      }],
+    });
   });
 
   it('recreates a terminal Retired projection after queued Leave removed the active index', async () => {
@@ -962,6 +975,46 @@ describe('CollabLocalProjectRepository', () => {
       .resolves.toBe(true);
     await expect(repository.removeProjectDocument(PROJECT_ID, 'pending-operation'))
       .resolves.toBe(false);
+  });
+
+  it('discovers a pending operation before the Project index projection exists', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      operationId: 'create-project-alpha',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+
+    await expect(repository.loadIndex()).resolves.toMatchObject({ projects: [] });
+    await expect(repository.listPendingOperationProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+  });
+
+  it('removes the pending index projection before discarding its authority record', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    await repository.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      operationId: 'create-project-alpha',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    const pendingPath = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+      'pending-operation.json',
+    );
+    await rm(pendingPath);
+    await mkdir(pendingPath);
+
+    await expect(repository.discardPendingOperation(PROJECT_ID)).rejects.toMatchObject({
+      code: 'workspace-boundary-invalid',
+    });
+
+    await expect(repository.loadIndex()).resolves.toMatchObject({ projects: [] });
+    await expect(stat(pendingPath)).resolves.toMatchObject({});
   });
 
   it('removes only the disposable cache document', async () => {

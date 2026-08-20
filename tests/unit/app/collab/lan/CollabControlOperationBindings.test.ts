@@ -30,11 +30,11 @@ describe('CollabControlOperationBindings', () => {
     ))).size).toBe(operations.length);
     expect(new Set(Object.values(COLLAB_CONTROL_OPERATION_BINDINGS).map(binding => (
       binding.version
-    )))).toEqual(new Set([7]));
+    )))).toEqual(new Set([9]));
     expect(COLLAB_CONTROL_OPERATION_BINDINGS).not.toHaveProperty('transferManager');
   });
 
-  it('preserves the exact executable tuple for every v7 JSON control operation', () => {
+  it('preserves the exact executable tuple for every v9 JSON control operation', () => {
     expect(Object.entries(COLLAB_CONTROL_OPERATION_BINDINGS).map(([
       operation,
       binding,
@@ -52,10 +52,13 @@ describe('CollabControlOperationBindings', () => {
       ['activateJoinAttempt', 'POST', 'join-attempts/:joinAttemptId/activate', 'join', 'active-member', 'active', 'path-and-body', 200],
       ['getSnapshot', 'GET', 'snapshot', 'project', 'active-member', 'active', 'path', 200],
       ['getRequest', 'GET', 'requests/:requestId', 'request', 'active-member', 'active', 'path', 200],
+      ['listRequestComments', 'GET', 'requests/:requestId/comments', 'request', 'active-member', 'active', 'path-and-query', 200],
       ['ensureMyRequest', 'PUT', 'requests/mine', 'request', 'active-member', 'active', 'body', 200],
       ['createComment', 'POST', 'requests/:requestId/comments', 'request', 'active-member', 'active', 'path-and-body', 201],
       ['listTickets', 'GET', 'tickets', 'ticket', 'active-member', 'active', 'path-and-query', 200],
       ['getTicket', 'GET', 'tickets/:ticketId', 'ticket', 'active-member', 'active', 'path', 200],
+      ['listTicketComments', 'GET', 'tickets/:ticketId/comments', 'ticket', 'active-member', 'active', 'path-and-query', 200],
+      ['listTicketAcceptedRelations', 'GET', 'tickets/:ticketId/relations', 'ticket', 'active-member', 'active', 'path-and-query', 200],
       ['createTicket', 'POST', 'tickets', 'ticket', 'active-member', 'active', 'body', 201],
       ['updateTicketContent', 'PUT', 'tickets/:ticketId/content', 'ticket', 'active-member', 'active', 'path-and-body', 200],
       ['createTicketComment', 'POST', 'tickets/:ticketId/comments', 'ticket', 'active-member', 'active', 'path-and-body', 201],
@@ -92,29 +95,29 @@ describe('CollabControlOperationBindings', () => {
       const binding = COLLAB_CONTROL_OPERATION_BINDINGS[operation];
       return [operation, binding.method, `/v${binding.version}/projects/:projectId/${binding.route}`];
     })).toEqual([
-      ['leaveProject', 'POST', '/v7/projects/:projectId/leave'],
-      ['createManagerResponsibilityOffer', 'POST', '/v7/projects/:projectId/manager-responsibility-offers'],
-      ['getCurrentManagerResponsibilityOffer', 'GET', '/v7/projects/:projectId/manager-responsibility-offers/current'],
-      ['getManagerResponsibilityOffer', 'GET', '/v7/projects/:projectId/manager-responsibility-offers/:offerId'],
-      ['acknowledgeManagerResponsibility', 'POST', '/v7/projects/:projectId/manager-responsibility-offers/:offerId/acknowledge'],
-      ['declineManagerResponsibility', 'POST', '/v7/projects/:projectId/manager-responsibility-offers/:offerId/decline'],
-      ['cancelManagerResponsibilityOffer', 'DELETE', '/v7/projects/:projectId/manager-responsibility-offers/:offerId'],
-      ['promoteManager', 'POST', '/v7/projects/:projectId/managers/:memberId/promote'],
-      ['demoteManager', 'POST', '/v7/projects/:projectId/managers/:memberId/demote'],
-      ['createHostTransfer', 'POST', '/v7/projects/:projectId/host-transfers'],
-      ['acceptHostTransfer', 'POST', '/v7/projects/:projectId/host-transfers/:transferId/accept'],
-      ['declineHostTransfer', 'POST', '/v7/projects/:projectId/host-transfers/:transferId/decline'],
-      ['cancelHostTransfer', 'DELETE', '/v7/projects/:projectId/host-transfers/:transferId'],
-      ['retireProject', 'POST', '/v7/projects/:projectId/retire'],
-      ['acknowledgeRetirement', 'POST', '/v7/projects/:projectId/retirement/acknowledgements/current'],
-      ['getHostTransitions', 'GET', '/v7/projects/:projectId/host-transitions'],
+      ['leaveProject', 'POST', '/v9/projects/:projectId/leave'],
+      ['createManagerResponsibilityOffer', 'POST', '/v9/projects/:projectId/manager-responsibility-offers'],
+      ['getCurrentManagerResponsibilityOffer', 'GET', '/v9/projects/:projectId/manager-responsibility-offers/current'],
+      ['getManagerResponsibilityOffer', 'GET', '/v9/projects/:projectId/manager-responsibility-offers/:offerId'],
+      ['acknowledgeManagerResponsibility', 'POST', '/v9/projects/:projectId/manager-responsibility-offers/:offerId/acknowledge'],
+      ['declineManagerResponsibility', 'POST', '/v9/projects/:projectId/manager-responsibility-offers/:offerId/decline'],
+      ['cancelManagerResponsibilityOffer', 'DELETE', '/v9/projects/:projectId/manager-responsibility-offers/:offerId'],
+      ['promoteManager', 'POST', '/v9/projects/:projectId/managers/:memberId/promote'],
+      ['demoteManager', 'POST', '/v9/projects/:projectId/managers/:memberId/demote'],
+      ['createHostTransfer', 'POST', '/v9/projects/:projectId/host-transfers'],
+      ['acceptHostTransfer', 'POST', '/v9/projects/:projectId/host-transfers/:transferId/accept'],
+      ['declineHostTransfer', 'POST', '/v9/projects/:projectId/host-transfers/:transferId/decline'],
+      ['cancelHostTransfer', 'DELETE', '/v9/projects/:projectId/host-transfers/:transferId'],
+      ['retireProject', 'POST', '/v9/projects/:projectId/retire'],
+      ['acknowledgeRetirement', 'POST', '/v9/projects/:projectId/retirement/acknowledgements/current'],
+      ['getHostTransitions', 'GET', '/v9/projects/:projectId/host-transitions'],
     ]);
   });
 
   it('builds parameterized paths from the authoritative binding', () => {
     expect(collabControlOperationPath('createComment', 'project-a', {
       requestId: 'request-a',
-    })).toBe('/v7/projects/project-a/requests/request-a/comments');
+    })).toBe('/v9/projects/project-a/requests/request-a/comments');
     expect(() => collabControlOperationPath('createComment', 'project-a'))
       .toThrow('Missing Collab route parameter: requestId');
   });

@@ -17,7 +17,6 @@ import { LocalProjectExitCoordinator } from '@/app/collab/exit/LocalProjectExitC
 import { PendingLeaveAuthorityService } from '@/app/collab/exit/PendingLeaveAuthorityService';
 import { PendingLeaveWorker } from '@/app/collab/exit/PendingLeaveWorker';
 import { RetiredProjectFinalizer } from '@/app/collab/exit/RetiredProjectFinalizer';
-import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
@@ -26,7 +25,6 @@ import {
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
-import { LanHostTransitionProofClient } from '@/app/collab/reconnect/LanHostTransitionProofClient';
 import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
 import { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { RetirementLocalRecovery } from '@/app/collab/retirement/RetirementLocalRecovery';
@@ -54,9 +52,7 @@ export function createCollabFeatureSubcomposition(
   const journals = new CollabLifecycleJournalStore(vaultRoot);
   const pendingLeaves = journals.pendingLeaves;
   const pendingLeaveAuthority = new PendingLeaveAuthorityService({
-    discovery: foundation.discovery,
-    proofClient: new LanHostTransitionProofClient(),
-    trustTransitions: new HostTrustTransitionService(),
+    hostTransitionCandidates: foundation.hostTransitionCandidates,
   });
   const managerReceipts = new ManagerResponsibilityReceiptStore(
     foundation.local.projects,
@@ -186,6 +182,7 @@ export function createCollabFeatureSubcomposition(
             pending: input.pending,
             ...(input.signal ? { signal: input.signal } : {}),
           }),
+          resolveLeaveHost: input => pendingLeaveAuthority.resolveHost(input),
           settleLeave: input => pendingLeaveAuthority.settle({
             pending: input.pending,
             ...(input.signal ? { signal: input.signal } : {}),

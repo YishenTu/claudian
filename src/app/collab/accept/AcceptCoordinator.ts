@@ -520,6 +520,7 @@ export class AcceptCoordinator {
           'authority-integrity-error',
           'authorization-denied',
           'idempotency-conflict',
+          'quota-exceeded',
           'request-not-open',
           'stale-request-metadata',
           'stale-ticket',

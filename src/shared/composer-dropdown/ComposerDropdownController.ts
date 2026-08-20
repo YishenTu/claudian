@@ -9,7 +9,6 @@ import type {
 
 interface ActiveFolder {
   readonly item: ComposerDropdownFolderItem;
-  readonly sourceId: string;
 }
 
 export interface ComposerDropdownControllerOptions {
@@ -134,14 +133,6 @@ export class ComposerDropdownController {
     this.view.hide();
   }
 
-  invalidate(): void {
-    this.rematchInput();
-  }
-
-  isInFolder(): boolean {
-    return this.activeFolder !== null;
-  }
-
   isVisible(): boolean {
     return this.view.isVisible();
   }
@@ -260,7 +251,7 @@ export class ComposerDropdownController {
     const match = this.activeMatch;
     if (!item || item.kind === 'status' || item.disabled || !source || !match) return;
     if (item.kind === 'folder') {
-      this.activeFolder = { item, sourceId: source.id };
+      this.activeFolder = { item };
       if (item.inputPrefix !== undefined) {
         const replacement = `${match.trigger}${item.inputPrefix}`;
         this.replaceRange(match, replacement);

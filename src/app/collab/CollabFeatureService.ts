@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabChangeRequest, type CollabComment, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketComment, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
@@ -15,14 +15,14 @@ import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService
 import {
   type CollabPendingProjectOperation,
   decodeCollabPendingProjectOperation,
-} from '@/app/collab/join/JoinProjectRecord';
+} from '@/app/collab/PendingProjectOperation';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import {
   ProjectOperationAdmission,
   type ProjectOperationPolicy,
 } from '@/app/collab/ProjectOperationAdmission';
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
-import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAcknowledgeManagerResponsibilityRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAcknowledgeManagerResponsibilityRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabFeatureFoundationPort {
@@ -32,6 +32,7 @@ export interface CollabFeatureFoundationPort {
       | 'loadIndex'
       | 'loadMembership'
       | 'loadProjectDocument'
+      | 'listPendingOperationProjectIds'
       | 'selectProject'
     >;
     readonly workspace: Pick<CollabWorkspaceService, 'resolveManagedProjectPath'>;
@@ -227,11 +228,34 @@ export interface CollabPublicationPort {
     requestId: CollabRequestId,
     options?: CollabOperationOptions,
   ): Promise<CollabRequestDetail>;
+  listRequestComments(
+    projectId: CollabProjectId,
+    requestId: CollabRequestId,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabCommentPage>;
   readTicket(
     projectId: CollabProjectId,
     ticketId: string,
     options?: CollabOperationOptions,
   ): Promise<CollabTicketDetailProjection>;
+  readTicketPage(
+    projectId: CollabProjectId,
+    ticketId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketDetailProjection>;
+  listTicketComments(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketCommentPage>;
+  listTicketAcceptedRelations(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketAcceptedRelationPage>;
   reopenTicket(
     request: CollabChangeTicketStatusRequest,
     options?: CollabOperationOptions,
@@ -239,6 +263,11 @@ export interface CollabPublicationPort {
   ): Promise<CollabTicketSummary>;
   scheduleAcceptedMainSynchronization(projectId: CollabProjectId): void;
   prepareReview(
+    projectId: CollabProjectId,
+    requestId: CollabRequestId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabRequestReview>;
+  prepareReviewPage(
     projectId: CollabProjectId,
     requestId: CollabRequestId,
     options?: CollabOperationOptions,
@@ -722,6 +751,28 @@ class CollabFeatureServiceCore {
     return pending?.record.operationId ?? null;
   }
 
+  async listPendingSetupOperationIds(): Promise<readonly CollabOperationId[]> {
+    const projectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    const operationIds: CollabOperationId[] = [];
+    const seen = new Set<CollabOperationId>();
+    for (const projectId of projectIds) {
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        projectId,
+        'pending-operation',
+        decodeCollabPendingProjectOperation,
+      );
+      if (pending) {
+        if (seen.has(pending.record.operationId)) {
+          throw operationError('pending-operation-duplicate');
+        }
+        seen.add(pending.record.operationId);
+        operationIds.push(pending.record.operationId);
+      }
+    }
+    return operationIds;
+  }
+
   async joinProject(
     request: CollabJoinProjectRequest,
     options?: CollabOperationOptions,
@@ -1020,6 +1071,28 @@ class CollabFeatureServiceCore {
     }
   }
 
+  async listRequestComments(
+    projectId: CollabProjectId,
+    requestId: string,
+    query: { readonly cursor?: string; readonly limit?: number } = {},
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabCommentPage>> {
+    try {
+      throwIfCancelled(options.signal);
+      return {
+        status: 'success',
+        value: await this.options.publication.listRequestComments(
+          projectId,
+          requestId,
+          query,
+          options,
+        ),
+      };
+    } catch (error) {
+      return this.failureResult(error);
+    }
+  }
+
   async addComment(
     request: CollabAddCommentRequest,
     options: CollabOperationOptions = {},
@@ -1068,6 +1141,66 @@ class CollabFeatureServiceCore {
       return {
         status: 'success',
         value: await this.options.publication.readTicket(projectId, ticketId, options),
+      };
+    } catch (error) {
+      return this.failureResult(error);
+    }
+  }
+
+  async readTicketPage(
+    projectId: CollabProjectId,
+    ticketId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabTicketDetailProjection>> {
+    try {
+      throwIfCancelled(options.signal);
+      return {
+        status: 'success',
+        value: await this.options.publication.readTicketPage(projectId, ticketId, options),
+      };
+    } catch (error) {
+      return this.failureResult(error);
+    }
+  }
+
+  async listTicketComments(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number } = {},
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabTicketCommentPage>> {
+    try {
+      throwIfCancelled(options.signal);
+      return {
+        status: 'success',
+        value: await this.options.publication.listTicketComments(
+          projectId,
+          ticketId,
+          query,
+          options,
+        ),
+      };
+    } catch (error) {
+      return this.failureResult(error);
+    }
+  }
+
+  async listTicketAcceptedRelations(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number } = {},
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabTicketAcceptedRelationPage>> {
+    try {
+      throwIfCancelled(options.signal);
+      return {
+        status: 'success',
+        value: await this.options.publication.listTicketAcceptedRelations(
+          projectId,
+          ticketId,
+          query,
+          options,
+        ),
       };
     } catch (error) {
       return this.failureResult(error);
@@ -1185,6 +1318,25 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       const review = await this.options.publication.prepareReview(
+        projectId,
+        requestId,
+        options,
+      );
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: review };
+    } catch (error) {
+      return this.failureResult(error);
+    }
+  }
+
+  async prepareReviewPage(
+    projectId: CollabProjectId,
+    requestId: CollabRequestId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabRequestReview>> {
+    try {
+      throwIfCancelled(options.signal);
+      const review = await this.options.publication.prepareReviewPage(
         projectId,
         requestId,
         options,
@@ -1778,16 +1930,21 @@ class CollabFeatureServiceCore {
   private async findPendingOperation(
     operationId: CollabOperationId,
   ): Promise<CollabPendingProjectOperation | null> {
-    const index = await this.foundation.local.projects.loadIndex();
-    for (const project of index.projects) {
+    const projectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    let match: CollabPendingProjectOperation | null = null;
+    for (const projectId of projectIds) {
       const pending = await this.foundation.local.projects.loadProjectDocument(
-        project.id,
+        projectId,
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending?.record.operationId === operationId) return pending;
+      if (pending?.record.operationId === operationId) {
+        if (match) throw operationError('pending-operation-duplicate');
+        match = pending;
+      }
     }
-    return null;
+    return match;
   }
 
   private failureResult<T>(error: unknown): CollabResult<T> {
@@ -1823,6 +1980,7 @@ class CollabFeatureServiceCore {
 }
 
 export class CollabFeatureService implements CollabFeaturePort {
+  readonly boundedQueries: CollabBoundedQueryPort;
   private readonly operationAdmission = new ProjectOperationAdmission();
   private readonly core: CollabFeatureServiceCore;
 
@@ -1837,6 +1995,56 @@ export class CollabFeatureService implements CollabFeaturePort {
       options,
       this.operationAdmission,
     );
+    this.boundedQueries = Object.freeze({
+      listRequestComments: (
+        projectId: CollabProjectId,
+        requestId: CollabRequestId,
+        query?: { readonly cursor?: string; readonly limit?: number },
+        operationOptions?: CollabOperationOptions,
+      ) => this.project(
+        () => projectId,
+        'active',
+        () => this.core.listRequestComments(projectId, requestId, query, operationOptions),
+      ),
+      listTicketAcceptedRelations: (
+        projectId: CollabProjectId,
+        ticketId: string,
+        query?: { readonly cursor?: string; readonly limit?: number },
+        operationOptions?: CollabOperationOptions,
+      ) => this.project(
+        () => projectId,
+        'active',
+        () => this.core.listTicketAcceptedRelations(projectId, ticketId, query, operationOptions),
+      ),
+      listTicketComments: (
+        projectId: CollabProjectId,
+        ticketId: string,
+        query?: { readonly cursor?: string; readonly limit?: number },
+        operationOptions?: CollabOperationOptions,
+      ) => this.project(
+        () => projectId,
+        'active',
+        () => this.core.listTicketComments(projectId, ticketId, query, operationOptions),
+      ),
+      prepareReview: (
+        projectId: CollabProjectId,
+        requestId: CollabRequestId,
+        operationOptions?: CollabOperationOptions,
+      ) => this.project(
+        () => projectId,
+        'active',
+        () => this.core.prepareReviewPage(projectId, requestId, operationOptions),
+      ),
+      readTicket: (
+        projectId: CollabProjectId,
+        ticketId: string,
+        operationOptions?: CollabOperationOptions,
+      ) => this.project(
+        () => projectId,
+        'active',
+        () => this.core.readTicketPage(projectId, ticketId, operationOptions),
+      ),
+    });
   }
 
   get state(): CollabFeatureState {
@@ -2038,6 +2246,10 @@ export class CollabFeatureService implements CollabFeaturePort {
 
   getPendingSetupOperationId(projectId: CollabProjectId): Promise<CollabOperationId | null> {
     return this.runGlobal(() => this.core.getPendingSetupOperationId(projectId));
+  }
+
+  listPendingSetupOperationIds(): Promise<readonly CollabOperationId[]> {
+    return this.runGlobal(() => this.core.listPendingSetupOperationIds());
   }
 
   restoreHosts(): Promise<void> {

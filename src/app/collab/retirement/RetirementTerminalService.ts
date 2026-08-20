@@ -4,21 +4,7 @@ import type { RetirementTombstoneRepository } from '@/app/collab/retirement/Reti
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-export interface RetirementTrustChainVerifier {
-  verifyChain(input: {
-    readonly expectedCurrentCaFingerprint?: string;
-    readonly pinnedCaCertificatePem: string;
-    readonly projectId: CollabProjectId;
-    readonly proofs: readonly CollabHostTrustTransitionProof[];
-  }): string;
-}
-
-export interface RetirementTerminalServiceOptions {
-  readonly trustChainVerifier?: RetirementTrustChainVerifier;
-}
-
 export interface RetirementTerminalResponse<T> {
-  readonly afterResponseFlushed?: () => void;
   readonly body: T;
 }
 
@@ -35,14 +21,9 @@ function terminalError(reason: string): CollabError {
 }
 
 export class RetirementTerminalService {
-  private readonly trustChainVerifier?: RetirementTrustChainVerifier;
-
   constructor(
     private readonly tombstones: RetirementTombstoneRepository,
-    options: RetirementTerminalServiceOptions = {},
-  ) {
-    this.trustChainVerifier = options.trustChainVerifier;
-  }
+  ) {}
 
   async getResult(
     projectId: CollabProjectId,
@@ -75,19 +56,5 @@ export class RetirementTerminalService {
         ...acknowledgement.result,
       },
     };
-  }
-
-  async verifyTrust(input: {
-    readonly expectedCurrentCaFingerprint?: string;
-    readonly pinnedCaCertificatePem: string;
-    readonly projectId: CollabProjectId;
-  }): Promise<string> {
-    if (!this.trustChainVerifier) throw terminalError('retirement-trust-verifier-missing');
-    const tombstone = await this.tombstones.load(input.projectId);
-    if (!tombstone) throw terminalError('retirement-tombstone-missing');
-    return this.trustChainVerifier.verifyChain({
-      ...input,
-      proofs: tombstone.hostTransitionProofs,
-    });
   }
 }

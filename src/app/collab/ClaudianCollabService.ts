@@ -45,6 +45,7 @@ import {
   type HostTransferModuleOptions,
 } from '@/app/collab/host-transfer/HostTransferModule';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
+import { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import { JoinProjectCoordinator } from '@/app/collab/join/JoinProjectCoordinator';
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
@@ -175,6 +176,7 @@ function environmentPath(environment: NodeJS.ProcessEnv): string | undefined {
 
 export class ClaudianCollabService {
   readonly discovery: CollabLanDiscoveryService;
+  readonly hostTransitionCandidates: HostTransitionCandidateResolver;
   readonly join: JoinProjectCoordinator;
   readonly lanHost: LanHostCoordinator;
   readonly local: CollabLocalFoundation;
@@ -237,6 +239,11 @@ export class ClaudianCollabService {
     });
     const hostTransitionProofClient = new LanHostTransitionProofClient();
     const hostTrustTransitions = new HostTrustTransitionService();
+    this.hostTransitionCandidates = new HostTransitionCandidateResolver({
+      discovery: this.discovery,
+      proofClient: hostTransitionProofClient,
+      trustTransitions: hostTrustTransitions,
+    });
     this.join = new JoinProjectCoordinator(this, {
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
       ...(options.getProjectsFolder ? { getProjectsFolder: options.getProjectsFolder } : {}),
@@ -249,10 +256,8 @@ export class ClaudianCollabService {
       vaultRoot: options.vaultRoot,
     });
     this.retirementTerminalClient = new RetirementTerminalClient({
-      discovery: this.discovery,
-      proofClient: hostTransitionProofClient,
+      hostTransitionCandidates: this.hostTransitionCandidates,
       request: (trust, input) => this.sendRetirementAcknowledgement(trust, input),
-      trustTransitions: hostTrustTransitions,
     });
     this.lanHost = new LanHostCoordinator({
       ...options.lanHost,
@@ -451,6 +456,23 @@ export class ClaudianCollabService {
     await foundation.database.close();
   }
 
+  async inspectAuthority(
+    projectId: CollabProjectId,
+  ): Promise<CollabAuthorityFoundation | null> {
+    this.assertOpen();
+    const existing = this.authorityFoundations.get(projectId);
+    if (existing) return existing;
+    if (await this.local.projects.findAuthorityDirectory(projectId) === null) {
+      return null;
+    }
+    return this.openAuthority(projectId);
+  }
+
+  async discardProvisionalAuthority(projectId: CollabProjectId): Promise<void> {
+    await this.closeAuthority(projectId);
+    await this.local.projects.removeAuthorityDirectory(projectId);
+  }
+
   createHostTransferService(
     snapshots: HostTransferModuleOptions['snapshots'],
   ): CollabHostTransferService {
@@ -594,6 +616,7 @@ export class ClaudianCollabService {
         mutationQueue.run(() => requestEnsure.ensure(...args))
       ),
       read: requestQuery.read.bind(requestQuery),
+      readComments: requestQuery.readComments.bind(requestQuery),
       updateMetadata: (...args: Parameters<RequestEnsureService['updateMetadata']>) => (
         mutationQueue.run(() => requestEnsure.updateMetadata(...args))
       ),
@@ -609,6 +632,8 @@ export class ClaudianCollabService {
         mutationQueue.run(() => ticketService.create(...args))
       ),
       list: ticketService.list.bind(ticketService),
+      listAcceptedRelations: ticketService.listAcceptedRelations.bind(ticketService),
+      listComments: ticketService.listComments.bind(ticketService),
       read: ticketService.read.bind(ticketService),
       reopen: (...args: Parameters<TicketService['reopen']>) => (
         mutationQueue.run(() => ticketService.reopen(...args))
@@ -803,12 +828,7 @@ export class ClaudianCollabService {
           memberCredential,
           request.retiredAt,
         );
-        return {
-          ...(result.afterResponseFlushed
-            ? { afterResponseFlushed: result.afterResponseFlushed }
-            : {}),
-          response: result.body,
-        };
+        return { response: result.body };
       },
       getHostTransitions: async request => ({
         projectId: request.projectId,

@@ -1,9 +1,7 @@
-import { type CollabDecodeResult, CollabError } from '@claudian/collab-protocol';
+import { type CollabDecodeResult, CollabError, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{64,2048}$/;
 const CERTIFICATE_PATTERN = /^-----BEGIN CERTIFICATE-----\n(?:[A-Za-z0-9+/=]{1,64}\n)+-----END CERTIFICATE-----\n?$/;
@@ -47,9 +45,9 @@ export function decodeLanCollabHostTrustTransitionProof(
     || !expectedKeys.every(key => Object.hasOwn(value, key))
     || value.schemaVersion !== 1
     || typeof value.projectId !== 'string'
-    || !PROJECT_ID_PATTERN.test(value.projectId)
+    || !isCollabProjectId(value.projectId)
     || typeof value.transferId !== 'string'
-    || !OPAQUE_ID_PATTERN.test(value.transferId)
+    || !isCollabOpaqueId(value.transferId)
     || typeof value.previousCaFingerprint !== 'string'
     || !FINGERPRINT_PATTERN.test(value.previousCaFingerprint)
     || typeof value.nextCaCertificatePem !== 'string'

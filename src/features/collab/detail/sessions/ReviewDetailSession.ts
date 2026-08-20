@@ -8,7 +8,6 @@ import {
 } from 'obsidian';
 
 import { type CollabAcceptRequest, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabPublicationReview, type CollabRequestReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabConflictDetailViewState,
@@ -25,6 +24,9 @@ import {
   isWorkingTreeReview,
   reviewsShareIdentity,
 } from '@/features/collab/detail/review/ReviewDiffSession';
+import {
+  TicketReferenceResolver,
+} from '@/features/collab/detail/sessions/TicketReferenceResolver';
 import type {
   CollabPreparedReviewCache,
 } from '@/features/collab/handoff/CollabPreparedReviewCache';
@@ -97,6 +99,7 @@ export class ReviewDetailSession {
   private review: CollabDisplayReview | null = null;
   private reviewController: AbortController | null = null;
   private state: CollabReviewDetailViewState | null = null;
+  private readonly ticketReferences: TicketReferenceResolver;
 
   private readonly app: App;
   private readonly component: Component;
@@ -118,6 +121,7 @@ export class ReviewDetailSession {
     this.preparedReviews = options.preparedReviews ?? null;
     this.rootEl = options.rootEl;
     this.viewType = options.viewType;
+    this.ticketReferences = new TicketReferenceResolver(options.port);
   }
 
   get displayText(): string {
@@ -882,7 +886,7 @@ export class ReviewDetailSession {
     const title = this.requestCommentsTitleEl;
     const list = this.requestCommentsListEl;
     if (!title || !list) return;
-    const comments = [...review.detail.comments]
+    const comments = [...review.detail.comments.comments]
       .sort((left, right) => (
         left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
       ));
@@ -969,32 +973,13 @@ export class ReviewDetailSession {
   private async openTicketReference(projectId: string, ticketNumber: number): Promise<void> {
     const openTicketInNewTab = this.openTicketInNewTab;
     if (!openTicketInNewTab) return;
-    const ticketId = await this.findTicketId(projectId, ticketNumber);
-    if (ticketId) await openTicketInNewTab(projectId, ticketId);
-  }
-
-  private async findTicketId(projectId: string, ticketNumber: number): Promise<string | null> {
-    for (const status of ['open', 'closed'] as const) {
-      let cursor: string | undefined;
-      const visitedCursors = new Set<string>();
-      do {
-        const result = await this.port.listTickets({
-          ...(cursor ? { cursor } : {}),
-          limit: CLAUDIAN_COLLAB_LIMITS.maxTicketPageSize,
-          projectId,
-          status,
-        });
-        if (result.status !== 'success') break;
-        const ticket = result.value.page.tickets.find(
-          candidate => candidate.number === ticketNumber,
-        );
-        if (ticket) return ticket.id;
-        cursor = result.value.page.nextCursor;
-        if (cursor && visitedCursors.has(cursor)) break;
-        if (cursor) visitedCursors.add(cursor);
-      } while (cursor);
-    }
-    return null;
+    const generation = this.generation;
+    await this.ticketReferences.openReference(
+      projectId,
+      ticketNumber,
+      openTicketInNewTab,
+      () => this.generation === generation,
+    );
   }
 
   private requireDescription(button: HTMLButtonElement): void {
@@ -1033,10 +1018,10 @@ export class ReviewDetailSession {
       || previous.detail.request.revision !== current.detail.request.revision
       || previous.detail.request.updatedAt !== current.detail.request.updatedAt
       || previous.detail.request.commentCount !== current.detail.request.commentCount
-      || previous.detail.comments.length !== current.detail.comments.length
+      || previous.detail.comments.comments.length !== current.detail.comments.comments.length
     ) return true;
-    return previous.detail.comments.some((comment, index) => (
-      comment.id !== current.detail.comments[index]?.id
+    return previous.detail.comments.comments.some((comment, index) => (
+      comment.id !== current.detail.comments.comments[index]?.id
     ));
   }
 
@@ -1259,13 +1244,16 @@ export class ReviewDetailSession {
     review: CollabRequestReview,
     comment: CollabComment,
   ): CollabRequestReview {
-    const replayed = review.detail.comments.some(candidate => candidate.id === comment.id);
-    const comments = replayed ? review.detail.comments : [...review.detail.comments, comment];
+    const replayed = review.detail.comments.comments
+      .some(candidate => candidate.id === comment.id);
+    const comments = replayed
+      ? review.detail.comments.comments
+      : [...review.detail.comments.comments, comment];
     const updatedReview: CollabRequestReview = {
       ...review,
       detail: {
         ...review.detail,
-        comments,
+        comments: { comments },
         request: {
           ...review.detail.request,
           commentCount: Math.max(
@@ -1315,6 +1303,7 @@ export class ReviewDetailSession {
 
   private cancelWork(options: { readonly retainDiff?: boolean } = {}): void {
     this.destroyDescriptionEditor();
+    this.ticketReferences.cancel();
     this.reviewController?.abort();
     this.reviewController = null;
     this.requestCoordinationController?.abort();
@@ -1399,9 +1388,9 @@ function mergeRefreshedRequestReview(
   incoming: CollabRequestReview,
 ): CollabRequestReview {
   if (current.detail.request.id !== incoming.detail.request.id) return incoming;
-  const comments = [...incoming.detail.comments];
+  const comments = [...incoming.detail.comments.comments];
   const commentIds = new Set(comments.map(comment => comment.id));
-  for (const comment of current.detail.comments) {
+  for (const comment of current.detail.comments.comments) {
     if (commentIds.has(comment.id)) continue;
     commentIds.add(comment.id);
     comments.push(comment);
@@ -1417,7 +1406,7 @@ function mergeRefreshedRequestReview(
     ...incoming,
     detail: {
       ...incoming.detail,
-      comments,
+      comments: { comments },
       request: {
         ...retainedRequest,
         commentCount: Math.max(

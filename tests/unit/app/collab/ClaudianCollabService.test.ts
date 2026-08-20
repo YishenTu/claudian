@@ -63,7 +63,7 @@ describe('ClaudianCollabService retirement recovery', () => {
           projectId: 'project-a',
         },
         method: 'POST',
-        path: '/v7/projects/project-a/retire',
+        path: '/v9/projects/project-a/retire',
       }),
       Buffer.alloc(32, 1).toString('base64url'),
       {},

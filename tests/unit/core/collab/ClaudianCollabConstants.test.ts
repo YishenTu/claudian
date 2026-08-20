@@ -11,6 +11,8 @@ describe('ClaudianCollabConstants', () => {
       maxReceivedPackBytes: 256 * 1024 * 1024,
       maxTextDiffBytes: 2 * 1024 * 1024,
       maxTextDiffLines: 20_000,
+      maxRequestComments: 500,
+      maxTicketAcceptedRelations: 2_000,
       maxTicketHighlights: 5,
     });
     expect(Object.isFrozen(CLAUDIAN_COLLAB_LIMITS)).toBe(true);

@@ -278,6 +278,16 @@ export class CollabDetailView extends ItemView {
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     const state = parseState(value);
     result.history = true;
+    if (!this.port.isDetailAdmissionOpen()) {
+      // A restored leaf before workspace-layout readiness may keep its parsed
+      // state but must not activate, subscribe, or read; startup detaches it
+      // once the layout is ready.
+      if (this.ticketSession || this.conflictSession || this.reviewSession) {
+        this.cancelWork();
+      }
+      this.state = state;
+      return;
+    }
     if (state.kind === 'conflict') {
       this.activateMode('conflict');
       this.state = state;
@@ -294,6 +304,7 @@ export class CollabDetailView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    if (!this.port.isDetailAdmissionOpen()) return;
     this.featureSubscription ??= this.port.subscribe(() => {
       const state = this.state;
       if (state?.kind === 'ticket') void this.loadTicket(state);

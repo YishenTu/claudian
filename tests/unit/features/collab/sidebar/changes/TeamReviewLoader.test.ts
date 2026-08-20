@@ -184,6 +184,25 @@ describe('TeamReviewLoader', () => {
     loader.destroy();
   });
 
+  it('drops cached review details when only the request revision changes', async () => {
+    const port: jest.Mocked<TeamReviewLoaderPort> = {
+      prepareReview: jest.fn().mockResolvedValue(
+        success(review('request-a', 'member-a', HEAD_A)),
+      ),
+    };
+    const loader = new TeamReviewLoader(port);
+    loader.update('project-a', coordination());
+    await loader.load('request-a');
+    expect(loader.peek('request-a')).toMatchObject({ kind: 'ready' });
+
+    loader.update('project-a', coordination({ revision: 2 }));
+
+    expect(loader.peek('request-a')).toBeNull();
+    await expect(loader.load('request-a')).resolves.toMatchObject({ kind: 'ready' });
+    expect(port.prepareReview).toHaveBeenCalledTimes(2);
+    loader.destroy();
+  });
+
   it('hydrates an exact review from the plugin-lifetime prepared cache', async () => {
     const port: jest.Mocked<TeamReviewLoaderPort> = {
       prepareReview: jest.fn(),
@@ -270,6 +289,7 @@ function coordination(options: {
   readonly commentCount?: number;
   readonly currentMemberRole?: 'manager' | 'member';
   readonly mainOid?: string;
+  readonly revision?: number;
   readonly updatedAt?: string;
 } = {}): CollabCoordinationSnapshot {
   const mainOid = options.mainOid ?? MAIN;
@@ -291,6 +311,7 @@ function coordination(options: {
         {
           ...request('request-a', 'member-a', HEAD_A, mainOid),
           commentCount: options.commentCount ?? 0,
+          revision: options.revision ?? 1,
           updatedAt: options.updatedAt ?? '2026-08-08T00:10:00.000Z',
         },
         request('request-b', 'member-b', HEAD_B, mainOid),
@@ -365,8 +386,7 @@ function review(
     comparisonKind: 'candidate',
     comparisonTargetOid: '5'.repeat(40),
     detail: {
-      changedFiles: [file],
-      comments: [],
+      comments: { comments: [] },
       currentMainOid: mainOid,
       request: changeRequest,
       reviewCondition: 'clean',

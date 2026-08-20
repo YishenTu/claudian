@@ -22,7 +22,10 @@ import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { type GitRuntime,GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import { JoinProjectCoordinator } from '@/app/collab/join/JoinProjectCoordinator';
-import { CollabControlRouter } from '@/app/collab/lan/CollabControlRouter';
+import {
+  type CollabControlProjectService,
+  CollabControlRouter,
+} from '@/app/collab/lan/CollabControlRouter';
 import { CollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { isGitHttpRoute } from '@/app/collab/lan/git/GitHttpRoute';
 import { GitHttpBackendProxy } from '@/app/collab/lan/GitHttpBackendProxy';
@@ -164,7 +167,11 @@ describe('Join Project same-device LAN integration', () => {
         COLLAB_MAIN_REF,
       ))!,
     });
-    router.registerProject(PROJECT_ID, membership);
+    router.registerProject(
+      PROJECT_ID,
+      membership as unknown as CollabControlProjectService,
+      { lifecycle: { execute: jest.fn() } },
+    );
     proxy = new GitHttpBackendProxy({
       authorityDirectory,
       authenticateMemberCredential: membership.authenticateMemberCredential.bind(membership),

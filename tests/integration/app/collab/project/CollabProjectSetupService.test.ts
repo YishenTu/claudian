@@ -20,6 +20,9 @@ import {
 } from '@/app/collab';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
+  decodeCollabProjectSetupRecord,
+} from '@/app/collab/project/CollabProjectSetupRecord';
+import {
   type CollabProjectFoundationPort,
   CollabProjectSetupService,
 } from '@/app/collab/project/CollabProjectSetupService';
@@ -206,6 +209,123 @@ describe('CollabProjectSetupService', () => {
     await foundation.close();
   });
 
+  it('cancels between staging and the authority commit without committing or orphaning state', async () => {
+    git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
+    const foundation = createFoundation();
+    const controller = new AbortController();
+    const port: CollabProjectFoundationPort = {
+      local: foundation.local,
+      discardProvisionalAuthority: projectId => (
+        foundation.discardProvisionalAuthority(projectId)
+      ),
+      inspectAuthority: projectId => foundation.inspectAuthority(projectId),
+      openAuthority: async projectId => {
+        controller.abort();
+        return foundation.openAuthority(projectId);
+      },
+      requireGitFoundation: () => foundation.requireGitFoundation(),
+    };
+    const service = new CollabProjectSetupService(port, setupOptions(vaultRoot));
+
+    await expect(service.createProject({
+      memberDisplayName: 'Alice',
+      name: 'Cancelled Mid Commit',
+    }, { signal: controller.signal })).resolves.toEqual({
+      durableProgress: false,
+      operationId: OPERATION_ID,
+      status: 'cancelled',
+    });
+
+    await expect(foundation.local.projects.loadIndex()).resolves.toMatchObject({
+      projects: [],
+    });
+    await expect(foundation.local.projects.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    )).resolves.toBeNull();
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readdir(path.join(vaultRoot, 'workspace'))).resolves.toEqual(
+      expect.not.arrayContaining([
+        expect.stringMatching(/^\.claudian-(?:clone|seed)-/u),
+      ]),
+    );
+    expect((foundation as unknown as {
+      authorityFoundations: Map<string, unknown>;
+    }).authorityFoundations.size).toBe(0);
+    await foundation.close();
+  });
+
+  it('preserves discoverable setup state when provisional authority cleanup fails', async () => {
+    git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
+    const foundation = createFoundation();
+    const controller = new AbortController();
+    const port: CollabProjectFoundationPort = {
+      local: foundation.local,
+      discardProvisionalAuthority: async () => {
+        throw new Error('injected provisional authority cleanup failure');
+      },
+      inspectAuthority: projectId => foundation.inspectAuthority(projectId),
+      openAuthority: async projectId => {
+        controller.abort();
+        return foundation.openAuthority(projectId);
+      },
+      requireGitFoundation: () => foundation.requireGitFoundation(),
+    };
+    const service = new CollabProjectSetupService(port, setupOptions(vaultRoot));
+
+    await expect(service.createProject({
+      memberDisplayName: 'Alice',
+      name: 'Cleanup Failure',
+    }, { signal: controller.signal })).resolves.toMatchObject({
+      error: expect.objectContaining({
+        safeContext: expect.objectContaining({ reason: 'project-setup-cleanup-failed' }),
+      }),
+      status: 'failure',
+    });
+    await expect(foundation.local.projects.loadIndex()).resolves.toMatchObject({
+      projects: [expect.objectContaining({ id: PROJECT_ID })],
+    });
+    await expect(foundation.local.projects.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    )).resolves.toMatchObject({ operationId: OPERATION_ID });
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    ))).resolves.toBeDefined();
+    await expect(stat(path.join(
+      vaultRoot,
+      'workspace',
+      `.claudian-seed-${PROJECT_ID}`,
+    ))).resolves.toBeDefined();
+
+    await expect(service.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
+      status: 'success',
+      value: { id: PROJECT_ID },
+    });
+    await expect(stat(path.join(vaultRoot, 'workspace', 'cleanup-failure')))
+      .resolves.toBeDefined();
+    await foundation.close();
+  });
+
   it('cancels before any Projects-folder or durable setup state is written', async () => {
     const foundation = createFoundation();
     const service = new CollabProjectSetupService(foundation, setupOptions(vaultRoot));
@@ -236,6 +356,10 @@ describe('CollabProjectSetupService', () => {
     let wrappedAuthority: CollabAuthorityFoundation | null = null;
     const abortingPort: CollabProjectFoundationPort = {
       local: firstFoundation.local,
+      discardProvisionalAuthority: projectId => (
+        firstFoundation.discardProvisionalAuthority(projectId)
+      ),
+      inspectAuthority: projectId => firstFoundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
         const authority = await firstFoundation.openAuthority(projectId);
         if (wrappedAuthority) return wrappedAuthority;
@@ -412,6 +536,163 @@ describe('CollabProjectSetupService', () => {
       'authorities',
       PROJECT_ID,
     ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await foundation.close();
+  });
+
+  it('resumes a staged record with an already-aborted signal without committing', async () => {
+    const foundation = createFoundation();
+    await foundation.local.projects.upsertProject({
+      authorityKind: 'lan',
+      createdAt: CREATED_AT,
+      id: PROJECT_ID,
+      name: 'Staged',
+      updatedAt: CREATED_AT,
+      workspacePath: 'workspace/staged',
+    });
+    await foundation.local.projects.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      cloneDirectoryName: `.claudian-clone-${PROJECT_ID}`,
+      createdAt: CREATED_AT,
+      initialCommitOid: '1'.repeat(40),
+      memberCredential: MEMBER_CREDENTIAL,
+      memberDisplayName: 'Alice',
+      memberId: MEMBER_ID,
+      name: 'Staged',
+      operationId: OPERATION_ID,
+      phase: 'staged',
+      projectId: PROJECT_ID,
+      projectsFolder: 'workspace',
+      schemaVersion: 2,
+      seedDirectoryName: `.claudian-seed-${PROJECT_ID}`,
+      slug: 'staged',
+      updatedAt: CREATED_AT,
+    });
+    const service = new CollabProjectSetupService(foundation, setupOptions(vaultRoot));
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(service.resumeSetup(
+      { operationId: OPERATION_ID },
+      { signal: controller.signal },
+    )).resolves.toEqual({
+      durableProgress: false,
+      status: 'cancelled',
+    });
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(foundation.local.projects.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    )).resolves.toMatchObject({ operationId: OPERATION_ID });
+    await foundation.close();
+  });
+
+  it('keeps recovery-required semantics when cancellation lands after the authority commit', async () => {
+    git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
+    const foundation = createFoundation();
+    const controller = new AbortController();
+    const port: CollabProjectFoundationPort = {
+      local: foundation.local,
+      discardProvisionalAuthority: projectId => (
+        foundation.discardProvisionalAuthority(projectId)
+      ),
+      inspectAuthority: projectId => foundation.inspectAuthority(projectId),
+      openAuthority: async projectId => {
+        const authority = await foundation.openAuthority(projectId);
+        return {
+          ...authority,
+          database: {
+            mutate: mutation => {
+              controller.abort();
+              return authority.database.mutate(mutation);
+            },
+            read: reader => authority.database.read(reader),
+          },
+        };
+      },
+      requireGitFoundation: () => foundation.requireGitFoundation(),
+    };
+    const service = new CollabProjectSetupService(port, setupOptions(vaultRoot));
+
+    await expect(service.createProject({
+      memberDisplayName: 'Alice',
+      name: 'Committed Then Cancelled',
+    }, { signal: controller.signal })).resolves.toMatchObject({
+      durablePhase: 'committed',
+      durableProgress: true,
+      status: 'recovery-required',
+    });
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    ))).resolves.toBeDefined();
+    await expect(foundation.local.projects.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    )).resolves.toMatchObject({ operationId: OPERATION_ID });
+    await foundation.close();
+  });
+
+  it('leaves no authority, index, or staging orphans after a pre-commit staging failure', async () => {
+    git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
+    const foundation = createFoundation();
+    const port: CollabProjectFoundationPort = {
+      local: foundation.local,
+      discardProvisionalAuthority: projectId => (
+        foundation.discardProvisionalAuthority(projectId)
+      ),
+      inspectAuthority: projectId => foundation.inspectAuthority(projectId),
+      openAuthority: projectId => foundation.openAuthority(projectId),
+      requireGitFoundation: () => Promise.reject(
+        new Error('injected staging Git failure'),
+      ),
+    };
+    const service = new CollabProjectSetupService(port, setupOptions(vaultRoot));
+
+    await expect(service.createProject({
+      memberDisplayName: 'Alice',
+      name: 'Staging Failure',
+    })).resolves.toMatchObject({ status: 'failure' });
+
+    await expect(foundation.local.projects.loadIndex()).resolves.toMatchObject({
+      projects: [],
+    });
+    await expect(foundation.local.projects.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    )).resolves.toBeNull();
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readdir(path.join(vaultRoot, 'workspace'))).resolves.toEqual(
+      expect.not.arrayContaining([
+        expect.stringMatching(/^\.claudian-(?:clone|seed)-/u),
+      ]),
+    );
+    expect((foundation as unknown as {
+      authorityFoundations: Map<string, unknown>;
+    }).authorityFoundations.size).toBe(0);
     await foundation.close();
   });
 

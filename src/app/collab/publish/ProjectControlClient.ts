@@ -1,4 +1,4 @@
-import { type AcceptResponse, type CollabChangeRequest, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse } from '@claudian/collab-protocol';
+import { type AcceptResponse, type CollabChangeRequest, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse } from '@claudian/collab-protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
@@ -70,6 +70,21 @@ export interface ReadProjectTicketInput {
   readonly projectId: string;
   readonly signal?: AbortSignal;
   readonly ticketId: string;
+}
+
+export interface PageProjectTicketCommentsInput extends ReadProjectTicketInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface PageProjectTicketRelationsInput extends ReadProjectTicketInput {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface PageProjectRequestCommentsInput extends ReadProjectRequestInput {
+  readonly cursor?: string;
+  readonly limit?: number;
 }
 
 export interface CreateProjectTicketInput {
@@ -219,6 +234,50 @@ export class ProjectControlClient {
       path: collabControlOperationPath('getTicket', input.projectId, {
         ticketId: input.ticketId,
       }),
+    }, input.memberCredential, input.signal ? { signal: input.signal } : {});
+  }
+
+  listTicketComments(input: PageProjectTicketCommentsInput): Promise<CollabTicketCommentPage> {
+    const query = new URLSearchParams();
+    if (input.cursor !== undefined) query.set('cursor', input.cursor);
+    if (input.limit !== undefined) query.set('limit', String(input.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : '';
+    return this.transport.requestWithMember({
+      decode: lanCollabControlOperationCodec('listTicketComments').decodeResponse,
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.listTicketComments.method,
+      path: `${collabControlOperationPath('listTicketComments', input.projectId, {
+        ticketId: input.ticketId,
+      })}${suffix}`,
+    }, input.memberCredential, input.signal ? { signal: input.signal } : {});
+  }
+
+  listTicketAcceptedRelations(
+    input: PageProjectTicketRelationsInput,
+  ): Promise<CollabTicketAcceptedRelationPage> {
+    const query = new URLSearchParams();
+    if (input.cursor !== undefined) query.set('cursor', input.cursor);
+    if (input.limit !== undefined) query.set('limit', String(input.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : '';
+    return this.transport.requestWithMember({
+      decode: lanCollabControlOperationCodec('listTicketAcceptedRelations').decodeResponse,
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.listTicketAcceptedRelations.method,
+      path: `${collabControlOperationPath('listTicketAcceptedRelations', input.projectId, {
+        ticketId: input.ticketId,
+      })}${suffix}`,
+    }, input.memberCredential, input.signal ? { signal: input.signal } : {});
+  }
+
+  listRequestComments(input: PageProjectRequestCommentsInput): Promise<CollabCommentPage> {
+    const query = new URLSearchParams();
+    if (input.cursor !== undefined) query.set('cursor', input.cursor);
+    if (input.limit !== undefined) query.set('limit', String(input.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : '';
+    return this.transport.requestWithMember({
+      decode: lanCollabControlOperationCodec('listRequestComments').decodeResponse,
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.listRequestComments.method,
+      path: `${collabControlOperationPath('listRequestComments', input.projectId, {
+        requestId: input.requestId,
+      })}${suffix}`,
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type AcceptResponse, type CollabComment, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketDetail, type CollabTicketPage } from '@claudian/collab-protocol';
+import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage } from '@claudian/collab-protocol';
 
 import {
   CollabProjectWorkSessionRegistry,
@@ -24,8 +24,8 @@ import type {
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CACHE_SCHEMA_VERSION = 3 as const;
-const OBSOLETE_CACHE_SCHEMA_VERSION = 2 as const;
+const CACHE_SCHEMA_VERSION = 4 as const;
+const OBSOLETE_CACHE_SCHEMA_VERSIONS = new Set<unknown>([2, 3]);
 const MAX_CACHED_TICKET_PAGES = 16;
 const MAX_CACHED_TICKET_DETAILS = 32;
 
@@ -50,7 +50,7 @@ interface CollabSnapshotCache extends CollabLocalProjectDocumentBase {
 }
 
 interface ObsoleteCollabSnapshotCache extends CollabLocalProjectDocumentBase {
-  readonly schemaVersion: typeof OBSOLETE_CACHE_SCHEMA_VERSION;
+  readonly schemaVersion: 2 | 3;
 }
 
 type DecodedCollabSnapshotCache = CollabSnapshotCache | ObsoleteCollabSnapshotCache;
@@ -98,6 +98,24 @@ export interface CollabClientProjectionControlPort {
     request: CollabListTicketsRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabTicketPage>;
+  listRequestComments(
+    projectId: string,
+    requestId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabCommentPage>;
+  listTicketComments(
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketCommentPage>;
+  listTicketAcceptedRelations(
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketAcceptedRelationPage>;
   readRequest(
     projectId: string,
     requestId: string,
@@ -108,6 +126,11 @@ export interface CollabClientProjectionControlPort {
     options?: CollabOperationOptions,
   ): Promise<CollabProjectSnapshot>;
   readTicket(
+    projectId: string,
+    ticketId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketDetail>;
+  readTicketPage(
     projectId: string,
     ticketId: string,
     options?: CollabOperationOptions,
@@ -165,10 +188,10 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   const source = value as Readonly<Record<string, unknown>>;
   const projectId = source.projectId;
   if (
-    source.schemaVersion === OBSOLETE_CACHE_SCHEMA_VERSION
+    OBSOLETE_CACHE_SCHEMA_VERSIONS.has(source.schemaVersion)
     && typeof projectId === 'string'
   ) {
-    return { projectId, schemaVersion: OBSOLETE_CACHE_SCHEMA_VERSION };
+    return { projectId, schemaVersion: source.schemaVersion as 2 | 3 };
   }
   const cachedAt = source.cachedAt;
   if (
@@ -236,12 +259,69 @@ function decodeCachedTicketDetail(value: unknown): CachedTicketDetail {
   if (typeof source.ticketId !== 'string') {
     throw new TypeError('Invalid cached Ticket detail');
   }
-  const detail = lanCollabControlOperationCodec('getTicket')
-    .decodeResponse(cacheEnvelope(source.detail));
-  if (detail.ticket.id !== source.ticketId) {
+  if (!source.detail || typeof source.detail !== 'object' || Array.isArray(source.detail)) {
     throw new TypeError('Invalid cached Ticket detail');
   }
-  return { cachedAt, detail, ticketId: source.ticketId };
+  const rawDetail = source.detail as Readonly<Record<string, unknown>>;
+  if (
+    !rawDetail.comments
+    || typeof rawDetail.comments !== 'object'
+    || Array.isArray(rawDetail.comments)
+    || !rawDetail.acceptedRelations
+    || typeof rawDetail.acceptedRelations !== 'object'
+    || Array.isArray(rawDetail.acceptedRelations)
+  ) {
+    throw new TypeError('Invalid cached Ticket collections');
+  }
+  const rawCommentsPage = rawDetail.comments as Readonly<Record<string, unknown>>;
+  const rawRelationsPage = rawDetail.acceptedRelations as Readonly<Record<string, unknown>>;
+  const rawComments = rawCommentsPage.comments;
+  const rawRelations = rawRelationsPage.acceptedRelations;
+  if (
+    rawCommentsPage.nextCursor !== undefined
+    || rawRelationsPage.nextCursor !== undefined
+    || !Array.isArray(rawComments)
+    || rawComments.length > COLLAB_LIMITS.maxTicketComments
+    || !Array.isArray(rawRelations)
+    || rawRelations.length > COLLAB_LIMITS.maxTicketAcceptedRelations
+  ) {
+    throw new TypeError('Invalid cached Ticket collections');
+  }
+  const detail = lanCollabControlOperationCodec('getTicket').decodeResponse(cacheEnvelope({
+    ...rawDetail,
+    acceptedRelations: { acceptedRelations: [] },
+    comments: { comments: [] },
+  }));
+  const comments = rawComments.flatMap((_item, index) => {
+    if (index % COLLAB_LIMITS.maxCommentPageSize !== 0) return [];
+    return lanCollabControlOperationCodec('listTicketComments').decodeResponse(cacheEnvelope({
+      comments: rawComments.slice(index, index + COLLAB_LIMITS.maxCommentPageSize),
+    })).comments;
+  });
+  const acceptedRelations = rawRelations.flatMap((_item, index) => {
+    if (index % COLLAB_LIMITS.maxRelationsPerPage !== 0) return [];
+    return lanCollabControlOperationCodec('listTicketAcceptedRelations')
+      .decodeResponse(cacheEnvelope({
+        acceptedRelations: rawRelations.slice(index, index + COLLAB_LIMITS.maxRelationsPerPage),
+      })).acceptedRelations;
+  });
+  if (
+    detail.ticket.id !== source.ticketId
+    || comments.length !== detail.ticket.commentCount
+    || acceptedRelations.length !== detail.ticket.acceptedRelationCount
+    || comments.some(comment => comment.ticketId !== detail.ticket.id)
+  ) {
+    throw new TypeError('Invalid cached Ticket detail');
+  }
+  return {
+    cachedAt,
+    detail: {
+      ...detail,
+      acceptedRelations: { acceptedRelations },
+      comments: { comments },
+    },
+    ticketId: source.ticketId,
+  };
 }
 
 function cacheEnvelope(data: unknown): unknown {
@@ -453,6 +533,27 @@ export class CollabClientProjection {
     }
   }
 
+  async readTicketPage(
+    projectId: string,
+    ticketId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketDetailProjection> {
+    this.assertOpen();
+    throwIfCancelled(options.signal);
+    const detail = await this.runWithRetirementFallback(
+      projectId,
+      () => this.control.readTicketPage(projectId, ticketId, options),
+    );
+    throwIfCancelled(options.signal);
+    if (detail.ticket.id !== ticketId) {
+      throw new CollabError({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'projection-ticket-detail-mismatch' },
+      });
+    }
+    return { detail, source: 'online', stale: false };
+  }
+
   async readRequest(
     projectId: string,
     requestId: string,
@@ -462,6 +563,45 @@ export class CollabClientProjection {
     return this.runWithRetirementFallback(
       projectId,
       () => this.control.readRequest(projectId, requestId, options),
+    );
+  }
+
+  async listRequestComments(
+    projectId: string,
+    requestId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCommentPage> {
+    this.assertOpen();
+    return this.runWithRetirementFallback(
+      projectId,
+      () => this.control.listRequestComments(projectId, requestId, query, options),
+    );
+  }
+
+  async listTicketComments(
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketCommentPage> {
+    this.assertOpen();
+    return this.runWithRetirementFallback(
+      projectId,
+      () => this.control.listTicketComments(projectId, ticketId, query, options),
+    );
+  }
+
+  async listTicketAcceptedRelations(
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketAcceptedRelationPage> {
+    this.assertOpen();
+    return this.runWithRetirementFallback(
+      projectId,
+      () => this.control.listTicketAcceptedRelations(projectId, ticketId, query, options),
     );
   }
 
@@ -765,7 +905,7 @@ export class CollabClientProjection {
 
   private async loadCache(projectId: string): Promise<CollabSnapshotCache | null> {
     const cache = await this.store.loadProjectDocument(projectId, 'cache', decodeCache);
-    if (cache?.schemaVersion === OBSOLETE_CACHE_SCHEMA_VERSION) {
+    if (cache && cache.schemaVersion !== CACHE_SCHEMA_VERSION) {
       await this.store.removeProjectDocument(projectId, 'cache');
       return null;
     }

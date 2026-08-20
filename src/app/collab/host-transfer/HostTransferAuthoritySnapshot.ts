@@ -3,7 +3,7 @@ import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
 
 import {
   assertAuthorityDatabaseIntegrity,
-  migrateAuthorityV8DatabaseToV9,
+  migrateLegacyAuthorityDatabaseToCurrent,
 } from '@/app/collab/authority/AuthoritySchema';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { HostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
@@ -114,7 +114,7 @@ function decodeProofChain(
   });
 }
 
-function assertSchema(database: Database, expectedVersion: 8 | 9): void {
+function assertSchema(database: Database, expectedVersion: 8 | 9 | 10 | 11): void {
   const version = one(database, 'PRAGMA user_version').user_version;
   if (version !== expectedVersion) {
     throw snapshotError('host-transfer-authority-schema-mismatch');
@@ -252,11 +252,11 @@ export class HostTransferAuthoritySnapshot {
     readonly pinnedSourceCaCertificatePem: string;
     readonly sourceHostMemberId: CollabMemberId;
   }): Promise<void> {
-    if (input.manifest.authoritySchemaVersion !== 8) return;
-    const database = await this.openRaw(input.bytes, 8);
+    if (input.manifest.authoritySchemaVersion === COLLAB_AUTHORITY_SCHEMA_VERSION) return;
+    const database = await this.openRaw(input.bytes, input.manifest.authoritySchemaVersion);
     try {
       this.inspectOpenInert(database, input);
-      migrateAuthorityV8DatabaseToV9(database);
+      migrateLegacyAuthorityDatabaseToCurrent(database);
     } catch (error) {
       if (error instanceof CollabError) throw error;
       throw snapshotError('host-transfer-authority-migration-failed');
@@ -294,17 +294,20 @@ export class HostTransferAuthoritySnapshot {
         assertAuthorityDatabaseIntegrity(database, { full: true, requireProject: true });
       }
       this.inspectOpenInert(database, input);
-      const legacy = input.manifest.authoritySchemaVersion === 8;
+      const legacy = input.manifest.authoritySchemaVersion !== COLLAB_AUTHORITY_SCHEMA_VERSION;
       let legacyActivatedBytes: Uint8Array | undefined;
       if (legacy) {
-        const legacyDatabase = await this.openRaw(input.bytes, 8);
+        const legacyDatabase = await this.openRaw(
+          input.bytes,
+          input.manifest.authoritySchemaVersion,
+        );
         try {
           this.applyActivation(legacyDatabase, certificate, false);
           legacyActivatedBytes = Uint8Array.from(legacyDatabase.export());
         } finally {
           legacyDatabase.close();
         }
-        migrateAuthorityV8DatabaseToV9(database);
+        migrateLegacyAuthorityDatabaseToCurrent(database);
       }
       this.applyActivation(database, certificate, true);
       return {
@@ -378,7 +381,10 @@ export class HostTransferAuthoritySnapshot {
     }
   }
 
-  private async openRaw(bytes: Uint8Array, expectedSchemaVersion: 8 | 9): Promise<Database> {
+  private async openRaw(
+    bytes: Uint8Array,
+    expectedSchemaVersion: 8 | 9 | 10 | 11,
+  ): Promise<Database> {
     if (bytes.byteLength < 16 || Buffer.from(bytes.subarray(0, 16)).toString('binary') !== 'SQLite format 3\u0000') {
       throw snapshotError('host-transfer-authority-header-invalid');
     }

@@ -1,3 +1,5 @@
+import { isCollabMemberId } from '@claudian/collab-protocol';
+
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   matchCollabControlOperation,
@@ -10,19 +12,10 @@ import type {
 } from '@/app/collab/lan/routes/RouteTypes';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-
 function routeError(reason: string): CollabError {
   return new CollabError({
     code: 'protocol-payload-invalid',
     safeContext: { reason },
-  });
-}
-
-function unavailable(): CollabError {
-  return new CollabError({
-    code: 'operation-failed',
-    safeContext: { reason: 'membership-admin-service-unavailable' },
   });
 }
 
@@ -34,7 +27,7 @@ function parseRemoval(request: CollabControlRouteRequest, memberId: string) {
     body.projectId !== request.projectId
     || body.idempotencyKey !== request.idempotencyKey
   ) throw routeError('membership-mutation-request-mismatch');
-  if (!MEMBER_ID_PATTERN.test(memberId) || body.memberId !== memberId) {
+  if (!isCollabMemberId(memberId) || body.memberId !== memberId) {
     throw routeError('membership-removal-request-invalid');
   }
   return body;
@@ -51,7 +44,6 @@ export const handleMembershipRoute: CollabControlRouteHandler = async request =>
     const memberId = match.parameters.memberId ?? '';
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    if (!request.service.removeMember) throw unavailable();
     return {
       data: await request.service.removeMember(
         memberCredential,

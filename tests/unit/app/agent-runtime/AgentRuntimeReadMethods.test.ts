@@ -134,10 +134,6 @@ const COORDINATION: CollabCoordinationSnapshot = {
 };
 
 const CONFLICT: CollabConflictSession = {
-  decisions: [
-    { choice: 'use-manual-draft', draft: 'private draft', path: CHANGED_FILE.path },
-    { choice: 'use-agent-proposal', path: 'notes/second.md', proposal: 'private proposal' },
-  ],
   descriptor: {
     conflicts: [
       {
@@ -155,8 +151,6 @@ const CONFLICT: CollabConflictSession = {
     startingMainOid: 'starting-main-oid',
     startingPersonalOid: 'starting-personal-oid',
   },
-  pending: [{ kind: 'binary', path: 'assets/image.png' }],
-  resolvedPaths: [CHANGED_FILE.path],
 };
 
 const INSPECTION: CollabProjectInspection = {
@@ -203,26 +197,28 @@ const INSPECTION: CollabProjectInspection = {
 };
 
 const REQUEST_DETAIL: CollabRequestDetail = {
-  changedFiles: [RAW_ONLY_FILE, CHANGED_FILE],
-  comments: [{
-    authorMemberId: 'member-manager',
-    body: 'Please verify this.',
-    createdAt: '2026-08-11T03:00:00.000Z',
-    id: 'comment-1',
-    requestId: REQUEST.id,
-  }, {
-    authorMemberId: 'member-manager',
-    body: 'Additional overview feedback.',
-    createdAt: '2026-08-11T03:00:30.000Z',
-    id: 'comment-hidden',
-    requestId: REQUEST.id,
-  }, {
-    authorMemberId: 'member-manager',
-    body: 'General overview feedback.',
-    createdAt: '2026-08-11T03:01:00.000Z',
-    id: 'comment-general',
-    requestId: REQUEST.id,
-  }],
+  comments: {
+    comments: [{
+      authorMemberId: 'member-manager',
+      body: 'Please verify this.',
+      createdAt: '2026-08-11T03:00:00.000Z',
+      id: 'comment-1',
+      requestId: REQUEST.id,
+    }, {
+      authorMemberId: 'member-manager',
+      body: 'Additional overview feedback.',
+      createdAt: '2026-08-11T03:00:30.000Z',
+      id: 'comment-hidden',
+      requestId: REQUEST.id,
+    }, {
+      authorMemberId: 'member-manager',
+      body: 'General overview feedback.',
+      createdAt: '2026-08-11T03:01:00.000Z',
+      id: 'comment-general',
+      requestId: REQUEST.id,
+    }],
+    nextCursor: 'request-comments-next',
+  },
   currentMainOid: 'main-oid',
   request: REQUEST,
   reviewedHeadOid: 'head-oid',
@@ -243,6 +239,7 @@ const TICKET_PAGE: CollabTicketPageProjection = {
   page: {
     nextCursor: 'next-cursor',
     tickets: [{
+      acceptedRelationCount: 0,
       authorMemberId: 'member-manager',
       commentCount: 1,
       createdAt: '2026-08-11T01:00:00.000Z',
@@ -260,22 +257,28 @@ const TICKET_PAGE: CollabTicketPageProjection = {
 
 const TICKET_DETAIL: CollabTicketDetailProjection = {
   detail: {
-    acceptedRelations: [{
-      acceptedAt: '2026-08-11T04:00:00.000Z',
-      acceptedMergeOid: 'merge-oid',
-      commitOid: 'head-oid',
-      id: 'accepted-relation-1',
-      kind: 'references',
-      requestId: REQUEST.id,
-    }],
+    acceptedRelations: {
+      acceptedRelations: [{
+        acceptedAt: '2026-08-11T04:00:00.000Z',
+        acceptedMergeOid: 'merge-oid',
+        commitOid: 'head-oid',
+        id: 'accepted-relation-1',
+        kind: 'references',
+        requestId: REQUEST.id,
+      }],
+      nextCursor: 'ticket-relations-next',
+    },
     body: 'Full Ticket body',
-    comments: [{
-      authorMemberId: 'member-manager',
-      body: 'Ticket comment',
-      createdAt: '2026-08-11T03:00:00.000Z',
-      id: 'ticket-comment-1',
-      ticketId: 'ticket-1',
-    }],
+    comments: {
+      comments: [{
+        authorMemberId: 'member-manager',
+        body: 'Ticket comment',
+        createdAt: '2026-08-11T03:00:00.000Z',
+        id: 'ticket-comment-1',
+        ticketId: 'ticket-1',
+      }],
+      nextCursor: 'ticket-comments-next',
+    },
     ticket: TICKET_PAGE.page.tickets[0]!,
   },
   source: 'cache',
@@ -298,7 +301,22 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     listProjects: jest.fn().mockResolvedValue(success([PROJECT])),
     listTickets: jest.fn().mockResolvedValue(success(TICKET_PAGE)),
     publish: jest.fn(),
-    prepareReview: jest.fn().mockResolvedValue(success(REQUEST_REVIEW)),
+    boundedQueries: {
+      listRequestComments: jest.fn().mockResolvedValue(success({
+        comments: [REQUEST_DETAIL.comments.comments[0]!],
+        nextCursor: 'request-comments-next-2',
+      })),
+      listTicketAcceptedRelations: jest.fn().mockResolvedValue(success({
+        acceptedRelations: TICKET_DETAIL.detail.acceptedRelations.acceptedRelations,
+        nextCursor: 'ticket-relations-next-2',
+      })),
+      listTicketComments: jest.fn().mockResolvedValue(success({
+        comments: TICKET_DETAIL.detail.comments.comments,
+        nextCursor: 'ticket-comments-next-2',
+      })),
+      prepareReview: jest.fn().mockResolvedValue(success(REQUEST_REVIEW)),
+      readTicket: jest.fn().mockResolvedValue(success(TICKET_DETAIL)),
+    },
     readConflict: jest.fn().mockResolvedValue(success(CONFLICT)),
     readConflictFile: jest.fn().mockResolvedValue(success({
       accepted: { path: CHANGED_FILE.path, text: 'accepted' },
@@ -328,7 +346,6 @@ function readPort(): jest.Mocked<CollabAgentPort> {
       oldText: 'old text',
     })),
     readSnapshot: jest.fn().mockResolvedValue(success(COORDINATION)),
-    readTicket: jest.fn().mockResolvedValue(success(TICKET_DETAIL)),
     readWorkingTreeReviewFile: jest.fn().mockResolvedValue(success({
       file: CHANGED_FILE,
       kind: 'binary',
@@ -499,13 +516,14 @@ describe('Agent Runtime Collab read methods', () => {
           { id: 'comment-hidden' },
           { id: 'comment-general' },
         ],
+        nextCommentCursor: 'request-comments-next',
         comparisonBaseOid: REQUEST_REVIEW.comparisonBaseOid,
         comparisonKind: REQUEST_REVIEW.comparisonKind,
         comparisonTargetOid: REQUEST_REVIEW.comparisonTargetOid,
         request: { id: REQUEST.id },
       },
     });
-    expect(port.prepareReview).toHaveBeenCalledWith(
+    expect(port.boundedQueries.prepareReview).toHaveBeenCalledWith(
       PROJECT.id,
       REQUEST.id,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -542,8 +560,43 @@ describe('Agent Runtime Collab read methods', () => {
         acceptedRelations: [{ id: 'accepted-relation-1' }],
         body: 'Full Ticket body',
         comments: [{ id: 'ticket-comment-1' }],
+        nextAcceptedRelationCursor: 'ticket-relations-next',
+        nextCommentCursor: 'ticket-comments-next',
         source: 'cache',
         stale: true,
+      },
+    });
+
+    await expect(call(port, 'collab.requests.comments.list', {
+      cursor: 'request-comments-next',
+      limit: 25,
+      projectId: PROJECT.id,
+      requestId: REQUEST.id,
+    })).resolves.toMatchObject({
+      result: {
+        comments: [{ id: 'comment-1' }],
+        nextCursor: 'request-comments-next-2',
+        requestId: REQUEST.id,
+      },
+    });
+    await expect(call(port, 'collab.tickets.comments.list', {
+      cursor: 'ticket-comments-next',
+      projectId: PROJECT.id,
+      ticketId: 'ticket-1',
+    })).resolves.toMatchObject({
+      result: {
+        comments: [{ id: 'ticket-comment-1' }],
+        nextCursor: 'ticket-comments-next-2',
+      },
+    });
+    await expect(call(port, 'collab.tickets.relations.list', {
+      cursor: 'ticket-relations-next',
+      projectId: PROJECT.id,
+      ticketId: 'ticket-1',
+    })).resolves.toMatchObject({
+      result: {
+        acceptedRelations: [{ id: 'accepted-relation-1' }],
+        nextCursor: 'ticket-relations-next-2',
       },
     });
   });
@@ -568,15 +621,13 @@ describe('Agent Runtime Collab read methods', () => {
     expect(conflict).toMatchObject({
       result: {
         conflict: {
-          decisions: [],
-          location: 'request',
-          operationId: 'operation-1',
-          pending: [
+          conflicts: [
             { kind: 'text', path: CHANGED_FILE.path },
             { kind: 'binary', path: 'assets/image.png' },
           ],
+          location: 'request',
+          operationId: 'operation-1',
           requestId: REQUEST.id,
-          resolvedPaths: [],
         },
       },
     });
@@ -777,19 +828,18 @@ describe('Agent Runtime Collab read methods', () => {
       'listProjects',
       'inspectProject',
       'readSnapshot',
-      'prepareReview',
+      'boundedQueries',
       'readReviewFile',
       'readWorkingTreeReviewFile',
       'readConflict',
       'readConflictFile',
       'readProjectSelection',
       'listTickets',
-      'readTicket',
       'publish',
       'reopenTicket',
       'updateTicketContent',
     ];
-    expect(keys).toHaveLength(20);
+    expect(keys).toHaveLength(19);
     expect(keys).not.toEqual(expect.arrayContaining([
       'createInvitation',
       'demoteManager',

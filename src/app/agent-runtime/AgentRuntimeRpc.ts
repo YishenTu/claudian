@@ -3,7 +3,7 @@ import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTic
 import type { CollabAuthorityKind, CollabAuthoritySyncStatus, CollabConflictKind, CollabConnectionStatus, CollabHostStatus, CollabLocalCleanupStatus, CollabPersonalAction, CollabProjectHealth, CollabProjectLifecycle, CollabReviewComparisonKind } from '@/core/collab';
 import type { CollabErrorCode } from '@/core/collab/ClaudianCollabError';
 
-export const AGENT_RUNTIME_PROTOCOL_VERSION = 4 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION = 5 as const;
 
 export type AgentRuntimeRpcOwnedErrorCode =
   | 'invalid_request'
@@ -224,15 +224,6 @@ export interface AgentRuntimeConflictEntry {
   readonly acceptedPath?: string;
 }
 
-export interface AgentRuntimeConflictDecision {
-  readonly path: string;
-  readonly choice:
-    | 'keep-personal'
-    | 'use-accepted'
-    | 'use-manual-draft'
-    | 'use-agent-proposal';
-}
-
 export type AgentRuntimeReviewFileContent =
   | {
     readonly kind: 'text';
@@ -372,6 +363,14 @@ export interface AgentRuntimeRequestGetResult {
   readonly comparisonTargetOid: string;
   readonly changedFiles: readonly AgentRuntimeChangedFile[];
   readonly comments: readonly AgentRuntimeComment[];
+  readonly nextCommentCursor?: string;
+}
+
+export interface AgentRuntimeRequestCommentsListResult {
+  readonly projectId: string;
+  readonly requestId: string;
+  readonly comments: readonly AgentRuntimeComment[];
+  readonly nextCursor?: string;
 }
 
 export interface AgentRuntimeRequestFileResult {
@@ -400,6 +399,22 @@ export interface AgentRuntimeTicketGetResult {
   readonly body: string;
   readonly comments: readonly AgentRuntimeTicketComment[];
   readonly acceptedRelations: readonly AgentRuntimeTicketAcceptedRelation[];
+  readonly nextCommentCursor?: string;
+  readonly nextAcceptedRelationCursor?: string;
+}
+
+export interface AgentRuntimeTicketCommentsListResult {
+  readonly projectId: string;
+  readonly ticketId: string;
+  readonly comments: readonly AgentRuntimeTicketComment[];
+  readonly nextCursor?: string;
+}
+
+export interface AgentRuntimeTicketRelationsListResult {
+  readonly projectId: string;
+  readonly ticketId: string;
+  readonly acceptedRelations: readonly AgentRuntimeTicketAcceptedRelation[];
+  readonly nextCursor?: string;
 }
 
 export interface AgentRuntimeTicketCreateResult {
@@ -469,9 +484,6 @@ export interface AgentRuntimeConflictGetResult {
     readonly startingMainOid: string;
     readonly mergeBaseOid: string;
     readonly conflicts: readonly AgentRuntimeConflictEntry[];
-    readonly pending: readonly AgentRuntimeConflictEntry[];
-    readonly resolvedPaths: readonly string[];
-    readonly decisions: readonly AgentRuntimeConflictDecision[];
   };
 }
 
@@ -493,9 +505,12 @@ export type AgentRuntimeRpcResult =
   | AgentRuntimePersonalChangeFileResult
   | AgentRuntimeRequestsListResult
   | AgentRuntimeRequestGetResult
+  | AgentRuntimeRequestCommentsListResult
   | AgentRuntimeRequestFileResult
   | AgentRuntimeTicketsListResult
   | AgentRuntimeTicketGetResult
+  | AgentRuntimeTicketCommentsListResult
+  | AgentRuntimeTicketRelationsListResult
   | AgentRuntimeTicketCreateResult
   | AgentRuntimeTicketSummaryMutationResult
   | AgentRuntimeTicketCommentCreateResult

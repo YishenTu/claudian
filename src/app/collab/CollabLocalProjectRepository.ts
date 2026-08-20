@@ -116,7 +116,6 @@ export interface CollabLocalProjectPaths {
   readonly hostTransferRecovery: string;
   readonly localCleanup: string;
   readonly managerResponsibilityReceipt: string;
-  readonly pendingLeave: string;
   readonly retirement: string;
 }
 
@@ -127,7 +126,6 @@ export type CollabLocalProjectDocumentKind =
   | 'request-draft';
 
 export type CollabLifecycleProjectDocumentKind =
-  | 'pending-leave'
   | 'manager-responsibility-receipt'
   | 'local-cleanup'
   | 'host-transfer-recovery'
@@ -625,6 +623,30 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  discardPendingOperation(projectId: CollabProjectId): Promise<void> {
+    this.requireProjectId(projectId);
+    return this.operationQueue.run(async () => {
+      const index = await this.loadIndexUnlocked(false);
+      if (
+        index.selectedProjectId === projectId
+        || index.projects.some(project => project.id === projectId)
+      ) {
+        await this.saveIndexUnlocked({
+          ...index,
+          projects: index.projects.filter(project => project.id !== projectId),
+          selectedProjectId: index.selectedProjectId === projectId
+            ? null
+            : index.selectedProjectId,
+        });
+      }
+      await removeCollabFileDurably(
+        this.vaultRoot,
+        this.projectDocumentPath(projectId, 'pending-operation'),
+        this.onDiagnostic,
+      );
+    });
+  }
+
   purgeProjectPrivateState(projectId: CollabProjectId): Promise<boolean> {
     this.requireProjectId(projectId);
     return this.operationQueue.run(() => removeCollabDirectoryDurably(
@@ -632,6 +654,26 @@ export class CollabLocalProjectRepository {
       `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}`,
       this.onDiagnostic,
     ));
+  }
+
+  pruneProjectPrivateDirectoryIfEmpty(projectId: CollabProjectId): Promise<boolean> {
+    this.requireProjectId(projectId);
+    return this.operationQueue.run(async () => {
+      const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}`;
+      const absoluteDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        relativeDirectory,
+      );
+      const entries = await readdir(absoluteDirectory).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw localRecordError('local-record-read-failed', 'index', projectId);
+      });
+      if (entries === null || entries.length > 0) return false;
+      await rm(absoluteDirectory, { recursive: true }).catch(() => {
+        throw localRecordError('local-record-remove-failed', 'index', projectId);
+      });
+      return true;
+    });
   }
 
   finalizeRetiredProject(projectId: CollabProjectId): Promise<void> {
@@ -725,51 +767,51 @@ export class CollabLocalProjectRepository {
       )) {
         throw localRecordError('local-retirement-identity-conflict', 'retirement', projectId);
       }
+      const authoritative = existing ?? retirement;
       let retiredEntry: CollabLocalProjectIndexEntry;
       try {
         retiredEntry = entry ?? normalizeIndexEntry({
           ...projectionSeed,
-          cleanupStatus: retirement.cleanupStatus,
+          cleanupStatus: authoritative.cleanupStatus,
           id: projectId,
           lifecycle: 'retired',
-          retiredAt: retirement.retiredAt,
-          updatedAt: retirement.updatedAt,
+          retiredAt: authoritative.retiredAt,
+          updatedAt: authoritative.updatedAt,
         });
       } catch {
         throw localRecordError('local-project-missing', 'index', projectId);
       }
-      const alreadyRetired = entry?.lifecycle === 'retired' && existing !== null;
       if (
-        !alreadyRetired
-        && entry !== undefined
+        entry !== undefined
         && entry.lifecycle !== 'active'
         && entry.lifecycle !== 'leaving'
+        && entry.lifecycle !== 'retired'
       ) {
         throw localRecordError('local-project-not-active', 'index', projectId);
       }
-      if (!alreadyRetired) {
-        await this.ensurePrivateProjectDirectory(projectId);
+      await this.ensurePrivateProjectDirectory(projectId);
+      if (!existing) {
         await writeCollabFileAtomically(
           this.vaultRoot,
           this.lifecycleDocumentPath(projectId, 'retirement'),
-          serializeJson(retirement),
+          serializeJson(authoritative),
           { mode: 0o600, onDiagnostic: this.onDiagnostic },
         );
-        await this.saveIndexUnlocked({
-          ...index,
-          projects: entry
-            ? index.projects.map(project => project.id === projectId
-              ? {
-                  ...project,
-                  cleanupStatus: retirement.cleanupStatus,
-                  lifecycle: 'retired' as const,
-                  retiredAt: retirement.retiredAt,
-                  updatedAt: retirement.updatedAt,
-                }
-              : project)
-            : [...index.projects, retiredEntry],
-        });
       }
+      await this.saveIndexUnlocked({
+        ...index,
+        projects: entry
+          ? index.projects.map(project => project.id === projectId
+            ? {
+                ...project,
+                cleanupStatus: authoritative.cleanupStatus,
+                lifecycle: 'retired' as const,
+                retiredAt: authoritative.retiredAt,
+                updatedAt: authoritative.updatedAt,
+              }
+            : project)
+          : [...index.projects, retiredEntry],
+      });
 
       const activeDocuments = [
         this.getProjectPaths(projectId).membership,
@@ -777,7 +819,6 @@ export class CollabLocalProjectRepository {
         this.getProjectPaths(projectId).pendingOperation,
         this.getProjectPaths(projectId).publicationState,
         this.getProjectPaths(projectId).requestDraft,
-        this.getProjectPaths(projectId).pendingLeave,
         this.getProjectPaths(projectId).managerResponsibilityReceipt,
         this.getProjectPaths(projectId).hostTransferRecovery,
       ];
@@ -1062,6 +1103,40 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  listPendingOperationProjectIds(): Promise<readonly CollabProjectId[]> {
+    return this.operationQueue.run(async () => {
+      const kind = 'pending-operation' as const;
+      const projectsDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        `${PRIVATE_STATE_DIRECTORY}/projects`,
+      );
+      const entries = await readdir(projectsDirectory, { withFileTypes: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw localRecordError('local-project-directory-read-failed', kind);
+      });
+      const projectIds: CollabProjectId[] = [];
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isDirectory()) {
+          if (entry.isSymbolicLink()) {
+            throw localRecordError('local-project-directory-invalid', kind, entry.name);
+          }
+          continue;
+        }
+        if (!PROJECT_ID_PATTERN.test(entry.name)) {
+          throw localRecordError('local-project-directory-invalid', kind, entry.name);
+        }
+        const projectId = entry.name;
+        const value = await this.readJson(
+          this.projectDocumentPath(projectId, kind),
+          kind,
+          projectId,
+        );
+        if (value !== null) projectIds.push(projectId);
+      }
+      return projectIds;
+    });
+  }
+
   saveProjectDocument<T extends CollabLocalProjectDocumentBase>(
     projectId: CollabProjectId,
     kind: CollabLocalProjectDocumentKind,
@@ -1192,42 +1267,40 @@ export class CollabLocalProjectRepository {
         serializeJson(decoded),
         { mode: 0o600, onDiagnostic: this.onDiagnostic },
       );
-      const projectIds = await this.loadRetirementTombstoneIndexUnlocked();
-      if (!projectIds.includes(decoded.projectId)) {
-        await this.saveRetirementTombstoneIndexUnlocked([...projectIds, decoded.projectId]);
-      }
     });
   }
 
   removeRetirementTombstone(projectId: CollabProjectId): Promise<boolean> {
     this.requireProjectId(projectId);
     return this.operationQueue.run(async () => {
-      const removed = await removeCollabFileDurably(
+      return removeCollabFileDurably(
         this.vaultRoot,
         this.retirementTombstonePath(projectId),
         this.onDiagnostic,
       );
-      const projectIds = await this.loadRetirementTombstoneIndexUnlocked();
-      if (projectIds.includes(projectId)) {
-        await this.saveRetirementTombstoneIndexUnlocked(
-          projectIds.filter(candidate => candidate !== projectId),
-        );
-      }
-      return removed;
     });
   }
 
   listRetirementTombstoneProjectIds(): Promise<readonly CollabProjectId[]> {
     return this.operationQueue.run(async () => {
-      await this.ensureRetirementTombstoneDirectory();
-      const indexed = await this.loadRetirementTombstoneIndexUnlocked();
       const directory = await resolveCollabVaultPath(
         this.vaultRoot,
         `${PRIVATE_STATE_DIRECTORY}/retirement-tombstones`,
-        { mustExist: true },
       );
+      let entries;
+      try {
+        entries = await readdir(directory, { withFileTypes: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') {
+          throw localRecordError('retirement-tombstone-directory-invalid', 'retirement-tombstone');
+        }
+        throw error;
+      }
       const discovered: CollabProjectId[] = [];
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
+      for (const entry of entries) {
+        // A legacy index.json is ignored, never consulted, and never deleted;
+        // the physical tombstone records are the sole recovery authority.
         if (entry.name === 'index.json' || /^\..+\.[0-9a-f-]+\.tmp$/.test(entry.name)) {
           continue;
         }
@@ -1237,11 +1310,7 @@ export class CollabLocalProjectRepository {
         }
         discovered.push(match[1]);
       }
-      const reconciled = [...new Set(discovered)].sort();
-      if (JSON.stringify(indexed) !== JSON.stringify(reconciled)) {
-        await this.saveRetirementTombstoneIndexUnlocked(reconciled);
-      }
-      return reconciled;
+      return [...new Set(discovered)].sort();
     });
   }
 
@@ -1256,7 +1325,6 @@ export class CollabLocalProjectRepository {
       localCleanup: `${projectDirectory}/local-cleanup.json`,
       managerResponsibilityReceipt: `${projectDirectory}/manager-responsibility-receipt.json`,
       membership: `${projectDirectory}/membership.json`,
-      pendingLeave: `${projectDirectory}/pending-leave.json`,
       pendingOperation: `${projectDirectory}/pending-operation.json`,
       publicationState: `${projectDirectory}/publication-state.json`,
       requestDraft: `${projectDirectory}/request-draft.json`,
@@ -1272,6 +1340,26 @@ export class CollabLocalProjectRepository {
     await ensureCollabContainerGuard(this.vaultRoot, PRIVATE_STATE_DIRECTORY, {
       onDiagnostic: this.onDiagnostic,
       privateContainer: true,
+    });
+  }
+
+  async findAuthorityDirectory(projectId: CollabProjectId): Promise<string | null> {
+    this.requireProjectId(projectId);
+    return this.operationQueue.run(async () => {
+      const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
+      const authorityDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        relativeDirectory,
+      );
+      const directoryStat = await lstat(authorityDirectory).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
+      });
+      if (directoryStat === null) return null;
+      if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+        throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
+      }
+      return authorityDirectory;
     });
   }
 
@@ -1559,7 +1647,6 @@ export class CollabLocalProjectRepository {
     kind: CollabLifecycleProjectDocumentKind,
   ): string {
     const paths = this.getProjectPaths(projectId);
-    if (kind === 'pending-leave') return paths.pendingLeave;
     if (kind === 'manager-responsibility-receipt') return paths.managerResponsibilityReceipt;
     if (kind === 'local-cleanup') return paths.localCleanup;
     if (kind === 'host-transfer-recovery') return paths.hostTransferRecovery;
@@ -1576,44 +1663,6 @@ export class CollabLocalProjectRepository {
       this.vaultRoot,
       `${PRIVATE_STATE_DIRECTORY}/retirement-tombstones`,
       { mode: 0o700, onDiagnostic: this.onDiagnostic },
-    );
-  }
-
-  private async loadRetirementTombstoneIndexUnlocked(): Promise<readonly CollabProjectId[]> {
-    const value = await this.readJson(
-      `${PRIVATE_STATE_DIRECTORY}/retirement-tombstones/index.json`,
-      'retirement-tombstone',
-    );
-    if (value === null) return [];
-    if (
-      !isRecord(value)
-      || value.schemaVersion !== 1
-      || !Array.isArray(value.projectIds)
-      || Object.keys(value).length !== 2
-      || Object.keys(value).some(key => key !== 'schemaVersion' && key !== 'projectIds')
-    ) throw localRecordError('local-record-corrupt', 'retirement-tombstone');
-    const projectIds: string[] = value.projectIds.map(projectId => {
-      if (typeof projectId !== 'string' || !PROJECT_ID_PATTERN.test(projectId)) {
-        throw localRecordError('local-record-corrupt', 'retirement-tombstone');
-      }
-      return projectId;
-    });
-    if (
-      projectIds.length > 10_000
-      || new Set(projectIds).size !== projectIds.length
-    ) throw localRecordError('local-record-corrupt', 'retirement-tombstone');
-    return projectIds.sort();
-  }
-
-  private async saveRetirementTombstoneIndexUnlocked(
-    projectIds: readonly CollabProjectId[],
-  ): Promise<void> {
-    await this.ensureRetirementTombstoneDirectory();
-    await writeCollabFileAtomically(
-      this.vaultRoot,
-      `${PRIVATE_STATE_DIRECTORY}/retirement-tombstones/index.json`,
-      serializeJson({ schemaVersion: 1, projectIds: [...projectIds].sort() }),
-      { mode: 0o600, onDiagnostic: this.onDiagnostic },
     );
   }
 

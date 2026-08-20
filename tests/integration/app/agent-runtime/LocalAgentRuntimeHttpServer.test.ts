@@ -26,7 +26,13 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     listProjects: jest.fn().mockResolvedValue({ status: 'success', value: [] }),
     listTickets: jest.fn(),
     publish: jest.fn(),
-    prepareReview: jest.fn(),
+    boundedQueries: {
+      listRequestComments: jest.fn(),
+      listTicketAcceptedRelations: jest.fn(),
+      listTicketComments: jest.fn(),
+      prepareReview: jest.fn(),
+      readTicket: jest.fn(),
+    },
     readConflict: jest.fn(),
     readConflictFile: jest.fn(),
     readProjectSelection: jest.fn().mockResolvedValue({
@@ -35,7 +41,6 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     }),
     readReviewFile: jest.fn(),
     readSnapshot: jest.fn(),
-    readTicket: jest.fn(),
     readWorkingTreeReviewFile: jest.fn(),
     reopenTicket: jest.fn(),
     updateTicketContent: jest.fn(),
@@ -99,7 +104,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       result: {
         access: 'read-write',
         name: 'claudian-agent-runtime',
-        protocolVersion: 4,
+        protocolVersion: 5,
       },
     });
 
@@ -109,7 +114,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       params: {},
     })).json()).resolves.toEqual({
       id: 'health-1',
-      result: { ok: true, protocolVersion: 4 },
+      result: { ok: true, protocolVersion: 5 },
     });
     await expect((await post(endpoint, {
       id: 'operation-1',
@@ -119,7 +124,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       id: 'operation-1',
       result: {
         operation: { name: 'collab.projects.get' },
-        protocolVersion: 4,
+        protocolVersion: 5,
       },
     });
   });
@@ -432,10 +437,11 @@ describe('LocalAgentRuntimeHttpServer', () => {
       releaseFirst = resolve;
     });
     const ticket = {
-      acceptedRelations: [],
+      acceptedRelations: { acceptedRelations: [] },
       body: 'Retry after an ambiguous timeout.',
-      comments: [],
+      comments: { comments: [] },
       ticket: {
+        acceptedRelationCount: 0,
         authorMemberId: 'member-a',
         commentCount: 0,
         createdAt: '2026-08-12T00:00:00.000Z',

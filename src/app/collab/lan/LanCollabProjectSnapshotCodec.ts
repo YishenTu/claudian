@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF, type CollabChangeRequest, type CollabMember, collabMemberRef, type CollabRequestTicketRelation, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, COLLAB_MAIN_REF, type CollabChangeRequest, type CollabMember, collabMemberRef, type CollabRequestTicketRelation, type CollabTicketSummary, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import { decodeLanCollabLifecycleOperationResponse } from '@/app/collab/lan/LanCollabLifecycleCodecs';
 import type {
@@ -11,11 +11,6 @@ import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
-
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const GIT_OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 function decodeError(field: string): CollabError {
   return new CollabError({
@@ -34,7 +29,7 @@ function string(
   value: UnknownRecord,
   field: string,
   maxLength: number,
-  pattern?: RegExp,
+  validation?: (candidate: unknown) => boolean,
   unit: 'utf16' | 'utf8' = 'utf16',
 ): string {
   const candidate = value[field];
@@ -44,7 +39,7 @@ function string(
     || (unit === 'utf8'
       ? Buffer.byteLength(candidate, 'utf8') > maxLength
       : candidate.length > maxLength)
-    || (pattern && !pattern.test(candidate))
+    || (validation && !validation(candidate))
   ) throw decodeError(field);
   return candidate;
 }
@@ -81,6 +76,16 @@ function nonNegativeInteger(value: UnknownRecord, field: string): number {
   return candidate;
 }
 
+function boundedNonNegativeInteger(
+  value: UnknownRecord,
+  field: string,
+  maximum: number,
+): number {
+  const candidate = nonNegativeInteger(value, field);
+  if (candidate > maximum) throw decodeError(field);
+  return candidate;
+}
+
 function positiveInteger(value: UnknownRecord, field: string): number {
   const candidate = nonNegativeInteger(value, field);
   if (candidate < 1) throw decodeError(field);
@@ -94,11 +99,11 @@ function requestTicketRelation(value: unknown): CollabRequestTicketRelation {
     || (source.state !== 'pending' && source.state !== 'accepted')
   ) throw decodeError('request.ticketRelations');
   return {
-    commitOid: string(source, 'commitOid', 64, GIT_OID_PATTERN),
-    id: string(source, 'id', 128, OPAQUE_ID_PATTERN),
+    commitOid: string(source, 'commitOid', 64, isCollabGitOid),
+    id: string(source, 'id', 128, isCollabOpaqueId),
     kind: source.kind,
     state: source.state,
-    ticketId: string(source, 'ticketId', 128, OPAQUE_ID_PATTERN),
+    ticketId: string(source, 'ticketId', 128, isCollabOpaqueId),
     ticketNumber: positiveInteger(source, 'ticketNumber'),
     ticketRevision: positiveInteger(source, 'ticketRevision'),
     ticketTitle: string(source, 'ticketTitle', CLAUDIAN_COLLAB_LIMITS.maxTicketTitleUtf16),
@@ -107,7 +112,7 @@ function requestTicketRelation(value: unknown): CollabRequestTicketRelation {
 
 function member(value: unknown): CollabMember {
   const source = record(value, 'member');
-  const id = string(source, 'id', 64, MEMBER_ID_PATTERN);
+  const id = string(source, 'id', 64, isCollabMemberId);
   const personalRef = string(source, 'personalRef', 256);
   const role = source.role;
   const status = source.status;
@@ -140,15 +145,19 @@ function changeRequest(value: unknown): CollabChangeRequest {
   ) throw decodeError('request.status');
   const mergedOid = source.mergedOid === undefined
     ? undefined
-    : string(source, 'mergedOid', 64, GIT_OID_PATTERN);
+    : string(source, 'mergedOid', 64, isCollabGitOid);
   return {
-    commentCount: nonNegativeInteger(source, 'commentCount'),
+    commentCount: boundedNonNegativeInteger(
+      source,
+      'commentCount',
+      COLLAB_LIMITS.maxRequestComments,
+    ),
     createdAt: timestamp(source, 'createdAt'),
     description: text(source, 'description', CLAUDIAN_COLLAB_LIMITS.maxRequestDescriptionBytes),
-    firstBaseOid: string(source, 'firstBaseOid', 64, GIT_OID_PATTERN),
-    id: string(source, 'id', 128, OPAQUE_ID_PATTERN),
-    latestHeadOid: string(source, 'latestHeadOid', 64, GIT_OID_PATTERN),
-    memberId: string(source, 'memberId', 64, MEMBER_ID_PATTERN),
+    firstBaseOid: string(source, 'firstBaseOid', 64, isCollabGitOid),
+    id: string(source, 'id', 128, isCollabOpaqueId),
+    latestHeadOid: string(source, 'latestHeadOid', 64, isCollabGitOid),
+    memberId: string(source, 'memberId', 64, isCollabMemberId),
     ...(mergedOid ? { mergedOid } : {}),
     revision: nonNegativeInteger(source, 'revision'),
     status,
@@ -163,18 +172,27 @@ function ticketSummary(value: unknown): CollabTicketSummary {
   const closedAt = optionalTimestamp(source, 'closedAt');
   const closedByMemberId = source.closedByMemberId === undefined
     ? undefined
-    : string(source, 'closedByMemberId', 64, MEMBER_ID_PATTERN);
+    : string(source, 'closedByMemberId', 64, isCollabMemberId);
   if (
     (status !== 'open' && status !== 'closed')
     || (status === 'open' && (closedAt !== undefined || closedByMemberId !== undefined))
     || (status === 'closed' && (closedAt === undefined || closedByMemberId === undefined))
   ) throw decodeError('ticket.status');
   return {
-    authorMemberId: string(source, 'authorMemberId', 64, MEMBER_ID_PATTERN),
+    acceptedRelationCount: boundedNonNegativeInteger(
+      source,
+      'acceptedRelationCount',
+      COLLAB_LIMITS.maxTicketAcceptedRelations,
+    ),
+    authorMemberId: string(source, 'authorMemberId', 64, isCollabMemberId),
     ...(closedAt && closedByMemberId ? { closedAt, closedByMemberId } : {}),
-    commentCount: nonNegativeInteger(source, 'commentCount'),
+    commentCount: boundedNonNegativeInteger(
+      source,
+      'commentCount',
+      COLLAB_LIMITS.maxTicketComments,
+    ),
     createdAt: timestamp(source, 'createdAt'),
-    id: string(source, 'id', 128, OPAQUE_ID_PATTERN),
+    id: string(source, 'id', 128, isCollabOpaqueId),
     number: positiveInteger(source, 'number'),
     revision: positiveInteger(source, 'revision'),
     status,
@@ -191,9 +209,9 @@ function project(value: unknown): CollabProject {
   return {
     authorityKind: 'lan',
     createdAt: timestamp(source, 'createdAt'),
-    hostMemberId: string(source, 'hostMemberId', 64, MEMBER_ID_PATTERN),
-    id: string(source, 'id', 64, PROJECT_ID_PATTERN),
-    mainOid: string(source, 'mainOid', 64, GIT_OID_PATTERN),
+    hostMemberId: string(source, 'hostMemberId', 64, isCollabMemberId),
+    id: string(source, 'id', 64, isCollabProjectId),
+    mainOid: string(source, 'mainOid', 64, isCollabGitOid),
     mainRef: COLLAB_MAIN_REF,
     managerSetGeneration: nonNegativeInteger(source, 'managerSetGeneration'),
     name: string(source, 'name', 200),

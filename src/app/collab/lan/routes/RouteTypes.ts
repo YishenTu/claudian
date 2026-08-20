@@ -1,4 +1,4 @@
-import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabMemberStatus, CollabRequestDetail, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListTicketsRequest, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian/collab-protocol';
+import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian/collab-protocol';
 
 import type {
   CollabControlOperationMatch,
@@ -23,7 +23,7 @@ import type { LifecycleGatewayPort } from '@/app/collab/lan/lifecycle/LifecycleG
 import type { CollabProjectSnapshot, CollabRetirementResult } from '@/core/collab';
 
 export interface CollabControlProjectService {
-  acceptRequest?(
+  acceptRequest(
     memberCredential: string,
     request: AcceptRequest,
   ): Promise<AcceptResponse>;
@@ -49,45 +49,57 @@ export interface CollabControlProjectService {
     options: { readonly remoteAddress: string },
   ): Promise<CollabJoinAttempt>;
   encodeInvitation(invitation: CollabInvitation): string;
-  ensureMyRequest?(
+  ensureMyRequest(
     memberCredential: string,
     request: EnsureMyRequestRequest,
   ): Promise<EnsureMyRequestResponse>;
-  createComment?(
+  createComment(
     memberCredential: string,
     request: CreateCommentRequest,
   ): Promise<CreateCommentResponse>;
-  createTicket?(
+  createTicket(
     memberCredential: string,
     request: CreateTicketRequest,
   ): Promise<CreateTicketResponse>;
-  createTicketComment?(
+  createTicketComment(
     memberCredential: string,
     request: CreateTicketCommentRequest,
   ): Promise<CreateTicketCommentResponse>;
-  closeTicket?(
+  closeTicket(
     memberCredential: string,
     request: ChangeTicketStatusRequest,
   ): Promise<TicketMutationResponse>;
-  getTicket?(
+  getTicket(
     memberCredential: string,
     projectId: string,
     ticketId: string,
   ): Promise<CollabTicketDetail>;
-  listTickets?(
+  listRequestComments(
+    memberCredential: string,
+    request: ListRequestCommentsRequest,
+  ): Promise<CollabCommentPage>;
+  listTicketAcceptedRelations(
+    memberCredential: string,
+    request: ListTicketAcceptedRelationsRequest,
+  ): Promise<CollabTicketAcceptedRelationPage>;
+  listTicketComments(
+    memberCredential: string,
+    request: ListTicketCommentsRequest,
+  ): Promise<CollabTicketCommentPage>;
+  listTickets(
     memberCredential: string,
     request: ListTicketsRequest,
   ): Promise<CollabTicketPage>;
-  readRequest?(
+  readRequest(
     memberCredential: string,
     request: GetRequestRequest,
   ): Promise<CollabRequestDetail>;
   readSnapshot(memberCredential: string): Promise<CollabProjectSnapshot>;
-  reopenTicket?(
+  reopenTicket(
     memberCredential: string,
     request: ChangeTicketStatusRequest,
   ): Promise<TicketMutationResponse>;
-  removeMember?(
+  removeMember(
     memberCredential: string,
     request: RemoveMemberRequest,
   ): Promise<MembershipTerminationResponse>;
@@ -99,11 +111,11 @@ export interface CollabControlProjectService {
     memberCredential: string,
     request: RevokeInvitationRequest,
   ): Promise<void>;
-  updateMyRequestMetadata?(
+  updateMyRequestMetadata(
     memberCredential: string,
     request: UpdateMyRequestMetadataRequest,
   ): Promise<UpdateMyRequestMetadataResponse>;
-  updateTicketContent?(
+  updateTicketContent(
     memberCredential: string,
     request: UpdateTicketContentRequest,
   ): Promise<TicketMutationResponse>;
@@ -128,19 +140,30 @@ export interface CollabTerminalProjectService {
   ): Promise<CollabRetirementResult>;
 }
 
-export interface CollabControlRouteRequest {
+interface CollabControlRouteRequestBase {
   readonly authorization: string | null;
   readonly body: unknown;
   readonly idempotencyKey: string | null;
-  readonly lifecycle?: LifecycleGatewayPort;
   readonly method: string;
   readonly operationMatch?: CollabControlOperationMatch;
   readonly projectId: string;
   readonly query: Readonly<Record<string, string>>;
   readonly remoteAddress: string;
   readonly segments: readonly string[];
+}
+
+export interface CollabControlRouteRequest extends CollabControlRouteRequestBase {
+  readonly lifecycle: LifecycleGatewayPort;
   readonly service: CollabControlProjectService;
 }
+
+export interface CollabTerminalControlRouteRequest extends CollabControlRouteRequestBase {
+  readonly lifecycle: LifecycleGatewayPort;
+}
+
+export type CollabLifecycleRouteRequest =
+  | CollabControlRouteRequest
+  | CollabTerminalControlRouteRequest;
 
 export interface CollabControlRouteResult {
   readonly afterResponseFlushed?: () => void;

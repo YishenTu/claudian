@@ -6,6 +6,7 @@ import {
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
+import { decodeRoutePageQuery } from '@/app/collab/lan/routes/RoutePageQuery';
 import type {
   CollabControlRouteHandler,
   CollabControlRouteRequest,
@@ -86,24 +87,12 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
   const ticketId = match.parameters.ticketId;
 
   if (match.operation === 'listTickets') {
-    if (!request.service.listTickets) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.listTickets(memberCredential, listRequest(request)),
     };
   }
 
   if (match.operation === 'getTicket' && ticketId) {
-    if (!request.service.getTicket) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     return {
       data: await request.service.getTicket(
         memberCredential,
@@ -113,13 +102,33 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
     };
   }
 
+  if (match.operation === 'listTicketComments' && ticketId) {
+    return {
+      data: await request.service.listTicketComments(
+        memberCredential,
+        decode('listTicketComments', {
+          ...decodeRoutePageQuery(request, 'ticket-comment-page-query-invalid'),
+          projectId: request.projectId,
+          ticketId,
+        }),
+      ),
+    };
+  }
+
+  if (match.operation === 'listTicketAcceptedRelations' && ticketId) {
+    return {
+      data: await request.service.listTicketAcceptedRelations(
+        memberCredential,
+        decode('listTicketAcceptedRelations', {
+          ...decodeRoutePageQuery(request, 'ticket-relation-page-query-invalid'),
+          projectId: request.projectId,
+          ticketId,
+        }),
+      ),
+    };
+  }
+
   if (match.operation === 'createTicket') {
-    if (!request.service.createTicket) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const body = decode('createTicket', request.body);
     if (
@@ -139,12 +148,6 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
   }
 
   if (match.operation === 'updateTicketContent' && ticketId) {
-    if (!request.service.updateTicketContent) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     const body = ticketMutation(request, ticketId, match.operation);
     return {
       data: await request.service.updateTicketContent(memberCredential, {
@@ -156,12 +159,6 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
   }
 
   if (match.operation === 'createTicketComment' && ticketId) {
-    if (!request.service.createTicketComment) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     if (!request.idempotencyKey) throw routeError('idempotency-key-required');
     const body = decode('createTicketComment', request.body);
     if (
@@ -186,23 +183,14 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
     && ticketId
   ) {
     const closing = match.operation === 'closeTicket';
-    if (
-      (closing && !request.service.closeTicket)
-      || (!closing && !request.service.reopenTicket)
-    ) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'ticket-service-unavailable' },
-      });
-    }
     const mutation = ticketMutation(
       request,
       ticketId,
       match.operation,
     );
     const data = closing
-      ? await request.service.closeTicket!(memberCredential, mutation)
-      : await request.service.reopenTicket!(memberCredential, mutation);
+      ? await request.service.closeTicket(memberCredential, mutation)
+      : await request.service.reopenTicket(memberCredential, mutation);
     return { data };
   }
 

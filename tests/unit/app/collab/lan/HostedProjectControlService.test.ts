@@ -1,10 +1,77 @@
 import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian/collab-protocol';
 
 import {
+  type HostedLifecycleControlPort,
   type HostedMembershipAdminPort,
   type HostedMembershipControlPort,
   HostedProjectControlService,
+  type HostedRequestControlPort,
+  type HostedTicketControlPort,
 } from '@/app/collab/lan/HostedProjectControlService';
+
+function createHostedService(
+  membership: HostedMembershipControlPort,
+  overrides: {
+    readonly administration?: Partial<HostedMembershipAdminPort>;
+    readonly admission?: { run<T>(operation: () => Promise<T>): Promise<T> };
+    readonly lifecycle?: Partial<HostedLifecycleControlPort>;
+    readonly requests?: Partial<HostedRequestControlPort>;
+    readonly tickets?: Partial<HostedTicketControlPort>;
+  } = {},
+): HostedProjectControlService {
+  const requests: HostedRequestControlPort = {
+    accept: jest.fn(),
+    createComment: jest.fn(),
+    ensure: jest.fn(),
+    read: jest.fn(),
+    readComments: jest.fn(),
+    updateMetadata: jest.fn(),
+    ...overrides.requests,
+  };
+  const administration: HostedMembershipAdminPort = {
+    demoteManager: jest.fn(),
+    leaveProject: jest.fn(),
+    promoteManager: jest.fn(),
+    removeMember: jest.fn(),
+    ...overrides.administration,
+  };
+  const tickets: HostedTicketControlPort = {
+    close: jest.fn(),
+    comment: jest.fn(),
+    create: jest.fn(),
+    list: jest.fn(),
+    listAcceptedRelations: jest.fn(),
+    listComments: jest.fn(),
+    read: jest.fn(),
+    reopen: jest.fn(),
+    updateContent: jest.fn(),
+    ...overrides.tickets,
+  };
+  const lifecycle: HostedLifecycleControlPort = {
+    acceptHostTransfer: jest.fn(),
+    acknowledgeManagerResponsibility: jest.fn(),
+    cancelHostTransfer: jest.fn(),
+    cancelManagerResponsibilityOffer: jest.fn(),
+    createHostTransfer: jest.fn(),
+    createManagerResponsibilityOffer: jest.fn(),
+    declineHostTransfer: jest.fn(),
+    declineManagerResponsibility: jest.fn(),
+    getCurrentHostTransfer: jest.fn().mockResolvedValue(null),
+    getCurrentManagerResponsibilityOffer: jest.fn().mockResolvedValue(null),
+    getHostTransitions: jest.fn(),
+    getManagerResponsibilityOffer: jest.fn(),
+    retireProject: jest.fn(),
+    ...overrides.lifecycle,
+  };
+  return new HostedProjectControlService(
+    membership,
+    requests,
+    administration,
+    tickets,
+    lifecycle,
+    overrides.admission,
+  );
+}
 
 describe('HostedProjectControlService', () => {
   it('augments membership snapshots with actor-visible lifecycle summaries', async () => {
@@ -22,13 +89,7 @@ describe('HostedProjectControlService', () => {
       getCurrentManagerResponsibilityOffer: jest.fn()
         .mockResolvedValue(managerResponsibilityOffer),
     };
-    const service = new HostedProjectControlService(
-      membership,
-      undefined,
-      undefined,
-      undefined,
-      lifecycle as never,
-    );
+    const service = createHostedService(membership, { lifecycle });
 
     await expect(service.readSnapshot('credential')).resolves.toEqual({
       ...snapshot,
@@ -67,13 +128,7 @@ describe('HostedProjectControlService', () => {
       getCurrentHostTransfer: jest.fn().mockResolvedValue(null),
       getCurrentManagerResponsibilityOffer: jest.fn().mockResolvedValue(null),
     };
-    const service = new HostedProjectControlService(
-      membership,
-      undefined,
-      undefined,
-      undefined,
-      lifecycle as never,
-    );
+    const service = createHostedService(membership, { lifecycle });
 
     await expect(service.readSnapshot('credential')).resolves.toEqual(after);
     expect(membership.readSnapshot).toHaveBeenCalledTimes(4);
@@ -91,9 +146,10 @@ describe('HostedProjectControlService', () => {
       createComment: jest.fn(),
       ensure: jest.fn().mockResolvedValue({ request: { id: 'request-a' } }),
       read: jest.fn(),
+      readComments: jest.fn(),
       updateMetadata: jest.fn(),
     };
-    const service = new HostedProjectControlService(membership, requests);
+    const service = createHostedService(membership, { requests });
     const request: EnsureMyRequestRequest = {
       description: 'Published change',
       expectedMainOid: 'b'.repeat(40),
@@ -123,6 +179,7 @@ describe('HostedProjectControlService', () => {
       createComment: jest.fn(),
       ensure: jest.fn(),
       read: jest.fn(),
+      readComments: jest.fn(),
       updateMetadata: jest.fn(),
     };
     const administration: HostedMembershipAdminPort = {
@@ -149,11 +206,7 @@ describe('HostedProjectControlService', () => {
         promotedMemberId: 'member-a',
       }),
     };
-    const service = new HostedProjectControlService(
-      membership,
-      requests,
-      administration,
-    );
+    const service = createHostedService(membership, { administration, requests });
 
     await service.removeMember('credential', {
       idempotencyKey: 'remove-key',
@@ -187,14 +240,10 @@ describe('HostedProjectControlService', () => {
       removeMember: jest.fn(),
     };
     const run = jest.fn(async operation => operation());
-    const service = new HostedProjectControlService(
-      membership,
-      undefined,
+    const service = createHostedService(membership, {
       administration,
-      undefined,
-      undefined,
-      { run },
-    );
+      admission: { run },
+    });
     const request = {
       expectedHostMemberId: 'member-host',
       expectedMemberId: 'member-a',
@@ -230,9 +279,10 @@ describe('HostedProjectControlService', () => {
       createComment: jest.fn().mockResolvedValue({ comment: { id: 'comment-a' } }),
       ensure: jest.fn(),
       read: jest.fn().mockResolvedValue({ request: { id: 'request-a' } }),
+      readComments: jest.fn(),
       updateMetadata: jest.fn(),
     };
-    const service = new HostedProjectControlService(membership, requests);
+    const service = createHostedService(membership, { requests });
     const comment: CreateCommentRequest = {
       body: 'Please revise',
       idempotencyKey: 'comment-key',
@@ -265,9 +315,10 @@ describe('HostedProjectControlService', () => {
       createComment: jest.fn(),
       ensure: jest.fn(),
       read: jest.fn(),
+      readComments: jest.fn(),
       updateMetadata: jest.fn(),
     };
-    const service = new HostedProjectControlService(membership, requests);
+    const service = createHostedService(membership, { requests });
     const request: AcceptRequest = {
       expectedHeadOid: 'b'.repeat(40),
       expectedMainOid: 'a'.repeat(40),

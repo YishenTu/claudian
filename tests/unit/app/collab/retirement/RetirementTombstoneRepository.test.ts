@@ -22,14 +22,12 @@ describe('RetirementTombstoneRepository', () => {
     const replay = await repository.acknowledge('project-alpha', 'a'.repeat(43));
     expect(first).toEqual({
       acknowledgedAt: NOW.toISOString(),
-      allAcknowledged: false,
-      memberId: 'member-a',
       result: record().result,
     });
     expect(replay).toEqual(first);
 
     const final = await repository.acknowledge('project-alpha', 'b'.repeat(43));
-    expect(final.allAcknowledged).toBe(true);
+    expect(final.acknowledgedAt).toBe(NOW.toISOString());
     expect(store.removeCalls).toBe(0);
   });
 

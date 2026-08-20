@@ -28,6 +28,56 @@ const HEAD = '2'.repeat(40);
 const TREE = '3'.repeat(40);
 
 describe('CollabDetailView', () => {
+  it('retains restored state without subscribing or loading while admission is closed', async () => {
+    const port = detailPort(requestReview());
+    port.isDetailAdmissionOpen.mockReturnValue(false);
+    const view = createView(port, diffPort(), objectUrlPort());
+
+    await view.setState(viewState(), { history: false });
+    await view.onOpen();
+    await nextTurn();
+
+    expect(view.getState()).toEqual(viewState());
+    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.prepareReview).not.toHaveBeenCalled();
+    expect(port.readSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('retains restored Ticket state without subscribing or loading while admission is closed', async () => {
+    const port = detailPort(requestReview());
+    port.isDetailAdmissionOpen.mockReturnValue(false);
+    const view = createView(port, diffPort(), objectUrlPort());
+    const state: CollabTicketDetailViewState = {
+      kind: 'ticket',
+      projectId: 'project-a',
+      ticketId: 'ticket-a',
+    };
+
+    await view.setState(state, { history: false });
+    await view.onOpen();
+    await nextTurn();
+
+    expect(view.getState()).toEqual(state);
+    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.readTicket).not.toHaveBeenCalled();
+  });
+
+  it('loads normally once admission is open', async () => {
+    const review = requestReview();
+    const port = detailPort(review);
+    const view = createView(port, diffPort(), objectUrlPort());
+
+    await view.onOpen();
+    await view.setState(viewState(), { history: false });
+    await nextTurn();
+
+    expect(port.subscribe).toHaveBeenCalled();
+    expect(port.prepareReview).toHaveBeenCalledWith(
+      'project-a',
+      'request-a',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
   it('previews the working tree locally and publishes only from the review header', async () => {
     const review = workingTreeReview();
     const port = detailPort(requestReview());
@@ -433,7 +483,7 @@ describe('CollabDetailView', () => {
       canAccept: false,
       detail: {
         ...request.detail,
-        comments: [concurrentComment],
+        comments: { comments: [concurrentComment] },
         request: { ...request.detail.request, commentCount: 1 },
       },
     };
@@ -457,13 +507,15 @@ describe('CollabDetailView', () => {
       ...base,
       detail: {
         ...base.detail,
-        comments: [{
+        comments: {
+          comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Overview feedback',
           createdAt: '2026-08-08T00:01:00.000Z',
           id: 'comment-a',
           requestId: 'request-a',
         }],
+        },
       },
     };
     const port = detailPort(review);
@@ -506,13 +558,15 @@ describe('CollabDetailView', () => {
       ...base,
       detail: {
         ...base.detail,
-        comments: [{
+        comments: {
+          comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Overview feedback',
           createdAt: '2026-08-08T00:01:00.000Z',
           id: 'comment-stale',
           requestId: 'request-a',
         }],
+        },
       },
     };
     const view = createView(detailPort(review), diffPort(), objectUrlPort());
@@ -738,7 +792,7 @@ describe('CollabDetailView', () => {
       limit: 100,
       projectId: 'project-a',
       status: 'open',
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(openTicketInNewTab).toHaveBeenCalledWith('project-a', 'ticket-a');
   });
 
@@ -1551,7 +1605,7 @@ describe('CollabDetailView', () => {
       ...review,
       detail: {
         ...review.detail,
-        comments: [comment],
+        comments: { comments: [comment] },
         request: {
           ...review.detail.request,
           commentCount: 1,
@@ -1675,13 +1729,15 @@ describe('CollabDetailView', () => {
       ...base,
       detail: {
         ...base.detail,
-        comments: [{
+        comments: {
+          comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Current feedback',
           createdAt: '2026-08-08T00:01:00.000Z',
           id: 'comment-current',
           requestId: base.detail.request.id,
         }],
+        },
       },
     };
     const port = detailPort(review);
@@ -1766,7 +1822,7 @@ describe('CollabDetailView', () => {
       ...review,
       detail: {
         ...review.detail,
-        comments: [comment],
+        comments: { comments: [comment] },
         request: {
           ...review.detail.request,
           commentCount: 1,
@@ -1982,6 +2038,152 @@ describe('CollabDetailView', () => {
     }, { history: false });
 
     expect(view.getDisplayText()).toBe('Ticket title #17');
+  });
+
+  it('aborts a Ticket-reference lookup when the Ticket state is replaced', async () => {
+    const port = detailPort(requestReview());
+    const first = { ...ticketDetail(), body: 'See #99.' };
+    const second = {
+      ...ticketDetail(),
+      ticket: {
+        ...ticketDetail().ticket,
+        id: 'ticket-b',
+        number: 18,
+        title: 'Replacement Ticket',
+      },
+    };
+    port.readTicket.mockImplementation(async (_projectId, ticketId) => ({
+      status: 'success',
+      value: {
+        detail: ticketId === 'ticket-a' ? first : second,
+        source: 'online',
+        stale: false,
+      },
+    }));
+    let lookupSignal: AbortSignal | undefined;
+    let releaseLookup!: () => void;
+    port.listTickets.mockImplementation((_request, options) => {
+      lookupSignal = options?.signal;
+      return new Promise(resolve => {
+        releaseLookup = () => resolve({
+          status: 'success',
+          value: { page: { tickets: [] }, source: 'online', stale: false },
+        });
+      });
+    });
+    const openTicketInNewTab = jest.fn().mockResolvedValue(undefined);
+    const render = MarkdownRenderer.render as jest.Mock;
+    const previousRender = render.getMockImplementation();
+    render.mockImplementation(async (
+      _app: unknown,
+      markdown: string,
+      host: HTMLElement,
+    ) => host.setText(markdown));
+    const view = createView(
+      port,
+      diffPort(),
+      objectUrlPort(),
+      undefined,
+      {} as WorkspaceLeaf,
+      undefined,
+      undefined,
+      openTicketInNewTab,
+    );
+
+    await view.setState({
+      kind: 'ticket',
+      projectId: 'project-a',
+      ticketId: 'ticket-a',
+    }, { history: false });
+    view.contentEl.querySelector<HTMLButtonElement>(
+      '.claudian-collab-markdown-ticket-reference',
+    )?.click();
+    await nextTurn();
+    expect(lookupSignal?.aborted).toBe(false);
+
+    await view.setState({
+      kind: 'ticket',
+      projectId: 'project-a',
+      ticketId: 'ticket-b',
+    }, { history: false });
+    expect(lookupSignal?.aborted).toBe(true);
+    releaseLookup();
+    await nextTurn();
+    if (previousRender) render.mockImplementation(previousRender);
+
+    expect(openTicketInNewTab).not.toHaveBeenCalled();
+  });
+
+  it('aborts a Ticket-reference lookup when closed admission replaces the state', async () => {
+    const port = detailPort(requestReview());
+    port.readTicket.mockResolvedValue({
+      status: 'success',
+      value: {
+        detail: { ...ticketDetail(), body: 'See #99.' },
+        source: 'online',
+        stale: false,
+      },
+    });
+    let lookupSignal: AbortSignal | undefined;
+    let releaseLookup!: () => void;
+    port.listTickets.mockImplementation((_request, options) => {
+      lookupSignal = options?.signal;
+      return new Promise(resolve => {
+        releaseLookup = () => resolve({
+          status: 'success',
+          value: {
+            page: { tickets: [{ ...ticketDetail().ticket, number: 99 }] },
+            source: 'online',
+            stale: false,
+          },
+        });
+      });
+    });
+    const openTicketInNewTab = jest.fn().mockResolvedValue(undefined);
+    const render = MarkdownRenderer.render as jest.Mock;
+    const previousRender = render.getMockImplementation();
+    render.mockImplementation(async (
+      _app: unknown,
+      markdown: string,
+      host: HTMLElement,
+    ) => host.setText(markdown));
+    const view = createView(
+      port,
+      diffPort(),
+      objectUrlPort(),
+      undefined,
+      {} as WorkspaceLeaf,
+      undefined,
+      undefined,
+      openTicketInNewTab,
+    );
+
+    try {
+      await view.setState({
+        kind: 'ticket',
+        projectId: 'project-a',
+        ticketId: 'ticket-a',
+      }, { history: false });
+      view.contentEl.querySelector<HTMLButtonElement>(
+        '.claudian-collab-markdown-ticket-reference',
+      )?.click();
+      await nextTurn();
+      expect(lookupSignal?.aborted).toBe(false);
+
+      port.isDetailAdmissionOpen.mockReturnValue(false);
+      await view.setState({
+        kind: 'ticket',
+        projectId: 'project-a',
+        ticketId: 'ticket-b',
+      }, { history: false });
+      expect(lookupSignal?.aborted).toBe(true);
+      releaseLookup();
+      await nextTurn();
+
+      expect(openTicketInNewTab).not.toHaveBeenCalled();
+    } finally {
+      if (previousRender) render.mockImplementation(previousRender);
+    }
   });
 
   it('reuses the Accept intent when retrying after a lost response', async () => {
@@ -2524,8 +2726,7 @@ function requestReview(): CollabRequestReview {
     comparisonKind: 'candidate',
     comparisonTargetOid: TREE,
     detail: {
-      changedFiles: [],
-      comments: [],
+      comments: { comments: [] },
       currentMainOid: MAIN,
       request: {
         commentCount: 0,
@@ -2566,10 +2767,11 @@ function requestReview(): CollabRequestReview {
 
 function ticketDetail(): CollabTicketDetail {
   return {
-    acceptedRelations: [],
+    acceptedRelations: { acceptedRelations: [] },
     body: 'Ticket body',
-    comments: [],
+    comments: { comments: [] },
     ticket: {
+      acceptedRelationCount: 0,
       authorMemberId: 'member-a',
       commentCount: 0,
       createdAt: '2026-08-08T00:00:00.000Z',
@@ -2645,6 +2847,7 @@ function detailPort(review: CollabRequestReview) {
     readReviewFile: jest.fn(async (request: { file: { path: string } }) => (
       { status: 'success' as const, value: request.file.path === 'image.png' ? image : text }
     )),
+    isDetailAdmissionOpen: jest.fn().mockReturnValue(true),
     publish: jest.fn(),
     reopenTicket: jest.fn(),
     subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),

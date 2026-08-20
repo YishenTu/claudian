@@ -15,10 +15,7 @@ import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import type { PublishProjectContext } from '@/app/collab/publish/PublishCoordinator';
-import type {
-  CollabConflictDecision,
-  CollabConflictDescriptor,
-} from '@/core/collab';
+import type { CollabConflictDescriptor } from '@/core/collab';
 
 jest.setTimeout(30_000);
 
@@ -165,15 +162,7 @@ describe('ConflictScratchGitRepository', () => {
       .resolves.toBe('personal\n');
   });
 
-  it.each([
-    [{ choice: 'keep-personal', path: 'note.md' }, 'personal\n'],
-    [{ choice: 'use-accepted', path: 'note.md' }, 'accepted\n'],
-    [{ choice: 'use-manual-draft', draft: 'manual\n', path: 'note.md' }, 'manual\n'],
-    [{ choice: 'use-agent-proposal', path: 'note.md', proposal: 'agent\n' }, 'agent\n'],
-  ] as const)('stages an explicit %s decision and creates a two-parent commit', async (
-    decision,
-    expected,
-  ) => {
+  it('stages the committed working-tree version and creates a two-parent commit', async () => {
     const harness = await createHarness();
     await harness.scratch.prepare(
       harness.context,
@@ -181,25 +170,24 @@ describe('ConflictScratchGitRepository', () => {
       harness.descriptor,
     );
 
-    const inspection = await harness.scratch.applyDecision(
+    const inspection = await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      decision as CollabConflictDecision,
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
       harness.descriptor,
-      [decision.path],
+      ['note.md'],
     );
 
     expect(inspection.stages).toEqual([]);
     await expect(readFile(path.join(harness.scratchPath, 'note.md'), 'utf8'))
-      .resolves.toBe(expected);
+      .resolves.toBe('personal\n');
     await expect(harness.git.readBlobAtPath(
       harness.scratchPath,
       resultOid,
       'note.md',
-    )).resolves.toEqual(Buffer.from(expected));
+    )).resolves.toEqual(Buffer.from('personal\n'));
     await expect(showParents(harness.runner, harness.scratchPath, resultOid))
       .resolves.toBe(
         `${harness.descriptor.startingPersonalOid} ${harness.descriptor.startingMainOid}`,
@@ -214,9 +202,8 @@ describe('ConflictScratchGitRepository', () => {
 
   it.each([
     ['keep-personal', Buffer.from([0x00, 0x01, 0x02])],
-    ['use-accepted', Buffer.from([0x00, 0x03, 0x04])],
   ] as const)('resolves a binary conflict with whole-file choice %s', async (
-    choice,
+    _choice,
     expected,
   ) => {
     const harness = await createHarness('binary');
@@ -226,10 +213,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.descriptor,
     );
 
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice, path: 'image.bin' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -246,8 +232,7 @@ describe('ConflictScratchGitRepository', () => {
 
   it.each([
     ['keep-personal', 'personal\n'],
-    ['use-accepted', null],
-  ] as const)('resolves delete/modify with explicit side %s', async (choice, expected) => {
+  ] as const)('resolves delete/modify with explicit side %s', async (_choice, expected) => {
     const harness = await createHarness('delete-modify');
     await harness.scratch.prepare(
       harness.context,
@@ -255,10 +240,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.descriptor,
     );
 
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice, path: 'note.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -276,8 +260,7 @@ describe('ConflictScratchGitRepository', () => {
 
   it.each([
     ['keep-personal', 'shared line\npersonal\n'],
-    ['use-accepted', null],
-  ] as const)('resolves rename/delete with explicit side %s', async (choice, expected) => {
+  ] as const)('resolves rename/delete with explicit side %s', async (_choice, expected) => {
     const harness = await createHarness('rename-delete');
     await harness.scratch.prepare(
       harness.context,
@@ -285,10 +268,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.descriptor,
     );
 
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice, path: 'renamed.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -316,10 +298,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.scratchPath,
       harness.descriptor,
     );
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice: 'use-manual-draft', draft: 'resolved\n', path: 'note.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -382,10 +363,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.scratchPath,
       harness.descriptor,
     );
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice: 'keep-personal', path: 'note.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -418,10 +398,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.scratchPath,
       harness.descriptor,
     );
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice: 'keep-personal', path: 'note.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,
@@ -461,10 +440,9 @@ describe('ConflictScratchGitRepository', () => {
       harness.scratchPath,
       harness.descriptor,
     );
-    await harness.scratch.applyDecision(
+    await harness.scratch.resolveWithPersonalVersions(
       harness.scratchPath,
       harness.descriptor,
-      { choice: 'keep-personal', path: 'note.md' },
     );
     const resultOid = await harness.scratch.createResolutionCommit(
       harness.scratchPath,

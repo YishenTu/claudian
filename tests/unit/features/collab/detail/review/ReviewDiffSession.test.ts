@@ -227,8 +227,7 @@ function requestReview(): CollabRequestReview {
     comparisonKind: 'candidate',
     comparisonTargetOid: TREE,
     detail: {
-      changedFiles: [],
-      comments: [],
+      comments: { comments: [] },
       currentMainOid: MAIN,
       request: {
         commentCount: 0,

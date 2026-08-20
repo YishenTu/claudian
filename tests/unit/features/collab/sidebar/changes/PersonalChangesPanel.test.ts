@@ -388,7 +388,6 @@ describe('PersonalChangesPanel', () => {
     const conflicted = {
       ...inspection(),
       conflict: {
-        decisions: [],
         descriptor: {
           conflicts: [{ kind: 'text' as const, path: 'note.md' }],
           mergeBaseOid: MAIN,
@@ -397,8 +396,6 @@ describe('PersonalChangesPanel', () => {
           startingMainOid: MAIN,
           startingPersonalOid: HEAD,
         },
-        pending: [{ kind: 'text' as const, path: 'note.md' }],
-        resolvedPaths: [],
       },
       personalChanges: {
         action: 'resolve-changes' as const,

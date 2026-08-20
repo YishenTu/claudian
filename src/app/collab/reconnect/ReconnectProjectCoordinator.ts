@@ -6,6 +6,7 @@ import type {
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
+import type { HostTransitionProofClientPort } from '@/app/collab/HostTransitionCandidateResolver';
 import {
   type CollabHostTrustStore,
   CollabHttpClient,
@@ -57,13 +58,6 @@ interface DiscoveredCandidateValidation {
   readonly candidate?: CollabTrustedEndpointCandidate;
   readonly error?: CollabError;
   readonly membership?: CollabLocalMembershipRecord;
-}
-
-export interface HostTransitionProofClientPort {
-  fetchHostTransitions(
-    candidate: CollabTrustedEndpointCandidate,
-    options?: CollabHttpOperationOptions,
-  ): Promise<readonly CollabHostTrustTransitionProof[]>;
 }
 
 interface HostTrustTransitionVerifierPort {

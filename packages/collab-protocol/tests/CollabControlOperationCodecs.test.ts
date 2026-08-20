@@ -135,6 +135,16 @@ describe('CollabControlOperationCodecs', () => {
       projectId: 'project-a',
       status: 'all',
     })).toMatchObject({ status: 'ok' });
+    for (const cursor of [
+      '',
+      'c'.repeat(COLLAB_LIMITS.maxPageCursorUtf16 + 1),
+    ]) {
+      expect(collabControlOperationCodec('listTickets').decodeRequest({
+        cursor,
+        projectId: 'project-a',
+        status: 'all',
+      })).toMatchObject({ status: 'invalid' });
+    }
     expect(collabControlOperationCodec('listTickets').decodeRequest({
       futureField: true,
       projectId: 'project-a',

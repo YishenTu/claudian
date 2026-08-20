@@ -95,13 +95,7 @@ function comment() {
 
 function detailEnvelope(): unknown {
   return envelope({
-    changedFiles: [{
-      binary: false,
-      kind: 'modified',
-      largeForReview: false,
-      path: 'README.md',
-    }],
-    comments: [comment()],
+    comments: { comments: [comment()] },
     currentMainOid: HEAD,
     request: { ...request(), commentCount: 1 },
     reviewCondition: 'clean',
@@ -140,7 +134,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v7/projects/project-a/snapshot',
+        path: '/v9/projects/project-a/snapshot',
       }),
       CREDENTIAL,
       {},
@@ -157,7 +151,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'publish-head',
         method: 'PUT',
-        path: '/v7/projects/project-a/requests/mine',
+        path: '/v9/projects/project-a/requests/mine',
       }),
       CREDENTIAL,
       {},
@@ -182,7 +176,7 @@ describe('ProjectControlClient', () => {
       projectId: 'project-a',
       requestId: 'request-a',
     })).resolves.toMatchObject({
-      comments: [{ id: 'comment-a' }],
+      comments: { comments: [{ id: 'comment-a' }] },
       request: { id: 'request-a' },
       reviewedHeadOid: HEAD,
     });
@@ -200,7 +194,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v7/projects/project-a/requests/request-a',
+        path: '/v9/projects/project-a/requests/request-a',
       }),
       CREDENTIAL,
       {},
@@ -216,7 +210,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'comment-key',
         method: 'POST',
-        path: '/v7/projects/project-a/requests/request-a/comments',
+        path: '/v9/projects/project-a/requests/request-a/comments',
       }),
       CREDENTIAL,
       {},
@@ -265,7 +259,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'accept-key',
         method: 'POST',
-        path: '/v7/projects/project-a/requests/request-a/accept',
+        path: '/v9/projects/project-a/requests/request-a/accept',
       }),
       CREDENTIAL,
       {},

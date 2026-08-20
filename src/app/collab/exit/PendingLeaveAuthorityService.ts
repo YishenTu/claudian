@@ -1,11 +1,9 @@
-import type { CollabLanDiscoveryPort } from '@/app/collab/discovery/CollabLanDiscoveryService';
 import type {
   PendingLeaveAuthorityReplay,
   PendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
-import type { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
+import type { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import {
-  type CollabTrustedEndpointCandidate,
   type CollabTrustedHost,
   PinnedCollabHttpClient,
 } from '@/app/collab/lan/CollabHttpClient';
@@ -15,23 +13,10 @@ import {
   MembershipControlClient,
 } from '@/app/collab/membership/MembershipControlClient';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
-import type {
-  HostTransitionProofClientPort,
-} from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import type { CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
-const DISCOVERED_ENDPOINT_TIMEOUT_MS = 2_000;
-const REDISCOVERY_CODES = new Set([
-  'endpoint-unreachable',
-  'host-stopped',
-  'local-network-permission-required',
-  'offline',
-  'operation-timeout',
-  'tls-ca-mismatch',
-  'tls-untrusted',
-]);
 
 export interface PendingLeaveAuthorityClientPort {
   leaveProject(input: LeaveProjectInput): Promise<MembershipTerminationResponse>;
@@ -45,14 +30,8 @@ export interface PendingLeaveAuthorityClientPort {
 export interface PendingLeaveAuthorityServiceOptions {
   readonly createClient?: (
     record: PendingLeaveRecord,
-    trust?: CollabTrustedHost,
   ) => PendingLeaveAuthorityClientPort;
-  readonly discovery?: Pick<
-    CollabLanDiscoveryPort,
-    'discoverProjectCandidatesForTrustTransition'
-  >;
-  readonly proofClient?: HostTransitionProofClientPort;
-  readonly trustTransitions?: Pick<HostTrustTransitionService, 'verifyChain'>;
+  readonly hostTransitionCandidates?: Pick<HostTransitionCandidateResolver, 'resolve'>;
 }
 
 export interface PreparePendingLeaveInput {
@@ -71,17 +50,16 @@ export interface SettlePendingLeaveInput {
   readonly signal?: AbortSignal;
 }
 
-interface VerifiedCandidate {
-  readonly caCertificatePem: string;
-  readonly candidate: CollabTrustedEndpointCandidate;
+export interface ResolvePendingLeaveHostInput extends SettlePendingLeaveInput {
+  readonly failure: unknown;
 }
 
 export class PendingLeaveAuthorityService {
   private readonly createClient: NonNullable<PendingLeaveAuthorityServiceOptions['createClient']>;
 
   constructor(private readonly options: PendingLeaveAuthorityServiceOptions = {}) {
-    this.createClient = options.createClient ?? ((record, trust) => {
-      const transport = new PinnedCollabHttpClient(trust ?? storedTrust(record), CONTROL_TIMEOUT_MS);
+    this.createClient = options.createClient ?? (record => {
+      const transport = new PinnedCollabHttpClient(storedTrust(record), CONTROL_TIMEOUT_MS);
       const membership = new MembershipControlClient(transport);
       const project = new ProjectControlClient(transport);
       return {
@@ -124,7 +102,7 @@ export class PendingLeaveAuthorityService {
         safeContext: { reason: 'pending-leave-replay-preconditions-missing' },
       });
     }
-    return this.withTrustedClient(pending, client => client.leaveProject({
+    return this.createClient(pending).leaveProject({
       expectedHostMemberId: replay.expectedHostMemberId,
       expectedMemberId: pending.memberId,
       idempotencyKey: pending.idempotencyKey,
@@ -135,7 +113,23 @@ export class PendingLeaveAuthorityService {
       }),
       projectId: pending.projectId,
       ...(input.signal ? { signal: input.signal } : {}),
-    }), input.signal);
+    });
+  }
+
+  async resolveHost(input: ResolvePendingLeaveHostInput): Promise<CollabTrustedHost> {
+    if (!this.options.hostTransitionCandidates) {
+      if (input.failure instanceof Error) throw input.failure;
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'pending-leave-host-resolution-failed' },
+      });
+    }
+    return this.options.hostTransitionCandidates.resolve({
+      failure: input.failure,
+      pinnedCaCertificatePem: input.pending.hostCaCertificatePem,
+      projectId: input.pending.projectId,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
   }
 
   private async readCurrentPreparation(
@@ -144,11 +138,11 @@ export class PendingLeaveAuthorityService {
     managerResponsibilityOfferId: string | null,
     signal?: AbortSignal,
   ): Promise<PendingLeaveAuthorityPreparation> {
-    const snapshot = await this.withTrustedClient(pending, client => client.readSnapshot(
+    const snapshot = await this.createClient(pending).readSnapshot(
       pending.projectId,
       pending.memberCredential,
       signal ? { signal } : {},
-    ), signal);
+    );
     if (
       snapshot.project.id !== pending.projectId
       || snapshot.currentMember.id !== pending.memberId
@@ -174,73 +168,6 @@ export class PendingLeaveAuthorityService {
     };
   }
 
-  private async withTrustedClient<T>(
-    pending: PendingLeaveRecord,
-    operation: (client: PendingLeaveAuthorityClientPort) => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    try {
-      return await operation(this.createClient(pending));
-    } catch (error) {
-      if (!(error instanceof CollabError) || !REDISCOVERY_CODES.has(error.code)) throw error;
-      if (!this.options.discovery || !this.options.proofClient || !this.options.trustTransitions) {
-        throw error;
-      }
-    }
-    const verified = await this.discover(pending, signal);
-    return operation(this.createClient(pending, {
-      caCertificatePem: verified.caCertificatePem,
-      caFingerprint: verified.candidate.caFingerprint,
-      endpoint: verified.candidate.endpoint,
-      projectId: pending.projectId,
-    }));
-  }
-
-  private async discover(
-    pending: PendingLeaveRecord,
-    signal?: AbortSignal,
-  ): Promise<VerifiedCandidate> {
-    const { discovery, proofClient, trustTransitions } = this.options;
-    if (!discovery || !proofClient || !trustTransitions) {
-      throw new CollabError({ code: 'endpoint-unreachable', recoveryActions: ['retry'] });
-    }
-    const candidates = await discovery.discoverProjectCandidatesForTrustTransition(
-      pending.projectId,
-      signal ? { signal } : {},
-    );
-    const verified = (await Promise.all(candidates.map(async candidate => {
-      if (candidate.projectId !== pending.projectId) return null;
-      try {
-        const proofs = await proofClient.fetchHostTransitions(candidate, {
-          ...(signal ? { signal } : {}),
-          timeoutMs: DISCOVERED_ENDPOINT_TIMEOUT_MS,
-        });
-        return {
-          caCertificatePem: trustTransitions.verifyChain({
-            expectedCurrentCaFingerprint: candidate.caFingerprint,
-            pinnedCaCertificatePem: pending.hostCaCertificatePem,
-            projectId: pending.projectId,
-            proofs,
-          }),
-          candidate,
-        } satisfies VerifiedCandidate;
-      } catch {
-        return null;
-      }
-    }))).flatMap(candidate => candidate ? [candidate] : []);
-    if (verified.length !== 1) {
-      throw new CollabError({
-        code: verified.length > 1 ? 'authority-integrity-error' : 'endpoint-unreachable',
-        recoveryActions: verified.length > 1 ? ['open-diagnostics'] : ['retry'],
-        safeContext: {
-          reason: verified.length > 1
-            ? 'multiple-pending-leave-authorities-confirmed'
-            : 'pending-leave-authority-unavailable',
-        },
-      });
-    }
-    return verified[0];
-  }
 }
 
 function storedTrust(record: PendingLeaveRecord): CollabTrustedHost {

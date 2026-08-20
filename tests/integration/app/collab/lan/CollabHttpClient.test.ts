@@ -139,11 +139,11 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithInvitation({
       decode: value => value as { ok: boolean },
       method: 'POST',
-      path: '/v7/projects/project-alpha/join-attempts',
+      path: '/v9/projects/project-alpha/join-attempts',
     }, invite.invitationSecret)).resolves.toEqual({ ok: true });
     expect(server.requests).toEqual([{
       authorization: `Claudian-Invitation ${invite.invitationSecret}`,
-      path: '/v7/projects/project-alpha/join-attempts',
+      path: '/v9/projects/project-alpha/join-attempts',
     }]);
   });
 
@@ -229,7 +229,7 @@ describe('CollabHttpClient pinned transport', () => {
     await pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/endpoint',
+      path: '/v9/projects/project-alpha/endpoint',
     }, Buffer.alloc(32, 7).toString('base64url'));
     expect(nextServer.requests).toHaveLength(1);
 
@@ -251,14 +251,14 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/tickets?status=open&limit=50',
+      path: '/v9/projects/project-alpha/tickets?status=open&limit=50',
     }, secret)).resolves.toEqual({ ok: true });
     expect(server.requests).toHaveLength(1);
 
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/endpoint?status=open',
+      path: '/v9/projects/project-alpha/endpoint?status=open',
     }, secret)).rejects.toMatchObject({
       code: 'operation-failed',
       safeContext: { reason: 'control-request-path-invalid' },
@@ -275,7 +275,7 @@ describe('CollabHttpClient pinned transport', () => {
       body: {},
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/snapshot',
+      path: '/v9/projects/project-alpha/snapshot',
     }, secret)).rejects.toMatchObject({
       code: 'protocol-payload-invalid',
       safeContext: { reason: 'control-request-body-forbidden' },
@@ -324,7 +324,7 @@ describe('CollabHttpClient pinned transport', () => {
     const unauthorizedError = await pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/endpoint',
+      path: '/v9/projects/project-alpha/endpoint',
     }, secret).catch((error: unknown) => error);
     expect(unauthorizedError).toEqual(
       expect.objectContaining({ code: 'authentication-failed' }),
@@ -334,7 +334,7 @@ describe('CollabHttpClient pinned transport', () => {
     const revokedError = await pinned.requestWithInvitation({
       decode: value => value,
       method: 'POST',
-      path: '/v7/projects/project-alpha/join-attempts',
+      path: '/v9/projects/project-alpha/join-attempts',
     }, secret).catch((error: unknown) => error);
     expect(revokedError).toEqual(
       expect.objectContaining({ code: 'invitation-revoked' }),
@@ -344,7 +344,7 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/snapshot',
+      path: '/v9/projects/project-alpha/snapshot',
     }, secret, { timeoutMs: 25 })).rejects.toEqual(
       expect.objectContaining({ code: 'operation-timeout' }),
     );
@@ -353,7 +353,7 @@ describe('CollabHttpClient pinned transport', () => {
     const aborted = pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/snapshot',
+      path: '/v9/projects/project-alpha/snapshot',
     }, secret, { signal: controller.signal });
     controller.abort();
     await expect(aborted).rejects.toEqual(expect.objectContaining({ code: 'cancelled' }));
@@ -383,7 +383,7 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: '/v7/projects/project-alpha/tickets?status=open',
+      path: '/v9/projects/project-alpha/tickets?status=open',
     }, secret)).rejects.toMatchObject({
       code: 'project-retired',
       safeContext: {
@@ -420,7 +420,7 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'POST',
-      path: '/v7/projects/project-alpha/requests/request-alpha/accept',
+      path: '/v9/projects/project-alpha/requests/request-alpha/accept',
     }, secret)).rejects.toMatchObject({
       code,
       safeContext: { reason },
@@ -449,7 +449,7 @@ describe('CollabHttpClient pinned transport', () => {
     await expect(pinned.requestWithMember({
       decode: value => value,
       method: 'POST',
-      path: '/v7/projects/project-alpha/managers/member-a/promote',
+      path: '/v9/projects/project-alpha/managers/member-a/promote',
     }, secret)).rejects.toMatchObject({
       code: 'stale-project-selection',
       safeContext: { reason: 'membership-manager-changed' },

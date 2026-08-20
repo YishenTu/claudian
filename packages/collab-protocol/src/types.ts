@@ -1,7 +1,7 @@
 import {
   COLLAB_MEMBER_REF_PREFIX,
 } from './CollabConstants';
-import { COLLAB_MEMBER_ID_PATTERN } from './CollabValidation';
+import { isCollabMemberId } from './CollabValidation';
 
 export type CollabProjectId = string;
 export type CollabMemberId = string;
@@ -23,7 +23,7 @@ export type CollabTicketStatus = 'open' | 'closed';
 export type CollabTicketCommitRelationKind = 'references' | 'resolves';
 
 export function collabMemberRef(memberId: CollabMemberId): string {
-  if (!COLLAB_MEMBER_ID_PATTERN.test(memberId)) {
+  if (!isCollabMemberId(memberId)) {
     throw new RangeError('Invalid Collab member ID');
   }
   return `${COLLAB_MEMBER_REF_PREFIX}${memberId}`;
@@ -47,6 +47,7 @@ export interface CollabTicketSummary {
   status: CollabTicketStatus;
   authorMemberId: CollabMemberId;
   revision: number;
+  acceptedRelationCount: number;
   commentCount: number;
   createdAt: CollabIsoTimestamp;
   updatedAt: CollabIsoTimestamp;
@@ -74,8 +75,18 @@ export interface CollabTicketAcceptedRelation {
 export interface CollabTicketDetail {
   ticket: CollabTicketSummary;
   body: string;
+  comments: CollabTicketCommentPage;
+  acceptedRelations: CollabTicketAcceptedRelationPage;
+}
+
+export interface CollabTicketCommentPage {
   comments: readonly CollabTicketComment[];
+  nextCursor?: string;
+}
+
+export interface CollabTicketAcceptedRelationPage {
   acceptedRelations: readonly CollabTicketAcceptedRelation[];
+  nextCursor?: string;
 }
 
 export interface CollabTicketPage {
@@ -122,6 +133,11 @@ export interface CollabComment {
   createdAt: CollabIsoTimestamp;
 }
 
+export interface CollabCommentPage {
+  comments: readonly CollabComment[];
+  nextCursor?: string;
+}
+
 export type CollabFileChangeKind =
   | 'added'
   | 'modified'
@@ -149,8 +165,7 @@ export interface CollabRequestDetail {
   currentMainOid: CollabGitOid;
   reviewedHeadOid: CollabGitOid;
   reviewCondition: CollabReviewCondition;
-  changedFiles: readonly CollabChangedFile[];
-  comments: readonly CollabComment[];
+  comments: CollabCommentPage;
 }
 
 export interface CollabResolvingTicketExpectation {

@@ -2,6 +2,8 @@ import { randomUUID, X509Certificate } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { connect as connectTls, type DetailedPeerCertificate } from 'node:tls';
 
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   type CollabControlOperationBinding,
@@ -19,7 +21,7 @@ import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface CollabTrustedHost {
@@ -245,7 +247,7 @@ function validateTrustedHost(
     throw transportError('tls-untrusted', 'stored-ca-certificate-invalid');
   }
   if (
-    !OPAQUE_ID_PATTERN.test(trust.projectId)
+    !isCollabProjectId(trust.projectId)
     || !certificate.ca
     || !certificate.verify(certificate.publicKey)
     || fingerprintCertificatePem(trust.caCertificatePem) !== trust.caFingerprint
@@ -341,7 +343,7 @@ function protocolStructuredError(value: unknown): CollabError | null {
   if (
     envelope.protocolVersion !== COLLAB_CONTROL_PROTOCOL_VERSION
     || typeof envelope.requestId !== 'string'
-    || !OPAQUE_ID_PATTERN.test(envelope.requestId)
+    || !REQUEST_ID_PATTERN.test(envelope.requestId)
     || !envelope.error
     || typeof envelope.error !== 'object'
     || Array.isArray(envelope.error)
@@ -433,7 +435,7 @@ export class PinnedCollabHttpClient {
     }
     if (
       request.idempotencyKey !== undefined
-      && !OPAQUE_ID_PATTERN.test(request.idempotencyKey)
+      && !isCollabOpaqueId(request.idempotencyKey)
     ) {
       throw transportError('operation-failed', 'idempotency-key-invalid');
     }
@@ -660,7 +662,7 @@ export class CollabHttpClient {
     options: CollabHttpOperationOptions = {},
   ): Promise<PinnedCollabHttpClient> {
     const endpoint = this.invitationCodec.normalizeEndpoint(candidate.endpoint);
-    if (!OPAQUE_ID_PATTERN.test(candidate.projectId)) {
+    if (!isCollabProjectId(candidate.projectId)) {
       throw transportError('project-not-found', 'candidate-project-invalid');
     }
     const timeoutMs = validateTimeout(options.timeoutMs ?? this.defaultTimeoutMs);

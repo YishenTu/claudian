@@ -39,7 +39,13 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     }),
     listTickets: jest.fn(),
     publish: jest.fn(),
-    prepareReview: jest.fn(),
+    boundedQueries: {
+      listRequestComments: jest.fn(),
+      listTicketAcceptedRelations: jest.fn(),
+      listTicketComments: jest.fn(),
+      prepareReview: jest.fn(),
+      readTicket: jest.fn(),
+    },
     readConflict: jest.fn(),
     readConflictFile: jest.fn(),
     readProjectSelection: jest.fn().mockResolvedValue({
@@ -51,7 +57,6 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     }),
     readReviewFile: jest.fn(),
     readSnapshot: jest.fn(),
-    readTicket: jest.fn(),
     readWorkingTreeReviewFile: jest.fn(),
     reopenTicket: jest.fn(),
     updateTicketContent: jest.fn(),
@@ -86,7 +91,7 @@ describe('AgentRuntimeGateway', () => {
             name: 'collab.projects.list',
           },
         ]),
-        protocolVersion: 4,
+        protocolVersion: 5,
       },
     });
     expect(response).not.toHaveProperty('result.methodDescriptors');
@@ -116,7 +121,7 @@ describe('AgentRuntimeGateway', () => {
             }),
           ],
         },
-        protocolVersion: 4,
+        protocolVersion: 5,
       },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
@@ -182,7 +187,7 @@ describe('AgentRuntimeGateway', () => {
       params: {},
     })).resolves.toEqual({
       id: 'ping-1',
-      result: { ok: true, protocolVersion: 4 },
+      result: { ok: true, protocolVersion: 5 },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
   });

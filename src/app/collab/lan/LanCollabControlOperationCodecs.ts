@@ -88,10 +88,13 @@ function sharedCodec<Operation extends keyof typeof COLLAB_CONTROL_OPERATION_COD
 
 export const LAN_COLLAB_CONTROL_OPERATION_CODECS = Object.freeze({
   getRequest: sharedCodec('getRequest'),
+  listRequestComments: sharedCodec('listRequestComments'),
   ensureMyRequest: sharedCodec('ensureMyRequest'),
   createComment: sharedCodec('createComment'),
   listTickets: sharedCodec('listTickets'),
   getTicket: sharedCodec('getTicket'),
+  listTicketComments: sharedCodec('listTicketComments'),
+  listTicketAcceptedRelations: sharedCodec('listTicketAcceptedRelations'),
   createTicket: sharedCodec('createTicket'),
   updateTicketContent: sharedCodec('updateTicketContent'),
   createTicketComment: sharedCodec('createTicketComment'),

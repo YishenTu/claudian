@@ -256,7 +256,7 @@ describe('ReconnectProjectCoordinator', () => {
     expect(requestWithMember).toHaveBeenCalledTimes(1);
     expect(requestWithMember.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       method: 'GET',
-      path: '/v7/projects/project-a/endpoint',
+      path: '/v9/projects/project-a/endpoint',
     }));
     expect(requestWithMember.mock.calls[0]?.[1]).toBe(credential);
     expect(requestWithMember.mock.calls[0]?.[2]).toEqual({ timeoutMs: 2_000 });

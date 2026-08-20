@@ -10,6 +10,10 @@ import {
 import { ProjectInvitationModal } from '@/features/collab/modals/project/ProjectInvitationModal';
 import { MutationIntentStore } from '@/features/collab/shared/MutationIntentStore';
 import { t } from '@/i18n/i18n';
+import {
+  type LatestTaskHandle,
+  LatestTaskScope,
+} from '@/shared/async/LatestTaskScope';
 
 export type ProjectManagementModalPort = Pick<
   CollabFeaturePort,
@@ -82,11 +86,11 @@ export class ProjectManagementModal extends Modal {
   private invitationActionsEl: HTMLDivElement | null = null;
   private invitationModal: ProjectInvitationModal | null = null;
   private lifecycleActionsEl: HTMLDivElement | null = null;
-  private loadGeneration = 0;
   private members: readonly CollabMember[] = [];
   private readonly mutationIntents = new MutationIntentStore<AccessMutationIntentKind>();
   private opened = false;
   private operationPending = false;
+  private readonly readTasks = new LatestTaskScope();
   private snapshot: CollabProjectSnapshot | null = null;
   private status: AccessStatus | null = null;
 
@@ -132,7 +136,7 @@ export class ProjectManagementModal extends Modal {
     this.abortController.abort();
     this.featureSubscription?.dispose();
     this.featureSubscription = null;
-    this.loadGeneration += 1;
+    this.readTasks.cancel();
     this.mutationIntents.clearAll();
     this.hostSection?.destroy();
     this.hostSection = null;
@@ -197,13 +201,15 @@ export class ProjectManagementModal extends Modal {
   }
 
   private async loadMembers(): Promise<void> {
-    const generation = ++this.loadGeneration;
+    // Presentation reads own one latest-task lane: a superseding read cancels
+    // the earlier authority read. Mutations retain application-owned admission.
+    const task = this.readTasks.start();
     this.renderLoading();
     const result = await this.port.readSnapshot(
       this.options.project.id,
-      { signal: this.abortController.signal },
+      { signal: task.signal },
     );
-    if (!this.isCurrent(generation)) return;
+    if (!this.isReadCurrent(task)) return;
     if (result.status !== 'success') {
       this.renderLoadFailure();
       return;
@@ -1024,9 +1030,9 @@ export class ProjectManagementModal extends Modal {
     return this.lifecycleActionsEl;
   }
 
-  private isCurrent(generation: number): boolean {
+  private isReadCurrent(task: LatestTaskHandle): boolean {
     return this.opened
       && !this.abortController.signal.aborted
-      && generation === this.loadGeneration;
+      && task.isCurrent();
   }
 }

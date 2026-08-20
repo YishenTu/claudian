@@ -7,6 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { COLLAB_LIMITS } from '@claudian/collab-protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -165,6 +166,31 @@ describe('RequestCommentService', () => {
     expect(await database.read(connection => connection.get(
       'SELECT COUNT(*) AS count FROM comments',
     )?.count)).toBe(1);
+  });
+
+  it('keeps replay available at the shared Request comment limit but rejects a new comment', async () => {
+    const replayRequest = input('replay-at-limit', 'Existing comment');
+    const replay = await service.create('member-host', replayRequest);
+    await database.mutate(connection => {
+      for (let index = 1; index < COLLAB_LIMITS.maxRequestComments; index += 1) {
+        connection.run(
+          `INSERT INTO comments (
+            comment_id, request_id, author_member_id, body, created_at
+          ) VALUES (?, 'request-one', 'member-host', 'Existing comment', ?)`,
+          [`comment-${index}`, COMMENTED_AT],
+        );
+      }
+    });
+
+    await expect(service.create('member-host', replayRequest)).resolves.toEqual(replay);
+    await expect(service.create('member-host', input('over-limit', 'One too many')))
+      .rejects.toMatchObject({
+        code: 'quota-exceeded',
+        safeContext: {
+          limit: COLLAB_LIMITS.maxRequestComments,
+          quota: 'maxRequestComments',
+        },
+      });
   });
 
   it('requires active membership before replaying an existing comment', async () => {

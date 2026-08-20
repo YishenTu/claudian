@@ -72,4 +72,31 @@ describe('GitCommandRunner Windows process ownership', () => {
     await expect(execution).rejects.toMatchObject({ code: 'cancelled' });
     expect(runner.activeProcessCount).toBe(0);
   });
+
+  it('settles cancellation after the bounded deadline when taskkill never emits', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const git = createMockGitProcess();
+    const taskkill = new EventEmitter();
+    mockSpawn
+      .mockReturnValueOnce(git)
+      .mockReturnValueOnce(taskkill as ReturnType<typeof spawn>);
+    const runner = new GitCommandRunner({
+      emptyConfigPath: 'C:\\empty.gitconfig',
+      executablePath: 'C:\\Program Files\\Git\\cmd\\git.exe',
+      taskkillTimeoutMs: 20,
+    });
+    const controller = new AbortController();
+
+    const execution = runner.run({
+      args: ['status'],
+      cwd: 'C:\\vault',
+      signal: controller.signal,
+    });
+    controller.abort();
+    git.emit('close', null);
+
+    await expect(execution).rejects.toMatchObject({ code: 'cancelled' });
+    expect(runner.activeProcessCount).toBe(0);
+    expect(git.kill).toHaveBeenCalledWith('SIGTERM');
+  });
 });

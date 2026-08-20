@@ -1,4 +1,4 @@
-import { type AcceptRequest, type AcceptResponse, type ChangeTicketStatusRequest, type CollabMemberId, type CollabRequestDetail, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentRequest, type CreateCommentResponse, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type EnsureMyRequestRequest, type EnsureMyRequestResponse, type GetRequestRequest, type ListTicketsRequest, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse, type UpdateTicketContentRequest } from '@claudian/collab-protocol';
+import { type AcceptRequest, type AcceptResponse, type ChangeTicketStatusRequest, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentRequest, type CreateCommentResponse, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type EnsureMyRequestRequest, type EnsureMyRequestResponse, type GetRequestRequest, type ListRequestCommentsRequest, type ListTicketAcceptedRelationsRequest, type ListTicketCommentsRequest, type ListTicketsRequest, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse, type UpdateTicketContentRequest } from '@claudian/collab-protocol';
 
 import type {
   CollabActiveProjectRouting,
@@ -41,24 +41,17 @@ import type {
 } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-export type HostedMembershipControlPort = Omit<
+export type HostedMembershipControlPort = Pick<
   CollabControlProjectService,
-  | 'acceptRequest'
-  | 'createComment'
-  | 'createTicket'
-  | 'createTicketComment'
-  | 'closeTicket'
-  | 'ensureMyRequest'
-  | 'getTicket'
-  | 'leaveProject'
-  | 'listTickets'
-  | 'readRequest'
-  | 'reopenTicket'
-  | 'removeMember'
-  | 'promoteManager'
-  | 'demoteManager'
-  | 'updateMyRequestMetadata'
-  | 'updateTicketContent'
+  | 'activateJoinAttempt'
+  | 'authenticateMemberCredential'
+  | 'confirmEndpoint'
+  | 'createInvitation'
+  | 'createJoinAttempt'
+  | 'encodeInvitation'
+  | 'readSnapshot'
+  | 'refreshEndpoint'
+  | 'revokeInvitation'
 >;
 
 export interface HostedRequestControlPort {
@@ -79,6 +72,12 @@ export interface HostedRequestControlPort {
     projectId: string,
     requestId: string,
   ): Promise<CollabRequestDetail>;
+  readComments(
+    actorMemberId: CollabMemberId,
+    projectId: string,
+    requestId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<CollabCommentPage>;
   updateMetadata(
     actorMemberId: CollabMemberId,
     request: UpdateMyRequestMetadataRequest,
@@ -102,6 +101,18 @@ export interface HostedTicketControlPort {
     actorMemberId: CollabMemberId,
     request: ListTicketsRequest,
   ): Promise<CollabTicketPage>;
+  listAcceptedRelations(
+    actorMemberId: CollabMemberId,
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<CollabTicketAcceptedRelationPage>;
+  listComments(
+    actorMemberId: CollabMemberId,
+    projectId: string,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+  ): Promise<CollabTicketCommentPage>;
   read(
     actorMemberId: CollabMemberId,
     projectId: string,
@@ -198,19 +209,19 @@ export class HostedProjectControlService implements CollabControlProjectService 
 
   constructor(
     private readonly membership: HostedMembershipControlPort,
-    private readonly requests?: HostedRequestControlPort,
-    private readonly administration?: HostedMembershipAdminPort,
-    private readonly tickets?: HostedTicketControlPort,
-    private readonly lifecycle?: HostedLifecycleControlPort,
+    private readonly requests: HostedRequestControlPort,
+    private readonly administration: HostedMembershipAdminPort,
+    private readonly tickets: HostedTicketControlPort,
+    private readonly lifecycle: HostedLifecycleControlPort,
     lifecycleAdmission?: CollabControlAdmissionPort,
   ) {
     const lifecycleGateway: LifecycleGatewayPort = new ActiveLifecycleGateway({
       ...(lifecycleAdmission ? { admission: lifecycleAdmission } : {}),
-      ...(administration ? { administration } : {}),
+      administration,
       authenticateMemberCredential: (credential, statuses) => (
         membership.authenticateMemberCredential(credential, statuses)
       ),
-      ...(lifecycle ? { lifecycle } : {}),
+      lifecycle,
     });
     this.routing = Object.freeze({
       ...(lifecycleAdmission ? { admission: lifecycleAdmission } : {}),
@@ -243,7 +254,6 @@ export class HostedProjectControlService implements CollabControlProjectService 
   );
 
   async readSnapshot(memberCredential: string) {
-    if (!this.lifecycle) return this.membership.readSnapshot(memberCredential);
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const before = await this.membership.readSnapshot(memberCredential);
       const actorMemberId = before.currentMember.id;
@@ -290,7 +300,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
       memberCredential,
       ['active'],
     );
-    return this.requireRequests().ensure(actor.member.id, request);
+    return this.requests.ensure(actor.member.id, request);
   }
 
   async acceptRequest(
@@ -301,7 +311,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
       memberCredential,
       ['active'],
     );
-    return this.requireRequests().accept(actor.member.id, request);
+    return this.requests.accept(actor.member.id, request);
   }
 
   async createComment(
@@ -312,7 +322,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
       memberCredential,
       ['active'],
     );
-    return this.requireRequests().createComment(actor.member.id, request);
+    return this.requests.createComment(actor.member.id, request);
   }
 
   async readRequest(
@@ -323,10 +333,26 @@ export class HostedProjectControlService implements CollabControlProjectService 
       memberCredential,
       ['active'],
     );
-    return this.requireRequests().read(
+    return this.requests.read(
       actor.member.id,
       request.projectId,
       request.requestId,
+    );
+  }
+
+  async listRequestComments(
+    memberCredential: string,
+    request: ListRequestCommentsRequest,
+  ): Promise<CollabCommentPage> {
+    const actor = await this.authenticateActive(memberCredential);
+    return this.requests.readComments(
+      actor,
+      request.projectId,
+      request.requestId,
+      {
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.limit === undefined ? {} : { limit: request.limit }),
+      },
     );
   }
 
@@ -335,7 +361,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: UpdateMyRequestMetadataRequest,
   ): Promise<UpdateMyRequestMetadataResponse> {
     const actor = await this.authenticateActive(memberCredential);
-    return this.requireRequests().updateMetadata(actor, request);
+    return this.requests.updateMetadata(actor, request);
   }
 
   async listTickets(
@@ -343,7 +369,39 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: ListTicketsRequest,
   ): Promise<CollabTicketPage> {
     const actor = await this.authenticateActive(memberCredential);
-    return this.requireTickets().list(actor, request);
+    return this.tickets.list(actor, request);
+  }
+
+  async listTicketComments(
+    memberCredential: string,
+    request: ListTicketCommentsRequest,
+  ): Promise<CollabTicketCommentPage> {
+    const actor = await this.authenticateActive(memberCredential);
+    return this.tickets.listComments(
+      actor,
+      request.projectId,
+      request.ticketId,
+      {
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.limit === undefined ? {} : { limit: request.limit }),
+      },
+    );
+  }
+
+  async listTicketAcceptedRelations(
+    memberCredential: string,
+    request: ListTicketAcceptedRelationsRequest,
+  ): Promise<CollabTicketAcceptedRelationPage> {
+    const actor = await this.authenticateActive(memberCredential);
+    return this.tickets.listAcceptedRelations(
+      actor,
+      request.projectId,
+      request.ticketId,
+      {
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.limit === undefined ? {} : { limit: request.limit }),
+      },
+    );
   }
 
   async getTicket(
@@ -352,7 +410,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     ticketId: string,
   ): Promise<CollabTicketDetail> {
     const actor = await this.authenticateActive(memberCredential);
-    return this.requireTickets().read(actor, projectId, ticketId);
+    return this.tickets.read(actor, projectId, ticketId);
   }
 
   async createTicket(
@@ -360,7 +418,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: CreateTicketRequest,
   ) {
     const actor = await this.authenticateActive(memberCredential);
-    return { ticket: await this.requireTickets().create(actor, request) };
+    return { ticket: await this.tickets.create(actor, request) };
   }
 
   async updateTicketContent(
@@ -368,7 +426,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: UpdateTicketContentRequest,
   ) {
     const actor = await this.authenticateActive(memberCredential);
-    return { ticket: await this.requireTickets().updateContent(actor, request) };
+    return { ticket: await this.tickets.updateContent(actor, request) };
   }
 
   async createTicketComment(
@@ -376,7 +434,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: CreateTicketCommentRequest,
   ): Promise<CreateTicketCommentResponse> {
     const actor = await this.authenticateActive(memberCredential);
-    return this.requireTickets().comment(actor, request);
+    return this.tickets.comment(actor, request);
   }
 
   async closeTicket(
@@ -384,7 +442,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: ChangeTicketStatusRequest,
   ) {
     const actor = await this.authenticateActive(memberCredential);
-    return { ticket: await this.requireTickets().close(actor, request) };
+    return { ticket: await this.tickets.close(actor, request) };
   }
 
   async reopenTicket(
@@ -392,7 +450,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: ChangeTicketStatusRequest,
   ) {
     const actor = await this.authenticateActive(memberCredential);
-    return { ticket: await this.requireTickets().reopen(actor, request) };
+    return { ticket: await this.tickets.reopen(actor, request) };
   }
 
   async removeMember(
@@ -400,7 +458,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     request: RemoveMemberRequest,
   ): Promise<MembershipTerminationResponse> {
     const actor = await this.authenticateAdministration(memberCredential);
-    return this.requireAdministration().removeMember(actor, request);
+    return this.administration.removeMember(actor, request);
   }
 
   private async authenticateAdministration(memberCredential: string): Promise<string> {
@@ -415,27 +473,4 @@ export class HostedProjectControlService implements CollabControlProjectService 
     return actor.member.id;
   }
 
-  private requireTickets(): HostedTicketControlPort {
-    if (this.tickets) return this.tickets;
-    throw new CollabError({
-      code: 'operation-failed',
-      safeContext: { reason: 'ticket-service-unavailable' },
-    });
-  }
-
-  private requireAdministration(): HostedMembershipAdminPort {
-    if (this.administration) return this.administration;
-    throw new CollabError({
-      code: 'operation-failed',
-      safeContext: { reason: 'membership-admin-service-unavailable' },
-    });
-  }
-
-  private requireRequests(): HostedRequestControlPort {
-    if (this.requests) return this.requests;
-    throw new CollabError({
-      code: 'operation-failed',
-      safeContext: { reason: 'request-service-unavailable' },
-    });
-  }
 }

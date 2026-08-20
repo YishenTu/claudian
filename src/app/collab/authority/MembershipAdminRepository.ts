@@ -118,7 +118,10 @@ export class MembershipAdminRepository {
     if (input.targetMemberId === input.actorMemberId) {
       throw membershipError('authorization-denied', 'membership-manager-self-demotion-denied');
     }
-    this.managerResponsibilities.cancelAllNonterminal(connection, input.demotedAt);
+    this.managerResponsibilities.cancelRelatedNonterminal(connection, {
+      cancelledAt: input.demotedAt,
+      memberId: input.targetMemberId,
+    });
     const updated = this.managerSet.demote(connection, {
       expectedGeneration: managerSet.generation,
       targetMemberId: input.targetMemberId,
@@ -189,7 +192,10 @@ export class MembershipAdminRepository {
           ['retry'],
         );
       }
-      this.managerResponsibilities.cancelAllNonterminal(connection, input.terminatedAt);
+      this.managerResponsibilities.cancelRelatedNonterminal(connection, {
+        cancelledAt: input.terminatedAt,
+        memberId: input.actorMemberId,
+      });
       this.managerSet.demote(connection, {
         expectedGeneration: managerSet.generation,
         targetMemberId: input.actorMemberId,
@@ -270,7 +276,10 @@ export class MembershipAdminRepository {
     const target = this.requireActiveTarget(connection, input.targetMemberId);
     if (target.role === 'manager') {
       const managerSet = this.managerSet.requireActiveManager(connection, input.actorMemberId);
-      this.managerResponsibilities.cancelAllNonterminal(connection, input.terminatedAt);
+      this.managerResponsibilities.cancelRelatedNonterminal(connection, {
+        cancelledAt: input.terminatedAt,
+        memberId: input.targetMemberId,
+      });
       this.managerSet.demote(connection, {
         expectedGeneration: managerSet.generation,
         targetMemberId: input.targetMemberId,

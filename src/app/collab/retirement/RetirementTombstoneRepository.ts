@@ -33,8 +33,6 @@ export interface RetirementTombstoneAuthentication {
 
 export interface RetirementAcknowledgementResult {
   readonly acknowledgedAt: CollabIsoTimestamp;
-  readonly allAcknowledged: boolean;
-  readonly memberId: CollabMemberId;
   readonly result: CollabRetirementResult;
 }
 
@@ -183,15 +181,8 @@ export class RetirementTombstoneRepository {
         ));
         await this.store.saveRetirementTombstone({ ...tombstone, formerMembers });
       }
-      const current = member.acknowledgedAt === null
-        ? tombstone.formerMembers.map((candidate, index) => (
-          index === memberIndex ? { ...candidate, acknowledgedAt } : candidate
-        ))
-        : tombstone.formerMembers;
       return {
         acknowledgedAt,
-        allAcknowledged: current.every(candidate => candidate.acknowledgedAt !== null),
-        memberId: member.memberId,
         result: tombstone.result,
       };
     });

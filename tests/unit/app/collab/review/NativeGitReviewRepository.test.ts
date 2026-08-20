@@ -314,8 +314,7 @@ function baseContext() {
 
 function detail(reviewCondition: 'clean' | 'conflicting' | 'stale'): CollabRequestDetail {
   return {
-    changedFiles: [],
-    comments: [],
+    comments: { comments: [] },
     currentMainOid: MAIN,
     request: {
       commentCount: 0,

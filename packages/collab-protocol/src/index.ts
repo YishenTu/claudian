@@ -54,6 +54,9 @@ export type {
   EnsureMyRequestResponse,
   GetRequestRequest,
   GetTicketRequest,
+  ListRequestCommentsRequest,
+  ListTicketAcceptedRelationsRequest,
+  ListTicketCommentsRequest,
   ListTicketsRequest,
   TicketMutationResponse,
   UpdateMyRequestMetadataRequest,
@@ -74,12 +77,20 @@ export type {
 
 export type { CollabRequestTicketOperation } from './CollabRequestTicketRequestCodecs';
 
+export {
+  isCollabGitOid,
+  isCollabMemberId,
+  isCollabOpaqueId,
+  isCollabProjectId,
+} from './CollabValidation';
+
 export { collabMemberRef } from './types';
 export type {
   CollabChangedFile,
   CollabChangeRequest,
   CollabComment,
   CollabCommentId,
+  CollabCommentPage,
   CollabFileChangeKind,
   CollabGitOid,
   CollabIdempotencyKey,
@@ -99,8 +110,10 @@ export type {
   CollabReviewCondition,
   CollabRole,
   CollabTicketAcceptedRelation,
+  CollabTicketAcceptedRelationPage,
   CollabTicketComment,
   CollabTicketCommentId,
+  CollabTicketCommentPage,
   CollabTicketCommitRelationKind,
   CollabTicketDetail,
   CollabTicketId,

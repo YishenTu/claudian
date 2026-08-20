@@ -5,7 +5,6 @@ import {
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
-  type CollabConflictDecision,
   type CollabFeaturePort,
   type CollabResult,
 } from '@/core/collab/CollabFeaturePort';
@@ -74,41 +73,8 @@ describe('CollabFeaturePort', () => {
     expect(TEST_COLLAB_FEATURE_PORT_METHODS).not.toContain('shutdown');
   });
 
-  it('keeps legacy agent decisions decodable for durable conflict replay', () => {
-    const decisions: readonly CollabConflictDecision[] = [
-      { path: 'mine.md', choice: 'keep-personal' },
-      { path: 'accepted.md', choice: 'use-accepted' },
-      {
-        path: 'manual.md',
-        choice: 'use-manual-draft',
-        draft: 'reviewed manual result',
-      },
-      {
-        path: 'agent.md',
-        choice: 'use-agent-proposal',
-        proposal: 'reviewed agent result',
-      },
-    ];
-
-    expect(decisions).toEqual([
-      { path: 'mine.md', choice: 'keep-personal' },
-      { path: 'accepted.md', choice: 'use-accepted' },
-      {
-        path: 'manual.md',
-        choice: 'use-manual-draft',
-        draft: 'reviewed manual result',
-      },
-      {
-        path: 'agent.md',
-        choice: 'use-agent-proposal',
-        proposal: 'reviewed agent result',
-      },
-    ]);
-  });
-
-  it('keeps resumable conflict decisions and file versions provider-neutral', () => {
+  it('keeps decision-free conflict inspection and file versions provider-neutral', () => {
     const session = {
-      decisions: [{ path: 'note.md', choice: 'keep-personal' as const }],
       descriptor: {
         operationId: 'operation_1',
         projectId: 'project_1',
@@ -117,8 +83,6 @@ describe('CollabFeaturePort', () => {
         mergeBaseOid: '3'.repeat(40),
         conflicts: [{ kind: 'text' as const, path: 'note.md' }],
       },
-      pending: [],
-      resolvedPaths: ['note.md'],
     };
     const content = {
       accepted: { path: 'note.md', text: 'accepted\n' },
@@ -128,7 +92,7 @@ describe('CollabFeaturePort', () => {
       personal: { path: 'note.md', text: 'mine\n' },
     };
 
-    expect(session.decisions[0]).toMatchObject({ choice: 'keep-personal' });
+    expect(session.descriptor.conflicts).toEqual([{ kind: 'text', path: 'note.md' }]);
     expect(content).toMatchObject({
       accepted: { text: 'accepted\n' },
       personal: { text: 'mine\n' },

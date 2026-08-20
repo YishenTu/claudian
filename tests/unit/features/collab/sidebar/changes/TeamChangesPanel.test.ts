@@ -721,8 +721,7 @@ function review(requestId: string): CollabRequestReview {
     comparisonKind: 'candidate',
     comparisonTargetOid: '3'.repeat(40),
     detail: {
-      changedFiles: [file],
-      comments: [],
+      comments: { comments: [] },
       currentMainOid: MAIN,
       request: matchingRequest,
       reviewCondition: 'clean',

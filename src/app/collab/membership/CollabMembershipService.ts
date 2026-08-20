@@ -20,7 +20,6 @@ import {
   type CreateInvitationInput,
   type CreateManagerResponsibilityOfferInput,
   type DemoteManagerInput,
-  type LeaveProjectInput,
   type ManagerResponsibilityOfferInput,
   MembershipControlClient,
   type PromoteManagerInput,
@@ -31,7 +30,7 @@ import type {
   CollabManagerResponsibilityOfferSummary,
   CollabProjectSnapshot,
 } from '@/core/collab';
-import { type CollabAcknowledgeManagerResponsibilityRequest, type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDeclineManagerResponsibilityRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabLeaveProjectRequest, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest } from '@/core/collab';
+import { type CollabAcknowledgeManagerResponsibilityRequest, type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDeclineManagerResponsibilityRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -63,7 +62,6 @@ export interface CollabMembershipControlClientPort {
     readonly projectId: string;
     readonly signal?: AbortSignal;
   }): Promise<CollabManagerResponsibilityOfferSummary>;
-  leaveProject(input: LeaveProjectInput): Promise<MembershipTerminationResponse>;
   demoteManager(input: DemoteManagerInput): Promise<DemoteManagerResponse>;
   promoteManager(input: PromoteManagerInput): Promise<PromoteManagerResponse>;
   removeMember(input: RemoveMemberInput): Promise<MembershipTerminationResponse>;
@@ -104,13 +102,6 @@ export interface CollabMembershipSafetyContext {
   readonly managerResponsibilityOperations: ManagerResponsibilityOperationPort;
   readonly managerReceipts: CollabMembershipManagerReceiptPort;
   readonly pendingLeaves: CollabMembershipPendingLeavePort;
-}
-
-export interface CollabMembershipLeaveInput {
-  readonly idempotencyKey: string;
-  readonly managerResponsibilityOfferId?: string;
-  readonly projectId: CollabProjectId;
-  readonly signal?: AbortSignal;
 }
 
 interface MembershipSession {
@@ -258,54 +249,6 @@ export class CollabMembershipService {
       ...(options.signal ? { signal: options.signal } : {}),
     });
     await this.refreshProjection(request.projectId, options);
-  }
-
-  async leaveProject(
-    request: CollabLeaveProjectRequest,
-    options: CollabOperationOptions = {},
-  ): Promise<void> {
-    await this.settleLeave({
-      idempotencyKey: this.createIdempotencyKey('leave-project'),
-      ...(request.managerResponsibilityOfferId === undefined ? {} : {
-        managerResponsibilityOfferId: request.managerResponsibilityOfferId,
-      }),
-      projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-  }
-
-  async settleLeave(input: CollabMembershipLeaveInput): Promise<MembershipTerminationResponse> {
-    const session = await this.loadSession(input.projectId);
-    const coordination = await this.snapshots.readCoordinationSnapshot(
-      input.projectId,
-      input.signal ? { signal: input.signal } : {},
-    );
-    if (coordination.source !== 'online' || coordination.stale) {
-      throw membershipError('host-stopped', 'membership-leave-authority-required');
-    }
-    const snapshot = coordination.snapshot;
-    if (
-      snapshot.project.id !== input.projectId
-      || snapshot.currentMember.id !== session.membership.member.id
-    ) throw membershipError('project-not-found', 'membership-leave-snapshot-mismatch');
-    if (snapshot.project.hostMemberId === snapshot.currentMember.id) {
-      throw new CollabError({
-        code: 'host-transfer-pending',
-        safeContext: { reason: 'membership-leave-host-transfer-required' },
-      });
-    }
-    return session.client.leaveProject({
-      expectedHostMemberId: snapshot.project.hostMemberId,
-      expectedMemberId: snapshot.currentMember.id,
-      idempotencyKey: input.idempotencyKey,
-      idempotencyManagerMemberId: null,
-      memberCredential: session.membership.member.credential,
-      ...(input.managerResponsibilityOfferId === undefined ? {} : {
-        managerResponsibilityOfferId: input.managerResponsibilityOfferId,
-      }),
-      projectId: input.projectId,
-      ...(input.signal ? { signal: input.signal } : {}),
-    });
   }
 
   async createManagerResponsibilityOffer(

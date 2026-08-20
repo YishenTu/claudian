@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
 import Bonjour from 'bonjour-service';
 
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
@@ -14,7 +14,6 @@ const DISCOVERY_RETRY_DELAYS_MS = [750, 1_750] as const;
 const CANDIDATE_SETTLE_MS = 400;
 const MAX_DISCOVERED_CANDIDATES = 8;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 export interface CollabDiscoveredHost {
   readonly caFingerprint: string;
@@ -227,7 +226,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     if (
       this.closed
       || options.signal?.aborted
-      || !PROJECT_ID_PATTERN.test(projectId)
+      || !isCollabProjectId(projectId)
     ) {
       return [];
     }
@@ -327,7 +326,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
       || typeof txt.projectId !== 'string'
       || typeof txt.caFingerprint !== 'string'
       || typeof txt.endpoint !== 'string'
-      || !PROJECT_ID_PATTERN.test(txt.projectId)
+      || !isCollabProjectId(txt.projectId)
       || !FINGERPRINT_PATTERN.test(txt.caFingerprint)
     ) {
       return null;
@@ -365,7 +364,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
 
   private validateHost(host: CollabDiscoveredHost): CollabDiscoveredHost {
     if (
-      !PROJECT_ID_PATTERN.test(host.projectId)
+      !isCollabProjectId(host.projectId)
       || !FINGERPRINT_PATTERN.test(host.caFingerprint)
     ) {
       throw new Error('Collab LAN discovery identity is invalid.');

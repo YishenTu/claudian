@@ -9,6 +9,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import {
   SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   HostTransferAuthoritySnapshot,
 } from '@/app/collab/host-transfer/HostTransferAuthoritySnapshot';
@@ -214,7 +215,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     })).rejects.toMatchObject({ code: 'authority-integrity-error' });
   });
 
-  it('validates a bound raw v8 snapshot before migrating and activating it as v9', async () => {
+  it('validates a bound raw v8 snapshot before migrating and activating it as current', async () => {
     const codec = new HostTransferAuthoritySnapshot({
       loadSqlJs: async () => SQL,
       trust: { verifyChain: jest.fn().mockReturnValue(proof.nextCaCertificatePem) },
@@ -323,7 +324,8 @@ describe('HostTransferAuthoritySnapshot', () => {
     expect(legacy.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
     legacy.close();
     const current = new SQL.Database(activated.bytes);
-    expect(current.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(9);
+    expect(current.exec('PRAGMA user_version')[0]?.values[0]?.[0])
+      .toBe(COLLAB_AUTHORITY_SCHEMA_VERSION);
     expect(current.exec('PRAGMA table_info(project)')[0]?.values.map(row => row[1]))
       .not.toContain('manager_member_id');
     expect(current.exec('SELECT phase FROM host_transfer_operations')[0]?.values[0]?.[0])
@@ -389,7 +391,8 @@ function downgradeInertToV8(database: Database): Uint8Array {
     FROM accept_operations_v9_fixture;
     DROP TABLE accept_operations_v9_fixture;
 
-    DROP INDEX manager_responsibility_one_nonterminal;
+    DROP INDEX manager_responsibility_one_nonterminal_source;
+    DROP INDEX manager_responsibility_one_nonterminal_target;
     ALTER TABLE manager_responsibility_offers
       RENAME TO manager_responsibility_offers_v9_fixture;
     CREATE TABLE manager_responsibility_offers (
@@ -410,7 +413,9 @@ function downgradeInertToV8(database: Database): Uint8Array {
     INSERT INTO manager_responsibility_offers SELECT
       offer_id,
       CASE purpose WHEN 'manager-promotion' THEN 'manager-transfer' ELSE purpose END,
-      source_manager_member_id, source_manager_generation, target_member_id,
+      source_manager_member_id,
+      (SELECT manager_generation FROM project WHERE singleton = 1),
+      target_member_id,
       status, offered_at, expires_at, acknowledged_at, consumed_at, updated_at
     FROM manager_responsibility_offers_v9_fixture;
     DROP TABLE manager_responsibility_offers_v9_fixture;

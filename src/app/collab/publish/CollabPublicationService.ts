@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabChangeRequest, type CollabComment, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabTicketComment, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
 
 import {
   type CollabProjectInspectionLease,
@@ -203,12 +203,29 @@ export class CollabPublicationService {
     return this.projection.readRequest(projectId, requestId, options);
   }
 
+  listRequestComments(
+    projectId: CollabProjectId,
+    requestId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCommentPage> {
+    return this.projection.listRequestComments(projectId, requestId, query, options);
+  }
+
   async prepareReview(
     projectId: CollabProjectId,
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
     return (await this.runtime()).review.prepare(projectId, requestId, options);
+  }
+
+  async prepareReviewPage(
+    projectId: CollabProjectId,
+    requestId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabRequestReview> {
+    return (await this.runtime()).review.preparePage(projectId, requestId, options);
   }
 
   async readReviewFile(
@@ -415,12 +432,38 @@ export class CollabPublicationService {
     return this.projection.listTickets(request, options);
   }
 
-  readTicket(
+  async readTicket(
     projectId: CollabProjectId,
     ticketId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketDetailProjection> {
     return this.projection.readTicket(projectId, ticketId, options);
+  }
+
+  async readTicketPage(
+    projectId: CollabProjectId,
+    ticketId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketDetailProjection> {
+    return this.projection.readTicketPage(projectId, ticketId, options);
+  }
+
+  listTicketComments(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketCommentPage> {
+    return this.projection.listTicketComments(projectId, ticketId, query, options);
+  }
+
+  listTicketAcceptedRelations(
+    projectId: CollabProjectId,
+    ticketId: string,
+    query: { readonly cursor?: string; readonly limit?: number },
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketAcceptedRelationPage> {
+    return this.projection.listTicketAcceptedRelations(projectId, ticketId, query, options);
   }
 
   createTicket(

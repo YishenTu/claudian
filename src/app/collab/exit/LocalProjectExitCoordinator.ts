@@ -7,7 +7,12 @@ import type {
 } from '@/app/collab/activity/CollabProjectWorkSession';
 import type { LocalExitProjectStorePort } from '@/app/collab/exit/LocalExitStores';
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
-import type { PendingLeaveAuthorityPreparation } from '@/app/collab/exit/PendingLeaveAuthorityService';
+import type {
+  PendingLeaveAuthorityPreparation,
+  PreparePendingLeaveInput,
+  ResolvePendingLeaveHostInput,
+  SettlePendingLeaveInput,
+} from '@/app/collab/exit/PendingLeaveAuthorityService';
 import type {
   PendingLeavePhase,
   PendingLeaveRecord,
@@ -19,7 +24,6 @@ import {
 import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
 import type { PendingLeaveJournalPort } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import type {
-  CollabMembershipLeaveInput,
   CollabMembershipManagerReceiptPort,
 } from '@/app/collab/membership/CollabMembershipService';
 import type {
@@ -30,17 +34,21 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface LocalExitAuthorityPort {
   prepareLeave(
-    input: CollabMembershipLeaveInput & { readonly pending: PendingLeaveRecord },
+    input: PreparePendingLeaveInput,
   ): Promise<PendingLeaveAuthorityPreparation>;
   refreshLeave(
-    input: Omit<CollabMembershipLeaveInput, 'managerResponsibilityOfferId'> & {
-      readonly pending: PendingLeaveRecord;
-    },
+    input: SettlePendingLeaveInput,
   ): Promise<PendingLeaveAuthorityPreparation>;
+  resolveLeaveHost(
+    input: ResolvePendingLeaveHostInput,
+  ): Promise<{
+    readonly caCertificatePem: string;
+    readonly caFingerprint: string;
+    readonly endpoint: string;
+    readonly projectId: CollabProjectId;
+  }>;
   settleLeave(
-    input: Omit<CollabMembershipLeaveInput, 'managerResponsibilityOfferId'> & {
-      readonly pending: PendingLeaveRecord;
-    },
+    input: SettlePendingLeaveInput,
   ): Promise<MembershipTerminationResponse>;
 }
 
@@ -253,44 +261,64 @@ export class LocalProjectExitCoordinator {
       pending = await this.transition(pending, 'submitting');
       try {
         if (!pending.authorityReplay) {
-          const preparation = await this.authority.prepareLeave({
-            idempotencyKey: pending.idempotencyKey,
-            ...(managerResponsibilityOfferId === undefined ? {} : {
-              managerResponsibilityOfferId,
-            }),
-            projectId: pending.projectId,
+          const prepared = await this.withPersistedHostContinuity(
             pending,
-            ...(options.signal ? { signal: options.signal } : {}),
-          });
+            current => this.authority.prepareLeave({
+              ...(managerResponsibilityOfferId === undefined ? {} : {
+                managerResponsibilityOfferId,
+              }),
+              pending: current,
+              ...(options.signal ? { signal: options.signal } : {}),
+            }),
+            options,
+          );
+          pending = prepared.pending;
+          const preparation = prepared.value;
           pending = await this.update(pending, {
             authorityReplay: preparation.authorityReplay,
             localRole: preparation.memberRole,
           });
         }
         try {
-          await this.settleAuthority(pending, options);
+          const settled = await this.withPersistedHostContinuity(
+            pending,
+            current => this.settleAuthority(current, options),
+            options,
+          );
+          pending = settled.pending;
         } catch (error) {
+          pending = await this.pendingLeaves.load(pending.projectId) ?? pending;
           if (this.isDeterministicObsoleteOffer(pending, error)) {
             throw error;
           }
           if (!(error instanceof CollabError) || error.code !== 'stale-project-selection') {
             throw error;
           }
-          const preparation = await this.authority.refreshLeave({
-            idempotencyKey: pending.idempotencyKey,
-            projectId: pending.projectId,
+          const refreshed = await this.withPersistedHostContinuity(
             pending,
-            ...(options.signal ? { signal: options.signal } : {}),
-          });
+            current => this.authority.refreshLeave({
+              pending: current,
+              ...(options.signal ? { signal: options.signal } : {}),
+            }),
+            options,
+          );
+          pending = refreshed.pending;
+          const preparation = refreshed.value;
           pending = await this.update(pending, {
             authorityReplay: preparation.authorityReplay,
             localRole: preparation.memberRole,
           });
-          await this.settleAuthority(pending, options);
+          const settled = await this.withPersistedHostContinuity(
+            pending,
+            current => this.settleAuthority(current, options),
+            options,
+          );
+          pending = settled.pending;
         }
         pending = await this.transition(pending, 'confirmed');
         authorityConfirmed = true;
       } catch (error) {
+        pending = await this.pendingLeaves.load(pending.projectId) ?? pending;
         if (this.isDeterministicObsoleteOffer(pending, error)) {
           await this.clearObsoleteManagerLeave(pending);
           throw error;
@@ -434,18 +462,49 @@ export class LocalProjectExitCoordinator {
     options: CollabOperationOptions,
   ): Promise<MembershipTerminationResponse> {
     return this.authority.settleLeave({
-      idempotencyKey: pending.idempotencyKey,
-      projectId: pending.projectId,
       pending,
       ...(options.signal ? { signal: options.signal } : {}),
     });
+  }
+
+  private async withPersistedHostContinuity<T>(
+    pending: PendingLeaveRecord,
+    operation: (current: PendingLeaveRecord) => Promise<T>,
+    options: CollabOperationOptions,
+  ): Promise<{ readonly pending: PendingLeaveRecord; readonly value: T }> {
+    try {
+      return { pending, value: await operation(pending) };
+    } catch (failure) {
+      const trust = await this.authority.resolveLeaveHost({
+        failure,
+        pending,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      if (trust.projectId !== pending.projectId) {
+        throw new CollabError({
+          code: 'authority-integrity-error',
+          safeContext: { reason: 'pending-leave-host-project-mismatch' },
+        });
+      }
+      const updated = await this.update(pending, {
+        hostCaCertificatePem: trust.caCertificatePem,
+        hostCaFingerprint: trust.caFingerprint,
+        hostEndpoint: trust.endpoint,
+      });
+      return { pending: updated, value: await operation(updated) };
+    }
   }
 
   private async update(
     record: PendingLeaveRecord,
     patch: Partial<Pick<
       PendingLeaveRecord,
-      'authorityReplay' | 'localCleanupComplete' | 'localRole'
+      | 'authorityReplay'
+      | 'hostCaCertificatePem'
+      | 'hostCaFingerprint'
+      | 'hostEndpoint'
+      | 'localCleanupComplete'
+      | 'localRole'
     >>,
   ): Promise<PendingLeaveRecord> {
     const updated = decodePendingLeaveRecord({

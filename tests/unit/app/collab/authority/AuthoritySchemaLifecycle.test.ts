@@ -1,9 +1,10 @@
+import { COLLAB_LIMITS } from '@claudian/collab-protocol';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {
   applyAuthorityMigrations,
   assertAuthorityDatabaseIntegrity,
-  migrateAuthorityV8DatabaseToV9,
+  migrateLegacyAuthorityDatabaseToCurrent,
 } from '@/app/collab/authority/AuthoritySchema';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 
@@ -28,6 +29,10 @@ function addMemberTableUniqueConstraint(database: Database): void {
 
 function downgradeEmptyCurrentSchemaToV8(database: Database): void {
   database.run(`
+    DROP TRIGGER comments_request_capacity_insert;
+    DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
+    DROP TRIGGER request_ticket_relations_accepted_capacity_update;
+
     ALTER TABLE project RENAME TO project_v9_fixture;
     CREATE TABLE project (
       singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
@@ -60,7 +65,8 @@ function downgradeEmptyCurrentSchemaToV8(database: Database): void {
     );
     DROP TABLE accept_operations_v9_fixture;
 
-    DROP INDEX manager_responsibility_one_nonterminal;
+    DROP INDEX manager_responsibility_one_nonterminal_source;
+    DROP INDEX manager_responsibility_one_nonterminal_target;
     ALTER TABLE manager_responsibility_offers
       RENAME TO manager_responsibility_offers_v9_fixture;
     CREATE TABLE manager_responsibility_offers (
@@ -109,7 +115,8 @@ function createHybridV8Database(SQL: SqlJsStatic): Database {
       'refs/heads/main', '${CREATED_AT}', 3
     );
 
-    DROP INDEX manager_responsibility_one_nonterminal;
+    DROP INDEX manager_responsibility_one_nonterminal_source;
+    DROP INDEX manager_responsibility_one_nonterminal_target;
     ALTER TABLE manager_responsibility_offers
       RENAME TO manager_responsibility_offers_v9_fixture;
     CREATE TABLE manager_responsibility_offers (
@@ -169,7 +176,7 @@ describe('AuthoritySchema lifecycle migration', () => {
     SQL = await initSqlJs();
   });
 
-  it('atomically migrates a populated v8 authority to the multi-Manager v9 schema', () => {
+  it('atomically migrates a populated v8 authority to the finite multi-Manager v11 schema', () => {
     const database = createV8Database(SQL);
     insertMembers(database);
     insertProject(database);
@@ -222,13 +229,15 @@ describe('AuthoritySchema lifecycle migration', () => {
       );
     `);
 
-    expect(migrateAuthorityV8DatabaseToV9(database)).toBe(3);
+    expect(migrateLegacyAuthorityDatabaseToCurrent(database)).toBe(3);
     expect(applyAuthorityMigrations(database)).toBe(false);
     expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0])
       .toBe(COLLAB_AUTHORITY_SCHEMA_VERSION);
     expect(columns(database, 'project')).toContain('manager_set_generation');
     expect(columns(database, 'project')).not.toContain('manager_member_id');
     expect(columns(database, 'accept_operations')).toContain('completion_actor_member_id');
+    expect(columns(database, 'manager_responsibility_offers'))
+      .not.toContain('source_manager_generation');
     expect(database.exec(`
       SELECT project_id, host_member_id, manager_set_generation,
              main_ref, snapshot_generation
@@ -292,13 +301,13 @@ describe('AuthoritySchema lifecycle migration', () => {
       'Authority V9 Manager schema is incomplete',
     );
     expect(ordinary.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
-    expect(() => migrateAuthorityV8DatabaseToV9(hostTransfer)).toThrow(
+    expect(() => migrateLegacyAuthorityDatabaseToCurrent(hostTransfer)).toThrow(
       'Authority V9 Manager schema is incomplete',
     );
     expect(hostTransfer.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
   });
 
-  it('repairs the obsolete singular-Manager index on a current v9 database', () => {
+  it('repairs the obsolete singular-Manager index on a current v11 database', () => {
     const database = new SQL.Database();
     applyAuthorityMigrations(database);
     database.run(`
@@ -314,32 +323,92 @@ describe('AuthoritySchema lifecycle migration', () => {
     `)).toEqual([]);
   });
 
+  it('installs exact finite-collection triggers in the v11 authority schema', () => {
+    const database = new SQL.Database();
+    applyAuthorityMigrations(database);
+
+    expect(database.exec(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'trigger' AND name IN (
+        'comments_request_capacity_insert',
+        'request_ticket_relations_accepted_capacity_insert',
+        'request_ticket_relations_accepted_capacity_update'
+      )
+      ORDER BY name
+    `)[0]?.values).toEqual([
+      ['comments_request_capacity_insert'],
+      ['request_ticket_relations_accepted_capacity_insert'],
+      ['request_ticket_relations_accepted_capacity_update'],
+    ]);
+  });
+
+  it('rejects legacy authority data that exceeds the shared Request comment limit', () => {
+    const database = new SQL.Database();
+    applyAuthorityMigrations(database);
+    database.run(`
+      DROP TRIGGER comments_request_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
+      DROP TRIGGER request_ticket_relations_accepted_capacity_update;
+      PRAGMA user_version = 10;
+    `);
+    insertMembers(database);
+    database.run(`
+      INSERT INTO project (
+        singleton, project_id, name, state, host_member_id,
+        manager_set_generation, main_ref, created_at, snapshot_generation
+      ) VALUES (
+        1, 'project-alpha', 'Alpha', 'active', 'member-host', 0,
+        'refs/heads/main', '${CREATED_AT}', 0
+      );
+      INSERT INTO change_requests (
+        request_id, member_id, status, first_base_oid, latest_head_oid,
+        merged_oid, created_at, updated_at, description, revision
+      ) VALUES (
+        'request-one', 'member-a', 'open', '${'a'.repeat(40)}', '${'b'.repeat(40)}',
+        NULL, '${CREATED_AT}', '${CREATED_AT}', 'Review', 1
+      );
+    `);
+    for (let index = 0; index <= COLLAB_LIMITS.maxRequestComments; index += 1) {
+      database.run(
+        `INSERT INTO comments (
+          comment_id, request_id, author_member_id, body, created_at
+        ) VALUES (?, 'request-one', 'member-host', 'Comment', ?)`,
+        [`comment-${index}`, CREATED_AT],
+      );
+    }
+
+    expect(() => applyAuthorityMigrations(database)).toThrow(
+      'Authority V11 finite collection invariant failed',
+    );
+    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(10);
+  });
+
   it.each([
     {
       corrupt: (database: Database) => {
-        database.run('DROP INDEX manager_responsibility_one_nonterminal');
+        database.run('DROP INDEX manager_responsibility_one_nonterminal_source');
       },
       name: 'missing responsibility index',
     },
     {
       corrupt: (database: Database) => {
         database.run(`
-          DROP INDEX manager_responsibility_one_nonterminal;
-          CREATE INDEX manager_responsibility_one_nonterminal
+          DROP INDEX manager_responsibility_one_nonterminal_source;
+          CREATE INDEX manager_responsibility_one_nonterminal_source
           ON manager_responsibility_offers(status)
         `);
       },
       name: 'malformed responsibility index',
     },
-  ])('rejects a current v9 database with a $name', ({ corrupt }) => {
+  ])('rejects a current v11 database with a $name', ({ corrupt }) => {
     const database = new SQL.Database();
     applyAuthorityMigrations(database);
     corrupt(database);
 
     expect(() => applyAuthorityMigrations(database)).toThrow(
-      'Authority V9 Manager schema is incomplete',
+      'Authority V10 Manager schema is incomplete',
     );
-    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(9);
+    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(11);
   });
 
   it('rejects a renamed unique index that still enforces one active Manager', () => {
@@ -352,7 +421,7 @@ describe('AuthoritySchema lifecycle migration', () => {
     `);
 
     expect(() => applyAuthorityMigrations(database)).toThrow(
-      'Authority V9 Manager schema is incomplete',
+      'Authority V10 Manager schema is incomplete',
     );
   });
 
@@ -366,7 +435,7 @@ describe('AuthoritySchema lifecycle migration', () => {
     `);
 
     expect(() => applyAuthorityMigrations(database)).toThrow(
-      'Authority V9 Manager schema is incomplete',
+      'Authority V10 Manager schema is incomplete',
     );
   });
 
@@ -376,7 +445,7 @@ describe('AuthoritySchema lifecycle migration', () => {
     addMemberTableUniqueConstraint(database);
 
     expect(() => applyAuthorityMigrations(database)).toThrow(
-      'Authority V9 Manager schema is incomplete',
+      'Authority V10 Manager schema is incomplete',
     );
   });
 
@@ -397,7 +466,7 @@ describe('AuthoritySchema lifecycle migration', () => {
       'Authority V9 Manager schema is incomplete',
     );
     expect(ordinary.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
-    expect(() => migrateAuthorityV8DatabaseToV9(hostTransfer)).toThrow(
+    expect(() => migrateLegacyAuthorityDatabaseToCurrent(hostTransfer)).toThrow(
       'Authority V9 Manager schema is incomplete',
     );
     expect(hostTransfer.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
@@ -416,7 +485,7 @@ describe('AuthoritySchema lifecycle migration', () => {
       'Authority V9 Manager schema is incomplete',
     );
     expect(ordinary.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
-    expect(() => migrateAuthorityV8DatabaseToV9(hostTransfer)).toThrow(
+    expect(() => migrateLegacyAuthorityDatabaseToCurrent(hostTransfer)).toThrow(
       'Authority V9 Manager schema is incomplete',
     );
     expect(hostTransfer.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);

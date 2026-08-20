@@ -21,10 +21,10 @@ import type {
   CollabProjectsFolderChildOwnership,
 } from '@/app/collab/CollabWorkspaceService';
 import { collabStoppedHostRemoteUrl } from '@/app/collab/git/GitRepositoryService';
+import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import {
   COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   type CollabProjectSetupRecord,
-  decodeCollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
@@ -57,6 +57,10 @@ export interface CollabProjectFoundationPort {
   readonly local: CollabLocalFoundation;
   requireGitFoundation(): Promise<CollabGitFoundation>;
   openAuthority(projectId: CollabProjectId): Promise<CollabProjectAuthorityFoundation>;
+  inspectAuthority(
+    projectId: CollabProjectId,
+  ): Promise<CollabProjectAuthorityFoundation | null>;
+  discardProvisionalAuthority(projectId: CollabProjectId): Promise<void>;
 }
 
 export interface CollabProjectSetupServiceOptions {
@@ -230,7 +234,7 @@ export class CollabProjectSetupService {
       await this.savePending(record);
       await this.foundation.local.projects.upsertProject(this.indexEntry(record));
       record = await this.prepareSeed(record, options.signal);
-      record = await this.commitAuthority(record);
+      record = await this.commitAuthority(record, options.signal);
       throwIfCancelled(options.signal);
       return await this.finishCommittedSetup(record, options.signal);
     } catch (error) {
@@ -244,6 +248,7 @@ export class CollabProjectSetupService {
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     let record: CollabProjectSetupRecord | null = null;
     try {
+      throwIfCancelled(options.signal);
       record = await this.findPending(request.operationId);
       if (!record) throw setupError('project-not-found', 'pending-setup-not-found');
       if (record.legacyImportPlanned) {
@@ -259,7 +264,7 @@ export class CollabProjectSetupService {
         if (record.phase === 'planned') {
           record = await this.prepareSeed(record, options.signal);
         }
-        record = await this.commitAuthority(record);
+        record = await this.commitAuthority(record, options.signal);
       } else if (record.phase === 'planned' || record.phase === 'staged') {
         record = await this.updateRecord(record, { phase: 'committed' });
       }
@@ -321,6 +326,7 @@ export class CollabProjectSetupService {
 
   private async commitAuthority(
     record: CollabProjectSetupRecord,
+    signal?: AbortSignal,
   ): Promise<CollabProjectSetupRecord> {
     if (!record.initialCommitOid) {
       throw setupError('repository-invalid', 'initial-commit-missing', ['open-diagnostics']);
@@ -331,6 +337,9 @@ export class CollabProjectSetupService {
       const credentialHash = createHash('sha256')
         .update(record.memberCredential, 'utf8')
         .digest();
+      // The point of no return: cancellation must not cross into the durable
+      // authority mutation.
+      throwIfCancelled(signal);
       await authority.database.mutate(connection => {
         authority.projects.initialize(connection, {
           createdAt: record.createdAt,
@@ -591,7 +600,20 @@ export class CollabProjectSetupService {
         status: 'recovery-required',
       };
     }
-    if (record) await this.cleanupUncommitted(record);
+    if (record) {
+      try {
+        await this.cleanupUncommitted(record);
+      } catch {
+        return {
+          error: setupError(
+            'operation-failed',
+            'project-setup-cleanup-failed',
+            ['resume', 'open-diagnostics'],
+          ),
+          status: 'failure',
+        };
+      }
+    }
     if (collabError.code === 'cancelled') {
       return {
         ...(record ? { operationId: record.operationId } : {}),
@@ -603,17 +625,21 @@ export class CollabProjectSetupService {
   }
 
   private async cleanupUncommitted(record: CollabProjectSetupRecord): Promise<void> {
+    // Authority cleanup is the safety boundary: keep the discoverable local
+    // setup record and resumable staging artifacts until the provisional
+    // foundation is actually gone.
+    await this.foundation.discardProvisionalAuthority(record.projectId);
     await this.removeOwnedWorkspaceChild(record, 'create-seed').catch(() => undefined);
     await this.removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
-    await this.foundation.local.projects.removeProjectDocument(
+    await this.foundation.local.projects.discardPendingOperation(record.projectId);
+    await this.foundation.local.projects.pruneProjectPrivateDirectoryIfEmpty(
       record.projectId,
-      'pending-operation',
     ).catch(() => undefined);
-    await this.foundation.local.projects.removeProject(record.projectId).catch(() => undefined);
   }
 
   private async isAuthorityCommitted(record: CollabProjectSetupRecord): Promise<boolean> {
-    const authority = await this.foundation.openAuthority(record.projectId);
+    const authority = await this.foundation.inspectAuthority(record.projectId);
+    if (!authority) return false;
     const project = await authority.database.read(connection => authority.projects.get(connection));
     if (!project) return false;
     this.assertMatchingAuthority(record, project);
@@ -642,22 +668,39 @@ export class CollabProjectSetupService {
   }
 
   private async findPending(operationId: string): Promise<CollabProjectSetupRecord | null> {
-    const index = await this.foundation.local.projects.loadIndex();
-    for (const project of index.projects) {
+    const projectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    let match: CollabProjectSetupRecord | null = null;
+    for (const projectId of projectIds) {
       const pending = await this.foundation.local.projects.loadProjectDocument(
-        project.id,
+        projectId,
         'pending-operation',
-        decodeCollabProjectSetupRecord,
+        decodeCollabPendingProjectOperation,
       );
-      if (pending?.operationId === operationId) return pending;
+      if (pending?.kind === 'create-project' && pending.record.operationId === operationId) {
+        if (match) throw setupError('repository-invalid', 'pending-operation-duplicate');
+        match = pending.record;
+      }
     }
-    return null;
+    return match;
   }
 
   private async claimSlug(projectsFolder: string, name: string): Promise<string> {
     const base = slugBase(name);
     const index = await this.foundation.local.projects.loadIndex();
     const reservedPaths = new Set(index.projects.map(project => project.workspacePath));
+    const pendingProjectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    for (const projectId of pendingProjectIds) {
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        projectId,
+        'pending-operation',
+        decodeCollabPendingProjectOperation,
+      );
+      if (pending) {
+        reservedPaths.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+      }
+    }
     for (let suffix = 1; suffix <= 9_999; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
       if (reservedPaths.has(`${projectsFolder}/${candidate}`)) continue;

@@ -115,6 +115,121 @@ describe('TicketListPanel', () => {
     expect(disposeFocus).toHaveBeenCalledTimes(1);
   });
 
+  it('skips re-reading on an unchanged reopen and coalesces hidden invalidations', async () => {
+    const listTickets = jest.fn().mockResolvedValue({
+      status: 'success',
+      value: ticketPageRead({ tickets: [ticket('ticket-open', 17, 'Open ticket', 'open')] }),
+    });
+    let invalidate: () => void = () => undefined;
+    const root = document.createElement('div');
+    const panel = new TicketListPanel(root, {
+      onCreate: jest.fn(),
+      onOpen: jest.fn(),
+      port: {
+        listTickets,
+        readSnapshot: jest.fn(),
+        subscribe: jest.fn().mockImplementation((listener: () => void) => {
+          invalidate = () => listener();
+          return { dispose: jest.fn() };
+        }),
+      } as unknown as CollabFeaturePort,
+      project: project(),
+    });
+
+    panel.setActive(true);
+    await nextTurn();
+    expect(listTickets).toHaveBeenCalledTimes(1);
+
+    panel.setActive(false);
+    panel.setActive(true);
+    await nextTurn();
+    expect(listTickets).toHaveBeenCalledTimes(1);
+
+    panel.setActive(false);
+    invalidate();
+    invalidate();
+    panel.setActive(true);
+    await nextTurn();
+    expect(listTickets).toHaveBeenCalledTimes(2);
+    panel.destroy();
+  });
+
+  it('re-reads on the next activation when a read is aborted by hiding', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const listTickets = jest.fn()
+      .mockReturnValueOnce(gate.then(() => ({
+        status: 'success',
+        value: ticketPageRead({ tickets: [ticket('ticket-open', 17, 'Open ticket', 'open')] }),
+      })))
+      .mockResolvedValueOnce({
+        status: 'success',
+        value: ticketPageRead({ tickets: [ticket('ticket-open', 17, 'Open ticket', 'open')] }),
+      });
+    const root = document.createElement('div');
+    const panel = new TicketListPanel(root, {
+      onCreate: jest.fn(),
+      onOpen: jest.fn(),
+      port: {
+        listTickets,
+        readSnapshot: jest.fn(),
+        subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+      } as unknown as CollabFeaturePort,
+      project: project(),
+    });
+
+    panel.setActive(true);
+    expect(listTickets).toHaveBeenCalledTimes(1);
+    panel.setActive(false);
+    release();
+    await nextTurn();
+
+    panel.setActive(true);
+    await nextTurn();
+    expect(listTickets).toHaveBeenCalledTimes(2);
+    panel.destroy();
+  });
+
+  it('re-reads after an active invalidation is interrupted by hiding', async () => {
+    let invalidate: () => void = () => undefined;
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+    const result = {
+      status: 'success' as const,
+      value: ticketPageRead({ tickets: [ticket('ticket-open', 17, 'Open ticket', 'open')] }),
+    };
+    const listTickets = jest.fn()
+      .mockResolvedValueOnce(result)
+      .mockReturnValueOnce(refreshGate.then(() => result))
+      .mockResolvedValueOnce(result);
+    const panel = new TicketListPanel(document.createElement('div'), {
+      onCreate: jest.fn(),
+      onOpen: jest.fn(),
+      port: {
+        listTickets,
+        readSnapshot: jest.fn(),
+        subscribe: jest.fn().mockImplementation((listener: () => void) => {
+          invalidate = listener;
+          return { dispose: jest.fn() };
+        }),
+      } as unknown as CollabFeaturePort,
+      project: project(),
+    });
+
+    panel.setActive(true);
+    await nextTurn();
+    invalidate();
+    expect(listTickets).toHaveBeenCalledTimes(2);
+    panel.setActive(false);
+    releaseRefresh();
+    await nextTurn();
+
+    panel.setActive(true);
+    await nextTurn();
+    expect(listTickets).toHaveBeenCalledTimes(3);
+    panel.destroy();
+  });
+
   it('shows the empty state when a fresh snapshot confirms there are no open Tickets', async () => {
     const root = document.createElement('div');
     const panel = new TicketListPanel(root, {
@@ -194,6 +309,7 @@ function ticket(
   status: 'open' | 'closed',
 ): CollabTicketSummary {
   return {
+    acceptedRelationCount: 0,
     authorMemberId: 'member-a',
     commentCount: 0,
     createdAt: CREATED_AT,

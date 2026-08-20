@@ -1,6 +1,5 @@
 import {
   RetirementTerminalService,
-  type RetirementTrustChainVerifier,
 } from '@/app/collab/retirement/RetirementTerminalService';
 import type { RetirementTombstoneRecord } from '@/app/collab/retirement/RetirementTombstoneRecord';
 import type { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
@@ -10,8 +9,6 @@ describe('RetirementTerminalService', () => {
     const repository = {
       acknowledge: jest.fn().mockResolvedValue({
         acknowledgedAt: '2026-08-13T08:01:00.000Z',
-        allAcknowledged: true,
-        memberId: 'member-a',
         result: { projectId: 'project-alpha', retiredAt: '2026-08-13T08:00:00.000Z' },
       }),
       authenticate: jest.fn().mockResolvedValue({ memberId: 'member-a', tombstone: record() }),
@@ -30,7 +27,6 @@ describe('RetirementTerminalService', () => {
       projectId: 'project-alpha',
       retiredAt: '2026-08-13T08:00:00.000Z',
     });
-    expect(response.afterResponseFlushed).toBeUndefined();
 
     await expect(service.acknowledge(
       'project-alpha',
@@ -60,10 +56,7 @@ describe('RetirementTerminalService', () => {
     );
   });
 
-  it('serves the copied proof chain to an earlier pinned CA verifier', async () => {
-    const verifier: RetirementTrustChainVerifier = {
-      verifyChain: jest.fn().mockReturnValue('current-ca-pem'),
-    };
+  it('serves the copied proof chain from the tombstone', async () => {
     const tombstone = record({
       hostTransitionProofs: [{
         issuedAt: '2026-08-12T08:00:00.000Z',
@@ -80,19 +73,8 @@ describe('RetirementTerminalService', () => {
     const repository = {
       load: jest.fn().mockResolvedValue(tombstone),
     } as unknown as RetirementTombstoneRepository;
-    const service = new RetirementTerminalService(repository, { trustChainVerifier: verifier });
+    const service = new RetirementTerminalService(repository);
 
-    expect(await service.verifyTrust({
-      expectedCurrentCaFingerprint: 'b'.repeat(64),
-      pinnedCaCertificatePem: 'old-ca-pem',
-      projectId: 'project-alpha',
-    })).toBe('current-ca-pem');
-    expect(verifier.verifyChain).toHaveBeenCalledWith({
-      expectedCurrentCaFingerprint: 'b'.repeat(64),
-      pinnedCaCertificatePem: 'old-ca-pem',
-      projectId: 'project-alpha',
-      proofs: tombstone.hostTransitionProofs,
-    });
     await expect(service.getHostTransitions('project-alpha'))
       .resolves.toEqual(tombstone.hostTransitionProofs);
   });

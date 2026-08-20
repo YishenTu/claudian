@@ -14,7 +14,7 @@ import type {
 } from '@/app/collab/conflicts/ConflictScratchGitRepository';
 import type { PublishProjectContext } from '@/app/collab/publish/PublishCoordinator';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import { type CollabConflictDecision, type CollabConflictDescriptor, type CollabConflictEntry, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConflictTextSegment, type CollabOperationOptions, type CollabPublicationReview, type CollabResolveConflictRequest, type CollabResult } from '@/core/collab';
+import { type CollabConflictDescriptor, type CollabConflictEntry, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConflictTextSegment, type CollabOperationOptions, type CollabPublicationReview, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ConflictResolutionProjectPort {
@@ -32,11 +32,9 @@ export interface ConflictScratchStorePort {
 }
 
 export interface ConflictScratchGitPort {
-  applyDecision(
+  resolveWithPersonalVersions(
     scratchPath: string,
     descriptor: CollabConflictDescriptor,
-    decision: CollabConflictDecision,
-    resolvedPaths?: readonly string[],
   ): Promise<ConflictScratchInspection>;
   retainResultForPublication(
     context: PublishProjectContext,
@@ -192,13 +190,6 @@ export class ConflictResolutionCoordinator {
     return this.operationQueue.run(() => this.findProjectExclusive(projectId, options.signal));
   }
 
-  resolve(
-    request: CollabResolveConflictRequest,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<CollabConflictSession>> {
-    return this.operationQueue.run(() => this.resolveExclusive(request, options.signal));
-  }
-
   prepareWorkingTreeResolution(
     descriptor: CollabConflictDescriptor,
     options: CollabOperationOptions = {},
@@ -233,7 +224,6 @@ export class ConflictResolutionCoordinator {
         const timestamp = this.now().toISOString();
         record = decodeConflictResolutionRecord({
           createdAt: timestamp,
-          decisions: [],
           descriptor,
           operationId: descriptor.operationId,
           phase: 'planned',
@@ -364,78 +354,6 @@ export class ConflictResolutionCoordinator {
     }
   }
 
-  private async resolveExclusive(
-    request: CollabResolveConflictRequest,
-    signal?: AbortSignal,
-  ): Promise<CollabResult<CollabConflictSession>> {
-    let record: ConflictResolutionRecord | null = null;
-    let durableProgress = false;
-    try {
-      throwIfCancelled(signal);
-      record = await this.requireRecord(request.operationId);
-      const context = await this.loadContext(record, signal);
-      if (record.phase === 'planned' || record.phase === 'ready') {
-        record = this.withDecisions(record, request.decisions);
-        await this.store.save(record);
-        durableProgress = request.decisions.length > 0;
-        record = await this.rebuild(record, context, signal);
-      } else if (request.decisions.length > 0) {
-        throw conflictError('idempotency-conflict', 'conflict-result-already-committed');
-      }
-      if (!request.finalize) {
-        return { status: 'success', value: this.session(record) };
-      }
-      if (record.decisions.length !== record.descriptor.conflicts.length) {
-        throw conflictError('content-conflict', 'conflict-decisions-incomplete');
-      }
-      const scratchPath = await this.store.repositoryPath(record.operationId);
-      if (record.phase === 'ready' || record.phase === 'planned') {
-        await this.projects.revalidate(context);
-        await this.safety.assertSafe(context);
-        throwIfCancelled(signal);
-        const resultCommitOid = await this.git.createResolutionCommit(
-          scratchPath,
-          record.descriptor,
-          this.resolvedPaths(record),
-        );
-        record = await this.saveRecord(record, {
-          phase: 'committed',
-          resultCommitOid,
-        });
-        durableProgress = true;
-      }
-      if (!record.resultCommitOid) {
-        throw conflictError('repository-invalid', 'conflict-result-commit-missing');
-      }
-      await this.projects.revalidate(context);
-      await this.safety.assertSafe(context);
-      throwIfCancelled(signal);
-      await this.git.retainResultForPublication(
-        context,
-        scratchPath,
-        record.descriptor,
-        record.resultCommitOid,
-        signal,
-        async () => {
-          await this.projects.revalidate(context);
-          await this.safety.assertSafe(context);
-        },
-      );
-      const publicationReview = await this.publication.prepareResolvedReview(context, {
-        candidateOid: record.resultCommitOid,
-        contributionHeadOid: record.descriptor.startingPersonalOid,
-        currentMainOid: record.descriptor.startingMainOid,
-        operationId: record.operationId,
-      }, signal);
-      durableProgress = true;
-      const completedSession = { ...this.session(record), publicationReview };
-      await this.store.remove(record.operationId);
-      return { status: 'success', value: completedSession };
-    } catch (error) {
-      return this.failure(error, record, durableProgress);
-    }
-  }
-
   private async prepareWorkingTreeResolutionExclusive(
     descriptor: CollabConflictDescriptor,
     signal?: AbortSignal,
@@ -448,26 +366,19 @@ export class ConflictResolutionCoordinator {
       if (record.projectId !== descriptor.projectId) {
         throw conflictError('idempotency-conflict', 'conflict-project-mismatch');
       }
+      const context = await this.loadContext(record, signal);
       if (record.phase === 'committed') {
         if (!exactDescriptor(record.descriptor, descriptor)) {
           throw conflictError('idempotency-conflict', 'conflict-operation-mismatch');
         }
-        return this.resolveExclusive({
-          decisions: [],
-          finalize: true,
-          operationId: descriptor.operationId,
-        }, signal);
+        return {
+          status: 'success',
+          value: await this.completeCommitted(record, context, signal),
+        };
       }
 
-      const context = await this.loadContext(record, signal);
-      const decisions: readonly CollabConflictDecision[] = descriptor.conflicts
-        .filter(conflict => (
-          conflict.kind !== 'directory-file' && conflict.kind !== 'portability'
-        ))
-        .map(conflict => ({ choice: 'keep-personal' as const, path: conflict.path }));
       record = decodeConflictResolutionRecord({
         ...record,
-        decisions,
         descriptor,
         phase: 'planned',
         resultCommitOid: null,
@@ -476,15 +387,29 @@ export class ConflictResolutionCoordinator {
       await this.store.save(record);
       durableProgress = true;
 
-      if (decisions.length !== descriptor.conflicts.length) {
+      if (descriptor.conflicts.some(conflict => (
+        conflict.kind === 'directory-file' || conflict.kind === 'portability'
+      ))) {
         record = await this.rebuild(record, context, signal);
         return { status: 'success', value: this.session(record) };
       }
-      return this.resolveExclusive({
-        decisions: [],
-        finalize: true,
-        operationId: descriptor.operationId,
-      }, signal);
+      record = await this.rebuild(record, context, signal);
+      const scratchPath = await this.store.repositoryPath(record.operationId);
+      await this.projects.revalidate(context);
+      await this.safety.assertSafe(context);
+      throwIfCancelled(signal);
+      await this.git.resolveWithPersonalVersions(scratchPath, descriptor);
+      const resultCommitOid = await this.git.createResolutionCommit(
+        scratchPath,
+        descriptor,
+        descriptor.conflicts.map(conflict => conflict.path),
+      );
+      record = await this.saveRecord(record, { phase: 'committed', resultCommitOid });
+      durableProgress = true;
+      return {
+        status: 'success',
+        value: await this.completeCommitted(record, context, signal),
+      };
     } catch (error) {
       return this.failure(error, record, durableProgress);
     }
@@ -502,7 +427,6 @@ export class ConflictResolutionCoordinator {
         if (await this.git.isPrepared(
           scratchPath,
           record.descriptor,
-          this.resolvedPaths(record),
         )) {
           return record;
         }
@@ -521,46 +445,40 @@ export class ConflictResolutionCoordinator {
     throwIfCancelled(signal);
     const scratchPath = await this.store.recreateRepository(record.operationId);
     await this.git.prepare(context, scratchPath, record.descriptor, signal);
-    const resolvedPaths: string[] = [];
-    for (const decision of record.decisions) {
-      throwIfCancelled(signal);
-      await this.git.applyDecision(
-        scratchPath,
-        record.descriptor,
-        decision,
-        resolvedPaths.slice(),
-      );
-      resolvedPaths.push(decision.path);
-    }
     return this.saveRecord(record, { phase: 'ready' });
   }
 
-  private withDecisions(
+  private async completeCommitted(
     record: ConflictResolutionRecord,
-    incoming: readonly CollabConflictDecision[],
-  ): ConflictResolutionRecord {
-    const conflictPaths = new Set(
-      record.descriptor.conflicts.map(conflict => conflict.path),
-    );
-    const incomingPaths = new Set(incoming.map(decision => decision.path));
-    if (
-      incomingPaths.size !== incoming.length
-      || incoming.some(decision => !conflictPaths.has(decision.path))
-    ) {
-      throw conflictError('content-conflict', 'conflict-decision-path-invalid');
+    context: PublishProjectContext,
+    signal?: AbortSignal,
+  ): Promise<CollabConflictSession> {
+    if (!record.resultCommitOid) {
+      throw conflictError('repository-invalid', 'conflict-result-commit-missing');
     }
-    const byPath = new Map(record.decisions.map(decision => [decision.path, decision]));
-    for (const decision of incoming) byPath.set(decision.path, decision);
-    const decisions = record.descriptor.conflicts
-      .map(conflict => byPath.get(conflict.path))
-      .filter((decision): decision is CollabConflictDecision => decision !== undefined);
-    return decodeConflictResolutionRecord({
-      ...record,
-      decisions,
-      phase: 'ready',
-      resultCommitOid: null,
-      updatedAt: this.now().toISOString(),
-    });
+    const scratchPath = await this.store.repositoryPath(record.operationId);
+    await this.projects.revalidate(context);
+    await this.safety.assertSafe(context);
+    throwIfCancelled(signal);
+    await this.git.retainResultForPublication(
+      context,
+      scratchPath,
+      record.descriptor,
+      record.resultCommitOid,
+      signal,
+      async () => {
+        await this.projects.revalidate(context);
+        await this.safety.assertSafe(context);
+      },
+    );
+    const publicationReview = await this.publication.prepareResolvedReview(context, {
+      candidateOid: record.resultCommitOid,
+      contributionHeadOid: record.descriptor.startingPersonalOid,
+      currentMainOid: record.descriptor.startingMainOid,
+      operationId: record.operationId,
+    }, signal);
+    await this.store.remove(record.operationId);
+    return { descriptor: record.descriptor, publicationReview };
   }
 
   private saveRecord(
@@ -596,22 +514,8 @@ export class ConflictResolutionCoordinator {
     return record;
   }
 
-  private resolvedPaths(record: ConflictResolutionRecord): readonly string[] {
-    const decided = new Set(record.decisions.map(decision => decision.path));
-    return record.descriptor.conflicts
-      .filter(conflict => decided.has(conflict.path))
-      .map(conflict => conflict.path);
-  }
-
   private session(record: ConflictResolutionRecord): CollabConflictSession {
-    const resolvedPaths = this.resolvedPaths(record);
-    const resolved = new Set(resolvedPaths);
-    return {
-      decisions: record.decisions,
-      descriptor: record.descriptor,
-      pending: record.descriptor.conflicts.filter(conflict => !resolved.has(conflict.path)),
-      resolvedPaths,
-    };
+    return { descriptor: record.descriptor };
   }
 
   private conflictVersionPaths(conflict: CollabConflictEntry): {

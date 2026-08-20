@@ -40,7 +40,7 @@ describe('MembershipControlClient', () => {
     expect(transport.requestWithMember).toHaveBeenCalledWith({
       decode: expect.any(Function),
       method: 'GET',
-      path: '/v7/projects/project-a/endpoint',
+      path: '/v9/projects/project-a/endpoint',
     }, 'credential', { timeoutMs: 1_234 });
   });
 
@@ -74,7 +74,7 @@ describe('MembershipControlClient', () => {
       body: { invitation, projectId: 'project-a' },
       decode: expect.any(Function),
       method: 'POST',
-      path: '/v7/projects/project-a/endpoint-refresh',
+      path: '/v9/projects/project-a/endpoint-refresh',
     }, 'credential', {});
   });
 
@@ -127,7 +127,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'promote-key',
       method: 'POST',
-      path: '/v7/projects/project-a/managers/member-a/promote',
+      path: '/v9/projects/project-a/managers/member-a/promote',
     }, 'credential', {});
     expect(transport.requestWithMember).toHaveBeenNthCalledWith(2, {
       body: {
@@ -138,7 +138,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'demote-key',
       method: 'POST',
-      path: '/v7/projects/project-a/managers/member-a/demote',
+      path: '/v9/projects/project-a/managers/member-a/demote',
     }, 'credential', {});
   });
 
@@ -177,7 +177,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'remove-key',
       method: 'DELETE',
-      path: '/v7/projects/project-a/members/member-a',
+      path: '/v9/projects/project-a/members/member-a',
     }, 'credential', {});
     expect(transport.requestWithMember).toHaveBeenNthCalledWith(2, {
       body: {
@@ -190,7 +190,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'leave-key',
       method: 'POST',
-      path: '/v7/projects/project-a/leave',
+      path: '/v9/projects/project-a/leave',
     }, 'credential', {});
   });
 
@@ -244,7 +244,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'offer-key',
       method: 'POST',
-      path: '/v7/projects/project-a/manager-responsibility-offers',
+      path: '/v9/projects/project-a/manager-responsibility-offers',
     }, 'credential', {});
     expect(transport.requestWithMember).toHaveBeenNthCalledWith(2, {
       body: {
@@ -256,7 +256,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'ack-key',
       method: 'POST',
-      path: '/v7/projects/project-a/manager-responsibility-offers/offer-one/acknowledge',
+      path: '/v9/projects/project-a/manager-responsibility-offers/offer-one/acknowledge',
     }, 'credential', {});
     expect(transport.requestWithMember).toHaveBeenNthCalledWith(3, {
       body: {
@@ -267,7 +267,7 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'cancel-key',
       method: 'DELETE',
-      path: '/v7/projects/project-a/manager-responsibility-offers/offer-one',
+      path: '/v9/projects/project-a/manager-responsibility-offers/offer-one',
     }, 'credential', {});
   });
 
@@ -347,14 +347,14 @@ describe('MembershipControlClient', () => {
       decode: expect.any(Function),
       idempotencyKey: 'invite-key',
       method: 'POST',
-      path: '/v7/projects/project-a/invitations',
+      path: '/v9/projects/project-a/invitations',
     }, 'credential', {});
     expect(transport.requestWithMember).toHaveBeenNthCalledWith(2, {
       body: { idempotencyKey: 'revoke-key', projectId: 'project-a' },
       decode: expect.any(Function),
       idempotencyKey: 'revoke-key',
       method: 'DELETE',
-      path: '/v7/projects/project-a/invitations/current',
+      path: '/v9/projects/project-a/invitations/current',
     }, 'credential', {});
   });
 

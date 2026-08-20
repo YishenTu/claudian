@@ -181,6 +181,7 @@ describe('ComposerDropdownController', () => {
 
   it('opens a folder and Escape returns to the root menu', async () => {
     const input = createInput();
+    const containerEl = createMockEl();
     const folderItems: readonly ComposerDropdownItem[] = [
       { id: 'alice', kind: 'value', label: 'Alice', replacement: "@Alice's Changes " },
     ];
@@ -190,7 +191,7 @@ describe('ComposerDropdownController', () => {
       label: "Member's Changes",
       load: jest.fn().mockResolvedValue(folderItems),
     }]);
-    const controller = new ComposerDropdownController(createMockEl(), input, [mention]);
+    const controller = new ComposerDropdownController(containerEl, input, [mention]);
 
     input.value = '@';
     input.selectionStart = input.selectionEnd = 1;
@@ -199,10 +200,13 @@ describe('ComposerDropdownController', () => {
     controller.handleKeydown(key('Enter'));
     await Promise.resolve();
 
-    expect(controller.isInFolder()).toBe(true);
+    const labels = () => containerEl
+      .querySelectorAll('.claudian-composer-dropdown-label')
+      .map((el: { textContent: string }) => el.textContent);
+    expect(labels()).toEqual(['Alice']);
     controller.handleKeydown(key('Escape'));
     await Promise.resolve();
-    expect(controller.isInFolder()).toBe(false);
+    expect(labels()).toEqual(["Member's Changes"]);
     expect(controller.isVisible()).toBe(true);
   });
 

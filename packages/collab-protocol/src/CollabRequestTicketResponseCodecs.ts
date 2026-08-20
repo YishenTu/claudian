@@ -10,22 +10,24 @@ import {
   type UpdateMyRequestMetadataResponse,
 } from './CollabProtocol';
 import {
-  type CollabChangedFile,
   type CollabChangeRequest,
   type CollabComment,
+  type CollabCommentPage,
   type CollabRequestDetail,
   type CollabRequestTicketRelation,
   type CollabTicketAcceptedRelation,
+  type CollabTicketAcceptedRelationPage,
   type CollabTicketComment,
+  type CollabTicketCommentPage,
   type CollabTicketDetail,
   type CollabTicketPage,
   type CollabTicketSummary,
 } from './types';
 import {
-  COLLAB_GIT_OID_PATTERN,
-  COLLAB_MEMBER_ID_PATTERN,
-  COLLAB_OPAQUE_ID_PATTERN,
   hasUtf8ByteLengthAtMost,
+  isCollabGitOid,
+  isCollabMemberId,
+  isCollabOpaqueId,
 } from './CollabValidation';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
@@ -47,11 +49,30 @@ function record(value: unknown, field: string): UnknownRecord {
   return value;
 }
 
+function assertJsonUtf8ByteLengthAtMost(
+  value: unknown,
+  maximum: number,
+  field: string,
+): void {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw decodeError(field);
+  }
+  if (
+    serialized === undefined
+    || !hasUtf8ByteLengthAtMost(serialized, maximum)
+  ) {
+    throw decodeError(field);
+  }
+}
+
 function string(
   value: UnknownRecord,
   field: string,
   maxLength: number,
-  pattern?: RegExp,
+  validate?: (value: string) => boolean,
   unit: 'utf16' | 'utf8' = 'utf16',
 ): string {
   const candidate = value[field];
@@ -61,7 +82,7 @@ function string(
     || (unit === 'utf8'
       ? !hasUtf8ByteLengthAtMost(candidate, maxLength)
       : candidate.length > maxLength)
-    || (pattern && !pattern.test(candidate))
+    || (validate && !validate(candidate))
   ) {
     throw decodeError(field);
   }
@@ -108,6 +129,16 @@ function nonNegativeInteger(value: UnknownRecord, field: string): number {
   return candidate;
 }
 
+function boundedNonNegativeInteger(
+  value: UnknownRecord,
+  field: string,
+  maximum: number,
+): number {
+  const candidate = nonNegativeInteger(value, field);
+  if (candidate > maximum) throw decodeError(field);
+  return candidate;
+}
+
 function positiveInteger(value: UnknownRecord, field: string): number {
   const candidate = nonNegativeInteger(value, field);
   if (candidate < 1) throw decodeError(field);
@@ -125,11 +156,11 @@ function requestTicketRelation(value: unknown): CollabRequestTicketRelation {
     throw decodeError('request.ticketRelations');
   }
   return {
-    commitOid: string(source, 'commitOid', 64, COLLAB_GIT_OID_PATTERN),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
+    commitOid: string(source, 'commitOid', 64, isCollabGitOid),
+    id: string(source, 'id', 128, isCollabOpaqueId),
     kind,
     state,
-    ticketId: string(source, 'ticketId', 128, COLLAB_OPAQUE_ID_PATTERN),
+    ticketId: string(source, 'ticketId', 128, isCollabOpaqueId),
     ticketNumber: positiveInteger(source, 'ticketNumber'),
     ticketRevision: positiveInteger(source, 'ticketRevision'),
     ticketTitle: string(source, 'ticketTitle', COLLAB_LIMITS.maxTicketTitleUtf16),
@@ -148,15 +179,19 @@ function changeRequest(value: unknown): CollabChangeRequest {
   }
   const mergedOid = source.mergedOid === undefined
     ? undefined
-    : string(source, 'mergedOid', 64, COLLAB_GIT_OID_PATTERN);
+    : string(source, 'mergedOid', 64, isCollabGitOid);
   return {
-    commentCount: nonNegativeInteger(source, 'commentCount'),
+    commentCount: boundedNonNegativeInteger(
+      source,
+      'commentCount',
+      COLLAB_LIMITS.maxRequestComments,
+    ),
     createdAt: timestamp(source, 'createdAt'),
     description: text(source, 'description', COLLAB_LIMITS.maxRequestDescriptionBytes, 'utf8'),
-    firstBaseOid: string(source, 'firstBaseOid', 64, COLLAB_GIT_OID_PATTERN),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
-    latestHeadOid: string(source, 'latestHeadOid', 64, COLLAB_GIT_OID_PATTERN),
-    memberId: string(source, 'memberId', 64, COLLAB_MEMBER_ID_PATTERN),
+    firstBaseOid: string(source, 'firstBaseOid', 64, isCollabGitOid),
+    id: string(source, 'id', 128, isCollabOpaqueId),
+    latestHeadOid: string(source, 'latestHeadOid', 64, isCollabGitOid),
+    memberId: string(source, 'memberId', 64, isCollabMemberId),
     ...(mergedOid ? { mergedOid } : {}),
     revision: nonNegativeInteger(source, 'revision'),
     status,
@@ -171,7 +206,7 @@ function ticketSummary(value: unknown): CollabTicketSummary {
   const closedAt = optionalTimestamp(source, 'closedAt');
   const closedByMemberId = source.closedByMemberId === undefined
     ? undefined
-    : string(source, 'closedByMemberId', 64, COLLAB_MEMBER_ID_PATTERN);
+    : string(source, 'closedByMemberId', 64, isCollabMemberId);
   if (
     (status !== 'open' && status !== 'closed')
     || (status === 'open' && (closedAt !== undefined || closedByMemberId !== undefined))
@@ -180,11 +215,20 @@ function ticketSummary(value: unknown): CollabTicketSummary {
     throw decodeError('ticket.status');
   }
   return {
-    authorMemberId: string(source, 'authorMemberId', 64, COLLAB_MEMBER_ID_PATTERN),
+    acceptedRelationCount: boundedNonNegativeInteger(
+      source,
+      'acceptedRelationCount',
+      COLLAB_LIMITS.maxTicketAcceptedRelations,
+    ),
+    authorMemberId: string(source, 'authorMemberId', 64, isCollabMemberId),
     ...(closedAt && closedByMemberId ? { closedAt, closedByMemberId } : {}),
-    commentCount: nonNegativeInteger(source, 'commentCount'),
+    commentCount: boundedNonNegativeInteger(
+      source,
+      'commentCount',
+      COLLAB_LIMITS.maxTicketComments,
+    ),
     createdAt: timestamp(source, 'createdAt'),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
+    id: string(source, 'id', 128, isCollabOpaqueId),
     number: positiveInteger(source, 'number'),
     revision: positiveInteger(source, 'revision'),
     status,
@@ -196,11 +240,11 @@ function ticketSummary(value: unknown): CollabTicketSummary {
 function ticketComment(value: unknown): CollabTicketComment {
   const source = record(value, 'ticket.comment');
   return {
-    authorMemberId: string(source, 'authorMemberId', 64, COLLAB_MEMBER_ID_PATTERN),
+    authorMemberId: string(source, 'authorMemberId', 64, isCollabMemberId),
     body: string(source, 'body', COLLAB_LIMITS.maxTicketCommentBytes, undefined, 'utf8'),
     createdAt: timestamp(source, 'createdAt'),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
-    ticketId: string(source, 'ticketId', 128, COLLAB_OPAQUE_ID_PATTERN),
+    id: string(source, 'id', 128, isCollabOpaqueId),
+    ticketId: string(source, 'ticketId', 128, isCollabOpaqueId),
   };
 }
 
@@ -212,30 +256,101 @@ function acceptedTicketRelation(value: unknown): CollabTicketAcceptedRelation {
   }
   return {
     acceptedAt: timestamp(source, 'acceptedAt'),
-    acceptedMergeOid: string(source, 'acceptedMergeOid', 64, COLLAB_GIT_OID_PATTERN),
-    commitOid: string(source, 'commitOid', 64, COLLAB_GIT_OID_PATTERN),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
+    acceptedMergeOid: string(source, 'acceptedMergeOid', 64, isCollabGitOid),
+    commitOid: string(source, 'commitOid', 64, isCollabGitOid),
+    id: string(source, 'id', 128, isCollabOpaqueId),
     kind,
-    requestId: string(source, 'requestId', 128, COLLAB_OPAQUE_ID_PATTERN),
+    requestId: string(source, 'requestId', 128, isCollabOpaqueId),
+  };
+}
+
+function pageCursor(source: Readonly<Record<string, unknown>>): string | undefined {
+  return source.nextCursor === undefined
+    ? undefined
+    : string(source, 'nextCursor', COLLAB_LIMITS.maxPageCursorUtf16);
+}
+
+function commentPage(value: unknown): CollabCommentPage {
+  const source = record(value, 'commentPage');
+  assertJsonUtf8ByteLengthAtMost(
+    source,
+    COLLAB_LIMITS.commentPageMaxUtf8Bytes,
+    'commentPage.bytes',
+  );
+  if (
+    !Array.isArray(source.comments)
+    || source.comments.length > COLLAB_LIMITS.maxCommentPageSize
+  ) {
+    throw decodeError('commentPage');
+  }
+  const nextCursor = pageCursor(source);
+  return {
+    comments: source.comments.map(comment),
+    ...(nextCursor ? { nextCursor } : {}),
+  };
+}
+
+function ticketCommentPage(value: unknown): CollabTicketCommentPage {
+  const source = record(value, 'ticketCommentPage');
+  assertJsonUtf8ByteLengthAtMost(
+    source,
+    COLLAB_LIMITS.commentPageMaxUtf8Bytes,
+    'ticketCommentPage.bytes',
+  );
+  if (
+    !Array.isArray(source.comments)
+    || source.comments.length > COLLAB_LIMITS.maxCommentPageSize
+  ) {
+    throw decodeError('ticketCommentPage');
+  }
+  const nextCursor = pageCursor(source);
+  return {
+    comments: source.comments.map(ticketComment),
+    ...(nextCursor ? { nextCursor } : {}),
+  };
+}
+
+function acceptedRelationPage(value: unknown): CollabTicketAcceptedRelationPage {
+  const source = record(value, 'ticketAcceptedRelationPage');
+  assertJsonUtf8ByteLengthAtMost(
+    source,
+    COLLAB_LIMITS.relationPageMaxUtf8Bytes,
+    'ticketAcceptedRelationPage.bytes',
+  );
+  if (
+    !Array.isArray(source.acceptedRelations)
+    || source.acceptedRelations.length > COLLAB_LIMITS.maxRelationsPerPage
+  ) {
+    throw decodeError('ticketAcceptedRelationPage');
+  }
+  const nextCursor = pageCursor(source);
+  return {
+    acceptedRelations: source.acceptedRelations.map(acceptedTicketRelation),
+    ...(nextCursor ? { nextCursor } : {}),
   };
 }
 
 function ticketDetail(value: unknown): CollabTicketDetail {
   const source = record(value, 'ticketDetail');
+  assertJsonUtf8ByteLengthAtMost(
+    source,
+    COLLAB_LIMITS.detailMaxUtf8Bytes,
+    'ticketDetail.bytes',
+  );
   if (
-    !Array.isArray(source.comments)
-    || source.comments.length > COLLAB_LIMITS.maxTicketComments
-    || !Array.isArray(source.acceptedRelations)
+    !isRecord(source.comments)
+    || !isRecord(source.acceptedRelations)
   ) {
     throw decodeError('ticketDetail');
   }
   const decodedTicket = ticketSummary(source.ticket);
-  const comments = source.comments.map(ticketComment);
-  if (comments.some(commentValue => commentValue.ticketId !== decodedTicket.id)) {
+  const comments = ticketCommentPage(source.comments);
+  if (comments.comments.some(commentValue => commentValue.ticketId !== decodedTicket.id)) {
     throw decodeError('ticketDetail.comments');
   }
+  const acceptedRelations = acceptedRelationPage(source.acceptedRelations);
   return {
-    acceptedRelations: source.acceptedRelations.map(acceptedTicketRelation),
+    acceptedRelations,
     body: string(source, 'body', COLLAB_LIMITS.maxTicketBodyBytes, undefined, 'utf8'),
     comments,
     ticket: decodedTicket,
@@ -245,45 +360,11 @@ function ticketDetail(value: unknown): CollabTicketDetail {
 function comment(value: unknown): CollabComment {
   const source = record(value, 'comment');
   return {
-    authorMemberId: string(source, 'authorMemberId', 64, COLLAB_MEMBER_ID_PATTERN),
+    authorMemberId: string(source, 'authorMemberId', 64, isCollabMemberId),
     body: string(source, 'body', COLLAB_LIMITS.maxCommentBytes, undefined, 'utf8'),
     createdAt: timestamp(source, 'createdAt'),
-    id: string(source, 'id', 128, COLLAB_OPAQUE_ID_PATTERN),
-    requestId: string(source, 'requestId', 128, COLLAB_OPAQUE_ID_PATTERN),
-  };
-}
-
-function changedFile(value: unknown): CollabChangedFile {
-  const source = record(value, 'changedFile');
-  const kind = source.kind;
-  if (
-    !['added', 'modified', 'deleted', 'renamed', 'copied', 'type-changed']
-      .includes(String(kind))
-    || typeof source.binary !== 'boolean'
-    || typeof source.largeForReview !== 'boolean'
-  ) {
-    throw decodeError('changedFile');
-  }
-  const previousPath = source.previousPath === undefined
-    ? undefined
-    : string(source, 'previousPath', 240);
-  const optionalCount = (field: string): number | undefined => (
-    source[field] === undefined ? undefined : nonNegativeInteger(source, field)
-  );
-  const oldBytes = optionalCount('oldBytes');
-  const newBytes = optionalCount('newBytes');
-  const additions = optionalCount('additions');
-  const deletions = optionalCount('deletions');
-  return {
-    ...(additions === undefined ? {} : { additions }),
-    binary: source.binary,
-    ...(deletions === undefined ? {} : { deletions }),
-    kind: kind as CollabChangedFile['kind'],
-    largeForReview: source.largeForReview,
-    ...(newBytes === undefined ? {} : { newBytes }),
-    ...(oldBytes === undefined ? {} : { oldBytes }),
-    path: string(source, 'path', 240),
-    ...(previousPath ? { previousPath } : {}),
+    id: string(source, 'id', 128, isCollabOpaqueId),
+    requestId: string(source, 'requestId', 128, isCollabOpaqueId),
   };
 }
 
@@ -294,40 +375,56 @@ function envelopeData(value: unknown): unknown {
 export function decodeEnsureMyRequestResponse(value: unknown): EnsureMyRequestResponse {
   const data = record(envelopeData(value), 'data');
   return {
-    mainOid: string(data, 'mainOid', 64, COLLAB_GIT_OID_PATTERN),
+    mainOid: string(data, 'mainOid', 64, isCollabGitOid),
     request: changeRequest(data.request),
   };
 }
 
 export function decodeRequestDetailResponse(value: unknown): CollabRequestDetail {
   const data = record(envelopeData(value), 'data');
+  assertJsonUtf8ByteLengthAtMost(
+    data,
+    COLLAB_LIMITS.detailMaxUtf8Bytes,
+    'requestDetail.bytes',
+  );
   if (
-    !Array.isArray(data.changedFiles)
-    || data.changedFiles.length > COLLAB_LIMITS.maxChangedPaths
-    || !Array.isArray(data.comments)
+    !isRecord(data.comments)
+    || data.changedFiles !== undefined
   ) {
     throw decodeError('requestDetail');
   }
   const decodedRequest = changeRequest(data.request);
-  const reviewedHeadOid = string(data, 'reviewedHeadOid', 64, COLLAB_GIT_OID_PATTERN);
+  const reviewedHeadOid = string(data, 'reviewedHeadOid', 64, isCollabGitOid);
   const reviewCondition = data.reviewCondition;
-  const comments = data.comments.map(comment);
+  const comments = commentPage(data.comments);
   if (
     reviewedHeadOid !== decodedRequest.latestHeadOid
     || !['clean', 'conflicting', 'stale'].includes(String(reviewCondition))
-    || comments.some(item => item.requestId !== decodedRequest.id)
-    || comments.length !== decodedRequest.commentCount
+    || comments.comments.some(item => item.requestId !== decodedRequest.id)
   ) {
     throw decodeError('requestDetail');
   }
   return {
-    changedFiles: data.changedFiles.map(changedFile),
     comments,
-    currentMainOid: string(data, 'currentMainOid', 64, COLLAB_GIT_OID_PATTERN),
+    currentMainOid: string(data, 'currentMainOid', 64, isCollabGitOid),
     request: decodedRequest,
     reviewCondition: reviewCondition as CollabRequestDetail['reviewCondition'],
     reviewedHeadOid,
   };
+}
+
+export function decodeCommentPageResponse(value: unknown): CollabCommentPage {
+  return commentPage(record(envelopeData(value), 'data'));
+}
+
+export function decodeTicketCommentPageResponse(value: unknown): CollabTicketCommentPage {
+  return ticketCommentPage(record(envelopeData(value), 'data'));
+}
+
+export function decodeTicketAcceptedRelationPageResponse(
+  value: unknown,
+): CollabTicketAcceptedRelationPage {
+  return acceptedRelationPage(record(envelopeData(value), 'data'));
 }
 
 export function decodeCreateCommentResponse(value: unknown): CreateCommentResponse {
@@ -345,8 +442,8 @@ export function decodeCreateCommentResponse(value: unknown): CreateCommentRespon
 
 export function decodeAcceptResponse(value: unknown): AcceptResponse {
   const data = record(envelopeData(value), 'data');
-  const mainOid = string(data, 'mainOid', 64, COLLAB_GIT_OID_PATTERN);
-  const mergeCommitOid = string(data, 'mergeCommitOid', 64, COLLAB_GIT_OID_PATTERN);
+  const mainOid = string(data, 'mainOid', 64, isCollabGitOid);
+  const mergeCommitOid = string(data, 'mergeCommitOid', 64, isCollabGitOid);
   const decodedRequest = changeRequest(data.request);
   if (
     mergeCommitOid !== mainOid
@@ -360,6 +457,11 @@ export function decodeAcceptResponse(value: unknown): AcceptResponse {
 
 export function decodeTicketPageResponse(value: unknown): CollabTicketPage {
   const data = record(envelopeData(value), 'data');
+  assertJsonUtf8ByteLengthAtMost(
+    data,
+    COLLAB_LIMITS.ticketPageMaxUtf8Bytes,
+    'ticketPage.bytes',
+  );
   if (
     !Array.isArray(data.tickets)
     || data.tickets.length > COLLAB_LIMITS.maxTicketPageSize

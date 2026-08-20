@@ -14,6 +14,7 @@ const CANDIDATE_OID = '3'.repeat(40);
 const MERGE_OID = '4'.repeat(40);
 
 const TICKET: CollabTicketSummary = {
+  acceptedRelationCount: 0,
   authorMemberId: 'member-a',
   commentCount: 0,
   createdAt: '2026-08-11T00:00:00.000Z',
@@ -25,10 +26,27 @@ const TICKET: CollabTicketSummary = {
   updatedAt: '2026-08-11T00:00:00.000Z',
 };
 
+function agentTicket(ticket: CollabTicketSummary) {
+  return {
+    authorMemberId: ticket.authorMemberId,
+    commentCount: ticket.commentCount,
+    createdAt: ticket.createdAt,
+    id: ticket.id,
+    number: ticket.number,
+    revision: ticket.revision,
+    status: ticket.status,
+    title: ticket.title,
+    updatedAt: ticket.updatedAt,
+    ...(ticket.closedAt && ticket.closedByMemberId
+      ? { closedAt: ticket.closedAt, closedByMemberId: ticket.closedByMemberId }
+      : {}),
+  };
+}
+
 const DETAIL: CollabTicketDetail = {
-  acceptedRelations: [],
+  acceptedRelations: { acceptedRelations: [] },
   body: 'Implement the Runtime write surface.',
-  comments: [],
+  comments: { comments: [] },
   ticket: TICKET,
 };
 
@@ -69,8 +87,7 @@ const REQUEST_REVIEW: CollabRequestReview = {
   comparisonKind: 'candidate',
   comparisonTargetOid: CANDIDATE_OID,
   detail: {
-    changedFiles: [],
-    comments: [],
+    comments: { comments: [] },
     currentMainOid: MAIN_OID,
     request: REQUEST,
     reviewedHeadOid: HEAD_OID,
@@ -128,7 +145,13 @@ function port(): jest.Mocked<CollabAgentPort> {
     inspectProject: jest.fn(),
     listProjects: jest.fn(),
     listTickets: jest.fn(),
-    prepareReview: jest.fn(),
+    boundedQueries: {
+      listRequestComments: jest.fn(),
+      listTicketAcceptedRelations: jest.fn(),
+      listTicketComments: jest.fn(),
+      prepareReview: jest.fn(),
+      readTicket: jest.fn(),
+    },
     publish: jest.fn(),
     readConflict: jest.fn(),
     readConflictFile: jest.fn(),
@@ -143,7 +166,6 @@ function port(): jest.Mocked<CollabAgentPort> {
       },
     }),
     readSnapshot: jest.fn(),
-    readTicket: jest.fn(),
     readWorkingTreeReviewFile: jest.fn(),
     reopenTicket: jest.fn(),
     updateTicketContent: jest.fn(),
@@ -176,7 +198,7 @@ describe('Agent Runtime write methods', () => {
         body: DETAIL.body,
         comments: [],
         projectId: PROJECT_ID,
-        ticket: TICKET,
+        ticket: agentTicket(TICKET),
       },
     });
     expect(collab.createTicket).toHaveBeenCalledWith({
@@ -240,7 +262,7 @@ describe('Agent Runtime write methods', () => {
       },
     })).resolves.toEqual({
       id,
-      result: { projectId: PROJECT_ID, ticket: TICKET },
+      result: { projectId: PROJECT_ID, ticket: agentTicket(TICKET) },
     });
     expect(collab[portMethod]).toHaveBeenCalledWith({
       ...content,
@@ -323,7 +345,7 @@ describe('Agent Runtime write methods', () => {
       id: 'request.comment.general',
       result: { comment: { id: REQUEST_COMMENT.id }, projectId: PROJECT_ID },
     });
-    expect(collab.prepareReview).not.toHaveBeenCalled();
+    expect(collab.boundedQueries.prepareReview).not.toHaveBeenCalled();
     expect(collab.readReviewFile).not.toHaveBeenCalled();
     expect(collab.addComment).toHaveBeenLastCalledWith({
       body: REQUEST_COMMENT.body,

@@ -409,7 +409,6 @@ function publication(): jest.Mocked<CollabPublicationPort> {
 
 function conflictSession() {
   return {
-    decisions: [],
     descriptor: {
       conflicts: [{ kind: 'text' as const, path: 'note.md' }],
       mergeBaseOid: 'a'.repeat(40),
@@ -448,6 +447,9 @@ describe('CollabFeatureService', () => {
           loadMembership: jest.fn(async () => membership()),
           loadProjectDocument: jest.fn(async (_projectId, _kind, decode) => (
             pending ? decode(pending) : null
+          )),
+          listPendingOperationProjectIds: jest.fn(async () => (
+            pending ? [pending.projectId] : []
           )),
           selectProject: jest.fn(async projectId => {
             currentIndex = { ...currentIndex, selectedProjectId: projectId };
@@ -638,7 +640,9 @@ describe('CollabFeatureService', () => {
     pending = pendingSetup();
     await service.resumeSetup({ operationId: 'create-project-alpha' });
 
-    expect(foundation.local.projects.loadIndex).toHaveBeenCalledTimes(3);
+    expect(foundation.local.projects.loadIndex).toHaveBeenCalledTimes(2);
+    expect(foundation.local.projects.listPendingOperationProjectIds)
+      .toHaveBeenCalledTimes(1);
     expect(service.state.projects[0]).toMatchObject({ health: 'needs-attention' });
   });
 

@@ -90,7 +90,6 @@ describe('ConflictScratchStore', () => {
     const store = new ConflictScratchStore(vaultRoot, projects);
     const record: ConflictResolutionRecord = {
       createdAt: '2026-08-08T00:00:00.000Z',
-      decisions: [],
       descriptor: {
         conflicts: [{ kind: 'text', path: 'note.md' }],
         mergeBaseOid: '1'.repeat(40),

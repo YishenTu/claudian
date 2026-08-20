@@ -118,6 +118,49 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  it('cancels a superseded snapshot read when a newer read starts', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const signals: AbortSignal[] = [];
+    let invalidate: () => void = () => undefined;
+    const port = createPort(members, {
+      readSnapshot: jest.fn().mockImplementation((
+        _projectId: string,
+        options?: { signal?: AbortSignal },
+      ) => {
+        signals.push(options!.signal!);
+        return Promise.resolve(success({
+          snapshot: {
+            currentMember: members[0],
+            members,
+            project: { hostMemberId: 'member-host' },
+          },
+          source: 'online',
+          stale: false,
+          syncState: { status: 'synchronized' },
+        } as never));
+      }),
+      subscribe: jest.fn().mockImplementation((listener: (state: unknown) => void) => {
+        invalidate = () => listener({ projects: [] });
+        return { dispose: jest.fn() };
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    expect(signals).toHaveLength(1);
+
+    invalidate();
+    await flush();
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+
+    modal.onClose();
+    expect(signals[1].aborted).toBe(true);
+  });
+
   it('omits left Members from the visible list and Member count', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),

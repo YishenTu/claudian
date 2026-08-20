@@ -181,4 +181,41 @@ describe('RetirementLocalRecovery', () => {
       projectId: 'project-one',
     }, {});
   });
+
+  it('finishes an indexed Retired projection from the applied cleanup journal alone', async () => {
+    const finalize = jest.fn(async () => undefined);
+    const handler = { resume: jest.fn(async () => undefined) };
+    const recovery = new RetirementLocalRecovery({
+      loadIndex: jest.fn(async () => ({
+        projects: [{
+          authorityKind: 'lan' as const,
+          cleanupStatus: 'complete' as const,
+          createdAt: RETIREMENT.createdAt,
+          id: RETIREMENT.projectId,
+          lifecycle: 'retired' as const,
+          name: 'Project One',
+          retiredAt: RETIREMENT.retiredAt,
+          updatedAt: RETIREMENT.updatedAt,
+          workspacePath: 'workspace/project-one',
+        }],
+        schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+        selectedProjectId: RETIREMENT.projectId,
+      })),
+      loadRetirementRecord: jest.fn(async () => RETIREMENT),
+      listRetirementAcknowledgementProjectIds: jest.fn(async () => []),
+    }, {
+      load: jest.fn(async () => null),
+    }, {
+      listProjectIds: jest.fn(async () => ['project-one']),
+      load: jest.fn(async () => CLEANUP),
+    }, handler, { finalize });
+
+    await recovery.resume();
+
+    expect(handler.resume).not.toHaveBeenCalled();
+    expect(finalize).toHaveBeenCalledWith({
+      choice: 'keep-files',
+      projectId: 'project-one',
+    }, {});
+  });
 });

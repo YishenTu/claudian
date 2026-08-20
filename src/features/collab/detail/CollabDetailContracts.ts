@@ -66,6 +66,7 @@ export type CollabReviewDetailViewState =
 
 export interface CollabDetailViewPort
   extends CollabConflictResolutionPort, ReviewDiffSessionPort {
+  isDetailAdmissionOpen(): boolean;
   listTickets(
     request: CollabListTicketsRequest,
     options?: CollabOperationOptions,

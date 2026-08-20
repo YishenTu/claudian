@@ -362,13 +362,13 @@ export class TicketEditorPanel {
 
   private activityEntries(detail: CollabTicketDetail): readonly TicketActivity[] {
     const entries: TicketActivity[] = [
-      ...detail.comments.map(comment => ({
+      ...detail.comments.comments.map(comment => ({
         at: comment.createdAt,
         comment,
         id: comment.id,
         kind: 'comment' as const,
       })),
-      ...detail.acceptedRelations.map(relation => ({
+      ...detail.acceptedRelations.acceptedRelations.map(relation => ({
         at: relation.acceptedAt,
         id: relation.id,
         kind: 'relation' as const,

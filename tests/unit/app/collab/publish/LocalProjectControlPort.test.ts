@@ -88,6 +88,9 @@ function ticketClientMethods() {
   return {
     addTicketComment: jest.fn(),
     createTicket: jest.fn(),
+    listRequestComments: jest.fn(),
+    listTicketAcceptedRelations: jest.fn(),
+    listTicketComments: jest.fn(),
     listTickets: jest.fn(),
     readTicket: jest.fn(),
     reopenTicket: jest.fn(),
@@ -98,6 +101,188 @@ function ticketClientMethods() {
 }
 
 describe('LocalProjectControlPort', () => {
+  it('keeps bounded first-page reads separate from complete UI assembly', async () => {
+    const request = {
+      commentCount: 2,
+      createdAt: CREATED_AT,
+      description: 'Published change',
+      firstBaseOid: HEAD,
+      id: 'request-a',
+      latestHeadOid: HEAD,
+      memberId: 'member-a',
+      revision: 1,
+      status: 'open' as const,
+      ticketRelations: [],
+      updatedAt: CREATED_AT,
+    };
+    const firstComment = {
+      authorMemberId: 'member-a',
+      body: 'First',
+      createdAt: CREATED_AT,
+      id: 'comment-a',
+      requestId: request.id,
+    };
+    const secondComment = { ...firstComment, body: 'Second', id: 'comment-b' };
+    const ticket = {
+      acceptedRelationCount: 0,
+      authorMemberId: 'member-a',
+      commentCount: 2,
+      createdAt: CREATED_AT,
+      id: 'ticket-a',
+      number: 1,
+      revision: 1,
+      status: 'open' as const,
+      title: 'Ticket',
+      updatedAt: CREATED_AT,
+    };
+    const firstTicketComment = {
+      authorMemberId: 'member-a',
+      body: 'First',
+      createdAt: CREATED_AT,
+      id: 'ticket-comment-a',
+      ticketId: ticket.id,
+    };
+    const secondTicketComment = {
+      ...firstTicketComment,
+      body: 'Second',
+      id: 'ticket-comment-b',
+    };
+    const client = {
+      ...ticketClientMethods(),
+      listRequestComments: jest.fn().mockResolvedValue({ comments: [secondComment] }),
+      listTicketComments: jest.fn().mockResolvedValue({ comments: [secondTicketComment] }),
+      readRequest: jest.fn().mockResolvedValue({
+        comments: { comments: [firstComment], nextCursor: 'request-next' },
+        currentMainOid: HEAD,
+        request,
+        reviewedHeadOid: HEAD,
+        reviewCondition: 'clean',
+      }),
+      readTicket: jest.fn().mockResolvedValue({
+        acceptedRelations: { acceptedRelations: [] },
+        body: 'Ticket body',
+        comments: { comments: [firstTicketComment], nextCursor: 'ticket-next' },
+        ticket,
+      }),
+    } as unknown as LocalProjectControlClientPort;
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.readRequestPage('project-a', request.id)).resolves.toMatchObject({
+      comments: { comments: [firstComment], nextCursor: 'request-next' },
+    });
+    expect(client.listRequestComments).not.toHaveBeenCalled();
+    await expect(port.readRequest('project-a', request.id)).resolves.toMatchObject({
+      comments: { comments: [firstComment, secondComment] },
+    });
+    expect(client.listRequestComments).toHaveBeenCalledTimes(1);
+
+    await expect(port.readTicketPage('project-a', ticket.id)).resolves.toMatchObject({
+      comments: { comments: [firstTicketComment], nextCursor: 'ticket-next' },
+    });
+    expect(client.listTicketComments).not.toHaveBeenCalled();
+    await expect(port.readTicket('project-a', ticket.id)).resolves.toMatchObject({
+      comments: { comments: [firstTicketComment, secondTicketComment] },
+    });
+    expect(client.listTicketComments).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a complete Ticket whose declared comment count is not assembled', async () => {
+    const client = {
+      ...ticketClientMethods(),
+      readTicket: jest.fn().mockResolvedValue({
+        acceptedRelations: { acceptedRelations: [] },
+        body: 'Ticket body',
+        comments: { comments: [] },
+        ticket: {
+          acceptedRelationCount: 0,
+          authorMemberId: 'member-a',
+          commentCount: 1,
+          createdAt: CREATED_AT,
+          id: 'ticket-a',
+          number: 1,
+          revision: 1,
+          status: 'open',
+          title: 'Ticket',
+          updatedAt: CREATED_AT,
+        },
+      }),
+    } as unknown as LocalProjectControlClientPort;
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.readTicket('project-a', 'ticket-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'control-ticket-comment-count-mismatch' },
+    });
+  });
+
+  it('rejects a complete Request whose declared comment count is not assembled', async () => {
+    const client = {
+      ...ticketClientMethods(),
+      readRequest: jest.fn().mockResolvedValue({
+        comments: { comments: [] },
+        currentMainOid: HEAD,
+        request: {
+          commentCount: 1,
+          createdAt: CREATED_AT,
+          description: 'Published change',
+          firstBaseOid: HEAD,
+          id: 'request-a',
+          latestHeadOid: HEAD,
+          memberId: 'member-a',
+          revision: 1,
+          status: 'open',
+          ticketRelations: [],
+          updatedAt: CREATED_AT,
+        },
+        reviewedHeadOid: HEAD,
+        reviewCondition: 'clean',
+      }),
+    } as unknown as LocalProjectControlClientPort;
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.readRequest('project-a', 'request-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'control-request-comment-count-mismatch' },
+    });
+  });
+
+  it('rejects a complete Ticket whose declared accepted relation count is not assembled', async () => {
+    const client = {
+      ...ticketClientMethods(),
+      readTicket: jest.fn().mockResolvedValue({
+        acceptedRelations: { acceptedRelations: [] },
+        body: 'Ticket body',
+        comments: { comments: [] },
+        ticket: {
+          acceptedRelationCount: 1,
+          authorMemberId: 'member-a',
+          commentCount: 0,
+          createdAt: CREATED_AT,
+          id: 'ticket-a',
+          number: 1,
+          revision: 1,
+          status: 'open',
+          title: 'Ticket',
+          updatedAt: CREATED_AT,
+        },
+      }),
+    } as unknown as LocalProjectControlClientPort;
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.readTicket('project-a', 'ticket-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'control-ticket-relation-count-mismatch' },
+    });
+  });
+
   it('reloads membership and validates snapshot and request identity', async () => {
     const client: LocalProjectControlClientPort = {
       ...ticketClientMethods(),
@@ -133,7 +318,7 @@ describe('LocalProjectControlPort', () => {
         },
       }),
       readRequest: jest.fn().mockResolvedValue({
-        comments: [],
+        comments: { comments: [] },
         currentMainOid: HEAD,
         request: {
           commentCount: 0,

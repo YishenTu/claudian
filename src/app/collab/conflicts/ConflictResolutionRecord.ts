@@ -1,12 +1,10 @@
-import { Buffer } from 'node:buffer';
-
 import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
-import { type CollabConflictDecision, type CollabConflictDescriptor, type CollabConflictEntry } from '@/core/collab';
+import { type CollabConflictDescriptor, type CollabConflictEntry } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
-export const COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION = 1 as const;
+export const COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION = 2 as const;
 
 export type ConflictResolutionPhase =
   | 'planned'
@@ -15,7 +13,6 @@ export type ConflictResolutionPhase =
 
 export interface ConflictResolutionRecord {
   readonly createdAt: string;
-  readonly decisions: readonly CollabConflictDecision[];
   readonly descriptor: CollabConflictDescriptor;
   readonly operationId: CollabOperationId;
   readonly phase: ConflictResolutionPhase;
@@ -133,32 +130,6 @@ function decodeDescriptor(value: unknown): CollabConflictDescriptor {
   };
 }
 
-function decisionText(value: UnknownRecord, key: 'draft' | 'proposal'): string {
-  const text = value[key];
-  if (
-    typeof text !== 'string'
-    || Buffer.byteLength(text, 'utf8') > CLAUDIAN_COLLAB_LIMITS.maxBlobBytes
-  ) {
-    throw new TypeError(`Invalid ${key}`);
-  }
-  return text;
-}
-
-function decodeDecision(value: unknown): CollabConflictDecision {
-  if (!isRecord(value)) throw new TypeError('Invalid conflict decision');
-  const path = relativePathField(value, 'path');
-  if (value.choice === 'keep-personal' || value.choice === 'use-accepted') {
-    return { choice: value.choice, path };
-  }
-  if (value.choice === 'use-manual-draft') {
-    return { choice: value.choice, draft: decisionText(value, 'draft'), path };
-  }
-  if (value.choice === 'use-agent-proposal') {
-    return { choice: value.choice, path, proposal: decisionText(value, 'proposal') };
-  }
-  throw new TypeError('Invalid conflict decision choice');
-}
-
 function resolutionPhase(value: unknown): ConflictResolutionPhase {
   if (
     value !== 'planned'
@@ -173,8 +144,9 @@ function resolutionPhase(value: unknown): ConflictResolutionPhase {
 export function decodeConflictResolutionRecord(value: unknown): ConflictResolutionRecord {
   if (
     !isRecord(value)
-    || value.schemaVersion !== COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION
-    || !Array.isArray(value.decisions)
+    || (value.schemaVersion !== 1
+      && value.schemaVersion !== COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION)
+    || (value.schemaVersion === 1 && !Array.isArray(value.decisions))
   ) {
     throw new TypeError('Invalid conflict resolution record');
   }
@@ -184,22 +156,13 @@ export function decodeConflictResolutionRecord(value: unknown): ConflictResoluti
   if (descriptor.operationId !== operationId || descriptor.projectId !== projectId) {
     throw new TypeError('Conflict resolution identity mismatch');
   }
-  const decisions = value.decisions.map(decodeDecision);
-  const decisionPaths = new Set(decisions.map(decision => decision.path));
-  const conflictPaths = new Set(descriptor.conflicts.map(conflict => conflict.path));
-  if (
-    decisionPaths.size !== decisions.length
-    || decisions.some(decision => !conflictPaths.has(decision.path))
-  ) {
-    throw new TypeError('Invalid conflict decisions');
-  }
   const phase = resolutionPhase(value.phase);
   const resultCommitOid = value.resultCommitOid === null
     ? null
     : oidField(value, 'resultCommitOid');
   if (
     phase === 'committed'
-    && (resultCommitOid === null || decisions.length !== descriptor.conflicts.length)
+    && resultCommitOid === null
   ) {
     throw new TypeError('Incomplete committed conflict resolution');
   }
@@ -208,7 +171,6 @@ export function decodeConflictResolutionRecord(value: unknown): ConflictResoluti
   }
   return {
     createdAt: timestampField(value, 'createdAt'),
-    decisions,
     descriptor,
     operationId,
     phase,

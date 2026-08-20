@@ -168,7 +168,7 @@ export class ManagerResponsibilityService {
       const replay = this.authority.idempotency.find<unknown>(connection, idempotencyInput);
       if (replay) return decodeSummary(replay.response);
       this.repository.expireDue(connection, offeredAt);
-      const managerSet = this.managerSet.requireActiveManager(connection, actorMemberId);
+      this.managerSet.requireActiveManager(connection, actorMemberId);
       this.requirePresence(request.projectId, request.targetMemberId);
       const summary = this.repository.create(connection, {
         expiresAt,
@@ -176,7 +176,6 @@ export class ManagerResponsibilityService {
         offerId,
         purpose: request.purpose,
         sourceManagerMemberId: actorMemberId,
-        sourceManagerGeneration: managerSet.generation,
         targetMemberId: request.targetMemberId,
       });
       this.appendInvalidation(connection, actorMemberId, request.projectId, offeredAt);

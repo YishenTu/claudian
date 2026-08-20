@@ -2,6 +2,9 @@ import type { CollabChangeRequest } from '@claudian/collab-protocol';
 
 import type { CollabCoordinationSnapshot, CollabOperationOptions, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
+import {
+  collabReviewSourceKey,
+} from '@/features/collab/handoff/CollabReviewSourceKey';
 
 export interface TeamReviewLoaderPort {
   prepareReview(
@@ -43,16 +46,11 @@ function reviewKey(
   request: CollabChangeRequest,
   coordination: CollabCoordinationSnapshot,
 ): string {
-  return [
-    projectId,
-    request.id,
-    request.latestHeadOid,
-    coordination.snapshot.project.mainOid,
-    request.updatedAt,
-    request.commentCount,
-    coordination.snapshot.currentMember.id,
-    coordination.snapshot.currentMember.role,
-  ].join(':');
+  return collabReviewSourceKey(projectId, request, {
+    currentMemberId: coordination.snapshot.currentMember.id,
+    currentMemberRole: coordination.snapshot.currentMember.role,
+    mainOid: coordination.snapshot.project.mainOid,
+  });
 }
 
 export class TeamReviewLoader {

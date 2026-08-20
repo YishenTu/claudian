@@ -16,8 +16,11 @@ describe('AgentRuntimeMethodRegistry', () => {
       'collab.projects.get',
       'collab.tickets.list',
       'collab.tickets.get',
+      'collab.tickets.comments.list',
+      'collab.tickets.relations.list',
       'collab.requests.list',
       'collab.requests.get',
+      'collab.requests.comments.list',
       'collab.requests.file.get',
       'collab.changes.mine',
       'collab.changes.file.get',
@@ -42,7 +45,7 @@ describe('AgentRuntimeMethodRegistry', () => {
     expect(AGENT_RUNTIME_OPERATION_SUMMARIES.filter(operation => operation.access === 'write'))
       .toHaveLength(8);
     expect(AGENT_RUNTIME_OPERATION_SUMMARIES.filter(operation => operation.access === 'read'))
-      .toHaveLength(14);
+      .toHaveLength(17);
   });
 
   it('preserves the exact operation access and parameter inventory', () => {
@@ -74,11 +77,41 @@ describe('AgentRuntimeMethodRegistry', () => {
         name: 'collab.tickets.get',
         parameters: [['projectId', true], ['ticketId', true]],
       },
+      {
+        access: 'read',
+        name: 'collab.tickets.comments.list',
+        parameters: [
+          ['projectId', true],
+          ['ticketId', true],
+          ['cursor', false],
+          ['limit', false],
+        ],
+      },
+      {
+        access: 'read',
+        name: 'collab.tickets.relations.list',
+        parameters: [
+          ['projectId', true],
+          ['ticketId', true],
+          ['cursor', false],
+          ['limit', false],
+        ],
+      },
       { access: 'read', name: 'collab.requests.list', parameters: [['projectId', true]] },
       {
         access: 'read',
         name: 'collab.requests.get',
         parameters: [['projectId', true], ['requestId', true]],
+      },
+      {
+        access: 'read',
+        name: 'collab.requests.comments.list',
+        parameters: [
+          ['projectId', true],
+          ['requestId', true],
+          ['cursor', false],
+          ['limit', false],
+        ],
       },
       {
         access: 'read',
@@ -153,6 +186,20 @@ describe('AgentRuntimeMethodRegistry', () => {
     ]);
   });
 
+  it('advertises the authority-owned default for relation continuation pages', () => {
+    const relationOperation = AGENT_RUNTIME_OPERATION_DESCRIPTORS.find(
+      descriptor => descriptor.name === 'collab.tickets.relations.list',
+    );
+    const limit = relationOperation?.parameters.find(parameter => parameter.name === 'limit');
+
+    expect(limit?.schema).toMatchObject({
+      default: 100,
+      maximum: 100,
+      minimum: 1,
+      type: 'integer',
+    });
+  });
+
   it('describes the remaining Request write contracts without inline placement', () => {
     const descriptors = Object.fromEntries(
       AGENT_RUNTIME_OPERATION_DESCRIPTORS.map(descriptor => [descriptor.name, descriptor]),
@@ -220,7 +267,11 @@ describe('AgentRuntimeMethodRegistry', () => {
         required: true,
         schema: expect.objectContaining({ enum: ['open', 'closed'], type: 'string' }),
       }),
-      expect.objectContaining({ name: 'cursor', required: false }),
+      expect.objectContaining({
+        name: 'cursor',
+        required: false,
+        schema: expect.objectContaining({ maxLength: 512, minLength: 1, type: 'string' }),
+      }),
       expect.objectContaining({
         name: 'limit',
         required: false,
@@ -242,7 +293,7 @@ describe('AgentRuntimeMethodRegistry', () => {
     const requestFile = descriptors['collab.requests.file.get'];
 
     expect(requestDetail?.description)
-      .toBe('Read one change Request with comments and changed-file manifest.');
+      .toBe('Read one change Request with a bounded comment page and changed-file manifest.');
     expect(requestFile?.resultDescription)
       .toBe('Request comparison identity and text or opaque file metadata.');
     expect(requestDetail?.parameters.find(parameter => parameter.name === 'requestId')?.description)
@@ -261,6 +312,26 @@ describe('AgentRuntimeMethodRegistry', () => {
     ['bad Ticket status', 'collab.tickets.list', { projectId: 'project-1', status: 'all' }],
     ['fractional limit', 'collab.tickets.list', { projectId: 'project-1', status: 'open', limit: 1.5 }],
     ['large limit', 'collab.tickets.list', { projectId: 'project-1', status: 'open', limit: 101 }],
+    ['empty Ticket cursor', 'collab.tickets.list', {
+      cursor: '',
+      projectId: 'project-1',
+      status: 'open',
+    }],
+    ['oversized Ticket cursor', 'collab.tickets.list', {
+      cursor: 'c'.repeat(513),
+      projectId: 'project-1',
+      status: 'open',
+    }],
+    ['oversized shared cursor', 'collab.requests.comments.list', {
+      cursor: 'c'.repeat(513),
+      projectId: 'project-1',
+      requestId: 'request-1',
+    }],
+    ['large comment page', 'collab.tickets.comments.list', {
+      limit: 101,
+      projectId: 'project-1',
+      ticketId: 'ticket-1',
+    }],
     ['legacy comment kind', 'collab.requests.comments.create', {
       body: 'Comment',
       kind: 'general',

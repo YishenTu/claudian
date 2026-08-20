@@ -3,7 +3,7 @@
     "decoderBehaviorDigests": [
       {
         "path": "src/CollabControlOperationCodecs.ts",
-        "sha256": "335fd418ae8d9bc99cb73e7b5c7ee6ba74261e0490ad1ecfb0ea096cd0bb20af"
+        "sha256": "9297e2d88ec9081f8649ade4b06bea8a04a8a6fa5d157d1f9259616dbbd7f34f"
       },
       {
         "path": "src/CollabProtocol.ts",
@@ -11,15 +11,15 @@
       },
       {
         "path": "src/CollabRequestTicketRequestCodecs.ts",
-        "sha256": "0548176fc3de34e86688d68e454d1df244b051cf480f8c5d5a936b95d8415f22"
+        "sha256": "4647591ebe177249df7ba1ad232d142595b0df39d481487126553fc81fa50848"
       },
       {
         "path": "src/CollabRequestTicketResponseCodecs.ts",
-        "sha256": "0d0ee76e686d74681e330e106ee581344ca98e79f1ff894a435769f07c407dfa"
+        "sha256": "3f339f4a71e3323c686d58f4dda04bfc5b4bd2eee29d9bdfd27e9838f2d33a9b"
       },
       {
         "path": "src/CollabValidation.ts",
-        "sha256": "ddba3d734c63ba21ab6f69c097c0817629acfd176dcffb7e68e850d5cd584f71"
+        "sha256": "cdc40841c8414633481f7a3018dd3aec374ccb97eea42a00dbac6c2c475dde76"
       }
     ],
     "errorCodes": [
@@ -60,19 +60,30 @@
       "memberPrefix": "refs/heads/members/"
     },
     "limits": {
+      "commentPageMaxUtf8Bytes": 131072,
+      "defaultCommentPageSize": 50,
       "defaultTicketPageSize": 50,
+      "detailMaxUtf8Bytes": 458752,
       "maxBlobBytes": 52428800,
       "maxChangedPaths": 2000,
       "maxCommentBytes": 16384,
+      "maxCommentPageSize": 100,
+      "maxJsonPayloadUtf8Bytes": 524288,
+      "maxPageCursorUtf16": 512,
       "maxPathSegmentUtf16": 120,
+      "maxRelationsPerPage": 100,
       "maxRepositoryPathUtf16": 240,
+      "maxRequestComments": 500,
       "maxRequestDescriptionBytes": 16384,
       "maxRequestTicketRelations": 32,
+      "maxTicketAcceptedRelations": 2000,
       "maxTicketBodyBytes": 32768,
       "maxTicketCommentBytes": 16384,
       "maxTicketComments": 500,
       "maxTicketPageSize": 100,
-      "maxTicketTitleUtf16": 200
+      "maxTicketTitleUtf16": 200,
+      "relationPageMaxUtf8Bytes": 98304,
+      "ticketPageMaxUtf8Bytes": 98304
     },
     "operations": [
       "acceptRequest",
@@ -83,6 +94,9 @@
       "ensureMyRequest",
       "getRequest",
       "getTicket",
+      "listRequestComments",
+      "listTicketAcceptedRelations",
+      "listTicketComments",
       "listTickets",
       "reopenTicket",
       "updateMyRequestMetadata",
@@ -105,7 +119,7 @@
         "source": "./CollabProtocol"
       },
       {
-        "declaration": "export declare const COLLAB_CONTROL_OPERATION_CODECS: Readonly<{\n    readonly getRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").GetRequestRequest, import(\"./types\").CollabRequestDetail>;\n    readonly ensureMyRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").EnsureMyRequestRequest, import(\"./CollabProtocol\").EnsureMyRequestResponse>;\n    readonly createComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateCommentRequest, import(\"./CollabProtocol\").CreateCommentResponse>;\n    readonly listTickets: CollabControlOperationCodec<import(\"./CollabProtocol\").ListTicketsRequest, import(\"./types\").CollabTicketPage>;\n    readonly getTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").GetTicketRequest, import(\"./types\").CollabTicketDetail>;\n    readonly createTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketRequest, import(\"./CollabProtocol\").CreateTicketResponse>;\n    readonly updateTicketContent: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateTicketContentRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly createTicketComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketCommentRequest, import(\"./CollabProtocol\").CreateTicketCommentResponse>;\n    readonly closeTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly reopenTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly updateMyRequestMetadata: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateMyRequestMetadataRequest, import(\"./CollabProtocol\").UpdateMyRequestMetadataResponse>;\n    readonly acceptRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").AcceptRequest, import(\"./CollabProtocol\").AcceptResponse>;\n}>;",
+        "declaration": "export declare const COLLAB_CONTROL_OPERATION_CODECS: Readonly<{\n    readonly getRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").GetRequestRequest, import(\"./types\").CollabRequestDetail>;\n    readonly listRequestComments: CollabControlOperationCodec<import(\"./CollabProtocol\").ListRequestCommentsRequest, import(\"./types\").CollabCommentPage>;\n    readonly ensureMyRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").EnsureMyRequestRequest, import(\"./CollabProtocol\").EnsureMyRequestResponse>;\n    readonly createComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateCommentRequest, import(\"./CollabProtocol\").CreateCommentResponse>;\n    readonly listTickets: CollabControlOperationCodec<import(\"./CollabProtocol\").ListTicketsRequest, import(\"./types\").CollabTicketPage>;\n    readonly getTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").GetTicketRequest, import(\"./types\").CollabTicketDetail>;\n    readonly listTicketComments: CollabControlOperationCodec<import(\"./CollabProtocol\").ListTicketCommentsRequest, import(\"./types\").CollabTicketCommentPage>;\n    readonly listTicketAcceptedRelations: CollabControlOperationCodec<import(\"./CollabProtocol\").ListTicketAcceptedRelationsRequest, import(\"./types\").CollabTicketAcceptedRelationPage>;\n    readonly createTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketRequest, import(\"./CollabProtocol\").CreateTicketResponse>;\n    readonly updateTicketContent: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateTicketContentRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly createTicketComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketCommentRequest, import(\"./CollabProtocol\").CreateTicketCommentResponse>;\n    readonly closeTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly reopenTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly updateMyRequestMetadata: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateMyRequestMetadataRequest, import(\"./CollabProtocol\").UpdateMyRequestMetadataResponse>;\n    readonly acceptRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").AcceptRequest, import(\"./CollabProtocol\").AcceptResponse>;\n}>;",
         "exportName": "COLLAB_CONTROL_OPERATION_CODECS",
         "source": "./CollabControlOperationCodecs"
       },
@@ -115,7 +129,7 @@
         "source": "./CollabError"
       },
       {
-        "declaration": "export declare const COLLAB_LIMITS: Readonly<{\n    maxBlobBytes: number;\n    maxChangedPaths: 2000;\n    maxCommentBytes: number;\n    maxRequestDescriptionBytes: number;\n    maxTicketTitleUtf16: 200;\n    maxTicketBodyBytes: number;\n    maxTicketCommentBytes: number;\n    maxRequestTicketRelations: 32;\n    defaultTicketPageSize: 50;\n    maxTicketPageSize: 100;\n    maxTicketComments: 500;\n    maxPathSegmentUtf16: 120;\n    maxRepositoryPathUtf16: 240;\n}>;",
+        "declaration": "export declare const COLLAB_LIMITS: Readonly<{\n    maxBlobBytes: number;\n    maxChangedPaths: 2000;\n    maxCommentBytes: number;\n    maxRequestDescriptionBytes: number;\n    maxTicketTitleUtf16: 200;\n    maxTicketBodyBytes: number;\n    maxTicketCommentBytes: number;\n    maxRequestTicketRelations: 32;\n    maxRequestComments: 500;\n    defaultTicketPageSize: 50;\n    maxTicketPageSize: 100;\n    maxTicketComments: 500;\n    maxTicketAcceptedRelations: 2000;\n    defaultCommentPageSize: 50;\n    maxCommentPageSize: 100;\n    commentPageMaxUtf8Bytes: number;\n    maxRelationsPerPage: 100;\n    relationPageMaxUtf8Bytes: number;\n    ticketPageMaxUtf8Bytes: number;\n    detailMaxUtf8Bytes: number;\n    maxJsonPayloadUtf8Bytes: number;\n    maxPageCursorUtf16: 512;\n    maxPathSegmentUtf16: 120;\n    maxRepositoryPathUtf16: 240;\n}>;",
         "exportName": "COLLAB_LIMITS",
         "source": "./CollabConstants"
       },
@@ -130,7 +144,7 @@
         "source": "./CollabConstants"
       },
       {
-        "declaration": "export declare const COLLAB_PROTOCOL_VERSION: 1;",
+        "declaration": "export declare const COLLAB_PROTOCOL_VERSION: 3;",
         "exportName": "COLLAB_PROTOCOL_VERSION",
         "source": "./CollabConstants"
       },
@@ -155,6 +169,11 @@
         "source": "./types"
       },
       {
+        "declaration": "export interface CollabCommentPage {\n    comments: readonly CollabComment[];\n    nextCursor?: string;\n}",
+        "exportName": "CollabCommentPage",
+        "source": "./types"
+      },
+      {
         "declaration": "export type CollabControlOperation = keyof CollabControlOperationMap;",
         "exportName": "CollabControlOperation",
         "source": "./CollabControlOperationCodecs"
@@ -175,7 +194,7 @@
         "source": "./CollabProtocol"
       },
       {
-        "declaration": "export interface CollabControlOperationMap {\n    getRequest: CollabControlOperationDefinition<GetRequestRequest, CollabRequestDetail>;\n    ensureMyRequest: CollabControlOperationDefinition<EnsureMyRequestRequest, EnsureMyRequestResponse>;\n    createComment: CollabControlOperationDefinition<CreateCommentRequest, CreateCommentResponse>;\n    listTickets: CollabControlOperationDefinition<ListTicketsRequest, CollabTicketPage>;\n    getTicket: CollabControlOperationDefinition<GetTicketRequest, CollabTicketDetail>;\n    createTicket: CollabControlOperationDefinition<CreateTicketRequest, CreateTicketResponse>;\n    updateTicketContent: CollabControlOperationDefinition<UpdateTicketContentRequest, TicketMutationResponse>;\n    createTicketComment: CollabControlOperationDefinition<CreateTicketCommentRequest, CreateTicketCommentResponse>;\n    closeTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    reopenTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    updateMyRequestMetadata: CollabControlOperationDefinition<UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse>;\n    acceptRequest: CollabControlOperationDefinition<AcceptRequest, AcceptResponse>;\n}",
+        "declaration": "export interface CollabControlOperationMap {\n    getRequest: CollabControlOperationDefinition<GetRequestRequest, CollabRequestDetail>;\n    listRequestComments: CollabControlOperationDefinition<ListRequestCommentsRequest, CollabCommentPage>;\n    ensureMyRequest: CollabControlOperationDefinition<EnsureMyRequestRequest, EnsureMyRequestResponse>;\n    createComment: CollabControlOperationDefinition<CreateCommentRequest, CreateCommentResponse>;\n    listTickets: CollabControlOperationDefinition<ListTicketsRequest, CollabTicketPage>;\n    getTicket: CollabControlOperationDefinition<GetTicketRequest, CollabTicketDetail>;\n    listTicketComments: CollabControlOperationDefinition<ListTicketCommentsRequest, CollabTicketCommentPage>;\n    listTicketAcceptedRelations: CollabControlOperationDefinition<ListTicketAcceptedRelationsRequest, CollabTicketAcceptedRelationPage>;\n    createTicket: CollabControlOperationDefinition<CreateTicketRequest, CreateTicketResponse>;\n    updateTicketContent: CollabControlOperationDefinition<UpdateTicketContentRequest, TicketMutationResponse>;\n    createTicketComment: CollabControlOperationDefinition<CreateTicketCommentRequest, CreateTicketCommentResponse>;\n    closeTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    reopenTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    updateMyRequestMetadata: CollabControlOperationDefinition<UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse>;\n    acceptRequest: CollabControlOperationDefinition<AcceptRequest, AcceptResponse>;\n}",
         "exportName": "CollabControlOperationMap",
         "source": "./CollabProtocol"
       },
@@ -310,7 +329,7 @@
         "source": "./types"
       },
       {
-        "declaration": "export interface CollabRequestDetail {\n    request: CollabChangeRequest;\n    currentMainOid: CollabGitOid;\n    reviewedHeadOid: CollabGitOid;\n    reviewCondition: CollabReviewCondition;\n    changedFiles: readonly CollabChangedFile[];\n    comments: readonly CollabComment[];\n}",
+        "declaration": "export interface CollabRequestDetail {\n    request: CollabChangeRequest;\n    currentMainOid: CollabGitOid;\n    reviewedHeadOid: CollabGitOid;\n    reviewCondition: CollabReviewCondition;\n    comments: CollabCommentPage;\n}",
         "exportName": "CollabRequestDetail",
         "source": "./types"
       },
@@ -325,7 +344,7 @@
         "source": "./types"
       },
       {
-        "declaration": "export type CollabRequestTicketOperation = 'acceptRequest' | 'closeTicket' | 'createComment' | 'createTicket' | 'createTicketComment' | 'ensureMyRequest' | 'getRequest' | 'getTicket' | 'listTickets' | 'reopenTicket' | 'updateMyRequestMetadata' | 'updateTicketContent';",
+        "declaration": "export type CollabRequestTicketOperation = 'acceptRequest' | 'closeTicket' | 'createComment' | 'createTicket' | 'createTicketComment' | 'ensureMyRequest' | 'getRequest' | 'getTicket' | 'listRequestComments' | 'listTicketAcceptedRelations' | 'listTicketComments' | 'listTickets' | 'reopenTicket' | 'updateMyRequestMetadata' | 'updateTicketContent';",
         "exportName": "CollabRequestTicketOperation",
         "source": "./CollabRequestTicketRequestCodecs"
       },
@@ -355,6 +374,11 @@
         "source": "./types"
       },
       {
+        "declaration": "export interface CollabTicketAcceptedRelationPage {\n    acceptedRelations: readonly CollabTicketAcceptedRelation[];\n    nextCursor?: string;\n}",
+        "exportName": "CollabTicketAcceptedRelationPage",
+        "source": "./types"
+      },
+      {
         "declaration": "export interface CollabTicketComment {\n    id: CollabTicketCommentId;\n    ticketId: CollabTicketId;\n    authorMemberId: CollabMemberId;\n    body: string;\n    createdAt: CollabIsoTimestamp;\n}",
         "exportName": "CollabTicketComment",
         "source": "./types"
@@ -365,12 +389,17 @@
         "source": "./types"
       },
       {
+        "declaration": "export interface CollabTicketCommentPage {\n    comments: readonly CollabTicketComment[];\n    nextCursor?: string;\n}",
+        "exportName": "CollabTicketCommentPage",
+        "source": "./types"
+      },
+      {
         "declaration": "export type CollabTicketCommitRelationKind = 'references' | 'resolves';",
         "exportName": "CollabTicketCommitRelationKind",
         "source": "./types"
       },
       {
-        "declaration": "export interface CollabTicketDetail {\n    ticket: CollabTicketSummary;\n    body: string;\n    comments: readonly CollabTicketComment[];\n    acceptedRelations: readonly CollabTicketAcceptedRelation[];\n}",
+        "declaration": "export interface CollabTicketDetail {\n    ticket: CollabTicketSummary;\n    body: string;\n    comments: CollabTicketCommentPage;\n    acceptedRelations: CollabTicketAcceptedRelationPage;\n}",
         "exportName": "CollabTicketDetail",
         "source": "./types"
       },
@@ -415,7 +444,7 @@
         "source": "./types"
       },
       {
-        "declaration": "export interface CollabTicketSummary {\n    id: CollabTicketId;\n    number: number;\n    title: string;\n    status: CollabTicketStatus;\n    authorMemberId: CollabMemberId;\n    revision: number;\n    commentCount: number;\n    createdAt: CollabIsoTimestamp;\n    updatedAt: CollabIsoTimestamp;\n    closedAt?: CollabIsoTimestamp;\n    closedByMemberId?: CollabMemberId;\n}",
+        "declaration": "export interface CollabTicketSummary {\n    id: CollabTicketId;\n    number: number;\n    title: string;\n    status: CollabTicketStatus;\n    authorMemberId: CollabMemberId;\n    revision: number;\n    acceptedRelationCount: number;\n    commentCount: number;\n    createdAt: CollabIsoTimestamp;\n    updatedAt: CollabIsoTimestamp;\n    closedAt?: CollabIsoTimestamp;\n    closedByMemberId?: CollabMemberId;\n}",
         "exportName": "CollabTicketSummary",
         "source": "./types"
       },
@@ -472,6 +501,41 @@
       {
         "declaration": "export interface GetTicketRequest {\n    projectId: CollabProjectId;\n    ticketId: CollabTicketId;\n}",
         "exportName": "GetTicketRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export declare function isCollabGitOid(value: unknown): value is string;",
+        "exportName": "isCollabGitOid",
+        "source": "./CollabValidation"
+      },
+      {
+        "declaration": "export declare function isCollabMemberId(value: unknown): value is string;",
+        "exportName": "isCollabMemberId",
+        "source": "./CollabValidation"
+      },
+      {
+        "declaration": "export declare function isCollabOpaqueId(value: unknown): value is string;",
+        "exportName": "isCollabOpaqueId",
+        "source": "./CollabValidation"
+      },
+      {
+        "declaration": "export declare function isCollabProjectId(value: unknown): value is string;",
+        "exportName": "isCollabProjectId",
+        "source": "./CollabValidation"
+      },
+      {
+        "declaration": "export interface ListRequestCommentsRequest {\n    projectId: CollabProjectId;\n    requestId: CollabRequestId;\n    cursor?: string;\n    limit?: number;\n}",
+        "exportName": "ListRequestCommentsRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface ListTicketAcceptedRelationsRequest {\n    projectId: CollabProjectId;\n    ticketId: CollabTicketId;\n    cursor?: string;\n    limit?: number;\n}",
+        "exportName": "ListTicketAcceptedRelationsRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface ListTicketCommentsRequest {\n    projectId: CollabProjectId;\n    ticketId: CollabTicketId;\n    cursor?: string;\n    limit?: number;\n}",
+        "exportName": "ListTicketCommentsRequest",
         "source": "./CollabProtocol"
       },
       {
@@ -532,13 +596,17 @@
       "collabErrorGroup",
       "collabMemberRef",
       "decodeCollabProtocolEnvelope",
+      "isCollabGitOid",
+      "isCollabMemberId",
+      "isCollabOpaqueId",
+      "isCollabProjectId",
       "parseCollabMemberMentions",
       "parseCollabTicketReferences",
       "sanitizeCollabDiagnosticContext",
       "scanCollabTicketReferences"
     ]
   },
-  "packageVersion": "0.1.0",
-  "protocolVersion": 1,
+  "packageVersion": "0.3.0",
+  "protocolVersion": 3,
   "schemaVersion": 1
 }

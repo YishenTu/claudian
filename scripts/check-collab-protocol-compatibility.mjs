@@ -196,6 +196,15 @@ export function assertVersionedContractChange(base, current) {
   if (protocolComparison < 0) failures.push('wire protocol version cannot decrease');
   if (!snapshotsHaveEqualContract(base, current)) {
     if (packageComparison <= 0) failures.push('package version must increase for a contract change');
+    else {
+      const baseVersion = parseSemver(base.packageVersion);
+      const currentVersion = parseSemver(current.packageVersion);
+      const minorOrGreater = currentVersion.major > baseVersion.major
+        || (currentVersion.major === baseVersion.major && currentVersion.minor > baseVersion.minor);
+      if (!minorOrGreater) {
+        failures.push('package version must increase by at least a minor release for a contract change');
+      }
+    }
     if (protocolComparison <= 0) {
       failures.push('wire protocol version must increase for a contract change');
     }
@@ -205,18 +214,44 @@ export function assertVersionedContractChange(base, current) {
   }
 }
 
-function readBaseSnapshot(baseSha) {
+const GIT_SHOW_MISSING_PATH = /(?:does not exist in|exists on disk, but not in)/u;
+
+export function readBaseSnapshot(baseSha, { cwd = root } = {}) {
   if (!/^[0-9a-f]{7,40}$/iu.test(baseSha)) {
     throw new Error(`Invalid base commit for protocol compatibility check: ${baseSha}`);
   }
+  let shown;
   try {
-    return JSON.parse(execFileSync(
+    execFileSync(
+      'git',
+      ['cat-file', '-e', `${baseSha}^{commit}`],
+      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (error) {
+    const stderr = typeof error?.stderr === 'string' ? error.stderr.trim() : '';
+    throw new Error(
+      `Cannot read the base protocol contract snapshot at ${baseSha}: ${stderr || 'base commit unavailable'}`,
+    );
+  }
+  try {
+    shown = execFileSync(
       'git',
       ['show', `${baseSha}:${snapshotRelativePath}`],
-      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    ));
-  } catch {
-    return null;
+      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (error) {
+    const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
+    if (GIT_SHOW_MISSING_PATH.test(stderr)) return null;
+    throw new Error(
+      `Cannot read the base protocol contract snapshot at ${baseSha}: ${stderr.trim() || 'git show failed'}`,
+    );
+  }
+  try {
+    return JSON.parse(shown);
+  } catch (error) {
+    throw new Error(
+      `Cannot parse the base protocol contract snapshot at ${baseSha}: ${error.message}`,
+    );
   }
 }
 

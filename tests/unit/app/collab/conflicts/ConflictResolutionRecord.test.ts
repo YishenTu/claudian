@@ -16,10 +16,6 @@ function record(
 ): ConflictResolutionRecord {
   return {
     createdAt: '2026-08-08T00:00:00.000Z',
-    decisions: [
-      { choice: 'keep-personal', path: 'note.md' },
-      { choice: 'use-manual-draft', draft: 'resolved\n', path: 'other.md' },
-    ],
     descriptor: {
       conflicts: [
         { kind: 'text', path: 'note.md' },
@@ -42,20 +38,16 @@ function record(
 }
 
 describe('ConflictResolutionRecord', () => {
-  it('decodes immutable OIDs and explicit decisions without a filesystem path', () => {
+  it('decodes immutable OIDs without local decision state or a filesystem path', () => {
     const decoded = decodeConflictResolutionRecord(record());
 
     expect(decoded).toEqual(record());
     expect(decoded).not.toHaveProperty('scratchPath');
+    expect(decoded).not.toHaveProperty('decisions');
     expect(JSON.stringify(decoded)).not.toContain('/Users/');
   });
 
-  it('requires completed decisions and a result OID for committed phases', () => {
-    expect(() => decodeConflictResolutionRecord(record({
-      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
-      phase: 'committed',
-      resultCommitOid: OID.result,
-    }))).toThrow();
+  it('requires a result OID for committed phases', () => {
     expect(() => decodeConflictResolutionRecord(record({
       phase: 'committed',
       resultCommitOid: null,
@@ -71,17 +63,10 @@ describe('ConflictResolutionRecord', () => {
     })).toThrow();
   });
 
-  it('rejects identity drift, duplicate decisions, invalid paths, and unsupported choices', () => {
+  it('rejects identity drift and invalid paths', () => {
     expect(() => decodeConflictResolutionRecord({
       ...record(),
       operationId: 'operation-b',
-    })).toThrow();
-    expect(() => decodeConflictResolutionRecord({
-      ...record(),
-      decisions: [
-        { choice: 'keep-personal', path: 'note.md' },
-        { choice: 'use-accepted', path: 'note.md' },
-      ],
     })).toThrow();
     expect(() => decodeConflictResolutionRecord({
       ...record(),
@@ -90,16 +75,20 @@ describe('ConflictResolutionRecord', () => {
         conflicts: [{ kind: 'text', path: '../outside.md' }],
       },
     })).toThrow();
-    expect(() => decodeConflictResolutionRecord({
-      ...record(),
-      decisions: [{ choice: 'automatic', path: 'note.md' }],
-    })).toThrow();
   });
 
-  it('rejects decisions for unknown paths and invalid terminal timestamps', () => {
-    expect(() => decodeConflictResolutionRecord(record({
-      decisions: [{ choice: 'keep-personal', path: 'missing.md' }],
-    }))).toThrow();
+  it('migrates legacy decision records to the decision-free schema', () => {
+    const decoded = decodeConflictResolutionRecord({
+      ...record(),
+      decisions: [{ choice: 'keep-personal', path: 'note.md' }],
+      schemaVersion: 1,
+    });
+
+    expect(decoded.schemaVersion).toBe(COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION);
+    expect(decoded).not.toHaveProperty('decisions');
+  });
+
+  it('rejects invalid terminal timestamps', () => {
     expect(() => decodeConflictResolutionRecord(record({
       updatedAt: 'not-a-date',
     }))).toThrow();

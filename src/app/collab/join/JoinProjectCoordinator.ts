@@ -35,7 +35,6 @@ import {
 } from '@/app/collab/join/JoinControlClient';
 import {
   COLLAB_JOIN_PROJECT_SCHEMA_VERSION,
-  decodeCollabPendingProjectOperation,
   decodeJoinProjectRecord,
   type JoinProjectPhase,
   type JoinProjectRecord,
@@ -46,6 +45,7 @@ import {
   type CollabTrustedHost,
 } from '@/app/collab/lan/CollabHttpClient';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
+import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
@@ -59,6 +59,8 @@ type LocalProjectsPort = Pick<
   | 'loadIndex'
   | 'loadMembership'
   | 'loadProjectDocument'
+  | 'listPendingOperationProjectIds'
+  | 'discardPendingOperation'
   | 'removeProject'
   | 'removeProjectDocument'
   | 'saveMembership'
@@ -726,7 +728,18 @@ export class JoinProjectCoordinator {
       ? await this.tryLoadRecord(record.projectId) ?? record
       : null;
     if (collabError.code === 'membership-revoked' && current) {
-      await this.expire(current);
+      try {
+        await this.expire(current);
+      } catch {
+        return {
+          error: joinError(
+            'operation-failed',
+            'join-cleanup-incomplete',
+            ['resume', 'open-diagnostics'],
+          ),
+          status: 'failure',
+        };
+      }
       return { error: collabError, status: 'failure' };
     }
     if (
@@ -751,7 +764,20 @@ export class JoinProjectCoordinator {
         status: 'recovery-required',
       };
     }
-    if (current) await this.cleanupBeforeMembership(current);
+    if (current) {
+      try {
+        await this.cleanupBeforeMembership(current);
+      } catch {
+        return {
+          error: joinError(
+            'operation-failed',
+            'join-cleanup-incomplete',
+            ['resume', 'open-diagnostics'],
+          ),
+          status: 'failure',
+        };
+      }
+    }
     return collabError.code === 'cancelled'
       ? {
         ...(current ? { operationId: current.operationId } : {}),
@@ -764,11 +790,7 @@ export class JoinProjectCoordinator {
   private async cleanupBeforeMembership(record: JoinProjectRecord): Promise<void> {
     await this.removeOwnedStaging(record).catch(() => undefined);
     await this.removeTemporaryCa(record).catch(() => undefined);
-    await this.foundation.local.projects.removeProjectDocument(
-      record.projectId,
-      'pending-operation',
-    ).catch(() => undefined);
-    await this.foundation.local.projects.removeProject(record.projectId).catch(() => undefined);
+    await this.foundation.local.projects.discardPendingOperation(record.projectId);
   }
 
   private async expire(record: JoinProjectRecord): Promise<void> {
@@ -776,11 +798,7 @@ export class JoinProjectCoordinator {
       await this.removeOwnedStaging(record).catch(() => undefined);
     }
     await this.removeTemporaryCa(record).catch(() => undefined);
-    await this.foundation.local.projects.removeProjectDocument(
-      record.projectId,
-      'pending-operation',
-    ).catch(() => undefined);
-    await this.foundation.local.projects.removeProject(record.projectId).catch(() => undefined);
+    await this.foundation.local.projects.discardPendingOperation(record.projectId);
     this.remoteMembershipMayExist.delete(record.operationId);
   }
 
@@ -799,8 +817,6 @@ export class JoinProjectCoordinator {
   }
 
   private async readExistingProject(projectId: string): Promise<JoinProjectRecord | null> {
-    const index = await this.foundation.local.projects.loadIndex();
-    if (!index.projects.some(project => project.id === projectId)) return null;
     const membership = await this.foundation.local.projects.loadMembership(projectId);
     if (membership) throw joinError('operation-failed', 'duplicate-local-project');
     const pending = await this.foundation.local.projects.loadProjectDocument(
@@ -808,7 +824,8 @@ export class JoinProjectCoordinator {
       'pending-operation',
       decodeCollabPendingProjectOperation,
     );
-    if (!pending || pending.kind !== 'join-project') {
+    if (!pending) return null;
+    if (pending.kind !== 'join-project') {
       throw joinError('operation-failed', 'duplicate-local-project');
     }
     return pending.record;
@@ -816,18 +833,21 @@ export class JoinProjectCoordinator {
 
   private async findPending(operationId: string): Promise<JoinProjectRecord | null> {
     if (!SAFE_ID_PATTERN.test(operationId)) return null;
-    const index = await this.foundation.local.projects.loadIndex();
-    for (const project of index.projects) {
+    const projectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    let match: JoinProjectRecord | null = null;
+    for (const projectId of projectIds) {
       const pending = await this.foundation.local.projects.loadProjectDocument(
-        project.id,
+        projectId,
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
       if (pending?.kind === 'join-project' && pending.record.operationId === operationId) {
-        return pending.record;
+        if (match) throw joinError('repository-invalid', 'pending-operation-duplicate');
+        match = pending.record;
       }
     }
-    return null;
+    return match;
   }
 
   private async claimSlug(
@@ -837,6 +857,16 @@ export class JoinProjectCoordinator {
   ): Promise<string> {
     const index = await this.foundation.local.projects.loadIndex();
     const reserved = new Set(index.projects.map(project => project.workspacePath));
+    const pendingProjectIds = await this.foundation.local.projects
+      .listPendingOperationProjectIds();
+    for (const pendingProjectId of pendingProjectIds) {
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        pendingProjectId,
+        'pending-operation',
+        decodeCollabPendingProjectOperation,
+      );
+      if (pending) reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+    }
     if (requestedSlug !== undefined) {
       const slug = requestedSlug.trim();
       if (!SAFE_SLUG_PATTERN.test(slug)) {

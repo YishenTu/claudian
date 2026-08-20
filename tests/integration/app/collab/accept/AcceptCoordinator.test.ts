@@ -405,6 +405,43 @@ function downgradeToV8(database: Database): void {
     );
     DROP TABLE accept_operations_v9_fixture;
 
+    DROP INDEX manager_responsibility_one_nonterminal_source;
+    DROP INDEX manager_responsibility_one_nonterminal_target;
+    ALTER TABLE manager_responsibility_offers
+      RENAME TO manager_responsibility_offers_v10_fixture;
+    CREATE TABLE manager_responsibility_offers (
+      offer_id TEXT PRIMARY KEY,
+      purpose TEXT NOT NULL CHECK(purpose IN ('manager-transfer', 'manager-leave')),
+      source_manager_member_id TEXT NOT NULL REFERENCES members(member_id),
+      source_manager_generation INTEGER NOT NULL,
+      target_member_id TEXT NOT NULL REFERENCES members(member_id),
+      status TEXT NOT NULL CHECK(status IN (
+        'offered', 'acknowledged', 'consumed', 'declined', 'cancelled', 'expired'
+      )),
+      offered_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      acknowledged_at TEXT,
+      consumed_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO manager_responsibility_offers SELECT
+      offer_id,
+      CASE purpose WHEN 'manager-promotion' THEN 'manager-transfer' ELSE purpose END,
+      source_manager_member_id,
+      (SELECT manager_generation FROM project WHERE singleton = 1),
+      target_member_id,
+      status,
+      offered_at,
+      expires_at,
+      acknowledged_at,
+      consumed_at,
+      updated_at
+    FROM manager_responsibility_offers_v10_fixture;
+    DROP TABLE manager_responsibility_offers_v10_fixture;
+    CREATE UNIQUE INDEX manager_responsibility_one_nonterminal
+      ON manager_responsibility_offers((1))
+      WHERE status IN ('offered', 'acknowledged');
+
     CREATE UNIQUE INDEX members_one_active_manager
       ON members(role) WHERE role = 'manager' AND status = 'active';
     PRAGMA user_version = 8;

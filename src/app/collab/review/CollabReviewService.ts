@@ -19,6 +19,11 @@ export interface CollabReviewControlPort {
     requestId: string,
     options?: CollabOperationOptions,
   ): Promise<CollabRequestDetail>;
+  readRequestPage(
+    projectId: string,
+    requestId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabRequestDetail>;
 }
 
 export interface CollabReviewProjectPort {
@@ -57,10 +62,37 @@ export class CollabReviewService {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
+    return this.prepareWith(
+      projectId,
+      requestId,
+      options,
+      () => this.control.readRequest(projectId, requestId, options),
+    );
+  }
+
+  async preparePage(
+    projectId: string,
+    requestId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabRequestReview> {
+    return this.prepareWith(
+      projectId,
+      requestId,
+      options,
+      () => this.control.readRequestPage(projectId, requestId, options),
+    );
+  }
+
+  private async prepareWith(
+    projectId: string,
+    requestId: string,
+    options: CollabOperationOptions,
+    readDetail: () => Promise<CollabRequestDetail>,
+  ): Promise<CollabRequestReview> {
     throwIfCancelled(options.signal);
     const [context, detail] = await Promise.all([
       this.projects.load(projectId),
-      this.control.readRequest(projectId, requestId, options),
+      readDetail(),
     ]);
     const review = await this.repository.prepare(context, detail, options.signal);
     await this.projects.revalidate(context);

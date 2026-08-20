@@ -44,7 +44,7 @@ describe('CollabClientProjection', () => {
     expect(store.documents.get('project-a')).toMatchObject({
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 3,
+      schemaVersion: 4,
       snapshot: { eventSequence: 5 },
     });
     expect(store.membership.lastEventSequence).toBe(5);
@@ -161,7 +161,7 @@ describe('CollabClientProjection', () => {
     const cached = {
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 3,
+      schemaVersion: 4,
       snapshot: { ...snapshot(), eventSequence: 6 },
       ticketDetails: [],
       ticketPages: [],
@@ -225,12 +225,12 @@ describe('CollabClientProjection', () => {
     });
   });
 
-  it('removes an obsolete schema-2 cache as a miss and replaces it on the next online read', async () => {
+  it('removes an obsolete schema-3 cache as a miss and replaces it on the next online read', async () => {
     const store = new MemoryProjectionStore();
     store.documents.set('project-a', {
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 2,
+      schemaVersion: 3,
       snapshot: {
         project: { id: 'project-a', managerMemberId: 'member-host' },
       },
@@ -258,7 +258,7 @@ describe('CollabClientProjection', () => {
     });
     expect(store.documents.get('project-a')).toMatchObject({
       projectId: 'project-a',
-      schemaVersion: 3,
+      schemaVersion: 4,
       snapshot: {
         project: {
           id: 'project-a',
@@ -276,8 +276,9 @@ describe('CollabClientProjection', () => {
   it('restores previously loaded Ticket pages and details as stale read-only data', async () => {
     const store = new MemoryProjectionStore();
     const onlineControl = controlPort();
-    onlineControl.listTickets.mockResolvedValue({ tickets: [ticketDetail().ticket] });
     onlineControl.readTicket.mockResolvedValue(ticketDetail());
+    onlineControl.readTicketPage.mockRejectedValue(new Error('bounded page is not cacheable'));
+    onlineControl.listTickets.mockResolvedValue({ tickets: [ticketDetail().ticket] });
     const online = new CollabClientProjection(store, onlineControl, {
       now: () => new Date(CREATED_AT),
     });
@@ -286,11 +287,18 @@ describe('CollabClientProjection', () => {
     await online.readTicket('project-a', 'ticket-a');
     online.dispose();
 
+    expect(onlineControl.readTicket).toHaveBeenCalledWith(
+      'project-a',
+      'ticket-a',
+      {},
+    );
+    expect(onlineControl.readTicketPage).not.toHaveBeenCalled();
+
     const offlineControl = controlPort();
-    offlineControl.listTickets.mockRejectedValue(new CollabError({
+    offlineControl.readTicket.mockRejectedValue(new CollabError({
       code: 'endpoint-unreachable',
     }));
-    offlineControl.readTicket.mockRejectedValue(new CollabError({
+    offlineControl.listTickets.mockRejectedValue(new CollabError({
       code: 'endpoint-unreachable',
     }));
     const offline = new CollabClientProjection(store, offlineControl);
@@ -309,6 +317,32 @@ describe('CollabClientProjection', () => {
         source: 'cache',
         stale: true,
       });
+  });
+
+  it('keeps complete multi-page Ticket cache separate from bounded online reads', async () => {
+    const store = new MemoryProjectionStore();
+    const completeDetail = ticketDetailWithComments(101);
+    const onlineControl = controlPort();
+    onlineControl.readTicket.mockResolvedValue(completeDetail);
+    const online = new CollabClientProjection(store, onlineControl, {
+      now: () => new Date(CREATED_AT),
+    });
+    await online.readSnapshot('project-a');
+    await online.readTicket('project-a', 'ticket-a');
+    online.dispose();
+
+    const offlineControl = controlPort();
+    const offlineFailure = new CollabError({ code: 'endpoint-unreachable' });
+    offlineControl.readTicket.mockRejectedValue(offlineFailure);
+    offlineControl.readTicketPage.mockRejectedValue(offlineFailure);
+    const offline = new CollabClientProjection(store, offlineControl);
+
+    await expect(offline.readTicket('project-a', 'ticket-a')).resolves.toEqual({
+      detail: completeDetail,
+      source: 'cache',
+      stale: true,
+    });
+    await expect(offline.readTicketPage('project-a', 'ticket-a')).rejects.toBe(offlineFailure);
   });
 
   it('never falls back to cached Tickets for authorization failures', async () => {
@@ -701,25 +735,32 @@ function controlPort(): jest.Mocked<CollabClientProjectionControlPort> {
   return {
     acceptRequest: jest.fn(),
     createComment: jest.fn(),
+    listRequestComments: jest.fn(),
+    listTicketAcceptedRelations: jest.fn(),
+    listTicketComments: jest.fn(),
     listTickets: jest.fn(),
     readRequest: jest.fn(),
     readSnapshot: jest.fn().mockResolvedValue(snapshot()),
     readTicket: jest.fn(),
+    readTicketPage: jest.fn(),
   };
 }
 
 function ticketDetail(): CollabTicketDetail {
   return {
-    acceptedRelations: [],
+    acceptedRelations: { acceptedRelations: [] },
     body: 'Saved Ticket body',
-    comments: [{
-      authorMemberId: 'member-a',
-      body: 'Saved comment',
-      createdAt: CREATED_AT,
-      id: 'comment-a',
-      ticketId: 'ticket-a',
-    }],
+    comments: {
+      comments: [{
+        authorMemberId: 'member-a',
+        body: 'Saved comment',
+        createdAt: CREATED_AT,
+        id: 'comment-a',
+        ticketId: 'ticket-a',
+      }],
+    },
     ticket: {
+      acceptedRelationCount: 0,
       authorMemberId: 'member-a',
       commentCount: 1,
       createdAt: CREATED_AT,
@@ -729,6 +770,26 @@ function ticketDetail(): CollabTicketDetail {
       status: 'open',
       title: 'Saved Ticket',
       updatedAt: CREATED_AT,
+    },
+  };
+}
+
+function ticketDetailWithComments(count: number): CollabTicketDetail {
+  const detail = ticketDetail();
+  return {
+    ...detail,
+    comments: {
+      comments: Array.from({ length: count }, (_, index) => ({
+        authorMemberId: 'member-a',
+        body: `Saved comment ${index}`,
+        createdAt: CREATED_AT,
+        id: `comment-${index}`,
+        ticketId: 'ticket-a',
+      })),
+    },
+    ticket: {
+      ...detail.ticket,
+      commentCount: count,
     },
   };
 }

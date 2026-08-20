@@ -147,10 +147,10 @@ describe('JoinProjectCoordinator', () => {
     });
   });
 
-  it('rejects a newly pasted v6 invitation but recovers an already-owned v6 Join over v7', async () => {
+  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v9', async () => {
     const legacyInvitation = {
       ...createInvitation('project-alpha'),
-      protocolVersion: 6 as const,
+      protocolVersion: 7 as const,
     };
     const encodedInvitation = encodeLegacyInvitation(legacyInvitation);
     const interactive = await createHarness();
@@ -185,9 +185,9 @@ describe('JoinProjectCoordinator', () => {
     await expect(recovering.coordinator.resumeJoin({ operationId: 'join-alpha' }))
       .resolves.toMatchObject({ status: 'success' });
     expect(recovering.controlPaths).toEqual([
-      '/v7/projects/project-alpha/join-attempts',
-      '/v7/projects/project-alpha/join-attempts',
-      '/v7/projects/project-alpha/join-attempts/join-alpha/activate',
+      '/v9/projects/project-alpha/join-attempts',
+      '/v9/projects/project-alpha/join-attempts',
+      '/v9/projects/project-alpha/join-attempts/join-alpha/activate',
     ]);
   });
 
@@ -404,6 +404,8 @@ describe('JoinProjectCoordinator', () => {
       loadIndex: projects.loadIndex.bind(projects),
       loadMembership: projects.loadMembership.bind(projects),
       loadProjectDocument: projects.loadProjectDocument.bind(projects),
+      listPendingOperationProjectIds: projects.listPendingOperationProjectIds.bind(projects),
+      discardPendingOperation: projects.discardPendingOperation.bind(projects),
       removeProject: projects.removeProject.bind(projects),
       removeProjectDocument: projects.removeProjectDocument.bind(projects),
       saveMembership: async (...args: Parameters<CollabLocalProjectRepository['saveMembership']>) => {
@@ -683,8 +685,8 @@ function encodeInvitation(invitation: LanCollabInvitation): string {
 }
 
 function encodeLegacyInvitation(
-  invitation: Omit<LanCollabInvitation, 'protocolVersion'> & { protocolVersion: 6 },
+  invitation: Omit<LanCollabInvitation, 'protocolVersion'> & { protocolVersion: 7 },
 ): string {
   const payload = Buffer.from(JSON.stringify(invitation), 'utf8').toString('base64url');
-  return `claudian-collab:v6:${payload}`;
+  return `claudian-collab:v7:${payload}`;
 }

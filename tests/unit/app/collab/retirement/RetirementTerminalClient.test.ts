@@ -14,12 +14,10 @@ const INPUT = {
 describe('RetirementTerminalClient', () => {
   it('uses the stored pinned endpoint without discovery while it remains reachable', async () => {
     const request = jest.fn().mockResolvedValue(response());
-    const discover = jest.fn();
+    const resolve = jest.fn();
     const client = new RetirementTerminalClient({
-      discovery: { discoverProjectCandidatesForTrustTransition: discover },
-      proofClient: { fetchHostTransitions: jest.fn().mockResolvedValue([]) },
+      hostTransitionCandidates: { resolve },
       request,
-      trustTransitions: { verifyChain: jest.fn().mockReturnValue('old-ca') },
     });
 
     await expect(client.acknowledge(INPUT)).resolves.toEqual(response());
@@ -28,7 +26,7 @@ describe('RetirementTerminalClient', () => {
       caCertificatePem: 'old-ca',
       endpoint: INPUT.hostEndpoint,
     }), INPUT);
-    expect(discover).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it('discovers a same-CA terminal responder after the stored endpoint becomes unreachable', async () => {
@@ -37,16 +35,15 @@ describe('RetirementTerminalClient', () => {
       .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
       .mockResolvedValueOnce(response());
     const client = new RetirementTerminalClient({
-      discovery: {
-        discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([{
+      hostTransitionCandidates: {
+        resolve: jest.fn().mockResolvedValue({
+          caCertificatePem: 'old-ca',
           caFingerprint: INPUT.hostCaFingerprint,
           endpoint: replacement,
           projectId: INPUT.projectId,
-        }]),
+        }),
       },
-      proofClient: { fetchHostTransitions: jest.fn().mockResolvedValue([]) },
       request,
-      trustTransitions: { verifyChain: jest.fn().mockReturnValue('old-ca') },
     });
 
     await expect(client.acknowledge(INPUT)).resolves.toEqual(response());
@@ -65,7 +62,6 @@ describe('RetirementTerminalClient', () => {
       projectId: INPUT.projectId,
     };
     const calls: string[] = [];
-    const proof = { transferId: 'transfer-one' } as never;
     const request = jest.fn(async trust => {
       calls.push(`request:${trust.caFingerprint}`);
       if (trust.endpoint === INPUT.hostEndpoint) {
@@ -74,22 +70,19 @@ describe('RetirementTerminalClient', () => {
       return response();
     });
     const client = new RetirementTerminalClient({
-      discovery: {
-        discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
-      },
-      proofClient: {
-        fetchHostTransitions: jest.fn(async () => {
+      hostTransitionCandidates: {
+        resolve: jest.fn(async () => {
           calls.push('proof');
-          return [proof];
+          calls.push('verify');
+          return {
+            caCertificatePem: 'new-ca',
+            caFingerprint: candidate.caFingerprint,
+            endpoint: candidate.endpoint,
+            projectId: candidate.projectId,
+          };
         }),
       },
       request,
-      trustTransitions: {
-        verifyChain: jest.fn(() => {
-          calls.push('verify');
-          return 'new-ca';
-        }),
-      },
     });
 
     await expect(client.acknowledge(INPUT)).resolves.toEqual(response());
@@ -117,12 +110,15 @@ describe('RetirementTerminalClient', () => {
       .mockRejectedValueOnce(new CollabError({ code: 'tls-untrusted' }))
       .mockResolvedValueOnce(response());
     const client = new RetirementTerminalClient({
-      discovery: {
-        discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
+      hostTransitionCandidates: {
+        resolve: jest.fn().mockResolvedValue({
+          caCertificatePem: 'new-ca',
+          caFingerprint: candidate.caFingerprint,
+          endpoint: candidate.endpoint,
+          projectId: candidate.projectId,
+        }),
       },
-      proofClient: { fetchHostTransitions: jest.fn().mockResolvedValue([{ proof: true }]) },
       request,
-      trustTransitions: { verifyChain: jest.fn().mockReturnValue('new-ca') },
     });
 
     await expect(client.acknowledge(INPUT)).resolves.toEqual(response());
@@ -135,19 +131,19 @@ describe('RetirementTerminalClient', () => {
   });
 
   it('does not discover or transmit credentials after a non-transport rejection', async () => {
-    const discover = jest.fn();
+    const resolve = jest.fn(async ({ failure }: { failure: unknown }) => {
+      throw failure;
+    });
     const request = jest.fn().mockRejectedValue(new CollabError({ code: 'authentication-failed' }));
     const client = new RetirementTerminalClient({
-      discovery: { discoverProjectCandidatesForTrustTransition: discover },
-      proofClient: { fetchHostTransitions: jest.fn() },
+      hostTransitionCandidates: { resolve },
       request,
-      trustTransitions: { verifyChain: jest.fn() },
     });
 
     await expect(client.acknowledge(INPUT)).rejects.toMatchObject({
       code: 'authentication-failed',
     });
-    expect(discover).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledTimes(1);
   });
 });

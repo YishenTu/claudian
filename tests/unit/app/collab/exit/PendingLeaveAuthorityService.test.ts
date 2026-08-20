@@ -80,57 +80,34 @@ describe('PendingLeaveAuthorityService', () => {
     expect(client.leaveProject).not.toHaveBeenCalled();
   });
 
-  it('verifies a moved Host proof before replaying Leave with the Member credential', async () => {
-    const storedClient = clientPort();
-    storedClient.leaveProject.mockRejectedValue(new CollabError({
-      code: 'endpoint-unreachable',
-    }));
-    const movedClient = clientPort();
+  it('resolves a moved Host without retrying a credentialed request in memory', async () => {
     const candidate = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n',
       caFingerprint: 'b'.repeat(64),
       endpoint: 'https://10.0.0.8:54545',
       projectId: 'project-alpha',
     };
-    const calls: string[] = [];
-    const createClient = jest.fn((_record, trust) => {
-      calls.push(trust ? 'client:moved' : 'client:stored');
-      return trust ? movedClient : storedClient;
-    });
+    const createClient = jest.fn(() => clientPort());
+    const resolve = jest.fn(async () => candidate);
     const service = new PendingLeaveAuthorityService({
       createClient,
-      discovery: {
-        discoverProjectCandidatesForTrustTransition: jest.fn(async () => [candidate]),
-      },
-      proofClient: {
-        fetchHostTransitions: jest.fn(async () => {
-          calls.push('proof');
-          return [{ transferId: 'transfer-one' }] as never;
-        }),
-      },
-      trustTransitions: {
-        verifyChain: jest.fn(() => {
-          calls.push('verify');
-          return '-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n';
-        }),
-      },
+      hostTransitionCandidates: { resolve },
     });
-
-    await expect(service.settle({
-      pending: record({
-        expectedHostMemberId: 'member-host',
-        idempotencyManagerMemberId: null,
-        managerResponsibilityOfferId: null,
-      }),
-    })).resolves.toMatchObject({ status: 'left' });
-
-    expect(calls).toEqual(['client:stored', 'proof', 'verify', 'client:moved']);
-    expect(createClient).toHaveBeenLastCalledWith(expect.anything(), {
-      caCertificatePem: '-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n',
-      caFingerprint: candidate.caFingerprint,
-      endpoint: candidate.endpoint,
-      projectId: candidate.projectId,
+    const pending = record({
+      expectedHostMemberId: 'member-host',
+      idempotencyManagerMemberId: null,
+      managerResponsibilityOfferId: null,
     });
-    expect(movedClient.leaveProject).toHaveBeenCalledTimes(1);
+    const failure = new CollabError({ code: 'endpoint-unreachable' });
+
+    await expect(service.resolveHost({ failure, pending })).resolves.toEqual(candidate);
+
+    expect(resolve).toHaveBeenCalledWith({
+      failure,
+      pinnedCaCertificatePem: pending.hostCaCertificatePem,
+      projectId: pending.projectId,
+    });
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it('refreshes the Host while preserving private legacy fingerprint material', async () => {

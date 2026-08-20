@@ -36,7 +36,7 @@ describe('LanHostTransitionProofClient', () => {
     expect(bootstrapPublicEndpoint).toHaveBeenCalledWith(candidate, {});
     expect(requestPublic).toHaveBeenCalledWith(expect.objectContaining({
       method: 'GET',
-      path: '/v7/projects/project-a/host-transitions',
+      path: '/v9/projects/project-a/host-transitions',
     }), {});
   });
 
