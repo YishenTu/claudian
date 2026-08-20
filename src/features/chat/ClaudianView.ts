@@ -345,6 +345,7 @@ export class ClaudianView extends ItemView {
     this.navRowContent = this.buildNavRowContent();
     this.buildViewLayout();
     if (!this.tabContentEl) return;
+    this.attachNavRowContentToInputFooter();
 
     let tabStatePersistence = this.tabStatePersistence;
     if (!previousLifecycleWasClosing || !tabStatePersistence) {
@@ -2321,7 +2322,6 @@ export class ClaudianView extends ItemView {
 
       this.initializedTabWorkspaceLifecycleRevision = lifecycleRevision;
       this.syncProviderBrandColor();
-      this.attachNavRowContentToInputFooter();
       this.updateInputLocation();
       this.updateTabBarVisibility();
       this.startSessionSidebarLayoutObserver();

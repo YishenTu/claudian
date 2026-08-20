@@ -2413,10 +2413,12 @@ describe('ClaudianView runtime tab initialization', () => {
     await view.onOpenImpl();
 
     expect(createTab).not.toHaveBeenCalled();
+    expect(view.attachNavRowContentToInputFooter).toHaveBeenCalledTimes(1);
 
     await view.setState({}, { history: false });
 
     expect(createTab).toHaveBeenCalledTimes(1);
+    expect(view.attachNavRowContentToInputFooter).toHaveBeenCalledTimes(1);
     expect(tabManagerCallbacks).not.toHaveProperty('onPersistedStateChanged');
 
     view.persistTabWorkspaceState = jest.fn();
