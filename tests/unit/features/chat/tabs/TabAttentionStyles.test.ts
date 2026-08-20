@@ -12,6 +12,9 @@ describe('tab attention styles', () => {
       /\.claudian-tab-badge-review \{[\s\S]*?border-color: var\(--color-green\);[\s\S]*?\}/,
     );
     expect(tabsCss).toMatch(
+      /\.claudian-tab-badge-review-error \{[\s\S]*?border-color: var\(--color-orange\);[\s\S]*?\}/,
+    );
+    expect(tabsCss).toMatch(
       /\.claudian-tab-badge-action-required \{[\s\S]*?border-color: var\(--text-error\);[\s\S]*?\}/,
     );
   });

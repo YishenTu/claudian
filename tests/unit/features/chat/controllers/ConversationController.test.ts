@@ -1316,9 +1316,9 @@ describe('ConversationController', () => {
           { id: 'normal', title: 'Normal', createdAt: 1 },
         ]);
         const attentionById = new Map([
-          ['review-pinned', { kind: 'review' as const, since: 300 }],
+          ['review-pinned', { kind: 'review' as const, outcome: 'completed' as const, since: 300 }],
           ['action', { kind: 'action-required' as const, since: 100 }],
-          ['review', { kind: 'review' as const, since: 200 }],
+          ['review', { kind: 'review' as const, outcome: 'completed' as const, since: 200 }],
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -2198,7 +2198,7 @@ describe('ConversationController', () => {
             openState: 'open',
             isRunning: false,
             attention: id === 'attention'
-              ? { kind: 'review', since: 1000 }
+              ? { kind: 'review', outcome: 'completed', since: 1000 }
               : null,
           }),
         });

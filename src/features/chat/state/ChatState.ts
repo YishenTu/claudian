@@ -6,6 +6,7 @@ import type {
   PendingToolCall,
   QueuedMessage,
   TabAttention,
+  TabReviewOutcome,
   ThinkingBlockState,
   TodoItem,
   WriteEditState,
@@ -50,7 +51,10 @@ export class ChatState {
   private state: ChatStateData;
   private _callbacks: ChatStateCallbacks;
   private readonly pendingActionIds = new Set<string>();
-  private pendingReviewSince: number | null = null;
+  private pendingReview: {
+    outcome: TabReviewOutcome;
+    since: number;
+  } | null = null;
   private thinkingIndicatorTimeoutWindow: Window | null = null;
   private flavorTimerIntervalWindow: Window | null = null;
 
@@ -316,8 +320,11 @@ export class ChatState {
     if (this.pendingActionIds.has(interactionId)) return;
 
     this.pendingActionIds.add(interactionId);
-    if (this.state.attention?.kind === 'review' && this.pendingReviewSince === null) {
-      this.pendingReviewSince = this.state.attention.since;
+    if (this.state.attention?.kind === 'review' && this.pendingReview === null) {
+      this.pendingReview = {
+        outcome: this.state.attention.outcome,
+        since: this.state.attention.since,
+      };
     }
     if (!this.requiresAction) {
       this.setAttention({ kind: 'action-required', since: Date.now() });
@@ -327,25 +334,37 @@ export class ChatState {
   endActionRequired(interactionId: string): void {
     if (!this.pendingActionIds.delete(interactionId)) return;
     if (this.pendingActionIds.size === 0 && this.requiresAction) {
-      const reviewSince = this.pendingReviewSince;
-      this.pendingReviewSince = null;
-      this.setAttention(reviewSince === null
+      const review = this.pendingReview;
+      this.pendingReview = null;
+      this.setAttention(review === null
         ? null
-        : { kind: 'review', since: reviewSince });
+        : { kind: 'review', ...review });
     }
   }
 
-  markReviewRequired(): void {
-    if (this.state.attention?.kind === 'review') return;
-    if (this.requiresAction) {
-      this.pendingReviewSince ??= Date.now();
+  markReviewRequired(outcome: TabReviewOutcome = 'completed'): void {
+    if (this.state.attention?.kind === 'review') {
+      if (this.state.attention.outcome === 'error' || outcome === 'completed') return;
+      this.setAttention({
+        kind: 'review',
+        outcome: 'error',
+        since: this.state.attention.since,
+      });
       return;
     }
-    this.setAttention({ kind: 'review', since: Date.now() });
+    if (this.requiresAction) {
+      if (this.pendingReview === null) {
+        this.pendingReview = { outcome, since: Date.now() };
+      } else if (outcome === 'error') {
+        this.pendingReview.outcome = 'error';
+      }
+      return;
+    }
+    this.setAttention({ kind: 'review', outcome, since: Date.now() });
   }
 
   acknowledgeReview(): void {
-    this.pendingReviewSince = null;
+    this.pendingReview = null;
     if (this.state.attention?.kind === 'review') {
       this.setAttention(null);
     }
@@ -353,7 +372,7 @@ export class ChatState {
 
   clearAttention(): void {
     this.pendingActionIds.clear();
-    this.pendingReviewSince = null;
+    this.pendingReview = null;
     this.setAttention(null);
   }
 
@@ -497,7 +516,10 @@ export class ChatState {
       || (current !== null
         && attention !== null
         && current.kind === attention.kind
-        && current.since === attention.since)
+        && current.since === attention.since
+        && (current.kind !== 'review'
+          || attention.kind !== 'review'
+          || current.outcome === attention.outcome))
     ) {
       return;
     }

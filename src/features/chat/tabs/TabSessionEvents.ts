@@ -57,7 +57,7 @@ async function handleTabSessionEvent(
       ...(event.result !== undefined ? { result: event.result } : {}),
     });
     if (applied && isCurrent()) {
-      const reportReviewableSettlement = tab.captureReviewableSettlement?.();
+      const reportReviewableSettlement = tab.captureReviewableSettlement?.(event.status);
       try {
         await tab.controllers.conversationController.save(true);
       } finally {
@@ -96,7 +96,7 @@ async function handleTabSessionEvent(
     }, isCurrent);
     if (isCurrent()) {
       const reportReviewableSettlement = hasVisibleOutput
-        ? tab.captureReviewableSettlement?.()
+        ? tab.captureReviewableSettlement?.('completed')
         : null;
       try {
         await tab.controllers.conversationController.save(true);

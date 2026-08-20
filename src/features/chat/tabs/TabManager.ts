@@ -288,6 +288,10 @@ export class TabManager implements TabManagerInterface {
           this.callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);
           if (!isStreaming) runtime.session.executionCoordinator.notifyMayCool();
         },
+        onWorkChanged: runtime => {
+          if (!this.isTabStateMutable(runtime)) return;
+          this.callbacks.onTabWorkChanged?.(runtime.id);
+        },
         onRewindingChanged: (runtime, isRewinding) => {
           if (!this.isTabStateMutable(runtime)) return;
           this.callbacks.onTabRewindingChanged?.(runtime.id, isRewinding);
@@ -300,7 +304,7 @@ export class TabManager implements TabManagerInterface {
             runtime.session.executionCoordinator.notifyMayCool();
           }
         },
-        captureReviewableSettlement: runtime => {
+        captureReviewableSettlement: (runtime, outcome) => {
           const shouldReport = this.isTabStateMutable(runtime) && this.activeTabId !== runtime.id;
           const activationRevision = this.tabActivationRevisions.get(runtime.id) ?? 0;
           return () => {
@@ -309,7 +313,7 @@ export class TabManager implements TabManagerInterface {
               && this.isTabStateMutable(runtime)
               && (this.tabActivationRevisions.get(runtime.id) ?? 0) === activationRevision
             ) {
-              runtime.state.markReviewRequired();
+              runtime.state.markReviewRequired(outcome);
             }
           };
         },
@@ -1119,6 +1123,16 @@ export class TabManager implements TabManagerInterface {
     return Array.from(this.tabs.values());
   }
 
+  /** True while the tab has any user-visible foreground or background work in progress. */
+  isTabWorking(tabId: TabId): boolean {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return false;
+    return tab.state.isStreaming
+      || tab.session.activeTurn !== null
+      || tab.executionCoordinator.hasBackgroundWork
+      || tab.services.subagentManager.hasActiveAsyncSubagents();
+  }
+
   /** Reconciles blank drafts after provider/model availability changes. */
   reconcileProviderAvailability(): void {
     for (const tab of this.tabs.values()) {
@@ -1253,7 +1267,7 @@ export class TabManager implements TabManagerInterface {
         title: getTabTitle(tab, this.plugin),
         providerId: getTabProviderId(tab, this.plugin),
         isActive: tab.id === this.activeTabId,
-        isStreaming: tab.state.isStreaming,
+        isWorking: this.isTabWorking(tab.id),
         attention: tab.state.attention,
         canClose: !tab.state.isRewinding && (this.tabs.size > 1 || !tab.state.isStreaming),
       });

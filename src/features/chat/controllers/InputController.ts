@@ -47,8 +47,7 @@ import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { setToolIcon, updateToolCallResult } from '../rendering/ToolCallRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
-import type { QueuedMessage } from '../state/types';
-import type { ChatTurnRequest } from '../state/types';
+import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { AddExternalContextResult } from '../ui/InputToolbar';
@@ -139,7 +138,7 @@ export interface InputControllerDeps {
   toggleFastMode?: () => Promise<boolean>;
   restorePrePlanPermissionModeIfNeeded?: () => void | Promise<void>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
-  captureReviewableSettlement?: () => () => void;
+  captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn?: () => boolean;
   turnOwner?: ActiveTurnOwner;
 }
@@ -518,8 +517,9 @@ export class InputController {
       shouldReportReviewableSettlement = result.status === 'completed'
         || (result.status === 'error' && result.accepted);
       if (shouldReportReviewableSettlement) {
-        currentReviewableSettlementReporter =
-          this.deps.captureReviewableSettlement?.() ?? null;
+        currentReviewableSettlementReporter = this.deps.captureReviewableSettlement?.(
+          result.status === 'error' ? 'error' : 'completed',
+        ) ?? null;
       }
       if (result.status === 'cancelled') {
         wasInterrupted = true;
@@ -575,7 +575,7 @@ export class InputController {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
         currentReviewableSettlementReporter =
-          this.deps.captureReviewableSettlement?.() ?? null;
+          this.deps.captureReviewableSettlement?.('error') ?? null;
       }
     } finally {
       const finalAssistantMsg = this.activeStreamingAssistantMessage ?? assistantMsg;

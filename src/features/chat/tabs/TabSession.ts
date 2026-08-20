@@ -21,6 +21,7 @@ export class TabSession {
   constructor(
     private readonly state: TabSessionState,
     private readonly coordinator: ChatExecutionCoordinator,
+    private readonly onWorkChanged?: () => void,
   ) {}
 
   get id(): string { return this.state.id; }
@@ -37,7 +38,9 @@ export class TabSession {
   get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
   get activeTurn(): Promise<void> | null { return this.activeTurnValue; }
   set activeTurn(value: Promise<void> | null) {
+    const wasActive = this.activeTurnValue !== null;
     this.activeTurnValue = value;
+    if (wasActive !== (value !== null)) this.onWorkChanged?.();
     if (value === null) this.coordinator.notifyMayCool();
   }
 

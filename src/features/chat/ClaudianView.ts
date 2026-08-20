@@ -419,6 +419,12 @@ export class ClaudianView extends ItemView {
         onTabTitleChanged: () => {
           if (isTabWorkspaceInitialized()) this.updateTabBar();
         },
+        onTabWorkChanged: () => {
+          if (isTabWorkspaceInitialized()) {
+            this.updateTabBar();
+            this.notifyConversationNavigationChanged();
+          }
+        },
         onTabAttentionChanged: () => {
           if (isTabWorkspaceInitialized()) {
             this.updateTabBar();
@@ -2160,7 +2166,7 @@ export class ClaudianView extends ItemView {
       return {
         attention: activeTab.state.attention,
         openState: 'current',
-        isRunning: activeTab.state.isStreaming,
+        isRunning: this.tabManager?.isTabWorking(activeTab.id) ?? false,
         location: 'current-view',
         tabIndex: this.getHistoryTabIndex(activeTab),
       };
@@ -2171,7 +2177,7 @@ export class ClaudianView extends ItemView {
       return {
         attention: localTab.state.attention,
         openState: 'open',
-        isRunning: localTab.state.isStreaming,
+        isRunning: this.tabManager?.isTabWorking(localTab.id) ?? false,
         location: 'current-view',
         tabIndex: this.getHistoryTabIndex(localTab),
       };
@@ -2179,11 +2185,12 @@ export class ClaudianView extends ItemView {
 
     const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
     if (crossViewResult && crossViewResult.view !== this) {
-      const crossViewTab = crossViewResult.view.getTabManager()?.getTab(crossViewResult.tabId);
+      const crossViewManager = crossViewResult.view.getTabManager();
+      const crossViewTab = crossViewManager?.getTab(crossViewResult.tabId);
       return {
         attention: crossViewTab?.state.attention,
         openState: 'open',
-        isRunning: crossViewTab?.state.isStreaming ?? false,
+        isRunning: crossViewManager?.isTabWorking(crossViewResult.tabId) ?? false,
         location: 'other-view',
       };
     }
