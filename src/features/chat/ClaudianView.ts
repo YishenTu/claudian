@@ -24,7 +24,6 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
-import { getVaultFileByPath, revealWorkspaceLeaf } from '../../utils/obsidianCompat';
 import type {
   CollabSidebarSurfaceController,
   FeatureHost,

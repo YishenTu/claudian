@@ -652,29 +652,48 @@ class CollabFeatureServiceCore {
     options: CollabOperationOptions,
   ): Promise<CollabCoordinationSnapshot> {
     const publication = this.options.publication;
+    let coordination: CollabCoordinationSnapshot;
     try {
-      return await publication.readCoordinationSnapshot(projectId, options);
+      coordination = await publication.readCoordinationSnapshot(projectId, options);
     } catch (error) {
-      const connectivityFailure = error instanceof CollabError
-        && error.group === 'connectivity';
-      if (connectivityFailure && !options.signal?.aborted) {
-        try {
-          if (await publication.tryAutoReconnect(projectId, options)) {
-            return publication.readCoordinationSnapshot(projectId, options);
-          }
-        } catch (reconnectError) {
-          if (
-            reconnectError instanceof CollabError
-            && (
-              reconnectError.code === 'authority-integrity-error'
-              || reconnectError.group === 'authorization'
-            )
-          ) {
-            throw reconnectError;
-          }
-        }
+      const reconnectableEndpointFailure = error instanceof CollabError
+        && (error.group === 'connectivity' || error.code === 'operation-timeout');
+      if (
+        reconnectableEndpointFailure
+        && !options.signal?.aborted
+        && await this.tryAutoReconnect(projectId, options)
+      ) {
+        return publication.readCoordinationSnapshot(projectId, options);
       }
       throw error;
+    }
+    if (
+      coordination.stale
+      && !options.signal?.aborted
+      && await this.tryAutoReconnect(projectId, options)
+    ) {
+      return publication.readCoordinationSnapshot(projectId, options);
+    }
+    return coordination;
+  }
+
+  private async tryAutoReconnect(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+  ): Promise<boolean> {
+    try {
+      return await this.options.publication.tryAutoReconnect(projectId, options);
+    } catch (error) {
+      if (
+        error instanceof CollabError
+        && (
+          error.code === 'authority-integrity-error'
+          || error.group === 'authorization'
+        )
+      ) {
+        throw error;
+      }
+      return false;
     }
   }
 

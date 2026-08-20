@@ -1471,6 +1471,80 @@ describe('CollabFeatureService', () => {
     expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
   });
 
+  it('retries a timed-out old endpoint after automatic LAN discovery', async () => {
+    const publish = publication();
+    publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
+    publish.readCoordinationSnapshot
+      .mockRejectedValueOnce(new CollabError({ code: 'operation-timeout' }))
+      .mockResolvedValueOnce({
+        snapshot: authoritySnapshot(),
+        source: 'online',
+        stale: false,
+        syncState: {
+          eventSequence: 2,
+          generation: 1,
+          projectId: 'project-alpha',
+          status: 'synchronized',
+        },
+      });
+    const service = createService({
+      publication: publish,
+    });
+    await service.initialize();
+
+    await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        coordination: { source: 'online', stale: false },
+        project: { id: 'project-alpha' },
+      },
+    });
+    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
+    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an offline cached snapshot after automatic LAN discovery', async () => {
+    const publish = publication();
+    publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
+    publish.readCoordinationSnapshot
+      .mockResolvedValueOnce({
+        snapshot: authoritySnapshot(),
+        source: 'cache',
+        stale: true,
+        syncState: {
+          eventSequence: 1,
+          generation: 1,
+          projectId: 'project-alpha',
+          status: 'offline',
+        },
+      })
+      .mockResolvedValueOnce({
+        snapshot: authoritySnapshot(),
+        source: 'online',
+        stale: false,
+        syncState: {
+          eventSequence: 2,
+          generation: 1,
+          projectId: 'project-alpha',
+          status: 'synchronized',
+        },
+      });
+    const service = createService({
+      publication: publish,
+    });
+    await service.initialize();
+
+    await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        coordination: { source: 'online', stale: false },
+        project: { id: 'project-alpha' },
+      },
+    });
+    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
+    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps an old-endpoint TLS failure visible when discovery cannot verify a Host', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(false);
