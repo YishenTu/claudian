@@ -5,6 +5,13 @@ import path from 'node:path';
 import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
+import type {
+  StartCloudBootstrapServiceInput,
+  SubmitCloudBootstrapServiceParticipantInput,
+} from '@/app/collab/bootstrap/CloudBootstrapService';
+import type {
+  CloudBootstrapTransitionRecord,
+} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
   CollabLocalMembershipRecord,
@@ -20,6 +27,7 @@ import type { CollabProjectSetupService } from '@/app/collab/project/CollabProje
 import {
   ProjectOperationAdmission,
   type ProjectOperationPolicy,
+  type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
@@ -321,6 +329,7 @@ export interface CollabPublicationPort {
 }
 
 export interface CollabFeatureServiceOptions {
+  readonly cloudBootstrap: CollabCloudBootstrapPort;
   readonly hostTransfer: CollabHostTransferPort;
   readonly join: CollabJoinProjectPort;
   readonly lanHost: CollabLanHostPort;
@@ -330,6 +339,19 @@ export interface CollabFeatureServiceOptions {
   readonly publication: CollabPublicationPort;
   readonly retirement: CollabRetirementPort;
   readonly vaultRoot: string;
+}
+
+export interface CollabCloudBootstrapPort {
+  cancel(projectId: CollabProjectId): Promise<CloudBootstrapTransitionRecord>;
+  close(): Promise<void>;
+  prepareLocalRecovery(): Promise<void>;
+  recoverPending(): Promise<void>;
+  startFormerHost(
+    input: StartCloudBootstrapServiceInput,
+  ): Promise<CloudBootstrapTransitionRecord>;
+  submitParticipant(
+    input: SubmitCloudBootstrapServiceParticipantInput,
+  ): Promise<CloudBootstrapTransitionRecord>;
 }
 
 function operationError(reason: string): CollabError {
@@ -1053,9 +1075,10 @@ class CollabFeatureServiceCore {
     if (retryAfterLockRelease.length > 0) {
       await waitForHostLockRelease();
       for (const projectId of retryAfterLockRelease) {
-        await this.options.lanHost.startProject(projectId).catch(error => {
-          firstError ??= error;
-        });
+        await this.options.lanHost.startProject(projectId)
+          .catch(error => {
+            firstError ??= error;
+          });
       }
     }
     await this.refreshProjects();
@@ -1690,6 +1713,7 @@ class CollabFeatureServiceCore {
     }
     const close = (async () => {
       await this.operationAdmission.drain();
+      await this.options.cloudBootstrap.close();
       await lifecycleRecoveryClose;
       await Promise.resolve()
         .then(() => this.options.retirement.close())
@@ -1974,6 +1998,7 @@ class CollabFeatureServiceCore {
 
 export class CollabFeatureService implements CollabFeaturePort {
   readonly boundedQueries: CollabBoundedQueryPort;
+  private readonly cloudBootstrap: CollabCloudBootstrapPort;
   private readonly operationAdmission = new ProjectOperationAdmission();
   private readonly core: CollabFeatureServiceCore;
 
@@ -1982,6 +2007,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     projectSetup: CollabProjectSetupPort,
     options: CollabFeatureServiceOptions,
   ) {
+    this.cloudBootstrap = options.cloudBootstrap;
     this.core = new CollabFeatureServiceCore(
       foundation,
       projectSetup,
@@ -2246,6 +2272,46 @@ export class CollabFeatureService implements CollabFeaturePort {
   closeProjectAdmission(projectId: CollabProjectId): void {
     this.operationAdmission.closeProject(projectId);
     this.core.abortProjectBackgroundWork(projectId);
+  }
+
+  suspendProjectAdmission(projectId: CollabProjectId): ProjectOperationSuspension {
+    const suspension = this.operationAdmission.suspendProject(projectId);
+    this.core.abortProjectBackgroundWork(projectId);
+    return suspension;
+  }
+
+  resumeProjectAdmission(
+    suspension: ProjectOperationSuspension,
+  ): boolean {
+    return this.operationAdmission.resumeProject(suspension);
+  }
+
+  drainAdmittedOperations(): Promise<void> {
+    return this.operationAdmission.drain();
+  }
+
+  recoverPendingCloudBootstraps(): Promise<void> {
+    return this.cloudBootstrap.recoverPending();
+  }
+
+  prepareCloudBootstrapLocalRecovery(): Promise<void> {
+    return this.cloudBootstrap.prepareLocalRecovery();
+  }
+
+  startCloudBootstrapFormerHost(
+    input: StartCloudBootstrapServiceInput,
+  ): Promise<CloudBootstrapTransitionRecord> {
+    return this.cloudBootstrap.startFormerHost(input);
+  }
+
+  submitCloudBootstrapParticipant(
+    input: SubmitCloudBootstrapServiceParticipantInput,
+  ): Promise<CloudBootstrapTransitionRecord> {
+    return this.cloudBootstrap.submitParticipant(input);
+  }
+
+  cancelCloudBootstrap(projectId: CollabProjectId): Promise<CloudBootstrapTransitionRecord> {
+    return this.cloudBootstrap.cancel(projectId);
   }
 
   close(): Promise<void> {

@@ -1,3 +1,21 @@
+import { randomUUID } from 'node:crypto';
+
+import { CloudBootstrapCoordinator } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
+import { CloudBootstrapLocalFence } from '@/app/collab/bootstrap/CloudBootstrapLocalFence';
+import { CloudBootstrapReadinessCollector } from '@/app/collab/bootstrap/CloudBootstrapReadiness';
+import { CloudBootstrapService } from '@/app/collab/bootstrap/CloudBootstrapService';
+import {
+  developmentBootstrapManifestSha256,
+} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
+import {
+  DevelopmentBootstrapCloudClient,
+} from '@/app/collab/bootstrap/DevelopmentBootstrapCloudClient';
+import {
+  LocalCloudBootstrapReadinessInspector,
+} from '@/app/collab/bootstrap/LocalCloudBootstrapReadinessInspector';
+import {
+  LocalDevelopmentBootstrapSource,
+} from '@/app/collab/bootstrap/LocalDevelopmentBootstrapSource';
 import type { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import {
   CollabFeatureService,
@@ -43,6 +61,18 @@ export interface CollabFeatureSubcomposition {
 
 function cancelled(): CollabError {
   return new CollabError({ code: 'cancelled' });
+}
+
+function bootstrapCompositionError(reason: string): CollabError {
+  return new CollabError({
+    code: 'durable-progress-recovery-required',
+    recoveryActions: ['retry', 'open-diagnostics'],
+    safeContext: { reason },
+  });
+}
+
+function normalizedFingerprint(value: string): string {
+  return value.replaceAll(':', '').toLocaleLowerCase('en-US');
 }
 
 export function createCollabFeatureSubcomposition(
@@ -289,7 +319,105 @@ export function createCollabFeatureSubcomposition(
     retirement,
   });
 
-  const feature = new CollabFeatureService(foundation, projectSetup, {
+  const bootstrapWorkSessions: CloudBootstrapLocalFence = new CloudBootstrapLocalFence({
+    admission: {
+      closeProjectAdmission: projectId => feature.closeProjectAdmission(projectId),
+      drainAdmittedOperations: () => feature.drainAdmittedOperations(),
+      resumeProjectAdmission: suspension => feature.resumeProjectAdmission(suspension),
+      suspendProjectAdmission: projectId => feature.suspendProjectAdmission(projectId),
+    },
+    workSessions: {
+      closeProject: projectId => requirePublication().closeProject(projectId),
+      completeProjectSuspension: suspension => (
+        requirePublication().completeProjectSuspension(suspension)
+      ),
+      drainProject: projectId => requirePublication().drainProject(projectId),
+      resumeProject: suspension => requirePublication().resumeProject(suspension),
+      suspendProject: projectId => requirePublication().suspendProject(projectId),
+    },
+  });
+  const transitions = foundation.cloudBootstrapTransitions;
+  const source = new LocalDevelopmentBootstrapSource({ foundation, vaultRoot });
+  const readiness = new CloudBootstrapReadinessCollector(
+    new LocalCloudBootstrapReadinessInspector({
+      foundation,
+      isProjectQuiesced: projectId => bootstrapWorkSessions.isProjectQuiesced(projectId),
+      managerResponsibilityReceipts: managerReceipts,
+      vaultRoot,
+    }),
+  );
+  const cloudBootstrap = new CloudBootstrapService({
+    createCoordinator: ({ developmentActorId, serverUrl }) => (
+      new CloudBootstrapCoordinator({
+        cloud: new DevelopmentBootstrapCloudClient({
+          developmentActorId,
+          serverUrl,
+        }),
+        createFenceId: () => `bootstrap-fence-${randomUUID().replaceAll('-', '')}`,
+        formerHost: {
+          stopAndDrain: async projectId => {
+            const stopped = await foundation.lanHost.stopProject(projectId);
+            const membership = await foundation.local.projects.loadMembership(projectId);
+            if (
+              stopped.status !== 'stopped'
+              || foundation.lanHost.isProjectRunning(projectId)
+              || !membership
+              || membership.project.id !== projectId
+              || !membership.hostOwnership.ownsAuthority
+              || membership.hostOwnership.autoStart !== false
+            ) {
+              throw bootstrapCompositionError('cloud-bootstrap-host-stop-not-durable');
+            }
+            return {
+              autoStartDisabled: true,
+              resourcesDrained: true,
+              routeUnregistered: true,
+              stoppedAt: new Date().toISOString(),
+            };
+          },
+        },
+        localIdentity: {
+          load: async projectId => {
+            const membership = await foundation.local.projects.loadMembership(projectId);
+            if (
+              !membership
+              || membership.authority.kind !== 'lan'
+              || !membership.authority.endpoint
+              || !membership.authority.gitRemoteUrl
+              || !membership.authority.hostCaFingerprint
+            ) {
+              throw bootstrapCompositionError('cloud-bootstrap-local-identity-unavailable');
+            }
+            return {
+              authorityKind: 'lan',
+              caFingerprint: normalizedFingerprint(
+                membership.authority.hostCaFingerprint,
+              ),
+              endpoint: membership.authority.endpoint,
+              gitRemoteUrl: membership.authority.gitRemoteUrl,
+              memberId: membership.member.id,
+              ownsAuthority: membership.hostOwnership.ownsAuthority,
+              projectId: membership.project.id,
+            };
+          },
+        },
+        readiness,
+        source,
+        transitions,
+        workSessions: bootstrapWorkSessions,
+      })
+    ),
+    fenceUncertainProject: projectId => bootstrapWorkSessions.closeAndDrain(projectId),
+    recoverLocalArtifacts: () => source.recoverArtifacts(async manifest => {
+      const record = await transitions.load(manifest.comparison.projectId);
+      return record?.attemptId === manifest.attemptId
+        && record.manifestSha256 === developmentBootstrapManifestSha256(manifest);
+    }),
+    transitions,
+  });
+
+  const feature: CollabFeatureService = new CollabFeatureService(foundation, projectSetup, {
+    cloudBootstrap,
     hostTransfer: lifecycle.hostTransfer,
     join: foundation.join,
     lanHost: foundation.lanHost,

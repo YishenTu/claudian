@@ -112,6 +112,26 @@ async function syncDirectoryBestEffort(
   }
 }
 
+export async function syncCollabVaultDirectoryDurably(
+  vaultRoot: string,
+  relativePath: string,
+): Promise<void> {
+  const absolutePath = await resolveCollabVaultPath(
+    vaultRoot,
+    relativePath,
+    { mustExist: true },
+  );
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(absolutePath, fsConstants.O_RDONLY);
+    await handle.sync();
+  } catch {
+    throw filesystemError('operation-failed', 'directory-sync-required', relativePath);
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
 export async function resolveCollabVaultPath(
   vaultRoot: string,
   relativePath: string,

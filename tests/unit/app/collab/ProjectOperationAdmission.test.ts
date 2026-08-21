@@ -17,6 +17,40 @@ describe('ProjectOperationAdmission', () => {
     )).resolves.toBe('allowed');
   });
 
+  it('resumes active Project admission only through the owning suspension token', async () => {
+    const admission = new ProjectOperationAdmission();
+    const suspension = admission.suspendProject('project-a');
+
+    await expect(admission.runProject(
+      () => 'project-a',
+      'active',
+      async () => 'blocked',
+    )).rejects.toMatchObject({
+      code: 'cancelled',
+      safeContext: { reason: 'collab-feature-project-suspended' },
+    });
+    expect(admission.resumeProject({
+      projectId: 'project-a',
+      token: Symbol('project-a'),
+    })).toBe(false);
+    expect(admission.resumeProject(suspension)).toBe(true);
+    await expect(admission.runProject(
+      () => 'project-a',
+      'active',
+      async () => 'resumed',
+    )).resolves.toBe('resumed');
+    expect(admission.resumeProject(suspension)).toBe(false);
+  });
+
+  it('does not let a suspension token reopen a permanently closed Project', () => {
+    const admission = new ProjectOperationAdmission();
+    const suspension = admission.suspendProject('project-a');
+
+    admission.closeProject('project-a');
+
+    expect(admission.resumeProject(suspension)).toBe(false);
+  });
+
   it('rejects new work before resolving operation arguments once closing starts', async () => {
     const admission = new ProjectOperationAdmission();
     const resolveProjectId = jest.fn(() => {

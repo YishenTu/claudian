@@ -181,6 +181,10 @@ function repositoryError(
   });
 }
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+}
+
 function assertOid(oid: string): void {
   if (!isCollabGitOid(oid)) {
     throw repositoryError('repository-invalid', 'git-oid-invalid');
@@ -773,8 +777,9 @@ export class GitRepositoryService {
   async assertLocalRepositoryIdentity(
     repositoryPath: string,
     expected: GitLocalRepositoryIdentity,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.inspectRepository(repositoryPath, signal);
     if (repository.bare) {
       throw repositoryError('repository-invalid', 'collab-local-repository-is-bare');
     }
@@ -796,6 +801,7 @@ export class GitRepositoryService {
         args: ['config', '--local', '--get-all', key],
         cwd: repository.repositoryPath,
         maxStdoutBytes: 4_096,
+        signal,
       });
       const values = result.stdout.toString('utf8').split(/\r?\n/).filter(Boolean);
       if (result.exitCode !== 0 || values.length !== 1 || values[0] !== value) {
@@ -909,17 +915,22 @@ export class GitRepositoryService {
     return (await this.getWorkingTreeStateUnchecked(repositoryPath)).entries;
   }
 
-  async getWorkingTreeState(repositoryPath: string): Promise<GitWorkingTreeState> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.getWorkingTreeStateUnchecked(repository.repositoryPath);
+  async getWorkingTreeState(
+    repositoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<GitWorkingTreeState> {
+    const repository = await this.inspectRepository(repositoryPath, signal);
+    return this.getWorkingTreeStateUnchecked(repository.repositoryPath, signal);
   }
 
   private async getWorkingTreeStateUnchecked(
     repositoryPath: string,
+    signal?: AbortSignal,
   ): Promise<GitWorkingTreeState> {
     const result = await this.runner.run({
       args: ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'],
       cwd: repositoryPath,
+      signal,
     });
     const state = parseGitWorkingTreeState(result.stdout);
     for (const entry of state.entries) {
@@ -929,25 +940,35 @@ export class GitRepositoryService {
     return state;
   }
 
-  async resolveRef(repositoryPath: string, ref: string): Promise<string | null> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.resolveRefUnchecked(repository.repositoryPath, ref);
+  async resolveRef(
+    repositoryPath: string,
+    ref: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    const repository = await this.inspectRepository(repositoryPath, signal);
+    return this.resolveRefUnchecked(repository.repositoryPath, ref, signal);
   }
 
   async resolveRefs(
     repositoryPath: string,
     refs: readonly string[],
+    signal?: AbortSignal,
   ): Promise<ReadonlyMap<string, string | null>> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.resolveRefsUnchecked(repository.repositoryPath, refs);
+    const repository = await this.inspectRepository(repositoryPath, signal);
+    return this.resolveRefsUnchecked(repository.repositoryPath, refs, signal);
   }
 
-  private async resolveRefUnchecked(repositoryPath: string, ref: string): Promise<string | null> {
+  private async resolveRefUnchecked(
+    repositoryPath: string,
+    ref: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     assertRef(ref);
     const result = await this.runner.run({
       acceptedExitCodes: [0, 128],
       args: ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
       cwd: repositoryPath,
+      signal,
     });
     return result.exitCode === 0 ? parseSingleOid(result.stdout) : null;
   }
@@ -955,6 +976,7 @@ export class GitRepositoryService {
   private async resolveRefsUnchecked(
     repositoryPath: string,
     refs: readonly string[],
+    signal?: AbortSignal,
   ): Promise<ReadonlyMap<string, string | null>> {
     refs.forEach(assertRef);
     if (refs.length === 0) return new Map();
@@ -963,6 +985,7 @@ export class GitRepositoryService {
       args: ['cat-file', '--batch-check'],
       cwd: repositoryPath,
       maxStdoutBytes: refs.length * 192,
+      signal,
       stdin: refs.map(ref => `${ref}^{commit}\n`).join(''),
     });
     const metadata = parseGitBatchObjectMetadata(result.stdout, refs.length);
@@ -1542,12 +1565,18 @@ export class GitRepositoryService {
     }
   }
 
-  private async inspectRepository(repositoryPath: string): Promise<InspectedRepository> {
+  private async inspectRepository(
+    repositoryPath: string,
+    signal?: AbortSignal,
+  ): Promise<InspectedRepository> {
+    throwIfCancelled(signal);
     const rootStat = await lstat(repositoryPath).catch(() => null);
+    throwIfCancelled(signal);
     if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) {
       throw repositoryError('repository-invalid', 'git-repository-root-invalid');
     }
     const canonicalRepositoryPath = await realpath(repositoryPath).catch(() => null);
+    throwIfCancelled(signal);
     if (!canonicalRepositoryPath) {
       throw repositoryError('repository-invalid', 'git-repository-root-invalid');
     }
@@ -1561,10 +1590,12 @@ export class GitRepositoryService {
       ],
       cwd: canonicalRepositoryPath,
       maxStdoutBytes: 32 * 1024,
+      signal,
     });
     const fields = repositoryResult.stdout.toString('utf8').trim().split(/\r?\n/);
     const gitDirectory = await realpath(fields[0] ?? '')
       .catch(() => null);
+    throwIfCancelled(signal);
     if (!gitDirectory) throw repositoryError('repository-invalid', 'git-directory-invalid');
     const bareText = fields[1];
     if (bareText !== 'true' && bareText !== 'false') {
@@ -1584,6 +1615,7 @@ export class GitRepositoryService {
       }
       const topLevel = await realpath(fields[2] ?? '')
         .catch(() => null);
+      throwIfCancelled(signal);
       if (
         topLevel !== canonicalRepositoryPath
         || !isContainedPath(canonicalRepositoryPath, gitDirectory)

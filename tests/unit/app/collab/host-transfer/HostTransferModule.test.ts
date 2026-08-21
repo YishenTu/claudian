@@ -1,5 +1,10 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { HostTransferModule } from '@/app/collab/host-transfer/HostTransferModule';
+import { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
 
 const membership = {
   authority: {
@@ -120,5 +125,48 @@ describe('HostTransferModule', () => {
 
     expect(control.create).toHaveBeenCalledTimes(1);
     await module.clientService.close();
+  });
+
+  it('cannot bypass the durable Host start guard during outgoing recovery', async () => {
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-host-guard-'));
+    const openProject = jest.fn();
+    const lanHost = new LanHostCoordinator({
+      localProjects: {
+        ensurePrivateStateContainer: jest.fn(),
+        hostTransferRecovery: { load: jest.fn() },
+        loadMembership: jest.fn(),
+        saveMembership: jest.fn(),
+      } as never,
+      openProject,
+      runWithProjectStartGuard: async () => {
+        throw new Error('durable Cloud fence');
+      },
+      vaultRoot,
+    });
+    const module = new HostTransferModule({
+      activateTransferredAuthority: jest.fn(),
+      finalizeOldAuthority: jest.fn(),
+      lanHost,
+      projects: {
+        hostTransferRecovery: {
+          load: jest.fn(async (_projectId, direction) => (
+            direction === 'outgoing' ? { direction: 'outgoing', phase: 'offered' } : null
+          )),
+        },
+        loadIndex: jest.fn(async () => ({
+          projects: [{ id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' }],
+        })),
+      },
+      requireGitFoundation: jest.fn(),
+      snapshots: { readCoordinationSnapshot: jest.fn() },
+      workspace: {},
+      createControlClient: jest.fn(),
+    } as never);
+
+    await expect(module.clientService.resume()).rejects.toThrow('durable Cloud fence');
+    expect(openProject).not.toHaveBeenCalled();
+    await module.clientService.close();
+    await lanHost.close();
+    await rm(vaultRoot, { force: true, recursive: true });
   });
 });

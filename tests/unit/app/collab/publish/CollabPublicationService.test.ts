@@ -346,6 +346,16 @@ describe('CollabPublicationService reconnect', () => {
     await expect(draftStore.load('project-a')).resolves.toEqual(newerDraft);
   });
 
+  it('fails closed when a suspended work session was terminally drained', async () => {
+    const service = publicationServiceForClose();
+    const suspension = await service.suspendProject('project-a');
+    await service.drainProject('project-a');
+
+    await expect(service.resumeProject(suspension)).rejects.toMatchObject({
+      safeContext: { reason: 'collab-project-work-session-resume-failed' },
+    });
+  });
+
   it('shares an overlapping close and tears down local projection after sessions settle', async () => {
     const sessionClose = deferred<void>();
     const service = publicationServiceForClose();

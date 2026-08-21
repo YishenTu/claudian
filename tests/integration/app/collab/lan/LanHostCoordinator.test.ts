@@ -1850,6 +1850,31 @@ describe('LanHostCoordinator production transport', () => {
 });
 
 describe('LanHostCoordinator lazy construction', () => {
+  it('applies the durable Project start guard before every Host recovery path', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'claudian-lan-host-guard-'));
+    const openProject = jest.fn();
+    const runWithProjectStartGuard = jest.fn(async () => {
+      throw new Error('durable Cloud fence');
+    });
+    const coordinator = new LanHostCoordinator({
+      localProjects: {
+        ensurePrivateStateContainer: jest.fn(),
+        hostTransferRecovery: { load: jest.fn() },
+        loadMembership: jest.fn(),
+        saveMembership: jest.fn(),
+      } as never,
+      openProject,
+      runWithProjectStartGuard,
+      vaultRoot: root,
+    });
+
+    await expect(coordinator.startProject(PROJECT_ID)).rejects.toThrow('durable Cloud fence');
+    expect(runWithProjectStartGuard).toHaveBeenCalledWith(PROJECT_ID, expect.any(Function));
+    expect(openProject).not.toHaveBeenCalled();
+    await coordinator.close();
+    await rm(root, { force: true, recursive: true });
+  });
+
   it('does not open ordinary Host authority ahead of incoming transfer recovery', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-lan-host-incoming-'));
     const openProject = jest.fn();

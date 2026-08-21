@@ -12,6 +12,7 @@ import {
   inspectPluginArtifactReferences,
   mainBudgetBytes,
   preCollabReferenceMainBytes,
+  privateCloudBootstrapAllowanceBytes,
 } from './check-startup-performance.mjs';
 
 function listTypeScriptFiles(root) {
@@ -827,6 +828,8 @@ test('source-only typecheck resolves the canonical collab protocol source', () =
 });
 
 test('performance policy enforces the main bundle budget and reports the pre-Collab delta', () => {
+  assert.equal(privateCloudBootstrapAllowanceBytes, 100_000);
+  assert.equal(mainBudgetBytes, 5_100_000);
   assert.deepEqual(inspectArtifactSize(mainBudgetBytes), {
     budgetExceeded: false,
     referenceDeltaBytes: mainBudgetBytes - preCollabReferenceMainBytes,

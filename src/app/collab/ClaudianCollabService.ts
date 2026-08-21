@@ -22,6 +22,7 @@ import { RequestQueryGitPolicy } from '@/app/collab/authority/RequestQueryGitPol
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
+import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBootstrapTransitionStore';
 import {
   type CollabFilesystemDiagnosticSink,
 } from '@/app/collab/CollabFilesystemBoundary';
@@ -175,6 +176,7 @@ function environmentPath(environment: NodeJS.ProcessEnv): string | undefined {
 }
 
 export class ClaudianCollabService {
+  readonly cloudBootstrapTransitions: CloudBootstrapTransitionStore;
   readonly discovery: CollabLanDiscoveryService;
   readonly hostTransitionCandidates: HostTransitionCandidateResolver;
   readonly join: JoinProjectCoordinator;
@@ -259,11 +261,15 @@ export class ClaudianCollabService {
       hostTransitionCandidates: this.hostTransitionCandidates,
       request: (trust, input) => this.sendRetirementAcknowledgement(trust, input),
     });
+    this.cloudBootstrapTransitions = new CloudBootstrapTransitionStore(options.vaultRoot);
     this.lanHost = new LanHostCoordinator({
       ...options.lanHost,
       discovery: this.discovery,
       localProjects: projects,
       openProject: projectId => this.openLanHostProject(projectId),
+      runWithProjectStartGuard: (projectId, operation) => (
+        this.cloudBootstrapTransitions.runWithLanHostStartGuard(projectId, operation)
+      ),
       vaultRoot: options.vaultRoot,
     });
   }

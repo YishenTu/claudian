@@ -1,4 +1,9 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import {
+  GitRepositoryService,
   parseGitBatchBlob,
   parseGitBatchBlobSequence,
   parseGitBatchObjectMetadata,
@@ -7,6 +12,36 @@ import {
   parseGitRecursiveTree,
   parseGitWorkingTreeState,
 } from '@/app/collab/git/GitRepositoryService';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
+
+describe('GitRepositoryService cancellation', () => {
+  it('passes inspection cancellation into the real Git command boundary', async () => {
+    const repositoryPath = await mkdtemp(path.join(tmpdir(), 'claudian-git-cancel-'));
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    const runner = {
+      run: jest.fn(async ({ signal }: { readonly signal?: AbortSignal }) => {
+        markStarted?.();
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(new CollabError({ code: 'cancelled' }));
+          }, { once: true });
+        });
+      }),
+    };
+    const repositories = new GitRepositoryService(runner as never);
+    const controller = new AbortController();
+    const inspection = repositories.getWorkingTreeState(repositoryPath, controller.signal);
+    await started;
+    controller.abort();
+
+    await expect(inspection).rejects.toMatchObject({ code: 'cancelled' });
+    expect(runner.run).toHaveBeenCalledWith(expect.objectContaining({
+      signal: controller.signal,
+    }));
+    await rm(repositoryPath, { force: true, recursive: true });
+  });
+});
 
 describe('GitRepositoryService parsers', () => {
   it('parses ordinary, rename, unmerged, and untracked porcelain v2 records', () => {

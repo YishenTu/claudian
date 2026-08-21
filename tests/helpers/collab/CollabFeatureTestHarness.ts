@@ -1,4 +1,5 @@
 import type {
+  CollabCloudBootstrapPort,
   CollabFeatureServiceOptions,
   CollabHostTransferPort,
   CollabJoinProjectPort,
@@ -87,6 +88,7 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 ] as const satisfies readonly CollabResult<unknown>['status'][];
 
 type FeatureOptionsOverrides = {
+  readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly join?: Partial<CollabJoinProjectPort>;
   readonly lanHost?: Partial<CollabLanHostPort>;
@@ -97,6 +99,17 @@ type FeatureOptionsOverrides = {
   readonly retirement?: Partial<CollabRetirementPort>;
   readonly vaultRoot: string;
 };
+
+function defaultCloudBootstrap(): CollabCloudBootstrapPort {
+  return {
+    cancel: () => unexpected('cancelCloudBootstrap'),
+    close: () => Promise.resolve(),
+    prepareLocalRecovery: () => Promise.resolve(),
+    recoverPending: () => Promise.resolve(),
+    startFormerHost: () => unexpected('startCloudBootstrapFormerHost'),
+    submitParticipant: () => unexpected('submitCloudBootstrapParticipant'),
+  };
+}
 
 type PublicationOptionsOverrides = {
   readonly discovery?: Partial<CollabPublicationServiceOptions['discovery']>;
@@ -290,6 +303,7 @@ export function completeCollabFeatureOptions(
   overrides: FeatureOptionsOverrides,
 ): CollabFeatureServiceOptions {
   return {
+    cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
     hostTransfer: { ...defaultHostTransfer(), ...overrides.hostTransfer },
     join: { ...defaultJoin(), ...overrides.join },
     lanHost: { ...defaultLanHost(), ...overrides.lanHost },

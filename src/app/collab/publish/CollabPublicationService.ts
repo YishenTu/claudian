@@ -613,7 +613,13 @@ export class CollabPublicationService {
   }
 
   async resumeProject(suspension: CollabProjectWorkSessionSuspension): Promise<void> {
-    await this.sessions.resumeProject(suspension);
+    if (!await this.sessions.resumeProject(suspension)) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['retry', 'open-diagnostics'],
+        safeContext: { reason: 'collab-project-work-session-resume-failed' },
+      });
+    }
   }
 
   beginProjectInspection(projectId: CollabProjectId): CollabProjectInspectionLease {

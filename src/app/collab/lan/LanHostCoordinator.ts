@@ -184,6 +184,10 @@ export interface LanHostCoordinatorOptions {
   readonly openProject: (projectId: CollabProjectId) => Promise<LanHostProjectRuntime>;
   readonly portCandidates?: readonly number[];
   readonly resourceCloseTimeoutMs?: number;
+  readonly runWithProjectStartGuard?: <T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
   readonly tlsIdentity?: LanTlsIdentity;
   readonly vaultRoot: string;
 }
@@ -392,10 +396,14 @@ export class LanHostCoordinator {
 
   startProject(projectId: CollabProjectId): Promise<CollabHostSession & { endpoint: string }> {
     this.projectTransitions.set(projectId, 'starting');
+    const operation = () => this.operationQueue.run(() => this.startProjectUnlocked(projectId));
+    const guarded = this.options.runWithProjectStartGuard
+      ? this.options.runWithProjectStartGuard(projectId, operation)
+      : operation();
     return this.withTransition(
       projectId,
       'starting',
-      this.operationQueue.run(() => this.startProjectUnlocked(projectId)),
+      guarded,
     );
   }
 
