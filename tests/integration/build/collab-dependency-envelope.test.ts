@@ -215,7 +215,7 @@ describe('Collab dependency envelope', () => {
 
     expect(markdownParserContributors).toHaveLength(1);
     expect(markdownParserContributors[0]).toMatch(
-      /\/node_modules\/@lezer\/markdown\/dist\/index\.js$/,
+      /(?:^|\/)node_modules\/@lezer\/markdown\/dist\/index\.js$/,
     );
   });
 
