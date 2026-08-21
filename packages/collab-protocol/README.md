@@ -19,14 +19,11 @@ or compatibility rules.
   `collabMemberRef`)
 - Shared limits that client and server must agree on (`COLLAB_LIMITS`)
 - Protocol-version negotiation (`COLLAB_PROTOCOL_VERSION`, envelope decoding)
+- Cloud binding v1 route construction/matching, capability negotiation, strict success/error envelopes, private-development bootstrap, Project snapshot, and redacted event contracts
 - Markdown-derived Ticket-reference and Member-mention semantics shared by
   client rendering and authority derivation
 
-The package is transport-neutral. It contains no HTTP routes, methods, or
-dispatch; no LAN Host admission, invitation trust, mDNS/TLS/discovery, or
-Host-transfer transport; no Obsidian, Vault, UI, Agent, provider, SQL, or
-filesystem behavior; and no `IngressPrincipal` or other deployment-ingress
-contracts.
+The package owns the declarative Cloud HTTP/WebSocket/Git binding contract, but no transport runtime, request dispatch, trust policy, authentication, authorization, persistence, Git execution, or client-local recovery. It contains no LAN Host admission, invitation trust, mDNS/TLS/discovery, or Host-transfer transport; no Obsidian, Vault, UI, Agent, provider, SQL, or filesystem behavior; and no `IngressPrincipal` or other deployment-ingress contracts.
 
 The current registry contains only the decision-complete, transport-neutral
 request, Ticket, metadata, and Accept operations. Detail DTOs embed the first
@@ -40,11 +37,7 @@ fixed part of the detail so the whole detail stays within
 has one compatible final-serialization limit. Request comments and Ticket
 accepted relations also have shared authority-enforced total limits; summary
 counts let complete consumers reject partial or cross-snapshot assembly.
-Existing LAN v9 Join,
-invitation, endpoint, membership
-lifecycle, Host-transfer, retirement, Project snapshot, and HTTP bindings
-remain application-owned. The exact Cloud snapshot and route catalog require
-a separate product-level contract decision.
+Cloud binding v1 adds the authority-neutral Project snapshot, six redacted durable event kinds plus `snapshot.required`, eight capability tokens, the exact ordinary Project/Git route catalog, and six private-development bootstrap bindings. Existing LAN v9 Join, invitation, endpoint, membership lifecycle, Host-transfer, retirement, snapshot, event, and HTTP bindings remain independently application-owned.
 
 ## Usage
 
@@ -67,16 +60,17 @@ part of the public surface.
 
 ## Versioning
 
-Package SemVer and the wire-protocol version are independent concepts.
+Package SemVer, canonical wire version, and Cloud binding version are independent concepts.
 
 - **Package version** (this `package.json`): pre-1.0. Minor releases may add or
   break TypeScript API; patch releases are behavior-preserving fixes. The
   package version never signals wire compatibility by itself.
-- **Wire version** (`COLLAB_PROTOCOL_VERSION`): currently `3`. The supported
-  range is exactly `[3, 3]`. This is independent from the existing application
+- **Wire version** (`COLLAB_PROTOCOL_VERSION`): currently `4`. The supported
+  range is exactly `[4, 4]`. This is independent from Cloud binding version `1` and the existing application
   LAN control version `9`. Any change to an envelope, DTO, or operation
   payload shape, or to the operation inventory, is wire-breaking and requires
   a new wire-protocol version.
+- **Cloud binding version** (`COLLAB_CLOUD_BINDING_VERSION`): currently `1`. It versions Cloud routes and capabilities independently from package and wire versions.
 
 ### Compatibility behavior
 
@@ -87,6 +81,7 @@ Package SemVer and the wire-protocol version are independent concepts.
 - An unsupported `protocolVersion` decodes to `unsupported-version` with the
   received and supported versions in safe context.
 - Unknown operation kinds have no codec and fail at registry lookup.
+- Unknown Cloud capability tokens are accepted and ignored by older consumers; unknown document fields, route operations, discriminants, schema versions, binding versions, and wire versions fail closed.
 - `CollabError.safeContext` is sanitized: credential-like keys are redacted
   and filesystem paths are replaced with `[PATH]`.
 

@@ -58,7 +58,7 @@ Scoped guides define the source of truth and allowed mutators for state in their
 | Area | Responsibility |
 | --- | --- |
 | `src/main.ts` | Plugin lifecycle and concrete application composition |
-| `packages/collab-protocol/` | Sole owner of the decision-complete shared Collab wire contract: opaque IDs, transport-neutral DTOs, executable codecs, the operation registry, shared safe errors and limits, Git ref semantics, and version/compatibility policy consumed by Claudian and Cloud Server; undecided Cloud snapshots and events remain excluded |
+| `packages/collab-protocol/` | Sole owner of the decision-complete shared Collab wire contract: opaque IDs, transport-neutral DTOs, executable codecs, canonical operation semantics, Cloud binding routes/capabilities/bootstrap/snapshot/events, shared safe errors and limits, Git ref semantics, and independent package/wire/binding compatibility policy consumed by Claudian and Cloud Server |
 | `src/app/` | Application conversation, settings, provider-host, and storage services |
 | `src/core/` | Provider-neutral runtime, registry, storage, tool, and type contracts |
 | `src/providers/acp/` | Shared ACP transport, interaction, and session primitives without provider policy |

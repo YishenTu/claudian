@@ -122,7 +122,8 @@ const assert = require('node:assert/strict');
 const protocol = require('@claudian/collab-protocol');
 const packageVersion = ${JSON.stringify(installedManifest.version)};
 
-assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 3);
+assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 4);
+assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 1);
 assert.notEqual(packageVersion, String(protocol.COLLAB_PROTOCOL_VERSION));
 assert.match(packageVersion, /^0\\./);
 
@@ -187,8 +188,8 @@ console.log(`cjs ${cjsOutput}`);
 const esmOutput = run(process.execPath, [
   '--input-type=module',
   '-e',
-  "import { COLLAB_PROTOCOL_VERSION, collabMemberRef } from '@claudian/collab-protocol';"
-    + " if (COLLAB_PROTOCOL_VERSION !== 3 || collabMemberRef('member_1') !== 'refs/heads/members/member_1') process.exit(1);"
+  "import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, collabMemberRef } from '@claudian/collab-protocol';"
+    + " if (COLLAB_PROTOCOL_VERSION !== 4 || COLLAB_CLOUD_BINDING_VERSION !== 1 || collabMemberRef('member_1') !== 'refs/heads/members/member_1') process.exit(1);"
     + " console.log('esm import OK');",
 ], { cwd: consumerRoot });
 console.log(esmOutput);

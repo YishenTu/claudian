@@ -145,11 +145,15 @@ function publicDeclarations() {
 
 function decoderBehaviorDigests() {
   return [
+    'CollabCloudBinding.ts',
+    'CollabCloudProjectEvent.ts',
+    'CollabCloudProjectSnapshot.ts',
     'CollabControlOperationCodecs.ts',
     'CollabProtocol.ts',
     'CollabRequestTicketRequestCodecs.ts',
     'CollabRequestTicketResponseCodecs.ts',
     'CollabValidation.ts',
+    'DevelopmentBootstrap.ts',
   ].map(name => {
     const contents = readFileSync(path.join(packageRoot, 'src', name), 'utf8');
     return {

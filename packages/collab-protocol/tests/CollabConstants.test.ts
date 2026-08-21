@@ -7,7 +7,7 @@ import {
 
 describe('CollabConstants', () => {
   it('freezes the wire protocol version', () => {
-    expect(COLLAB_PROTOCOL_VERSION).toBe(3);
+    expect(COLLAB_PROTOCOL_VERSION).toBe(4);
   });
 
   it('defines the protected and personal ref semantics', () => {
@@ -20,7 +20,9 @@ describe('CollabConstants', () => {
       maxBlobBytes: 50 * 1024 * 1024,
       maxChangedPaths: 2_000,
       maxCommentBytes: 16 * 1024,
+      maxMemberDisplayNameUtf16: 200,
       maxRequestDescriptionBytes: 16 * 1024,
+      maxProjectNameUtf16: 200,
       maxTicketTitleUtf16: 200,
       maxTicketBodyBytes: 32 * 1024,
       maxTicketCommentBytes: 16 * 1024,
