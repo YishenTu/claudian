@@ -12,6 +12,7 @@ import {
   getVaultPath,
   isPathWithinDirectory,
   isPathWithinVault,
+  normalizeConfiguredCliPath,
   normalizePathForComparison,
   normalizePathForFilesystem,
   normalizePathForVault,
@@ -673,5 +674,47 @@ describe('expandHomePath - Windows environment variable formats', () => {
       if (original === undefined) delete process.env.MY_CI_VAR;
       else process.env.MY_CI_VAR = original;
     }
+  });
+});
+
+describe('normalizeConfiguredCliPath', () => {
+  it('strips surrounding double quotes from a path containing a space', () => {
+    expect(normalizeConfiguredCliPath('"/opt/my cli/claude"')).toBe('/opt/my cli/claude');
+  });
+
+  it('strips surrounding single quotes', () => {
+    expect(normalizeConfiguredCliPath("'/opt/claude'")).toBe('/opt/claude');
+  });
+
+  it('leaves an unquoted path unchanged', () => {
+    expect(normalizeConfiguredCliPath('/opt/my cli/claude')).toBe('/opt/my cli/claude');
+  });
+
+  it('leaves a path with only a leading quote unchanged', () => {
+    expect(normalizeConfiguredCliPath('"/opt/claude')).toBe('"/opt/claude');
+  });
+
+  it('trims surrounding whitespace before unquoting', () => {
+    expect(normalizeConfiguredCliPath('  "/opt/claude"  ')).toBe('/opt/claude');
+  });
+
+  it('expands environment variables after unquoting', () => {
+    const original = process.env.TEST_QUOTED_CLI_DIR;
+    process.env.TEST_QUOTED_CLI_DIR = '/opt/tools';
+    try {
+      expect(normalizeConfiguredCliPath('"$TEST_QUOTED_CLI_DIR/my cli"')).toBe('/opt/tools/my cli');
+    } finally {
+      if (original === undefined) delete process.env.TEST_QUOTED_CLI_DIR;
+      else process.env.TEST_QUOTED_CLI_DIR = original;
+    }
+  });
+
+  it('expands a home-relative path after unquoting', () => {
+    expect(normalizeConfiguredCliPath('"~/bin/my cli"')).toBe(path.join(os.homedir(), 'bin/my cli'));
+  });
+
+  it('returns an empty string for blank or missing input', () => {
+    expect(normalizeConfiguredCliPath('   ')).toBe('');
+    expect(normalizeConfiguredCliPath(undefined)).toBe('');
   });
 });

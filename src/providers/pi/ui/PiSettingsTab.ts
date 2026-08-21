@@ -21,7 +21,7 @@ import {
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath } from '../../../utils/path';
 import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
 import { sameDiscoveredModels, sameStringList } from '../internal/compareCollections';
 import { decodePiModelId, type PiDiscoveredModel } from '../models';
@@ -216,7 +216,7 @@ function validateCliPath(value: string): string | null {
     return null;
   }
 
-  const expandedPath = expandHomePath(trimmed);
+  const expandedPath = normalizeConfiguredCliPath(trimmed);
   if (!fs.existsSync(expandedPath)) {
     return 'Path does not exist';
   }

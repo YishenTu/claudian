@@ -696,6 +696,27 @@ describe('CodexSettingsTab', () => {
     expect(mockSaveSettings).toHaveBeenCalledTimes(0);
   });
 
+  it('accepts a CLI path pasted with surrounding quotes', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/my tools/codex');
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => mutation());
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: any) => void | Promise<void>,
+    ) => {
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    await findSetting('Codex CLI path').textComponents[0].onChangeCallback?.('"/my tools/codex"');
+
+    expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('"/my tools/codex"');
+  });
+
   it('accepts a Linux-side CLI command when installation method is WSL', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();

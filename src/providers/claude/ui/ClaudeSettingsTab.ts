@@ -10,7 +10,7 @@ import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeM
 import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import {
   getClaudeModelOptions,
@@ -100,7 +100,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       const trimmed = value.trim();
       if (!trimmed) return null;
 
-      const expandedPath = expandHomePath(trimmed);
+      const expandedPath = normalizeConfiguredCliPath(trimmed);
 
       if (!fs.existsSync(expandedPath)) {
         return t('settings.cliPath.validation.notExist');

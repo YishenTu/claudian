@@ -22,6 +22,15 @@ describe('cliBinaryLocator', () => {
     expect(resolveConfiguredCliPath(cliPath)).toBe(cliPath);
   });
 
+  it('resolves a configured CLI path that was pasted with surrounding quotes', () => {
+    const binDir = path.join(tempDir, 'my tools');
+    const cliPath = path.join(binDir, 'pi');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(cliPath, '');
+
+    expect(resolveConfiguredCliPath(`"${cliPath}"`)).toBe(cliPath);
+  });
+
   it('finds Windows npm .cmd shims on a PATH entry', () => {
     const binDir = path.join(tempDir, 'bin');
     const shimPath = path.join(binDir, 'pi.cmd');

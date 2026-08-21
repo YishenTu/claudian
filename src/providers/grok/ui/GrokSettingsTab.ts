@@ -25,7 +25,7 @@ import {
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath } from '../../../utils/path';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
 import type { GrokDiscoveredModel } from '../models';
 import {
@@ -269,7 +269,7 @@ function validateCliPath(value: string): string | null {
   if (!trimmed) {
     return null;
   }
-  const expandedPath = expandHomePath(trimmed);
+  const expandedPath = normalizeConfiguredCliPath(trimmed);
   if (!path.posix.isAbsolute(expandedPath) && !path.win32.isAbsolute(expandedPath)) {
     return 'Path must be absolute';
   }

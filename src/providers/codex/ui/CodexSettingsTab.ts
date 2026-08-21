@@ -13,7 +13,7 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { getCodexModelOptions } from '../modelOptions';
 import { getDefaultCodexModel } from '../models';
@@ -145,7 +145,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         return null;
       }
 
-      const expandedPath = expandHomePath(trimmed);
+      const expandedPath = normalizeConfiguredCliPath(trimmed);
 
       if (!fs.existsSync(expandedPath)) {
         return t('settings.cliPath.validation.notExist');
