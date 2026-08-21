@@ -71,6 +71,8 @@
 
 .claudian-linked-content-selector {
   appearance: none;
+  display: block;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
   padding: 0;
@@ -83,6 +85,8 @@
   font-size: inherit;
   line-height: inherit;
   overflow: hidden;
+  direction: ltr;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;

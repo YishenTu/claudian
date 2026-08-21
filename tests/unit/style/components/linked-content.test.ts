@@ -32,6 +32,15 @@ describe('Linked content styles', () => {
     expect(messagesCss).not.toContain('.claudian-linked-content-picker-retry');
   });
 
+  it('truncates a long welcome selector only at its right edge', () => {
+    const selectorRule = messagesCss.match(/\.claudian-linked-content-selector\s*{[^}]*}/)?.[0];
+    expect(selectorRule).toMatch(/display:\s*block;/);
+    expect(selectorRule).toMatch(/flex:\s*0\s+1\s+auto;/);
+    expect(selectorRule).toMatch(/direction:\s*ltr;/);
+    expect(selectorRule).toMatch(/text-align:\s*left;/);
+    expect(selectorRule).toMatch(/text-overflow:\s*ellipsis;/);
+  });
+
   it('inherits menu and selected-item visuals from the shared composer dropdown', () => {
     expect(composerDropdownCss).toMatch(/\.claudian-composer-dropdown\s*{[^}]*background:\s*var\(--background-secondary\);[^}]*border:/);
     expect(composerDropdownCss).toMatch(/\.claudian-composer-dropdown-item:hover,[\s\S]*?\.claudian-composer-dropdown-item\.is-selected\s*{[^}]*background:\s*var\(--background-modifier-hover\);/);
