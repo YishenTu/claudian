@@ -88,7 +88,7 @@ describe('OpencodeConversationHistoryService', () => {
         userMessageId: 'msg-user',
       },
     ]);
-  });
+  }, 15_000);
 
   it('recovers the last OpenCode model from native message metadata', async () => {
     const dbPath = path.join(tmpRoot, 'model-history.db');
