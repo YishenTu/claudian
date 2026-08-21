@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "채팅에서 Mermaid 다이어그램 렌더링",
-      "desc": "응답의 mermaid 코드 블록을 다이어그램으로 렌더링합니다. 각 블록의 스트리밍이 끝난 뒤에 렌더링됩니다. 끄면 모든 코드 블록이 원본 소스로 표시됩니다."
+      "desc": "기본값은 꺼짐입니다. 각 블록의 스트리밍이 끝나면 응답의 mermaid 코드 블록을 다이어그램으로 렌더링합니다. Obsidian의 mermaid 렌더러에는 mermaid 소스만 전달되지만, mermaid 블록을 처리하는 설치된 플러그인이 모델 출력에 대해 실행될 수 있습니다. 다른 코드 블록은 실행되지 않는 원본 소스로 남습니다."
     },
     "expandFileEditsByDefault": {
       "name": "파일 편집을 기본적으로 펼치기",

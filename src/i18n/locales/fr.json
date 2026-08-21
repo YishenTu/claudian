@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "Afficher les diagrammes Mermaid dans le chat",
-      "desc": "Affiche les blocs de code mermaid des réponses sous forme de diagrammes. Le rendu a lieu une fois chaque bloc entièrement reçu. Désactivez pour conserver tous les blocs de code en texte source."
+      "desc": "Désactivé par défaut. Affiche les blocs de code mermaid des réponses sous forme de diagrammes une fois chaque bloc entièrement reçu. Seul le code mermaid est transmis au moteur de rendu mermaid d'Obsidian : tout plugin installé qui traite les blocs mermaid peut donc s'exécuter sur la sortie du modèle. Tous les autres blocs de code restent du texte source inerte."
     },
     "expandFileEditsByDefault": {
       "name": "Développer les modifications de fichiers par défaut",

@@ -415,6 +415,39 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should defer diagram rendering for nested and attributed diagram fences', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = true;
+      const textEl = createMockEl();
+      deps.state.currentTextEl = textEl;
+
+      await controller.appendText('> ```mermaid title="sample"\n> flowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        textEl,
+        '> ```mermaid title="sample"\n> flowchart TB\n',
+        { deferDiagrams: true }
+      );
+    });
+
+    it('should not defer rendering for a mermaid fence nested inside another code block', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = true;
+      const textEl = createMockEl();
+      deps.state.currentTextEl = textEl;
+
+      await controller.appendText('````markdown\n```mermaid\nflowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        textEl,
+        '````markdown\n```mermaid\nflowchart TB\n'
+      );
+    });
+
     it('should not defer diagram rendering when the setting is disabled', async () => {
       (deps.plugin.settings as any).renderDiagramsInChat = false;
       deps.state.currentTextEl = createMockEl();

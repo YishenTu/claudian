@@ -28,17 +28,26 @@ body.theme-light .claudian-message-content pre {
 }
 
 /* Rendered mermaid diagrams are graphics, not code surfaces */
-.claudian-message-content .block-language-mermaid,
-.claudian-code-wrapper pre.mermaid,
-.claudian-message-content pre.mermaid {
+.claudian-diagram-block .block-language-mermaid,
+.claudian-diagram-block pre.mermaid {
   background: transparent;
   padding: 0;
   text-align: center;
 }
 
-.claudian-message-content .mermaid svg {
+.claudian-diagram-block .mermaid svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Claudian keeps the inert source in place and hides it once the diagram renders */
+.claudian-code-wrapper pre.claudian-diagram-source-hidden {
+  display: none;
+}
+
+.claudian-code-wrapper.claudian-diagram-wrapper .claudian-code-lang-label,
+.claudian-code-wrapper.claudian-diagram-wrapper .copy-code-button {
+  display: none;
 }
 
 /* Unwrapped pre still needs margin */

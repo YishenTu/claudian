@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "Mermaid-Diagramme im Chat rendern",
-      "desc": "Mermaid-Codeblöcke aus Antworten als Diagramme rendern. Diagramme werden gerendert, sobald der jeweilige Block fertig gestreamt ist. Deaktivieren, um alle Codeblöcke als reinen Quelltext zu zeigen."
+      "desc": "Standardmäßig aus. Rendert Mermaid-Codeblöcke aus Antworten als Diagramme, sobald der jeweilige Block fertig gestreamt ist. Nur der Mermaid-Quelltext wird an Obsidians Mermaid-Renderer übergeben, daher kann jedes installierte Plugin, das Mermaid-Blöcke verarbeitet, auf Modellausgaben laufen. Alle anderen Codeblöcke bleiben inaktiver Quelltext."
     },
     "expandFileEditsByDefault": {
       "name": "Dateibearbeitungen standardmäßig ausklappen",

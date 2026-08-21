@@ -4,17 +4,41 @@ import { transformMarkdownSegments } from '../../../utils/markdownSegments';
 
 const PLACEHOLDER_LANGUAGE_PREFIX = 'claudian-display-only-fence-';
 
-/** Fence languages Claudian renders instead of neutralizing, when the user opts in. */
+/** Fence languages Claudian re-renders itself, when the user opts in. */
 export const DIAGRAM_FENCE_LANGUAGES: readonly string[] = ['mermaid'];
 
-const DIAGRAM_FENCE_OPENER = new RegExp(
-  String.raw`^[\t ]*(?:\x60{3,}|~{3,})[\t ]*(?:${DIAGRAM_FENCE_LANGUAGES.join('|')})[\t ]*$`,
-  'im',
-);
+/** Marks a neutralized code block whose source Claudian renders as a diagram. */
+export const DIAGRAM_SOURCE_CLASS = 'claudian-diagram-source';
 
-/** Reports whether streaming content already contains a diagram fence opener. */
-export function hasDiagramFence(content: string): boolean {
-  return DIAGRAM_FENCE_OPENER.test(content);
+const FENCE_INFO_PATTERN = /^([\t ]*)(\S+)(.*)$/;
+
+function toLanguageSet(languages: readonly string[]): Set<string> {
+  return new Set(languages.map((language) => language.toLowerCase()));
+}
+
+/**
+ * Reports whether streaming content already contains a diagram fence opener.
+ * Detection runs through the shared segmenter so blockquoted, list-nested, and
+ * attributed fences are recognized exactly as the render pass recognizes them.
+ */
+export function hasDiagramFence(
+  content: string,
+  languages: readonly string[] = DIAGRAM_FENCE_LANGUAGES,
+): boolean {
+  const diagramLanguages = toLanguageSet(languages);
+  let found = false;
+
+  transformMarkdownSegments(content, {
+    fence: (opener, fence) => {
+      const language = fence.info.match(FENCE_INFO_PATTERN)?.[2];
+      if (language && diagramLanguages.has(language.toLowerCase())) {
+        found = true;
+      }
+      return opener;
+    },
+  });
+
+  return found;
 }
 
 interface PrismHighlighter {
@@ -32,6 +56,8 @@ function isPrismHighlighter(value: unknown): value is PrismHighlighter {
 export interface DisplayOnlyCodeFence {
   placeholderLanguage: string;
   originalLanguage: string;
+  /** Claudian renders this fence's source itself instead of highlighting it. */
+  diagram?: boolean;
 }
 
 export interface PreparedDisplayOnlyCodeFences {
@@ -41,10 +67,11 @@ export interface PreparedDisplayOnlyCodeFences {
 
 export interface PrepareDisplayOnlyCodeFencesOptions {
   /**
-   * Languages whose code-block processor is allowed to run on chat content.
-   * Everything else stays inert.
+   * Languages Claudian renders through its own diagram path after the neutralized
+   * pass. Their fences are still neutralized here, so no chat content reaches a
+   * registered code-block processor during the main render.
    */
-  renderedLanguages?: readonly string[];
+  diagramLanguages?: readonly string[];
 }
 
 /** Replaces fence languages so Obsidian cannot dispatch registered code-block processors. */
@@ -52,24 +79,22 @@ export function prepareDisplayOnlyCodeFences(
   markdown: string,
   options?: PrepareDisplayOnlyCodeFencesOptions,
 ): PreparedDisplayOnlyCodeFences {
-  const renderedLanguages = new Set(
-    (options?.renderedLanguages ?? []).map((language) => language.toLowerCase()),
-  );
+  const diagramLanguages = toLanguageSet(options?.diagramLanguages ?? []);
   const fences: DisplayOnlyCodeFence[] = [];
   const preparedMarkdown = transformMarkdownSegments(markdown, {
     fence: (opener, fence) => {
-      const languageMatch = fence.info.match(/^([\t ]*)(\S+)(.*)$/);
+      const languageMatch = fence.info.match(FENCE_INFO_PATTERN);
       if (!languageMatch) {
         return opener;
       }
 
       const originalLanguage = languageMatch[2];
-      if (renderedLanguages.has(originalLanguage.toLowerCase())) {
-        return opener;
-      }
-
       const placeholderLanguage = `${PLACEHOLDER_LANGUAGE_PREFIX}${fences.length}`;
-      fences.push({ placeholderLanguage, originalLanguage });
+      const entry: DisplayOnlyCodeFence = { placeholderLanguage, originalLanguage };
+      if (diagramLanguages.has(originalLanguage.toLowerCase())) {
+        entry.diagram = true;
+      }
+      fences.push(entry);
 
       const transformedInfo = `${languageMatch[1]}${placeholderLanguage}${languageMatch[3]}`;
       return opener.slice(0, fence.infoStart)
@@ -97,6 +122,11 @@ export async function restoreDisplayOnlyCodeFences(
 
     code.classList.remove(placeholderClass);
     code.classList.add(`language-${fence.originalLanguage}`);
+    if (fence.diagram) {
+      // Diagram sources are handed to Claudian's own render path, never to Prism.
+      code.classList.add(DIAGRAM_SOURCE_CLASS);
+      continue;
+    }
     codeBlocks.push(code);
   }
 

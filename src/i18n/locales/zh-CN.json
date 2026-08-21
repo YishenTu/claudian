@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "在对话中渲染 Mermaid 图表",
-      "desc": "把回复里的 mermaid 代码块渲染成图表。每个代码块流式输出结束后才渲染。关闭后所有代码块只显示源码。"
+      "desc": "默认关闭。每个代码块流式输出结束后，把回复里的 mermaid 代码块渲染成图表。只有 mermaid 源码会交给 Obsidian 的 mermaid 渲染器，因此任何处理 mermaid 代码块的已安装插件都可能在模型输出上运行。其他代码块仍保持为不会执行的源码。"
     },
     "expandFileEditsByDefault": {
       "name": "默认展开文件编辑",

@@ -164,3 +164,11 @@ if (globalThis.SVGElement && !Reflect.has(globalThis.SVGElement.prototype, 'crea
     return el;
   };
 }
+
+if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'empty')) {
+  globalThis.HTMLElement.prototype.empty = function (this: HTMLElement) {
+    while (this.firstChild) {
+      this.removeChild(this.firstChild);
+    }
+  };
+}

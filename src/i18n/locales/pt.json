@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "Renderizar diagramas Mermaid no chat",
-      "desc": "Renderiza os blocos de código mermaid das respostas como diagramas. A renderização ocorre quando cada bloco termina de ser transmitido. Desative para manter todos os blocos como código-fonte."
+      "desc": "Desativado por padrão. Renderiza os blocos de código mermaid das respostas como diagramas assim que cada bloco termina de ser transmitido. Apenas o código mermaid é entregue ao renderizador mermaid do Obsidian, portanto qualquer plugin instalado que processe blocos mermaid pode executar sobre a saída do modelo. Os demais blocos de código continuam como código-fonte inerte."
     },
     "expandFileEditsByDefault": {
       "name": "Expandir edições de arquivo por padrão",

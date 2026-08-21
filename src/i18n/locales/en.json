@@ -685,7 +685,7 @@
     },
     "renderDiagramsInChat": {
       "name": "Render Mermaid diagrams in chat",
-      "desc": "Render mermaid code blocks from responses as diagrams. Diagrams render after each block finishes streaming. Turn this off to keep all code blocks as plain source."
+      "desc": "Off by default. Renders mermaid code blocks from responses as diagrams once each block finishes streaming. Only the mermaid source is handed to Obsidian's mermaid renderer, so any installed plugin that handles mermaid blocks can run on model output. Every other code block stays inert plain source."
     },
     "expandFileEditsByDefault": {
       "name": "Expand file edits by default",
