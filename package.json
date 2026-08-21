@@ -76,6 +76,7 @@
     "jsdom": "^26.1.0",
     "obsidian": "1.13.0",
     "stylelint": "^17.14.1",
+    "terser": "^5.50.0",
     "ts-jest": "^29.4.9",
     "tsx": "^4.23.1",
     "typescript": "^6.0.2"

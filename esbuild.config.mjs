@@ -12,6 +12,8 @@ import {
 } from 'fs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
 import desktopRuntimeAliasHelpers from './scripts/desktopRuntimeAliases.js';
+import sourcePackageAliasHelpers from './scripts/sourcePackageAliases.js';
+import terserProductionBundleHelpers from './scripts/terserProductionBundle.js';
 import pierreShikiBundleHelpers from './scripts/pierreShikiBundle.js';
 import compressedStaticAssetsHelpers from './scripts/compressedStaticAssets.js';
 
@@ -20,6 +22,8 @@ const {
   patchRendererUnsafeUnrefSites,
 } = rendererSafeUnrefHelpers;
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
+const { createSourcePackageAliases } = sourcePackageAliasHelpers;
+const { createTerserProductionBundlePlugin } = terserProductionBundleHelpers;
 const { createPierreShikiBundlePlugin } = pierreShikiBundleHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 
@@ -189,12 +193,16 @@ const external = [
 
 const mainContext = await esbuild.context({
   entryPoints: ['src/main.ts'],
-  alias: createDesktopRuntimeAliases(),
+  alias: {
+    ...createDesktopRuntimeAliases(),
+    ...createSourcePackageAliases(),
+  },
   bundle: true,
   plugins: [
     patchSdkImportMeta,
     createCompressedStaticAssetsPlugin(),
     createPierreShikiBundlePlugin(),
+    ...(prod ? [createTerserProductionBundlePlugin(['main.js'])] : []),
     createPatchRendererUnsafeUnref(['main.js']),
     copyToObsidian,
   ],

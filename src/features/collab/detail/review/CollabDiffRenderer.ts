@@ -130,7 +130,7 @@ let sharedPierreModulePromise: Promise<PierreDiffModule> | null = null;
 
 export function preloadCollabDiffRenderer(): Promise<PierreDiffModule> {
   sharedPierreModulePromise ??= (
-    import('@pierre/diffs') as unknown as Promise<PierreDiffModule>
+    import('./CollabPierreDiffModule') as unknown as Promise<PierreDiffModule>
   ).catch((error: unknown) => {
     sharedPierreModulePromise = null;
     throw error;

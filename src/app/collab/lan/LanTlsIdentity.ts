@@ -9,8 +9,10 @@ import {
 import { lstat, open, readFile, unlink } from 'node:fs/promises';
 import { isIP } from 'node:net';
 
-import forgePki from 'node-forge/lib/pki';
+import forgeAsn1 from 'node-forge/lib/asn1';
+import forgePem from 'node-forge/lib/pem';
 import forgeSha256 from 'node-forge/lib/sha256';
+import forgePki from 'node-forge/lib/x509';
 
 import {
   ensureCollabContainerGuard,
@@ -88,6 +90,19 @@ function tlsIdentityError(
 
 function normalizePem(pem: string): string {
   return `${pem.replace(/\r\n?/g, '\n').trim()}\n`;
+}
+
+function privateKeyFromPem(pem: string): ReturnType<typeof forgePki.privateKeyFromAsn1> {
+  const message = forgePem.decode(pem)[0];
+  const procType = message?.procType as { readonly type?: unknown } | null | undefined;
+  if (
+    !message
+    || (message.type !== 'PRIVATE KEY' && message.type !== 'RSA PRIVATE KEY')
+    || procType?.type === 'ENCRYPTED'
+  ) {
+    throw new Error('Unsupported RSA private key PEM');
+  }
+  return forgePki.privateKeyFromAsn1(forgeAsn1.fromDer(message.body));
 }
 
 function certificateSerial(): string {
@@ -193,7 +208,7 @@ export class LanTlsIdentity {
     }
     const hostCa = await this.loadOrCreate();
     const caCertificate = forgePki.certificateFromPem(hostCa.caCertificatePem);
-    const caPrivateKey = forgePki.privateKeyFromPem(hostCa.caPrivateKeyPem);
+    const caPrivateKey = privateKeyFromPem(hostCa.caPrivateKeyPem);
     const keyPairPem = await generateRsaKeyPair();
     const certificate = forgePki.createCertificate();
     const issuedAt = options.now ?? this.now();
@@ -305,7 +320,7 @@ export class LanTlsIdentity {
 
   private async createHostCa(): Promise<LanTlsHostCa> {
     const keyPairPem = await generateRsaKeyPair();
-    const privateKey = forgePki.privateKeyFromPem(keyPairPem.privateKeyPem);
+    const privateKey = privateKeyFromPem(keyPairPem.privateKeyPem);
     const certificate = forgePki.createCertificate();
     const now = this.now();
     certificate.publicKey = forgePki.publicKeyFromPem(keyPairPem.publicKeyPem);
@@ -351,7 +366,7 @@ export class LanTlsIdentity {
       ) {
         throw new Error('Host CA validation failed');
       }
-      forgePki.privateKeyFromPem(normalizedPrivateKey);
+      privateKeyFromPem(normalizedPrivateKey);
       return Object.freeze({
         caCertificatePem: normalizedCertificate,
         caFingerprint: fingerprintCertificatePem(normalizedCertificate),

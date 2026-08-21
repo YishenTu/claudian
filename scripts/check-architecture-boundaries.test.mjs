@@ -7,11 +7,10 @@ import ts from 'typescript';
 import {
   evaluationIndicatorMs,
   evaluationReviewThresholdMs,
-  historicalMainWarningBytes,
   inspectArtifactSize,
   inspectEvaluationDuration,
   inspectPluginArtifactReferences,
-  mainReviewThresholdBytes,
+  mainBudgetBytes,
   preCollabReferenceMainBytes,
 } from './check-startup-performance.mjs';
 
@@ -417,16 +416,19 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
       sourceImport.dynamic && sourceImport.specifier === './app/collab'
     )),
   );
+  const collabReviewRoot = path.join(featuresRoot, 'collab', 'detail', 'review');
   assert.ok(
-    listSourceImports(path.join(
-      featuresRoot,
-      'collab',
-      'detail',
-      'review',
-      'CollabDiffRenderer.ts',
-    ))
+    listSourceImports(path.join(collabReviewRoot, 'CollabDiffRenderer.ts'))
       .some(sourceImport => (
-        sourceImport.dynamic && sourceImport.specifier === '@pierre/diffs'
+        sourceImport.dynamic
+        && sourceImport.specifier === './CollabPierreDiffModule'
+      )),
+  );
+  assert.ok(
+    listSourceImports(path.join(collabReviewRoot, 'CollabPierreDiffModule.ts'))
+      .some(sourceImport => (
+        !sourceImport.dynamic
+        && sourceImport.specifier === '@pierre/diffs'
       )),
   );
 });
@@ -824,16 +826,12 @@ test('source-only typecheck resolves the canonical collab protocol source', () =
   );
 });
 
-test('performance policy reports the pre-Collab delta and review thresholds', () => {
-  assert.deepEqual(inspectArtifactSize(historicalMainWarningBytes + 1), {
-    historicalNotice: true,
-    referenceDeltaBytes: historicalMainWarningBytes + 1 - preCollabReferenceMainBytes,
-    reviewRequired: false,
+test('performance policy enforces the main bundle budget and reports the pre-Collab delta', () => {
+  assert.deepEqual(inspectArtifactSize(mainBudgetBytes), {
+    budgetExceeded: false,
+    referenceDeltaBytes: mainBudgetBytes - preCollabReferenceMainBytes,
   });
-  assert.equal(
-    inspectArtifactSize(mainReviewThresholdBytes + 1).reviewRequired,
-    true,
-  );
+  assert.equal(inspectArtifactSize(mainBudgetBytes + 1).budgetExceeded, true);
   assert.equal(inspectEvaluationDuration(evaluationIndicatorMs), 'within-indicator');
   assert.equal(inspectEvaluationDuration(evaluationIndicatorMs + 1), 'warning');
   assert.equal(

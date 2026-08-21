@@ -10,17 +10,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mainPath = path.join(root, 'main.js');
 const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
 export const preCollabReferenceMainBytes = 3_739_584;
-export const historicalMainWarningBytes = 5_000_000;
-export const mainReviewThresholdBytes = 20_000_000;
+export const mainBudgetBytes = 5_000_000;
 export const evaluationIndicatorMs = 50;
 export const evaluationReviewThresholdMs = 150;
 const pluginArtifactNames = ['main.js', 'manifest.json'];
 
 export function inspectArtifactSize(mainBytes) {
   return {
-    historicalNotice: mainBytes > historicalMainWarningBytes,
+    budgetExceeded: mainBytes > mainBudgetBytes,
     referenceDeltaBytes: mainBytes - preCollabReferenceMainBytes,
-    reviewRequired: mainBytes > mainReviewThresholdBytes,
   };
 }
 
@@ -80,14 +78,9 @@ function run() {
 
   const mainBytes = statSync(mainPath).size;
   const artifact = inspectArtifactSize(mainBytes);
-  if (artifact.reviewRequired) {
+  if (artifact.budgetExceeded) {
     throw new Error(
-      `main.js is ${mainBytes} bytes; the ${mainReviewThresholdBytes}-byte review threshold requires an explicit dependency decision.`,
-    );
-  }
-  if (artifact.historicalNotice) {
-    console.warn(
-      `Bundle size notice: main.js is ${mainBytes} bytes; ${historicalMainWarningBytes} bytes is a historical warning, not a hard limit.`,
+      `main.js is ${mainBytes} bytes; the production bundle budget is ${mainBudgetBytes} bytes.`,
     );
   }
 
@@ -144,7 +137,13 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain);
 };
 const startedAt = performance.now();
-require(mainPath);
+try {
+  require(mainPath);
+} catch (error) {
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  process.stderr.write('Module evaluation failed: ' + message);
+  process.exit(1);
+}
 process.stdout.write(JSON.stringify({
   childProcessStarts,
   durationMs: performance.now() - startedAt,
@@ -153,11 +152,18 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
+  const childNodePath = [
+    path.join(root, 'node_modules', '.bun', 'node_modules'),
+    process.env.NODE_PATH,
+  ].filter(candidate => candidate && existsSync(candidate)).join(path.delimiter);
   const samples = [];
   for (let index = 0; index < 7; index += 1) {
     const result = spawnSync(process.execPath, ['-e', childScript, mainPath], {
       cwd: root,
       encoding: 'utf8',
+      env: childNodePath
+        ? { ...process.env, NODE_PATH: childNodePath }
+        : process.env,
     });
     if (result.status !== 0) {
       throw new Error(`Module evaluation harness failed: ${result.stderr || result.stdout}`);

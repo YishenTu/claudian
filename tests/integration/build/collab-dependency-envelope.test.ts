@@ -14,8 +14,10 @@ import { build, stop } from 'esbuild';
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
 import * as pierreShikiBundleHelpers from '../../../scripts/pierreShikiBundle.js';
+import * as sourcePackageAliasHelpers from '../../../scripts/sourcePackageAliases.js';
 
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
+const { createSourcePackageAliases } = sourcePackageAliasHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 const {
   createPierreShikiBundlePlugin,
@@ -30,12 +32,16 @@ const performanceScriptPath = path.join(root, 'scripts/check-startup-performance
 describe('Collab dependency envelope', () => {
   const tempDirectory = mkdtempSync(path.join(tmpdir(), 'claudian-collab-build-'));
   const bundlePath = path.join(tempDirectory, 'dependency-envelope.cjs');
+  let bundleContributors: string[] = [];
   let bundleInputs: string[] = [];
 
   beforeAll(async () => {
     const result = await build({
       absWorkingDir: root,
-      alias: createDesktopRuntimeAliases(),
+      alias: {
+        ...createDesktopRuntimeAliases(),
+        ...createSourcePackageAliases({ root }),
+      },
       bundle: true,
       external: [
         ...builtinModules,
@@ -54,11 +60,18 @@ describe('Collab dependency envelope', () => {
       stdin: {
         contents: `
           import { WebSocket, WebSocketServer } from 'ws';
+          import { parser as markdownParser } from '@lezer/markdown';
+          import { scanCollabTicketReferences } from '@claudian/collab-protocol';
           import initSqlJs from 'sql.js';
           import sqlWasmBinary from 'sql.js/dist/sql-wasm.wasm';
           import * as english from './src/i18n/locales/en.json';
+          import * as german from './src/i18n/locales/de.json';
           import { pierreThemes, shikiThemes } from '@pierre/theming/themes';
-          import { CollabDiffRenderer } from './src/features/collab/detail/review/CollabDiffRenderer';
+          import { LanTlsIdentity } from './src/app/collab/lan/LanTlsIdentity';
+          import {
+            CollabDiffRenderer,
+            preloadCollabDiffRenderer,
+          } from './src/features/collab/detail/review/CollabDiffRenderer';
 
           export function probeWebSocket() {
             return [typeof WebSocket, typeof WebSocketServer];
@@ -73,16 +86,30 @@ describe('Collab dependency envelope', () => {
           }
 
           export async function probeDiffs() {
-            const diffs = await import('@pierre/diffs');
+            const diffs = await preloadCollabDiffRenderer();
             return typeof diffs.FileDiff;
           }
 
           export function probeLocale() {
-            return english.collab.commands.createProject;
+            return [
+              english.collab.commands.createProject,
+              german.common.save,
+            ];
+          }
+
+          export function probeMarkdownDependencies() {
+            return [
+              markdownParser.parse('# heading').length,
+              scanCollabTicketReferences('References #12').length,
+            ];
           }
 
           export function probeThemes() {
             return [pierreThemes.getThemeNames(), shikiThemes.getThemeNames()];
+          }
+
+          export function probeTlsIdentity() {
+            return typeof LanTlsIdentity;
           }
           export async function renderCollabTextDiff(container) {
             const renderer = new CollabDiffRenderer({
@@ -105,8 +132,12 @@ describe('Collab dependency envelope', () => {
         sourcefile: 'collab-dependency-envelope.ts',
       },
       target: 'node24',
+      treeShaking: true,
     });
     bundleInputs = Object.keys(result.metafile.inputs);
+    bundleContributors = Object.entries(Object.values(result.metafile.outputs)[0].inputs)
+      .filter(([, contribution]) => contribution.bytesInOutput > 0)
+      .map(([input]) => input);
   }, 60_000);
 
   afterAll(() => {
@@ -166,12 +197,60 @@ describe('Collab dependency envelope', () => {
     expect(inlinedOnigurumaInputs).toEqual([]);
   });
 
+  it('retains only the Pierre component surface used by Collab', () => {
+    const normalizedInputs = bundleContributors.map(input => input.replaceAll('\\\\', '/'));
+    const unusedComponentInputs = normalizedInputs.filter(input => (
+      input.endsWith('/@pierre/diffs/dist/components/CodeView.js')
+      || input.endsWith('/@pierre/diffs/dist/components/FileStream.js')
+      || input.endsWith('/@pierre/diffs/dist/components/UnresolvedFile.js')
+    ));
+
+    expect(unusedComponentInputs).toEqual([]);
+  });
+
+  it('bundles one shared Markdown parser implementation', () => {
+    const markdownParserContributors = bundleContributors
+      .map(input => input.replaceAll('\\\\', '/'))
+      .filter(input => input.includes('/@lezer/markdown/dist/'));
+
+    expect(markdownParserContributors).toHaveLength(1);
+    expect(markdownParserContributors[0]).toMatch(
+      /\/node_modules\/@lezer\/markdown\/dist\/index\.js$/,
+    );
+  });
+
+  it('excludes unused Forge PKCS and password-encryption modules', () => {
+    const normalizedContributors = bundleContributors.map(input => (
+      input.replaceAll('\\\\', '/')
+    ));
+    const unusedForgeInputs = normalizedContributors.filter(input => (
+      input.endsWith('/node-forge/lib/pbe.js')
+      || input.endsWith('/node-forge/lib/pbkdf2.js')
+      || input.endsWith('/node-forge/lib/pkcs12.js')
+      || input.endsWith('/node-forge/lib/pkcs7asn1.js')
+      || input.endsWith('/node-forge/lib/rc2.js')
+    ));
+
+    expect(unusedForgeInputs).toEqual([]);
+  });
+
   it('forces the Node WebSocket implementation inside the browser-oriented bundle', () => {
     const config = readFileSync(esbuildConfigPath, 'utf8');
-    const aliases = createDesktopRuntimeAliases();
+    const aliases = {
+      ...createDesktopRuntimeAliases(),
+      ...createSourcePackageAliases({ root }),
+    };
 
     expect(path.basename(aliases.ws)).toBe('index.js');
-    expect(config).toContain('alias: createDesktopRuntimeAliases()');
+    expect(aliases['@claudian/collab-protocol']).toBe(path.join(
+      root,
+      'packages',
+      'collab-protocol',
+      'src',
+      'index.ts',
+    ));
+    expect(config).toContain('...createDesktopRuntimeAliases()');
+    expect(config).toContain('...createSourcePackageAliases()');
     expect(readFileSync(bundlePath, 'utf8')).not.toContain('ws does not work in the browser');
     expect(runBundle(`
       const dependencyEnvelope = require(process.argv[1]);
@@ -179,20 +258,24 @@ describe('Collab dependency envelope', () => {
     `)).toBe('["function","function"]');
   });
 
-  it('treats 5 MB as historical guidance and 20 MB as the review gate', () => {
+  it('enforces a 5 MB main bundle budget', () => {
     const script = readFileSync(performanceScriptPath, 'utf8');
 
     expect(script).toContain('preCollabReferenceMainBytes = 3_739_584');
-    expect(script).toContain('historicalMainWarningBytes = 5_000_000');
-    expect(script).toContain('mainReviewThresholdBytes = 20_000_000');
+    expect(script).toContain('mainBudgetBytes = 5_000_000');
     expect(script).toContain('evaluationReviewThresholdMs = 150');
     expect(script).toContain('pre-Collab reference delta');
-    expect(script).not.toContain('mainBudgetBytes');
+    expect(script).toContain('artifact.budgetExceeded');
+    expect(script).not.toContain('historicalMainWarningBytes');
+    expect(script).not.toContain('mainReviewThresholdBytes');
   });
 
   it('guards ordinary evaluation from deferred runtime initialization', () => {
     const script = readFileSync(performanceScriptPath, 'utf8');
 
+    expect(script).toContain('Module evaluation failed:');
+    expect(script).toContain("path.join(root, 'node_modules', '.bun', 'node_modules')");
+    expect(script).toContain('NODE_PATH: childNodePath');
     expect(script).toContain('childProcessStarts !== 0');
     expect(script).toContain('networkListens !== 0');
     expect(script).toContain('wasmInitializations !== 0');
@@ -219,8 +302,10 @@ describe('Collab dependency envelope', () => {
       exports: [
         'probeDiffs',
         'probeLocale',
+        'probeMarkdownDependencies',
         'probeSql',
         'probeThemes',
+        'probeTlsIdentity',
         'probeWebSocket',
         'renderCollabTextDiff',
       ],
@@ -244,12 +329,25 @@ describe('Collab dependency envelope', () => {
     const bundle = readFileSync(bundlePath, 'utf8');
     const localeResult = runBundle(`
       const dependencyEnvelope = require(process.argv[1]);
-      process.stdout.write(dependencyEnvelope.probeLocale());
+      process.stdout.write(JSON.stringify(dependencyEnvelope.probeLocale()));
     `);
 
     expect(bundle).toContain('brotliDecompressSync');
     expect(bundle).not.toContain('Create Collab project');
-    expect(localeResult).toBe('Create Collab project');
+    expect(JSON.parse(localeResult)).toEqual([
+      'Create Collab project',
+      'Speichern',
+    ]);
+  });
+
+  it('shares one compressed catalog across non-English locales', () => {
+    const compressedCatalogContributors = bundleContributors.filter(input => (
+      input.includes('compressed-locale-catalog')
+    ));
+
+    expect(compressedCatalogContributors).toEqual([
+      'compressed-locale-catalog:non-english',
+    ]);
   });
 
   it('mounts Collab review through the styled Pierre custom element', () => {
