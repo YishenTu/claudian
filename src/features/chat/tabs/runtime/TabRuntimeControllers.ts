@@ -67,6 +67,7 @@ export function buildTabRuntimeControllers(
 ): TabRuntimeControllerBundle {
   const { component, forkRequestCallback, isRuntimeLive, openConversation, plugin } = options;
   const viewHost = component as Partial<TabManagerViewHost>;
+  const owningLeaf = viewHost.leaf;
   const { dom, state } = shell;
   const ensureExecutionInitialized = async (): Promise<boolean> => {
     const tab = runtimeRef.requirePublished();
@@ -122,6 +123,7 @@ export function buildTabRuntimeControllers(
     undefined,
     [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
     () => commitProvisionalTab(runtimeRef.requirePublished()),
+    owningLeaf,
   );
   options.registerCleanup('tab editor selection controller', () => selectionController.stop());
 
