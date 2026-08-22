@@ -267,6 +267,27 @@ describe('GitCommandRunner', () => {
     expect(result.stdout.toString('utf8')).not.toContain(authorizationHeader);
   });
 
+  it('allows an explicit non-sensitive routing value to match a Git ref', async () => {
+    const runner = new GitCommandRunner({
+      emptyConfigPath,
+      executablePath: process.execPath,
+    });
+
+    const result = await runner.run({
+      args: ['-e', 'process.stdout.write(process.argv[1] ?? "")', 'member-alice'],
+      cwd: workingDirectory,
+      network: {
+        headers: [{
+          name: 'X-Claudian-Development-Actor',
+          sensitive: false,
+          value: 'member-alice',
+        }],
+      },
+    });
+
+    expect(result.stdout.toString('utf8')).toBe('member-alice');
+  });
+
   it('rejects config-scope mutation and argument-carried secrets before spawn', async () => {
     const runner = new GitCommandRunner({
       emptyConfigPath,

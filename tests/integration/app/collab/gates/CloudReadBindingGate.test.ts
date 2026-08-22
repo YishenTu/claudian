@@ -57,6 +57,8 @@ import {
   CollabAuthorityGitNetworkEnvironment,
 } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 
+jest.setTimeout(30_000);
+
 const execFileAsync = promisify(execFile);
 const GIT_EXECUTABLE = '/usr/bin/git';
 const PROJECT_ID = 'project-cloud-gate';

@@ -19,6 +19,7 @@ const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 export interface GitNetworkEnvironment {
   readonly headers: readonly {
     readonly name: string;
+    readonly sensitive?: boolean;
     readonly value: string;
   }[];
   readonly sslCaInfoPath?: string;
@@ -96,6 +97,7 @@ function invalidNetworkEnvironment(
       || header.value.includes('\u0000')
       || header.value.includes('\r')
       || header.value.includes('\n')
+      || (header.sensitive !== undefined && typeof header.sensitive !== 'boolean')
       || (header.name.toLocaleLowerCase('en-US') === 'authorization'
         && !/^(?:Basic|Bearer) [A-Za-z0-9._~+/-]+={0,2}$/u.test(header.value))
     ))
@@ -333,7 +335,11 @@ export class GitCommandRunner {
 
     const sensitiveValues = [
       ...(request.sensitiveValues ?? []),
-      ...(request.network ? request.network.headers.map(header => header.value) : []),
+      ...(request.network
+        ? request.network.headers
+          .filter(header => header.sensitive !== false)
+          .map(header => header.value)
+        : []),
     ];
     const argumentError = validateGitArguments(request.args, sensitiveValues);
     if (argumentError) return Promise.reject(argumentError);

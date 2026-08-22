@@ -942,6 +942,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       git: {
         headers: [{
           name: 'X-Claudian-Development-Actor',
+          sensitive: false,
           value: membership.authority.developmentActorId,
         }],
         remoteUrl: membership.authority.gitRemoteUrl,

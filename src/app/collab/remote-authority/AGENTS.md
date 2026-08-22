@@ -11,7 +11,7 @@
 
 - Publication, projection, review, reconciliation, feature, UI, and Agent-facing services depend on the neutral ports and never construct LAN or Cloud transports directly.
 - Cloud Projects expose only negotiated capabilities. Host transfer, membership administration, Manager responsibility, Leave, Retire, and LAN diagnostics remain LAN-only and must not fall back to a stale LAN session.
-- Canonicalize self-host URLs once and compare exact normalized values. Git environments may carry multiple redacted headers and an optional CA path; credentials, header values, and private paths never enter process arguments, logs, errors, or persisted diagnostics.
+- Canonicalize self-host URLs once and compare exact normalized values. Git environments may carry multiple headers and an optional CA path. Credential-bearing headers are sensitive by default and their values plus private paths never enter process arguments, logs, errors, or persisted diagnostics. A non-credential routing header must be explicitly marked non-sensitive so its domain identifier may independently appear in a Git ref argument; the header itself still enters Git only through the isolated environment.
 
 ## Verification
 

@@ -180,7 +180,11 @@ describe('CloudAuthorityAdapter', () => {
     expect(session.supports('project-snapshot')).toBe(true);
     expect(session.supports('requests')).toBe(false);
     expect(session.git).toEqual({
-      headers: [{ name: 'X-Claudian-Development-Actor', value: ACTOR_ID }],
+      headers: [{
+        name: 'X-Claudian-Development-Actor',
+        sensitive: false,
+        value: ACTOR_ID,
+      }],
       remoteUrl: `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([

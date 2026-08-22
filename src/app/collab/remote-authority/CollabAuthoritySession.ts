@@ -31,6 +31,7 @@ export interface CollabAuthorityEventPort {
 
 export interface CollabAuthorityGitHeader {
   readonly name: string;
+  readonly sensitive?: boolean;
   readonly value: string;
 }
 
