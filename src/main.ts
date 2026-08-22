@@ -525,6 +525,9 @@ export default class ClaudianPlugin extends Plugin {
 
     if (leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
+      if (isClaudianView(leaf.view)) {
+        leaf.view.focusActiveInput();
+      }
     }
   }
 
