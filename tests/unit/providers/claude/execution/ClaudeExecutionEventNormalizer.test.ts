@@ -137,3 +137,34 @@ describe('ClaudeExecutionEventNormalizer task tools', () => {
     }));
   });
 });
+
+describe('ClaudeExecutionEventNormalizer prompt suggestions', () => {
+  it('normalizes a non-empty native suggestion without rendering it as output', () => {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+
+    const events = normalizer.normalize({
+      type: 'prompt_suggestion',
+      suggestion: 'Review the changed files',
+      uuid: '00000000-0000-4000-8000-000000000001',
+      session_id: 'session-1',
+    }, 'background');
+
+    expect(events).toEqual([{
+      type: 'prompt_suggestion',
+      suggestion: 'Review the changed files',
+    }]);
+  });
+
+  it('ignores a whitespace-only native suggestion', () => {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+
+    const events = normalizer.normalize({
+      type: 'prompt_suggestion',
+      suggestion: '   ',
+      uuid: '00000000-0000-4000-8000-000000000001',
+      session_id: 'session-1',
+    }, 'background');
+
+    expect(events).toEqual([]);
+  });
+});

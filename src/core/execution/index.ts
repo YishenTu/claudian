@@ -21,6 +21,7 @@ export {
   type ProviderExecutionEventScope,
   type ProviderModeChangedEvent,
   type ProviderNoticeEvent,
+  type ProviderPromptSuggestionEvent,
   type ProviderRequestedEventScope,
   type ProviderRequestedExecutionEvent,
   type ProviderSessionErrorEvent,

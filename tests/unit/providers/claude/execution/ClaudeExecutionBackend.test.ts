@@ -263,6 +263,59 @@ describe('ClaudeExecutionBackend', () => {
         source: 'sdk',
       },
     ]);
+    expect(sdkMock.getLastOptions()?.promptSuggestions).toBe(true);
+  });
+
+  it('routes a trailing second-turn prompt suggestion through the session channel', async () => {
+    let turn = 0;
+    let query!: ScriptedQuery;
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockImplementationOnce(async () => ((request: {
+      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
+    }) => {
+      query = createPromptDrivenPersistentQuery(request.prompt, () => {
+        turn += 1;
+        if (turn === 1) {
+          return [
+            { type: 'system', subtype: 'init', session_id: 'session-1' },
+            { type: 'result', subtype: 'success' },
+          ];
+        }
+        return [
+          { type: 'result', subtype: 'success' },
+          {
+            type: 'prompt_suggestion',
+            suggestion: 'Review the changed files',
+            uuid: 'suggestion-2',
+            session_id: 'session-1',
+          },
+        ];
+      });
+      return query;
+    }) as never);
+    const { services } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig());
+    const sessionEvents: ProviderSessionEvent[] = [];
+    session.onEvent(event => sessionEvents.push(event));
+
+    await collectEvents(session.execute(createRequest()).events);
+    const secondRun = session.execute(createRequest({
+      input: [{ type: 'text', text: 'Continue' }],
+    }));
+    await collectEvents(secondRun.events);
+    await waitFor(() => sessionEvents.some(event => event.type === 'prompt_suggestion'));
+
+    expect(sessionEvents).toContainEqual(expect.objectContaining({
+      type: 'prompt_suggestion',
+      originatingTurnId: secondRun.turnId,
+      suggestion: 'Review the changed files',
+      scope: expect.objectContaining({ kind: 'session' }),
+    }));
+    await session.dispose();
+    await query.finished;
   });
 
   it('resumes and materializes a pending fork without losing opaque provider state', async () => {
@@ -369,6 +422,7 @@ describe('ClaudeExecutionBackend', () => {
       tools: [],
     }));
     expect(sdkMock.getLastOptions()?.thinking).toBeUndefined();
+    expect(sdkMock.getLastOptions()?.promptSuggestions).toBeUndefined();
     expect(oneShot.getSnapshot().providerSessionId).toBeUndefined();
   });
 
@@ -1591,6 +1645,12 @@ describe('ClaudeExecutionBackend', () => {
         },
         { type: 'result', subtype: 'success' },
         {
+          type: 'prompt_suggestion',
+          suggestion: 'Follow up on the automatic turn',
+          uuid: 'background-suggestion',
+          session_id: 'session-1',
+        },
+        {
           type: 'system',
           subtype: 'task_notification',
           session_id: 'session-1',
@@ -1630,6 +1690,7 @@ describe('ClaudeExecutionBackend', () => {
       subagentId: 'task-1',
       result: 'Subagent result',
     }));
+    expect(sessionEvents.some(({ type }) => type === 'prompt_suggestion')).toBe(false);
   });
 
   it('cancels one active run, fences late output, and rejects execution after disposal', async () => {

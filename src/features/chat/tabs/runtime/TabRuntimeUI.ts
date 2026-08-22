@@ -25,6 +25,7 @@ import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../../ui/InstructionModeManager';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
+import { PromptSuggestionController } from '../../ui/PromptSuggestionController';
 import { StatusPanel } from '../../ui/StatusPanel';
 import { autoResizeTextarea } from '../../ui/textareaResize';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
@@ -141,6 +142,7 @@ function buildInstructionComponents(
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
   composerDropdown: MainChatComposerDropdown,
+  promptSuggestionController: PromptSuggestionController,
 ): Pick<
   TabUIComponents,
   'instructionModeManager' | 'bangBashModeManager' | 'statusPanel'
@@ -156,7 +158,10 @@ function buildInstructionComponents(
       },
       getInputWrapper: () => dom.inputWrapper,
       onActiveChange: active => {
-        if (active) composerDropdown.hide();
+        if (active) {
+          promptSuggestionController.clear();
+          composerDropdown.hide();
+        }
       },
     },
   );
@@ -460,7 +465,13 @@ export function buildTabRuntimeUI(
 ): TabUIComponents {
   const { dom } = shell;
   const { plugin } = options;
+  const promptSuggestionController = new PromptSuggestionController(dom.inputEl);
+  options.registerCleanup(
+    'tab prompt suggestion controller',
+    () => promptSuggestionController.destroy(),
+  );
   const onUserModified = (): void => {
+    promptSuggestionController.clear();
     commitProvisionalTab(runtimeRef.requirePublished());
   };
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
@@ -494,6 +505,7 @@ export function buildTabRuntimeUI(
     options,
     runtimeRef,
     composerDropdown,
+    promptSuggestionController,
   );
   const navigationSidebar = new NavigationSidebar(
     dom.messagesWrapperEl,
@@ -511,6 +523,7 @@ export function buildTabRuntimeUI(
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
     composerDropdown,
+    promptSuggestionController,
     ...instructionComponents,
     contextUsageMeter: toolbar.contextUsageMeter,
     navigationSidebar,

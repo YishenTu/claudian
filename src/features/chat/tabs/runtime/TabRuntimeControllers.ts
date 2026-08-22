@@ -256,6 +256,7 @@ export function buildTabRuntimeControllers(
       isDisposed: () => shell.lifecycleState === 'closing',
       ensureExecutionForConversation: async (conversation) => {
         const tab = runtimeRef.requirePublished();
+        tab.ui.promptSuggestionController.clear();
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
         const nextConversationId = conversation?.id ?? null;
         const providerChanged = tab.providerId !== nextProviderId;
@@ -291,6 +292,7 @@ export function buildTabRuntimeControllers(
     {
       onNewConversation: () => {
         const tab = runtimeRef.requirePublished();
+        tab.ui.promptSuggestionController.clear();
         const previousProviderId = tab.providerId;
         const nextModel = resolveNewConversationModel(plugin.settings);
         void shell.executionCoordinator.bindConversation(null);
@@ -308,11 +310,13 @@ export function buildTabRuntimeControllers(
       },
       onConversationLoaded: () => {
         const tab = runtimeRef.requirePublished();
+        tab.ui.promptSuggestionController.clear();
         invalidateTabProviderCommands(tab, shell.providerCatalogResolver);
         tab.controllers.inputController.onConversationActivated();
       },
       onConversationSwitched: () => {
         const tab = runtimeRef.requirePublished();
+        tab.ui.promptSuggestionController.clear();
         invalidateTabProviderCommands(tab, shell.providerCatalogResolver);
         tab.controllers.inputController.onConversationActivated();
       },

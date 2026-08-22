@@ -171,6 +171,9 @@ export class ClaudeExecutionRequestEncoder {
       spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
       includePartialMessages: true,
       enableFileCheckpointing: true,
+      ...(sessionConfig.lifecycle === 'persistent'
+        ? { promptSuggestions: true }
+        : {}),
       canUseTool,
       disallowedTools: [
         ...UNSUPPORTED_SDK_TOOLS,

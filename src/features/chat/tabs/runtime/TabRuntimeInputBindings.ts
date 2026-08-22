@@ -39,6 +39,7 @@ export function buildTabRuntimeInputBindings(
     }
 
     if (ui.bangBashModeManager?.handleTriggerKey(event)) {
+      ui.promptSuggestionController.clear();
       syncBangBashSuppression();
       return;
     }
@@ -60,6 +61,10 @@ export function buildTabRuntimeInputBindings(
       return;
     }
 
+    if (ui.promptSuggestionController.handleKeydown(event)) {
+      return;
+    }
+
     if (event.key === 'Escape' && !event.isComposing && state.isStreaming) {
       event.preventDefault();
       controllers.inputController.cancelStreaming();
@@ -78,6 +83,7 @@ export function buildTabRuntimeInputBindings(
 
   const inputHandler = () => {
     commitProvisionalTab(runtimeRef.requirePublished());
+    ui.promptSuggestionController.handleInputChange();
     ui.instructionModeManager.handleInputChange();
     if (
       !ui.bangBashModeManager?.isActive()
