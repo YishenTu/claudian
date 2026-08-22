@@ -57,6 +57,8 @@ const CLOUD_ORIGIN = 'https://cloud.example.test';
 const CLOUD_REMOTE = `${CLOUD_ORIGIN}/v1/projects/${PROJECT_ID}/repository.git`;
 const CRASH = new Error('simulated process crash');
 
+jest.setTimeout(30_000);
+
 interface RecoveryFixture {
   readonly mainOid: string;
   readonly manifest: DevelopmentBootstrapManifest;

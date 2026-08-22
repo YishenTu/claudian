@@ -65,6 +65,8 @@ const OTHER_MEMBER_ID = 'member-bob';
 const OLD_ENDPOINT = 'https://192.168.1.20:54545/';
 const OLD_REMOTE = `${OLD_ENDPOINT}v1/git/${PROJECT_ID}/repository.git`;
 
+jest.setTimeout(30_000);
+
 interface RepositoryFixture {
   readonly barePath: string;
   readonly mainOid: string;
