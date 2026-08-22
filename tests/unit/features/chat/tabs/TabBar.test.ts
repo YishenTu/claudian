@@ -435,6 +435,34 @@ describe('TabBar', () => {
       expect(callbacks.onTabClose).toHaveBeenCalledWith('middle-close-tab');
     });
 
+    it('prevents the middle-button down default before the auxiliary close', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'middle-close-tab', canClose: true })]);
+
+      const middleDown = { button: 1, preventDefault: jest.fn() };
+      containerEl._children[0].dispatchEvent('mousedown', middleDown);
+
+      expect(middleDown.preventDefault).toHaveBeenCalledTimes(1);
+      expect(callbacks.onTabClose).not.toHaveBeenCalled();
+    });
+
+    it('does not prevent primary-button down behavior', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'primary-tab', canClose: true })]);
+
+      const primaryDown = { button: 0, preventDefault: jest.fn() };
+      containerEl._children[0].dispatchEvent('mousedown', primaryDown);
+
+      expect(primaryDown.preventDefault).not.toHaveBeenCalled();
+      expect(callbacks.onTabClose).not.toHaveBeenCalled();
+    });
+
     it('ignores other auxiliary mouse buttons', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
@@ -462,6 +490,7 @@ describe('TabBar', () => {
       tabBar.update([createTabBarItem({ id: 'uncloseable-tab', canClose: false })]);
 
       expect(containerEl._children[0]._eventListeners.has('contextmenu')).toBe(false);
+      expect(containerEl._children[0]._eventListeners.has('mousedown')).toBe(false);
       expect(containerEl._children[0]._eventListeners.has('auxclick')).toBe(false);
     });
   });

@@ -120,6 +120,10 @@ export class TabBar {
         this.callbacks.onTabClose(item.id);
       });
 
+      badgeEl.addEventListener('mousedown', (e) => {
+        if (e.button === 1) e.preventDefault();
+      });
+
       badgeEl.addEventListener('auxclick', (e) => {
         if (e.button !== 1) return;
         e.preventDefault();
