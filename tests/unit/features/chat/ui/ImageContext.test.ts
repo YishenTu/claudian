@@ -818,6 +818,21 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps Tab focus on the only control in the image dialog', () => {
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
+      const tabEvent = {
+        key: 'Tab',
+        preventDefault: jest.fn(),
+      };
+
+      const keydownHandler = addEventSpy.mock.calls[0][1];
+      keydownHandler(tabEvent);
+
+      expect(tabEvent.preventDefault).toHaveBeenCalledTimes(1);
+      expect(closeButtonFocus).toHaveBeenCalledTimes(2);
+    });
+
     it('should register Escape key handler and close button', () => {
       const image = createImageAttachment();
       manager['showFullImage'](image);

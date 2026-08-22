@@ -730,9 +730,12 @@ export class MessageRenderer {
     });
     closeBtn.setText('\u00D7');
 
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         close();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        closeBtn.focus();
       }
     };
 
@@ -740,7 +743,7 @@ export class MessageRenderer {
     const close = () => {
       if (isClosed) return;
       isClosed = true;
-      ownerDocument.removeEventListener('keydown', handleEsc);
+      ownerDocument.removeEventListener('keydown', handleKeyDown);
       overlay.remove();
       if (this.closeImageModal === close) {
         this.closeImageModal = null;
@@ -754,7 +757,7 @@ export class MessageRenderer {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
-    ownerDocument.addEventListener('keydown', handleEsc);
+    ownerDocument.addEventListener('keydown', handleKeyDown);
     this.closeImageModal = close;
     closeBtn.focus();
   }

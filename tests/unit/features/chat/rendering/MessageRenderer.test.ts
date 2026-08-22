@@ -1982,6 +1982,30 @@ describe('MessageRenderer', () => {
       }
     });
 
+    it('keeps Tab focus on the only control in the image dialog', () => {
+      const { renderer } = createRenderer();
+      const {
+        closeButtonFocus,
+        docListeners,
+        origDocument,
+      } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+        const tabEvent = {
+          key: 'Tab',
+          preventDefault: jest.fn(),
+        };
+
+        docListeners.get('keydown')?.[0](tabEvent);
+
+        expect(tabEvent.preventDefault).toHaveBeenCalledTimes(1);
+        expect(closeButtonFocus()).toHaveBeenCalledTimes(2);
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
     it('closeBtn click removes overlay', () => {
       const { renderer } = createRenderer();
       const { overlayEl, origDocument } = setupDocumentMock();
