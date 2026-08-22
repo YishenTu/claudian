@@ -4,7 +4,7 @@ import * as path from 'path';
 
 import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliBinaryLocator';
 import { parseEnvironmentVariables } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { expandHomePath, stripSurroundingQuotes } from '../../../utils/path';
 import type { CodexInstallationMethod } from '../settings';
 import type { CodexExecutionTarget } from './codexLaunchTypes';
 
@@ -116,16 +116,6 @@ function parsePathEntriesForPlatform(pathValue: string | undefined, platform: No
     .map(segment => expandHomePath(segment));
 }
 
-function stripSurroundingQuotes(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
 export function resolveCodexCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
@@ -143,7 +133,7 @@ export function resolveCodexCliPath(
 
   if (isWslTarget) {
     const configuredCommand = [hostnamePath, legacyPath]
-      .map(value => (value ?? '').trim())
+      .map(value => stripSurroundingQuotes((value ?? '').trim()))
       .find(value => value.length > 0 && !isWindowsStyleCliReference(value));
     return configuredCommand || 'codex';
   }
