@@ -446,6 +446,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
+      .setName(t('settings.renderDiagramsInChat.name'))
+      .setDesc(t('settings.renderDiagramsInChat.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.renderDiagramsInChat === true)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.renderDiagramsInChat = value;
+            });
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.expandFileEditsByDefault.name'))
       .setDesc(t('settings.expandFileEditsByDefault.desc'))
       .addToggle((toggle) =>

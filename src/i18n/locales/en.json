@@ -683,6 +683,10 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
+    "renderDiagramsInChat": {
+      "name": "Render Mermaid diagrams in chat",
+      "desc": "Off by default. Renders mermaid code blocks from responses as diagrams once each block finishes streaming. Only the mermaid source is handed to Obsidian's mermaid renderer, so any installed plugin that handles mermaid blocks can run on model output. Every other code block stays inert plain source."
+    },
     "expandFileEditsByDefault": {
       "name": "Expand file edits by default",
       "desc": "Show Write and Edit diffs expanded when they first appear."

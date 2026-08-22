@@ -37,6 +37,8 @@ import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 import { renderCitationGroup as renderCitationBlock } from './CitationRenderer';
 import {
+  DIAGRAM_FENCE_LANGUAGES,
+  DIAGRAM_SOURCE_CLASS,
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
@@ -52,6 +54,15 @@ import { renderStoredWriteEdit } from './WriteEditRenderer';
 
 export interface RenderContentOptions {
   deferMath?: boolean;
+  /** Keeps diagram fences inert while content is still streaming in. */
+  deferDiagrams?: boolean;
+}
+
+interface PendingDiagramBlock {
+  language: string;
+  source: string;
+  pre: HTMLElement;
+  wrapper: HTMLElement;
 }
 
 export type RenderContentFn = (
@@ -753,6 +764,65 @@ export class MessageRenderer {
   // ============================================
 
   /**
+   * Diagram fences stay neutralized like every other fence; this only marks which
+   * ones Claudian re-renders itself afterwards, and only once streaming settles so
+   * partial diagram sources never reach the diagram path.
+   */
+  private resolveDiagramFenceLanguages(
+    options?: RenderContentOptions
+  ): readonly string[] {
+    if (options?.deferDiagrams) return [];
+    return this.plugin.settings.renderDiagramsInChat === true
+      ? DIAGRAM_FENCE_LANGUAGES
+      : [];
+  }
+
+  /**
+   * Renders one diagram source through a Claudian-owned container. Only the fence
+   * body reaches the diagram renderer: the info string, surrounding message text,
+   * and every other fence stay inert.
+   */
+  private async renderDiagramBlock(
+    language: string,
+    source: string,
+    host: HTMLElement
+  ): Promise<void> {
+    const longestBacktickRun = Math.max(
+      0,
+      ...Array.from(source.matchAll(/`+/g), (match) => match[0].length)
+    );
+    const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+    await MarkdownRenderer.render(
+      this.app,
+      `${fence}${language}\n${source}\n${fence}`,
+      host,
+      '',
+      this.component
+    );
+  }
+
+  /**
+   * Swaps each neutralized diagram code block for a rendered diagram. The inert
+   * source stays in the DOM and comes back if rendering fails.
+   */
+  private async renderDiagramBlocks(
+    blocks: readonly PendingDiagramBlock[]
+  ): Promise<void> {
+    for (const block of blocks) {
+      if (!DIAGRAM_FENCE_LANGUAGES.includes(block.language.toLowerCase())) continue;
+
+      const host = block.wrapper.createDiv({ cls: 'claudian-diagram-block' });
+      try {
+        await this.renderDiagramBlock(block.language, block.source, host);
+        block.pre.classList.add('claudian-diagram-source-hidden');
+        block.wrapper.classList.add('claudian-diagram-wrapper');
+      } catch {
+        host.remove();
+      }
+    }
+  }
+
+  /**
    * Renders markdown content with code block enhancements.
    */
   async renderContent(
@@ -771,7 +841,9 @@ export class MessageRenderer {
       // as plain text. Trusted plugin markup (image embeds) is injected only
       // after this step, otherwise it would be escaped too.
       const safeMarkdown = escapeRawHtmlTags(renderMarkdown);
-      const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(safeMarkdown);
+      const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(safeMarkdown, {
+        diagramLanguages: this.resolveDiagramFenceLanguages(options),
+      });
       const processedMarkdown = replaceImageEmbedsWithHtml(
         displayOnlyCodeFences.markdown,
         this.app,
@@ -786,7 +858,23 @@ export class MessageRenderer {
       );
       await restoreDisplayOnlyCodeFences(el, displayOnlyCodeFences.fences);
 
-      el.querySelectorAll('pre').forEach(enhanceRenderedCodeFence);
+      // Wrap pre elements, then collect the diagram sources Claudian renders itself.
+      const diagramBlocks: PendingDiagramBlock[] = [];
+      el.querySelectorAll('pre').forEach((pre) => {
+        const wrapper = enhanceRenderedCodeFence(pre);
+        const diagramCode = pre.querySelector<HTMLElement>(`code.${DIAGRAM_SOURCE_CLASS}`);
+        const diagramLanguage = diagramCode?.className.match(/language-([\w-]+)/)?.[1];
+        if (diagramCode && diagramLanguage) {
+          diagramBlocks.push({
+            language: diagramLanguage,
+            source: diagramCode.textContent ?? '',
+            pre,
+            wrapper,
+          });
+        }
+      });
+
+      await this.renderDiagramBlocks(diagramBlocks);
 
       // Process wikilinks only when the source can contain them; the DOM pass is expensive.
       if (processedMarkdown.includes('[[')) {
