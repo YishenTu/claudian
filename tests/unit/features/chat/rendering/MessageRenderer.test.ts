@@ -1906,11 +1906,31 @@ describe('MessageRenderer', () => {
 
     function setupDocumentMock() {
       const overlayEl = createMockEl();
+      const previouslyFocusedEl = {
+        focus: jest.fn(),
+        isConnected: true,
+      };
+      let closeButtonFocus: jest.Mock | null = null;
+      const createModal = overlayEl.createDiv.bind(overlayEl);
+      overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
+        const modalEl = createModal(options);
+        const createModalChild = modalEl.createEl.bind(modalEl);
+        modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
+          const child = createModalChild(tag, childOptions);
+          if (tag === 'button') {
+            closeButtonFocus = jest.fn();
+            child.focus = closeButtonFocus;
+          }
+          return child;
+        });
+        return modalEl;
+      });
       const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
       const docListeners = new Map<string, ((...args: any[]) => void)[]>();
       const origDocument = globalThis.document;
 
       (globalThis as any).document = {
+        activeElement: previouslyFocusedEl,
         body: mockBody,
         addEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
           if (!docListeners.has(event)) docListeners.set(event, []);
@@ -1925,8 +1945,66 @@ describe('MessageRenderer', () => {
         }),
       };
 
-      return { overlayEl, mockBody, docListeners, origDocument };
+      return {
+        closeButtonFocus: () => closeButtonFocus,
+        docListeners,
+        mockBody,
+        origDocument,
+        overlayEl,
+        previouslyFocusedEl,
+      };
     }
+
+    it('exposes a named dialog, moves focus inside, and restores it after close', () => {
+      const { renderer } = createRenderer();
+      const {
+        closeButtonFocus,
+        origDocument,
+        overlayEl,
+        previouslyFocusedEl,
+      } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+
+        const modalEl = overlayEl.children[0];
+        const closeBtn = modalEl.children[1];
+        expect(modalEl.getAttribute('role')).toBe('dialog');
+        expect(modalEl.getAttribute('aria-modal')).toBe('true');
+        expect(modalEl.getAttribute('aria-label')).toBe('Image preview: test.png');
+        expect(closeButtonFocus()).toHaveBeenCalledTimes(1);
+
+        closeBtn.click();
+
+        expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
+    it('keeps Tab focus on the only control in the image dialog', () => {
+      const { renderer } = createRenderer();
+      const {
+        closeButtonFocus,
+        docListeners,
+        origDocument,
+      } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+        const tabEvent = {
+          key: 'Tab',
+          preventDefault: jest.fn(),
+        };
+
+        docListeners.get('keydown')?.[0](tabEvent);
+
+        expect(tabEvent.preventDefault).toHaveBeenCalledTimes(1);
+        expect(closeButtonFocus()).toHaveBeenCalledTimes(2);
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
 
     it('closeBtn click removes overlay', () => {
       const { renderer } = createRenderer();
@@ -1940,6 +2018,9 @@ describe('MessageRenderer', () => {
         // Children: img (index 0), closeBtn (index 1)
         const closeBtn = modalEl.children[1];
         expect(closeBtn.hasClass('claudian-image-modal-close')).toBe(true);
+        expect(closeBtn.tagName).toBe('BUTTON');
+        expect(closeBtn.getAttribute('type')).toBe('button');
+        expect(closeBtn.getAttribute('aria-label')).toBe('Close image preview');
 
         const removeSpy = jest.spyOn(overlayEl, 'remove');
         closeBtn.click();
@@ -2198,11 +2279,11 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // renderMessageImages - click handler
+  // renderMessageImages - preview control
   // ============================================
 
-  describe('renderMessageImages - click handler', () => {
-    it('should add click handler on image elements', () => {
+  describe('renderMessageImages - preview control', () => {
+    it('opens the preview from a native named button', () => {
       const containerEl = createMockEl();
       const { renderer } = createRenderer();
       const showFullImageSpy = jest.spyOn(renderer, 'showFullImage').mockImplementation(() => {});
@@ -2216,15 +2297,19 @@ describe('MessageRenderer', () => {
 
       // Find the img element and check for click handler
       const imagesContainer = containerEl.children[0];
-      const wrapper = imagesContainer.children[0];
-      const imgEl = wrapper.children[0]; // The img element
+      const previewButton = imagesContainer.children[0];
+      const imgEl = previewButton.children[0];
 
-      // Check click handler is registered
-      const clickHandlers = imgEl._eventListeners?.get('click');
+      expect(previewButton.tagName).toBe('BUTTON');
+      expect(previewButton.getAttribute('type')).toBe('button');
+      expect(previewButton.getAttribute('aria-label')).toBe('Preview photo.png');
+      expect(imgEl.tagName).toBe('IMG');
+      expect(imgEl.getAttribute('alt')).toBe('photo.png');
+
+      const clickHandlers = previewButton._eventListeners?.get('click');
       expect(clickHandlers).toBeDefined();
       expect(clickHandlers!.length).toBe(1);
 
-      // Trigger click and verify showFullImage is called
       clickHandlers![0]();
       expect(showFullImageSpy).toHaveBeenCalledWith(images[0]);
     });

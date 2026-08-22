@@ -676,7 +676,13 @@ export class MessageRenderer {
     const imagesEl = containerEl.createDiv({ cls: 'claudian-message-images' });
 
     for (const image of images) {
-      const imageWrapper = imagesEl.createDiv({ cls: 'claudian-message-image' });
+      const imageWrapper = imagesEl.createEl('button', {
+        cls: 'claudian-message-image',
+        attr: {
+          'aria-label': `Preview ${image.name}`,
+          type: 'button',
+        },
+      });
       const imgEl = imageWrapper.createEl('img', {
         attr: {
           alt: image.name,
@@ -685,8 +691,7 @@ export class MessageRenderer {
 
       void this.setImageSrc(imgEl, image);
 
-      // Click to view full size
-      imgEl.addEventListener('click', () => {
+      imageWrapper.addEventListener('click', () => {
         void this.showFullImage(image);
       });
     }
@@ -702,8 +707,12 @@ export class MessageRenderer {
     const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
     const ownerDocument = this.messagesEl.ownerDocument ?? window.document;
+    const previouslyFocusedElement = ownerDocument.activeElement as HTMLElement | null;
     const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', `Image preview: ${image.name}`);
 
     modal.createEl('img', {
       attr: {
@@ -712,12 +721,21 @@ export class MessageRenderer {
       },
     });
 
-    const closeBtn = modal.createDiv({ cls: 'claudian-image-modal-close' });
+    const closeBtn = modal.createEl('button', {
+      cls: 'claudian-image-modal-close',
+      attr: {
+        'aria-label': 'Close image preview',
+        type: 'button',
+      },
+    });
     closeBtn.setText('\u00D7');
 
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         close();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        closeBtn.focus();
       }
     };
 
@@ -725,10 +743,13 @@ export class MessageRenderer {
     const close = () => {
       if (isClosed) return;
       isClosed = true;
-      ownerDocument.removeEventListener('keydown', handleEsc);
+      ownerDocument.removeEventListener('keydown', handleKeyDown);
       overlay.remove();
       if (this.closeImageModal === close) {
         this.closeImageModal = null;
+      }
+      if (previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement.focus();
       }
     };
 
@@ -736,8 +757,9 @@ export class MessageRenderer {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
-    ownerDocument.addEventListener('keydown', handleEsc);
+    ownerDocument.addEventListener('keydown', handleKeyDown);
     this.closeImageModal = close;
+    closeBtn.focus();
   }
 
   /**
