@@ -50,19 +50,28 @@
 
 /* Individual image in message - standardized size */
 .claudian-message-image {
+  appearance: none;
   width: 120px;
   height: 120px;
+  padding: 0;
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
+  box-shadow: none;
 }
 
-.claudian-message-image:hover {
+.claudian-message-image:hover,
+.claudian-message-image:focus-visible {
   transform: scale(1.03);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.claudian-message-image:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .claudian-message-image img {

@@ -676,7 +676,13 @@ export class MessageRenderer {
     const imagesEl = containerEl.createDiv({ cls: 'claudian-message-images' });
 
     for (const image of images) {
-      const imageWrapper = imagesEl.createDiv({ cls: 'claudian-message-image' });
+      const imageWrapper = imagesEl.createEl('button', {
+        cls: 'claudian-message-image',
+        attr: {
+          'aria-label': `Preview ${image.name}`,
+          type: 'button',
+        },
+      });
       const imgEl = imageWrapper.createEl('img', {
         attr: {
           alt: image.name,
@@ -685,8 +691,7 @@ export class MessageRenderer {
 
       void this.setImageSrc(imgEl, image);
 
-      // Click to view full size
-      imgEl.addEventListener('click', () => {
+      imageWrapper.addEventListener('click', () => {
         void this.showFullImage(image);
       });
     }

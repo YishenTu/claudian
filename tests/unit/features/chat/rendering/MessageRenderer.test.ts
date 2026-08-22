@@ -2201,11 +2201,11 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // renderMessageImages - click handler
+  // renderMessageImages - preview control
   // ============================================
 
-  describe('renderMessageImages - click handler', () => {
-    it('should add click handler on image elements', () => {
+  describe('renderMessageImages - preview control', () => {
+    it('opens the preview from a native named button', () => {
       const containerEl = createMockEl();
       const { renderer } = createRenderer();
       const showFullImageSpy = jest.spyOn(renderer, 'showFullImage').mockImplementation(() => {});
@@ -2219,15 +2219,19 @@ describe('MessageRenderer', () => {
 
       // Find the img element and check for click handler
       const imagesContainer = containerEl.children[0];
-      const wrapper = imagesContainer.children[0];
-      const imgEl = wrapper.children[0]; // The img element
+      const previewButton = imagesContainer.children[0];
+      const imgEl = previewButton.children[0];
 
-      // Check click handler is registered
-      const clickHandlers = imgEl._eventListeners?.get('click');
+      expect(previewButton.tagName).toBe('BUTTON');
+      expect(previewButton.getAttribute('type')).toBe('button');
+      expect(previewButton.getAttribute('aria-label')).toBe('Preview photo.png');
+      expect(imgEl.tagName).toBe('IMG');
+      expect(imgEl.getAttribute('alt')).toBe('photo.png');
+
+      const clickHandlers = previewButton._eventListeners?.get('click');
       expect(clickHandlers).toBeDefined();
       expect(clickHandlers!.length).toBe(1);
 
-      // Trigger click and verify showFullImage is called
       clickHandlers![0]();
       expect(showFullImageSpy).toHaveBeenCalledWith(images[0]);
     });
