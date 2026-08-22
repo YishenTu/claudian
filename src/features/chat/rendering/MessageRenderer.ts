@@ -707,8 +707,12 @@ export class MessageRenderer {
     const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
     const ownerDocument = this.messagesEl.ownerDocument ?? window.document;
+    const previouslyFocusedElement = ownerDocument.activeElement as HTMLElement | null;
     const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', `Image preview: ${image.name}`);
 
     modal.createEl('img', {
       attr: {
@@ -741,6 +745,9 @@ export class MessageRenderer {
       if (this.closeImageModal === close) {
         this.closeImageModal = null;
       }
+      if (previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement.focus();
+      }
     };
 
     closeBtn.addEventListener('click', close);
@@ -749,6 +756,7 @@ export class MessageRenderer {
     });
     ownerDocument.addEventListener('keydown', handleEsc);
     this.closeImageModal = close;
+    closeBtn.focus();
   }
 
   /**

@@ -1906,11 +1906,31 @@ describe('MessageRenderer', () => {
 
     function setupDocumentMock() {
       const overlayEl = createMockEl();
+      const previouslyFocusedEl = {
+        focus: jest.fn(),
+        isConnected: true,
+      };
+      let closeButtonFocus: jest.Mock | null = null;
+      const createModal = overlayEl.createDiv.bind(overlayEl);
+      overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
+        const modalEl = createModal(options);
+        const createModalChild = modalEl.createEl.bind(modalEl);
+        modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
+          const child = createModalChild(tag, childOptions);
+          if (tag === 'button') {
+            closeButtonFocus = jest.fn();
+            child.focus = closeButtonFocus;
+          }
+          return child;
+        });
+        return modalEl;
+      });
       const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
       const docListeners = new Map<string, ((...args: any[]) => void)[]>();
       const origDocument = globalThis.document;
 
       (globalThis as any).document = {
+        activeElement: previouslyFocusedEl,
         body: mockBody,
         addEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
           if (!docListeners.has(event)) docListeners.set(event, []);
@@ -1925,8 +1945,42 @@ describe('MessageRenderer', () => {
         }),
       };
 
-      return { overlayEl, mockBody, docListeners, origDocument };
+      return {
+        closeButtonFocus: () => closeButtonFocus,
+        docListeners,
+        mockBody,
+        origDocument,
+        overlayEl,
+        previouslyFocusedEl,
+      };
     }
+
+    it('exposes a named dialog, moves focus inside, and restores it after close', () => {
+      const { renderer } = createRenderer();
+      const {
+        closeButtonFocus,
+        origDocument,
+        overlayEl,
+        previouslyFocusedEl,
+      } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+
+        const modalEl = overlayEl.children[0];
+        const closeBtn = modalEl.children[1];
+        expect(modalEl.getAttribute('role')).toBe('dialog');
+        expect(modalEl.getAttribute('aria-modal')).toBe('true');
+        expect(modalEl.getAttribute('aria-label')).toBe('Image preview: test.png');
+        expect(closeButtonFocus()).toHaveBeenCalledTimes(1);
+
+        closeBtn.click();
+
+        expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
 
     it('closeBtn click removes overlay', () => {
       const { renderer } = createRenderer();

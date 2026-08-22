@@ -755,14 +755,35 @@ describe('ImageContextManager - Private Helpers', () => {
     let mockBody: any;
     let addEventSpy: jest.Mock;
     let removeEventSpy: jest.Mock;
+    let closeButtonFocus: jest.Mock;
+    let previouslyFocusedEl: { focus: jest.Mock; isConnected: boolean };
 
     beforeEach(() => {
       overlayEl = createMockEl();
+      closeButtonFocus = jest.fn();
+      previouslyFocusedEl = {
+        focus: jest.fn(),
+        isConnected: true,
+      };
+      const createModal = overlayEl.createDiv.bind(overlayEl);
+      overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
+        const modalEl = createModal(options);
+        const createModalChild = modalEl.createEl.bind(modalEl);
+        modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
+          const child = createModalChild(tag, childOptions);
+          if (tag === 'button') {
+            child.focus = closeButtonFocus;
+          }
+          return child;
+        });
+        return modalEl;
+      });
       addEventSpy = jest.fn();
       removeEventSpy = jest.fn();
       mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
       origDocument = globalThis.document;
       (globalThis as any).document = {
+        activeElement: previouslyFocusedEl,
         body: mockBody,
         addEventListener: addEventSpy,
         removeEventListener: removeEventSpy,
@@ -779,6 +800,22 @@ describe('ImageContextManager - Private Helpers', () => {
       manager['showFullImage'](image);
 
       expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
+    });
+
+    it('exposes a named dialog, moves focus inside, and restores it after close', () => {
+      const image = createImageAttachment({ name: 'test.png' });
+      manager['showFullImage'](image);
+
+      const modalEl = overlayEl.children[0];
+      const closeBtn = modalEl.children[1];
+      expect(modalEl.getAttribute('role')).toBe('dialog');
+      expect(modalEl.getAttribute('aria-modal')).toBe('true');
+      expect(modalEl.getAttribute('aria-label')).toBe('Image preview: test.png');
+      expect(closeButtonFocus).toHaveBeenCalledTimes(1);
+
+      closeBtn.click();
+
+      expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
     });
 
     it('should register Escape key handler and close button', () => {

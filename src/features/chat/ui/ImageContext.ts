@@ -317,8 +317,12 @@ export class ImageContextManager {
     this.closeImageModal?.();
 
     const ownerDocument = this.containerEl.ownerDocument ?? window.document;
+    const previouslyFocusedElement = ownerDocument.activeElement as HTMLElement | null;
     const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', `Image preview: ${image.name}`);
 
     modal.createEl('img', {
       attr: {
@@ -351,6 +355,9 @@ export class ImageContextManager {
       if (this.closeImageModal === close) {
         this.closeImageModal = null;
       }
+      if (previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement.focus();
+      }
     };
 
     closeBtn.addEventListener('click', close);
@@ -359,6 +366,7 @@ export class ImageContextManager {
     });
     ownerDocument.addEventListener('keydown', handleEsc);
     this.closeImageModal = close;
+    closeBtn.focus();
   }
 
   private generateId(): string {
