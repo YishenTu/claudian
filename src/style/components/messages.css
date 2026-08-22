@@ -284,6 +284,8 @@
 }
 
 .claudian-message {
+  flex-shrink: 0;
+  content-visibility: auto;
   padding: 10px 14px;
   border-radius: 8px;
   max-width: 95%;
@@ -291,6 +293,7 @@
 }
 
 .claudian-message-user {
+  contain-intrinsic-size: auto 5rem;
   position: relative;
   background: rgba(0, 0, 0, 0.3);
   align-self: flex-end;
@@ -308,6 +311,7 @@
 }
 
 .claudian-message-assistant {
+  contain-intrinsic-size: auto 23.5rem;
   background: transparent;
   align-self: stretch;
   width: 100%;
