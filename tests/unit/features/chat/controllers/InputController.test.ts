@@ -224,6 +224,50 @@ function createFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe('InputController approval details', () => {
+  it('makes long approval details a named keyboard-scrollable region', () => {
+    const parentEl = createMockEl();
+    const inputContainerEl = createMockEl();
+    inputContainerEl.parentElement = parentEl;
+    parentEl.appendChild(inputContainerEl);
+    const fixture = createFixture({
+      getInputContainerEl: () => inputContainerEl as any,
+    });
+
+    const pending = fixture.controller.handleApprovalRequest(
+      'Bash',
+      {},
+      'A long command description',
+    );
+    const descriptionEl = parentEl.querySelector('.claudian-ask-approval-desc');
+
+    expect(descriptionEl?.getAttribute('tabindex')).toBe('0');
+    expect(descriptionEl?.getAttribute('role')).toBe('region');
+    expect(descriptionEl?.getAttribute('aria-label')).toBe('Bash approval details');
+
+    const stopPropagation = jest.fn();
+    const preventDefault = jest.fn();
+    descriptionEl?.dispatchEvent({
+      type: 'keydown',
+      key: 'ArrowDown',
+      preventDefault,
+      stopPropagation,
+    });
+    descriptionEl?.dispatchEvent({
+      type: 'keydown',
+      key: 'Enter',
+      preventDefault,
+      stopPropagation,
+    });
+
+    expect(stopPropagation).toHaveBeenCalledTimes(2);
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    fixture.controller.dismissPendingApprovalPrompt();
+    return pending;
+  });
+});
+
 describe('InputController coordinator execution', () => {
   beforeEach(() => {
     jest.clearAllMocks();

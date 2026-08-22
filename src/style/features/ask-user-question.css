@@ -316,3 +316,8 @@
   color: var(--text-normal);
   word-break: break-all;
 }
+
+.claudian-ask-approval-desc:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}

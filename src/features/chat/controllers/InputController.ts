@@ -1934,7 +1934,22 @@ export class InputController {
       headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
     }
 
-    headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+    const descriptionEl = headerEl.createDiv({
+      text: description,
+      cls: 'claudian-ask-approval-desc',
+    });
+    descriptionEl.setAttribute('aria-label', `${toolName} approval details`);
+    descriptionEl.setAttribute('role', 'region');
+    descriptionEl.setAttribute('tabindex', '0');
+    descriptionEl.addEventListener('keydown', (event) => {
+      if (
+        event.key === 'ArrowDown'
+        || event.key === 'ArrowUp'
+        || event.key === 'Enter'
+      ) {
+        event.stopPropagation();
+      }
+    });
 
     const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
     const optionDecisionMap = new Map<string, ApprovalDecision>();
