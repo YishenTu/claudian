@@ -248,12 +248,16 @@ export class ClaudeExecutionEventNormalizer {
     if (chunk.type === 'error') {
       target.push({
         type: 'native_error',
-        message: chunk.content,
+        message: (isSyntheticApiErrorMessage(message) ? extractApiErrorText(message) : null)
+          ?? chunk.content,
         code: chunk.code,
         providerSessionId: chunk.providerSessionId,
       });
       return;
     }
+
+    // The native_error above already carries this text; rendering it again would duplicate it.
+    if (chunk.type === 'text' && isSyntheticApiErrorMessage(message)) return;
 
     if (
       (chunk.type === 'text' || chunk.type === 'thinking')
@@ -500,6 +504,44 @@ function normalizeToolCompleted(
     isBlocked: state.blockedToolIds.has(chunk.id),
     toolUseResult: chunk.toolUseResult,
   };
+}
+
+// Claude reports quota and other API failures as a synthetic assistant message whose only
+// payload is human-readable text (e.g. the session-limit reset time). `error` alone is not
+// enough to detect it: errors such as `max_output_tokens` ride on real assistant messages
+// carrying real partial prose, which must not be mistaken for error copy. `isApiErrorMessage`
+// and `apiErrorStatus` are wire-only fields the SDK does not declare, so they are treated as
+// optional hints alongside the typed `<synthetic>` model marker.
+function isSyntheticApiErrorMessage(message: SDKMessage): boolean {
+  if (message.type !== 'assistant') return false;
+  if (typeof message.error !== 'string' || message.error.trim() === '') return false;
+  const wireOnly = message as unknown as {
+    isApiErrorMessage?: unknown;
+    apiErrorStatus?: unknown;
+  };
+  return (
+    wireOnly.isApiErrorMessage === true
+    || typeof wireOnly.apiErrorStatus === 'number'
+    || (message.message as { model?: unknown } | undefined)?.model === '<synthetic>'
+  );
+}
+
+function extractApiErrorText(message: SDKMessage): string | null {
+  if (message.type !== 'assistant') return null;
+  const content = (message.message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return null;
+  const text = content
+    .filter((block): block is { type: 'text'; text: string } => (
+      typeof block === 'object'
+      && block !== null
+      && (block as { type?: unknown }).type === 'text'
+      && typeof (block as { text?: unknown }).text === 'string'
+      && (block as { text: string }).text.trim() !== '(no content)'
+    ))
+    .map(block => block.text)
+    .join('\n')
+    .trim();
+  return text === '' ? null : text;
 }
 
 function isAssistantOutputChunk(chunk: StreamChunk): boolean {
