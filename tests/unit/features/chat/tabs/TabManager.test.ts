@@ -1748,6 +1748,17 @@ describe('TabManager provider execution orchestration', () => {
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
   });
 
+  it('requests provider built-ins for Main Chat command discovery', async () => {
+    const { manager } = createManager();
+    await manager.createTab();
+
+    await manager.getProviderCommandDiscovery();
+
+    expect(commandCatalog.listDropdownEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ includeBuiltIns: true }),
+    );
+  });
+
   it('rejects command context loaded for a conversation rebound during lookup', async () => {
     const firstLookup = deferred<any>();
     const conversationB = {
