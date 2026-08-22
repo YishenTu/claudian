@@ -7,6 +7,7 @@ import {
 } from '@/shared/components/ResumeSessionDropdown';
 
 function createMockInput(): any {
+  const attributes = new Map<string, string>();
   return {
     value: '',
     selectionStart: 0,
@@ -14,6 +15,9 @@ function createMockInput(): any {
     focus: jest.fn(),
     addEventListener: jest.fn(),
     removeEventListener: jest.fn(),
+    setAttribute: jest.fn((name: string, value: string) => attributes.set(name, value)),
+    getAttribute: jest.fn((name: string) => attributes.get(name) ?? null),
+    removeAttribute: jest.fn((name: string) => attributes.delete(name)),
   };
 }
 
@@ -152,6 +156,38 @@ describe('ResumeSessionDropdown', () => {
 
       dropdown.destroy();
     });
+
+    it('exposes the popup and active conversation through listbox semantics', () => {
+      const dropdown = new ResumeSessionDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const listbox = containerEl.querySelector('.claudian-resume-list');
+      const items = listbox?.querySelectorAll('.claudian-resume-item') ?? [];
+      const listboxId = listbox?.getAttribute('id');
+      const activeOptionId = items[0]?.getAttribute('id');
+
+      expect(listbox?.getAttribute('role')).toBe('listbox');
+      expect(listbox?.getAttribute('aria-label')).toBe('Resume conversation');
+      expect(listboxId).toBeTruthy();
+      expect(items.map((item: any) => item.getAttribute('role'))).toEqual([
+        'option',
+        'option',
+        'option',
+      ]);
+      expect(items.map((item: any) => item.getAttribute('aria-selected'))).toEqual([
+        'true',
+        'false',
+        'false',
+      ]);
+      expect(inputEl.getAttribute('role')).toBe('combobox');
+      expect(inputEl.getAttribute('aria-haspopup')).toBe('listbox');
+      expect(inputEl.getAttribute('aria-expanded')).toBe('true');
+      expect(inputEl.getAttribute('aria-controls')).toBe(listboxId);
+      expect(inputEl.getAttribute('aria-activedescendant')).toBe(activeOptionId);
+
+      dropdown.destroy();
+    });
   });
 
   describe('handleKeydown', () => {
@@ -183,6 +219,24 @@ describe('ResumeSessionDropdown', () => {
 
       expect(result).toBe(true);
       expect(event.preventDefault).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+
+    it('keeps the active descendant and option selection in sync while navigating', () => {
+      const dropdown = new ResumeSessionDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+      const listbox = containerEl.querySelector('.claudian-resume-list');
+      const items = listbox?.querySelectorAll('.claudian-resume-item') ?? [];
+
+      dropdown.handleKeydown({ key: 'ArrowDown', preventDefault: jest.fn() } as any);
+
+      expect(items[0]?.getAttribute('aria-selected')).toBe('false');
+      expect(items[1]?.getAttribute('aria-selected')).toBe('true');
+      expect(inputEl.getAttribute('aria-activedescendant')).toBe(
+        items[1]?.getAttribute('id')
+      );
 
       dropdown.destroy();
     });
@@ -312,6 +366,22 @@ describe('ResumeSessionDropdown', () => {
       dropdown.destroy();
 
       expect(inputEl.removeEventListener).toHaveBeenCalledWith('input', expect.any(Function));
+    });
+
+    it('restores the input accessibility attributes it temporarily owns', () => {
+      inputEl.setAttribute('role', 'textbox');
+      inputEl.setAttribute('aria-controls', 'existing-popup');
+      const dropdown = new ResumeSessionDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      dropdown.destroy();
+
+      expect(inputEl.getAttribute('role')).toBe('textbox');
+      expect(inputEl.getAttribute('aria-controls')).toBe('existing-popup');
+      expect(inputEl.getAttribute('aria-haspopup')).toBeNull();
+      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
+      expect(inputEl.getAttribute('aria-activedescendant')).toBeNull();
     });
   });
 

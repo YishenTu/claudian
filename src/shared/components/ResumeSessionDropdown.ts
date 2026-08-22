@@ -14,6 +14,16 @@ export interface ResumeSessionDropdownCallbacks {
   onDismiss: () => void;
 }
 
+const INPUT_ACCESSIBILITY_ATTRIBUTES = [
+  'role',
+  'aria-haspopup',
+  'aria-controls',
+  'aria-expanded',
+  'aria-activedescendant',
+] as const;
+
+let nextListboxId = 0;
+
 export class ResumeSessionDropdown {
   private containerEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
@@ -23,6 +33,8 @@ export class ResumeSessionDropdown {
   private currentConversationId: string | null;
   private selectedIndex = 0;
   private onInput: () => void;
+  private listboxId: string;
+  private previousInputAttributes: Map<string, string | null>;
 
   constructor(
     containerEl: HTMLElement,
@@ -36,8 +48,16 @@ export class ResumeSessionDropdown {
     this.conversations = this.sortConversations(conversations);
     this.currentConversationId = currentConversationId;
     this.callbacks = callbacks;
+    this.listboxId = `claudian-resume-listbox-${++nextListboxId}`;
+    this.previousInputAttributes = new Map(
+      INPUT_ACCESSIBILITY_ATTRIBUTES.map(attribute => [
+        attribute,
+        this.inputEl.getAttribute(attribute),
+      ])
+    );
 
     this.dropdownEl = this.containerEl.createDiv({ cls: 'claudian-resume-dropdown' });
+    this.configureInputAccessibility();
     this.render();
     this.dropdownEl.addClass('visible');
 
@@ -80,11 +100,14 @@ export class ResumeSessionDropdown {
 
   destroy(): void {
     this.inputEl.removeEventListener('input', this.onInput);
+    this.restoreInputAccessibility();
     this.dropdownEl?.remove();
   }
 
   private dismiss(): void {
     this.dropdownEl.removeClass('visible');
+    this.inputEl.setAttribute('aria-expanded', 'false');
+    this.inputEl.removeAttribute('aria-activedescendant');
     this.callbacks.onDismiss();
   }
 
@@ -108,16 +131,28 @@ export class ResumeSessionDropdown {
     this.updateSelection();
   }
 
-  private updateSelection(): void {
+  private updateSelection(scrollSelectedIntoView = true): void {
     const items = this.dropdownEl.querySelectorAll('.claudian-resume-item');
+    let activeOptionId: string | null = null;
     items?.forEach((item, index) => {
       if (index === this.selectedIndex) {
         item.addClass('selected');
-        (item as HTMLElement).scrollIntoView({ block: 'nearest' });
+        item.setAttribute('aria-selected', 'true');
+        activeOptionId = item.getAttribute('id');
+        if (scrollSelectedIntoView) {
+          (item as HTMLElement).scrollIntoView({ block: 'nearest' });
+        }
       } else {
         item.removeClass('selected');
+        item.setAttribute('aria-selected', 'false');
       }
     });
+
+    if (activeOptionId) {
+      this.inputEl.setAttribute('aria-activedescendant', activeOptionId);
+    } else {
+      this.inputEl.removeAttribute('aria-activedescendant');
+    }
   }
 
   private sortConversations(conversations: ConversationMeta[]): ConversationMeta[] {
@@ -132,18 +167,24 @@ export class ResumeSessionDropdown {
     const header = this.dropdownEl.createDiv({ cls: 'claudian-resume-header' });
     header.createSpan({ text: 'Resume conversation' });
 
+    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
+    list.setAttribute('id', this.listboxId);
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', 'Resume conversation');
+
     if (this.conversations.length === 0) {
-      this.dropdownEl.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
+      list.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
+      this.inputEl.removeAttribute('aria-activedescendant');
       return;
     }
-
-    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
 
     for (let i = 0; i < this.conversations.length; i++) {
       const conv = this.conversations[i];
       const isCurrent = conv.id === this.currentConversationId;
 
       const item = list.createDiv({ cls: 'claudian-resume-item' });
+      item.setAttribute('id', `${this.listboxId}-option-${i}`);
+      item.setAttribute('role', 'option');
       if (isCurrent) item.addClass('current');
       if (i === this.selectedIndex) item.addClass('selected');
 
@@ -170,6 +211,26 @@ export class ResumeSessionDropdown {
         this.selectedIndex = i;
         this.updateSelection();
       });
+    }
+
+    this.updateSelection(false);
+  }
+
+  private configureInputAccessibility(): void {
+    this.inputEl.setAttribute('role', 'combobox');
+    this.inputEl.setAttribute('aria-haspopup', 'listbox');
+    this.inputEl.setAttribute('aria-controls', this.listboxId);
+    this.inputEl.setAttribute('aria-expanded', 'true');
+  }
+
+  private restoreInputAccessibility(): void {
+    for (const attribute of INPUT_ACCESSIBILITY_ATTRIBUTES) {
+      const previousValue = this.previousInputAttributes.get(attribute) ?? null;
+      if (previousValue === null) {
+        this.inputEl.removeAttribute(attribute);
+      } else {
+        this.inputEl.setAttribute(attribute, previousValue);
+      }
     }
   }
 
