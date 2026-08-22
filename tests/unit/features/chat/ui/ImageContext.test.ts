@@ -787,6 +787,12 @@ describe('ImageContextManager - Private Helpers', () => {
 
       expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
 
+      const modalEl = overlayEl.children[0];
+      const closeBtn = modalEl.children[1];
+      expect(closeBtn.tagName).toBe('BUTTON');
+      expect(closeBtn.getAttribute('type')).toBe('button');
+      expect(closeBtn.getAttribute('aria-label')).toBe('Close image preview');
+
       const escHandler = addEventSpy.mock.calls[0][1];
       escHandler({ key: 'Escape' });
 

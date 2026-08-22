@@ -712,7 +712,13 @@ export class MessageRenderer {
       },
     });
 
-    const closeBtn = modal.createDiv({ cls: 'claudian-image-modal-close' });
+    const closeBtn = modal.createEl('button', {
+      cls: 'claudian-image-modal-close',
+      attr: {
+        'aria-label': 'Close image preview',
+        type: 'button',
+      },
+    });
     closeBtn.setText('\u00D7');
 
     const handleEsc = (e: KeyboardEvent) => {

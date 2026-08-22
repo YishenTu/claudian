@@ -1940,6 +1940,9 @@ describe('MessageRenderer', () => {
         // Children: img (index 0), closeBtn (index 1)
         const closeBtn = modalEl.children[1];
         expect(closeBtn.hasClass('claudian-image-modal-close')).toBe(true);
+        expect(closeBtn.tagName).toBe('BUTTON');
+        expect(closeBtn.getAttribute('type')).toBe('button');
+        expect(closeBtn.getAttribute('aria-label')).toBe('Close image preview');
 
         const removeSpy = jest.spyOn(overlayEl, 'remove');
         closeBtn.click();
