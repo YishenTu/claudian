@@ -65,7 +65,7 @@ describe('Project exit foundation gate', () => {
       authority: COLLAB_AUTHORITY_SCHEMA_VERSION,
       local: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       protocol: COLLAB_CONTROL_PROTOCOL_VERSION,
-    }).toEqual({ authority: 11, local: 2, protocol: 9 });
+    }).toEqual({ authority: 11, local: 3, protocol: 9 });
     expect(lanCollabControlOperationCodec('leaveProject').decodeRequest({
       expectedHostMemberId: 'member-host',
       expectedMemberId: 'member-target',

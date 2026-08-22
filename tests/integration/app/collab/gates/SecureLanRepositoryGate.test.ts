@@ -13,6 +13,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 
@@ -88,7 +89,9 @@ describe('M3 secure LAN repository gate', () => {
     }
 
     const localMembership = await member.local.projects.loadMembership(projectId);
-    if (!localMembership) throw new Error('Member membership missing');
+    if (!localMembership || !isCollabLocalLanMembership(localMembership)) {
+      throw new Error('Member LAN membership missing');
+    }
     const workingCopy = path.join(memberRoot, joined.value.workspacePath);
     await writeFile(path.join(workingCopy, 'member-note.md'), 'member change\n');
     const memberGit = await member.requireGitFoundation();
@@ -107,9 +110,12 @@ describe('M3 secure LAN repository gate', () => {
       mode: 0o600,
     });
     const network = {
-      authorizationHeader: `Basic ${Buffer.from(
-        `${localMembership.member.id}:${localMembership.member.credential}`,
-      ).toString('base64')}`,
+      headers: [{
+        name: 'Authorization',
+        value: `Basic ${Buffer.from(
+          `${localMembership.member.id}:${localMembership.member.credential}`,
+        ).toString('base64')}`,
+      }],
       sslCaInfoPath: caPath,
     };
     await memberGit.repositories.push(

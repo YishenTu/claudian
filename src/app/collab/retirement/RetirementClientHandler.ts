@@ -4,6 +4,7 @@ import { collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol
 
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabRetiredProjectProjectionSeed } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import {
   decodeLocalCleanupRecord,
   type LocalCleanupRecord,
@@ -144,6 +145,12 @@ export class RetirementClientHandler {
       return;
     }
     const membership = await this.store.loadMembership(result.projectId);
+    if (membership && !isCollabLocalLanMembership(membership)) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'retirement-client-lan-only' },
+      });
+    }
     const pendingLeave = membership
       ? null
       : await this.pendingLeaves?.load(result.projectId) ?? null;

@@ -12,6 +12,8 @@ describe('Collab core barrel', () => {
     // must not re-export package symbols or grow a second registry.
     expect(Object.keys(coreCollab).sort()).toEqual([
       'DEFAULT_COLLAB_PROJECTS_FOLDER',
+      'isCollabCloudProjectSnapshot',
+      'isCollabLanProjectSnapshot',
       'parseCollabProjectsFolder',
       'resolveEffectiveCollabProjectId',
     ]);

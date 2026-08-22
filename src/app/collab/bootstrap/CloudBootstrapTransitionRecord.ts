@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
-  collabCloudGitRoute,
   type CollabGitOid,
   type CollabIsoTimestamp,
   type CollabMemberId,
@@ -18,6 +17,12 @@ import {
   isCollabOpaqueId,
   isCollabProjectId,
 } from '@claudian/collab-protocol';
+
+import {
+  canonicalCloudOrigin,
+  canonicalCloudUrl,
+  cloudProjectGitRemoteUrl,
+} from '@/app/collab/remote-authority/CloudAuthorityUrls';
 
 export const CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION = 1 as const;
 
@@ -181,31 +186,6 @@ function timestamp(source: Value, key: string): CollabIsoTimestamp {
   return candidate;
 }
 
-function isLoopbackHostname(hostname: string): boolean {
-  return hostname === '127.0.0.1' || hostname === '[::1]' || hostname === 'localhost';
-}
-
-export function canonicalCloudOrigin(candidate: string, key: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    throw new TypeError(`Invalid ${key}`);
-  }
-  if (
-    (parsed.protocol !== 'https:'
-      && !(parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname)))
-    || parsed.username.length > 0
-    || parsed.password.length > 0
-    || parsed.pathname !== '/'
-    || parsed.search.length > 0
-    || parsed.hash.length > 0
-  ) {
-    throw new TypeError(`Invalid ${key}`);
-  }
-  return parsed.toString();
-}
-
 function canonicalHttpsOrigin(candidate: string, key: string): string {
   const normalized = canonicalCloudOrigin(candidate, key);
   if (new URL(normalized).protocol !== 'https:') throw new TypeError(`Invalid ${key}`);
@@ -229,34 +209,6 @@ function canonicalHttpsUrl(candidate: string, key: string): string {
     throw new TypeError(`Invalid ${key}`);
   }
   return parsed.toString();
-}
-
-function canonicalCloudUrl(candidate: string, key: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    throw new TypeError(`Invalid ${key}`);
-  }
-  if (
-    (parsed.protocol !== 'https:'
-      && !(parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname)))
-    || parsed.username.length > 0
-    || parsed.password.length > 0
-    || parsed.search.length > 0
-    || parsed.hash.length > 0
-  ) {
-    throw new TypeError(`Invalid ${key}`);
-  }
-  return parsed.toString();
-}
-
-export function cloudProjectGitRemoteUrl(serverUrl: string, projectId: string): string {
-  const origin = canonicalCloudOrigin(serverUrl, 'serverUrl');
-  const uploadPack = collabCloudGitRoute(projectId, 'git-upload-pack').target;
-  const suffix = '/git-upload-pack';
-  if (!uploadPack.endsWith(suffix)) throw new TypeError('Invalid Cloud Git route');
-  return new URL(uploadPack.slice(0, -suffix.length), origin).toString();
 }
 
 export function developmentBootstrapManifestSha256(
@@ -573,13 +525,48 @@ export function markCloudBootstrapTerminalCleanupCompleted(
   updatedAt: CollabIsoTimestamp,
 ): CloudBootstrapTransitionRecord {
   const current = decodeCloudBootstrapTransitionRecord(record);
-  if (current.attemptState === 'pending') {
+  if (
+    current.attemptState === 'pending'
+    || (current.attemptState === 'activated' && current.phase !== 'fence-terminal')
+  ) {
     throw new TypeError('Cloud bootstrap attempt is not terminal');
   }
   if (current.terminalCleanupCompleted) return current;
   return decodeCloudBootstrapTransitionRecord({
     ...current,
     terminalCleanupCompleted: true,
+    updatedAt,
+  });
+}
+
+export function advanceCloudBootstrapTransitionPhase(
+  record: CloudBootstrapTransitionRecord,
+  nextPhase: CloudBootstrapTransitionPhase,
+  updatedAt: CollabIsoTimestamp,
+): CloudBootstrapTransitionRecord {
+  const current = decodeCloudBootstrapTransitionRecord(record);
+  if (current.attemptState !== 'activated') {
+    throw new TypeError('Cloud bootstrap attempt is not activated');
+  }
+  const currentIndex = CLOUD_BOOTSTRAP_TRANSITION_PHASES.indexOf(current.phase);
+  const nextIndex = CLOUD_BOOTSTRAP_TRANSITION_PHASES.indexOf(nextPhase);
+  if (nextIndex === currentIndex) return current;
+  if (nextIndex !== currentIndex + 1) {
+    throw new TypeError('Invalid Cloud bootstrap transition phase');
+  }
+  if (
+    nextPhase === 'fence-terminal'
+    && current.fence.state !== 'host-stopped'
+    && current.fence.state !== 'not-applicable'
+  ) {
+    throw new TypeError('Cloud bootstrap Host fence is not stopped');
+  }
+  return decodeCloudBootstrapTransitionRecord({
+    ...current,
+    fence: nextPhase === 'fence-terminal' && current.fence.state === 'host-stopped'
+      ? { ...current.fence, state: 'terminal' }
+      : current.fence,
+    phase: nextPhase,
     updatedAt,
   });
 }

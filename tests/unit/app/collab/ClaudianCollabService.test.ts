@@ -34,6 +34,7 @@ describe('ClaudianCollabService retirement recovery', () => {
         endpoint: 'https://127.0.0.1:61234',
         hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
         hostCaFingerprint: 'a'.repeat(64),
+        kind: 'lan',
       },
       member: { credential: Buffer.alloc(32, 1).toString('base64url') },
     });

@@ -7,9 +7,18 @@ import {
   type CollabClientProjectionStore,
 } from '@/app/collab/client/CollabClientProjection';
 import type { ProjectEventInvalidation } from '@/app/collab/client/ProjectEventClient';
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  CollabLocalCloudMembershipRecord,
+  CollabLocalLanMembershipRecord,
+  CollabLocalMembershipRecord,
+} from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import {
+  CollabAuthoritySessionFactory,
+} from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
+import { type CollabCloudProjectSnapshot, type CollabLanProjectSnapshot, type CollabProjectSnapshot, isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
@@ -123,6 +132,8 @@ describe('CollabClientProjection', () => {
     expect(reconcileSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       managerResponsibilityOffer: offered,
     }));
+    expect(isCollabLanProjectSnapshot(result.snapshot)).toBe(true);
+    if (!isCollabLanProjectSnapshot(result.snapshot)) throw new Error('Expected LAN snapshot');
     expect(result.snapshot.managerResponsibilityOffer).toEqual(acknowledged);
     expect(store.documents.get('project-a')).toMatchObject({
       snapshot: { managerResponsibilityOffer: acknowledged },
@@ -211,6 +222,52 @@ describe('CollabClientProjection', () => {
     await expect(reloaded.readSnapshot('project-a')).rejects.toMatchObject({
       code: 'membership-revoked',
     });
+  });
+
+  it('strictly restores a Cloud snapshot cache after reload', async () => {
+    const store = new MemoryProjectionStore();
+    store.membership = cloudMembership();
+    const onlineControl = controlPort();
+    onlineControl.readSnapshot.mockResolvedValue(cloudSnapshot());
+    const online = new CollabClientProjection(store, onlineControl, {
+      now: () => new Date(CREATED_AT),
+    });
+    await online.readSnapshot('project-a');
+    online.dispose();
+    const offlineControl = controlPort();
+    offlineControl.readSnapshot.mockRejectedValue(new CollabError({
+      code: 'endpoint-unreachable',
+    }));
+    const reloaded = new CollabClientProjection(store, offlineControl);
+
+    await expect(reloaded.readSnapshot('project-a')).resolves.toEqual({
+      snapshot: cloudSnapshot(),
+      source: 'cache',
+      stale: true,
+      syncState: {
+        eventSequence: 7,
+        generation: 0,
+        projectId: 'project-a',
+        status: 'offline',
+      },
+    });
+  });
+
+  it('rejects a pre-cutover LAN cache after membership becomes Cloud', async () => {
+    const store = new MemoryProjectionStore();
+    const online = new CollabClientProjection(store, controlPort(), {
+      now: () => new Date(CREATED_AT),
+    });
+    await online.readSnapshot('project-a');
+    online.dispose();
+    store.membership = cloudMembership();
+    const offlineControl = controlPort();
+    const unavailable = new CollabError({ code: 'endpoint-unreachable' });
+    offlineControl.readSnapshot.mockRejectedValue(unavailable);
+    const reloaded = new CollabClientProjection(store, offlineControl);
+
+    await expect(reloaded.readSnapshot('project-a')).rejects.toBe(unavailable);
+    expect(store.removedDocuments).toEqual([['project-a', 'cache']]);
   });
 
   it('does not invent an offline projection when no valid cache exists', async () => {
@@ -497,10 +554,12 @@ describe('CollabClientProjection', () => {
     });
 
     await projection.subscribe('project-a', jest.fn());
+    const currentMembership = store.membership;
+    if (!isCollabLocalLanMembership(currentMembership)) throw new Error('Expected LAN membership');
     store.membership = {
-      ...store.membership,
+      ...currentMembership,
       authority: {
-        ...store.membership.authority,
+        ...currentMembership.authority,
         endpoint: 'https://192.168.1.30:54545',
       },
     };
@@ -512,6 +571,78 @@ describe('CollabClientProjection', () => {
       { endpoint: 'https://192.168.1.20:54545' },
       { endpoint: 'https://192.168.1.30:54545' },
     ]);
+  });
+
+  it('rejects a subscription when its adapter resolves after the membership generation resets', async () => {
+    const store = new MemoryProjectionStore();
+    const created = deferred<CollabAuthoritySession>();
+    const connect = jest.fn();
+    const dispose = jest.fn();
+    const create = jest.fn(() => created.promise);
+    const authoritySessions = new CollabAuthoritySessionFactory([{
+      authorityKind: 'lan',
+      create,
+    }]);
+    const projection = new CollabClientProjection(store, controlPort(), {
+      authoritySessions,
+    });
+
+    const subscription = projection.subscribe('project-a', jest.fn());
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(create).toHaveBeenCalledTimes(1);
+    projection.resetProjectConnection('project-a');
+    created.resolve({
+      authorityKind: 'lan',
+      control: controlPort(),
+      dispose,
+      events: { connect },
+      git: { headers: [], remoteUrl: 'https://192.168.1.20:54545/repository.git' },
+      supports: () => true,
+    });
+
+    await expect(subscription).rejects.toMatchObject({
+      code: 'cancelled',
+      safeContext: { reason: 'projection-project-connection-reset' },
+    });
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(connect).not.toHaveBeenCalled();
+    projection.dispose();
+  });
+
+  it('disposes an event connection created while its authority generation resets', async () => {
+    const store = new MemoryProjectionStore();
+    const eventDispose = jest.fn();
+    const authorityDispose = jest.fn();
+    const holder: { projection?: CollabClientProjection } = {};
+    const connect = jest.fn(() => {
+      holder.projection?.resetProjectConnection('project-a');
+      return { dispose: eventDispose };
+    });
+    const authoritySessions = new CollabAuthoritySessionFactory([{
+      authorityKind: 'lan',
+      create: async () => ({
+        authorityKind: 'lan' as const,
+        control: controlPort(),
+        dispose: authorityDispose,
+        events: { connect },
+        git: { headers: [], remoteUrl: 'https://192.168.1.20:54545/repository.git' },
+        supports: () => true,
+      }),
+    }]);
+    const projection = new CollabClientProjection(store, controlPort(), {
+      authoritySessions,
+    });
+    holder.projection = projection;
+
+    await expect(projection.subscribe('project-a', jest.fn())).rejects.toMatchObject({
+      code: 'cancelled',
+      safeContext: { reason: 'projection-project-connection-reset' },
+    });
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(eventDispose).toHaveBeenCalledTimes(1);
+    expect(authorityDispose).toHaveBeenCalledTimes(1);
+    projection.dispose();
   });
 
   it('closes Project activity through the local-exit activity port', async () => {
@@ -672,7 +803,7 @@ describe('CollabClientProjection', () => {
   });
 });
 
-function membership(): CollabLocalMembershipRecord {
+function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
       endpoint: 'https://192.168.1.20:54545',
@@ -701,7 +832,36 @@ function membership(): CollabLocalMembershipRecord {
   };
 }
 
-function snapshot(): CollabProjectSnapshot {
+function cloudMembership(): CollabLocalCloudMembershipRecord {
+  return {
+    authority: {
+      bindingVersion: 1,
+      developmentActorId: 'member-a',
+      gitRemoteUrl: 'https://cloud.example.test/v1/projects/project-a/repository.git',
+      kind: 'cloud',
+      serverUrl: 'https://cloud.example.test',
+      wireVersion: 4,
+    },
+    createdAt: CREATED_AT,
+    lastEventSequence: 0,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Alice',
+      id: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      role: 'member',
+    },
+    project: {
+      id: 'project-a',
+      name: 'Alpha',
+      workspacePath: 'workspace/project-a',
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: CREATED_AT,
+  };
+}
+
+function snapshot(): CollabLanProjectSnapshot {
   const currentMember = {
     activatedAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -731,18 +891,54 @@ function snapshot(): CollabProjectSnapshot {
   };
 }
 
+function cloudSnapshot(): CollabCloudProjectSnapshot {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: 'Alice',
+    id: 'member-a',
+    personalRef: 'refs/heads/members/member-a',
+    role: 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 7,
+    members: [currentMember],
+    openTicketCount: 0,
+    openRequests: [],
+    project: {
+      authorityKind: 'cloud',
+      createdAt: CREATED_AT,
+      id: 'project-a',
+      mainOid: HEAD,
+      mainRef: 'refs/heads/main',
+      name: 'Alpha',
+    },
+    ticketHighlights: [],
+  };
+}
+
 function controlPort(): jest.Mocked<CollabClientProjectionControlPort> {
   return {
+    addTicketComment: jest.fn(),
     acceptRequest: jest.fn(),
+    closeTicket: jest.fn(),
     createComment: jest.fn(),
+    createTicket: jest.fn(),
+    ensure: jest.fn(),
     listRequestComments: jest.fn(),
     listTicketAcceptedRelations: jest.fn(),
     listTicketComments: jest.fn(),
     listTickets: jest.fn(),
     readRequest: jest.fn(),
+    readRequestPage: jest.fn(),
     readSnapshot: jest.fn().mockResolvedValue(snapshot()),
     readTicket: jest.fn(),
     readTicketPage: jest.fn(),
+    reopenTicket: jest.fn(),
+    updateRequestMetadata: jest.fn(),
+    updateTicketContent: jest.fn(),
   };
 }
 
@@ -797,7 +993,7 @@ function ticketDetailWithComments(count: number): CollabTicketDetail {
 class MemoryProjectionStore implements CollabClientProjectionStore {
   readonly documents = new Map<string, unknown>();
   readonly removedDocuments: Array<[string, 'cache']> = [];
-  membership = membership();
+  membership: CollabLocalMembershipRecord = membership();
 
   async loadMembership(): Promise<CollabLocalMembershipRecord | null> {
     return this.membership;
@@ -831,11 +1027,31 @@ class MemoryProjectionStore implements CollabClientProjectionStore {
     role: CollabLocalMembershipRecord['member']['role'],
     sequence: number,
   ): Promise<CollabLocalMembershipRecord> {
-    this.membership = {
-      ...this.membership,
-      lastEventSequence: sequence,
-      member: { ...this.membership.member, id: memberId, role },
-    };
+    const current = this.membership;
+    if (isCollabLocalLanMembership(current)) {
+      this.membership = {
+        ...current,
+        lastEventSequence: sequence,
+        member: { ...current.member, id: memberId, role },
+      };
+    } else {
+      this.membership = {
+        ...current,
+        lastEventSequence: sequence,
+        member: { ...current.member, id: memberId, role },
+      };
+    }
     return this.membership;
   }
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  return {
+    promise: new Promise<T>(settle => { resolve = settle; }),
+    resolve,
+  };
 }

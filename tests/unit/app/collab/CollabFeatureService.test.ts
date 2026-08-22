@@ -23,7 +23,7 @@ import {
 } from '@/app/collab/CollabFeatureService';
 import type { CollabLocalProjectIndex } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabPublishOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -124,7 +124,7 @@ function pendingJoin() {
   };
 }
 
-function authoritySnapshot(): CollabProjectSnapshot {
+function authoritySnapshot(): CollabLanProjectSnapshot {
   const currentMember = {
     activatedAt: CREATED_AT,
     createdAt: CREATED_AT,

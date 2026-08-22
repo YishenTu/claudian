@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { type CollabProjectId } from '@claudian/collab-protocol';
 
 import type {
-  CollabLocalMembershipRecord,
+  CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferRecoveryStorePort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import {
   hostTransferAcceptanceIdempotencyKey,
@@ -15,7 +16,7 @@ import type {
   IncomingHostTransferCoordinator,
 } from '@/app/collab/host-transfer/IncomingHostTransferCoordinator';
 import type { HostTransferControlClient } from '@/app/collab/lan/HostTransferControlClient';
-import { type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabHostTransferIntentRequest, type CollabOperationOptions } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabHostTransferIntentRequest, type CollabLanProjectSnapshot, type CollabOperationOptions, isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 type IncomingCoordinator = Pick<IncomingHostTransferCoordinator, 'accept' | 'close' | 'resume'>;
@@ -25,13 +26,17 @@ interface IncomingCoordinatorEntry {
   readonly coordinator: Promise<IncomingCoordinator>;
 }
 
+type LanCoordinationSnapshot = Omit<CollabCoordinationSnapshot, 'snapshot'> & {
+  readonly snapshot: CollabLanProjectSnapshot;
+};
+
 export interface CollabHostTransferServiceOptions {
   readonly createControlClient: (
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
   ) => Pick<HostTransferControlClient, 'cancel' | 'create' | 'decline'>;
   readonly createIdempotencyKey?: (kind: string) => string;
   readonly createIncomingCoordinator: (
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
   ) => Promise<IncomingCoordinator> | IncomingCoordinator;
   readonly projects: Pick<
     CollabLocalProjectRepository,
@@ -207,7 +212,7 @@ export class CollabHostTransferService {
   }
 
   private incomingCoordinator(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
   ): Promise<IncomingCoordinator> {
     this.assertOpen();
     const authorityIdentity = [
@@ -238,7 +243,13 @@ export class CollabHostTransferService {
     if (this.closed) throw serviceError('host-transfer-service-closed');
   }
 
-  private async session(projectId: CollabProjectId, options: CollabOperationOptions) {
+  private async session(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+  ): Promise<{
+    readonly coordination: LanCoordinationSnapshot;
+    readonly membership: CollabLocalLanMembershipRecord;
+  }> {
     const [membership, coordination] = await Promise.all([
       this.requireMembership(projectId),
       this.options.snapshots.readCoordinationSnapshot(projectId, options),
@@ -250,12 +261,21 @@ export class CollabHostTransferService {
       coordination.snapshot.project.id !== projectId
       || coordination.snapshot.currentMember.id !== membership.member.id
     ) throw serviceError('host-transfer-snapshot-mismatch');
-    return { coordination, membership };
+    if (!isCollabLanProjectSnapshot(coordination.snapshot)) {
+      throw serviceError('host-transfer-lan-only', 'authorization-denied');
+    }
+    return { coordination: coordination as LanCoordinationSnapshot, membership };
   }
 
-  private async requireMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord> {
+  private async requireMembership(
+    projectId: CollabProjectId,
+  ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.projects.loadMembership(projectId);
-    if (!membership || membership.project.id !== projectId) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || membership.project.id !== projectId
+    ) {
       throw serviceError('host-transfer-membership-missing');
     }
     if (

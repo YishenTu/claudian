@@ -9,9 +9,6 @@ import {
   type StartCloudBootstrapInput,
   type SubmitCloudBootstrapParticipantInput,
 } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
-import {
-  CLOUD_BOOTSTRAP_ADMISSION_RESUME_FAILED_REASON,
-} from '@/app/collab/bootstrap/CloudBootstrapLocalFence';
 import type {
   CloudBootstrapTransitionRecord,
 } from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
@@ -58,22 +55,6 @@ function serviceError(reason: string): CollabError {
   });
 }
 
-const RETRYABLE_RECOVERY_CODES = new Set([
-  'endpoint-unreachable',
-  'operation-failed',
-  'operation-timeout',
-]);
-
-function isRetryableRecoveryFailure(error: unknown): boolean {
-  return error instanceof CollabError && (
-    RETRYABLE_RECOVERY_CODES.has(error.code)
-    || (
-      error.code === 'durable-progress-recovery-required'
-      && error.safeContext.reason === CLOUD_BOOTSTRAP_ADMISSION_RESUME_FAILED_REASON
-    )
-  );
-}
-
 export class CloudBootstrapService {
   private readonly active = new Set<Promise<unknown>>();
   private closePromise: Promise<void> | null = null;
@@ -97,12 +78,11 @@ export class CloudBootstrapService {
       ...input,
       developmentActorId: input.memberId,
     };
-    return this.run(async signal => {
-      const record = await this.options.createCoordinator(coordinatorInput)
-        .startFormerHost(coordinatorInput, signal);
-      this.trackTransition(record);
-      return record;
-    });
+    return this.run(signal => this.runDirectTransition(
+      input.projectId,
+      () => this.options.createCoordinator(coordinatorInput)
+        .startFormerHost(coordinatorInput, signal),
+    ));
   }
 
   submitParticipant(
@@ -112,12 +92,11 @@ export class CloudBootstrapService {
       ...input,
       developmentActorId: input.memberId,
     };
-    return this.run(async signal => {
-      const record = await this.options.createCoordinator(coordinatorInput)
-        .submitParticipant(coordinatorInput, signal);
-      this.trackTransition(record);
-      return record;
-    });
+    return this.run(signal => this.runDirectTransition(
+      input.projectId,
+      () => this.options.createCoordinator(coordinatorInput)
+        .submitParticipant(coordinatorInput, signal),
+    ));
   }
 
   cancel(projectId: CollabProjectId): Promise<CloudBootstrapTransitionRecord> {
@@ -194,7 +173,7 @@ export class CloudBootstrapService {
     if (signal.aborted) throw new CollabError({ code: 'cancelled' });
     const uncertainProjects = new Set<CollabProjectId>(catalog.blockedProjectIds);
     for (const record of catalog.records) {
-      if (record.attemptState !== 'cancelled' || !record.terminalCleanupCompleted) {
+      if (!record.terminalCleanupCompleted) {
         uncertainProjects.add(record.projectId);
       }
     }
@@ -238,9 +217,47 @@ export class CloudBootstrapService {
       }).recoverProject(record.projectId, signal);
       if (recovered?.attemptState === 'pending') this.requestRetry(recovered);
       else this.clearProjectRetry(record.projectId);
-    } catch (error: unknown) {
-      if (isRetryableRecoveryFailure(error)) this.requestRetry(record);
+    } catch {
+      await this.scheduleIncompleteTransitionRecovery(record.projectId);
     }
+  }
+
+  private async runDirectTransition(
+    projectId: CollabProjectId,
+    operation: () => Promise<CloudBootstrapTransitionRecord>,
+  ): Promise<CloudBootstrapTransitionRecord> {
+    try {
+      const record = await operation();
+      this.trackTransition(record);
+      return record;
+    } catch (error: unknown) {
+      await this.scheduleIncompleteTransitionRecovery(projectId);
+      throw error;
+    }
+  }
+
+  private async scheduleIncompleteTransitionRecovery(
+    projectId: CollabProjectId,
+  ): Promise<void> {
+    if (this.closing) return;
+    let durable: CloudBootstrapTransitionRecord | null;
+    try {
+      durable = await this.options.transitions.load(projectId);
+    } catch {
+      this.requestCatalogRetry();
+      return;
+    }
+    if (!durable) return;
+    try {
+      this.assertActorBinding(durable);
+    } catch {
+      return;
+    }
+    if (durable.terminalCleanupCompleted) {
+      this.clearProjectRetry(projectId);
+      return;
+    }
+    this.requestRetry(durable);
   }
 
   private requestRetry(record: CloudBootstrapTransitionRecord): void {

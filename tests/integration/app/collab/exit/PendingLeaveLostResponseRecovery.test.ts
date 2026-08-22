@@ -29,7 +29,7 @@ import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import type { LeaveProjectInput } from '@/app/collab/membership/MembershipControlClient';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabLocalCleanupStatus } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -423,7 +423,7 @@ function snapshot(
   memberId: string,
   role: 'manager' | 'member',
   managerSetGeneration: number,
-): CollabProjectSnapshot {
+): CollabLanProjectSnapshot {
   return {
     currentMember: {
       activatedAt: NOW,

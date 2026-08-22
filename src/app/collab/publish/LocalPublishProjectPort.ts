@@ -1,15 +1,11 @@
-import { readFile } from 'node:fs/promises';
-
 import { type CollabProjectId } from '@claudian/collab-protocol';
 
-import {
-  resolveCollabVaultPath,
-  writeCollabFileAtomically,
-} from '@/app/collab/CollabFilesystemBoundary';
+import type { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import type {
   CollabLocalProjectRepository} from '@/app/collab/CollabLocalProjectRepository';
 import {
-  type CollabLocalMembershipRecord
+  type CollabLocalMembershipRecord,
+  isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
@@ -22,6 +18,9 @@ import {
   type PublishProjectContext,
   type PublishProjectPort,
 } from '@/app/collab/publish/PublishCoordinator';
+import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
+import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 function projectError(
@@ -42,7 +41,7 @@ function assertMembershipMatches(
   if (!membership) throw projectError('project-not-found', 'publish-membership-missing');
   if (
     membership.project.id !== context.projectId
-    || membership.hostOwnership.ownsAuthority !== context.allowHostRemoteRepair
+    || allowsHostRemoteRepair(membership) !== context.allowHostRemoteRepair
     || membership.member.id !== context.memberId
     || membership.member.personalRef !== context.personalRef
     || membershipRemoteUrl(membership) !== context.remoteUrl
@@ -54,9 +53,13 @@ function assertMembershipMatches(
 
 function membershipRemoteUrl(membership: CollabLocalMembershipRecord): string | null {
   return membership.authority.gitRemoteUrl
-    ?? (membership.hostOwnership.ownsAuthority
+    ?? (isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority
       ? collabStoppedHostRemoteUrl(membership.project.id)
       : null);
+}
+
+function allowsHostRemoteRepair(membership: CollabLocalMembershipRecord): boolean {
+  return isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority;
 }
 
 export class LocalPublishProjectPort implements PublishProjectPort {
@@ -92,7 +95,7 @@ export class LocalPublishProjectPort implements PublishProjectPort {
       projectId,
     });
     return {
-      allowHostRemoteRepair: membership.hostOwnership.ownsAuthority,
+      allowHostRemoteRepair: allowsHostRemoteRepair(membership),
       memberId: membership.member.id,
       personalRef: membership.member.personalRef,
       projectId,
@@ -128,14 +131,20 @@ export class LocalPublishProjectPort implements PublishProjectPort {
 }
 
 export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
+  private readonly networkEnvironment: CollabAuthorityGitNetworkEnvironment;
+
   constructor(
     private readonly vaultRoot: string,
     private readonly projects: CollabLocalProjectRepository,
+    private readonly sessions: CollabProjectWorkSessionRegistry,
+    private readonly authoritySessions: CollabAuthoritySessionFactory,
     private readonly isLocalHostRunning: (projectId: CollabProjectId) => boolean = () => false,
     private readonly assertControlReachable: (
       projectId: CollabProjectId,
     ) => Promise<void> = () => Promise.resolve(),
-  ) {}
+  ) {
+    this.networkEnvironment = new CollabAuthorityGitNetworkEnvironment(vaultRoot);
+  }
 
   async withNetwork<T>(
     context: PublishProjectContext,
@@ -145,42 +154,24 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
       context,
       await this.projects.loadMembership(context.projectId),
     );
-    const caCertificatePem = membership.authority.hostCaCertificatePem;
+    const authority = await this.sessions.acquire(context.projectId)
+      .ensureAuthoritySession<CollabAuthoritySession>(
+        () => this.authoritySessions.create(membership),
+      );
+    if (authority.git.remoteUrl !== context.remoteUrl) {
+      throw projectError('stale-project-selection', 'publish-authority-session-changed');
+    }
     if (
-      membership.hostOwnership.ownsAuthority
+      isCollabLocalLanMembership(membership)
+      && membership.hostOwnership.ownsAuthority
       && !this.isLocalHostRunning(context.projectId)
     ) {
       throw projectError('host-stopped', 'publish-local-host-not-running');
     }
-    if (
-      !membership.authority.endpoint
-      || !caCertificatePem
-      || !membership.authority.hostCaFingerprint
-    ) {
+    if (authority.git.headers.length === 0) {
       throw projectError('host-stopped', 'publish-host-endpoint-unavailable');
     }
     await this.assertControlReachable(context.projectId);
-    const relativeCaPath = `.claudian/collab/projects/${context.projectId}/git-ca.pem`;
-    const existingCaPath = await resolveCollabVaultPath(this.vaultRoot, relativeCaPath);
-    const existingCa = await readFile(existingCaPath, 'utf8').catch(error => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw error;
-    });
-    if (existingCa !== caCertificatePem) {
-      await writeCollabFileAtomically(this.vaultRoot, relativeCaPath, caCertificatePem, {
-        mode: 0o600,
-      });
-    }
-    const sslCaInfoPath = await resolveCollabVaultPath(
-      this.vaultRoot,
-      relativeCaPath,
-      { mustExist: true },
-    );
-    return operation({
-      authorizationHeader: `Basic ${Buffer.from(
-        `${membership.member.id}:${membership.member.credential}`,
-      ).toString('base64')}`,
-      sslCaInfoPath,
-    });
+    return operation(await this.networkEnvironment.resolve(context.projectId, authority.git));
   }
 }

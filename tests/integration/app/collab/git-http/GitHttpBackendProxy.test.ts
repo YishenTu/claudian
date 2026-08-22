@@ -65,7 +65,11 @@ describe('GitHttpBackendProxy integration', () => {
   let emptyConfigPath: string;
   let forceBackpressure: boolean;
   let memberStatus: CollabMemberStatus;
-  let network: { authorizationHeader: string; sslCaInfoPath: string };
+  let network: {
+    authorizationHeader: string;
+    headers: readonly { readonly name: string; readonly value: string }[];
+    sslCaInfoPath: string;
+  };
   let proxy: GitHttpBackendProxy;
   let prepareBarrier: Promise<void> | null;
   let prepareStarted: boolean;
@@ -194,8 +198,12 @@ describe('GitHttpBackendProxy integration', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test address');
     url = `https://127.0.0.1:${address.port}/v1/git/${PROJECT_ID}/repository.git`;
+    const authorizationHeader = `Basic ${Buffer.from(
+      `${MEMBER_ID}:${CREDENTIAL}`,
+    ).toString('base64')}`;
     network = {
-      authorizationHeader: `Basic ${Buffer.from(`${MEMBER_ID}:${CREDENTIAL}`).toString('base64')}`,
+      authorizationHeader,
+      headers: [{ name: 'Authorization', value: authorizationHeader }],
       sslCaInfoPath: caPath,
     };
   });

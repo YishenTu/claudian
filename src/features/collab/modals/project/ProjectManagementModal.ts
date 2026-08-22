@@ -1,7 +1,7 @@
 import type { CollabMember, CollabMemberId } from '@claudian/collab-protocol';
 import { type App, Modal } from 'obsidian';
 
-import type { CollabFeaturePort, CollabLocalCleanupChoice, CollabLocalProjectSummary, CollabProjectSnapshot } from '@/core/collab';
+import { type CollabFeaturePort, type CollabLanProjectSnapshot, type CollabLocalCleanupChoice, type CollabLocalProjectSummary, type CollabProjectSnapshot, isCollabLanProjectSnapshot } from '@/core/collab';
 import { HostDiagnosticsModal } from '@/features/collab/modals/project/HostDiagnosticsModal';
 import {
   type LanHostDiagnostics,
@@ -165,7 +165,10 @@ export class ProjectManagementModal extends Modal {
     const primary = actions.createDiv({
       cls: 'claudian-collab-project-actions-primary',
     });
-    if (this.hostProject.hostStatus !== 'not-host') {
+    if (
+      this.hostProject.authorityKind === 'lan'
+      && this.hostProject.hostStatus !== 'not-host'
+    ) {
       const host = primary.createDiv({ cls: 'claudian-collab-project-host-action' });
       this.hostSection = new LanHostSection(host, {
         onOpenDiagnostics: diagnostics => this.openHostDiagnostics(diagnostics),
@@ -236,7 +239,9 @@ export class ProjectManagementModal extends Modal {
       this.status = null;
     }
     this.currentMemberId = snapshot.currentMember.id;
-    this.hostMemberId = snapshot.project.hostMemberId;
+    this.hostMemberId = snapshot.project.authorityKind === 'lan'
+      ? snapshot.project.hostMemberId
+      : null;
     this.members = snapshot.members.filter(member => member.status !== 'left');
     this.snapshot = snapshot;
     this.render();
@@ -313,14 +318,16 @@ export class ProjectManagementModal extends Modal {
     this.renderBadge(badges, this.memberStatusLabel(member));
 
     if (member.id === this.currentMemberId) {
-      this.renderIncomingResponsibilityActions(item, member);
+      if (this.lanSnapshot()) this.renderIncomingResponsibilityActions(item, member);
       return;
     }
     if (member.status !== 'active') return;
+    const lanSnapshot = this.lanSnapshot();
+    if (!lanSnapshot) return;
 
     const actions = item.createDiv({ cls: 'claudian-collab-access-actions' });
     if (isManager && member.role !== 'manager') {
-      const pendingPromotion = this.snapshot?.managerResponsibilityOffer;
+      const pendingPromotion = lanSnapshot.managerResponsibilityOffer;
       const matchingPromotion = pendingPromotion?.purpose === 'manager-promotion'
         && pendingPromotion.sourceManagerMemberId === this.currentMemberId
         && pendingPromotion.targetMemberId === member.id
@@ -375,7 +382,7 @@ export class ProjectManagementModal extends Modal {
         });
       }
     }
-    if (this.currentMemberId === this.hostMemberId && !this.snapshot?.hostTransfer) {
+    if (this.currentMemberId === this.hostMemberId && !lanSnapshot.hostTransfer) {
       const transferHost = actions.createEl('button', {
         attr: {
           'data-action': 'offer-host-transfer',
@@ -444,7 +451,7 @@ export class ProjectManagementModal extends Modal {
     item: HTMLLIElement,
     member: CollabMember,
   ): void {
-    const managerOffer = this.snapshot?.managerResponsibilityOffer;
+    const managerOffer = this.lanSnapshot()?.managerResponsibilityOffer;
     if (
       managerOffer?.sourceManagerMemberId === member.id
       && (managerOffer.status === 'offered' || managerOffer.status === 'acknowledged')
@@ -459,7 +466,7 @@ export class ProjectManagementModal extends Modal {
           projectId: this.options.project.id,
         }, { signal: this.abortController.signal }));
     }
-    const hostTransfer = this.snapshot?.hostTransfer;
+    const hostTransfer = this.lanSnapshot()?.hostTransfer;
     if (member.id === this.hostMemberId && hostTransfer?.canCancel) {
       const actions = item.createDiv({ cls: 'claudian-collab-access-actions' });
       this.createLifecycleButton(actions, 'cancel-host-transfer',
@@ -503,6 +510,7 @@ export class ProjectManagementModal extends Modal {
     invitationActions.replaceChildren();
     lifecycleActions.replaceChildren();
     if (!current || current.status !== 'active') return;
+    if (!this.lanSnapshot()) return;
     if (isManager) {
       const invite = invitationActions.createEl('button', {
         attr: { 'data-action': 'create-invitation', type: 'button' },
@@ -582,7 +590,7 @@ export class ProjectManagementModal extends Modal {
     confirmation: Extract<AccessConfirmation, { readonly kind: 'leave' }>,
   ): void {
     const currentMemberId = this.requireCurrentMemberId();
-    const offer = this.snapshot?.managerResponsibilityOffer;
+    const offer = this.lanSnapshot()?.managerResponsibilityOffer;
     const leaveOffer = offer?.purpose === 'manager-leave'
       && offer.sourceManagerMemberId === currentMemberId
       && (offer.status === 'offered' || offer.status === 'acknowledged')
@@ -746,7 +754,7 @@ export class ProjectManagementModal extends Modal {
         ? t('collab.access.retry')
         : t('collab.access.confirm'),
     });
-    const managerOffer = this.snapshot?.managerResponsibilityOffer;
+    const managerOffer = this.lanSnapshot()?.managerResponsibilityOffer;
     const acceptedLeaveOffer = confirmation.kind === 'leave'
       && confirmation.managerSuccessorRequired
       && managerOffer?.purpose === 'manager-leave'
@@ -993,6 +1001,12 @@ export class ProjectManagementModal extends Modal {
 
   private currentMember(): CollabMember | undefined {
     return this.members.find(member => member.id === this.currentMemberId);
+  }
+
+  private lanSnapshot(): CollabLanProjectSnapshot | null {
+    return this.snapshot && isCollabLanProjectSnapshot(this.snapshot)
+      ? this.snapshot
+      : null;
   }
 
   private requireCurrentMemberId(): CollabMemberId {

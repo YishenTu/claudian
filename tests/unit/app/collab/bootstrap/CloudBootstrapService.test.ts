@@ -9,6 +9,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 import {
   bootstrapManifest,
+  finalizeActivatedBindingForTest,
   HOST_MEMBER_ID,
   OTHER_MEMBER_ID,
   PROJECT_ID,
@@ -65,7 +66,6 @@ describe('CloudBootstrapService', () => {
     await service.prepareLocalRecovery();
 
     expect(fenceUncertainProject.mock.calls.map(([projectId]) => projectId).sort()).toEqual([
-      'project-activated',
       'project-cancelling',
       'project-corrupt',
       'project-pending',
@@ -88,6 +88,7 @@ describe('CloudBootstrapService', () => {
       save: async (next: CloudBootstrapTransitionRecord) => { record = next; },
     };
     const createCoordinator = () => new CloudBootstrapCoordinator({
+      binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud: {
         activate: async () => { throw new Error('unexpected activation'); },
         begin: async () => { throw new Error('unexpected begin'); },
@@ -331,6 +332,85 @@ describe('CloudBootstrapService', () => {
     await service.close();
   });
 
+  it('schedules recovery when direct activation reaches durable state before binding fails', async () => {
+    const activated = {
+      ...pendingTransition(),
+      attemptState: 'activated' as const,
+      terminalCleanupCompleted: false,
+    } as CloudBootstrapTransitionRecord;
+    const failure = new CollabError({
+      code: 'durable-progress-recovery-required',
+      recoveryActions: ['retry', 'open-diagnostics'],
+      safeContext: { reason: 'cloud-bootstrap-binding-index-repair-failed' },
+    });
+    const startFormerHost = jest.fn().mockRejectedValue(failure);
+    const recoverProject = jest.fn(async () => ({
+      ...activated,
+      terminalCleanupCompleted: true,
+    }));
+    let retry: (() => Promise<void>) | undefined;
+    const scheduleRetry = jest.fn((_retryKey, operation, delayMs) => {
+      retry = operation;
+      expect(delayMs).toBe(1_000);
+    });
+    const service = new CloudBootstrapService({
+      createCoordinator: () => ({
+        recoverProject,
+        startFormerHost,
+      }) as unknown as CloudBootstrapCoordinator,
+      fenceUncertainProject: async () => undefined,
+      recoverLocalArtifacts: async () => undefined,
+      scheduleRetry,
+      transitions: {
+        list: async () => ({ blockedProjectIds: [], records: [], retryRequired: false }),
+        load: async () => activated,
+      },
+    });
+
+    await expect(service.startFormerHost({
+      memberId: HOST_MEMBER_ID,
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    })).rejects.toBe(failure);
+
+    expect(scheduleRetry).toHaveBeenCalledWith(PROJECT_ID, expect.any(Function), 1_000);
+    await retry?.();
+    expect(recoverProject).toHaveBeenCalledWith(PROJECT_ID, expect.any(AbortSignal));
+    await service.close();
+  });
+
+  it('schedules recovery when cancellation interrupts an incomplete durable transition', async () => {
+    const activated = {
+      ...pendingTransition(),
+      attemptState: 'activated' as const,
+      terminalCleanupCompleted: false,
+    } as CloudBootstrapTransitionRecord;
+    const failure = new CollabError({ code: 'cancelled' });
+    const startFormerHost = jest.fn().mockRejectedValue(failure);
+    const scheduleRetry = jest.fn();
+    const service = new CloudBootstrapService({
+      createCoordinator: () => ({
+        startFormerHost,
+      }) as unknown as CloudBootstrapCoordinator,
+      fenceUncertainProject: async () => undefined,
+      recoverLocalArtifacts: async () => undefined,
+      scheduleRetry,
+      transitions: {
+        list: async () => ({ blockedProjectIds: [], records: [], retryRequired: false }),
+        load: async () => activated,
+      },
+    });
+
+    await expect(service.startFormerHost({
+      memberId: HOST_MEMBER_ID,
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    })).rejects.toBe(failure);
+
+    expect(scheduleRetry).toHaveBeenCalledWith(PROJECT_ID, expect.any(Function), 1_000);
+    await service.close();
+  });
+
   it('continues bounded Project polling after a successful pending recovery', async () => {
     const record = pendingTransition();
     const recoverProject = jest.fn()
@@ -365,8 +445,14 @@ describe('CloudBootstrapService', () => {
   });
 
   it('isolates Project recovery failures and schedules bounded retry', async () => {
+    const hostRecord = pendingTransition();
+    const otherRecord = pendingTransition('project-other', OTHER_MEMBER_ID);
     const recoverHost = jest.fn()
-      .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
+      .mockRejectedValueOnce(new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['retry', 'open-diagnostics'],
+        safeContext: { reason: 'cloud-bootstrap-binding-retired-authority-missing' },
+      }))
       .mockResolvedValue(null);
     const recoverOther = jest.fn(async () => null);
     const cancelRetry = jest.fn();
@@ -386,22 +472,10 @@ describe('CloudBootstrapService', () => {
       recoverLocalArtifacts: async () => undefined,
       scheduleRetry,
       transitions: {
-        load: async () => null,
+        load: async projectId => projectId === PROJECT_ID ? hostRecord : otherRecord,
         list: async () => ({
           blockedProjectIds: [],
-          records: [{
-            attemptState: 'pending',
-            developmentActorId: HOST_MEMBER_ID,
-            memberId: HOST_MEMBER_ID,
-            newAuthority: { serverUrl: 'https://cloud.example.test/' },
-            projectId: PROJECT_ID,
-          }, {
-            attemptState: 'pending',
-            developmentActorId: OTHER_MEMBER_ID,
-            memberId: OTHER_MEMBER_ID,
-            newAuthority: { serverUrl: 'https://cloud.example.test/' },
-            projectId: 'project-other',
-          }] as never,
+          records: [hostRecord, otherRecord],
           retryRequired: false,
         }),
       },

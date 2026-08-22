@@ -945,9 +945,12 @@ export class JoinProjectCoordinator {
 
   private gitNetwork(record: JoinProjectRecord, caPath: string): GitNetworkEnvironment {
     return {
-      authorizationHeader: `Basic ${Buffer.from(
-        `${record.memberId}:${record.memberCredential}`,
-      ).toString('base64')}`,
+      headers: [{
+        name: 'Authorization',
+        value: `Basic ${Buffer.from(
+          `${record.memberId}:${record.memberCredential}`,
+        ).toString('base64')}`,
+      }],
       sslCaInfoPath: caPath,
     };
   }

@@ -378,6 +378,11 @@ describe('GitRepositoryService integration', () => {
     ]);
     await expect(service.fetch(clonePath, 'origin', ['+refs/heads/main:refs/remotes/origin/main']))
       .resolves.toBeUndefined();
+    await expect(service.fetchFromUrl(
+      clonePath,
+      barePath,
+      ['+refs/heads/main:refs/remotes/origin/main'],
+    )).resolves.toBeUndefined();
     await expect(service.assertHealthy(barePath)).resolves.toBeUndefined();
     expect(await service.measureStorageBytes(barePath)).toBeGreaterThan(initialStorageBytes);
     expect((await stat(path.join(clonePath, '.git'))).isDirectory()).toBe(true);

@@ -15,9 +15,7 @@ import {
 import type {
   DevelopmentBootstrapCloudPort,
 } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
-import {
-  canonicalCloudOrigin,
-} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
+import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const JSON_TIMEOUT_MS = 30_000;

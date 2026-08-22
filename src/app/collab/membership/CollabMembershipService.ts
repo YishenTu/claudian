@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { type CollabMember, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
 import type {
-  CollabLocalMembershipRecord,
+  CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import type {
   DemoteManagerResponse,
@@ -27,10 +28,11 @@ import {
   type RevokeInvitationInput,
 } from '@/app/collab/membership/MembershipControlClient';
 import type {
+  CollabLanProjectSnapshot,
   CollabManagerResponsibilityOfferSummary,
   CollabProjectSnapshot,
 } from '@/core/collab';
-import { type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest } from '@/core/collab';
+import { type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest, isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -106,7 +108,7 @@ export interface CollabMembershipSafetyContext {
 
 interface MembershipSession {
   readonly client: CollabMembershipControlClientPort;
-  readonly membership: CollabLocalMembershipRecord;
+  readonly membership: CollabLocalLanMembershipRecord;
 }
 
 interface ManagerResponsibilityReconciliationRequest {
@@ -332,7 +334,14 @@ export class CollabMembershipService {
     snapshot: CollabProjectSnapshot,
     options: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary | null> {
-    const offer = snapshot.managerResponsibilityOffer;
+    if (!isCollabLanProjectSnapshot(snapshot)) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'manager-responsibility-lan-only' },
+      });
+    }
+    const lanSnapshot: CollabLanProjectSnapshot = snapshot;
+    const offer = lanSnapshot.managerResponsibilityOffer;
     if (
       !offer
       || offer.targetMemberId !== snapshot.currentMember.id
@@ -403,7 +412,11 @@ export class CollabMembershipService {
 
   private async loadSession(projectId: CollabProjectId): Promise<MembershipSession> {
     const membership = await this.projects.loadMembership(projectId);
-    if (!membership || membership.project.id !== projectId) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || membership.project.id !== projectId
+    ) {
       throw membershipError('project-not-found', 'membership-control-membership-missing');
     }
     const endpoint = membership.authority.endpoint;

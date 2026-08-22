@@ -7,18 +7,12 @@ import type { ProjectOperationSuspension } from '@/app/collab/ProjectOperationAd
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CloudBootstrapAdmissionPort {
-  closeProjectAdmission(projectId: CollabProjectId): void;
   drainAdmittedOperations(): Promise<void>;
   resumeProjectAdmission(suspension: ProjectOperationSuspension): boolean;
   suspendProjectAdmission(projectId: CollabProjectId): ProjectOperationSuspension;
 }
 
 export interface CloudBootstrapWorkSessionPort {
-  closeProject(projectId: CollabProjectId): void;
-  completeProjectSuspension(
-    suspension: CollabProjectWorkSessionSuspension,
-  ): Promise<void>;
-  drainProject(projectId: CollabProjectId): Promise<void>;
   resumeProject(suspension: CollabProjectWorkSessionSuspension): Promise<void>;
   suspendProject(
     projectId: CollabProjectId,
@@ -82,19 +76,14 @@ export class CloudBootstrapLocalFence {
   }
 
   async completeAfterActivation(projectId: CollabProjectId): Promise<void> {
-    const suspension = this.suspensions.get(projectId);
-    this.admission.closeProjectAdmission(projectId);
-    if (suspension) {
-      await this.workSessions.completeProjectSuspension(suspension.workSession);
-    } else {
-      this.workSessions.closeProject(projectId);
-      await this.workSessions.drainProject(projectId);
-    }
-    this.suspensions.delete(projectId);
-    this.quiescedProjects.add(projectId);
+    await this.resumeSuspendedProject(projectId);
   }
 
   async resumeAfterCancellation(projectId: CollabProjectId): Promise<void> {
+    await this.resumeSuspendedProject(projectId);
+  }
+
+  private async resumeSuspendedProject(projectId: CollabProjectId): Promise<void> {
     const suspension = this.suspensions.get(projectId);
     if (!suspension) {
       this.quiescedProjects.delete(projectId);

@@ -118,7 +118,7 @@ export interface AgentRuntimeProjectDetail extends AgentRuntimeProjectSummary {
     readonly stale: boolean;
     readonly sync: AgentRuntimeSyncState;
     readonly mainOid: string;
-    readonly hostMemberId: string;
+    readonly hostMemberId?: string;
     readonly managerCount: number;
     readonly managerMemberIds: readonly string[];
     readonly createdAt: string;

@@ -4,7 +4,7 @@ import {
 } from '@/app/collab/exit/PendingLeaveAuthorityService';
 import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 describe('PendingLeaveAuthorityService', () => {
@@ -197,7 +197,7 @@ function record(
   };
 }
 
-function snapshot(): CollabProjectSnapshot {
+function snapshot(): CollabLanProjectSnapshot {
   return {
     currentMember: {
       activatedAt: '2026-08-12T00:00:00.000Z',

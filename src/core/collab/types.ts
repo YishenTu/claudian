@@ -15,19 +15,29 @@ import type {
   CollabTicketSummary,
 } from '@claudian/collab-protocol';
 
-/** Claudian's current deployment authority. This is not a shared wire contract. */
-export type CollabAuthorityKind = 'lan';
+/** Claudian's local authority selection. This is not a shared wire contract. */
+export type CollabAuthorityKind = 'lan' | 'cloud';
 
-export interface CollabProject {
+export interface CollabProjectBase {
   id: CollabProjectId;
   name: string;
   authorityKind: CollabAuthorityKind;
   mainRef: typeof COLLAB_MAIN_REF;
   mainOid: CollabGitOid;
-  hostMemberId: CollabMemberId;
-  managerSetGeneration: number;
   createdAt: CollabIsoTimestamp;
 }
+
+export interface CollabLanProject extends CollabProjectBase {
+  authorityKind: 'lan';
+  hostMemberId: CollabMemberId;
+  managerSetGeneration: number;
+}
+
+export interface CollabCloudProject extends CollabProjectBase {
+  authorityKind: 'cloud';
+}
+
+export type CollabProject = CollabLanProject | CollabCloudProject;
 
 export type CollabManagerResponsibilityPurpose =
   | 'manager-promotion'
@@ -90,8 +100,7 @@ export interface CollabRetirementResult {
   retiredAt: CollabIsoTimestamp;
 }
 
-/** Client projection for the existing LAN authority. */
-export interface CollabProjectSnapshot {
+export interface CollabProjectSnapshotBase {
   project: CollabProject;
   currentMember: CollabMember;
   members: readonly CollabMember[];
@@ -99,8 +108,34 @@ export interface CollabProjectSnapshot {
   openTicketCount: number;
   ticketHighlights: readonly CollabTicketSummary[];
   eventSequence: number;
+}
+
+/** Client projection for the existing LAN authority. */
+export interface CollabLanProjectSnapshot extends CollabProjectSnapshotBase {
+  project: CollabLanProject;
   hostTransfer?: CollabHostTransferSummary;
   managerResponsibilityOffer?: CollabManagerResponsibilityOfferSummary;
+}
+
+/** Client projection composed from the package Cloud snapshot and local binding. */
+export interface CollabCloudProjectSnapshot extends CollabProjectSnapshotBase {
+  project: CollabCloudProject;
+}
+
+export type CollabProjectSnapshot =
+  | CollabLanProjectSnapshot
+  | CollabCloudProjectSnapshot;
+
+export function isCollabLanProjectSnapshot(
+  snapshot: CollabProjectSnapshot,
+): snapshot is CollabLanProjectSnapshot {
+  return snapshot.project.authorityKind === 'lan';
+}
+
+export function isCollabCloudProjectSnapshot(
+  snapshot: CollabProjectSnapshot,
+): snapshot is CollabCloudProjectSnapshot {
+  return snapshot.project.authorityKind === 'cloud';
 }
 
 /** Client-local review metadata captured from the working tree. */

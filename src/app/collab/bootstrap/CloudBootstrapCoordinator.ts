@@ -68,6 +68,12 @@ export interface CloudBootstrapLocalIdentity {
 }
 
 export interface CloudBootstrapCoordinatorOptions {
+  readonly binding: {
+    finalize(
+      record: CloudBootstrapTransitionRecord,
+      signal?: AbortSignal,
+    ): Promise<CloudBootstrapTransitionRecord>;
+  };
   readonly cloud: DevelopmentBootstrapCloudPort;
   readonly createFenceId: () => string;
   readonly formerHost: {
@@ -202,7 +208,7 @@ export class CloudBootstrapCoordinator {
       'submitDevelopmentBootstrapReport',
       await this.options.cloud.report({ attemptId: record.attemptId, report }, signal),
     );
-    return this.observeAndSaveTerminal(record, remote);
+    return this.observeAndSaveTerminal(record, remote, signal);
   }
 
   async recoverProject(
@@ -213,11 +219,13 @@ export class CloudBootstrapCoordinator {
     let record = await this.options.transitions.load(projectId);
     throwIfCancelled(signal);
     if (!record) return null;
+    if (record.terminalCleanupCompleted) return record;
     if (record.attemptState === 'cancelled') {
-      return this.settleLocalTerminal(record);
+      return this.settleLocalTerminal(record, signal);
     }
     if (record.attemptState === 'activated') {
-      return this.settleLocalTerminal(record);
+      await this.options.workSessions.closeAndDrain(record.projectId, signal);
+      return this.settleLocalTerminal(record, signal);
     }
     if (record.fence.state === 'active') record = await this.stopFormerHost(record, signal);
     if (record.fence.state === 'not-applicable' || record.fence.state === 'host-stopped') {
@@ -232,7 +240,7 @@ export class CloudBootstrapCoordinator {
       return this.driveFormerHost(record, true, signal, report);
     }
     const status = decodeStatus('getDevelopmentBootstrap', remote);
-    const terminal = await this.observeAndSaveTerminal(record, status);
+    const terminal = await this.observeAndSaveTerminal(record, status, signal);
     if (terminal.attemptState !== 'pending') return terminal;
     if (record.memberId !== record.oldAuthority.sourceHostMemberId) {
       if (status.reporterMemberIds.includes(record.memberId)) return terminal;
@@ -240,7 +248,7 @@ export class CloudBootstrapCoordinator {
         'submitDevelopmentBootstrapReport',
         await this.options.cloud.report({ attemptId: record.attemptId, report }, signal),
       );
-      return this.observeAndSaveTerminal(record, reported);
+      return this.observeAndSaveTerminal(record, reported, signal);
     }
     return this.driveFormerHost(record, false, signal, report, status);
   }
@@ -255,7 +263,7 @@ export class CloudBootstrapCoordinator {
       throw coordinatorError('cloud-bootstrap-already-activated');
     }
     if (record.attemptState === 'cancelled') {
-      return this.settleLocalTerminal(record);
+      return this.settleLocalTerminal(record, signal);
     }
     const status = decodeStatus(
       'cancelDevelopmentBootstrap',
@@ -270,7 +278,7 @@ export class CloudBootstrapCoordinator {
       throw coordinatorError('cloud-bootstrap-cancellation-not-durable');
     }
     await this.options.transitions.save(updated);
-    return this.settleLocalTerminal(updated);
+    return this.settleLocalTerminal(updated, signal);
   }
 
   private async createTransition(
@@ -393,7 +401,7 @@ export class CloudBootstrapCoordinator {
       );
     }
     if (!status) throw coordinatorError('cloud-bootstrap-status-unavailable');
-    let terminal = await this.observeAndSaveTerminal(record, status);
+    let terminal = await this.observeAndSaveTerminal(record, status, signal);
     if (terminal.attemptState !== 'pending') return terminal;
 
     if (!status.reporterMemberIds.includes(record.memberId)) {
@@ -401,7 +409,7 @@ export class CloudBootstrapCoordinator {
         'submitDevelopmentBootstrapReport',
         await this.options.cloud.report({ attemptId: record.attemptId, report }, signal),
       );
-      terminal = await this.observeAndSaveTerminal(record, status);
+      terminal = await this.observeAndSaveTerminal(record, status, signal);
       if (terminal.attemptState !== 'pending') return terminal;
     }
 
@@ -416,7 +424,7 @@ export class CloudBootstrapCoordinator {
           sha256: record.manifest.git.bundle.sha256,
         }, bodySignal => this.options.source.openBundle(record.manifest, bodySignal), signal),
       );
-      terminal = await this.observeAndSaveTerminal(record, status);
+      terminal = await this.observeAndSaveTerminal(record, status, signal);
       if (terminal.attemptState !== 'pending') return terminal;
     }
 
@@ -428,12 +436,13 @@ export class CloudBootstrapCoordinator {
         manifestSha256: record.manifestSha256,
       }, signal),
     );
-    return this.observeAndSaveTerminal(record, status);
+    return this.observeAndSaveTerminal(record, status, signal);
   }
 
   private async observeAndSaveTerminal(
     record: CloudBootstrapTransitionRecord,
     status: DevelopmentBootstrapAttemptStatus,
+    signal?: AbortSignal,
   ): Promise<CloudBootstrapTransitionRecord> {
     if (status.state === 'recovery-required' || status.state === 'rejected') {
       throw coordinatorError(`cloud-bootstrap-server-${status.state}`);
@@ -450,11 +459,12 @@ export class CloudBootstrapCoordinator {
     ) {
       await this.options.transitions.save(updated);
     }
-    return this.settleLocalTerminal(updated);
+    return this.settleLocalTerminal(updated, signal);
   }
 
   private async settleLocalTerminal(
     record: CloudBootstrapTransitionRecord,
+    signal?: AbortSignal,
   ): Promise<CloudBootstrapTransitionRecord> {
     if (record.attemptState === 'pending') return record;
     if (record.memberId === record.oldAuthority.sourceHostMemberId) {
@@ -463,6 +473,7 @@ export class CloudBootstrapCoordinator {
     if (record.attemptState === 'cancelled') {
       await this.options.workSessions.resumeAfterCancellation(record.projectId);
     } else {
+      record = await this.options.binding.finalize(record, signal);
       await this.options.workSessions.completeAfterActivation(record.projectId);
     }
     if (record.terminalCleanupCompleted) return record;

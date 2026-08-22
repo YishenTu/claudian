@@ -3,6 +3,7 @@ import { type AcceptResponse, COLLAB_LIMITS, type CollabChangeRequest, type Coll
 import type {
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import {
   ProjectControlClient,
@@ -581,7 +582,11 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
 
   private async loadSession(projectId: string): Promise<LocalProjectControlSession> {
     const membership = await this.projects.loadMembership(projectId);
-    if (!membership || membership.project.id !== projectId) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || membership.project.id !== projectId
+    ) {
       throw controlError('project-not-found', 'control-membership-missing');
     }
     const endpoint = membership.authority.endpoint;

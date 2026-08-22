@@ -26,7 +26,10 @@ import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBoots
 import {
   type CollabFilesystemDiagnosticSink,
 } from '@/app/collab/CollabFilesystemBoundary';
-import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
+import {
+  CollabLocalProjectRepository,
+  isCollabLocalLanMembership,
+} from '@/app/collab/CollabLocalProjectRepository';
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import {
@@ -491,6 +494,7 @@ export class ClaudianCollabService {
         const membership = await this.local.projects.loadMembership(input.projectId);
         if (
           !membership
+          || !isCollabLocalLanMembership(membership)
           || membership.project.id !== input.projectId
           || membership.member.id !== input.targetHostMemberId
           || !membership.hostOwnership.ownsAuthority
@@ -554,7 +558,9 @@ export class ClaudianCollabService {
   ): Promise<CollabAuthorityFoundation> {
     const membership = await this.local.projects.loadMembership(projectId);
     const authorityDirectory = await this.local.projects.ensureAuthorityDirectory(projectId, {
-      claimLegacyOwnedDirectory: membership?.project.id === projectId
+      claimLegacyOwnedDirectory: membership !== null
+        && isCollabLocalLanMembership(membership)
+        && membership.project.id === projectId
         && membership.hostOwnership.ownsAuthority,
     });
     const database = this.createAuthorityDatabase(authorityDirectory);
@@ -899,10 +905,16 @@ export class ClaudianCollabService {
     };
   }> {
     const membership = await this.local.projects.loadMembership(projectId);
-    const endpoint = membership?.authority.endpoint;
-    const caCertificatePem = membership?.authority.hostCaCertificatePem;
-    const caFingerprint = membership?.authority.hostCaFingerprint;
-    if (!membership || !endpoint || !caCertificatePem || !caFingerprint) {
+    if (!membership || !isCollabLocalLanMembership(membership)) {
+      throw new CollabError({
+        code: 'host-stopped',
+        safeContext: { reason: 'retirement-host-trust-unavailable' },
+      });
+    }
+    const endpoint = membership.authority.endpoint;
+    const caCertificatePem = membership.authority.hostCaCertificatePem;
+    const caFingerprint = membership.authority.hostCaFingerprint;
+    if (!endpoint || !caCertificatePem || !caFingerprint) {
       throw new CollabError({
         code: 'host-stopped',
         safeContext: { reason: 'retirement-host-trust-unavailable' },

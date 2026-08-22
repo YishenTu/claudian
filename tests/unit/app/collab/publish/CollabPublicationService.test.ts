@@ -86,7 +86,7 @@ describe('CollabPublicationService reconnect', () => {
         pathPolicy: {},
         projects: {
           loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32) },
+            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
             hostOwnership: { ownsAuthority: false },
           }),
         },
@@ -117,7 +117,7 @@ describe('CollabPublicationService reconnect', () => {
         pathPolicy: {},
         projects: {
           loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32) },
+            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
             hostOwnership: { ownsAuthority: true },
           }),
         },
@@ -165,7 +165,7 @@ describe('CollabPublicationService reconnect', () => {
         pathPolicy: {},
         projects: {
           loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32) },
+            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
             hostOwnership: { ownsAuthority: false },
           }),
         },
@@ -213,7 +213,7 @@ describe('CollabPublicationService reconnect', () => {
         pathPolicy: {},
         projects: {
           loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32) },
+            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
             hostOwnership: { ownsAuthority: false },
           }),
         },

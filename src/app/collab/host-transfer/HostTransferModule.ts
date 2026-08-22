@@ -4,6 +4,7 @@ import type { HostTransferAuthorityService } from '@/app/collab/authority/HostTr
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type {
+  CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
@@ -74,7 +75,7 @@ export interface HostTransferModuleOptions {
     | 'stopProvisionalTransfer'
   >;
   readonly createControlClient?: (
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
   ) => HostTransferControlPort;
   readonly createTargetTransport?: () => HostTransferTargetTransportPort;
   readonly projects: Pick<
@@ -193,7 +194,7 @@ export class HostTransferModule {
   }
 
   private async createIncomingCoordinator(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
   ): Promise<IncomingHostTransferCoordinator> {
     const git = await this.options.requireGitFoundation();
     const folder = projectsFolder(membership);
@@ -234,7 +235,7 @@ export class HostTransferModule {
     return coordinator;
   }
 
-  private createControlClient(membership: CollabLocalMembershipRecord): HostTransferControlPort {
+  private createControlClient(membership: CollabLocalLanMembershipRecord): HostTransferControlPort {
     if (this.options.createControlClient) return this.options.createControlClient(membership);
     const endpoint = membership.authority.endpoint;
     const caCertificatePem = membership.authority.hostCaCertificatePem;

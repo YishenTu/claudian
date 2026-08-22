@@ -4,6 +4,7 @@ import {
 } from '@claudian/collab-protocol';
 
 import {
+  advanceCloudBootstrapTransitionPhase,
   createCloudBootstrapTransitionRecord,
   decodeCloudBootstrapTransitionRecord,
   markCloudBootstrapTerminalCleanupCompleted,
@@ -198,5 +199,77 @@ describe('CloudBootstrapTransitionRecord', () => {
       record,
       '2026-08-21T00:00:03.000Z',
     )).toThrow(TypeError);
+  });
+
+  it('advances activated binding phases exactly and terminalizes the former Host fence', () => {
+    const pending = createCloudBootstrapTransitionRecord({
+      developmentActorId: HOST_MEMBER_ID,
+      fenceId: 'bootstrap-fence-one',
+      manifest: bootstrapManifest(),
+      manifestSha256: MANIFEST_SHA256,
+      memberId: HOST_MEMBER_ID,
+      oldEndpoint: 'https://192.168.1.20:54545',
+      oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
+      serverUrl: 'https://cloud.example.test',
+      timestamp: '2026-08-21T00:00:01.000Z',
+    });
+    const stopped = {
+      ...pending,
+      fence: {
+        fenceId: 'bootstrap-fence-one',
+        state: 'host-stopped' as const,
+        stoppedAt: '2026-08-21T00:00:02.000Z',
+      },
+      updatedAt: '2026-08-21T00:00:02.000Z',
+    };
+    const activated = observeCloudBootstrapAttemptStatus(stopped, {
+      activationPhase: 'completed',
+      activationResult: {
+        activatedAt: '2026-08-21T00:00:03.000Z',
+        activationOperationId: 'activation-one',
+        placementGeneration: 1,
+        projectId: PROJECT_ID,
+      },
+      attemptId: ATTEMPT_ID,
+      bundleState: 'validated',
+      createdAt: '2026-08-21T00:00:00.000Z',
+      expiresAt: '2026-08-22T00:00:00.000Z',
+      manifestSha256: MANIFEST_SHA256,
+      projectId: PROJECT_ID,
+      reporterMemberIds: [HOST_MEMBER_ID, OTHER_MEMBER_ID],
+      state: 'activated',
+    }, '2026-08-21T00:00:03.000Z');
+
+    const ready = advanceCloudBootstrapTransitionPhase(
+      activated,
+      'readiness-confirmed',
+      '2026-08-21T00:00:04.000Z',
+    );
+    expect(ready.phase).toBe('readiness-confirmed');
+    expect(() => advanceCloudBootstrapTransitionPhase(
+      ready,
+      'cloud-verified',
+      '2026-08-21T00:00:05.000Z',
+    )).toThrow(TypeError);
+
+    let terminal = ready;
+    for (const phase of [
+      'origin-rotated',
+      'cloud-verified',
+      'membership-replaced',
+      'index-repaired',
+      'lan-authority-retired',
+      'fence-terminal',
+    ] as const) {
+      terminal = advanceCloudBootstrapTransitionPhase(
+        terminal,
+        phase,
+        '2026-08-21T00:00:05.000Z',
+      );
+    }
+    expect(terminal).toMatchObject({
+      fence: { state: 'terminal' },
+      phase: 'fence-terminal',
+    });
   });
 });

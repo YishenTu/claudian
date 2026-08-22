@@ -1,6 +1,10 @@
 import { type CollabProjectId } from '@claudian/collab-protocol';
 
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  CollabLocalLanMembershipRecord,
+  CollabLocalMembershipRecord,
+} from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferProjectionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -97,7 +101,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
   }
 
   private async rotate(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
     endpoint: string,
   ): Promise<void> {
     const oldRemoteUrl = membership.authority.gitRemoteUrl;
@@ -110,9 +114,15 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
     });
   }
 
-  private async requireMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord> {
+  private async requireMembership(
+    projectId: CollabProjectId,
+  ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.loadMembership(projectId);
-    if (!membership || membership.project.id !== projectId) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || membership.project.id !== projectId
+    ) {
       throw projectionError('host-transfer-projection-membership-missing');
     }
     return membership;

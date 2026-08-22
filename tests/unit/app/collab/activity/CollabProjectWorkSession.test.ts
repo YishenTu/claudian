@@ -134,6 +134,61 @@ describe('CollabProjectWorkSession', () => {
     ]);
   });
 
+  it('owns one authority session per generation and disposes it during reset', async () => {
+    const session = new CollabProjectWorkSession('project-a');
+    const firstDispose = jest.fn();
+    const secondDispose = jest.fn();
+    const createFirst = jest.fn(async () => ({ dispose: firstDispose }));
+
+    const first = session.ensureAuthoritySession(createFirst);
+    expect(session.ensureAuthoritySession(createFirst)).toBe(first);
+    await expect(first).resolves.toEqual({ dispose: firstDispose });
+    expect(createFirst).toHaveBeenCalledTimes(1);
+
+    session.resetProjection();
+    await Promise.resolve();
+    expect(firstDispose).toHaveBeenCalledTimes(1);
+
+    await expect(session.ensureAuthoritySession(async () => ({ dispose: secondDispose })))
+      .resolves.toEqual({ dispose: secondDispose });
+    await session.close();
+    expect(firstDispose).toHaveBeenCalledTimes(1);
+    expect(secondDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retain a failed authority-session construction', async () => {
+    const session = new CollabProjectWorkSession('project-a');
+    const failure = new Error('authority unavailable');
+    await expect(session.ensureAuthoritySession(() => Promise.reject(failure)))
+      .rejects.toBe(failure);
+
+    const dispose = jest.fn();
+    await expect(session.ensureAuthoritySession(async () => ({ dispose })))
+      .resolves.toEqual({ dispose });
+    await session.close();
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects and disposes an authority session that resolves after its generation resets', async () => {
+    const session = new CollabProjectWorkSession('project-a');
+    const created = deferred<{ dispose(): void }>();
+    const dispose = jest.fn();
+
+    const authority = session.ensureAuthoritySession(() => created.promise);
+    await Promise.resolve();
+    session.resetProjection();
+    created.resolve({ dispose });
+
+    await expect(authority).rejects.toMatchObject({
+      code: 'cancelled',
+      safeContext: { reason: 'projection-project-connection-reset' },
+    } satisfies Partial<CollabError>);
+    expect(dispose).toHaveBeenCalledTimes(1);
+
+    await session.close();
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
   it('restarts a coalesced event refresh when a later invalidation requires a newer sequence', async () => {
     const session = new CollabProjectWorkSession('project-a');
     const first = deferred<number>();
@@ -153,6 +208,31 @@ describe('CollabProjectWorkSession', () => {
 
     second.resolve(5);
     await expect(later).resolves.toBe(5);
+  });
+
+  it('bounds client refresh work under saturation while server send-queue bounds stay server-owned', async () => {
+    const session = new CollabProjectWorkSession('project-a');
+    const first = deferred<number>();
+    const second = deferred<number>();
+    const refresh = jest.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const invalidations = Array.from({ length: 100 }, (_, index) => (
+      session.coalesceEventRefresh(index + 1, refresh)
+    ));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    first.resolve(50);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    second.resolve(100);
+    await expect(Promise.all(invalidations)).resolves.toHaveLength(100);
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
   it('closes resources, rejects new work, and drains admitted work', async () => {
@@ -229,6 +309,17 @@ describe('CollabProjectWorkSession', () => {
     const reopened = registry.acquire('project-a');
     expect(reopened).not.toBe(original);
     expect(reopened.projectId).toBe('project-a');
+  });
+
+  it('treats connection invalidation for a suspended Project as an idempotent no-op', async () => {
+    const registry = new CollabProjectWorkSessionRegistry();
+    registry.acquire('project-a');
+    const suspension = await registry.suspendProject('project-a');
+
+    expect(() => registry.resetProject('project-a')).not.toThrow();
+
+    await expect(registry.resumeProject(suspension)).resolves.toBe(true);
+    await registry.close();
   });
 
   it('does not reopen a suspension invalidated by terminal Project closure', async () => {

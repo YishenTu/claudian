@@ -14,9 +14,9 @@ import type { LanCollabInvitation } from '@/app/collab/lan/InvitationCodec';
 import type {
   CollabHostTransferSummary,
   CollabHostTrustTransitionProof,
+  CollabLanProjectSnapshot,
   CollabManagerResponsibilityOfferSummary,
   CollabManagerResponsibilityPurpose,
-  CollabProjectSnapshot,
   CollabRetirementResult,
 } from '@/core/collab';
 
@@ -189,16 +189,16 @@ export interface LanCollabControlOperationMap extends CollabControlOperationMap 
   >;
   activateJoinAttempt: CollabControlOperationDefinition<
     ActivateJoinAttemptRequest,
-    CollabProjectSnapshot
+    CollabLanProjectSnapshot
   >;
-  getSnapshot: CollabControlOperationDefinition<GetSnapshotRequest, CollabProjectSnapshot>;
+  getSnapshot: CollabControlOperationDefinition<GetSnapshotRequest, CollabLanProjectSnapshot>;
   createInvitation: CollabControlOperationDefinition<
     CreateInvitationRequest,
     LanCreateInvitationResponse
   >;
   revokeInvitation: CollabControlOperationDefinition<
     RevokeInvitationRequest,
-    CollabProjectSnapshot
+    CollabLanProjectSnapshot
   >;
   createManagerResponsibilityOffer: CollabControlOperationDefinition<
     CreateManagerResponsibilityOfferRequest,

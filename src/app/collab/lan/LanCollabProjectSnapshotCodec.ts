@@ -3,9 +3,9 @@ import { COLLAB_LIMITS, COLLAB_MAIN_REF, type CollabChangeRequest, type CollabMe
 import { decodeLanCollabLifecycleOperationResponse } from '@/app/collab/lan/LanCollabLifecycleCodecs';
 import type {
   CollabHostTransferSummary,
+  CollabLanProject,
+  CollabLanProjectSnapshot,
   CollabManagerResponsibilityOfferSummary,
-  CollabProject,
-  CollabProjectSnapshot,
 } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -201,7 +201,7 @@ function ticketSummary(value: unknown): CollabTicketSummary {
   };
 }
 
-function project(value: unknown): CollabProject {
+function project(value: unknown): CollabLanProject {
   const source = record(value, 'project');
   if (source.authorityKind !== 'lan' || source.mainRef !== COLLAB_MAIN_REF) {
     throw decodeError('project');
@@ -233,7 +233,7 @@ function hostTransfer(value: unknown): CollabHostTransferSummary {
   return decoded.value;
 }
 
-export function decodeLanCollabProjectSnapshot(value: unknown): CollabProjectSnapshot {
+export function decodeLanCollabProjectSnapshot(value: unknown): CollabLanProjectSnapshot {
   const data = record(value, 'snapshot');
   if (
     !Array.isArray(data.members)

@@ -5,6 +5,7 @@ import { collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol
 import type {
   CollabProjectWorkSessionSuspension,
 } from '@/app/collab/activity/CollabProjectWorkSession';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { LocalExitProjectStorePort } from '@/app/collab/exit/LocalExitStores';
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
 import type {
@@ -147,6 +148,12 @@ export class LocalProjectExitCoordinator {
     }
     const membership = await this.projects.loadMembership(request.projectId);
     if (!membership) throw new CollabError({ code: 'project-not-found' });
+    if (!isCollabLocalLanMembership(membership)) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'local-exit-lan-only' },
+      });
+    }
     if (membership.hostOwnership.ownsAuthority) {
       throw new CollabError({
         code: 'host-transfer-pending',

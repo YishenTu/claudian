@@ -10,6 +10,7 @@ describe('LanHostTransferSourceIdentity', () => {
     const tlsIdentity = { hostCaSigner: jest.fn().mockResolvedValue(signer) };
     const projects = {
       loadMembership: jest.fn().mockResolvedValue({
+        authority: { kind: 'lan' },
         member: { credential: 'credential' },
         project: { id: 'project-a' },
       }),

@@ -1,5 +1,5 @@
 import type {
-  CollabLocalMembershipRecord,
+  CollabLocalLanMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
@@ -17,8 +17,8 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 
 function membership(
-  overrides: Partial<CollabLocalMembershipRecord> = {},
-): CollabLocalMembershipRecord {
+  overrides: Partial<CollabLocalLanMembershipRecord> = {},
+): CollabLocalLanMembershipRecord {
   return {
     authority: {
       endpoint: 'https://192.168.1.10:54545',

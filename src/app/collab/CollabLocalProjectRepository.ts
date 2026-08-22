@@ -1,6 +1,6 @@
-import { lstat, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, readdir, readFile, rename, rm } from 'node:fs/promises';
 
-import { type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
 
 import {
   type CollabFilesystemDiagnosticSink,
@@ -9,6 +9,7 @@ import {
   removeCollabDirectoryDurably,
   removeCollabFileDurably,
   resolveCollabVaultPath,
+  syncCollabVaultDirectoryDurably,
   writeCollabFileAtomically,
 } from '@/app/collab/CollabFilesystemBoundary';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -23,6 +24,11 @@ import type {
 import {
   decodeHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
+import {
+  canonicalCloudOrigin,
+  canonicalCloudUrl,
+  cloudProjectGitRemoteUrl,
+} from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import {
   decodeRetirementRecord,
   type RetirementRecord,
@@ -74,15 +80,29 @@ export type CollabRetiredProjectProjectionSeed = Pick<
   'authorityKind' | 'createdAt' | 'name' | 'workspacePath'
 >;
 
-export interface CollabLocalMembershipRecord {
+interface CollabLocalMembershipRecordBase {
   readonly schemaVersion: typeof COLLAB_LOCAL_PROJECT_SCHEMA_VERSION;
   readonly project: {
     readonly id: CollabProjectId;
     readonly name: string;
     readonly workspacePath: string;
   };
+  readonly member: {
+    readonly id: CollabMemberId;
+    readonly displayName: string;
+    readonly role: CollabRole;
+    readonly personalRef: string;
+  };
+  readonly lifecycle?: 'active' | 'leaving';
+  readonly lastEventSequence: number;
+  readonly createdAt: CollabIsoTimestamp;
+  readonly updatedAt: CollabIsoTimestamp;
+}
+
+export interface CollabLocalLanMembershipRecord
+  extends CollabLocalMembershipRecordBase {
   readonly authority: {
-    readonly kind: CollabAuthorityKind;
+    readonly kind: 'lan';
     readonly endpoint: string | null;
     readonly gitRemoteUrl: string | null;
     readonly hostCaCertificatePem: string | null;
@@ -99,10 +119,34 @@ export interface CollabLocalMembershipRecord {
     readonly autoStart?: boolean;
     readonly ownsAuthority: boolean;
   };
-  readonly lifecycle?: 'active' | 'leaving';
-  readonly lastEventSequence: number;
-  readonly createdAt: CollabIsoTimestamp;
-  readonly updatedAt: CollabIsoTimestamp;
+}
+
+export interface CollabLocalCloudMembershipRecord
+  extends CollabLocalMembershipRecordBase {
+  readonly authority: {
+    readonly bindingVersion: typeof COLLAB_CLOUD_BINDING_VERSION;
+    readonly developmentActorId: CollabMemberId;
+    readonly gitRemoteUrl: string;
+    readonly kind: 'cloud';
+    readonly serverUrl: string;
+    readonly wireVersion: typeof COLLAB_PROTOCOL_VERSION;
+  };
+}
+
+export type CollabLocalMembershipRecord =
+  | CollabLocalLanMembershipRecord
+  | CollabLocalCloudMembershipRecord;
+
+export function isCollabLocalLanMembership(
+  membership: CollabLocalMembershipRecord,
+): membership is CollabLocalLanMembershipRecord {
+  return membership.authority?.kind === 'lan';
+}
+
+export function isCollabLocalCloudMembership(
+  membership: CollabLocalMembershipRecord,
+): membership is CollabLocalCloudMembershipRecord {
+  return membership.authority?.kind === 'cloud';
 }
 
 export interface CollabLocalProjectPaths {
@@ -150,6 +194,20 @@ type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireExactKeys(
+  value: UnknownRecord,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): void {
+  const allowed = new Set([...required, ...optional]);
+  if (
+    required.some(key => !Object.hasOwn(value, key))
+    || Object.keys(value).some(key => !allowed.has(key))
+  ) {
+    throw new TypeError('Unexpected record field');
+  }
 }
 
 function localRecordError(
@@ -268,7 +326,9 @@ function normalizeIndexEntry(value: unknown): CollabLocalProjectIndexEntry {
     || Object.keys(value).some(key => !required.has(key) && !optional.has(key))
   ) throw new TypeError('Unexpected project index entry field');
   const authorityKind = value.authorityKind;
-  if (authorityKind !== 'lan') throw new TypeError('Invalid authority kind');
+  if (authorityKind !== 'lan' && authorityKind !== 'cloud') {
+    throw new TypeError('Invalid authority kind');
+  }
   const lifecycle = value.lifecycle ?? 'active';
   if (lifecycle !== 'active' && lifecycle !== 'leaving' && lifecycle !== 'retired') {
     throw new TypeError('Invalid Project lifecycle');
@@ -339,8 +399,18 @@ function normalizeIndex(value: unknown): CollabLocalProjectIndex {
 }
 
 function migrateIndex(value: unknown, now: CollabIsoTimestamp): CollabLocalProjectIndex {
-  if (!isRecord(value) || (value.schemaVersion !== 0 && value.schemaVersion !== 1) || !Array.isArray(value.projects)) {
+  if (
+    !isRecord(value)
+    || ![0, 1, 2].includes(value.schemaVersion as number)
+    || !Array.isArray(value.projects)
+  ) {
     throw new TypeError('Invalid legacy Project index');
+  }
+  if (value.schemaVersion === 2) {
+    return normalizeIndex({
+      ...value,
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    });
   }
   return normalizeIndex({
     projects: value.projects.map(project => {
@@ -365,47 +435,130 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   if (value.schemaVersion !== COLLAB_LOCAL_PROJECT_SCHEMA_VERSION) {
     throw schemaVersionError('membership');
   }
-  if (
-    !isRecord(value.project)
-    || !isRecord(value.authority)
-    || !isRecord(value.member)
-    || !isRecord(value.hostOwnership)
-  ) {
+  if (!isRecord(value.project) || !isRecord(value.authority) || !isRecord(value.member)) {
     throw new TypeError('Invalid membership sections');
   }
-  const membershipKeys = new Set([
-    'schemaVersion', 'project', 'authority', 'member', 'hostOwnership',
-    'lastEventSequence', 'createdAt', 'updatedAt',
-  ]);
-  if (
-    [...membershipKeys].some(key => !(key in value))
-    || Object.keys(value).some(key => !membershipKeys.has(key) && key !== 'lifecycle')
-  ) {
-    throw new TypeError('Unexpected membership field');
+  const authorityKind = value.authority.kind;
+  if (authorityKind !== 'lan' && authorityKind !== 'cloud') {
+    throw new TypeError('Invalid authority kind');
   }
-  const lifecycle = value.lifecycle ?? 'active';
-  if (lifecycle !== 'active' && lifecycle !== 'leaving') {
+  requireExactKeys(
+    value,
+    authorityKind === 'lan'
+      ? [
+        'schemaVersion', 'project', 'authority', 'member', 'hostOwnership',
+        'lastEventSequence', 'createdAt', 'updatedAt',
+      ]
+      : [
+        'schemaVersion', 'project', 'authority', 'member',
+        'lastEventSequence', 'createdAt', 'updatedAt',
+      ],
+    ['lifecycle'],
+  );
+  requireExactKeys(value.project, ['id', 'name', 'workspacePath']);
+  const lifecycleValue = value.lifecycle ?? 'active';
+  if (lifecycleValue !== 'active' && lifecycleValue !== 'leaving') {
     throw new TypeError('Invalid membership lifecycle');
+  }
+  const lifecycle: 'active' | 'leaving' = lifecycleValue;
+  if (authorityKind === 'cloud' && lifecycle !== 'active') {
+    throw new TypeError('Invalid Cloud membership lifecycle');
   }
 
   const projectId = requireProjectId(value.project);
   const memberId = requireString(value.member, 'id', { maxLength: 64 });
   if (!isCollabMemberId(memberId)) throw new TypeError('Invalid Member id');
-  const authorityKind = value.authority.kind;
-  if (authorityKind !== 'lan') throw new TypeError('Invalid authority kind');
-  const role = value.member.role;
-  if (role !== 'manager' && role !== 'member') throw new TypeError('Invalid role');
+  const roleValue = value.member.role;
+  if (roleValue !== 'manager' && roleValue !== 'member') throw new TypeError('Invalid role');
+  const role: CollabRole = roleValue;
   const personalRef = requireString(value.member, 'personalRef', { maxLength: 256 });
   if (personalRef !== collabMemberRef(memberId)) throw new TypeError('Invalid personal ref');
+  const lastEventSequence = value.lastEventSequence;
+  if (!Number.isSafeInteger(lastEventSequence) || (lastEventSequence as number) < 0) {
+    throw new TypeError('Invalid event sequence');
+  }
+  const common = {
+    createdAt: requireTimestamp(value, 'createdAt'),
+    lastEventSequence: lastEventSequence as number,
+    lifecycle,
+    member: {
+      displayName: requireString(value.member, 'displayName', { maxLength: 200 }),
+      id: memberId,
+      personalRef,
+      role,
+    },
+    project: {
+      id: projectId,
+      name: requireString(value.project, 'name', { maxLength: 200 }),
+      workspacePath: requireWorkspacePath(value.project),
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: requireTimestamp(value, 'updatedAt'),
+  };
+
+  if (authorityKind === 'cloud') {
+    requireExactKeys(value.authority, [
+      'bindingVersion', 'developmentActorId', 'gitRemoteUrl', 'kind',
+      'serverUrl', 'wireVersion',
+    ]);
+    requireExactKeys(value.member, [
+      'displayName', 'id', 'personalRef', 'role',
+    ]);
+    if (
+      value.authority.bindingVersion !== COLLAB_CLOUD_BINDING_VERSION
+      || value.authority.wireVersion !== COLLAB_PROTOCOL_VERSION
+    ) {
+      throw schemaVersionError('membership');
+    }
+    const developmentActorId = requireString(
+      value.authority,
+      'developmentActorId',
+      { maxLength: 64 },
+    );
+    if (!isCollabMemberId(developmentActorId) || developmentActorId !== memberId) {
+      throw new TypeError('Invalid development actor id');
+    }
+    const serverUrl = canonicalCloudOrigin(
+      requireString(value.authority, 'serverUrl', { maxLength: 2_048 }),
+      'serverUrl',
+    );
+    const gitRemoteUrl = canonicalCloudUrl(
+      requireString(value.authority, 'gitRemoteUrl', { maxLength: 2_048 }),
+      'gitRemoteUrl',
+    );
+    if (gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)) {
+      throw new TypeError('Invalid Cloud Git URL');
+    }
+    const membership: CollabLocalCloudMembershipRecord = {
+      ...common,
+      authority: {
+        bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+        developmentActorId,
+        gitRemoteUrl,
+        kind: 'cloud',
+        serverUrl,
+        wireVersion: COLLAB_PROTOCOL_VERSION,
+      },
+    };
+    return membership;
+  }
+
+  if (!isRecord(value.hostOwnership)) {
+    throw new TypeError('Invalid Host ownership');
+  }
+  requireExactKeys(value.authority, [
+    'endpoint', 'gitRemoteUrl', 'hostCaCertificatePem',
+    'hostCaFingerprint', 'kind',
+  ]);
+  requireExactKeys(value.member, [
+    'credential', 'displayName', 'id', 'personalRef', 'role',
+  ]);
+  requireExactKeys(value.hostOwnership, ['ownsAuthority'], ['autoStart']);
   const ownsAuthority = value.hostOwnership.ownsAuthority;
   if (typeof ownsAuthority !== 'boolean') throw new TypeError('Invalid Host ownership');
   const autoStart = value.hostOwnership.autoStart;
   if (autoStart !== undefined && typeof autoStart !== 'boolean') {
     throw new TypeError('Invalid Host auto-start intent');
-  }
-  const lastEventSequence = value.lastEventSequence;
-  if (!Number.isSafeInteger(lastEventSequence) || (lastEventSequence as number) < 0) {
-    throw new TypeError('Invalid event sequence');
   }
   const hostCaCertificatePem = value.authority.hostCaCertificatePem === null
     ? null
@@ -429,58 +582,41 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     endpointOnly: true,
   });
   const gitRemoteUrl = requireNullableHttpsUrl(value.authority, 'gitRemoteUrl');
-  const networkFields = [
-    endpoint,
-    gitRemoteUrl,
-    hostCaCertificatePem,
-    hostCaFingerprint,
-  ];
+  const networkFields = [endpoint, gitRemoteUrl, hostCaCertificatePem, hostCaFingerprint];
   if (networkFields.some(field => field === null) && networkFields.some(field => field !== null)) {
     throw new TypeError('Incomplete LAN authority configuration');
   }
-
-  return {
+  const membership: CollabLocalLanMembershipRecord = {
+    ...common,
     authority: {
       endpoint,
       gitRemoteUrl,
       hostCaCertificatePem,
       hostCaFingerprint,
-      kind: authorityKind,
+      kind: 'lan',
     },
-    createdAt: requireTimestamp(value, 'createdAt'),
     hostOwnership: {
       ...(autoStart === undefined ? {} : { autoStart }),
       ownsAuthority,
     },
-    lastEventSequence: lastEventSequence as number,
-    lifecycle,
     member: {
+      ...common.member,
       credential: requireString(value.member, 'credential', {
         maxLength: 43,
         pattern: MEMBER_CREDENTIAL_PATTERN,
       }),
-      displayName: requireString(value.member, 'displayName', { maxLength: 200 }),
-      id: memberId,
-      personalRef,
-      role,
     },
-    project: {
-      id: projectId,
-      name: requireString(value.project, 'name', { maxLength: 200 }),
-      workspacePath: requireWorkspacePath(value.project),
-    },
-    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: requireTimestamp(value, 'updatedAt'),
   };
+  return membership;
 }
 
 function migrateMembership(value: unknown): CollabLocalMembershipRecord {
-  if (!isRecord(value) || value.schemaVersion !== 1) {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
     throw new TypeError('Invalid legacy membership');
   }
   return normalizeMembership({
     ...value,
-    lifecycle: 'active',
+    ...(value.schemaVersion === 1 ? { lifecycle: 'active' } : {}),
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
   });
 }
@@ -573,6 +709,97 @@ export class CollabLocalProjectRepository {
 
   loadIndex(): Promise<CollabLocalProjectIndex> {
     return this.operationQueue.run(() => this.loadIndexUnlocked(true));
+  }
+
+  repairIndexFromMemberships(): Promise<CollabLocalProjectIndex> {
+    return this.operationQueue.run(async () => {
+      let existing: CollabLocalProjectIndex | null;
+      try {
+        existing = await this.loadIndexUnlocked(false);
+      } catch (error) {
+        if (
+          !(error instanceof CollabError)
+          || error.safeContext.recordKind !== 'index'
+          || error.safeContext.reason !== 'local-record-corrupt'
+        ) {
+          throw error;
+        }
+        existing = null;
+      }
+      const projectsRelativePath = `${PRIVATE_STATE_DIRECTORY}/projects`;
+      const projectsPath = await resolveCollabVaultPath(this.vaultRoot, projectsRelativePath);
+      const entries = await readdir(projectsPath, { withFileTypes: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw localRecordError('local-record-read-failed', 'index');
+      });
+      const membershipProjects: CollabLocalProjectIndexEntry[] = [];
+      const recoveredRetiredProjects: CollabLocalProjectIndexEntry[] = [];
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (
+          !isCollabProjectId(entry.name)
+          || !entry.isDirectory()
+          || entry.isSymbolicLink()
+        ) {
+          throw localRecordError('local-project-directory-invalid', 'index');
+        }
+        const retirement = await this.loadRetirementRecordUnlocked(entry.name);
+        if (retirement) {
+          const terminal = existing?.projects.find(project => project.id === entry.name);
+          if (!terminal || terminal.lifecycle !== 'retired') {
+            throw localRecordError(
+              'local-index-retirement-projection-unrecoverable',
+              'index',
+              entry.name,
+            );
+          }
+          recoveredRetiredProjects.push({
+            ...terminal,
+            cleanupStatus: retirement.cleanupStatus,
+            lifecycle: 'retired',
+            retiredAt: retirement.retiredAt,
+            updatedAt: retirement.updatedAt,
+          });
+          continue;
+        }
+        const membership = await this.loadMembershipUnlocked(entry.name, true);
+        if (!membership) continue;
+        membershipProjects.push({
+          authorityKind: membership.authority.kind,
+          createdAt: membership.createdAt,
+          id: membership.project.id,
+          lifecycle: membership.lifecycle ?? 'active',
+          name: membership.project.name,
+          updatedAt: membership.updatedAt,
+          workspacePath: membership.project.workspacePath,
+        });
+      }
+      const membershipProjectIds = new Set(membershipProjects.map(project => project.id));
+      const recoveredRetiredProjectIds = new Set(
+        recoveredRetiredProjects.map(project => project.id),
+      );
+      const retainedNonActiveProjects = (existing?.projects ?? []).filter(project => (
+        !membershipProjectIds.has(project.id)
+        && !recoveredRetiredProjectIds.has(project.id)
+        && project.lifecycle !== 'active'
+      ));
+      const projects = [
+        ...membershipProjects,
+        ...recoveredRetiredProjects,
+        ...retainedNonActiveProjects,
+      ].sort((left, right) => left.id.localeCompare(right.id));
+      const selectedProjectId = projects.some(project => (
+        project.id === existing?.selectedProjectId
+      ))
+        ? existing?.selectedProjectId ?? null
+        : null;
+      const repaired: CollabLocalProjectIndex = {
+        projects,
+        schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+        selectedProjectId,
+      };
+      await this.saveIndexUnlocked(repaired);
+      return repaired;
+    });
   }
 
   upsertProject(entry: CollabLocalProjectIndexEntry): Promise<void> {
@@ -916,31 +1143,7 @@ export class CollabLocalProjectRepository {
 
   loadMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null> {
     this.requireProjectId(projectId);
-    return this.operationQueue.run(async () => {
-      const relativePath = this.getProjectPaths(projectId).membership;
-      const value = await this.readJson(relativePath, 'membership', projectId);
-      if (value === null) return null;
-      try {
-        const migrated = isRecord(value) && value.schemaVersion === 1;
-        const membership = migrated ? migrateMembership(value) : normalizeMembership(value);
-        if (membership.project.id !== projectId) {
-          throw new TypeError('Membership Project mismatch');
-        }
-        if (migrated) {
-          await this.ensurePrivateProjectDirectory(projectId);
-          await writeCollabFileAtomically(
-            this.vaultRoot,
-            relativePath,
-            serializeJson(membership),
-            { mode: 0o600, onDiagnostic: this.onDiagnostic },
-          );
-        }
-        return membership;
-      } catch (error) {
-        if (error instanceof CollabError) throw error;
-        throw localRecordError('local-record-corrupt', 'membership', projectId);
-      }
-    });
+    return this.operationQueue.run(() => this.loadMembershipUnlocked(projectId, true));
   }
 
   saveMembership(record: CollabLocalMembershipRecord): Promise<void> {
@@ -1041,12 +1244,19 @@ export class CollabLocalProjectRepository {
       ) {
         return membership;
       }
-      const updated = {
-        ...membership,
-        lastEventSequence: projection.sequence,
-        member: { ...membership.member, role: projection.role },
-        updatedAt: this.now().toISOString(),
-      };
+      const updated: CollabLocalMembershipRecord = isCollabLocalLanMembership(membership)
+        ? {
+          ...membership,
+          lastEventSequence: projection.sequence,
+          member: { ...membership.member, role: projection.role },
+          updatedAt: this.now().toISOString(),
+        }
+        : {
+          ...membership,
+          lastEventSequence: projection.sequence,
+          member: { ...membership.member, role: projection.role },
+          updatedAt: this.now().toISOString(),
+        };
       await this.ensurePrivateProjectDirectory(projectId);
       await writeCollabFileAtomically(
         this.vaultRoot,
@@ -1434,6 +1644,83 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  retireAuthorityDirectory(
+    projectId: CollabProjectId,
+    attemptId: string,
+  ): Promise<string | null> {
+    this.requireProjectId(projectId);
+    if (!isCollabOpaqueId(attemptId)) {
+      return Promise.reject(localRecordError(
+        'authority-directory-boundary-invalid',
+        'index',
+        projectId,
+      ));
+    }
+    return this.operationQueue.run(async () => {
+      const sourceRelative = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
+      const retiredParentRelative = `${PRIVATE_STATE_DIRECTORY}/retired-lan-authorities/${projectId}`;
+      const retiredRelative = `${retiredParentRelative}/${attemptId}`;
+      const source = await resolveCollabVaultPath(this.vaultRoot, sourceRelative);
+      const retired = await resolveCollabVaultPath(this.vaultRoot, retiredRelative);
+      const inspect = async (absolutePath: string, relativePath: string) => {
+        const info = await lstat(absolutePath).catch(error => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
+        });
+        if (info && (!info.isDirectory() || info.isSymbolicLink())) {
+          throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
+        }
+        if (info) {
+          const marker = await this.loadAuthorityOwnershipMarker(
+            `${relativePath}/${AUTHORITY_OWNERSHIP_MARKER}`,
+          );
+          if (
+            marker?.projectId !== projectId
+            || marker.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+          ) {
+            throw localRecordError('authority-ownership-marker-missing', 'index', projectId);
+          }
+        }
+        return info;
+      };
+      const [sourceInfo, retiredInfo] = await Promise.all([
+        inspect(source, sourceRelative),
+        inspect(retired, retiredRelative),
+      ]);
+      if (sourceInfo && retiredInfo) {
+        throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
+      }
+      if (retiredInfo) {
+        await ensureCollabVaultDirectory(this.vaultRoot, retiredParentRelative, {
+          durable: true,
+          mode: 0o700,
+          onDiagnostic: this.onDiagnostic,
+        });
+        await syncCollabVaultDirectoryDurably(
+          this.vaultRoot,
+          `${PRIVATE_STATE_DIRECTORY}/authorities`,
+        );
+        await syncCollabVaultDirectoryDurably(this.vaultRoot, retiredParentRelative);
+        return retired;
+      }
+      if (!sourceInfo) return null;
+      await ensureCollabVaultDirectory(this.vaultRoot, retiredParentRelative, {
+        durable: true,
+        mode: 0o700,
+        onDiagnostic: this.onDiagnostic,
+      });
+      await rename(source, retired).catch(() => {
+        throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
+      });
+      await syncCollabVaultDirectoryDurably(
+        this.vaultRoot,
+        `${PRIVATE_STATE_DIRECTORY}/authorities`,
+      );
+      await syncCollabVaultDirectoryDurably(this.vaultRoot, retiredParentRelative);
+      return retired;
+    });
+  }
+
   async ensureGitEmptyConfig(): Promise<string> {
     return this.operationQueue.run(async () => {
       await this.ensurePrivateStateContainer();
@@ -1553,7 +1840,12 @@ export class CollabLocalProjectRepository {
 
     let decoded: DecodeResult<CollabLocalProjectIndex>;
     try {
-      if (isRecord(value) && (value.schemaVersion === 0 || value.schemaVersion === 1)) {
+      if (
+        isRecord(value)
+        && (value.schemaVersion === 0
+          || value.schemaVersion === 1
+          || value.schemaVersion === 2)
+      ) {
         decoded = {
           migrated: true,
           value: migrateIndex(value, this.now().toISOString()),
@@ -1574,6 +1866,36 @@ export class CollabLocalProjectRepository {
       await this.saveIndexUnlocked(decoded.value);
     }
     return decoded.value;
+  }
+
+  private async loadMembershipUnlocked(
+    projectId: CollabProjectId,
+    persistMigration: boolean,
+  ): Promise<CollabLocalMembershipRecord | null> {
+    const relativePath = this.getProjectPaths(projectId).membership;
+    const value = await this.readJson(relativePath, 'membership', projectId);
+    if (value === null) return null;
+    try {
+      const migrated = isRecord(value)
+        && (value.schemaVersion === 1 || value.schemaVersion === 2);
+      const membership = migrated ? migrateMembership(value) : normalizeMembership(value);
+      if (membership.project.id !== projectId) {
+        throw new TypeError('Membership Project mismatch');
+      }
+      if (migrated && persistMigration) {
+        await this.ensurePrivateProjectDirectory(projectId);
+        await writeCollabFileAtomically(
+          this.vaultRoot,
+          relativePath,
+          serializeJson(membership),
+          { mode: 0o600, onDiagnostic: this.onDiagnostic },
+        );
+      }
+      return membership;
+    } catch (error) {
+      if (error instanceof CollabError) throw error;
+      throw localRecordError('local-record-corrupt', 'membership', projectId);
+    }
   }
 
   private async saveIndexUnlocked(index: CollabLocalProjectIndex): Promise<void> {

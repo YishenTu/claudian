@@ -18,6 +18,7 @@ import { AuthorityIdempotencyRepository } from '@/app/collab/authority/Authority
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { type GitRuntime,GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
@@ -222,6 +223,9 @@ describe('Join Project same-device LAN integration', () => {
       },
     });
     const localMembership = await memberFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!localMembership || !isCollabLocalLanMembership(localMembership)) {
+      throw new Error('Joined LAN membership missing');
+    }
     expect(localMembership).toMatchObject({
       authority: {
         endpoint,
@@ -233,21 +237,21 @@ describe('Join Project same-device LAN integration', () => {
         role: 'member',
       },
     });
-    expect(localMembership?.member.credential).not.toBe(invitation.invitationSecret);
-    const snapshot = await membership.readSnapshot(localMembership!.member.credential);
+    expect(localMembership.member.credential).not.toBe(invitation.invitationSecret);
+    const snapshot = await membership.readSnapshot(localMembership.member.credential);
     expect(snapshot.currentMember).toMatchObject({
-      id: localMembership!.member.id,
+      id: localMembership.member.id,
       status: 'active',
     });
     const workingCopy = path.join(memberRoot, 'workspace', PROJECT_ID);
     expect(await readFile(path.join(workingCopy, 'note.md'), 'utf8')).toBe('shared\n');
     expect(await hostGit.resolveRef(
       workingCopy,
-      localMembership!.member.personalRef,
+      localMembership.member.personalRef,
     )).toBe(initialOid);
     expect(await hostGit.resolveRef(
       bareRepositoryPath,
-      localMembership!.member.personalRef,
+      localMembership.member.personalRef,
     )).toBe(initialOid);
     const remoteUrl = await hostRunner.run({
       args: ['config', '--local', '--get', 'remote.origin.url'],
@@ -256,7 +260,7 @@ describe('Join Project same-device LAN integration', () => {
     expect(remoteUrl.stdout.toString('utf8').trim()).toBe(
       `${endpoint}/v1/git/${PROJECT_ID}/repository.git`,
     );
-    expect(remoteUrl.stdout.toString('utf8')).not.toContain(localMembership!.member.credential);
+    expect(remoteUrl.stdout.toString('utf8')).not.toContain(localMembership.member.credential);
     await expect(hostRunner.run({
       acceptedExitCodes: [1],
       args: ['config', '--local', '--get-all', 'http.extraHeader'],

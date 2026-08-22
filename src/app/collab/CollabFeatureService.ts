@@ -18,6 +18,7 @@ import type {
   CollabLocalProjectIndex,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import {
   type CollabPendingProjectOperation,
@@ -1060,7 +1061,9 @@ class CollabFeatureServiceCore {
       try {
         const membership = await this.foundation.local.projects.loadMembership(project.id);
         if (
-          !membership?.hostOwnership.ownsAuthority
+          !membership
+          || !isCollabLocalLanMembership(membership)
+          || !membership.hostOwnership.ownsAuthority
           || membership.hostOwnership.autoStart === false
         ) {
           continue;
@@ -1863,7 +1866,10 @@ class CollabFeatureServiceCore {
   ): CollabLocalProjectSummary {
     const lifecycle = project.lifecycle ?? membership?.lifecycle;
     const effectiveLifecycle = lifecycle ?? 'active';
-    const ownsAuthority = membership?.hostOwnership.ownsAuthority === true;
+    const lanMembership = membership && isCollabLocalLanMembership(membership)
+      ? membership
+      : null;
+    const ownsAuthority = lanMembership?.hostOwnership.ownsAuthority === true;
     const hostStatus = effectiveLifecycle === 'retired'
       ? 'not-host'
       : ownsAuthority
@@ -1879,7 +1885,9 @@ class CollabFeatureServiceCore {
           ? 'needs-attention'
           : ownsAuthority
           ? 'host-stopped'
-          : membership?.authority.endpoint
+          : membership?.authority.kind === 'cloud'
+            ? 'connected'
+            : lanMembership?.authority.endpoint
             ? 'connected'
             : 'offline',
       health: project.cleanupStatus === 'failed'

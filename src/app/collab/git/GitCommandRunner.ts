@@ -17,8 +17,11 @@ const DEFAULT_STDERR_LIMIT_BYTES = 64 * 1024;
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 
 export interface GitNetworkEnvironment {
-  readonly authorizationHeader: string;
-  readonly sslCaInfoPath: string;
+  readonly headers: readonly {
+    readonly name: string;
+    readonly value: string;
+  }[];
+  readonly sslCaInfoPath?: string;
 }
 
 export interface GitCommandIdentity {
@@ -84,13 +87,28 @@ function invalidNetworkEnvironment(
   network: GitNetworkEnvironment,
 ): CollabError | null {
   if (
-    !/^(?:Basic|Bearer) [A-Za-z0-9._~+/-]+={0,2}$/.test(network.authorizationHeader)
-    || network.sslCaInfoPath.length === 0
-    || network.sslCaInfoPath.length > 4_096
-    || !path.isAbsolute(network.sslCaInfoPath)
-    || network.sslCaInfoPath.includes('\u0000')
-    || network.sslCaInfoPath.includes('\r')
-    || network.sslCaInfoPath.includes('\n')
+    network.headers.length < 1
+    || network.headers.length > 4
+    || network.headers.some(header => (
+      !/^[A-Za-z][A-Za-z0-9-]{0,63}$/u.test(header.name)
+      || header.value.length < 1
+      || header.value.length > 4_096
+      || header.value.includes('\u0000')
+      || header.value.includes('\r')
+      || header.value.includes('\n')
+      || (header.name.toLocaleLowerCase('en-US') === 'authorization'
+        && !/^(?:Basic|Bearer) [A-Za-z0-9._~+/-]+={0,2}$/u.test(header.value))
+    ))
+    || new Set(network.headers.map(header => header.name.toLocaleLowerCase('en-US'))).size
+      !== network.headers.length
+    || (network.sslCaInfoPath !== undefined && (
+      network.sslCaInfoPath.length === 0
+      || network.sslCaInfoPath.length > 4_096
+      || !path.isAbsolute(network.sslCaInfoPath)
+      || network.sslCaInfoPath.includes('\u0000')
+      || network.sslCaInfoPath.includes('\r')
+      || network.sslCaInfoPath.includes('\n')
+    ))
   ) {
     return commandFailure('operation-failed', 'unsafe-git-network-environment');
   }
@@ -137,21 +155,28 @@ export function buildIsolatedGitEnvironment(
     runtimeConfig.push({ key: 'core.hooksPath', value: options.emptyConfigPath });
   }
   if (options.network) {
-    runtimeConfig.push({
-      key: 'http.extraHeader',
-      value: `Authorization: ${options.network.authorizationHeader}`,
-    });
-    if ((options.platform ?? process.platform) === 'win32') {
+    for (const header of options.network.headers) {
+      runtimeConfig.push({
+        key: 'http.extraHeader',
+        value: `${header.name}: ${header.value}`,
+      });
+    }
+    if (
+      options.network.sslCaInfoPath !== undefined
+      && (options.platform ?? process.platform) === 'win32'
+    ) {
       runtimeConfig.push(
         { key: 'http.sslBackend', value: 'schannel' },
         { key: 'http.schannelCheckRevoke', value: 'false' },
         { key: 'http.schannelUseSSLCAInfo', value: 'true' },
       );
     }
-    runtimeConfig.push({
-      key: 'http.sslCAInfo',
-      value: options.network.sslCaInfoPath,
-    });
+    if (options.network.sslCaInfoPath !== undefined) {
+      runtimeConfig.push({
+        key: 'http.sslCAInfo',
+        value: options.network.sslCaInfoPath,
+      });
+    }
   }
 
   Object.assign(environment, {
@@ -308,7 +333,7 @@ export class GitCommandRunner {
 
     const sensitiveValues = [
       ...(request.sensitiveValues ?? []),
-      ...(request.network ? [request.network.authorizationHeader] : []),
+      ...(request.network ? request.network.headers.map(header => header.value) : []),
     ];
     const argumentError = validateGitArguments(request.args, sensitiveValues);
     if (argumentError) return Promise.reject(argumentError);
@@ -433,7 +458,9 @@ export class GitCommandRunner {
             [
               ...sensitiveValues,
               ...(request.cwd.length > 1 ? [request.cwd] : []),
-              ...(request.network ? [request.network.sslCaInfoPath] : []),
+              ...(request.network?.sslCaInfoPath
+                ? [request.network.sslCaInfoPath]
+                : []),
             ],
           );
           if (failureKind === 'cancelled') {

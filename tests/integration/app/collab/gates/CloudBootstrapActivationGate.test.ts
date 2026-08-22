@@ -21,6 +21,7 @@ import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBoots
 import {
   ATTEMPT_ID,
   bootstrapManifest,
+  finalizeActivatedBindingForTest,
   HOST_MEMBER_ID,
   HOST_OID,
   HOST_REF,
@@ -204,7 +205,7 @@ describe('Cloud bootstrap activation gate', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('leaves both clients pending while the former Host stays durably stopped', async () => {
+  it('completes both client bindings while the former Host stays durably stopped', async () => {
     const hostRoot = path.join(root, 'host');
     const participantRoot = path.join(root, 'participant');
     const membership = JSON.stringify({
@@ -228,6 +229,7 @@ describe('Cloud bootstrap activation gate', () => {
     const timeline: string[] = [];
     const cloud = new SharedBootstrapCloud(timeline);
     const host = new CloudBootstrapCoordinator({
+      binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'bootstrap-fence-gate',
       formerHost: {
@@ -265,6 +267,7 @@ describe('Cloud bootstrap activation gate', () => {
       },
     });
     const participant = new CloudBootstrapCoordinator({
+      binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'unused',
       formerHost: { stopAndDrain: async () => { throw new Error('not-former-host'); } },
@@ -318,8 +321,8 @@ describe('Cloud bootstrap activation gate', () => {
     expect(hostActivated).toMatchObject({
       activationResult: ACTIVATION_RESULT,
       attemptState: 'activated',
-      fence: { state: 'host-stopped' },
-      phase: 'intent',
+      fence: { state: 'terminal' },
+      phase: 'fence-terminal',
     });
     expect(cloud.calls).toEqual([
       'begin',
@@ -331,6 +334,7 @@ describe('Cloud bootstrap activation gate', () => {
     ]);
 
     const restarted = new CloudBootstrapCoordinator({
+      binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'unused',
       formerHost: { stopAndDrain: async () => { throw new Error('host-restarted'); } },
@@ -356,8 +360,8 @@ describe('Cloud bootstrap activation gate', () => {
     });
     await expect(restarted.recoverProject(PROJECT_ID)).resolves.toMatchObject({
       attemptState: 'activated',
-      fence: { state: 'host-stopped' },
-      phase: 'intent',
+      fence: { state: 'terminal' },
+      phase: 'fence-terminal',
     });
 
     for (const clientRoot of [hostRoot, participantRoot]) {

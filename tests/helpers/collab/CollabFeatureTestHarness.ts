@@ -14,7 +14,7 @@ import type {
   CollabPublicationReconnectPort,
   CollabPublicationServiceOptions,
 } from '@/app/collab/publish/CollabPublicationService';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabFeaturePort, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -126,7 +126,7 @@ function unexpected<T>(operation: string): Promise<T> {
   return Promise.reject(new Error(`Unexpected Collab test operation: ${operation}`));
 }
 
-function projectSnapshot(): CollabProjectSnapshot {
+function projectSnapshot(): CollabLanProjectSnapshot {
   const currentMember = {
     activatedAt: TEST_TIMESTAMP,
     createdAt: TEST_TIMESTAMP,

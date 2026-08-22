@@ -121,6 +121,13 @@ export async function syncCollabVaultDirectoryDurably(
     relativePath,
     { mustExist: true },
   );
+  await syncDirectoryDurably(absolutePath, relativePath);
+}
+
+async function syncDirectoryDurably(
+  absolutePath: string,
+  relativePath: string,
+): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
     handle = await open(absolutePath, fsConstants.O_RDONLY);
@@ -195,12 +202,14 @@ export async function ensureCollabVaultDirectory(
     readonly mode?: number;
     readonly onDiagnostic?: CollabFilesystemDiagnosticSink;
     readonly preserveExistingMode?: boolean;
+    readonly durable?: boolean;
   } = {},
 ): Promise<string> {
   const segments = validateVaultRelativePath(relativePath);
   const mode = options.mode ?? 0o755;
   let accumulated = '';
   for (const segment of segments) {
+    const parentRelativePath = accumulated;
     accumulated = accumulated.length === 0 ? segment : `${accumulated}/${segment}`;
     const absolutePath = await resolveCollabVaultPath(vaultRoot, accumulated);
     let created = false;
@@ -218,6 +227,16 @@ export async function ensureCollabVaultDirectory(
     }
     if (created || !options.preserveExistingMode) {
       await applyModeBestEffort(absolutePath, accumulated, mode, options.onDiagnostic);
+    }
+    if (options.durable) {
+      const parentAbsolutePath = parentRelativePath.length === 0
+        ? path.resolve(vaultRoot)
+        : await resolveCollabVaultPath(vaultRoot, parentRelativePath, { mustExist: true });
+      await syncDirectoryDurably(absolutePath, accumulated);
+      await syncDirectoryDurably(
+        parentAbsolutePath,
+        parentRelativePath.length === 0 ? '.' : parentRelativePath,
+      );
     }
   }
   return resolveCollabVaultPath(vaultRoot, relativePath, { mustExist: true });

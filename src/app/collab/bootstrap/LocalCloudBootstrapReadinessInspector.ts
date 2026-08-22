@@ -13,6 +13,7 @@ import {
   type CloudBootstrapReadinessOperation,
 } from '@/app/collab/bootstrap/CloudBootstrapReadiness';
 import type { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { ConflictScratchStore } from '@/app/collab/conflicts/ConflictScratchStore';
 import type {
   ManagerResponsibilityReceiptRecord,
@@ -88,7 +89,7 @@ implements CloudBootstrapReadinessInspector {
     throwIfCancelled(signal);
     if (
       !membership
-      || membership.authority.kind !== 'lan'
+      || !isCollabLocalLanMembership(membership)
       || membership.project.id !== projectId
       || membership.member.id !== memberId
     ) {

@@ -13,7 +13,7 @@ import {
   MembershipControlClient,
 } from '@/app/collab/membership/MembershipControlClient';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -24,7 +24,7 @@ export interface PendingLeaveAuthorityClientPort {
     projectId: string,
     memberCredential: string,
     options?: { readonly signal?: AbortSignal },
-  ): Promise<CollabProjectSnapshot>;
+  ): Promise<CollabLanProjectSnapshot>;
 }
 
 export interface PendingLeaveAuthorityServiceOptions {

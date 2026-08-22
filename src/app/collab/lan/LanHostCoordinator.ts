@@ -17,9 +17,10 @@ import {
   resolveCollabVaultPath,
 } from '@/app/collab/CollabFilesystemBoundary';
 import type {
-  CollabLocalMembershipRecord,
+  CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   CollabLanAdvertisement,
   CollabLanDiscoveryPort,
@@ -192,6 +193,10 @@ export interface LanHostCoordinatorOptions {
   readonly vaultRoot: string;
 }
 
+export interface LanHostConnectionProjectionPort {
+  resetProjectConnection(projectId: CollabProjectId): void;
+}
+
 interface HostLockRecord {
   readonly nonce: string;
   readonly pid: number;
@@ -220,7 +225,7 @@ interface HostedProject {
   advertisement?: CollabLanAdvertisement;
   readonly events?: LanHostProjectRuntime['events'];
   readonly gitProxy: LanHostGitProxy;
-  readonly membership: CollabLocalMembershipRecord;
+  readonly membership: CollabLocalLanMembershipRecord;
   readonly runtime: LanHostProjectRuntime;
   readonly service: PendingMembershipService;
 }
@@ -366,6 +371,7 @@ export class LanHostCoordinator {
   private hostLock: HeldHostLock | null = null;
   private listener: RunningListener | null = null;
   private listenerFailure: CollabError | null = null;
+  private connectionProjection: LanHostConnectionProjectionPort | null = null;
   private readonly now: () => Date;
   private readonly operationQueue = new SerialTaskQueue();
   private readonly projectTransitions = new Map<
@@ -392,6 +398,13 @@ export class LanHostCoordinator {
         : { closeTimeoutMs: options.resourceCloseTimeoutMs }),
     });
     this.tlsIdentity = options.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot);
+  }
+
+  bindConnectionProjection(projection: LanHostConnectionProjectionPort): void {
+    if (this.connectionProjection) {
+      throw new Error('LAN Host connection projection is already bound');
+    }
+    this.connectionProjection = projection;
   }
 
   startProject(projectId: CollabProjectId): Promise<CollabHostSession & { endpoint: string }> {
@@ -733,7 +746,11 @@ export class LanHostCoordinator {
     if (incomingRecovery) {
       const membership = await this.options.localProjects.loadMembership(projectId);
       this.assertOpen();
-      if (!membership?.hostOwnership.ownsAuthority) {
+      if (
+        !membership
+        || !isCollabLocalLanMembership(membership)
+        || !membership.hostOwnership.ownsAuthority
+      ) {
         throw hostError(
           'durable-progress-recovery-required',
           'host-transfer-incoming-recovery-required',
@@ -741,6 +758,8 @@ export class LanHostCoordinator {
       }
     }
 
+    const membership = await this.requireLanMembership(projectId);
+    this.assertOpen();
     const firstListenerOwner = !this.listener
       && this.hostedProjects.size === 0
       && this.terminalProjects.size === 0
@@ -789,7 +808,9 @@ export class LanHostCoordinator {
           'host-transfer-post-relinquishment-recovery',
         );
       }
-      const membership = await this.requireHostMembership(projectId);
+      if (!membership.hostOwnership.ownsAuthority) {
+        throw hostError('authorization-denied', 'host-membership-required');
+      }
       const authorityProject = await openedRuntime.authority.database.read(connection => (
         openedRuntime.authority.projects.get(connection)
       ));
@@ -834,7 +855,7 @@ export class LanHostCoordinator {
       gitProxy = this.createGitProxy(projectId, openedRuntime, service);
       await gitProxy.enable();
       this.assertOpen();
-      const hostedMembership: CollabLocalMembershipRecord = {
+      const hostedMembership: CollabLocalLanMembershipRecord = {
         ...membership,
         authority: {
           endpoint: listener.endpoint,
@@ -1450,7 +1471,7 @@ export class LanHostCoordinator {
       return;
     }
     const next = await this.startListener();
-    const originals: CollabLocalMembershipRecord[] = [];
+    const originals: CollabLocalLanMembershipRecord[] = [];
     let promoted = false;
     try {
       this.assertOpen();
@@ -1490,6 +1511,9 @@ export class LanHostCoordinator {
           projectId,
         }).catch(() => undefined);
         this.assertOpen();
+      }
+      for (const projectId of this.hostedProjects.keys()) {
+        this.connectionProjection?.resetProjectConnection(projectId);
       }
     } catch (error) {
       for (const membership of originals) {
@@ -1592,12 +1616,22 @@ export class LanHostCoordinator {
 
   private async requireHostMembership(
     projectId: CollabProjectId,
-  ): Promise<CollabLocalMembershipRecord> {
+  ): Promise<CollabLocalLanMembershipRecord> {
+    const membership = await this.requireLanMembership(projectId);
+    if (!membership.hostOwnership.ownsAuthority) {
+      throw hostError('authorization-denied', 'host-membership-required');
+    }
+    return membership;
+  }
+
+  private async requireLanMembership(
+    projectId: CollabProjectId,
+  ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.localProjects.loadMembership(projectId);
     if (
       !membership
+      || !isCollabLocalLanMembership(membership)
       || membership.project.id !== projectId
-      || !membership.hostOwnership.ownsAuthority
     ) {
       throw hostError('authorization-denied', 'host-membership-required');
     }

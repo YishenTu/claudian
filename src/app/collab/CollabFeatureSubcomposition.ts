@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { CloudBootstrapBindingFinalizer } from '@/app/collab/bootstrap/CloudBootstrapBindingFinalizer';
 import { CloudBootstrapCoordinator } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
 import { CloudBootstrapLocalFence } from '@/app/collab/bootstrap/CloudBootstrapLocalFence';
 import { CloudBootstrapReadinessCollector } from '@/app/collab/bootstrap/CloudBootstrapReadiness';
@@ -10,6 +11,9 @@ import {
 import {
   DevelopmentBootstrapCloudClient,
 } from '@/app/collab/bootstrap/DevelopmentBootstrapCloudClient';
+import {
+  LocalCloudBootstrapBindingEffects,
+} from '@/app/collab/bootstrap/LocalCloudBootstrapBindingEffects';
 import {
   LocalCloudBootstrapReadinessInspector,
 } from '@/app/collab/bootstrap/LocalCloudBootstrapReadinessInspector';
@@ -22,6 +26,7 @@ import {
   type CollabLocalExitPort,
   type CollabRetirementPort,
 } from '@/app/collab/CollabFeatureService';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { FilesystemLocalRepositoryIdentity } from '@/app/collab/exit/FilesystemLocalRepositoryIdentity';
 import {
   LocalExitProjectStore,
@@ -35,6 +40,10 @@ import { LocalProjectExitCoordinator } from '@/app/collab/exit/LocalProjectExitC
 import { PendingLeaveAuthorityService } from '@/app/collab/exit/PendingLeaveAuthorityService';
 import { PendingLeaveWorker } from '@/app/collab/exit/PendingLeaveWorker';
 import { RetiredProjectFinalizer } from '@/app/collab/exit/RetiredProjectFinalizer';
+import {
+  ensureTrustedCollabOrigin,
+  rotateCloudBootstrapOrigin,
+} from '@/app/collab/git/CollabGitOriginPolicy';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
@@ -43,6 +52,10 @@ import {
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import {
+  CollabAuthorityGitNetworkEnvironment,
+} from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
 import { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { RetirementLocalRecovery } from '@/app/collab/retirement/RetirementLocalRecovery';
@@ -193,6 +206,9 @@ export function createCollabFeatureSubcomposition(
     retirement: retirementHandler,
     vaultRoot,
   });
+  foundation.lanHost.bindConnectionProjection({
+    resetProjectConnection: projectId => requirePublication().resetProjectConnection(projectId),
+  });
   const hostTransfer = foundation.createHostTransferService(publication);
   let exitCoordinator: LocalProjectExitCoordinator | null = null;
   const requireExitCoordinator = (): Promise<LocalProjectExitCoordinator> => {
@@ -321,17 +337,11 @@ export function createCollabFeatureSubcomposition(
 
   const bootstrapWorkSessions: CloudBootstrapLocalFence = new CloudBootstrapLocalFence({
     admission: {
-      closeProjectAdmission: projectId => feature.closeProjectAdmission(projectId),
       drainAdmittedOperations: () => feature.drainAdmittedOperations(),
       resumeProjectAdmission: suspension => feature.resumeProjectAdmission(suspension),
       suspendProjectAdmission: projectId => feature.suspendProjectAdmission(projectId),
     },
     workSessions: {
-      closeProject: projectId => requirePublication().closeProject(projectId),
-      completeProjectSuspension: suspension => (
-        requirePublication().completeProjectSuspension(suspension)
-      ),
-      drainProject: projectId => requirePublication().drainProject(projectId),
       resumeProject: suspension => requirePublication().resumeProject(suspension),
       suspendProject: projectId => requirePublication().suspendProject(projectId),
     },
@@ -346,9 +356,57 @@ export function createCollabFeatureSubcomposition(
       vaultRoot,
     }),
   );
+  const bootstrapGitNetwork = new CollabAuthorityGitNetworkEnvironment(vaultRoot);
+  const binding = new CloudBootstrapBindingFinalizer({
+    effects: new LocalCloudBootstrapBindingEffects({
+      activation: {
+        get: (record, signal) => new DevelopmentBootstrapCloudClient({
+          developmentActorId: record.developmentActorId,
+          serverUrl: record.newAuthority.serverUrl,
+        }).get({ attemptId: record.attemptId }, signal),
+      },
+      authorityAdapter: new CloudAuthorityAdapter(),
+      authorityLifecycle: {
+        closeAuthority: projectId => foundation.closeAuthority(projectId),
+      },
+      git: {
+        assertOrigin: async (record, repositoryPath) => ensureTrustedCollabOrigin(
+          (await foundation.requireGitFoundation()).repositories,
+          {
+            allowHostRemoteRepair: false,
+            projectId: record.projectId,
+            remoteUrl: record.newAuthority.gitRemoteUrl,
+            repositoryPath,
+          },
+          'cloud-bootstrap-binding-origin-mismatch',
+        ),
+        fetchFromUrl: async (...input) => (
+          (await foundation.requireGitFoundation()).repositories.fetchFromUrl(...input)
+        ),
+        network: (projectId, network) => bootstrapGitNetwork.resolve(projectId, network),
+        resolveRefs: async (...input) => (
+          (await foundation.requireGitFoundation()).repositories.resolveRefs(...input)
+        ),
+        rotateOrigin: async (record, repositoryPath) => rotateCloudBootstrapOrigin(
+          (await foundation.requireGitFoundation()).repositories,
+          {
+            newRemoteUrl: record.newAuthority.gitRemoteUrl,
+            oldRemoteUrl: record.oldAuthority.gitRemoteUrl,
+            projectId: record.projectId,
+            repositoryPath,
+          },
+        ),
+      },
+      projects: foundation.local.projects,
+      readiness,
+      workspace: foundation.local.workspace,
+    }),
+    transitions,
+  });
   const cloudBootstrap = new CloudBootstrapService({
     createCoordinator: ({ developmentActorId, serverUrl }) => (
       new CloudBootstrapCoordinator({
+        binding,
         cloud: new DevelopmentBootstrapCloudClient({
           developmentActorId,
           serverUrl,
@@ -362,6 +420,7 @@ export function createCollabFeatureSubcomposition(
               stopped.status !== 'stopped'
               || foundation.lanHost.isProjectRunning(projectId)
               || !membership
+              || !isCollabLocalLanMembership(membership)
               || membership.project.id !== projectId
               || !membership.hostOwnership.ownsAuthority
               || membership.hostOwnership.autoStart !== false
@@ -381,7 +440,7 @@ export function createCollabFeatureSubcomposition(
             const membership = await foundation.local.projects.loadMembership(projectId);
             if (
               !membership
-              || membership.authority.kind !== 'lan'
+              || !isCollabLocalLanMembership(membership)
               || !membership.authority.endpoint
               || !membership.authority.gitRemoteUrl
               || !membership.authority.hostCaFingerprint

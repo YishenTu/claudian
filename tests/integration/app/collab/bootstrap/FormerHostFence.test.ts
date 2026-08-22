@@ -23,6 +23,7 @@ import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBoots
 import {
   ATTEMPT_ID,
   bootstrapManifest,
+  finalizeActivatedBindingForTest,
   HOST_MEMBER_ID,
   HOST_OID,
   HOST_REF,
@@ -129,7 +130,7 @@ describe('Former Host Cloud bootstrap fence', () => {
     await rm(vaultRoot, { force: true, recursive: true });
   });
 
-  it('keeps LAN stopped and local binding pending after a lost activation response and restart', async () => {
+  it('keeps LAN stopped while completing local binding after a lost activation response', async () => {
     const transitionStore = new CloudBootstrapTransitionStore(vaultRoot);
     const hostStatePath = path.join(vaultRoot, '.claudian', 'collab', 'host-state.json');
     await writeFile(hostStatePath, JSON.stringify({
@@ -156,6 +157,7 @@ describe('Former Host Cloud bootstrap fence', () => {
       };
     });
     const common: Omit<CloudBootstrapCoordinatorOptions, 'cloud'> = {
+      binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       createFenceId: () => 'bootstrap-fence-one',
       formerHost: { stopAndDrain },
       localIdentity: {
@@ -235,8 +237,8 @@ describe('Former Host Cloud bootstrap fence', () => {
     await expect(restarted.recoverProject(PROJECT_ID)).resolves.toMatchObject({
       activationResult: ACTIVATION_RESULT,
       attemptState: 'activated',
-      fence: { state: 'host-stopped' },
-      phase: 'intent',
+      fence: { state: 'terminal' },
+      phase: 'fence-terminal',
     });
     expect(restartStop).not.toHaveBeenCalled();
     expect(JSON.parse(await readFile(hostStatePath, 'utf8'))).toEqual({

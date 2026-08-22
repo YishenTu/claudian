@@ -41,7 +41,7 @@ import type {
   RefreshEndpointResponse,
   RevokeInvitationRequest,
 } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -401,7 +401,7 @@ export class PendingMembershipService {
   async activateJoinAttempt(
     memberCredential: string,
     request: ActivateJoinAttemptRequest,
-  ): Promise<CollabProjectSnapshot> {
+  ): Promise<CollabLanProjectSnapshot> {
     const project = await this.requireProject(request.projectId);
     assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
     assertOpaqueId(request.idempotencyKey, 'idempotency-key');
@@ -451,7 +451,7 @@ export class PendingMembershipService {
     })).value;
   }
 
-  async readSnapshot(memberCredential: string): Promise<CollabProjectSnapshot> {
+  async readSnapshot(memberCredential: string): Promise<CollabLanProjectSnapshot> {
     await this.authenticateMemberCredential(memberCredential, ['active']);
     const mainOid = await this.readMainOid();
     return this.authority.database.read(connection => {
@@ -677,7 +677,7 @@ export class PendingMembershipService {
     connection: AuthorityDatabaseConnection,
     currentMemberId: string,
     mainOid: string,
-  ): CollabProjectSnapshot {
+  ): CollabLanProjectSnapshot {
     const project = this.authority.projects.get(connection);
     if (!project) throw serviceError('project-not-found', 'authority-project-missing');
     const members = this.repository.listMembers(connection);

@@ -611,8 +611,13 @@ function assertRemoteUrl(remoteUrl: string): void {
   } catch {
     throw repositoryError('repository-invalid', 'git-remote-url-invalid');
   }
+  const loopbackHttp = parsed.protocol === 'http:' && (
+    parsed.hostname === '127.0.0.1'
+    || parsed.hostname === '[::1]'
+    || parsed.hostname === 'localhost'
+  );
   if (
-    parsed.protocol !== 'https:'
+    (parsed.protocol !== 'https:' && !loopbackHttp)
     || parsed.username.length > 0
     || parsed.password.length > 0
     || parsed.search.length > 0
@@ -626,8 +631,17 @@ function assertRefspec(refspec: string): void {
   const normalized = refspec.startsWith('+') ? refspec.slice(1) : refspec;
   const parts = normalized.split(':');
   if (parts.length !== 2) throw repositoryError('repository-invalid', 'git-refspec-invalid');
-  assertRef(parts[0]);
-  assertRef(parts[1]);
+  const [source, target] = parts;
+  if (source === undefined || target === undefined) {
+    throw repositoryError('repository-invalid', 'git-refspec-invalid');
+  }
+  const sourceWildcards = [...source].filter(character => character === '*').length;
+  const targetWildcards = [...target].filter(character => character === '*').length;
+  if (sourceWildcards !== targetWildcards || sourceWildcards > 1) {
+    throw repositoryError('repository-invalid', 'git-refspec-invalid');
+  }
+  assertRef(source.replace('*', 'wildcard'));
+  assertRef(target.replace('*', 'wildcard'));
 }
 
 export class GitRepositoryService {
@@ -1445,6 +1459,24 @@ export class GitRepositoryService {
     refspecs.forEach(assertRefspec);
     await this.runner.run({
       args: ['fetch', '--quiet', '--no-tags', remote, ...refspecs],
+      cwd: repositoryPath,
+      network,
+      signal,
+    });
+  }
+
+  async fetchFromUrl(
+    repositoryPath: string,
+    remoteUrl: string,
+    refspecs: readonly string[],
+    network?: GitNetworkEnvironment,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.inspectRepository(repositoryPath);
+    assertRemoteUrl(remoteUrl);
+    refspecs.forEach(assertRefspec);
+    await this.runner.run({
+      args: ['fetch', '--quiet', '--no-tags', remoteUrl, ...refspecs],
       cwd: repositoryPath,
       network,
       signal,

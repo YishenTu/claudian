@@ -24,7 +24,10 @@ import { RequestQueryService } from '@/app/collab/authority/RequestQueryService'
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
-import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
+import {
+  CollabLocalProjectRepository,
+  isCollabLocalLanMembership,
+} from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   createHostTransferRecoveryRecord,
@@ -153,6 +156,8 @@ describe('LanHostCoordinator production transport', () => {
   let checkHostAddress: () => Promise<void>;
   let issueServerIdentity: (address: string) => Promise<LanTlsServerIdentity>;
   let privateAddresses: readonly string[];
+  let openProjectCount: number;
+  let resetProjectConnection: jest.Mock;
   let outgoingHostTransfer: {
     close?: jest.Mock;
     inspectStartupRecovery: jest.Mock;
@@ -230,6 +235,8 @@ describe('LanHostCoordinator production transport', () => {
     issueServerIdentity = address => sharedTlsIdentity.issueServerIdentity(address);
     privateAddresses = ['127.0.0.1'];
     outgoingHostTransfer = null;
+    openProjectCount = 0;
+    resetProjectConnection = jest.fn();
     root = await mkdtemp(path.join(tmpdir(), 'claudian-lan-host-'));
     localProjects = new CollabLocalProjectRepository(root);
     await localProjects.saveMembership({
@@ -296,6 +303,7 @@ describe('LanHostCoordinator production transport', () => {
       discovery: { advertiseProject },
       localProjects,
       openProject: async projectId => {
+        openProjectCount += 1;
         if (projectId !== PROJECT_ID) throw new Error('Unexpected Project');
         const eventHub = new ProjectEventHub(
           projectId,
@@ -382,6 +390,7 @@ describe('LanHostCoordinator production transport', () => {
       } as unknown as LanTlsIdentity,
       vaultRoot: root,
     });
+    coordinator.bindConnectionProjection({ resetProjectConnection });
   });
 
   afterEach(async () => {
@@ -418,6 +427,9 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
     });
     const localMembership = await localProjects.loadMembership(PROJECT_ID);
+    if (!localMembership || !isCollabLocalLanMembership(localMembership)) {
+      throw new Error('Stored LAN membership missing');
+    }
     expect(localMembership?.authority).toMatchObject({
       endpoint: host.endpoint,
       hostCaFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
@@ -665,6 +677,38 @@ describe('LanHostCoordinator production transport', () => {
       .rejects.toThrow();
   });
 
+  it('rejects Cloud membership before opening LAN authority state', async () => {
+    const existing = await localProjects.loadMembership(PROJECT_ID);
+    if (!existing) throw new Error('Missing membership fixture');
+    await localProjects.saveMembership({
+      authority: {
+        bindingVersion: 1,
+        developmentActorId: existing.member.id,
+        gitRemoteUrl: `http://127.0.0.1:8787/v1/projects/${PROJECT_ID}/repository.git`,
+        kind: 'cloud',
+        serverUrl: 'http://127.0.0.1:8787/',
+        wireVersion: 4,
+      },
+      createdAt: existing.createdAt,
+      lastEventSequence: existing.lastEventSequence,
+      lifecycle: 'active',
+      member: {
+        displayName: existing.member.displayName,
+        id: existing.member.id,
+        personalRef: existing.member.personalRef,
+        role: existing.member.role,
+      },
+      project: existing.project,
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      updatedAt: '2026-08-22T00:00:00.000Z',
+    });
+
+    await expect(coordinator.startProject(PROJECT_ID)).rejects.toMatchObject({
+      code: 'authorization-denied',
+    });
+    expect(openProjectCount).toBe(0);
+  });
+
   it('quiesces and closes one old-Host route without reopening after cutover', async () => {
     await coordinator.startProject(PROJECT_ID);
 
@@ -852,7 +896,11 @@ describe('LanHostCoordinator production transport', () => {
 
     const host = await coordinator.startProject(PROJECT_ID);
     const membership = await localProjects.loadMembership(PROJECT_ID);
-    if (!membership?.authority.hostCaCertificatePem) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || !membership.authority.hostCaCertificatePem
+    ) {
       throw new Error('Missing Host CA fixture');
     }
     const response = JSON.parse(await readPinnedUrl(
@@ -1200,7 +1248,9 @@ describe('LanHostCoordinator production transport', () => {
     if (!nextAddress) return;
     const first = await coordinator.startProject(PROJECT_ID);
     const firstMembership = await localProjects.loadMembership(PROJECT_ID);
-    const ca = firstMembership?.authority.hostCaCertificatePem;
+    const ca = firstMembership && isCollabLocalLanMembership(firstMembership)
+      ? firstMembership.authority.hostCaCertificatePem
+      : null;
     if (!ca) throw new Error('Stored Host CA missing');
 
     privateAddresses = [nextAddress];
@@ -1235,6 +1285,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
     });
     expect(advertisementStop).toHaveBeenCalledTimes(1);
+    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID);
   }, 30_000);
 
   it('closes cleanly when unload begins during an address rebind', async () => {
@@ -1398,7 +1449,9 @@ describe('LanHostCoordinator production transport', () => {
   it('keeps the current listener alive while network interfaces are temporarily absent', async () => {
     const first = await coordinator.startProject(PROJECT_ID);
     const membership = await localProjects.loadMembership(PROJECT_ID);
-    const ca = membership?.authority.hostCaCertificatePem;
+    const ca = membership && isCollabLocalLanMembership(membership)
+      ? membership.authority.hostCaCertificatePem
+      : null;
     if (!ca) throw new Error('Stored Host CA missing');
 
     privateAddresses = [];
@@ -1426,8 +1479,13 @@ describe('LanHostCoordinator production transport', () => {
   it('reconnects one existing Member after the Host moves to another endpoint', async () => {
     const firstHost = await coordinator.startProject(PROJECT_ID);
     const firstHostMembership = await localProjects.loadMembership(PROJECT_ID);
-    const hostCa = firstHostMembership?.authority.hostCaCertificatePem;
-    const hostFingerprint = firstHostMembership?.authority.hostCaFingerprint;
+    const hostCa = firstHostMembership && isCollabLocalLanMembership(firstHostMembership)
+      ? firstHostMembership.authority.hostCaCertificatePem
+      : null;
+    const hostFingerprint = firstHostMembership
+      && isCollabLocalLanMembership(firstHostMembership)
+      ? firstHostMembership.authority.hostCaFingerprint
+      : null;
     if (!hostCa || !hostFingerprint) throw new Error('Stored Host trust missing');
     const codec = new InvitationCodec({
       isAddressAllowed: addressValue => addressValue === '127.0.0.1',

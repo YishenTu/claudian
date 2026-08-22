@@ -7,6 +7,12 @@ import {
   encodeDevelopmentBootstrapManifestCanonicalJson,
 } from '@claudian/collab-protocol';
 
+import {
+  advanceCloudBootstrapTransitionPhase,
+  CLOUD_BOOTSTRAP_TRANSITION_PHASES,
+  type CloudBootstrapTransitionRecord,
+} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
+
 export const PROJECT_ID = 'project-alpha';
 export const ATTEMPT_ID = 'bootstrap-attempt-one';
 export const HOST_MEMBER_ID = 'member-alice';
@@ -83,3 +89,14 @@ export function bootstrapManifest(): DevelopmentBootstrapManifest {
 export const MANIFEST_SHA256 = createHash('sha256')
   .update(encodeDevelopmentBootstrapManifestCanonicalJson(bootstrapManifest()))
   .digest('hex');
+
+export function finalizeActivatedBindingForTest(
+  record: CloudBootstrapTransitionRecord,
+): CloudBootstrapTransitionRecord {
+  let current = record;
+  const currentIndex = CLOUD_BOOTSTRAP_TRANSITION_PHASES.indexOf(current.phase);
+  for (const phase of CLOUD_BOOTSTRAP_TRANSITION_PHASES.slice(currentIndex + 1)) {
+    current = advanceCloudBootstrapTransitionPhase(current, phase, current.updatedAt);
+  }
+  return current;
+}

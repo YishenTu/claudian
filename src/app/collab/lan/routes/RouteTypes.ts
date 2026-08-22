@@ -20,7 +20,7 @@ import type {
   RevokeInvitationRequest,
 } from '@/app/collab/lan/LanCollabControlOperations';
 import type { LifecycleGatewayPort } from '@/app/collab/lan/lifecycle/LifecycleGateway';
-import type { CollabProjectSnapshot, CollabRetirementResult } from '@/core/collab';
+import type { CollabLanProjectSnapshot, CollabRetirementResult } from '@/core/collab';
 
 export interface CollabControlProjectService {
   acceptRequest(
@@ -30,7 +30,7 @@ export interface CollabControlProjectService {
   activateJoinAttempt(
     memberCredential: string,
     request: ActivateJoinAttemptRequest,
-  ): Promise<CollabProjectSnapshot>;
+  ): Promise<CollabLanProjectSnapshot>;
   authenticateMemberCredential(
     memberCredential: string,
     statuses: readonly CollabMemberStatus[],
@@ -94,7 +94,7 @@ export interface CollabControlProjectService {
     memberCredential: string,
     request: GetRequestRequest,
   ): Promise<CollabRequestDetail>;
-  readSnapshot(memberCredential: string): Promise<CollabProjectSnapshot>;
+  readSnapshot(memberCredential: string): Promise<CollabLanProjectSnapshot>;
   reopenTicket(
     memberCredential: string,
     request: ChangeTicketStatusRequest,

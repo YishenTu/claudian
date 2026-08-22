@@ -9,7 +9,7 @@ import type {
   CollabJsonRequest,
 } from '@/app/collab/lan/CollabHttpClient';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 
 export interface ProjectControlTransport {
   requestWithMember<T>(
@@ -120,7 +120,7 @@ export class ProjectControlClient {
     projectId: string,
     memberCredential: string,
     options: CollabHttpOperationOptions = {},
-  ): Promise<CollabProjectSnapshot> {
+  ): Promise<CollabLanProjectSnapshot> {
     return this.transport.requestWithMember({
       decode: lanCollabControlOperationCodec('getSnapshot').decodeResponse,
       method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,

@@ -43,7 +43,10 @@ describe('GitCommandRunner', () => {
       },
       emptyConfigPath,
       network: {
-        authorizationHeader: secret,
+        headers: [
+          { name: 'Authorization', value: secret },
+          { name: 'X-Claudian-Development-Actor', value: 'member-alice' },
+        ],
         sslCaInfoPath: '/vault/.claudian/collab/ca.pem',
       },
       platform: 'win32',
@@ -71,6 +74,10 @@ describe('GitCommandRunner', () => {
       { key: 'credential.useHttpPath', value: 'true' },
       { key: 'fetch.fsckObjects', value: 'true' },
       { key: 'http.extraHeader', value: `Authorization: ${secret}` },
+      {
+        key: 'http.extraHeader',
+        value: 'X-Claudian-Development-Actor: member-alice',
+      },
       { key: 'http.schannelCheckRevoke', value: 'false' },
       { key: 'http.schannelUseSSLCAInfo', value: 'true' },
       { key: 'http.sslBackend', value: 'schannel' },
@@ -81,7 +88,7 @@ describe('GitCommandRunner', () => {
     const posixEnvironment = buildIsolatedGitEnvironment({
       emptyConfigPath,
       network: {
-        authorizationHeader: secret,
+        headers: [{ name: 'Authorization', value: secret }],
         sslCaInfoPath: '/vault/.claudian/collab/ca.pem',
       },
       platform: 'linux',
@@ -222,7 +229,7 @@ describe('GitCommandRunner', () => {
         ],
         cwd: workingDirectory,
         network: {
-          authorizationHeader: `Basic ${secret}`,
+          headers: [{ name: 'Authorization', value: `Basic ${secret}` }],
           sslCaInfoPath: emptyConfigPath,
         },
       });
@@ -251,7 +258,10 @@ describe('GitCommandRunner', () => {
     const result = await runner.run({
       args: ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))'],
       cwd: workingDirectory,
-      network: { authorizationHeader, sslCaInfoPath: emptyConfigPath },
+      network: {
+        headers: [{ name: 'Authorization', value: authorizationHeader }],
+        sslCaInfoPath: emptyConfigPath,
+      },
     });
 
     expect(result.stdout.toString('utf8')).not.toContain(authorizationHeader);
@@ -289,7 +299,10 @@ describe('GitCommandRunner', () => {
       args: ['--version'],
       cwd: workingDirectory,
       network: {
-        authorizationHeader: 'Basic safe\r\nX-Injected: true',
+        headers: [{
+          name: 'Authorization',
+          value: 'Basic safe\r\nX-Injected: true',
+        }],
         sslCaInfoPath: emptyConfigPath,
       },
     })).rejects.toMatchObject({
@@ -299,7 +312,7 @@ describe('GitCommandRunner', () => {
       args: ['--version'],
       cwd: workingDirectory,
       network: {
-        authorizationHeader: 'Bearer safe-token',
+        headers: [{ name: 'Authorization', value: 'Bearer safe-token' }],
         sslCaInfoPath: 'relative-ca.pem',
       },
     })).rejects.toMatchObject({

@@ -9,7 +9,7 @@ import {
   type CollabTerminalProjectService,
 } from '@/app/collab/lan/CollabControlRouter';
 import type { LanCollabInvitation } from '@/app/collab/lan/InvitationCodec';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-alpha';
@@ -17,7 +17,7 @@ const INVITATION_SECRET = Buffer.alloc(32, 2).toString('base64url');
 const MEMBER_CREDENTIAL = Buffer.alloc(32, 3).toString('base64url');
 const REQUEST_ID = 'request-alpha';
 
-function snapshot(): CollabProjectSnapshot {
+function snapshot(): CollabLanProjectSnapshot {
   const createdAt = '2026-08-08T00:00:00.000Z';
   const member = {
     activatedAt: createdAt,

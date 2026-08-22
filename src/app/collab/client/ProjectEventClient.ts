@@ -6,22 +6,14 @@ import {
   decodeLanCollabEvent,
   type LanCollabEvent as CollabEvent,
 } from '@/app/collab/lan/LanCollabEvent';
+import type {
+  CollabAuthorityEventInvalidation,
+} from '@/app/collab/remote-authority/CollabAuthoritySession';
 
 const MIN_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 
-export type ProjectEventInvalidation =
-  | {
-    readonly kind: 'retired';
-    readonly retiredAt: string;
-    readonly sequence: number;
-  }
-  | { readonly kind: 'snapshot'; readonly sequence: number }
-  | {
-    readonly kind: 'request';
-    readonly requestId: string;
-    readonly sequence: number;
-  };
+export type ProjectEventInvalidation = CollabAuthorityEventInvalidation;
 
 export interface ProjectEventClientInput {
   readonly caCertificatePem: string;

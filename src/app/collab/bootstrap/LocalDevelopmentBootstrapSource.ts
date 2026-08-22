@@ -25,6 +25,7 @@ import {
   resolveCollabVaultPath,
   writeCollabFileAtomically,
 } from '@/app/collab/CollabFilesystemBoundary';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -412,7 +413,7 @@ export class LocalDevelopmentBootstrapSource {
     throwIfCancelled(signal);
     if (
       !membership
-      || membership.authority.kind !== 'lan'
+      || !isCollabLocalLanMembership(membership)
       || membership.project.id !== projectId
       || membership.lifecycle !== 'active'
       || !membership.hostOwnership.ownsAuthority

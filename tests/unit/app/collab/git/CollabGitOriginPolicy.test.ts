@@ -1,4 +1,5 @@
 import {
+  rotateCloudBootstrapOrigin,
   rotateTrustedCollabOrigin,
 } from '@/app/collab/git/CollabGitOriginPolicy';
 
@@ -79,5 +80,50 @@ describe('CollabGitOriginPolicy', () => {
       code: 'repository-invalid',
     }));
     expect(repository.listRemoteUrls).not.toHaveBeenCalled();
+  });
+
+  it('rotates an exact LAN origin to the canonical Cloud Project route idempotently', async () => {
+    const cloudUrl = 'https://cloud.example.test/v1/projects/project-a/repository.git';
+    const repository = git([oldUrl]);
+
+    await rotateCloudBootstrapOrigin(repository, {
+      newRemoteUrl: cloudUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+    await rotateCloudBootstrapOrigin(repository, {
+      newRemoteUrl: cloudUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a non-canonical Cloud Project route', async () => {
+    const repository = git([oldUrl]);
+
+    await expect(rotateCloudBootstrapOrigin(repository, {
+      newRemoteUrl: 'https://cloud.example.test/v1/projects/project-b/repository.git',
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    })).rejects.toMatchObject({ code: 'repository-invalid' });
+    expect(repository.listRemoteUrls).not.toHaveBeenCalled();
+  });
+
+  it('permits the canonical loopback development Cloud route', async () => {
+    const repository = git([oldUrl]);
+
+    await rotateCloudBootstrapOrigin(repository, {
+      newRemoteUrl: 'http://127.0.0.1:8787/v1/projects/project-a/repository.git',
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledTimes(1);
   });
 });

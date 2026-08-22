@@ -7,8 +7,9 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
-  type CollabLocalMembershipRecord,
+  type CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -18,6 +19,8 @@ import {
   LocalPublishGitNetworkPort,
   LocalPublishProjectPort,
 } from '@/app/collab/publish/LocalPublishProjectPort';
+import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
+import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 
 const PROJECT_ID = 'project-a';
 const NOW = '2026-08-08T00:00:00.000Z';
@@ -25,6 +28,8 @@ const NOW = '2026-08-08T00:00:00.000Z';
 describe('Local Publish adapters', () => {
   let projects: CollabLocalProjectRepository;
   let repositories: { assertLocalRepositoryIdentity: jest.Mock };
+  let sessions: CollabProjectWorkSessionRegistry;
+  let authoritySessions: CollabAuthoritySessionFactory;
   let vaultRoot: string;
   let workspace: CollabWorkspaceService;
 
@@ -33,6 +38,8 @@ describe('Local Publish adapters', () => {
     projects = new CollabLocalProjectRepository(vaultRoot);
     workspace = new CollabWorkspaceService(vaultRoot);
     repositories = { assertLocalRepositoryIdentity: jest.fn().mockResolvedValue(undefined) };
+    sessions = new CollabProjectWorkSessionRegistry();
+    authoritySessions = new CollabAuthoritySessionFactory([new LanAuthorityAdapter()]);
     await workspace.claimProjectsFolder('workspace');
     await mkdir(path.join(vaultRoot, 'workspace', PROJECT_ID), { recursive: true });
     await projects.upsertProject({
@@ -47,6 +54,7 @@ describe('Local Publish adapters', () => {
   });
 
   afterEach(async () => {
+    await sessions.close();
     await rm(vaultRoot, { force: true, recursive: true });
   });
 
@@ -81,13 +89,22 @@ describe('Local Publish adapters', () => {
     await projects.saveMembership(membership());
     const projectPort = new LocalPublishProjectPort(projects, workspace, repositories);
     const context = await projectPort.load(PROJECT_ID);
-    const networkPort = new LocalPublishGitNetworkPort(vaultRoot, projects, () => true);
+    const networkPort = new LocalPublishGitNetworkPort(
+      vaultRoot,
+      projects,
+      sessions,
+      authoritySessions,
+      () => true,
+    );
 
     const result = await networkPort.withNetwork(context, async network => {
       expect(network).toEqual({
-        authorizationHeader: `Basic ${Buffer.from(
-          `member-a:${'A'.repeat(43)}`,
-        ).toString('base64')}`,
+        headers: [{
+          name: 'Authorization',
+          value: `Basic ${Buffer.from(
+            `member-a:${'A'.repeat(43)}`,
+          ).toString('base64')}`,
+        }],
         sslCaInfoPath: expect.stringContaining('git-ca.pem'),
       });
       return 'completed';
@@ -120,6 +137,8 @@ describe('Local Publish adapters', () => {
     const networkPort = new LocalPublishGitNetworkPort(
       vaultRoot,
       projects,
+      sessions,
+      authoritySessions,
       () => true,
       probe,
     );
@@ -131,8 +150,8 @@ describe('Local Publish adapters', () => {
 });
 
 function membership(
-  overrides: Partial<CollabLocalMembershipRecord> = {},
-): CollabLocalMembershipRecord {
+  overrides: Partial<CollabLocalLanMembershipRecord> = {},
+): CollabLocalLanMembershipRecord {
   return {
     authority: {
       endpoint: 'https://192.168.1.20:54545',

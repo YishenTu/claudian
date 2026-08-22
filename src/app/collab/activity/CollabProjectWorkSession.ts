@@ -32,7 +32,15 @@ function registryClosedError(): CollabError {
   });
 }
 
+function generationChangedError(): CollabError {
+  return new CollabError({
+    code: 'cancelled',
+    safeContext: { reason: 'projection-project-connection-reset' },
+  });
+}
+
 export class CollabProjectWorkSession {
+  private authoritySession: Promise<CollabProjectResource> | null = null;
   private autoReconnectTask: Promise<boolean> | null = null;
   private backgroundSynchronization: BackgroundSynchronization | null = null;
   private readonly cacheUpdateQueue = new SerialTaskQueue();
@@ -140,6 +148,31 @@ export class CollabProjectWorkSession {
     return pending;
   }
 
+  ensureAuthoritySession<T extends CollabProjectResource>(
+    create: () => Promise<T>,
+  ): Promise<T> {
+    this.assertOpen();
+    if (this.authoritySession) return this.authoritySession as Promise<T>;
+    const generation = this.projectionGeneration;
+    const pending = Promise.resolve().then(create).then(resource => {
+      if (
+        this.closed
+        || this.projectionGeneration !== generation
+        || this.authoritySession !== pending
+      ) {
+        resource.dispose();
+        if (this.closed) throw closedError(this.projectId);
+        throw generationChangedError();
+      }
+      return resource;
+    });
+    this.authoritySession = pending;
+    void pending.catch(() => {
+      if (this.authoritySession === pending) this.authoritySession = null;
+    });
+    return pending;
+  }
+
   enqueueCacheUpdate(update: () => Promise<void>): Promise<void> {
     this.assertOpen();
     return this.cacheUpdateQueue.run(update);
@@ -160,6 +193,20 @@ export class CollabProjectWorkSession {
       this.eventConnection.dispose();
     }
     this.eventConnection = resource;
+  }
+
+  adoptEventConnection(
+    resource: CollabProjectResource,
+    expectedGeneration: number,
+  ): void {
+    try {
+      this.assertOpen();
+      this.assertGeneration(expectedGeneration);
+      this.setEventConnection(resource);
+    } catch (error: unknown) {
+      resource.dispose();
+      throw error;
+    }
   }
 
   clearEventConnection(resource: CollabProjectResource): void {
@@ -191,6 +238,11 @@ export class CollabProjectWorkSession {
     this.observedAcceptedMainOid = null;
     this.eventConnection?.dispose();
     this.eventConnection = null;
+    const authoritySession = this.authoritySession;
+    this.authoritySession = null;
+    if (authoritySession) {
+      this.trackDetached(authoritySession.then(value => value.dispose(), () => undefined));
+    }
     const subscription = this.coordinationSubscription;
     this.coordinationSubscription = null;
     if (subscription) {
@@ -204,10 +256,7 @@ export class CollabProjectWorkSession {
 
   assertGeneration(generation: number): void {
     if (this.projectionGeneration !== generation) {
-      throw new CollabError({
-        code: 'cancelled',
-        safeContext: { reason: 'projection-project-connection-reset' },
-      });
+      throw generationChangedError();
     }
   }
 
@@ -217,6 +266,8 @@ export class CollabProjectWorkSession {
     this.backgroundSynchronization?.controller.abort();
     this.eventConnection?.dispose();
     this.eventConnection = null;
+    const authoritySession = this.authoritySession;
+    this.authoritySession = null;
     const coordinationSubscription = this.coordinationSubscription;
     this.coordinationSubscription = null;
     if (coordinationSubscription) {
@@ -231,6 +282,7 @@ export class CollabProjectWorkSession {
       this.eventRefresh ?? Promise.resolve(),
       this.snapshotRead ?? Promise.resolve(),
       coordinationSubscription ?? Promise.resolve(),
+      authoritySession?.then(value => value.dispose(), () => undefined) ?? Promise.resolve(),
       ...this.detachedTasks,
       ...this.inspections,
     ]).then(() => undefined);
@@ -341,6 +393,13 @@ export class CollabProjectWorkSessionRegistry {
 
   drainProject(projectId: CollabProjectId): Promise<void> {
     return this.closeProject(projectId);
+  }
+
+  resetProject(projectId: CollabProjectId): void {
+    if (this.closed || this.closedProjects.has(projectId) || this.suspensions.has(projectId)) {
+      return;
+    }
+    this.sessions.get(projectId)?.resetProjection();
   }
 
   async suspendProject(

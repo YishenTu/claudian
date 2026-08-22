@@ -17,6 +17,7 @@ import {
 import type {
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { ConflictResolutionCoordinator } from '@/app/collab/conflicts/ConflictResolutionCoordinator';
@@ -36,9 +37,6 @@ import {
   hasUnpublishedPersonalState,
   personalChangesReviewBaseOid,
 } from '@/app/collab/publish/LocalContributionClassifier';
-import {
-  LocalProjectControlPort,
-} from '@/app/collab/publish/LocalProjectControlPort';
 import {
   LocalPublishGitNetworkPort,
   LocalPublishProjectPort,
@@ -61,6 +59,10 @@ import { ReconciliationRepository } from '@/app/collab/reconciliation/Reconcilia
 import type {
   ReconnectDiscoveredProjectRequest,
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
+import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
+import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { CollabReviewService } from '@/app/collab/review/CollabReviewService';
 import { LocalReviewProjectPort } from '@/app/collab/review/LocalReviewProjectPort';
@@ -150,7 +152,8 @@ function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boo
 export class CollabPublicationService {
   private closePromise: Promise<void> | null = null;
   private readonly coordinationListeners = new Set<CollabCoordinationInvalidationListener>();
-  private readonly control: LocalProjectControlPort;
+  private readonly authoritySessions: CollabAuthoritySessionFactory;
+  private readonly control: CollabAuthorityControlRouter;
   private disposed = false;
   private readonly projection: CollabClientProjection;
   private readonly sessions = new CollabProjectWorkSessionRegistry();
@@ -160,8 +163,17 @@ export class CollabPublicationService {
     private readonly foundation: CollabPublicationFoundationPort,
     private readonly options: CollabPublicationServiceOptions,
   ) {
-    this.control = new LocalProjectControlPort(foundation.local.projects);
+    this.authoritySessions = new CollabAuthoritySessionFactory([
+      new LanAuthorityAdapter(),
+      new CloudAuthorityAdapter(),
+    ]);
+    this.control = new CollabAuthorityControlRouter(
+      foundation.local.projects,
+      this.sessions,
+      this.authoritySessions,
+    );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
+      authoritySessions: this.authoritySessions,
       managerResponsibility: options.managerResponsibility,
       retirement: options.retirement,
       sessions: this.sessions,
@@ -736,6 +748,7 @@ export class CollabPublicationService {
       const membership = await this.foundation.local.projects.loadMembership(projectId);
       if (
         !membership
+        || !isCollabLocalLanMembership(membership)
         || membership.hostOwnership.ownsAuthority
         || !membership.authority.hostCaFingerprint
       ) {
@@ -854,6 +867,8 @@ export class CollabPublicationService {
     const network = new LocalPublishGitNetworkPort(
       this.options.vaultRoot,
       this.foundation.local.projects,
+      this.sessions,
+      this.authoritySessions,
       this.options.isLocalHostRunning,
       async projectId => {
         await this.control.readSnapshot(projectId);

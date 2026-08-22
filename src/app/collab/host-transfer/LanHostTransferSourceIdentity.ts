@@ -3,6 +3,7 @@ import { type CollabProjectId } from '@claudian/collab-protocol';
 import type {
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   HostTransferSourceIdentityPort,
 } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
@@ -21,7 +22,11 @@ export class LanHostTransferSourceIdentity implements HostTransferSourceIdentity
 
   async memberCredential(projectId: CollabProjectId): Promise<string> {
     const membership = await this.projects.loadMembership(projectId);
-    if (!membership || membership.project.id !== projectId) {
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || membership.project.id !== projectId
+    ) {
       throw new CollabError({
         code: 'project-not-found',
         safeContext: { reason: 'host-transfer-source-membership-missing' },

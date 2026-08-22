@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
+  type CollabLocalCloudMembershipRecord,
+  type CollabLocalLanMembershipRecord,
   type CollabLocalMembershipRecord,
   type CollabLocalProjectIndexEntry,
   CollabLocalProjectRepository,
@@ -49,8 +51,8 @@ function indexEntry(
 }
 
 function membershipRecord(
-  overrides: Partial<CollabLocalMembershipRecord> = {},
-): CollabLocalMembershipRecord {
+  overrides: Partial<CollabLocalLanMembershipRecord> = {},
+): CollabLocalLanMembershipRecord {
   return {
     authority: {
       endpoint: 'https://192.168.1.20:54545',
@@ -83,6 +85,59 @@ function membershipRecord(
     updatedAt: '2026-08-08T00:00:00.000Z',
     ...overrides,
   };
+}
+
+function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
+  return {
+    authority: {
+      bindingVersion: 1,
+      developmentActorId: 'member-alice',
+      gitRemoteUrl: `http://127.0.0.1:8787/v1/projects/${PROJECT_ID}/repository.git`,
+      kind: 'cloud',
+      serverUrl: 'http://127.0.0.1:8787/',
+      wireVersion: 4,
+    },
+    createdAt: '2026-08-08T00:00:00.000Z',
+    lastEventSequence: 7,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Alice',
+      id: 'member-alice',
+      personalRef: 'refs/heads/members/member-alice',
+      role: 'manager',
+    },
+    project: {
+      id: PROJECT_ID,
+      name: 'Project Alpha',
+      workspacePath: 'workspace/project-alpha',
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: '2026-08-08T00:01:00.000Z',
+  };
+}
+
+function durableRetirementRecord(): RetirementRecord {
+  return decodeRetirementRecord({
+    acknowledgedAt: null,
+    acknowledgementStatus: 'pending',
+    cleanupOperationId: 'cleanup-retired-project',
+    cleanupStatus: 'failed',
+    createdAt: '2026-08-08T00:01:00.000Z',
+    hostCaCertificatePem: [
+      '-----BEGIN CERTIFICATE-----',
+      'TEST CERTIFICATE DATA',
+      '-----END CERTIFICATE-----',
+    ].join('\n'),
+    hostCaFingerprint: 'a'.repeat(64),
+    hostEndpoint: 'https://192.168.1.20:54545',
+    kind: 'retirement',
+    memberCredential: MEMBER_CREDENTIAL,
+    memberId: 'member-retired',
+    projectId: 'project-retired',
+    retiredAt: '2026-08-08T00:00:00.000Z',
+    schemaVersion: 1,
+    updatedAt: '2026-08-08T00:02:00.000Z',
+  });
 }
 
 describe('CollabLocalProjectRepository', () => {
@@ -146,7 +201,7 @@ describe('CollabLocalProjectRepository', () => {
     expect(await readFile(path.join(stateDirectory, '.gitignore'), 'utf8')).toBe('/*\n');
   });
 
-  it('migrates active v1 index and membership records to v2 without touching the workspace', async () => {
+  it('migrates active v1 index and membership records to v3 without touching the workspace', async () => {
     const stateDirectory = path.join(vaultRoot, '.claudian', 'collab');
     const projectState = path.join(stateDirectory, 'projects', PROJECT_ID);
     const workspace = path.join(vaultRoot, 'workspace', PROJECT_ID);
@@ -175,15 +230,271 @@ describe('CollabLocalProjectRepository', () => {
 
     const repository = new CollabLocalProjectRepository(vaultRoot);
     await expect(repository.loadIndex()).resolves.toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       projects: [expect.objectContaining({ lifecycle: 'active' })],
     });
     await expect(repository.loadMembership(PROJECT_ID)).resolves.toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       lifecycle: 'active',
     });
     expect(await readFile(path.join(workspace, 'note.md'), 'utf8')).toBe('preserved\n');
     expect(await readdir(workspace)).toEqual(['note.md']);
+  });
+
+  it('migrates v2 lifecycle projections without reactivating leaving or retired Projects', async () => {
+    const stateDirectory = path.join(vaultRoot, '.claudian', 'collab');
+    const projectState = path.join(stateDirectory, 'projects', PROJECT_ID);
+    await mkdir(projectState, { recursive: true });
+    const leavingMembership = {
+      ...membershipRecord({ lifecycle: 'leaving' }),
+      schemaVersion: 2,
+    };
+    await writeFile(
+      path.join(projectState, 'membership.json'),
+      JSON.stringify(leavingMembership),
+    );
+    await writeFile(path.join(stateDirectory, 'index.json'), JSON.stringify({
+      projects: [{
+        authorityKind: 'lan',
+        cleanupStatus: 'running',
+        createdAt: '2026-08-08T00:00:00.000Z',
+        id: PROJECT_ID,
+        lifecycle: 'leaving',
+        name: 'Project Alpha',
+        updatedAt: '2026-08-08T00:01:00.000Z',
+        workspacePath: 'workspace/project-alpha',
+      }, {
+        authorityKind: 'lan',
+        cleanupStatus: 'failed',
+        createdAt: '2026-08-07T00:00:00.000Z',
+        id: 'project-retired',
+        lifecycle: 'retired',
+        name: 'Retired Project',
+        retiredAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: '2026-08-08T00:02:00.000Z',
+        workspacePath: 'workspace/project-retired',
+      }],
+      schemaVersion: 2,
+      selectedProjectId: PROJECT_ID,
+    }));
+
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+
+    await expect(repository.loadIndex()).resolves.toEqual({
+      projects: [{
+        authorityKind: 'lan',
+        cleanupStatus: 'running',
+        createdAt: '2026-08-08T00:00:00.000Z',
+        id: PROJECT_ID,
+        lifecycle: 'leaving',
+        name: 'Project Alpha',
+        updatedAt: '2026-08-08T00:01:00.000Z',
+        workspacePath: 'workspace/project-alpha',
+      }, {
+        authorityKind: 'lan',
+        cleanupStatus: 'failed',
+        createdAt: '2026-08-07T00:00:00.000Z',
+        id: 'project-retired',
+        lifecycle: 'retired',
+        name: 'Retired Project',
+        retiredAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: '2026-08-08T00:02:00.000Z',
+        workspacePath: 'workspace/project-retired',
+      }],
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      selectedProjectId: PROJECT_ID,
+    });
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      lifecycle: 'leaving',
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    });
+  });
+
+  it('persists a strict Cloud membership without LAN authority or Host fields', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = cloudMembershipRecord();
+
+    await repository.saveMembership(record);
+    await repository.upsertProject(indexEntry({ authorityKind: 'cloud' }));
+
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toEqual(record);
+    await expect(repository.loadIndex()).resolves.toMatchObject({
+      projects: [{ authorityKind: 'cloud', id: PROJECT_ID }],
+    });
+    const persisted = JSON.parse(await readFile(
+      path.join(vaultRoot, '.claudian', 'collab', 'projects', PROJECT_ID, 'membership.json'),
+      'utf8',
+    ));
+    expect(persisted).not.toHaveProperty('hostOwnership');
+    expect(persisted.member).not.toHaveProperty('credential');
+    expect(persisted.authority).not.toHaveProperty('hostCaCertificatePem');
+  });
+
+  it('rejects a Cloud development actor that differs from the current Member', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = cloudMembershipRecord();
+
+    await expect(repository.saveMembership({
+      ...record,
+      authority: {
+        ...record.authority,
+        developmentActorId: 'member-bob',
+      },
+    })).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+  });
+
+  it('reconstructs every active Project index entry from authoritative memberships', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const first = cloudMembershipRecord();
+    const second = {
+      ...membershipRecord(),
+      member: {
+        ...membershipRecord().member,
+        id: 'member-bob',
+        personalRef: 'refs/heads/members/member-bob',
+      },
+      project: {
+        id: 'project-beta',
+        name: 'Project Beta',
+        workspacePath: 'workspace/project-beta',
+      },
+    };
+    await repository.saveMembership(first);
+    await repository.saveMembership(second);
+    await writeFile(
+      path.join(vaultRoot, '.claudian', 'collab', 'index.json'),
+      '{corrupt',
+    );
+
+    await expect(repository.repairIndexFromMemberships()).resolves.toMatchObject({
+      projects: [{ authorityKind: 'cloud', id: PROJECT_ID }, {
+        authorityKind: 'lan',
+        id: 'project-beta',
+      }],
+      selectedProjectId: null,
+    });
+    await expect(repository.loadIndex()).resolves.toMatchObject({
+      projects: [{ id: PROJECT_ID }, { id: 'project-beta' }],
+    });
+  });
+
+  it('fails closed before a corrupt index can erase a durable retired Project', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const retirement = durableRetirementRecord();
+    await repository.upsertProject(indexEntry({
+      cleanupStatus: 'failed',
+      id: 'project-retired',
+      lifecycle: 'retired',
+      name: 'Retired Project',
+      retiredAt: retirement.retiredAt,
+      workspacePath: 'workspace/project-retired',
+    }));
+    await repository.transitionProjectToRetired(retirement);
+    await repository.saveMembership(cloudMembershipRecord());
+    const indexPath = path.join(vaultRoot, '.claudian', 'collab', 'index.json');
+    await writeFile(indexPath, '{corrupt');
+
+    await expect(repository.repairIndexFromMemberships()).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: {
+        projectId: 'project-retired',
+        reason: 'local-index-retirement-projection-unrecoverable',
+      },
+    });
+    await expect(readFile(indexPath, 'utf8')).resolves.toBe('{corrupt');
+  });
+
+  it('reconstructs retired lifecycle state from the durable retirement owner', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const retirement = durableRetirementRecord();
+    await repository.upsertProject(indexEntry({
+      cleanupStatus: 'pending',
+      id: retirement.projectId,
+      lifecycle: 'retired',
+      name: 'Retired Project',
+      retiredAt: retirement.retiredAt,
+      workspacePath: 'workspace/project-retired',
+    }));
+    await repository.transitionProjectToRetired(retirement);
+    const indexPath = path.join(vaultRoot, '.claudian', 'collab', 'index.json');
+    await writeFile(indexPath, JSON.stringify({
+      projects: [indexEntry({
+        cleanupStatus: 'pending',
+        id: retirement.projectId,
+        lifecycle: 'retired',
+        name: 'Retired Project',
+        retiredAt: '2026-08-08T00:00:30.000Z',
+        updatedAt: '2026-08-08T00:01:30.000Z',
+        workspacePath: 'workspace/project-retired',
+      })],
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      selectedProjectId: null,
+    }));
+
+    await expect(repository.repairIndexFromMemberships()).resolves.toEqual({
+      projects: [{
+        authorityKind: 'lan',
+        cleanupStatus: retirement.cleanupStatus,
+        createdAt: '2026-08-08T00:00:00.000Z',
+        id: retirement.projectId,
+        lifecycle: 'retired',
+        name: 'Retired Project',
+        retiredAt: retirement.retiredAt,
+        updatedAt: retirement.updatedAt,
+        workspacePath: 'workspace/project-retired',
+      }],
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      selectedProjectId: null,
+    });
+  });
+
+  it('keeps durable Retirement terminal when cleanup has not removed stale membership', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const retirement = durableRetirementRecord();
+    const staleMembership = membershipRecord({
+      member: {
+        ...membershipRecord().member,
+        id: retirement.memberId,
+        personalRef: `refs/heads/members/${retirement.memberId}`,
+      },
+      project: {
+        id: retirement.projectId,
+        name: 'Retired Project',
+        workspacePath: 'workspace/project-retired',
+      },
+    });
+    await repository.saveMembership(staleMembership);
+    await repository.upsertProject(indexEntry({
+      id: retirement.projectId,
+      name: 'Retired Project',
+      workspacePath: 'workspace/project-retired',
+    }));
+    await repository.transitionProjectToRetired(retirement);
+    await repository.saveMembership(staleMembership);
+    await repository.upsertProject(indexEntry({
+      cleanupStatus: retirement.cleanupStatus,
+      id: retirement.projectId,
+      lifecycle: 'retired',
+      name: 'Retired Project',
+      retiredAt: retirement.retiredAt,
+      updatedAt: retirement.updatedAt,
+      workspacePath: 'workspace/project-retired',
+    }));
+
+    await expect(repository.repairIndexFromMemberships()).resolves.toMatchObject({
+      projects: [{
+        cleanupStatus: retirement.cleanupStatus,
+        id: retirement.projectId,
+        lifecycle: 'retired',
+        retiredAt: retirement.retiredAt,
+      }],
+    });
+    await expect(repository.loadMembership(retirement.projectId)).resolves.toEqual(
+      staleMembership,
+    );
   });
 
   it('persists lifecycle records and discovers tombstones without an active Project', async () => {
@@ -1092,6 +1403,35 @@ describe('CollabLocalProjectRepository', () => {
     });
     await expect(readFile(path.join(authorityDirectory, 'keep.db'), 'utf8'))
       .resolves.toBe('unowned');
+  });
+
+  it('atomically retires a former Host authority into attempt-scoped inert storage', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(authorityDirectory, 'collab.db'), 'former-host');
+
+    const retiredDirectory = await repository.retireAuthorityDirectory(
+      PROJECT_ID,
+      'bootstrap-attempt-one',
+    );
+    const replayedDirectory = await repository.retireAuthorityDirectory(
+      PROJECT_ID,
+      'bootstrap-attempt-one',
+    );
+    if (retiredDirectory === null) throw new Error('Expected retired authority directory');
+
+    expect(retiredDirectory).toBe(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'retired-lan-authorities',
+      PROJECT_ID,
+      'bootstrap-attempt-one',
+    ));
+    expect(replayedDirectory).toBe(retiredDirectory);
+    await expect(stat(authorityDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(path.join(retiredDirectory, 'collab.db'), 'utf8'))
+      .resolves.toBe('former-host');
   });
 
   it('claims only a known legacy authority layout when Host ownership is proven', async () => {

@@ -16,13 +16,34 @@ function admissionSuspension(
 }
 
 describe('CloudBootstrapLocalFence', () => {
+  it('reopens the suspended Project after Cloud activation', async () => {
+    const admission = admissionSuspension(PROJECT_ID);
+    const work = Object.freeze({ projectId: PROJECT_ID, token: Symbol('work') });
+    const admissionPort: CloudBootstrapAdmissionPort = {
+      drainAdmittedOperations: jest.fn(async () => undefined),
+      resumeProjectAdmission: jest.fn(() => true),
+      suspendProjectAdmission: jest.fn(() => admission),
+    };
+    const workSessions: CloudBootstrapWorkSessionPort = {
+      resumeProject: jest.fn(async () => undefined),
+      suspendProject: jest.fn(async () => work),
+    };
+    const fence = new CloudBootstrapLocalFence({ admission: admissionPort, workSessions });
+
+    await fence.closeAndDrain(PROJECT_ID);
+    await fence.completeAfterActivation(PROJECT_ID);
+
+    expect(workSessions.resumeProject).toHaveBeenCalledWith(work);
+    expect(admissionPort.resumeProjectAdmission).toHaveBeenCalledWith(admission);
+    expect(fence.isProjectQuiesced(PROJECT_ID)).toBe(false);
+  });
+
   it('replaces the paired suspension when admission resume fails', async () => {
     const admissionOne = admissionSuspension(PROJECT_ID);
     const admissionTwo = admissionSuspension(PROJECT_ID);
     const workOne = Object.freeze({ projectId: PROJECT_ID, token: Symbol('work-one') });
     const workTwo = Object.freeze({ projectId: PROJECT_ID, token: Symbol('work-two') });
     const admission: CloudBootstrapAdmissionPort = {
-      closeProjectAdmission: jest.fn(),
       drainAdmittedOperations: jest.fn(async () => undefined),
       resumeProjectAdmission: jest.fn()
         .mockReturnValueOnce(false)
@@ -32,9 +53,6 @@ describe('CloudBootstrapLocalFence', () => {
         .mockReturnValueOnce(admissionTwo),
     };
     const workSessions: CloudBootstrapWorkSessionPort = {
-      closeProject: jest.fn(),
-      completeProjectSuspension: jest.fn(async () => undefined),
-      drainProject: jest.fn(async () => undefined),
       resumeProject: jest.fn(async () => undefined),
       suspendProject: jest.fn()
         .mockResolvedValueOnce(workOne)

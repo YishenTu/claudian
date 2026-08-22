@@ -1,8 +1,9 @@
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
-  CollabLocalMembershipRecord,
+  CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
@@ -57,7 +58,7 @@ export interface ReconnectDiscoveredProjectRequest {
 interface DiscoveredCandidateValidation {
   readonly candidate?: CollabTrustedEndpointCandidate;
   readonly error?: CollabError;
-  readonly membership?: CollabLocalMembershipRecord;
+  readonly membership?: CollabLocalLanMembershipRecord;
 }
 
 interface HostTrustTransitionVerifierPort {
@@ -121,7 +122,7 @@ function remoteUrl(endpoint: string, projectId: string): string {
   return `${endpoint}/v1/git/${projectId}/repository.git`;
 }
 
-function summary(record: CollabLocalMembershipRecord): CollabLocalProjectSummary {
+function summary(record: CollabLocalLanMembershipRecord): CollabLocalProjectSummary {
   return {
     authorityKind: record.authority.kind,
     connectionStatus: 'connected',
@@ -136,7 +137,7 @@ function summary(record: CollabLocalMembershipRecord): CollabLocalProjectSummary
 
 class ReconnectTrustStore implements CollabHostTrustStore {
   constructor(
-    private readonly membership: CollabLocalMembershipRecord,
+    private readonly membership: CollabLocalLanMembershipRecord,
     private readonly candidate: CollabTrustedEndpointCandidate,
   ) {}
 
@@ -319,7 +320,7 @@ export class ReconnectProjectCoordinator {
   }
 
   private async validateDiscoveredCandidate(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<DiscoveredCandidateValidation> {
@@ -364,10 +365,10 @@ export class ReconnectProjectCoordinator {
   }
 
   private async resolveCandidateTrust(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
-  ): Promise<CollabLocalMembershipRecord> {
+  ): Promise<CollabLocalLanMembershipRecord> {
     const authority = membership.authority;
     if (candidate.caFingerprint === authority.hostCaFingerprint) return membership;
     if (
@@ -401,12 +402,12 @@ export class ReconnectProjectCoordinator {
   private async loadReconnectMembership(
     projectId: string,
     candidate: CollabTrustedEndpointCandidate,
-  ): Promise<CollabLocalMembershipRecord> {
+  ): Promise<CollabLocalLanMembershipRecord> {
     if (candidate.projectId !== projectId) {
       throw reconnectError('project-not-found', 'reconnect-project-mismatch');
     }
     const membership = await this.foundation.local.projects.loadMembership(projectId);
-    if (!membership) {
+    if (!membership || !isCollabLocalLanMembership(membership)) {
       throw reconnectError('project-not-found', 'reconnect-membership-missing');
     }
     if (membership.hostOwnership.ownsAuthority) {
@@ -425,7 +426,7 @@ export class ReconnectProjectCoordinator {
   }
 
   private async commitReconnect(
-    membership: CollabLocalMembershipRecord,
+    membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -447,7 +448,7 @@ export class ReconnectProjectCoordinator {
       projectId: membership.project.id,
       repositoryPath,
     });
-    const updated: CollabLocalMembershipRecord = {
+    const updated: CollabLocalLanMembershipRecord = {
       ...membership,
       authority: {
         ...authority,

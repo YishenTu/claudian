@@ -89,7 +89,7 @@ function createPort(
       snapshot: {
         currentMember,
         members,
-        project: { hostMemberId: identity.hostMemberId },
+        project: { authorityKind: 'lan', hostMemberId: identity.hostMemberId },
       },
       source: 'online',
       stale: false,
@@ -118,6 +118,58 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  it('renders Cloud membership without exposing LAN lifecycle actions', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          eventSequence: 7,
+          members,
+          openRequests: [],
+          openTicketCount: 0,
+          project: {
+            authorityKind: 'cloud',
+            createdAt: CREATED_AT,
+            id: 'project-alpha',
+            mainOid: 'a'.repeat(40),
+            mainRef: 'refs/heads/main',
+            name: 'Alpha',
+          },
+          ticketHighlights: [],
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+    }, { currentMemberId: 'member-manager', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).toContain('Alice');
+    expect(modal.contentEl.textContent).toContain('Maya');
+    for (const action of [
+      'create-invitation',
+      'leave-project',
+      'retire-project',
+      'start-host',
+      'stop-host',
+      'create-host-transfer',
+      'promote-manager',
+      'demote-manager',
+      'remove-member',
+    ]) {
+      expect(modal.contentEl.querySelector(`[data-action="${action}"]`)).toBeNull();
+    }
+  });
+
   it('cancels a superseded snapshot read when a newer read starts', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const signals: AbortSignal[] = [];
@@ -132,7 +184,7 @@ describe('ProjectManagementModal', () => {
           snapshot: {
             currentMember: members[0],
             members,
-            project: { hostMemberId: 'member-host' },
+            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
           },
           source: 'online',
           stale: false,
@@ -281,7 +333,7 @@ describe('ProjectManagementModal', () => {
             targetMemberId: 'member-maya',
           },
           members,
-          project: { hostMemberId: 'member-manager' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
         },
         source: 'online',
         stale: false,
@@ -334,7 +386,7 @@ describe('ProjectManagementModal', () => {
             targetMemberId: 'member-maya',
           },
           members,
-          project: { hostMemberId: 'member-manager' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
         },
         source: 'online',
         stale: false,
@@ -401,7 +453,7 @@ describe('ProjectManagementModal', () => {
             },
           } : {}),
           members: [manager, target],
-          project: { hostMemberId: 'member-host' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
         },
         source: 'online',
         stale: false,
@@ -484,7 +536,7 @@ describe('ProjectManagementModal', () => {
               },
             } : {}),
             members: [manager, projectedTarget],
-            project: { hostMemberId: 'member-host' },
+            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
           },
           source: 'online',
           stale: false,
@@ -696,7 +748,7 @@ describe('ProjectManagementModal', () => {
           snapshot: {
             currentMember: soleManagerHost,
             members: [soleManagerHost],
-            project: { hostMemberId: 'member-host' },
+            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
           },
           source: 'offline',
           stale: true,
@@ -706,7 +758,7 @@ describe('ProjectManagementModal', () => {
           snapshot: {
             currentMember: soleManagerHost,
             members: [soleManagerHost],
-            project: { hostMemberId: 'member-host' },
+            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
           },
           source: 'online',
           stale: false,
@@ -1013,7 +1065,7 @@ describe('ProjectManagementModal', () => {
             },
           } : {}),
           members,
-          project: { hostMemberId: 'member-host' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
         },
         source: 'online',
         stale: false,
@@ -1150,7 +1202,7 @@ describe('ProjectManagementModal', () => {
         snapshot: {
           currentMember,
           members,
-          project: { hostMemberId: 'member-host' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
         },
         source: 'online',
         stale: false,
@@ -1215,7 +1267,7 @@ describe('ProjectManagementModal', () => {
             targetMemberId: 'member-maya',
           },
           members,
-          project: { hostMemberId: 'member-manager' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
         },
         source: 'online',
         stale: false,
@@ -1255,7 +1307,7 @@ describe('ProjectManagementModal', () => {
             transferId: 'host-transfer-one',
           },
           members,
-          project: { hostMemberId: 'member-host' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
         },
         source: 'online',
         stale: false,
@@ -1305,7 +1357,7 @@ describe('ProjectManagementModal', () => {
             transferId: 'host-transfer-one',
           },
           members,
-          project: { hostMemberId: 'member-host' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
         },
         source: 'online',
         stale: false,
@@ -1407,7 +1459,7 @@ describe('ProjectManagementModal', () => {
             targetMemberId: 'member-maya',
           },
           members,
-          project: { hostMemberId: 'member-manager' },
+          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
         },
         source: 'online',
         stale: false,

@@ -1082,7 +1082,9 @@ function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProje
       : {
         createdAt: coordination.snapshot.project.createdAt,
         currentMember: toActiveMember(currentMember),
-        hostMemberId: coordination.snapshot.project.hostMemberId,
+        ...(coordination.snapshot.project.authorityKind === 'lan'
+          ? { hostMemberId: coordination.snapshot.project.hostMemberId }
+          : {}),
         mainOid: coordination.snapshot.project.mainOid,
         managerCount: managerMemberIds.length,
         managerMemberIds,

@@ -18,6 +18,7 @@ import type {
 import {
   ATTEMPT_ID,
   bootstrapManifest,
+  finalizeActivatedBindingForTest,
   HOST_MEMBER_ID,
   HOST_OID,
   HOST_REF,
@@ -165,6 +166,14 @@ function coordinatorFixture(options: {
   });
   const completeAfterActivation = jest.fn(async () => undefined);
   const coordinatorOptions: CloudBootstrapCoordinatorOptions = {
+    binding: {
+      finalize: async record => {
+        events.push('binding.finalize');
+        const completed = finalizeActivatedBindingForTest(record);
+        await store.save(completed);
+        return completed;
+      },
+    },
     cloud: { activate, begin, cancel, get, report, upload },
     createFenceId: () => 'bootstrap-fence-one',
     formerHost: {
@@ -286,7 +295,8 @@ describe('CloudBootstrapCoordinator', () => {
       'cloud.activate',
       'transition.save.host-stopped.activated',
       'source.discard',
-      'transition.save.host-stopped.activated',
+      'binding.finalize',
+      'transition.save.terminal.activated',
     ]);
     expect(fixture.captureManifest).toHaveBeenCalledWith(
       PROJECT_ID,
@@ -316,7 +326,7 @@ describe('CloudBootstrapCoordinator', () => {
     expect(result).toMatchObject({
       activationResult: ACTIVATION_RESULT,
       attemptState: 'activated',
-      phase: 'intent',
+      phase: 'fence-terminal',
       terminalCleanupCompleted: true,
     });
     expect(result.newAuthority.gitRemoteUrl).toBe(
@@ -355,7 +365,7 @@ describe('CloudBootstrapCoordinator', () => {
     expect(fixture.activate).not.toHaveBeenCalled();
   });
 
-  it('recovers a lost activation response without restarting LAN or binding locally', async () => {
+  it('recovers a lost activation response by completing binding without restarting LAN', async () => {
     const fixture = coordinatorFixture();
     await fixture.coordinator.startFormerHost({
       developmentActorId: HOST_MEMBER_ID,
@@ -367,6 +377,12 @@ describe('CloudBootstrapCoordinator', () => {
       ...fixture.store.record!,
       activationResult: null,
       attemptState: 'pending',
+      fence: {
+        fenceId: 'bootstrap-fence-one',
+        state: 'host-stopped',
+        stoppedAt: '2026-08-21T00:00:02.000Z',
+      },
+      phase: 'intent',
       terminalCleanupCompleted: false,
     };
     fixture.get.mockResolvedValue(status('activated', {
@@ -385,14 +401,14 @@ describe('CloudBootstrapCoordinator', () => {
       'readiness.collect',
       'transition.save.host-stopped.activated',
       'source.discard',
-      'transition.save.host-stopped.activated',
+      'binding.finalize',
+      'transition.save.terminal.activated',
     ]);
     expect(recovered).toMatchObject({
       activationResult: ACTIVATION_RESULT,
       attemptState: 'activated',
-      phase: 'intent',
+      phase: 'fence-terminal',
     });
-    expect(JSON.stringify(recovered)).not.toContain('membership-replaced');
   });
 
   it('marks a pre-activation cancellation as fence-released without auto-restart', async () => {
@@ -407,6 +423,12 @@ describe('CloudBootstrapCoordinator', () => {
       ...fixture.store.record!,
       activationResult: null,
       attemptState: 'pending',
+      fence: {
+        fenceId: 'bootstrap-fence-one',
+        state: 'host-stopped',
+        stoppedAt: '2026-08-21T00:00:02.000Z',
+      },
+      phase: 'intent',
       terminalCleanupCompleted: false,
     };
     fixture.events.length = 0;
@@ -447,7 +469,7 @@ describe('CloudBootstrapCoordinator', () => {
     ]);
   });
 
-  it('reapplies permanent local closure when recovering an activated restart', async () => {
+  it('does not disturb an already completed Cloud binding during recovery', async () => {
     const fixture = coordinatorFixture();
     await fixture.coordinator.startFormerHost({
       developmentActorId: HOST_MEMBER_ID,
@@ -462,7 +484,7 @@ describe('CloudBootstrapCoordinator', () => {
       attemptState: 'activated',
       terminalCleanupCompleted: true,
     });
-    expect(fixture.discardBundle).toHaveBeenCalledWith(bootstrapManifest());
-    expect(fixture.completeAfterActivation).toHaveBeenCalledWith(PROJECT_ID);
+    expect(fixture.discardBundle).not.toHaveBeenCalled();
+    expect(fixture.completeAfterActivation).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage } from '@claudian/collab-protocol';
 
 import {
+  type CollabProjectResource,
   CollabProjectWorkSessionRegistry,
 } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
@@ -14,13 +15,19 @@ import type {
   CollabLocalMembershipRecord,
   CollabLocalProjectDocumentBase,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
+import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
+import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import type {
   CollabManagerResponsibilityOfferSummary,
   CollabProjectSnapshot,
 } from '@/core/collab';
+import { isCollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -76,66 +83,7 @@ export interface CollabClientProjectionStore {
   ): Promise<CollabLocalMembershipRecord>;
 }
 
-export interface CollabClientProjectionControlPort {
-  acceptRequest(input: {
-    readonly expectedHeadOid: string;
-    readonly expectedMainOid: string;
-    readonly expectedRequestRevision: number;
-    readonly expectedResolvingTickets: readonly CollabResolvingTicketExpectation[];
-    readonly idempotencyKey: string;
-    readonly projectId: string;
-    readonly requestId: string;
-    readonly signal?: AbortSignal;
-  }): Promise<AcceptResponse>;
-  createComment(input: {
-    readonly body: string;
-    readonly idempotencyKey: string;
-    readonly projectId: string;
-    readonly requestId: string;
-    readonly signal?: AbortSignal;
-  }): Promise<{ readonly comment: CollabComment }>;
-  listTickets(
-    request: CollabListTicketsRequest,
-    options?: CollabOperationOptions,
-  ): Promise<CollabTicketPage>;
-  listRequestComments(
-    projectId: string,
-    requestId: string,
-    query: { readonly cursor?: string; readonly limit?: number },
-    options?: CollabOperationOptions,
-  ): Promise<CollabCommentPage>;
-  listTicketComments(
-    projectId: string,
-    ticketId: string,
-    query: { readonly cursor?: string; readonly limit?: number },
-    options?: CollabOperationOptions,
-  ): Promise<CollabTicketCommentPage>;
-  listTicketAcceptedRelations(
-    projectId: string,
-    ticketId: string,
-    query: { readonly cursor?: string; readonly limit?: number },
-    options?: CollabOperationOptions,
-  ): Promise<CollabTicketAcceptedRelationPage>;
-  readRequest(
-    projectId: string,
-    requestId: string,
-    options?: CollabOperationOptions,
-  ): Promise<CollabRequestDetail>;
-  readSnapshot(
-    projectId: string,
-    options?: CollabOperationOptions,
-  ): Promise<CollabProjectSnapshot>;
-  readTicket(
-    projectId: string,
-    ticketId: string,
-    options?: CollabOperationOptions,
-  ): Promise<CollabTicketDetail>;
-  readTicketPage(
-    projectId: string,
-    ticketId: string,
-    options?: CollabOperationOptions,
-  ): Promise<CollabTicketDetail>;
-}
+export type CollabClientProjectionControlPort = CollabAuthorityControlPort;
 
 export interface CollabClientCommentInput {
   readonly body: string;
@@ -155,6 +103,7 @@ export type CollabClientProjectionEventFactory = (
 ) => CollabClientProjectionEventPort;
 
 export interface CollabClientProjectionOptions {
+  readonly authoritySessions?: CollabAuthoritySessionFactory;
   readonly createEventClient?: CollabClientProjectionEventFactory;
   readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   readonly now?: () => Date;
@@ -169,7 +118,7 @@ export interface CollabManagerResponsibilityProjectionPort {
 }
 
 interface ProjectionEventSession {
-  readonly client: CollabClientProjectionEventPort;
+  readonly client: CollabProjectResource;
   readonly listeners: Set<(snapshot: CollabProjectSnapshot) => void>;
   dispose(): void;
 }
@@ -203,11 +152,21 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   ) {
     throw new TypeError('Invalid Collab snapshot cache');
   }
-  const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse({
-    data: source.snapshot,
-    protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
-    requestId: 'cache-decode',
-  });
+  const snapshotProject = source.snapshot && typeof source.snapshot === 'object'
+    && !Array.isArray(source.snapshot)
+    ? (source.snapshot as Readonly<Record<string, unknown>>).project
+    : undefined;
+  const authorityKind = snapshotProject && typeof snapshotProject === 'object'
+    && !Array.isArray(snapshotProject)
+    ? (snapshotProject as Readonly<Record<string, unknown>>).authorityKind
+    : undefined;
+  const snapshot = authorityKind === 'cloud'
+    ? decodeCloudProjectSnapshotCache(source.snapshot)
+    : lanCollabControlOperationCodec('getSnapshot').decodeResponse({
+      data: source.snapshot,
+      protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+      requestId: 'cache-decode',
+    });
   if (snapshot.project.id !== projectId) {
     throw new TypeError('Invalid Collab snapshot cache');
   }
@@ -388,6 +347,7 @@ function retirementResultFromError(
 
 export class CollabClientProjection {
   private readonly createEventClient: CollabClientProjectionEventFactory;
+  private readonly authoritySessions?: CollabAuthoritySessionFactory;
   private disposed = false;
   private readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   private readonly now: () => Date;
@@ -400,6 +360,7 @@ export class CollabClientProjection {
     private readonly control: CollabClientProjectionControlPort,
     options: CollabClientProjectionOptions = {},
   ) {
+    this.authoritySessions = options.authoritySessions;
     this.createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new ProjectEventClient(input, onInvalidation));
     this.managerResponsibility = options.managerResponsibility;
@@ -662,30 +623,42 @@ export class CollabClientProjection {
       const membership = await this.store.loadMembership(projectId);
       this.assertOpen();
       work.assertGeneration(generation);
-      const endpoint = membership?.authority.endpoint;
-      const caCertificatePem = membership?.authority.hostCaCertificatePem;
       if (!membership) {
         throw projectionError('project-not-found', 'projection-membership-missing');
       }
-      if (!endpoint || !caCertificatePem) {
-        throw projectionError('host-stopped', 'projection-host-endpoint-unavailable');
-      }
       const listeners = new Set<(snapshot: CollabProjectSnapshot) => void>();
-      const client = this.createEventClient({
-        caCertificatePem,
-        endpoint,
-        lastSequence: membership.lastEventSequence,
-        memberCredential: membership.member.credential,
-        projectId,
-      }, invalidation => this.refreshFromEvent(projectId, invalidation));
-      session = { client, dispose: () => client.dispose(), listeners };
-      work.setEventConnection(session);
-      try {
-        client.start();
-      } catch (error) {
-        work.clearEventConnection(session);
-        throw error;
+      let client: CollabProjectResource;
+      if (this.authoritySessions) {
+        const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
+          () => this.authoritySessions!.create(membership),
+        );
+        this.assertOpen();
+        work.assertGeneration(generation);
+        client = authority.events.connect({
+          afterSequence: membership.lastEventSequence,
+          onInvalidation: invalidation => this.refreshFromEvent(projectId, invalidation),
+        });
+      } else {
+        if (!isCollabLocalLanMembership(membership)) {
+          throw projectionError('host-stopped', 'projection-authority-session-unavailable');
+        }
+        const endpoint = membership.authority.endpoint;
+        const caCertificatePem = membership.authority.hostCaCertificatePem;
+        if (!endpoint || !caCertificatePem) {
+          throw projectionError('host-stopped', 'projection-host-endpoint-unavailable');
+        }
+        const lanClient = this.createEventClient({
+          caCertificatePem,
+          endpoint,
+          lastSequence: membership.lastEventSequence,
+          memberCredential: membership.member.credential,
+          projectId,
+        }, invalidation => this.refreshFromEvent(projectId, invalidation));
+        lanClient.start();
+        client = lanClient;
       }
+      session = { client, dispose: () => client.dispose(), listeners };
+      work.adoptEventConnection(session, generation);
     }
     session.listeners.add(listener);
     let disposed = false;
@@ -715,7 +688,7 @@ export class CollabClientProjection {
 
   resetProjectConnection(projectId: string): void {
     this.assertOpen();
-    this.sessions.acquire(projectId).resetProjection();
+    this.sessions.resetProject(projectId);
   }
 
   async handleRetirement(
@@ -792,11 +765,14 @@ export class CollabClientProjection {
       snapshot.eventSequence,
     );
     session.assertGeneration(generation);
-    const reconciledOffer = await this.managerResponsibility
-      ?.reconcileSnapshot(snapshot) ?? null;
+    const reconciledOffer = isCollabLanProjectSnapshot(snapshot)
+      ? await this.managerResponsibility?.reconcileSnapshot(snapshot) ?? null
+      : null;
     session.assertGeneration(generation);
     if (reconciledOffer) {
-      const originalOffer = snapshot.managerResponsibilityOffer;
+      const originalOffer = isCollabLanProjectSnapshot(snapshot)
+        ? snapshot.managerResponsibilityOffer
+        : undefined;
       if (
         !originalOffer
         || reconciledOffer.offerId !== originalOffer.offerId
@@ -908,6 +884,22 @@ export class CollabClientProjection {
     if (cache && cache.schemaVersion !== CACHE_SCHEMA_VERSION) {
       await this.store.removeProjectDocument(projectId, 'cache');
       return null;
+    }
+    if (cache) {
+      const membership = await this.store.loadMembership(projectId);
+      if (
+        !membership
+        || membership.project.id !== cache.snapshot.project.id
+        || membership.member.id !== cache.snapshot.currentMember.id
+        || membership.member.displayName !== cache.snapshot.currentMember.displayName
+        || membership.member.personalRef !== cache.snapshot.currentMember.personalRef
+        || membership.member.role !== cache.snapshot.currentMember.role
+        || membership.authority.kind !== cache.snapshot.project.authorityKind
+        || cache.snapshot.eventSequence < membership.lastEventSequence
+      ) {
+        await this.store.removeProjectDocument(projectId, 'cache');
+        return null;
+      }
     }
     return cache;
   }

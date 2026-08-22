@@ -20,7 +20,7 @@ const REMOTE_URL = 'https://192.168.1.20/repository.git';
 const PREVIOUS_HOST_URL = 'https://192.168.1.20:54545/v1/git/project-a/repository.git';
 const CURRENT_HOST_URL = 'https://192.168.1.21:54545/v1/git/project-a/repository.git';
 const NETWORK: GitNetworkEnvironment = {
-  authorizationHeader: 'Basic Zm9vOmJhcg==',
+  headers: [{ name: 'Authorization', value: 'Basic Zm9vOmJhcg==' }],
   sslCaInfoPath: '/vault/.claudian/review-ca.pem',
 };
 

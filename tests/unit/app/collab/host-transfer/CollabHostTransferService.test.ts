@@ -1,4 +1,5 @@
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabHostTransferService } from '@/app/collab/host-transfer/CollabHostTransferService';
 import {
   hostTransferAcceptanceIdempotencyKey,
@@ -24,9 +25,9 @@ const membership = {
     role: 'member' as const,
   },
   project: { id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' },
-  schemaVersion: 2 as const,
+  schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
   updatedAt: '2026-08-13T00:00:00.000Z',
-} satisfies CollabLocalMembershipRecord;
+} satisfies CollabLocalLanMembershipRecord;
 
 const snapshot = {
   snapshot: {
