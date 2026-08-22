@@ -1125,6 +1125,68 @@ describe('sdkSession', () => {
       expect(result.messages[2].content).toBe('Thanks');
     });
 
+    it('restores response duration from Claude turn metadata', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Inspect the project"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:02Z","message":{"content":[{"type":"tool_use","id":"tool-1","name":"Read","input":{"file_path":"README.md"}}]}}',
+        '{"type":"user","uuid":"tool-result-1","timestamp":"2024-01-15T10:00:03Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"Project details"}]}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:00:09Z","message":{"content":[{"type":"text","text":"Inspection complete."}]}}',
+        '{"type":"system","subtype":"turn_duration","uuid":"duration-1","parentUuid":"a2","timestamp":"2024-01-15T10:00:09.100Z","durationMs":4500,"messageCount":4}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-native-duration');
+
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Inspection complete.',
+        durationSeconds: 4,
+      });
+    });
+
+    it('treats a sub-second native turn duration as authoritative', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Quick check"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:03Z","message":{"content":[{"type":"text","text":"Done."}]}}',
+        '{"type":"system","subtype":"turn_duration","uuid":"duration-1","parentUuid":"a1","timestamp":"2024-01-15T10:00:03.100Z","durationMs":681}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-subsecond-duration');
+
+      expect(result.messages[1].durationSeconds).toBeUndefined();
+    });
+
+    it('does not infer response duration when native metadata is absent', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Inspect"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:07Z","message":{"content":[{"type":"text","text":"Complete."}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-no-duration');
+
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[1].durationSeconds).toBeUndefined();
+    });
+
+    it('does not add response duration to assistant output from an interrupted turn', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Start"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:04Z","message":{"content":[{"type":"text","text":"Partial response"}]}}',
+        '{"type":"system","subtype":"turn_duration","uuid":"duration-1","parentUuid":"a1","timestamp":"2024-01-15T10:00:04.100Z","durationMs":4000}',
+        '{"type":"user","uuid":"interrupt-1","timestamp":"2024-01-15T10:00:05Z","message":{"content":"[Request interrupted by user]"}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-interrupted-duration');
+      const assistant = result.messages.find(message => message.role === 'assistant');
+
+      expect(assistant).toBeDefined();
+      expect(assistant?.durationSeconds).toBeUndefined();
+    });
+
     it('sorts messages by timestamp ascending', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([

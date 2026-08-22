@@ -2,7 +2,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
-import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import {
+  type ChatMessage,
+  isCanonicalUserMessage,
+  type SubagentInfo,
+  type ToolCallInfo,
+} from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
@@ -146,10 +151,24 @@ export async function loadSDKSessionMessages(
   const toolResults = collectToolResults(filteredEntries);
   const toolUseResults = collectStructuredPatchResults(filteredEntries);
   const asyncSubagentResults = collectAsyncSubagentResults(filteredEntries);
+  const nativeTurnDurations = collectNativeTurnDurations(filteredEntries);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
+
+  const flushPendingAssistant = (includeDuration: boolean): void => {
+    if (pendingAssistant) {
+      const nativeDuration = pendingAssistant.assistantMessageId
+        ? nativeTurnDurations.get(pendingAssistant.assistantMessageId)
+        : undefined;
+      if (includeDuration && nativeDuration !== undefined && nativeDuration > 0) {
+        pendingAssistant.durationSeconds = nativeDuration;
+      }
+      chatMessages.push(pendingAssistant);
+    }
+    pendingAssistant = null;
+  };
 
   // Merge consecutive assistant messages until an actual user message appears
   for (const sdkMsg of filteredEntries) {
@@ -166,28 +185,20 @@ export async function loadSDKSessionMessages(
       // context_compacted must not merge with previous assistant (it's a standalone separator)
       const isCompactBoundary = chatMsg.contentBlocks?.some(b => b.type === 'context_compacted');
       if (isCompactBoundary) {
-        if (pendingAssistant) {
-          chatMessages.push(pendingAssistant);
-        }
+        flushPendingAssistant(true);
         chatMessages.push(chatMsg);
-        pendingAssistant = null;
       } else if (pendingAssistant) {
         mergeAssistantMessage(pendingAssistant, chatMsg);
       } else {
         pendingAssistant = chatMsg;
       }
     } else {
-      if (pendingAssistant) {
-        chatMessages.push(pendingAssistant);
-        pendingAssistant = null;
-      }
+      flushPendingAssistant(isCanonicalUserMessage(chatMsg));
       chatMessages.push(chatMsg);
     }
   }
 
-  if (pendingAssistant) {
-    chatMessages.push(pendingAssistant);
-  }
+  flushPendingAssistant(true);
 
   hydrateStructuredToolResults(chatMessages, toolUseResults);
   hydrateFallbackAskUserAnswers(chatMessages);
@@ -248,6 +259,27 @@ export async function loadSDKSessionMessages(
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
+}
+
+function collectNativeTurnDurations(
+  entries: SDKNativeMessage[],
+): Map<string, number> {
+  const durations = new Map<string, number>();
+  for (const entry of entries) {
+    if (
+      entry.type !== 'system'
+      || entry.subtype !== 'turn_duration'
+      || typeof entry.parentUuid !== 'string'
+      || typeof entry.durationMs !== 'number'
+      || !Number.isFinite(entry.durationMs)
+      || entry.durationMs < 0
+    ) {
+      continue;
+    }
+    const durationSeconds = Math.floor(entry.durationMs / 1_000);
+    durations.set(entry.parentUuid, durationSeconds);
+  }
+  return durations;
 }
 
 export function getLastSDKSessionModel(
