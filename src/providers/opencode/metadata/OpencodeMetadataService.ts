@@ -21,7 +21,7 @@ import {
 
 export interface OpencodeMetadataCatalogResult
   extends OpencodeMetadataProjectionInput {
-  readonly commands: readonly SlashCommand[];
+  readonly commands: readonly SlashCommand[] | null;
 }
 
 export interface OpencodeMetadataWarmResult
@@ -81,9 +81,11 @@ export class OpencodeMetadataService {
         ownedSignal.throwIfAborted();
         await projectOpencodeMetadata(this.plugin, catalog);
         ownedSignal.throwIfAborted();
-        this.options.commandCatalog?.setCommandSnapshot(
-          catalog.commands.map((command) => ({ ...command })),
-        );
+        if (catalog.commands !== null) {
+          this.options.commandCatalog?.setCommandSnapshot(
+            catalog.commands.map((command) => ({ ...command })),
+          );
+        }
         return true;
       },
       signal,
@@ -105,6 +107,9 @@ export class OpencodeMetadataService {
         ownedSignal.throwIfAborted();
         await projectOpencodeMetadata(this.plugin, catalog);
         ownedSignal.throwIfAborted();
+        if (catalog.commands === null) {
+          return { commands: [], loaded: false };
+        }
         const commands = catalog.commands.map((command) => ({ ...command }));
         this.options.commandCatalog?.setCommandSnapshot(commands);
         return { commands, loaded: true };
@@ -210,7 +215,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
       );
     }
     return {
-      commands: this.commands ?? [],
+      commands: this.commands,
       configOptions: native.configOptions,
       models: native.models,
       modes: native.modes,
