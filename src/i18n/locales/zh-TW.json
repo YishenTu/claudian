@@ -679,6 +679,10 @@
       "name": "串流傳輸時自動捲動",
       "desc": "在 Claude 串流傳輸回應時自動捲動到底部。停用後將停留在頂部，從頭開始閱讀。"
     },
+    "showMessageTimestamps": {
+      "name": "顯示訊息時間戳",
+      "desc": "在聊天串中顯示每則訊息的本機傳送或到達時間。"
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "串流傳輸時延遲渲染數學公式",
       "desc": "回應串流傳輸時顯示原始 LaTeX，並在每個文字區塊完成後只渲染一次數學公式。"

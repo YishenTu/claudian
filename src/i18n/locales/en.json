@@ -679,6 +679,10 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
+    "showMessageTimestamps": {
+      "name": "Show message timestamps",
+      "desc": "Display each message's local send or arrival time in the chat thread."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."

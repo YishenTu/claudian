@@ -51,6 +51,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   maxWarmAgentProcesses: 5,
   enableAutoScroll: true,
+  showMessageTimestamps: false,
   deferMathRenderingDuringStreaming: true,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
