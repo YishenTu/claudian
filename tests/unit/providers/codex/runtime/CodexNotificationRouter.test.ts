@@ -17,6 +17,53 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('text streaming', () => {
+    const emitEventMessage = (text: string) => {
+      router.handleNotification('event_msg', {
+        type: 'agent_message',
+        message: text,
+      });
+    };
+
+    const emitRawAssistantMessage = (text: string) => {
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text }],
+        },
+      });
+    };
+
+    const startAgentMessage = (itemId: string) => {
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: itemId,
+          text: '',
+          phase: 'streaming',
+          memoryCitation: null,
+        },
+      });
+    };
+
+    const completeAgentMessage = (itemId: string, text: string) => {
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: itemId,
+          text,
+          phase: 'final',
+          memoryCitation: null,
+        },
+      });
+    };
+
     it('maps item/agentMessage/delta to a text chunk', () => {
       router.handleNotification('item/agentMessage/delta', {
         threadId: 't1',
@@ -141,6 +188,82 @@ describe('CodexNotificationRouter', () => {
           memoryCitation: null,
         },
       });
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'First' },
+        { type: 'text', content: 'Second' },
+      ]);
+    });
+
+    it('emits a Responses final answer once when its item ID arrives after fallback text', () => {
+      emitEventMessage('Answer');
+      emitRawAssistantMessage('Answer');
+      startAgentMessage('msg1');
+      completeAgentMessage('msg1', 'Answer');
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'Answer' },
+      ]);
+    });
+
+    it('emits a recovered Responses final answer once without an item start notification', () => {
+      emitRawAssistantMessage('Answer');
+      emitEventMessage('Answer');
+      completeAgentMessage('msg1', 'Answer');
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'Answer' },
+      ]);
+    });
+
+    it('emits only the missing suffix after fallback text is claimed by a late item ID', () => {
+      emitEventMessage('Ans');
+      startAgentMessage('msg1');
+      completeAgentMessage('msg1', 'Answer');
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'Ans' },
+        { type: 'text', content: 'wer' },
+      ]);
+    });
+
+    it('preserves a non-prefix completion after fallback text is claimed by a late item ID', () => {
+      emitEventMessage('Draft');
+      startAgentMessage('msg1');
+      completeAgentMessage('msg1', 'Final');
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'Draft' },
+        { type: 'text', content: 'Final' },
+      ]);
+    });
+
+    it('does not overwrite known item text when claiming a later anonymous segment', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'First',
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'echo tool',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'echo tool' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      emitEventMessage('Second');
+      completeAgentMessage('msg1', 'First');
 
       expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
         { type: 'text', content: 'First' },

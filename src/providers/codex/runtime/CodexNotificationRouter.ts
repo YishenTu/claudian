@@ -189,6 +189,15 @@ export class CodexNotificationRouter {
 
     if (!this.currentAssistantSegmentId) {
       this.currentAssistantSegmentId = itemId;
+      if (
+        this.currentAssistantSegmentText
+        && !this.streamedAgentMessageTextById.has(itemId)
+      ) {
+        this.streamedAgentMessageTextById.set(
+          itemId,
+          this.currentAssistantSegmentText,
+        );
+      }
     }
   }
 
