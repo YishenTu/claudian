@@ -4,6 +4,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -15,10 +16,12 @@ import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStati
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
 import * as pierreShikiBundleHelpers from '../../../scripts/pierreShikiBundle.js';
 import * as sourcePackageAliasHelpers from '../../../scripts/sourcePackageAliases.js';
+import * as terserProductionBundleHelpers from '../../../scripts/terserProductionBundle.js';
 
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
 const { createSourcePackageAliases } = sourcePackageAliasHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
+const { minifyProductionBundle } = terserProductionBundleHelpers;
 const {
   createPierreShikiBundlePlugin,
   inspectPierreThemeContract,
@@ -51,6 +54,7 @@ describe('Collab dependency envelope', () => {
       loader: { '.wasm': 'binary' },
       logLevel: 'silent',
       metafile: true,
+      minify: true,
       outfile: bundlePath,
       platform: 'browser',
       plugins: [
@@ -62,8 +66,6 @@ describe('Collab dependency envelope', () => {
           import { WebSocket, WebSocketServer } from 'ws';
           import { parser as markdownParser } from '@lezer/markdown';
           import { scanCollabTicketReferences } from '@claudian/collab-protocol';
-          import initSqlJs from 'sql.js';
-          import sqlWasmBinary from 'sql.js/dist/sql-wasm.wasm';
           import * as english from './src/i18n/locales/en.json';
           import * as german from './src/i18n/locales/de.json';
           import { pierreThemes, shikiThemes } from '@pierre/theming/themes';
@@ -78,7 +80,13 @@ describe('Collab dependency envelope', () => {
           }
 
           export async function probeSql() {
-            const SQL = await initSqlJs({ wasmBinary: sqlWasmBinary });
+            const [sqlJsModule, wasmModule] = await Promise.all([
+              import('sql.js'),
+              import('sql.js/dist/sql-wasm.wasm'),
+            ]);
+            const SQL = await sqlJsModule.default({
+              wasmBinary: Uint8Array.from(wasmModule.default).buffer,
+            });
             const database = new SQL.Database();
             const result = database.exec('SELECT 1 AS value');
             database.close();
@@ -131,13 +139,15 @@ describe('Collab dependency envelope', () => {
         resolveDir: root,
         sourcefile: 'collab-dependency-envelope.ts',
       },
-      target: 'node24',
+      target: 'es2022',
       treeShaking: true,
     });
     bundleInputs = Object.keys(result.metafile.inputs);
     bundleContributors = Object.entries(Object.values(result.metafile.outputs)[0].inputs)
       .filter(([, contribution]) => contribution.bytesInOutput > 0)
       .map(([input]) => input);
+    const productionBundle = await minifyProductionBundle(readFileSync(bundlePath, 'utf8'));
+    writeFileSync(bundlePath, `${productionBundle}\n`, 'utf8');
   }, 60_000);
 
   afterAll(() => {

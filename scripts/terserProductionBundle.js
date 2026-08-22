@@ -8,6 +8,8 @@ async function minifyProductionBundle(source) {
   const result = await minify(source, {
     compress: {
       passes: 3,
+      // Multi-pass variable reduction drops sql.js's live CommonJS UMD export.
+      reduce_vars: false,
       toplevel: true,
     },
     ecma: 2022,
