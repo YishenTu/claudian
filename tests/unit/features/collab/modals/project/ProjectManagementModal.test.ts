@@ -161,6 +161,7 @@ describe('ProjectManagementModal', () => {
       'retire-project',
       'start-host',
       'stop-host',
+      'host-diagnostics',
       'create-host-transfer',
       'promote-manager',
       'demote-manager',

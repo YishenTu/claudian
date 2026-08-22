@@ -463,6 +463,57 @@ describe('Agent Runtime Collab read methods', () => {
     expect(serialized).not.toContain('package');
   });
 
+  it('keeps the Cloud Agent Runtime projection authority-neutral and local', async () => {
+    const port = readPort();
+    const cloudProject: CollabLocalProjectSummary = {
+      ...PROJECT,
+      authorityKind: 'cloud',
+      hostStatus: 'not-host',
+    };
+    const cloudCoordination: CollabCoordinationSnapshot = {
+      ...COORDINATION,
+      snapshot: {
+        ...COORDINATION.snapshot,
+        project: {
+          authorityKind: 'cloud',
+          createdAt: COORDINATION.snapshot.project.createdAt,
+          id: PROJECT.id,
+          mainOid: COORDINATION.snapshot.project.mainOid,
+          mainRef: COORDINATION.snapshot.project.mainRef,
+          name: PROJECT.name,
+        },
+      },
+    };
+    port.inspectProject.mockResolvedValue(success({
+      ...INSPECTION,
+      coordination: cloudCoordination,
+      project: cloudProject,
+    }));
+
+    const detail = await call(port, 'collab.projects.get', { projectId: PROJECT.id });
+
+    expect(detail).toMatchObject({
+      result: {
+        project: {
+          authorityKind: 'cloud',
+          coordination: {
+            mainOid: COORDINATION.snapshot.project.mainOid,
+            managerMemberIds: ['member-manager', 'member-manager-2'],
+          },
+          hostStatus: 'not-host',
+          workspacePath: PROJECT.workspacePath,
+        },
+      },
+    });
+    const serialized = JSON.stringify(detail);
+    expect(serialized).not.toContain('hostMemberId');
+    expect(serialized).not.toContain('managerSetGeneration');
+    expect(serialized).not.toContain('personalRef');
+    expect(serialized).not.toContain('providerSession');
+    expect(serialized).not.toContain('transcript');
+    expect(serialized).not.toContain('credential');
+  });
+
   it('fails closed when Project selection changes during a Project list read', async () => {
     const port = readPort();
     port.readProjectSelection.mockResolvedValue(success({

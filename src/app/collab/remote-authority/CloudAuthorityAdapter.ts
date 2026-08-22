@@ -331,8 +331,22 @@ class CloudAuthorityControl implements CollabAuthorityControlPort {
     }
     return response.request;
   }
-  acceptRequest(_input: Parameters<CollabAuthorityControlPort['acceptRequest']>[0]) {
-    return this.unavailable('accept');
+  async acceptRequest(input: Parameters<CollabAuthorityControlPort['acceptRequest']>[0]) {
+    const { signal, ...request } = input;
+    const response = await this.execute(
+      'accept',
+      'acceptRequest',
+      request,
+      signal ? { signal } : {},
+    );
+    if (
+      response.request.id !== input.requestId
+      || response.request.latestHeadOid !== input.expectedHeadOid
+      || response.request.revision !== input.expectedRequestRevision
+    ) {
+      throw controlIntegrityError('cloud-control-accept-response-mismatch');
+    }
+    return response;
   }
   async createComment(input: Parameters<CollabAuthorityControlPort['createComment']>[0]) {
     const { signal, ...request } = input;
@@ -678,13 +692,6 @@ class CloudAuthorityControl implements CollabAuthorityControlPort {
     return response.request;
   }
 
-  private unavailable(capability: CollabCloudCapability): Promise<never> {
-    this.requireCapability(capability);
-    return Promise.reject(adapterError(
-      'operation-failed',
-      'cloud-authority-operation-not-wired',
-    ));
-  }
 }
 
 export class CloudProjectEventClient {

@@ -19,6 +19,7 @@ const ACTOR_ID = 'member-alice';
 const CREATED_AT = '2026-08-22T00:00:00.000Z';
 const MAIN_OID = 'a'.repeat(40);
 const HEAD_OID = 'b'.repeat(40);
+const MERGED_OID = 'c'.repeat(40);
 
 function changeRequest(overrides: Readonly<Record<string, unknown>> = {}) {
   return {
@@ -255,9 +256,77 @@ describe('CloudAuthorityAdapter', () => {
     });
   });
 
-  it('keeps Accept unavailable until the dedicated Cloud authority tranche', async () => {
-    const request = jest.fn(async () => ({
-      body: collabCloudCapabilityDocument(['accept'], limits),
+  it('routes Accept through the canonical Cloud operation with its exact authority tuple', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+      ? {
+        body: collabCloudCapabilityDocument(['accept'], limits),
+        contentType: 'application/json',
+        status: 200,
+      }
+      : {
+        body: collabCloudSuccessEnvelope('response-accept', {
+          mainOid: MERGED_OID,
+          mergeCommitOid: MERGED_OID,
+          request: changeRequest({
+            latestHeadOid: HEAD_OID,
+            mergedOid: MERGED_OID,
+            revision: 1,
+            status: 'merged',
+          }),
+        }),
+        contentType: 'application/json; charset=utf-8',
+        status: 200,
+      });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const controller = new AbortController();
+
+    await expect(control.acceptRequest({
+      expectedHeadOid: HEAD_OID,
+      expectedMainOid: MAIN_OID,
+      expectedRequestRevision: 1,
+      expectedResolvingTickets: [],
+      idempotencyKey: 'accept-intent',
+      projectId: PROJECT_ID,
+      requestId: 'request-one',
+      signal: controller.signal,
+    })).resolves.toMatchObject({
+      mainOid: MERGED_OID,
+      request: { id: 'request-one', mergedOid: MERGED_OID, status: 'merged' },
+    });
+    expect(request.mock.calls[1]?.[0]).toEqual({
+      body: {
+        data: {
+          expectedHeadOid: HEAD_OID,
+          expectedMainOid: MAIN_OID,
+          expectedRequestRevision: 1,
+          expectedResolvingTickets: [],
+          idempotencyKey: 'accept-intent',
+          projectId: PROJECT_ID,
+          requestId: 'request-one',
+        },
+        protocolVersion: 4,
+        requestId: expect.any(String),
+      },
+      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      method: 'POST',
+      signal: controller.signal,
+      url: `https://cloud.example.test/v1/projects/${PROJECT_ID}/operations/acceptRequest`,
+    });
+  });
+
+  it('rejects an Accept response for a different reviewed Request tuple', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+      body: input.method === 'GET'
+        ? collabCloudCapabilityDocument(['accept'], limits)
+        : collabCloudSuccessEnvelope('response-accept', {
+          mainOid: MERGED_OID,
+          mergeCommitOid: MERGED_OID,
+          request: changeRequest({
+            id: 'request-other',
+            mergedOid: MERGED_OID,
+            status: 'merged',
+          }),
+        }),
       contentType: 'application/json',
       status: 200,
     }));
@@ -272,10 +341,9 @@ describe('CloudAuthorityAdapter', () => {
       projectId: PROJECT_ID,
       requestId: 'request-one',
     })).rejects.toMatchObject({
-      code: 'operation-failed',
-      safeContext: { reason: 'cloud-authority-operation-not-wired' },
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-control-accept-response-mismatch' },
     });
-    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('routes Request reads, comments, and metadata through canonical Cloud operations', async () => {
