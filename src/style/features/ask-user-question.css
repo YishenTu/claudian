@@ -305,6 +305,9 @@
 }
 
 .claudian-ask-approval-desc {
+  max-height: min(30vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 10px;
   background: var(--background-primary-alt);
   border-radius: 6px;
