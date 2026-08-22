@@ -113,10 +113,17 @@ export class TabBar {
       this.toggleBadgeTitle(item, badgeEl);
     });
 
-    // Right-click to close (if allowed)
+    // Right- or middle-click to close (if allowed)
     if (item.canClose) {
       badgeEl.addEventListener('contextmenu', (e) => {
         e.preventDefault();
+        this.callbacks.onTabClose(item.id);
+      });
+
+      badgeEl.addEventListener('auxclick', (e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
         this.callbacks.onTabClose(item.id);
       });
     }

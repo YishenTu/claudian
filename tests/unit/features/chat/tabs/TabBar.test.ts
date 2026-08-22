@@ -416,15 +416,53 @@ describe('TabBar', () => {
       expect(callbacks.onTabClose).toHaveBeenCalledWith('closeable-tab');
     });
 
-    it('should not register contextmenu handler when canClose is false', () => {
+    it('closes a closeable tab on middle click', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'middle-close-tab', canClose: true })]);
+
+      const event = {
+        button: 1,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+      };
+      containerEl._children[0].dispatchEvent('auxclick', event);
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+      expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+      expect(callbacks.onTabClose).toHaveBeenCalledWith('middle-close-tab');
+    });
+
+    it('ignores other auxiliary mouse buttons', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'auxiliary-tab', canClose: true })]);
+
+      const event = {
+        button: 2,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+      };
+      containerEl._children[0].dispatchEvent('auxclick', event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(event.stopPropagation).not.toHaveBeenCalled();
+      expect(callbacks.onTabClose).not.toHaveBeenCalled();
+    });
+
+    it('should not register close handlers when canClose is false', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([createTabBarItem({ id: 'uncloseable-tab', canClose: false })]);
 
-      // Check that contextmenu handler was not registered
       expect(containerEl._children[0]._eventListeners.has('contextmenu')).toBe(false);
+      expect(containerEl._children[0]._eventListeners.has('auxclick')).toBe(false);
     });
   });
 
