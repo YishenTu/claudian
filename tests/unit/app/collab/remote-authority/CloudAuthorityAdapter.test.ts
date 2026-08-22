@@ -16,6 +16,52 @@ import {
 
 const PROJECT_ID = 'project-cloud';
 const ACTOR_ID = 'member-alice';
+const CREATED_AT = '2026-08-22T00:00:00.000Z';
+const MAIN_OID = 'a'.repeat(40);
+const HEAD_OID = 'b'.repeat(40);
+
+function changeRequest(overrides: Readonly<Record<string, unknown>> = {}) {
+  return {
+    commentCount: 0,
+    createdAt: CREATED_AT,
+    description: 'Published change',
+    firstBaseOid: MAIN_OID,
+    id: 'request-one',
+    latestHeadOid: HEAD_OID,
+    memberId: ACTOR_ID,
+    revision: 1,
+    status: 'open',
+    ticketRelations: [],
+    updatedAt: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function ticketSummary(overrides: Readonly<Record<string, unknown>> = {}) {
+  return {
+    acceptedRelationCount: 0,
+    authorMemberId: ACTOR_ID,
+    commentCount: 0,
+    createdAt: CREATED_AT,
+    id: 'ticket-one',
+    number: 1,
+    revision: 1,
+    status: 'open',
+    title: 'Ticket title',
+    updatedAt: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function ticketDetail(overrides: Readonly<Record<string, unknown>> = {}) {
+  return {
+    acceptedRelations: { acceptedRelations: [] },
+    body: 'Ticket body',
+    comments: { comments: [] },
+    ticket: ticketSummary(),
+    ...overrides,
+  };
+}
 
 function membership(): CollabLocalCloudMembershipRecord {
   return {
@@ -152,6 +198,372 @@ describe('CloudAuthorityAdapter', () => {
     ]);
   });
 
+  it('ensures the current member Request through the package-owned Cloud operation', async () => {
+    const requests: CloudAuthorityHttpRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      requests.push(input);
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['requests'], limits),
+          contentType: 'application/json; charset=utf-8',
+          status: 200,
+        };
+      }
+      return {
+        body: collabCloudSuccessEnvelope('response-ensure', {
+          mainOid: MAIN_OID,
+          request: changeRequest(),
+        }),
+        contentType: 'application/json; charset=utf-8',
+        status: 200,
+      };
+    });
+    const session = await new CloudAuthorityAdapter({
+      request,
+      requestIdFactory: () => 'request-ensure',
+    }).create(membership());
+    const controller = new AbortController();
+
+    await expect(session.control.ensure({
+      description: 'Published change',
+      expectedMainOid: MAIN_OID,
+      headOid: HEAD_OID,
+      idempotencyKey: 'publish-head',
+      projectId: PROJECT_ID,
+      signal: controller.signal,
+    })).resolves.toMatchObject({ id: 'request-one', latestHeadOid: HEAD_OID });
+    expect(requests[1]).toEqual({
+      body: {
+        data: {
+          description: 'Published change',
+          expectedMainOid: MAIN_OID,
+          headOid: HEAD_OID,
+          idempotencyKey: 'publish-head',
+          projectId: PROJECT_ID,
+        },
+        protocolVersion: 4,
+        requestId: 'request-ensure',
+      },
+      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      method: 'POST',
+      signal: controller.signal,
+      url: `https://cloud.example.test/v1/projects/${PROJECT_ID}/operations/ensureMyRequest`,
+    });
+  });
+
+  it('keeps Accept unavailable until the dedicated Cloud authority tranche', async () => {
+    const request = jest.fn(async () => ({
+      body: collabCloudCapabilityDocument(['accept'], limits),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.acceptRequest({
+      expectedHeadOid: HEAD_OID,
+      expectedMainOid: MAIN_OID,
+      expectedRequestRevision: 1,
+      expectedResolvingTickets: [],
+      idempotencyKey: 'accept-intent',
+      projectId: PROJECT_ID,
+      requestId: 'request-one',
+    })).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'cloud-authority-operation-not-wired' },
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes Request reads, comments, and metadata through canonical Cloud operations', async () => {
+    const operations: string[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['requests'], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1)!;
+      operations.push(operation);
+      const data = operation === 'getRequest'
+        ? {
+          comments: { comments: [] },
+          currentMainOid: MAIN_OID,
+          request: changeRequest(),
+          reviewedHeadOid: HEAD_OID,
+          reviewCondition: 'clean',
+        }
+        : operation === 'listRequestComments'
+          ? { comments: [] }
+          : operation === 'createComment'
+            ? {
+              comment: {
+                authorMemberId: ACTOR_ID,
+                body: 'Looks good',
+                createdAt: CREATED_AT,
+                id: 'comment-one',
+                requestId: 'request-one',
+              },
+              request: changeRequest({ commentCount: 1 }),
+            }
+            : { request: changeRequest({ description: 'Updated description', revision: 2 }) };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+      request: { id: 'request-one' },
+    });
+    await expect(control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+      request: { id: 'request-one' },
+    });
+    await expect(control.listRequestComments(PROJECT_ID, 'request-one', {})).resolves.toEqual({
+      comments: [],
+    });
+    await expect(control.createComment({
+      body: 'Looks good',
+      idempotencyKey: 'comment-intent',
+      projectId: PROJECT_ID,
+      requestId: 'request-one',
+    })).resolves.toMatchObject({ comment: { id: 'comment-one' } });
+    await expect(control.updateRequestMetadata({
+      description: 'Updated description',
+      expectedHeadOid: HEAD_OID,
+      expectedRequestRevision: 1,
+      intentId: 'ui-intent',
+      projectId: PROJECT_ID,
+      requestId: 'request-one',
+    }, 'metadata-intent')).resolves.toMatchObject({
+      description: 'Updated description',
+      id: 'request-one',
+    });
+    expect(operations).toEqual([
+      'getRequest',
+      'getRequest',
+      'listRequestComments',
+      'createComment',
+      'updateMyRequestMetadata',
+    ]);
+    expect(request).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        data: expect.not.objectContaining({ intentId: expect.anything() }),
+      }),
+    }));
+  });
+
+  it('routes all Ticket reads and mutations through canonical Cloud operations', async () => {
+    const requests: CloudAuthorityHttpRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      requests.push(input);
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['tickets'], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1)!;
+      const data = operation === 'listTickets'
+        ? { tickets: [ticketSummary()] }
+        : operation === 'getTicket'
+          ? ticketDetail()
+          : operation === 'listTicketComments'
+            ? { comments: [] }
+            : operation === 'listTicketAcceptedRelations'
+              ? { acceptedRelations: [] }
+              : operation === 'createTicket'
+                ? { ticket: ticketDetail() }
+                : operation === 'createTicketComment'
+                  ? {
+                    comment: {
+                      authorMemberId: ACTOR_ID,
+                      body: 'Ticket comment',
+                      createdAt: CREATED_AT,
+                      id: 'ticket-comment-one',
+                      ticketId: 'ticket-one',
+                    },
+                    ticket: ticketSummary({ commentCount: 1, revision: 2 }),
+                  }
+                  : { ticket: ticketSummary({ revision: 2 }) };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.listTickets({ projectId: PROJECT_ID, status: 'open' })).resolves
+      .toMatchObject({ tickets: [{ id: 'ticket-one' }] });
+    await expect(control.readTicketPage(PROJECT_ID, 'ticket-one')).resolves
+      .toMatchObject({ ticket: { id: 'ticket-one' } });
+    await expect(control.readTicket(PROJECT_ID, 'ticket-one')).resolves
+      .toMatchObject({ ticket: { id: 'ticket-one' } });
+    await expect(control.listTicketComments(PROJECT_ID, 'ticket-one', {})).resolves
+      .toEqual({ comments: [] });
+    await expect(control.listTicketAcceptedRelations(PROJECT_ID, 'ticket-one', {})).resolves
+      .toEqual({ acceptedRelations: [] });
+    await expect(control.createTicket({
+      body: 'Ticket body',
+      intentId: 'ui-create-ticket',
+      projectId: PROJECT_ID,
+      title: 'Ticket title',
+    }, 'create-ticket')).resolves.toMatchObject({ ticket: { id: 'ticket-one' } });
+    await expect(control.updateTicketContent({
+      body: 'Updated body',
+      expectedRevision: 1,
+      intentId: 'ui-update-ticket',
+      projectId: PROJECT_ID,
+      ticketId: 'ticket-one',
+      title: 'Updated title',
+    }, 'update-ticket')).resolves.toMatchObject({ id: 'ticket-one', revision: 2 });
+    await expect(control.addTicketComment({
+      body: 'Ticket comment',
+      intentId: 'ui-comment-ticket',
+      projectId: PROJECT_ID,
+      ticketId: 'ticket-one',
+    }, 'comment-ticket')).resolves.toMatchObject({ id: 'ticket-comment-one' });
+    await expect(control.closeTicket({
+      expectedRevision: 1,
+      intentId: 'ui-close-ticket',
+      projectId: PROJECT_ID,
+      ticketId: 'ticket-one',
+    }, 'close-ticket')).resolves.toMatchObject({ id: 'ticket-one' });
+    await expect(control.reopenTicket({
+      expectedRevision: 1,
+      intentId: 'ui-reopen-ticket',
+      projectId: PROJECT_ID,
+      ticketId: 'ticket-one',
+    }, 'reopen-ticket')).resolves.toMatchObject({ id: 'ticket-one' });
+
+    expect(requests.slice(1).map(input => input.url.split('/').at(-1))).toEqual([
+      'listTickets',
+      'getTicket',
+      'getTicket',
+      'listTicketComments',
+      'listTicketAcceptedRelations',
+      'createTicket',
+      'updateTicketContent',
+      'createTicketComment',
+      'closeTicket',
+      'reopenTicket',
+    ]);
+    for (const input of requests.slice(6)) {
+      expect(input.body).toEqual(expect.objectContaining({
+        data: expect.not.objectContaining({ intentId: expect.anything() }),
+      }));
+    }
+  });
+
+  it('assembles bounded Cloud Request and Ticket pages for complete reads', async () => {
+    const requestComment = (id: string) => ({
+      authorMemberId: ACTOR_ID,
+      body: id,
+      createdAt: CREATED_AT,
+      id,
+      requestId: 'request-one',
+    });
+    const ticketComment = (id: string) => ({
+      authorMemberId: ACTOR_ID,
+      body: id,
+      createdAt: CREATED_AT,
+      id,
+      ticketId: 'ticket-one',
+    });
+    const acceptedRelation = {
+      acceptedAt: CREATED_AT,
+      acceptedMergeOid: MAIN_OID,
+      commitOid: HEAD_OID,
+      id: 'relation-one',
+      kind: 'resolves',
+      requestId: 'request-one',
+    };
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['requests', 'tickets'], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1)!;
+      const body = input.body as { readonly data: Readonly<Record<string, unknown>> };
+      const data = operation === 'getRequest'
+        ? {
+          comments: { comments: [requestComment('request-comment-one')], nextCursor: 'request-next' },
+          currentMainOid: MAIN_OID,
+          request: changeRequest({ commentCount: 2 }),
+          reviewedHeadOid: HEAD_OID,
+          reviewCondition: 'clean',
+        }
+        : operation === 'listRequestComments'
+          ? { comments: [requestComment('request-comment-two')] }
+          : operation === 'getTicket'
+            ? ticketDetail({
+              acceptedRelations: { acceptedRelations: [], nextCursor: 'relation-next' },
+              comments: { comments: [ticketComment('ticket-comment-one')], nextCursor: 'comment-next' },
+              ticket: ticketSummary({ acceptedRelationCount: 1, commentCount: 2 }),
+            })
+            : operation === 'listTicketComments'
+              ? { comments: [ticketComment(`ticket-${String(body.data.cursor)}`)] }
+              : { acceptedRelations: [acceptedRelation] };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+      comments: { comments: [{ id: 'request-comment-one' }, { id: 'request-comment-two' }] },
+    });
+    await expect(control.readTicket(PROJECT_ID, 'ticket-one')).resolves.toMatchObject({
+      acceptedRelations: { acceptedRelations: [{ id: 'relation-one' }] },
+      comments: {
+        comments: [{ id: 'ticket-comment-one' }, { id: 'ticket-comment-next' }],
+      },
+    });
+  });
+
+  it('rejects continuation comments returned for a different owner', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['requests', 'tickets'], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1)!;
+      const comment = {
+        authorMemberId: ACTOR_ID,
+        body: 'Wrong owner',
+        createdAt: CREATED_AT,
+        id: 'comment-wrong-owner',
+        ...(operation === 'listRequestComments'
+          ? { requestId: 'request-other' }
+          : { ticketId: 'ticket-other' }),
+      };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${operation}`, { comments: [comment] }),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.listRequestComments(PROJECT_ID, 'request-one', {})).rejects
+      .toMatchObject({ code: 'authority-integrity-error' });
+    await expect(control.listTicketComments(PROJECT_ID, 'ticket-one', {})).rejects
+      .toMatchObject({ code: 'authority-integrity-error' });
+  });
+
   it('fails closed on unsupported binding or wire versions', async () => {
     const document = collabCloudCapabilityDocument(['project-snapshot'], limits);
     const adapter = new CloudAuthorityAdapter({
@@ -164,6 +576,25 @@ describe('CloudAuthorityAdapter', () => {
 
     await expect(adapter.create(membership())).rejects.toMatchObject({
       code: 'protocol-version-unsupported',
+    });
+  });
+
+  it('rejects a Cloud snapshot bound to a different Project', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+      body: input.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot'], limits)
+        : collabCloudSuccessEnvelope('response-snapshot', {
+          ...cloudSnapshot(),
+          project: { ...cloudSnapshot().project, id: 'project-other' },
+        }),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.readSnapshot(PROJECT_ID)).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-control-snapshot-response-mismatch' },
     });
   });
 

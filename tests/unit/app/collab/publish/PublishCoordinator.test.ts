@@ -493,6 +493,59 @@ describe('PublishCoordinator', () => {
     expect(repository.commitCount).toBe(1);
   });
 
+  it('reconciles a successful personal push whose transport response was lost', async () => {
+    const fixture = createSubject();
+    fixture.repository.current = snapshot({
+      changedFiles: [{ path: 'note.md', status: 'modified' }],
+      workingTreeClean: false,
+    });
+    const push = jest.spyOn(fixture.repository, 'pushPersonal')
+      .mockImplementationOnce(async () => {
+        fixture.repository.calls.push('push');
+        fixture.repository.current = {
+          ...fixture.repository.current,
+          personalAheadBy: 0,
+          personalBehindBy: 0,
+          personalRemoteOid: fixture.repository.current.headOid,
+        };
+        throw new CollabError({ code: 'endpoint-unreachable' });
+      });
+
+    await expect(fixture.subject.publish(PUBLISH_REQUEST)).resolves.toMatchObject({
+      status: 'success',
+      value: { state: 'committed-locally' },
+    });
+    expect(fixture.state.current.operation).toMatchObject({ phase: 'applied' });
+
+    await expect(fixture.subject.publish(PUBLISH_REQUEST)).resolves.toMatchObject({
+      status: 'success',
+      value: { state: 'request-synchronized' },
+    });
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(fixture.requests.calls).toHaveLength(1);
+  });
+
+  it('replays the same Request intent after a successful response is lost', async () => {
+    const fixture = createSubject();
+    fixture.requests.error = new CollabError({ code: 'endpoint-unreachable' });
+
+    await expect(fixture.subject.publish(PUBLISH_REQUEST)).resolves.toMatchObject({
+      status: 'success',
+      value: { state: 'pushed' },
+    });
+    expect(fixture.state.current.operation).toMatchObject({ phase: 'pushed' });
+    const firstIntent = fixture.requests.calls[0]!.idempotencyKey;
+
+    fixture.requests.error = null;
+    await expect(fixture.subject.publish(PUBLISH_REQUEST)).resolves.toMatchObject({
+      status: 'success',
+      value: { request: { id: 'request-a' }, state: 'request-synchronized' },
+    });
+    expect(fixture.requests.calls).toHaveLength(2);
+    expect(fixture.requests.calls[1]!.idempotencyKey).toBe(firstIntent);
+    expect(fixture.state.current.operation).toBeNull();
+  });
+
   it('surfaces a conflict during Publish without pushing a misleading head', async () => {
     const fixture = createSubject({ state: new FakeState(BASE) });
     fixture.repository.acceptedState = { conflict: conflict(), kind: 'conflicting' };

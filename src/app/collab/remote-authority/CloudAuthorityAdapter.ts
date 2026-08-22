@@ -9,6 +9,11 @@ import {
   collabCloudCapabilitySupported,
   collabCloudProjectEventsRoute,
   collabCloudProjectOperationRoute,
+  type CollabControlOperation,
+  collabControlOperationCodec,
+  type CollabControlOperationMap,
+  type CollabRequestDetail,
+  type CollabTicketDetail,
   decodeCollabCloudCapabilityDocument,
   decodeCollabCloudErrorEnvelope,
   decodeCollabCloudProjectEventMessage,
@@ -125,6 +130,47 @@ function adapterError(
   });
 }
 
+function controlIntegrityError(reason: string): CollabError {
+  return new CollabError({
+    code: 'authority-integrity-error',
+    recoveryActions: ['open-diagnostics'],
+    safeContext: { reason },
+  });
+}
+
+function assertCompleteRequestComments(detail: CollabRequestDetail): void {
+  if (detail.comments.comments.length > COLLAB_LIMITS.maxRequestComments) {
+    throw controlIntegrityError('cloud-control-request-comment-limit-exceeded');
+  }
+  if (detail.comments.comments.length !== detail.request.commentCount) {
+    throw controlIntegrityError('cloud-control-request-comment-count-mismatch');
+  }
+  if (detail.comments.comments.some(comment => comment.requestId !== detail.request.id)) {
+    throw controlIntegrityError('cloud-control-request-comment-owner-mismatch');
+  }
+}
+
+function assertCompleteTicketCollections(detail: CollabTicketDetail): void {
+  if (detail.comments.comments.length !== detail.ticket.commentCount) {
+    throw controlIntegrityError('cloud-control-ticket-comment-count-mismatch');
+  }
+  if (detail.comments.comments.length > COLLAB_LIMITS.maxTicketComments) {
+    throw controlIntegrityError('cloud-control-ticket-comment-limit-exceeded');
+  }
+  if (
+    detail.acceptedRelations.acceptedRelations.length
+    > COLLAB_LIMITS.maxTicketAcceptedRelations
+  ) {
+    throw controlIntegrityError('cloud-control-ticket-relation-limit-exceeded');
+  }
+  if (
+    detail.acceptedRelations.acceptedRelations.length
+    !== detail.ticket.acceptedRelationCount
+  ) {
+    throw controlIntegrityError('cloud-control-ticket-relation-count-mismatch');
+  }
+}
+
 function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
   if (
     response.contentType === null
@@ -220,7 +266,9 @@ class CloudAuthorityControl implements CollabAuthorityControlPort {
   constructor(
     private readonly actorId: string,
     private readonly capabilities: ReadonlySet<string>,
+    private readonly memberId: string,
     private readonly origin: string,
+    private readonly personalRef: string,
     private readonly projectId: string,
     private readonly request: CloudAuthorityHttpTransport,
     private readonly requestId: () => string,
@@ -254,95 +302,380 @@ class CloudAuthorityControl implements CollabAuthorityControlPort {
       throw new CollabError(envelope.error);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
-    return decodeCloudAuthorityProjectSnapshot(envelope.data);
+    const snapshot = decodeCloudAuthorityProjectSnapshot(envelope.data);
+    if (
+      snapshot.project.id !== projectId
+      || snapshot.currentMember.id !== this.memberId
+      || snapshot.currentMember.personalRef !== this.personalRef
+    ) {
+      throw controlIntegrityError('cloud-control-snapshot-response-mismatch');
+    }
+    return snapshot;
   }
 
-  ensure(_input: Parameters<CollabAuthorityControlPort['ensure']>[0]) {
-    return this.unavailable('requests');
+  async ensure(input: Parameters<CollabAuthorityControlPort['ensure']>[0]) {
+    const { signal, ...request } = input;
+    const response = await this.execute(
+      'requests',
+      'ensureMyRequest',
+      request,
+      signal ? { signal } : {},
+    );
+    if (
+      response.request.memberId !== this.memberId
+      || response.request.latestHeadOid !== input.headOid
+      || response.request.status !== 'open'
+      || response.mainOid !== input.expectedMainOid
+    ) {
+      throw controlIntegrityError('cloud-control-request-response-mismatch');
+    }
+    return response.request;
   }
   acceptRequest(_input: Parameters<CollabAuthorityControlPort['acceptRequest']>[0]) {
     return this.unavailable('accept');
   }
-  createComment(_input: Parameters<CollabAuthorityControlPort['createComment']>[0]) {
-    return this.unavailable('requests');
+  async createComment(input: Parameters<CollabAuthorityControlPort['createComment']>[0]) {
+    const { signal, ...request } = input;
+    const response = await this.execute(
+      'requests',
+      'createComment',
+      request,
+      signal ? { signal } : {},
+    );
+    if (
+      response.comment.authorMemberId !== this.memberId
+      || response.comment.requestId !== input.requestId
+      || response.request.id !== input.requestId
+    ) {
+      throw controlIntegrityError('cloud-control-comment-response-mismatch');
+    }
+    return { comment: response.comment };
   }
-  createTicket(
-    _request: Parameters<CollabAuthorityControlPort['createTicket']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['createTicket']>[2],
-  ) { return this.unavailable('tickets'); }
-  updateTicketContent(
-    _request: Parameters<CollabAuthorityControlPort['updateTicketContent']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['updateTicketContent']>[2],
-  ) { return this.unavailable('tickets'); }
-  addTicketComment(
-    _request: Parameters<CollabAuthorityControlPort['addTicketComment']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['addTicketComment']>[2],
-  ) { return this.unavailable('tickets'); }
-  closeTicket(
-    _request: Parameters<CollabAuthorityControlPort['closeTicket']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['closeTicket']>[2],
-  ) { return this.unavailable('tickets'); }
-  reopenTicket(
-    _request: Parameters<CollabAuthorityControlPort['reopenTicket']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['reopenTicket']>[2],
-  ) { return this.unavailable('tickets'); }
+  async createTicket(
+    request: Parameters<CollabAuthorityControlPort['createTicket']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['createTicket']>[2] = {},
+  ) {
+    const response = await this.execute('tickets', 'createTicket', {
+      body: request.body,
+      idempotencyKey,
+      projectId: request.projectId,
+      title: request.title,
+    }, options);
+    if (response.ticket.ticket.authorMemberId !== this.memberId) {
+      throw controlIntegrityError('cloud-control-ticket-create-mismatch');
+    }
+    return response.ticket;
+  }
+  async updateTicketContent(
+    request: Parameters<CollabAuthorityControlPort['updateTicketContent']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['updateTicketContent']>[2] = {},
+  ) {
+    const response = await this.execute('tickets', 'updateTicketContent', {
+      body: request.body,
+      expectedRevision: request.expectedRevision,
+      idempotencyKey,
+      projectId: request.projectId,
+      ticketId: request.ticketId,
+      title: request.title,
+    }, options);
+    return this.checkedTicketMutation(request.ticketId, response.ticket);
+  }
+  async addTicketComment(
+    request: Parameters<CollabAuthorityControlPort['addTicketComment']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['addTicketComment']>[2] = {},
+  ) {
+    const response = await this.execute('tickets', 'createTicketComment', {
+      body: request.body,
+      idempotencyKey,
+      projectId: request.projectId,
+      ticketId: request.ticketId,
+    }, options);
+    if (
+      response.comment.authorMemberId !== this.memberId
+      || response.comment.ticketId !== request.ticketId
+      || response.ticket.id !== request.ticketId
+    ) {
+      throw controlIntegrityError('cloud-control-ticket-comment-mismatch');
+    }
+    return response.comment;
+  }
+  async closeTicket(
+    request: Parameters<CollabAuthorityControlPort['closeTicket']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['closeTicket']>[2] = {},
+  ) {
+    const response = await this.execute('tickets', 'closeTicket', {
+      expectedRevision: request.expectedRevision,
+      idempotencyKey,
+      projectId: request.projectId,
+      ticketId: request.ticketId,
+    }, options);
+    return this.checkedTicketMutation(request.ticketId, response.ticket);
+  }
+  async reopenTicket(
+    request: Parameters<CollabAuthorityControlPort['reopenTicket']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['reopenTicket']>[2] = {},
+  ) {
+    const response = await this.execute('tickets', 'reopenTicket', {
+      expectedRevision: request.expectedRevision,
+      idempotencyKey,
+      projectId: request.projectId,
+      ticketId: request.ticketId,
+    }, options);
+    return this.checkedTicketMutation(request.ticketId, response.ticket);
+  }
   updateRequestMetadata(
-    _request: Parameters<CollabAuthorityControlPort['updateRequestMetadata']>[0],
-    _idempotencyKey: string,
-    _options?: Parameters<CollabAuthorityControlPort['updateRequestMetadata']>[2],
-  ) { return this.unavailable('requests'); }
+    request: Parameters<CollabAuthorityControlPort['updateRequestMetadata']>[0],
+    idempotencyKey: string,
+    options: Parameters<CollabAuthorityControlPort['updateRequestMetadata']>[2] = {},
+  ) {
+    return this.updateRequest(request, idempotencyKey, options);
+  }
   listTickets(
-    _request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
-    _options?: Parameters<CollabAuthorityControlPort['listTickets']>[1],
-  ) { return this.unavailable('tickets'); }
-  listRequestComments(
-    _projectId: string,
-    _requestId: string,
-    _query: Parameters<CollabAuthorityControlPort['listRequestComments']>[2],
-    _options?: Parameters<CollabAuthorityControlPort['listRequestComments']>[3],
-  ) { return this.unavailable('requests'); }
-  listTicketComments(
-    _projectId: string,
-    _ticketId: string,
-    _query: Parameters<CollabAuthorityControlPort['listTicketComments']>[2],
-    _options?: Parameters<CollabAuthorityControlPort['listTicketComments']>[3],
-  ) { return this.unavailable('tickets'); }
+    request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
+    options: Parameters<CollabAuthorityControlPort['listTickets']>[1] = {},
+  ) { return this.execute('tickets', 'listTickets', request, options); }
+  async listRequestComments(
+    projectId: string,
+    requestId: string,
+    query: Parameters<CollabAuthorityControlPort['listRequestComments']>[2],
+    options: Parameters<CollabAuthorityControlPort['listRequestComments']>[3] = {},
+  ) {
+    const page = await this.execute('requests', 'listRequestComments', {
+      ...query,
+      projectId,
+      requestId,
+    }, options);
+    if (page.comments.some(comment => comment.requestId !== requestId)) {
+      throw controlIntegrityError('cloud-control-request-comment-owner-mismatch');
+    }
+    return page;
+  }
+  async listTicketComments(
+    projectId: string,
+    ticketId: string,
+    query: Parameters<CollabAuthorityControlPort['listTicketComments']>[2],
+    options: Parameters<CollabAuthorityControlPort['listTicketComments']>[3] = {},
+  ) {
+    const page = await this.execute('tickets', 'listTicketComments', {
+      ...query,
+      projectId,
+      ticketId,
+    }, options);
+    if (page.comments.some(comment => comment.ticketId !== ticketId)) {
+      throw controlIntegrityError('cloud-control-ticket-comment-owner-mismatch');
+    }
+    return page;
+  }
   listTicketAcceptedRelations(
-    _projectId: string,
-    _ticketId: string,
-    _query: Parameters<CollabAuthorityControlPort['listTicketAcceptedRelations']>[2],
-    _options?: Parameters<CollabAuthorityControlPort['listTicketAcceptedRelations']>[3],
-  ) { return this.unavailable('tickets'); }
-  readRequest(
-    _projectId: string,
-    _requestId: string,
-    _options?: Parameters<CollabAuthorityControlPort['readRequest']>[2],
-  ) { return this.unavailable('requests'); }
+    projectId: string,
+    ticketId: string,
+    query: Parameters<CollabAuthorityControlPort['listTicketAcceptedRelations']>[2],
+    options: Parameters<CollabAuthorityControlPort['listTicketAcceptedRelations']>[3] = {},
+  ) {
+    return this.execute('tickets', 'listTicketAcceptedRelations', {
+      ...query,
+      projectId,
+      ticketId,
+    }, options);
+  }
+  async readRequest(
+    projectId: string,
+    requestId: string,
+    options: Parameters<CollabAuthorityControlPort['readRequest']>[2] = {},
+  ) {
+    const detail = await this.readRequestDetail(projectId, requestId, options);
+    if (!detail.comments.nextCursor) {
+      assertCompleteRequestComments(detail);
+      return detail;
+    }
+    const comments = [...detail.comments.comments];
+    const visited = new Set<string>();
+    let cursor: string | undefined = detail.comments.nextCursor;
+    while (cursor) {
+      if (visited.has(cursor)) {
+        throw controlIntegrityError('cloud-control-comment-cursor-cycled');
+      }
+      visited.add(cursor);
+      const page = await this.listRequestComments(projectId, requestId, {
+        cursor,
+        limit: COLLAB_LIMITS.maxCommentPageSize,
+      }, options);
+      comments.push(...page.comments);
+      if (comments.length > COLLAB_LIMITS.maxRequestComments) {
+        throw controlIntegrityError('cloud-control-request-comment-limit-exceeded');
+      }
+      cursor = page.nextCursor;
+    }
+    const complete = { ...detail, comments: { comments } };
+    assertCompleteRequestComments(complete);
+    return complete;
+  }
   readRequestPage(
-    _projectId: string,
-    _requestId: string,
-    _options?: Parameters<CollabAuthorityControlPort['readRequestPage']>[2],
-  ) { return this.unavailable('requests'); }
-  readTicket(
-    _projectId: string,
-    _ticketId: string,
-    _options?: Parameters<CollabAuthorityControlPort['readTicket']>[2],
-  ) { return this.unavailable('tickets'); }
+    projectId: string,
+    requestId: string,
+    options: Parameters<CollabAuthorityControlPort['readRequestPage']>[2] = {},
+  ) { return this.readRequestDetail(projectId, requestId, options); }
+  async readTicket(
+    projectId: string,
+    ticketId: string,
+    options: Parameters<CollabAuthorityControlPort['readTicket']>[2] = {},
+  ) {
+    const detail = await this.readTicketDetail(projectId, ticketId, options);
+    if (!detail.comments.nextCursor && !detail.acceptedRelations.nextCursor) {
+      assertCompleteTicketCollections(detail);
+      return detail;
+    }
+    const comments = [...detail.comments.comments];
+    const acceptedRelations = [...detail.acceptedRelations.acceptedRelations];
+    const visited = new Set<string>();
+    let commentCursor: string | undefined = detail.comments.nextCursor;
+    while (commentCursor) {
+      if (visited.has(commentCursor)) {
+        throw controlIntegrityError('cloud-control-comment-cursor-cycled');
+      }
+      visited.add(commentCursor);
+      const page = await this.listTicketComments(projectId, ticketId, {
+        cursor: commentCursor,
+        limit: COLLAB_LIMITS.maxCommentPageSize,
+      }, options);
+      comments.push(...page.comments);
+      if (comments.length > COLLAB_LIMITS.maxTicketComments) {
+        throw controlIntegrityError('cloud-control-ticket-comment-limit-exceeded');
+      }
+      commentCursor = page.nextCursor;
+    }
+    let relationCursor: string | undefined = detail.acceptedRelations.nextCursor;
+    while (relationCursor) {
+      if (visited.has(relationCursor)) {
+        throw controlIntegrityError('cloud-control-relation-cursor-cycled');
+      }
+      visited.add(relationCursor);
+      const page = await this.listTicketAcceptedRelations(projectId, ticketId, {
+        cursor: relationCursor,
+        limit: COLLAB_LIMITS.maxRelationsPerPage,
+      }, options);
+      acceptedRelations.push(...page.acceptedRelations);
+      if (acceptedRelations.length > COLLAB_LIMITS.maxTicketAcceptedRelations) {
+        throw controlIntegrityError('cloud-control-ticket-relation-limit-exceeded');
+      }
+      relationCursor = page.nextCursor;
+    }
+    const complete = {
+      ...detail,
+      acceptedRelations: { acceptedRelations },
+      comments: { comments },
+    };
+    assertCompleteTicketCollections(complete);
+    return complete;
+  }
   readTicketPage(
-    _projectId: string,
-    _ticketId: string,
-    _options?: Parameters<CollabAuthorityControlPort['readTicketPage']>[2],
-  ) { return this.unavailable('tickets'); }
+    projectId: string,
+    ticketId: string,
+    options: Parameters<CollabAuthorityControlPort['readTicketPage']>[2] = {},
+  ) { return this.readTicketDetail(projectId, ticketId, options); }
 
   private requireCapability(capability: CollabCloudCapability): void {
     if (!this.capabilities.has(capability)) {
       throw adapterError('operation-failed', 'cloud-authority-capability-unavailable');
     }
+  }
+
+  private async execute<Operation extends CollabControlOperation>(
+    capability: CollabCloudCapability,
+    operation: Operation,
+    input: CollabControlOperationMap[Operation]['request'],
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<CollabControlOperationMap[Operation]['response']> {
+    this.requireCapability(capability);
+    if (input.projectId !== this.projectId) {
+      throw new CollabError({ code: 'project-not-found' });
+    }
+    const codec = collabControlOperationCodec(operation);
+    const decoded = codec.decodeRequest(input);
+    if (decoded.status !== 'ok') throw decoded.error;
+    const route = collabCloudProjectOperationRoute(input.projectId, operation);
+    const response = await this.request({
+      body: {
+        data: decoded.value,
+        protocolVersion: COLLAB_PROTOCOL_VERSION,
+        requestId: this.requestId(),
+      },
+      headers: { 'x-claudian-development-actor': this.actorId },
+      method: route.method,
+      ...(options.signal ? { signal: options.signal } : {}),
+      url: new URL(route.target, this.origin).toString(),
+    });
+    assertJsonResponse(response);
+    if (response.status < 200 || response.status >= 300) {
+      const envelope = decodeCollabCloudErrorEnvelope(response.body);
+      throw new CollabError(envelope.error);
+    }
+    const envelope = decodeCollabCloudSuccessEnvelope(response.body);
+    return codec.decodeResponse(envelope.data);
+  }
+
+  private async readRequestDetail(
+    projectId: string,
+    requestId: string,
+    options: { readonly signal?: AbortSignal },
+  ) {
+    const detail = await this.execute('requests', 'getRequest', {
+      projectId,
+      requestId,
+    }, options);
+    if (detail.request.id !== requestId) {
+      throw controlIntegrityError('cloud-control-request-detail-mismatch');
+    }
+    return detail;
+  }
+
+  private async readTicketDetail(
+    projectId: string,
+    ticketId: string,
+    options: { readonly signal?: AbortSignal },
+  ) {
+    const detail = await this.execute('tickets', 'getTicket', {
+      projectId,
+      ticketId,
+    }, options);
+    if (detail.ticket.id !== ticketId) {
+      throw controlIntegrityError('cloud-control-ticket-detail-mismatch');
+    }
+    return detail;
+  }
+
+  private checkedTicketMutation<Ticket extends { readonly id: string }>(
+    ticketId: string,
+    ticket: Ticket,
+  ): Ticket {
+    if (ticket.id !== ticketId) {
+      throw controlIntegrityError('cloud-control-ticket-mutation-mismatch');
+    }
+    return ticket;
+  }
+
+  private async updateRequest(
+    request: Parameters<CollabAuthorityControlPort['updateRequestMetadata']>[0],
+    idempotencyKey: string,
+    options: { readonly signal?: AbortSignal },
+  ) {
+    const response = await this.execute('requests', 'updateMyRequestMetadata', {
+      description: request.description,
+      expectedHeadOid: request.expectedHeadOid,
+      expectedRequestRevision: request.expectedRequestRevision,
+      idempotencyKey,
+      projectId: request.projectId,
+      requestId: request.requestId,
+    }, options);
+    if (response.request.id !== request.requestId || response.request.memberId !== this.memberId) {
+      throw controlIntegrityError('cloud-control-request-metadata-mismatch');
+    }
+    return response.request;
   }
 
   private unavailable(capability: CollabCloudCapability): Promise<never> {
@@ -580,7 +913,9 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     const control = new CloudAuthorityControl(
       membership.authority.developmentActorId,
       capabilities,
+      membership.member.id,
       origin,
+      membership.member.personalRef,
       membership.project.id,
       this.request,
       this.requestId,
