@@ -70,6 +70,29 @@ async function handleTabSessionEvent(
     new Notice(event.message);
     return;
   }
+  if (event.type === 'prompt_suggestion') {
+    if (
+      tab.dom.contentEl.hasClass('claudian-hidden')
+      || tab.lifecycleState === 'closing'
+      || tab.ui.instructionModeManager.isActive()
+      || tab.ui.bangBashModeManager?.isActive()
+      || tab.ui.composerDropdown.isVisible()
+    ) {
+      return;
+    }
+    const revision = tab.ui.promptSuggestionController.revision;
+    const activeTurn = tab.session.activeTurn;
+    if (activeTurn) await activeTurn.catch(() => undefined);
+    if (
+      !isCurrent()
+      || tab.ui.promptSuggestionController.revision !== revision
+      || tab.session.activeTurn !== null
+    ) {
+      return;
+    }
+    tab.ui.promptSuggestionController.show(event.suggestion);
+    return;
+  }
   if (event.scope.kind !== 'background') return;
 
   const turns = getBackgroundTurnBuffers(tab, context.bindingId);

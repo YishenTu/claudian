@@ -77,6 +77,7 @@ implements ClaudeExecutionStrategy {
     readonly model: string;
     readonly promise: Promise<void>;
   } | null = null;
+  private pendingPromptSuggestionQueryToken: number | null = null;
   private preparingTurnToken: number | null = null;
   private disposed = false;
 
@@ -182,6 +183,7 @@ implements ClaudeExecutionStrategy {
     this.abortController = null;
     this.authoritativeContextWindow = null;
     this.contextWindowDiscovery = null;
+    this.pendingPromptSuggestionQueryToken = null;
     if (query) {
       this.sink.handleNativeQueryClosed(query);
       this.finishNativeTurn(query, {
@@ -332,9 +334,13 @@ implements ClaudeExecutionStrategy {
           this.sink.publishCommands(query, queryToken);
         }
         const nativeTurn = this.getNativeTurn(query);
+        const nativeTurnToken = nativeTurn?.queryToken ?? queryToken;
+        const messageQueryToken = message.type === 'prompt_suggestion'
+          ? (this.pendingPromptSuggestionQueryToken ?? nativeTurnToken)
+          : nativeTurnToken;
         await this.sink.handleNativeMessage(
           message,
-          nativeTurn?.queryToken ?? queryToken,
+          messageQueryToken,
         );
         if (
           message.type === 'system'
@@ -344,8 +350,11 @@ implements ClaudeExecutionStrategy {
           this.messageChannel?.setSessionId(message.session_id);
         }
         if (message.type === 'result') {
+          this.pendingPromptSuggestionQueryToken = messageQueryToken;
           this.messageChannel?.onTurnComplete();
           this.finishNativeTurn(query, { type: 'completed' });
+        } else if (message.type === 'prompt_suggestion') {
+          this.pendingPromptSuggestionQueryToken = null;
         }
       }
       if (this.query === query && !this.disposed) {
@@ -407,6 +416,7 @@ implements ClaudeExecutionStrategy {
     this.currentConfig = null;
     this.authoritativeContextWindow = null;
     this.contextWindowDiscovery = null;
+    this.pendingPromptSuggestionQueryToken = null;
     this.sink.handleNativeQueryClosed(query);
   }
 }

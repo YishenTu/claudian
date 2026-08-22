@@ -85,6 +85,10 @@ export type ClaudeNormalizedExecutionEvent =
     readonly contextWindow: number;
   }
   | {
+    readonly type: 'prompt_suggestion';
+    readonly suggestion: string;
+  }
+  | {
     readonly type: 'result';
   };
 
@@ -127,6 +131,12 @@ export class ClaudeExecutionEventNormalizer {
   ): ClaudeNormalizedExecutionEvent[] {
     const state = this.states[channel];
     const normalized: ClaudeNormalizedExecutionEvent[] = [];
+    if (message.type === 'prompt_suggestion') {
+      const suggestion = message.suggestion.trim();
+      return suggestion
+        ? [{ type: 'prompt_suggestion', suggestion }]
+        : [];
+    }
     for (const event of transformSDKMessage(message, {
       ...options,
       streamState: state.streamState,

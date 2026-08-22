@@ -50,6 +50,7 @@ export function activateTab(tab: AssembledTabRuntime): void {
 }
 
 export function deactivateTab(tab: AssembledTabRuntime): void {
+  tab.ui.promptSuggestionController.clear();
   tab.controllers.streamController.setTabActive(false);
   tab.dom.contentEl.addClass('claudian-hidden');
   tab.controllers.selectionController.stop();

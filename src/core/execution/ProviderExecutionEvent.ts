@@ -305,6 +305,14 @@ export type ProviderSessionErrorEvent = ProviderEventBase<
     readonly recoverable: boolean;
   };
 
+export type ProviderPromptSuggestionEvent = ProviderEventBase<
+  'prompt_suggestion',
+  ProviderSessionEventScope
+> & {
+  readonly originatingTurnId: string;
+  readonly suggestion: string;
+};
+
 export type ProviderBackgroundOutputEvent =
   | (ProviderUserMessageStartedEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderAssistantMessageStartedEvent & { readonly scope: ProviderBackgroundEventScope })
@@ -325,6 +333,7 @@ export type ProviderSessionEvent =
   | ProviderBackgroundOutputEvent
   | ProviderBackgroundTurnCompletedEvent
   | ProviderAsyncSubagentCompletedEvent
+  | ProviderPromptSuggestionEvent
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderSessionEventScope })
   | (ProviderModeChangedEvent & { readonly scope: ProviderSessionEventScope })
   | ProviderSessionErrorEvent;

@@ -1741,6 +1741,123 @@ describe('Tab provider execution ownership', () => {
     expect(coordinatorDeps[0].warmExecution?.canCool()).toBe(true);
   });
 
+  it('shows and accepts a trailing prompt suggestion after the active turn settles', async () => {
+    const plugin = createPlugin();
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    tab.dom.contentEl.removeClass('claudian-hidden');
+    const activeTurn = deferred<void>();
+    tab.session.activeTurn = activeTurn.promise;
+    const eventPromise = coordinatorDeps[0].onSessionEvent?.({
+      type: 'prompt_suggestion',
+      originatingTurnId: 'turn-1',
+      suggestion: 'Review the changed files',
+      scope: {
+        kind: 'session',
+        sequence: 1,
+        sessionInstanceId: 'session-instance-1',
+      },
+    }, createEventContext());
+
+    expect(tab.dom.inputEl.placeholder).not.toBe('Review the changed files');
+    activeTurn.resolve(undefined);
+    tab.session.activeTurn = null;
+    await eventPromise;
+    expect(tab.dom.inputEl.placeholder).toBe('Review the changed files');
+
+    const preventDefault = jest.fn();
+    tab.dom.inputEl.dispatchEvent({
+      type: 'keydown',
+      key: 'Tab',
+      target: tab.dom.inputEl,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      isComposing: false,
+      preventDefault,
+    });
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(tab.dom.inputEl.value).toBe('Review the changed files');
+  });
+
+  it('does not resurrect a delayed suggestion after the composer changes', async () => {
+    const plugin = createPlugin();
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    tab.dom.contentEl.removeClass('claudian-hidden');
+    const activeTurn = deferred<void>();
+    tab.session.activeTurn = activeTurn.promise;
+    const eventPromise = coordinatorDeps[0].onSessionEvent?.({
+      type: 'prompt_suggestion',
+      originatingTurnId: 'turn-1',
+      suggestion: 'Stale suggestion',
+      scope: {
+        kind: 'session',
+        sequence: 1,
+        sessionInstanceId: 'session-instance-1',
+      },
+    }, createEventContext());
+
+    tab.dom.inputEl.value = 'New draft';
+    tab.dom.inputEl.dispatchEvent('input');
+    activeTurn.resolve(undefined);
+    tab.session.activeTurn = null;
+    await eventPromise;
+
+    expect(tab.dom.inputEl.placeholder).not.toBe('Stale suggestion');
+    expect(tab.dom.inputEl.value).toBe('New draft');
+  });
+
+  it('keeps composer dropdown key handling ahead of prompt-suggestion acceptance', async () => {
+    const plugin = createPlugin();
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    tab.dom.contentEl.removeClass('claudian-hidden');
+    await coordinatorDeps[0].onSessionEvent?.({
+      type: 'prompt_suggestion',
+      originatingTurnId: 'turn-1',
+      suggestion: 'Review the changed files',
+      scope: {
+        kind: 'session',
+        sequence: 1,
+        sessionInstanceId: 'session-instance-1',
+      },
+    }, createEventContext());
+    jest.spyOn(tab.ui.composerDropdown, 'handleKeydown').mockReturnValue(true);
+
+    tab.dom.inputEl.dispatchEvent({
+      type: 'keydown',
+      key: 'Tab',
+      target: tab.dom.inputEl,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      isComposing: false,
+      preventDefault: jest.fn(),
+    });
+
+    expect(tab.dom.inputEl.value).toBe('');
+    expect(tab.dom.inputEl.placeholder).toBe('Review the changed files');
+  });
+
+  it('ignores a prompt suggestion for an inactive tab', async () => {
+    const plugin = createPlugin();
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+
+    await coordinatorDeps[0].onSessionEvent?.({
+      type: 'prompt_suggestion',
+      originatingTurnId: 'turn-1',
+      suggestion: 'Review the changed files',
+      scope: {
+        kind: 'session',
+        sequence: 1,
+        sessionInstanceId: 'session-instance-1',
+      },
+    }, createEventContext());
+
+    expect(tab.dom.inputEl.placeholder).not.toBe('Review the changed files');
+  });
+
   it('buffers normalized background output and persists it on completion', async () => {
     const plugin = createPlugin();
     const onReviewableSettlement = jest.fn();

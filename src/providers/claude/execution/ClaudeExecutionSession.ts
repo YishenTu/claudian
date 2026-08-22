@@ -70,6 +70,11 @@ interface BackgroundTurn {
   sequence: number;
 }
 
+interface PendingPromptSuggestionTurn {
+  readonly queryToken: number;
+  readonly turnId: string;
+}
+
 type ClaudeExecutionSessionServices = Pick<
   ClaudeWorkspaceServices,
   'agentManager' | 'commandCatalog' | 'pluginManager'
@@ -103,6 +108,7 @@ ClaudeExecutionStrategySink {
   private activeRun: ActiveRequestedRun | null = null;
   private backgroundTurn: BackgroundTurn | null = null;
   private backgroundCounter = 0;
+  private pendingPromptSuggestionTurn: PendingPromptSuggestionTurn | null = null;
   private sessionSequence = 0;
   private queryToken = 0;
   private latestCommandQueryToken = -1;
@@ -185,6 +191,8 @@ ClaudeExecutionStrategySink {
       throw new Error('Claude execution session already has an active run');
     }
 
+    this.pendingPromptSuggestionTurn = null;
+
     const executionId = randomUUID();
     const turnId = randomUUID();
     const abortController = new AbortController();
@@ -234,6 +242,7 @@ ClaudeExecutionStrategySink {
   cancel(): void {
     const active = this.activeRun;
     if (!active || active.terminal) return;
+    this.pendingPromptSuggestionTurn = null;
     this.setStatus('cancelling');
     this.emitRequestedState(active);
     active.abortController.abort();
@@ -318,6 +327,7 @@ ClaudeExecutionStrategySink {
     });
     this.sessionListeners.clear();
     this.backgroundTurn = null;
+    this.pendingPromptSuggestionTurn = null;
     this.suppressedPersistentQueryTokens.clear();
     this.suppressedEphemeralQueryTokens.clear();
   }
@@ -459,6 +469,13 @@ ClaudeExecutionStrategySink {
     }
 
     const active = this.activeRun;
+    if (
+      !active
+      && this.pendingPromptSuggestionTurn
+      && isRequestedTurnEvidence(message)
+    ) {
+      this.pendingPromptSuggestionTurn = null;
+    }
     const intendedModel = this.lastEncodedRequest?.model;
     const authoritativeContextWindow = intendedModel
       && this.authoritativeContextWindow?.model === intendedModel
@@ -511,6 +528,22 @@ ClaudeExecutionStrategySink {
           snapshotRevision: this.revision,
           providerPayload: event,
         });
+        continue;
+      }
+      if (normalized.type === 'prompt_suggestion') {
+        const pending = this.pendingPromptSuggestionTurn;
+        this.pendingPromptSuggestionTurn = null;
+        if (
+          pending
+          && pending.queryToken === queryToken
+          && !this.activeRun
+        ) {
+          this.emitSession({
+            type: 'prompt_suggestion',
+            originatingTurnId: pending.turnId,
+            suggestion: normalized.suggestion,
+          });
+        }
         continue;
       }
       if (normalized.type === 'output') {
@@ -1035,6 +1068,9 @@ ClaudeExecutionStrategySink {
       planCompleted: active.planCompleted || undefined,
       reason,
     });
+    this.pendingPromptSuggestionTurn = reason === 'completed'
+      ? { queryToken: active.queryToken, turnId: active.turnId }
+      : null;
     this.endActiveRun(active);
   }
 
@@ -1044,6 +1080,7 @@ ClaudeExecutionStrategySink {
     missingProviderSessionId?: string,
   ): void {
     if (active.terminal) return;
+    this.pendingPromptSuggestionTurn = null;
     const details = classifyClaudeError(
       error,
       this.providerSessionId,
