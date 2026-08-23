@@ -560,12 +560,19 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
   const lockfile = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
   const protocolPackageName = '@claudian-collab/protocol';
   const protocolInstallPath = `node_modules/${protocolPackageName}`;
+  const protocolManifest = JSON.parse(fs.readFileSync(
+    path.join(root, protocolInstallPath, 'package.json'),
+    'utf8',
+  ));
 
   assert.equal(manifest.dependencies?.[protocolPackageName], '1.0.0');
+  assert.equal(manifest.dependencies?.['@lezer/markdown'], '1.7.2');
+  assert.equal(protocolManifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(manifest.dependencies?.['@claudian/collab-protocol'], undefined);
   assert.equal(manifest.workspaces, undefined);
   assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '1.0.0');
   assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '1.0.0');
+  assert.equal(lockfile.packages?.['node_modules/@lezer/markdown']?.version, '1.7.2');
   assert.match(
     lockfile.packages?.[protocolInstallPath]?.resolved ?? '',
     /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-1\.0\.0\.tgz$/u,
