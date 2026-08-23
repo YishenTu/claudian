@@ -77,7 +77,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     const record = activatedRecord();
     let membership: CollabLocalMembershipRecord = {
       authority: {
-        endpoint: record.oldAuthority.endpoint,
+        endpoint: record.oldAuthority.endpoint.replace(/\/$/u, ''),
         gitRemoteUrl: record.oldAuthority.gitRemoteUrl,
         hostCaCertificatePem: 'PRIVATE CA',
         hostCaFingerprint: record.oldAuthority.caFingerprint,
@@ -191,6 +191,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       workspace: { resolveManagedProjectPath: jest.fn(async () => '/vault/workspace/project-alpha') },
     });
 
+    await effects.confirmReadiness(record);
     await effects.verifyCloud(record);
     await effects.verifyActivation(record);
     await effects.replaceMembership(record);

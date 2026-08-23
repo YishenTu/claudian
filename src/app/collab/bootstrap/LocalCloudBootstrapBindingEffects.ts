@@ -85,6 +85,15 @@ function normalizedFingerprint(value: string): string {
   return value.replaceAll(':', '').toLocaleLowerCase('en-US');
 }
 
+function hasSameOrigin(left: string | null, right: string): boolean {
+  if (left === null) return false;
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
+}
+
 export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingEffects {
   private readonly now: () => Date;
 
@@ -256,7 +265,7 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
     const membership = await this.loadExactMembership(record);
     if (
       !isCollabLocalLanMembership(membership)
-      || membership.authority.endpoint !== record.oldAuthority.endpoint
+      || !hasSameOrigin(membership.authority.endpoint, record.oldAuthority.endpoint)
       || membership.authority.gitRemoteUrl !== record.oldAuthority.gitRemoteUrl
       || membership.authority.hostCaFingerprint === null
       || normalizedFingerprint(membership.authority.hostCaFingerprint)
