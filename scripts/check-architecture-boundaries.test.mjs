@@ -14,6 +14,7 @@ import {
   mainBudgetBytes,
   preCollabReferenceMainBytes,
   privateCloudBootstrapAllowanceBytes,
+  standaloneProtocolPackagingAllowanceBytes,
 } from './check-startup-performance.mjs';
 
 function listTypeScriptFiles(root) {
@@ -825,7 +826,8 @@ test('TypeScript resolves the Collab protocol through the installed registry pac
 test('performance policy enforces the main bundle budget and reports the pre-Collab delta', () => {
   assert.equal(cloudAuthorityBindingAllowanceBytes, 50_000);
   assert.equal(privateCloudBootstrapAllowanceBytes, 100_000);
-  assert.equal(mainBudgetBytes, 5_150_000);
+  assert.equal(standaloneProtocolPackagingAllowanceBytes, 20_000);
+  assert.equal(mainBudgetBytes, 5_170_000);
   assert.deepEqual(inspectArtifactSize(mainBudgetBytes), {
     budgetExceeded: false,
     referenceDeltaBytes: mainBudgetBytes - preCollabReferenceMainBytes,

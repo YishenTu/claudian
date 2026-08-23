@@ -12,9 +12,11 @@ const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
 export const preCollabReferenceMainBytes = 3_739_584;
 export const privateCloudBootstrapAllowanceBytes = 100_000;
 export const cloudAuthorityBindingAllowanceBytes = 50_000;
+export const standaloneProtocolPackagingAllowanceBytes = 20_000;
 export const mainBudgetBytes = 5_000_000
   + privateCloudBootstrapAllowanceBytes
-  + cloudAuthorityBindingAllowanceBytes;
+  + cloudAuthorityBindingAllowanceBytes
+  + standaloneProtocolPackagingAllowanceBytes;
 export const evaluationIndicatorMs = 50;
 export const evaluationReviewThresholdMs = 150;
 const pluginArtifactNames = ['main.js', 'manifest.json'];
