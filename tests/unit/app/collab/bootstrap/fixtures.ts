@@ -5,7 +5,7 @@ import {
   COLLAB_PROTOCOL_VERSION,
   type DevelopmentBootstrapManifest,
   encodeDevelopmentBootstrapManifestCanonicalJson,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   advanceCloudBootstrapTransitionPhase,

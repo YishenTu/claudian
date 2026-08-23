@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian-collab/protocol';
 
 import type {
   RequestEnsureHeadPolicyInput,

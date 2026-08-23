@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { parseCollabProjectsFolder } from '@/core/collab';
 

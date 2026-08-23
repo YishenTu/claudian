@@ -6,7 +6,7 @@ import type {
   DevelopmentBootstrapAttemptStatus,
   DevelopmentBootstrapManifest,
   SubmitDevelopmentBootstrapReportRequest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   CloudBootstrapCoordinator,

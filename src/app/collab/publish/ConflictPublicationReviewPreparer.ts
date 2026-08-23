@@ -1,4 +1,4 @@
-import { type CollabOperationId } from '@claudian/collab-protocol';
+import { type CollabOperationId } from '@claudian-collab/protocol';
 
 import type { ConflictPublicationPort } from '@/app/collab/conflicts/ConflictResolutionCoordinator';
 import type {

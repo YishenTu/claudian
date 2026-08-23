@@ -1,4 +1,4 @@
-import { type CollabGitOid, type CollabProjectId, type CollabRequestId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabProjectId, type CollabRequestId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 

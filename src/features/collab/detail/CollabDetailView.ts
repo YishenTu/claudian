@@ -2,7 +2,7 @@ import {
   isCollabGitOid,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 import {
   ItemView,
   MarkdownRenderer,

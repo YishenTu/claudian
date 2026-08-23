@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { type CollabChangedFile } from '@claudian/collab-protocol';
+import { type CollabChangedFile } from '@claudian-collab/protocol';
 
 import type {
   GitChangedBlob,

@@ -1,4 +1,4 @@
-import { type CollabGitOid, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 export const COLLAB_PUBLICATION_STATE_SCHEMA_VERSION = 1 as const;
 

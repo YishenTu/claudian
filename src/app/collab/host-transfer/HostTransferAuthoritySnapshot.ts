@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
 
 import {

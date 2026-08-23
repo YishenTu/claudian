@@ -9,8 +9,8 @@ import type {
   CollabTicketCommentPage,
   CollabTicketDetail,
   CollabTicketPage,
-} from '@claudian/collab-protocol';
-import type { CollabChangeRequest, CollabTicketSummary } from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
+import type { CollabChangeRequest, CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { PublishRequestEnsureInput } from '@/app/collab/publish/PublishCoordinator';
 import type {

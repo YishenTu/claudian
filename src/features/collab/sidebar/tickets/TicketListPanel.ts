@@ -1,4 +1,4 @@
-import type { CollabTicketStatus, CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
 import { setIcon } from 'obsidian';
 
 import type { CollabFeaturePort, CollabLocalProjectSummary } from '@/core/collab';

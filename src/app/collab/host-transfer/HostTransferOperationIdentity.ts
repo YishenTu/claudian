@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian-collab/protocol';
 
 /** Stable across target restarts so an ambiguous Accept can be replayed exactly. */
 export function hostTransferAcceptanceIdempotencyKey(

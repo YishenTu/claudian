@@ -7,7 +7,7 @@ import {
   rm,
 } from 'node:fs/promises';
 
-import { type CollabOperationId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { type CollabOperationId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   ensureCollabVaultDirectory,

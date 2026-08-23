@@ -1,4 +1,4 @@
-import { type CollabProjectId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabOpaqueId } from '@claudian-collab/protocol';
 import { type RawData,WebSocket } from 'ws';
 
 import { COLLAB_CONTROL_ROUTE_PREFIX } from '@/app/collab/lan/LanCollabConstants';

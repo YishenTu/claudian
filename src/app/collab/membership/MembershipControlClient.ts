@@ -2,7 +2,7 @@ import {
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,

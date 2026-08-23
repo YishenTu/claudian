@@ -553,22 +553,53 @@ test('only TabRuntimeFactory can register runtime resource ownership', () => {
   ].sort());
 });
 
-test('collab protocol package imports only relative modules and allowlisted dependencies', () => {
-  const protocolPackageSourceRoot = path.join(process.cwd(), 'packages', 'collab-protocol', 'src');
+test('Claudian consumes the standalone Collab protocol only from the exact registry package', () => {
+  const root = process.cwd();
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const lockfile = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+  const protocolPackageName = '@claudian-collab/protocol';
+  const protocolInstallPath = `node_modules/${protocolPackageName}`;
+
+  assert.equal(manifest.dependencies?.[protocolPackageName], '1.0.0');
+  assert.equal(manifest.dependencies?.['@claudian/collab-protocol'], undefined);
+  assert.equal(manifest.workspaces, undefined);
+  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '1.0.0');
+  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '1.0.0');
+  assert.match(
+    lockfile.packages?.[protocolInstallPath]?.resolved ?? '',
+    /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-1\.0\.0\.tgz$/u,
+  );
+
+  for (const retiredPath of [
+    'packages/collab-protocol',
+    'scripts/check-collab-protocol-compatibility.mjs',
+    'scripts/check-collab-protocol-compatibility.test.mjs',
+    'scripts/sourcePackageAliases.js',
+    'tsconfig.source.json',
+  ]) {
+    assert.equal(fs.existsSync(path.join(root, retiredPath)), false, `${retiredPath} must be absent`);
+  }
+
   const violations = [];
-  for (const file of listTypeScriptFiles(protocolPackageSourceRoot)) {
-    for (const sourceImport of listSourceImports(file)) {
-      const { specifier } = sourceImport;
-      if (specifier.startsWith('.') || specifier === '@lezer/markdown') continue;
-      violations.push(
-        `${path.relative(process.cwd(), file)}:${sourceImport.line} imports ${specifier}`,
-      );
+  for (const sourceRoot of [path.join(root, 'src'), path.join(root, 'tests')]) {
+    for (const file of listTypeScriptFiles(sourceRoot)) {
+      for (const sourceImport of listSourceImports(file)) {
+        if (
+          sourceImport.specifier === '@claudian/collab-protocol'
+          || sourceImport.specifier.startsWith(`${protocolPackageName}/`)
+          || sourceImport.specifier.includes('packages/collab-protocol')
+        ) {
+          violations.push(
+            `${path.relative(root, file)}:${sourceImport.line} imports ${sourceImport.specifier}`,
+          );
+        }
+      }
     }
   }
   assert.deepEqual(violations, []);
 });
 
-test('collab protocol registry and contract constants exist only in the package', () => {
+test('standalone Collab protocol registry and contract constants are not redefined', () => {
   const pattern = /export\s+(?:const|interface|type|class|function)\s+(?:COLLAB_CONTROL_OPERATION_CODECS|CollabControlOperationMap|COLLAB_EVENT_KINDS|COLLAB_ERROR_CODES|COLLAB_LIMITS|COLLAB_PROTOCOL_VERSION|COLLAB_MAIN_REF|COLLAB_MEMBER_REF_PREFIX)\b/;
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
@@ -682,22 +713,7 @@ test('production consumes protocol-owned canonical Collab Git refs', () => {
   ), []);
 });
 
-test('collab protocol build scripts avoid platform-specific shell commands', () => {
-  const manifest = JSON.parse(fs.readFileSync(
-    path.join(process.cwd(), 'packages', 'collab-protocol', 'package.json'),
-    'utf8',
-  ));
-  assert.equal(manifest.scripts.clean, 'node scripts/clean.mjs');
-
-  const verifier = fs.readFileSync(
-    path.join(process.cwd(), 'packages', 'collab-protocol', 'scripts', 'verify-pack.mjs'),
-    'utf8',
-  );
-  assert.match(verifier, /fileURLToPath\(import\.meta\.url\)/);
-  assert.doesNotMatch(verifier, /new URL\(import\.meta\.url\)\.pathname/);
-  assert.doesNotMatch(verifier, /run\(['"](?:npm|tar)['"]/);
-  assert.doesNotMatch(verifier, /\bexecSync\b/);
-
+test('Collab consumer CI does not retain protocol producer gates', () => {
   const workflow = fs.readFileSync(
     path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
     'utf8',
@@ -705,7 +721,10 @@ test('collab protocol build scripts avoid platform-specific shell commands', () 
   const crossPlatformJob = workflow
     .split(/^  build:/mu)[0]
     .split(/^  cross-platform-smoke:/mu)[1] ?? '';
-  assert.match(crossPlatformJob, /npm run verify:protocol/);
+  assert.doesNotMatch(workflow, /protocol-contract:|verify:protocol|check:protocol-compatibility/);
+  assert.doesNotMatch(workflow, /packages\/collab-protocol/);
+  assert.match(crossPlatformJob, /npm run build/);
+  assert.match(crossPlatformJob, /npm run test:cross-platform-collab/);
 });
 
 test('Collab Git process owners await Windows process-tree termination', () => {
@@ -720,7 +739,7 @@ test('Collab Git process owners await Windows process-tree termination', () => {
   }
 });
 
-test('CI gates releases, cross-platform behavior, protocol changes, and security', () => {
+test('CI gates releases, cross-platform behavior, and security', () => {
   const workflowsRoot = path.join(process.cwd(), '.github', 'workflows');
   const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8');
   const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8');
@@ -731,13 +750,13 @@ test('CI gates releases, cross-platform behavior, protocol changes, and security
   assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
   assert.match(ci, /diff-hygiene:/);
   assert.match(ci, /dependency-review-action@v4/);
-  assert.match(ci, /protocol-contract:/);
-  assert.match(ci, /npm run check:protocol-compatibility/);
+  assert.doesNotMatch(ci, /protocol-contract:/);
+  assert.doesNotMatch(ci, /npm run check:protocol-compatibility/);
   assert.match(ci, /cross-platform-smoke:/);
   assert.match(ci, /windows-latest/);
   assert.match(ci, /macos-latest/);
   assert.match(ci, /cross-platform-collab-scope:/);
-  assert.match(ci, /packages\/collab-protocol\/\*/);
+  assert.doesNotMatch(ci, /packages\/collab-protocol/);
   assert.match(ci, /src\/app\/collab\/\*/);
   assert.match(ci, /src\/core\/collab\/\*/);
   assert.match(ci, /src\/features\/collab\/\*/);
@@ -762,7 +781,7 @@ test('CI gates releases, cross-platform behavior, protocol changes, and security
 });
 
 test('src does not re-export the collab protocol package', () => {
-  const pattern = /export\s+(?:\*|\{[^}]*\})\s*from\s*['"]@claudian\/collab-protocol['"]/;
+  const pattern = /export\s+(?:\*|\{[^}]*\})\s*from\s*['"]@claudian-collab\/protocol['"]/;
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
@@ -773,7 +792,7 @@ test('src and tests import the collab protocol package only through its root ent
       for (const sourceImport of listSourceImports(file)) {
         const { specifier } = sourceImport;
         if (
-          specifier.startsWith('@claudian/collab-protocol/')
+          specifier.startsWith('@claudian-collab/protocol/')
           || specifier.includes('packages/collab-protocol')
         ) {
           violations.push(
@@ -786,37 +805,12 @@ test('src and tests import the collab protocol package only through its root ent
   assert.deepEqual(violations, []);
 });
 
-test('root tooling resolves the collab protocol package without generated artifacts', () => {
+test('TypeScript resolves the Collab protocol through the installed registry package', () => {
   const configPath = path.join(process.cwd(), 'tsconfig.json');
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
-  const host = {
-    ...ts.sys,
-    fileExists(file) {
-      return !file.includes(`${path.sep}collab-protocol${path.sep}dist${path.sep}`)
-        && ts.sys.fileExists(file);
-    },
-  };
   const resolution = ts.resolveModuleName(
-    '@claudian/collab-protocol',
-    path.join(process.cwd(), 'src', 'main.ts'),
-    parsed.options,
-    host,
-  ).resolvedModule;
-
-  assert.equal(
-    resolution?.resolvedFileName,
-    path.join(process.cwd(), 'packages', 'collab-protocol', 'src', 'index.ts'),
-  );
-});
-
-test('source-only typecheck resolves the canonical collab protocol source', () => {
-  const configPath = path.join(process.cwd(), 'tsconfig.source.json');
-  const config = ts.readConfigFile(configPath, ts.sys.readFile);
-  assert.equal(config.error, undefined);
-  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
-  const resolution = ts.resolveModuleName(
-    '@claudian/collab-protocol',
+    '@claudian-collab/protocol',
     path.join(process.cwd(), 'src', 'main.ts'),
     parsed.options,
     ts.sys,
@@ -824,7 +818,7 @@ test('source-only typecheck resolves the canonical collab protocol source', () =
 
   assert.equal(
     resolution?.resolvedFileName,
-    path.join(process.cwd(), 'packages', 'collab-protocol', 'src', 'index.ts'),
+    path.join(process.cwd(), 'node_modules', '@claudian-collab', 'protocol', 'dist', 'index.d.ts'),
   );
 });
 

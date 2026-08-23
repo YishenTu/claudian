@@ -1,4 +1,4 @@
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { decodeLanCollabHostTrustTransitionProof } from '@/app/collab/lan/LanCollabHostTrustTransitionProof';
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';

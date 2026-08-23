@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, COLLAB_MAIN_REF, type CollabChangeRequest, type CollabMember, collabMemberRef, type CollabRequestTicketRelation, type CollabTicketSummary, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, COLLAB_MAIN_REF, type CollabChangeRequest, type CollabMember, collabMemberRef, type CollabRequestTicketRelation, type CollabTicketSummary, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { decodeLanCollabLifecycleOperationResponse } from '@/app/collab/lan/LanCollabLifecycleCodecs';
 import type {

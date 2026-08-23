@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import type { CollabChangedFile } from '@claudian/collab-protocol';
+import type { CollabChangedFile } from '@claudian-collab/protocol';
 
 import { renderCollabChangedFileList } from '@/features/collab/shared/CollabChangedFileList';
 

@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 export interface ManagerResponsibilityOperationPort {
   run<T>(projectId: CollabProjectId, operation: () => Promise<T>): Promise<T>;

@@ -1,4 +1,4 @@
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabProjectSnapshot } from '@/core/collab';

@@ -1,4 +1,4 @@
-import type { CollabChangeRequest } from '@claudian/collab-protocol';
+import type { CollabChangeRequest } from '@claudian-collab/protocol';
 
 /**
  * Canonical source identity for cached and in-flight request-review work.

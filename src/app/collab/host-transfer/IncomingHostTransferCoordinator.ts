@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { type CollabIdempotencyKey, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIdempotencyKey, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   HostTransferProjectionPort,

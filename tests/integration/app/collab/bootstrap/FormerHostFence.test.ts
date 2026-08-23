@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { DevelopmentBootstrapAttemptStatus } from '@claudian/collab-protocol';
+import type { DevelopmentBootstrapAttemptStatus } from '@claudian-collab/protocol';
 
 import {
   CloudBootstrapCoordinator,

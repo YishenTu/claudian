@@ -1,4 +1,4 @@
-import { collabControlOperationCodec } from '@claudian/collab-protocol';
+import { collabControlOperationCodec } from '@claudian-collab/protocol';
 
 import type {
   CollabHttpOperationOptions,

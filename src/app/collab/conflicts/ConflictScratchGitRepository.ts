@@ -10,7 +10,7 @@ import {
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 
-import { collabMemberRef, isCollabGitOid } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabGitOid } from '@claudian-collab/protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { parseConflictTextMerge } from '@/app/collab/conflicts/ConflictTextMerge';

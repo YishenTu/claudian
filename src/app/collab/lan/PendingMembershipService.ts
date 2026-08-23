@@ -12,7 +12,7 @@ import {
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';

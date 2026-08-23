@@ -1,4 +1,4 @@
-import type { CollabChangedFile, CollabFileChangeKind } from '@claudian/collab-protocol';
+import type { CollabChangedFile, CollabFileChangeKind } from '@claudian-collab/protocol';
 
 export interface CollabChangedFileListOptions {
   readonly accessibleLabel: string;

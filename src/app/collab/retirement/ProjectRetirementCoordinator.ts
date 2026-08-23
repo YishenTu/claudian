@@ -1,4 +1,4 @@
-import type { CollabMemberId, CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabMemberId, CollabProjectId } from '@claudian-collab/protocol';
 
 import type { ProjectRetirementAuthorityRequest } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import type { CollabRetirementResult } from '@/core/collab';

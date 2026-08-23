@@ -1,4 +1,4 @@
-import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTicketCommitRelationKind } from '@claudian/collab-protocol';
+import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTicketCommitRelationKind } from '@claudian-collab/protocol';
 
 import type { CollabAuthorityKind, CollabAuthoritySyncStatus, CollabConflictKind, CollabConnectionStatus, CollabHostStatus, CollabLocalCleanupStatus, CollabPersonalAction, CollabProjectHealth, CollabProjectLifecycle, CollabReviewComparisonKind } from '@/core/collab';
 import type { CollabErrorCode } from '@/core/collab/ClaudianCollabError';

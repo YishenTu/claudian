@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS as SHARED_COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS as SHARED_COLLAB_LIMITS } from '@claudian-collab/protocol';
 
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 

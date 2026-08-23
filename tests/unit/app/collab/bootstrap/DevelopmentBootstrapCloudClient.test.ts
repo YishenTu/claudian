@@ -7,7 +7,7 @@ import {
   decodeCollabProtocolEnvelope,
   developmentBootstrapOperationCodec,
   matchCollabCloudRoute,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   DevelopmentBootstrapCloudClient,

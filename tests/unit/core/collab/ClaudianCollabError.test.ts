@@ -1,4 +1,4 @@
-import { decodeCollabProtocolEnvelope } from '@claudian/collab-protocol';
+import { decodeCollabProtocolEnvelope } from '@claudian-collab/protocol';
 
 import {
   COLLAB_LOCAL_ERROR_CODES,

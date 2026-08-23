@@ -1,4 +1,4 @@
-import { COLLAB_CONTROL_OPERATION_CODECS, type CollabControlOperationCodec, type CollabDecodeResult } from '@claudian/collab-protocol';
+import { COLLAB_CONTROL_OPERATION_CODECS, type CollabControlOperationCodec, type CollabDecodeResult } from '@claudian-collab/protocol';
 
 import type {
   LanCollabControlOperation,

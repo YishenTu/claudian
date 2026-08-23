@@ -1,4 +1,4 @@
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { parseCollabProjectsFolder } from '@/core/collab';
 

@@ -1,4 +1,4 @@
-import type { CollabRequestDetail } from '@claudian/collab-protocol';
+import type { CollabRequestDetail } from '@claudian-collab/protocol';
 
 import type { CollabReviewControlPort } from '@/app/collab/review/CollabReviewService';
 import {

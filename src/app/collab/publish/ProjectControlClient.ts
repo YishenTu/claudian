@@ -1,4 +1,4 @@
-import { type AcceptResponse, type CollabChangeRequest, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse } from '@claudian/collab-protocol';
+import { type AcceptResponse, type CollabChangeRequest, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,

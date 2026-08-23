@@ -1,4 +1,4 @@
-import { isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabProjectId } from '@claudian-collab/protocol';
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

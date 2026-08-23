@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
 import { AgentRuntimeGateway } from '@/app/agent-runtime/AgentRuntimeGateway';
 import type { CollabAgentPort } from '@/app/agent-runtime/AgentRuntimeMethodRegistry';

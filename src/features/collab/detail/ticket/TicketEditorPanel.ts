@@ -1,4 +1,4 @@
-import type { CollabTicketAcceptedRelation, CollabTicketComment, CollabTicketDetail } from '@claudian/collab-protocol';
+import type { CollabTicketAcceptedRelation, CollabTicketComment, CollabTicketDetail } from '@claudian-collab/protocol';
 
 import type { CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabFeaturePort, CollabProjectSnapshot, CollabResult, CollabUpdateTicketContentRequest } from '@/core/collab';
 import {

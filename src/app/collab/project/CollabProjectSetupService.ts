@@ -6,7 +6,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { SqlJsMutationResult } from '@/app/collab/authority/SqlJsProjectDatabase';

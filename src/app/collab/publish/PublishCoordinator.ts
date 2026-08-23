@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabChangeRequest, type CollabFileChangeKind, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabFileChangeKind, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import {
   type CollabPublicationOperationRecord,

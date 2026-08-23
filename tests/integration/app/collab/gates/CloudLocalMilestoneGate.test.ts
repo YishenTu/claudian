@@ -14,7 +14,7 @@ import { promisify } from 'node:util';
 import {
   type DevelopmentBootstrapAttemptStatus,
   type DevelopmentBootstrapManifest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   CloudBootstrapBindingFinalizer,

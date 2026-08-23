@@ -2,7 +2,7 @@
 
 import 'obsidian';
 
-import { type CollabTicketDetail } from '@claudian/collab-protocol';
+import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorView } from '@codemirror/view';
 
 import { type CollabCoordinationSnapshot } from '@/core/collab';

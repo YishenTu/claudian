@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 import {
   resolveCollabVaultPath,

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
 import type {

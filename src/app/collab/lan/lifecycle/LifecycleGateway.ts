@@ -1,4 +1,4 @@
-import { type CollabMemberStatus } from '@claudian/collab-protocol';
+import { type CollabMemberStatus } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,

@@ -2,7 +2,7 @@ import {
   COLLAB_MAIN_REF,
   type CollabProjectId,
   type DevelopmentBootstrapAttemptStatus,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type { CloudBootstrapBindingEffects } from '@/app/collab/bootstrap/CloudBootstrapBindingFinalizer';
 import type { CloudBootstrapReadinessCollector } from '@/app/collab/bootstrap/CloudBootstrapReadiness';

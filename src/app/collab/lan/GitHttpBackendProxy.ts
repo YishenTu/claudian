@@ -6,7 +6,7 @@ import { lstat, realpath, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 
-import { collabMemberRef, isCollabProjectId } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {

@@ -1,7 +1,7 @@
 import {
   collabCloudGitRoute,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 function isLoopbackHostname(hostname: string): boolean {
   return hostname === '127.0.0.1' || hostname === '[::1]' || hostname === 'localhost';

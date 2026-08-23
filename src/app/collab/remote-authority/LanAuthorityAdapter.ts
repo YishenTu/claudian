@@ -1,4 +1,4 @@
-import type { CollabCloudCapability } from '@claudian/collab-protocol';
+import type { CollabCloudCapability } from '@claudian-collab/protocol';
 
 import { ProjectEventClient } from '@/app/collab/client/ProjectEventClient';
 import type {

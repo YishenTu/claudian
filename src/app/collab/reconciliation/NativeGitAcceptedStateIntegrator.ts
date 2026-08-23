@@ -7,7 +7,7 @@ import {
   collabMemberRef,
   type CollabOperationId,
   isCollabGitOid,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import {

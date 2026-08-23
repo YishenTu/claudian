@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { CollabRequestDetail } from '@claudian/collab-protocol';
+import type { CollabRequestDetail } from '@claudian-collab/protocol';
 import {
   writeGitFixtureBlob,
   writeGitFixtureTree,

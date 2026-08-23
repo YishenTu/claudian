@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF, type CollabMemberId, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabMemberId, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   AuthorityDatabaseConnection,

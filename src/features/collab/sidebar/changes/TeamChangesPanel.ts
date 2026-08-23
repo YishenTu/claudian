@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian/collab-protocol';
+import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian-collab/protocol';
 
 import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';

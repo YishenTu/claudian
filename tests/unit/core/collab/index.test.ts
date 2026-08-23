@@ -8,7 +8,7 @@ import * as coreCollab from '@/core/collab';
 
 describe('Collab core barrel', () => {
   it('exposes only client-only Collab contracts', () => {
-    // The shared wire contract lives in @claudian/collab-protocol. This barrel
+    // The shared wire contract lives in @claudian-collab/protocol. This barrel
     // must not re-export package symbols or grow a second registry.
     expect(Object.keys(coreCollab).sort()).toEqual([
       'DEFAULT_COLLAB_PROJECTS_FOLDER',

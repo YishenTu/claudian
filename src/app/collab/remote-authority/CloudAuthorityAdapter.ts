@@ -18,7 +18,7 @@ import {
   decodeCollabCloudErrorEnvelope,
   decodeCollabCloudProjectEventMessage,
   decodeCollabCloudSuccessEnvelope,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 import { type RawData, WebSocket } from 'ws';
 
 import type {

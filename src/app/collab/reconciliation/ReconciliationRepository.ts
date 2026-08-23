@@ -1,4 +1,4 @@
-import type { CollabOperationId } from '@claudian/collab-protocol';
+import type { CollabOperationId } from '@claudian-collab/protocol';
 
 import type { NativeGitPublishRepository } from '@/app/collab/publish/NativeGitPublishRepository';
 import type {

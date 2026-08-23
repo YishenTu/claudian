@@ -1,4 +1,4 @@
-import { type CollabChangedFile, type CollabChangeRequest, type CollabComment, type CollabMember, type CollabRequestTicketRelation, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { type CollabChangedFile, type CollabChangeRequest, type CollabComment, type CollabMember, type CollabRequestTicketRelation, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import { type CollabBoundedQueryPort, type CollabConflictEntry, type CollabConflictFileContent, type CollabConflictOpaqueVersion, type CollabFeaturePort, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabPublishOutcome, type CollabResult, type CollabReviewFileContent } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';

@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, open, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabGitOid, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabGitOid, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';

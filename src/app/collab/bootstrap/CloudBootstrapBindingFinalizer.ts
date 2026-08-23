@@ -1,4 +1,4 @@
-import type { CollabIsoTimestamp } from '@claudian/collab-protocol';
+import type { CollabIsoTimestamp } from '@claudian-collab/protocol';
 
 import {
   advanceCloudBootstrapTransitionPhase,

@@ -12,7 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 

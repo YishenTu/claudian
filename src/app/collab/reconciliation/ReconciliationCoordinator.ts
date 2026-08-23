@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { classifyLocalContribution } from '@/app/collab/publish/LocalContributionClassifier';

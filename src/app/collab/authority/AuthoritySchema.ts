@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 import type { Database, SqlValue } from 'sql.js';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';

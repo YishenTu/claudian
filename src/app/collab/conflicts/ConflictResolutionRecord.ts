@@ -1,4 +1,4 @@
-import { type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { type CollabConflictDescriptor, type CollabConflictEntry } from '@/core/collab';

@@ -6,7 +6,7 @@ import {
   COLLAB_LIMITS,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
 import {

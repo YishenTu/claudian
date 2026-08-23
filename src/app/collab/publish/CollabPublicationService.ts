@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import {
   type CollabProjectInspectionLease,

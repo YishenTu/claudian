@@ -1,4 +1,4 @@
-import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian/collab-protocol';
+import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian-collab/protocol';
 
 import {
   type HostedLifecycleControlPort,

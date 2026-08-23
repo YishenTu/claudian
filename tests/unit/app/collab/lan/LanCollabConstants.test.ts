@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_MAX_BODY_BYTES,

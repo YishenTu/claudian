@@ -1,4 +1,4 @@
-import { collabMemberRef, type CollabRequestDetail } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabRequestDetail } from '@claudian-collab/protocol';
 
 import { ensureTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import {

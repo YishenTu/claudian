@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF } from '@claudian-collab/protocol';
 
 import type {
   CollabProject,

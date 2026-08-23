@@ -5,7 +5,7 @@ import {
   X509Certificate,
 } from 'node:crypto';
 
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { LanTlsHostCaSigner } from '@/app/collab/lan/LanTlsIdentity';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';

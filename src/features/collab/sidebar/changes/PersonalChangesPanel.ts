@@ -1,4 +1,4 @@
-import { type CollabChangedFile } from '@claudian/collab-protocol';
+import { type CollabChangedFile } from '@claudian-collab/protocol';
 
 import { type CollabFeatureState, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';

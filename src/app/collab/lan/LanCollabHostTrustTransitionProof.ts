@@ -1,4 +1,4 @@
-import { type CollabDecodeResult, CollabError, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabDecodeResult, CollabError, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 

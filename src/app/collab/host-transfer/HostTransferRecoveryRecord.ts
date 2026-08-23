@@ -1,4 +1,4 @@
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 export const COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION = 1 as const;
 export type HostTransferRecoveryDirection = 'incoming' | 'outgoing';

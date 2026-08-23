@@ -1,4 +1,4 @@
-import { collabMemberRef, type CollabOperationId, isCollabGitOid, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabOperationId, isCollabGitOid, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';

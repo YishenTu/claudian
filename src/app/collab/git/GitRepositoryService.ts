@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabFileChangeKind, collabMemberRef, isCollabGitOid, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabFileChangeKind, collabMemberRef, isCollabGitOid, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import {

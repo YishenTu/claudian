@@ -1,4 +1,4 @@
-import { type CollabDecodeResult, CollabError, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabDecodeResult, CollabError, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   LanCollabControlOperationMap,

@@ -1,4 +1,4 @@
-import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian-collab/protocol';
 
 import {
   decodeHostTransferRecoveryRecord,

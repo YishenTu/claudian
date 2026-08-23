@@ -5,7 +5,7 @@ import {
   decodeDevelopmentBootstrapManifest,
   type DevelopmentBootstrapClientReadiness,
   type DevelopmentBootstrapManifest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

@@ -13,7 +13,7 @@ import {
   type GetDevelopmentBootstrapRequest,
   type PutDevelopmentBootstrapGitBundleRequest,
   type SubmitDevelopmentBootstrapReportRequest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type {
   CloudBootstrapReadinessCollector,

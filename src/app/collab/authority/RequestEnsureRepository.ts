@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabMemberId, type CollabProjectId, type CollabRequestTicketRelation, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabMemberId, type CollabProjectId, type CollabRequestTicketRelation, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   type PendingTicketRelationInput,

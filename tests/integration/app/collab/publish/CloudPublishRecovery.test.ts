@@ -6,7 +6,7 @@ import {
   COLLAB_LIMITS,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';

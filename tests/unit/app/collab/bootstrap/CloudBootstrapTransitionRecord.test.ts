@@ -1,7 +1,7 @@
 import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   advanceCloudBootstrapTransitionPhase,

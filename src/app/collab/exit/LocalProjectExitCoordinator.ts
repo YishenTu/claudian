@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   CollabProjectWorkSessionSuspension,

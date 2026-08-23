@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 import type { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';

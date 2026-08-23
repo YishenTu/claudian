@@ -9,7 +9,7 @@ import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import type { Duplex } from 'node:stream';
 
-import { type CollabMember, type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMember, type CollabProjectId, isCollabProjectId } from '@claudian-collab/protocol';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminService';

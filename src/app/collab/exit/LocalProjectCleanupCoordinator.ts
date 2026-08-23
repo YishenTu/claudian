@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { DetachedProjectMarker } from '@/app/collab/exit/DetachedProjectMarker';

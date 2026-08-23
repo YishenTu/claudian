@@ -6,7 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_LIMITS, COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, COLLAB_MAIN_REF } from '@claudian-collab/protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {

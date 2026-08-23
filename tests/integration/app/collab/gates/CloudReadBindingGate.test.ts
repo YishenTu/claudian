@@ -15,7 +15,7 @@ import {
   collabMemberRef,
   type DevelopmentBootstrapManifest,
   matchCollabCloudRoute,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 import { WebSocketServer } from 'ws';
 
 import {

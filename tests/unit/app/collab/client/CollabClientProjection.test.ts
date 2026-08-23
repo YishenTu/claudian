@@ -1,4 +1,4 @@
-import { type CollabTicketDetail } from '@claudian/collab-protocol';
+import { type CollabTicketDetail } from '@claudian-collab/protocol';
 
 import {
   CollabClientProjection,

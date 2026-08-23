@@ -4,7 +4,7 @@ import {
   COLLAB_MAIN_REF,
   type CollabMemberId,
   type CollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   CLOUD_BOOTSTRAP_READINESS_OPERATIONS,

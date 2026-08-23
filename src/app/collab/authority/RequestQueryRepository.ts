@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabChangeRequest, type CollabComment, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   type AuthorityKeysetCursor,

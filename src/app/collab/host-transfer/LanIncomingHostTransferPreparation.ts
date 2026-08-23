@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';

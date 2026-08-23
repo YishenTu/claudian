@@ -4,7 +4,7 @@ import {
   type CollabMemberId,
   type CollabProjectId,
   type CollabRequestDetail,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   authorityDetailPageBudgets,

@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 import type { LocalProjectExitCoordinator } from '@/app/collab/exit/LocalProjectExitCoordinator';
 import type { PendingLeaveJournalPort } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';

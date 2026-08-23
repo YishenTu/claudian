@@ -12,7 +12,7 @@ import {
   type DevelopmentBootstrapSourceEligibility,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type {
   AuthorityDatabaseConnection,

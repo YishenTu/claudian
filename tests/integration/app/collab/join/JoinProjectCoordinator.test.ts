@@ -8,7 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian-collab/protocol';
 
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';

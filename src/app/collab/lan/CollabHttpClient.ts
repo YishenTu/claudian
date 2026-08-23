@@ -2,7 +2,7 @@ import { randomUUID, X509Certificate } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { connect as connectTls, type DetailedPeerCertificate } from 'node:tls';
 
-import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,

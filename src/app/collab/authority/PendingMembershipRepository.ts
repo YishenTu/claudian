@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';

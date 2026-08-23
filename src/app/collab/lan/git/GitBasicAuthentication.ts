@@ -1,6 +1,6 @@
 import { TextDecoder } from 'node:util';
 
-import { type CollabMemberStatus, isCollabMemberId } from '@claudian/collab-protocol';
+import { type CollabMemberStatus, isCollabMemberId } from '@claudian-collab/protocol';
 
 import type { CollabGitService } from '@/app/collab/lan/git/GitHttpRoute';
 import { CollabError } from '@/core/collab/ClaudianCollabError';

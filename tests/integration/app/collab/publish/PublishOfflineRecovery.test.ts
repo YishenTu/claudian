@@ -7,7 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { type CollabChangeRequest } from '@claudian/collab-protocol';
+import { type CollabChangeRequest } from '@claudian-collab/protocol';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';

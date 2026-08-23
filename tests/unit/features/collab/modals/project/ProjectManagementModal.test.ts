@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { type CollabMember } from '@claudian/collab-protocol';
+import { type CollabMember } from '@claudian-collab/protocol';
 
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';

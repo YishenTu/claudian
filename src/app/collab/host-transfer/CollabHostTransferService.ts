@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   CollabLocalLanMembershipRecord,

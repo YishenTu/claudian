@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
 export const COLLAB_CONTROL_PROTOCOL_VERSION = 9 as const;
 export const COLLAB_CONTROL_ROUTE_PREFIX = `/v${COLLAB_CONTROL_PROTOCOL_VERSION}/projects` as const;

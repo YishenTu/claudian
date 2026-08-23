@@ -5,7 +5,7 @@ import type {
   ServerResponse,
 } from 'node:http';
 
-import { isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,

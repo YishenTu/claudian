@@ -48,23 +48,6 @@ test('source lint matches strict Obsidian and type-aware review policy', async (
   ]);
 });
 
-test('collab protocol source receives type-aware lint rules', async () => {
-  const eslint = new ESLint();
-  const config = await eslint.calculateConfigForFile(
-    'packages/collab-protocol/src/CollabControlOperationCodecs.ts',
-  );
-
-  for (const rule of [
-    '@typescript-eslint/await-thenable',
-    '@typescript-eslint/no-redundant-type-constituents',
-    '@typescript-eslint/no-unnecessary-type-assertion',
-    '@typescript-eslint/no-unsafe-call',
-    '@typescript-eslint/no-unsafe-member-access',
-  ]) {
-    assert.equal(config.rules[rule]?.[0], 2, `${rule} must be an error`);
-  }
-});
-
 // ESLint hands the rule an absolute path using the host platform's separator, so the
 // basename has to be taken from either separator. Windows paths are used here on every
 // platform on purpose: they are what regressed, and CI only runs Linux.

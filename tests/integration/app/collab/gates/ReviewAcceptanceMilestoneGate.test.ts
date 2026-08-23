@@ -8,7 +8,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF } from '@claudian-collab/protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';

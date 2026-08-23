@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { isCollabOpaqueId } from '@claudian/collab-protocol';
+import { isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   type CollabFilesystemDiagnosticSink,

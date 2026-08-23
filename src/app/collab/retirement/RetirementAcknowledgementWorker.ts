@@ -1,4 +1,4 @@
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LanCollabControlOperations';
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';

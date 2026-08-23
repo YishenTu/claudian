@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 const MAX_TIMER_DELAY_MS = 24 * 60 * 60 * 1_000;
 const RETRY_DELAY_MS = 60_000;

@@ -15,7 +15,7 @@ import {
   collabMemberRef,
   decodeCollabProtocolEnvelope,
   matchCollabCloudRoute,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';

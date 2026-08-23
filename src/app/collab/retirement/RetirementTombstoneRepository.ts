@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import {

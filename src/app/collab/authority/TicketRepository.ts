@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabMemberId, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabMemberId, type CollabTicketAcceptedRelation, type CollabTicketComment, type CollabTicketDetail, type CollabTicketId, type CollabTicketStatus, type CollabTicketSummary, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   authorityDetailPageBudgets,

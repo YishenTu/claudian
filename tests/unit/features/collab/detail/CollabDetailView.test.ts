@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { type CollabTicketDetail } from '@claudian/collab-protocol';
+import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { MarkdownRenderer, setIcon, type WorkspaceLeaf } from 'obsidian';

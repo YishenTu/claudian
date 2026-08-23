@@ -9,7 +9,6 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
 ## Scope Guides
 
 - Before editing a scoped area, read its nearest scoped guide:
-  - `packages/collab-protocol/AGENTS.md`
   - `src/app/AGENTS.md`
   - `src/core/AGENTS.md`
   - `src/features/chat/AGENTS.md`
@@ -58,7 +57,7 @@ Scoped guides define the source of truth and allowed mutators for state in their
 | Area | Responsibility |
 | --- | --- |
 | `src/main.ts` | Plugin lifecycle and concrete application composition |
-| `packages/collab-protocol/` | Sole owner of the decision-complete shared Collab wire contract: opaque IDs, transport-neutral DTOs, executable codecs, canonical operation semantics, Cloud binding routes/capabilities/bootstrap/snapshot/events, shared safe errors and limits, Git ref semantics, and independent package/wire/binding compatibility policy consumed by Claudian and Cloud Server |
+| `@claudian-collab/protocol` | Exact-version registry dependency whose standalone repository solely owns the decision-complete shared Collab wire contract, compatibility policy, tests, build, and release |
 | `src/app/` | Application conversation, settings, provider-host, and storage services |
 | `src/core/` | Provider-neutral runtime, registry, storage, tool, and type contracts |
 | `src/providers/acp/` | Shared ACP transport, interaction, and session primitives without provider policy |
@@ -81,7 +80,7 @@ providers -> ProviderHost + core contracts + shared provider and UI primitives
 ```
 
 - `core/` must not import feature code, app composition, or provider implementations.
-- `packages/collab-protocol/` must not import repository source (`src/`), Obsidian, or any transport binding; `src/` consumes it only through the `@claudian/collab-protocol` package entry point, and `src/core/collab/` retains only client-only Collab contracts without re-exporting package symbols.
+- `src/` consumes the standalone shared contract only through the `@claudian-collab/protocol` package root. Claudian must not retain package source, source aliases, compatibility policy, or copied registries; `src/core/collab/` retains only client-owned Collab contracts without re-exporting package symbols.
 - Feature code must not import provider implementations. Resolve provider behavior through core registries and contracts.
 - Provider runtime and protocol code must not import chat views, feature controllers, or other feature orchestration.
 - Existing Claude compatibility re-exports that point into `src/app/` are migration seams, not an allowed general dependency direction. Do not add new provider-to-app imports; move shared contracts into `core/` when touching those seams materially.

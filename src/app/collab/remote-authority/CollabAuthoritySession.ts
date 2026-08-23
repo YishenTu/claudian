@@ -1,4 +1,4 @@
-import type { CollabCloudCapability } from '@claudian/collab-protocol';
+import type { CollabCloudCapability } from '@claudian-collab/protocol';
 
 import type { CollabProjectResource } from '@/app/collab/activity/CollabProjectWorkSession';
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';

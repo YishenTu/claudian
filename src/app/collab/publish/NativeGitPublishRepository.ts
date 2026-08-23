@@ -5,7 +5,7 @@ import {
   COLLAB_MEMBER_REF_PREFIX,
   type CollabFileChangeKind,
   type CollabOperationId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { ensureTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';

@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {

@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';

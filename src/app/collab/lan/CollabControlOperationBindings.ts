@@ -149,4 +149,4 @@ export function matchCollabControlOperation(
   }
   return null;
 }
-import { isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';

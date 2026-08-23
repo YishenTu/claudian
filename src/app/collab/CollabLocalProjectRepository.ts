@@ -1,6 +1,6 @@
 import { lstat, readdir, readFile, rename, rm } from 'node:fs/promises';
 
-import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   type CollabFilesystemDiagnosticSink,

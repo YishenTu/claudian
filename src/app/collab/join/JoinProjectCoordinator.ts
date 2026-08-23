@@ -6,7 +6,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { collabMemberRef, type CollabOperationId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { collabMemberRef, type CollabOperationId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import type {
   CollabGitFoundation,

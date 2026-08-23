@@ -1,4 +1,4 @@
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { HostTransferAuthorityRecord } from '@/app/collab/authority/HostTransferRepository';
 import type {

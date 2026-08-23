@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS, type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS, type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   type AuthorityKeysetCursor,

@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 
-import { type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   ensureCollabVaultDirectory,

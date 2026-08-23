@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CreateCommentRequest, type CreateCommentResponse } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CreateCommentRequest, type CreateCommentResponse } from '@claudian-collab/protocol';
 
 import { AcceptOperationRepository } from '@/app/collab/authority/AcceptOperationRepository';
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';

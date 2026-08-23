@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import {

@@ -204,18 +204,6 @@ export default defineConfig([
     },
   },
   {
-    files: ['packages/collab-protocol/src/**/*.ts'],
-    languageOptions: {
-      parserOptions: {
-        project: './packages/collab-protocol/tsconfig.json',
-        tsconfigRootDir,
-      },
-    },
-    rules: {
-      ...strictTypeAwareRules,
-    },
-  },
-  {
     files: ['tests/**/*.ts'],
     ...jestRecommended,
     rules: {

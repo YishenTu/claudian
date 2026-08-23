@@ -1,4 +1,4 @@
-import { type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import type { CollabTrustedHost } from '@/app/collab/lan/CollabHttpClient';

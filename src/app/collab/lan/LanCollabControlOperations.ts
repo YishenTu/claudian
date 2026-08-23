@@ -8,7 +8,7 @@ import type {
   CollabOperationId,
   CollabProjectId,
   CollabRequestId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import type { LanCollabInvitation } from '@/app/collab/lan/InvitationCodec';
 import type {

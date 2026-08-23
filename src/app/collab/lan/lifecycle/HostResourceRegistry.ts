@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

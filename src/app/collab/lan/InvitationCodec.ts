@@ -5,7 +5,7 @@ import {
 } from 'node:crypto';
 import { isIP } from 'node:net';
 
-import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_PROTOCOL_VERSION,

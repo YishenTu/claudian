@@ -1,7 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { collabMemberRef, isCollabMemberId, isCollabProjectId } from '@claudian/collab-protocol';
+import { collabMemberRef, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { LocalCleanupGitIdentityPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
 import type { GitLocalRepositoryIdentity } from '@/app/collab/git/GitRepositoryService';

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import { type CollabProjectId, isCollabProjectId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabProjectId } from '@claudian-collab/protocol';
 import Bonjour from 'bonjour-service';
 
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';

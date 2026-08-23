@@ -7,7 +7,7 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
-import { isCollabOpaqueId, isCollabProjectId } from '@claudian/collab-protocol';
+import { isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from 'obsidian';
 

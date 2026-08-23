@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 import { type App, Modal } from 'obsidian';
 
 import type { CollabFeaturePort, CollabInvitationView } from '@/core/collab';

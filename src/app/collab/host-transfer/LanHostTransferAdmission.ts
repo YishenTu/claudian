@@ -1,4 +1,4 @@
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { HostTransferAdmissionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import { CollabError } from '@/core/collab/ClaudianCollabError';

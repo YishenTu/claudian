@@ -1,4 +1,4 @@
-import { type CollabChangeRequest } from '@claudian/collab-protocol';
+import { type CollabChangeRequest } from '@claudian-collab/protocol';
 
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,

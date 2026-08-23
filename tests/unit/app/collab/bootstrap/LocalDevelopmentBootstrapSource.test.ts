@@ -5,7 +5,7 @@ import path from 'node:path';
 import {
   COLLAB_MAIN_REF,
   collabMemberRef,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   LocalDevelopmentBootstrapSource,

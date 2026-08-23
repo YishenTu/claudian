@@ -1,4 +1,4 @@
-import { COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC } from '@claudian/collab-protocol';
+import { COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC } from '@claudian-collab/protocol';
 
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
 

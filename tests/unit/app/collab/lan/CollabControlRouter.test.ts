@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 
-import { COLLAB_LIMITS } from '@claudian/collab-protocol';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
 import {
   type CollabControlAdmissionPort,

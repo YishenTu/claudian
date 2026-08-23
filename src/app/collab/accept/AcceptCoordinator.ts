@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type AcceptRequest, type AcceptResponse, COLLAB_MAIN_REF, type CollabMemberId, type CollabRequestTicketRelation, isCollabGitOid } from '@claudian/collab-protocol';
+import { type AcceptRequest, type AcceptResponse, COLLAB_MAIN_REF, type CollabMemberId, type CollabRequestTicketRelation, isCollabGitOid } from '@claudian-collab/protocol';
 
 import {
   AcceptOperationRepository,

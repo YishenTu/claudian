@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import type { CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabFeaturePort, CollabLocalProjectSummary } from '@/core/collab';
 import { TicketListPanel } from '@/features/collab/sidebar/tickets/TicketListPanel';

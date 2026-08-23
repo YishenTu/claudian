@@ -1,4 +1,4 @@
-import type { CollabRequestDetail, CollabRole } from '@claudian/collab-protocol';
+import type { CollabRequestDetail, CollabRole } from '@claudian-collab/protocol';
 
 import type { CollabOperationOptions, CollabRequestReview, CollabReviewFileContent, CollabReviewFileRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';

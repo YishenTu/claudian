@@ -1,6 +1,6 @@
 import {
   type DevelopmentBootstrapAttemptStatus,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   CloudBootstrapCoordinator,

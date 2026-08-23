@@ -9,7 +9,7 @@ import {
   COLLAB_PROTOCOL_VERSION,
   collabMemberRef,
   type DevelopmentBootstrapManifest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   type CloudBootstrapBindingEffects,

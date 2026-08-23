@@ -2,7 +2,7 @@ import type {
   CollabMemberId,
   CollabProjectId,
   DevelopmentBootstrapManifest,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   type CloudBootstrapCoordinator,

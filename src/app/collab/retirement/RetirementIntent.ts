@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { CollabIdempotencyKey, CollabMemberId, CollabProjectId } from '@claudian/collab-protocol';
+import type { CollabIdempotencyKey, CollabMemberId, CollabProjectId } from '@claudian-collab/protocol';
 
 export interface RetirementIntentInput {
   readonly expectedHostMemberId: CollabMemberId;

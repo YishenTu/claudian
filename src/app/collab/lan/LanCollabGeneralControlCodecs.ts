@@ -6,7 +6,7 @@ import {
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   decodeLanCollabInvitation,

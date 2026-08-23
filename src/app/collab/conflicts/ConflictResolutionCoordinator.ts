@@ -1,6 +1,6 @@
 import { TextDecoder } from 'node:util';
 
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   ConflictResolutionRecord,

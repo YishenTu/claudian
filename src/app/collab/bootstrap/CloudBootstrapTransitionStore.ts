@@ -4,7 +4,7 @@ import {
   type CollabProjectId,
   isCollabOpaqueId,
   isCollabProjectId,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 import {
   CLOUD_BOOTSTRAP_TRANSITION_PHASES,

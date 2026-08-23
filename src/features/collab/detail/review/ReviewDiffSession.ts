@@ -1,4 +1,4 @@
-import { type CollabChangedFile } from '@claudian/collab-protocol';
+import { type CollabChangedFile } from '@claudian-collab/protocol';
 import { setIcon } from 'obsidian';
 
 import { type CollabOperationOptions, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabRequestReview, type CollabResult, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';

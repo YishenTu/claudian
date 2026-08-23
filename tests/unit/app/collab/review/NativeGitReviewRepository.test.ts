@@ -1,4 +1,4 @@
-import { type CollabRequestDetail } from '@claudian/collab-protocol';
+import { type CollabRequestDetail } from '@claudian-collab/protocol';
 
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
 import {

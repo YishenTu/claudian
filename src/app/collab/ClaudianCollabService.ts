@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId } from '@claudian-collab/protocol';
 
 import { AcceptCoordinator } from '@/app/collab/accept/AcceptCoordinator';
 import { AcceptGitRepository } from '@/app/collab/accept/AcceptGitRepository';

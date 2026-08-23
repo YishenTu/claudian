@@ -1,4 +1,4 @@
-import { type CollabTicketReferenceToken, scanCollabTicketReferences } from '@claudian/collab-protocol';
+import { type CollabTicketReferenceToken, scanCollabTicketReferences } from '@claudian-collab/protocol';
 
 export interface MarkdownTicketReferenceRenderOptions {
   readonly host: HTMLElement;

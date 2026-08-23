@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMember, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestDetail, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMember, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestDetail, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 

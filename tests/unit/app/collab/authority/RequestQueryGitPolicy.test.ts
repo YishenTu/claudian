@@ -1,4 +1,4 @@
-import { COLLAB_MAIN_REF } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF } from '@claudian-collab/protocol';
 
 import { RequestQueryGitPolicy } from '@/app/collab/authority/RequestQueryGitPolicy';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';

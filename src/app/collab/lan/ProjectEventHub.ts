@@ -1,4 +1,4 @@
-import { type CollabProjectId, isCollabMemberId, isCollabOpaqueId } from '@claudian/collab-protocol';
+import { type CollabProjectId, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { type AuthorityEventRecord,AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';

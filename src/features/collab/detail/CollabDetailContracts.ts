@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian/collab-protocol';
+import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabListTicketsRequest, CollabOperationOptions, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabTicketPageProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
 import type {

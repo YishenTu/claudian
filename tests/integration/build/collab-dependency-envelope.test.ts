@@ -15,11 +15,9 @@ import { build, stop } from 'esbuild';
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
 import * as pierreShikiBundleHelpers from '../../../scripts/pierreShikiBundle.js';
-import * as sourcePackageAliasHelpers from '../../../scripts/sourcePackageAliases.js';
 import * as terserProductionBundleHelpers from '../../../scripts/terserProductionBundle.js';
 
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
-const { createSourcePackageAliases } = sourcePackageAliasHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 const { minifyProductionBundle } = terserProductionBundleHelpers;
 const {
@@ -43,7 +41,6 @@ describe('Collab dependency envelope', () => {
       absWorkingDir: root,
       alias: {
         ...createDesktopRuntimeAliases(),
-        ...createSourcePackageAliases({ root }),
       },
       bundle: true,
       external: [
@@ -65,7 +62,7 @@ describe('Collab dependency envelope', () => {
         contents: `
           import { WebSocket, WebSocketServer } from 'ws';
           import { parser as markdownParser } from '@lezer/markdown';
-          import { scanCollabTicketReferences } from '@claudian/collab-protocol';
+          import { scanCollabTicketReferences } from '@claudian-collab/protocol';
           import * as english from './src/i18n/locales/en.json';
           import * as german from './src/i18n/locales/de.json';
           import { pierreThemes, shikiThemes } from '@pierre/theming/themes';
@@ -244,24 +241,24 @@ describe('Collab dependency envelope', () => {
     expect(unusedForgeInputs).toEqual([]);
   });
 
-  it('forces the Node WebSocket implementation inside the browser-oriented bundle', () => {
+  it('forces Node WebSocket and bundles the installed registry protocol', () => {
     const config = readFileSync(esbuildConfigPath, 'utf8');
     const aliases = {
       ...createDesktopRuntimeAliases(),
-      ...createSourcePackageAliases({ root }),
     };
+    const normalizedInputs = bundleInputs.map(input => input.replaceAll('\\\\', '/'));
+    const protocolInputs = normalizedInputs.filter(input => (
+      input.endsWith('/node_modules/@claudian-collab/protocol/dist/index.js')
+      || input === 'node_modules/@claudian-collab/protocol/dist/index.js'
+    ));
+    const bundle = readFileSync(bundlePath, 'utf8');
 
     expect(path.basename(aliases.ws)).toBe('index.js');
-    expect(aliases['@claudian/collab-protocol']).toBe(path.join(
-      root,
-      'packages',
-      'collab-protocol',
-      'src',
-      'index.ts',
-    ));
+    expect(protocolInputs).toHaveLength(1);
     expect(config).toContain('...createDesktopRuntimeAliases()');
-    expect(config).toContain('...createSourcePackageAliases()');
-    expect(readFileSync(bundlePath, 'utf8')).not.toContain('ws does not work in the browser');
+    expect(config).not.toContain('sourcePackageAliases');
+    expect(bundle).not.toContain('@claudian-collab/protocol');
+    expect(bundle).not.toContain('ws does not work in the browser');
     expect(runBundle(`
       const dependencyEnvelope = require(process.argv[1]);
       process.stdout.write(JSON.stringify(dependencyEnvelope.probeWebSocket()));

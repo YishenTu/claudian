@@ -7,7 +7,7 @@ import {
   collabErrorGroup as sharedCollabErrorGroup,
   type CollabRecoveryAction as SharedCollabRecoveryAction,
   sanitizeCollabDiagnosticContext,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 export const COLLAB_LOCAL_ERROR_CODES = Object.freeze([
   'not-initialized',

@@ -1,7 +1,7 @@
 import {
   COLLAB_MAIN_REF,
   COLLAB_MEMBER_REF_PREFIX,
-} from '@claudian/collab-protocol';
+} from '@claudian-collab/protocol';
 
 const ORIGIN_REMOTE = 'origin';
 const ORIGIN_TRACKING_PREFIX = `refs/remotes/${ORIGIN_REMOTE}/`;

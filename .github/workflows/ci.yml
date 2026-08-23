@@ -84,36 +84,6 @@ jobs:
         with:
           fail-on-severity: high
 
-  protocol-contract:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify protocol contract and version policy
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ -n "$BASE_SHA" ]; then
-            npm run check:protocol-compatibility -- --base "$BASE_SHA"
-          else
-            npm run check:protocol-compatibility
-          fi
-
-      - name: Verify packed protocol consumer
-        run: npm run verify:protocol
-
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -158,7 +128,6 @@ jobs:
           run_smoke=false
           while IFS= read -r changed_path; do
             case "$changed_path" in
-              packages/collab-protocol/* | \
               src/app/collab/* | \
               src/core/collab/* | \
               src/features/collab/* | \
@@ -195,11 +164,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            verify-protocol: true
-          - os: macos-latest
-            verify-protocol: false
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     steps:
@@ -220,12 +185,8 @@ jobs:
       - name: Run OS-sensitive Collab tests
         run: npm run test:cross-platform-collab
 
-      - name: Verify protocol package on Windows
-        if: matrix.verify-protocol
-        run: npm run verify:protocol
-
   build:
-    needs: [quality, protocol-contract, test]
+    needs: [quality, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

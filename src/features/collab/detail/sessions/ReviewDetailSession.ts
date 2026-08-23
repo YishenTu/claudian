@@ -1,4 +1,4 @@
-import { type CollabChangeRequest, type CollabComment } from '@claudian/collab-protocol';
+import { type CollabChangeRequest, type CollabComment } from '@claudian-collab/protocol';
 import {
   type App,
   type Component,
