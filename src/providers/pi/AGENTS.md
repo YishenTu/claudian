@@ -38,7 +38,7 @@
 
 ## Commands and Models
 
-- Runtime commands come from the `get_commands` RPC and are exposed through `PiCommandCatalog`.
+- Runtime commands prefer the `get_commands` RPC and may fall back to a pushed `available_commands_update` catalog when compatibility shims omit `get_commands`; expose the normalized result through `PiCommandCatalog`.
 - Model discovery uses a separate subprocess and may receive extension UI requests. Keep model normalization in `models.ts`.
 - Use model-provided context windows when available; otherwise preserve the existing fallback behavior.
 

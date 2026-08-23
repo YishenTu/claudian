@@ -1,4 +1,7 @@
+import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
+import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { PI_PROVIDER_CAPABILITIES } from '@/providers/pi/capabilities';
 import { PiCommandMetadataProbe } from '@/providers/pi/execution/PiCommandMetadataProbe';
 
 class Deferred<T> {
@@ -65,5 +68,116 @@ describe('PiCommandMetadataProbe', () => {
     });
     expect(createKernel).not.toHaveBeenCalled();
     await probe.dispose();
+  });
+
+  it('falls back to a pushed command catalog when get_commands is unsupported', async () => {
+    const kernel = {
+      request: jest.fn(async () => {
+        throw new Error('Request timeout: get_commands (10000ms)');
+      }),
+      shutdown: jest.fn(async () => undefined),
+      start: jest.fn(),
+    };
+    const createKernel = jest.fn((_spec, callbacks) => {
+      queueMicrotask(() => callbacks.onEvent({
+        commands: [
+          { name: 'skill:project-probe', source: 'skill' },
+          { description: 'Run tests', name: 'test', source: 'runtime' },
+        ],
+        type: 'available_commands_update',
+      }));
+      return kernel as any;
+    });
+    const host = {
+      getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
+      settings: {},
+    } as unknown as ProviderHost;
+    const probe = new PiCommandMetadataProbe(host, createKernel);
+
+    await expect(probe.load('/vault')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'pi:skill:skill:project-probe',
+        kind: 'skill',
+        name: 'skill:project-probe',
+      }),
+      expect.objectContaining({
+        id: 'pi:runtime:test',
+        kind: 'command',
+        name: 'test',
+      }),
+    ]);
+    expect(kernel.request).toHaveBeenCalledWith(
+      'get_commands',
+      {},
+      10_000,
+      expect.any(AbortSignal),
+    );
+    await probe.dispose();
+  });
+
+  it('lets the pushed fallback settle after the provider-owned RPC deadline', async () => {
+    jest.useFakeTimers();
+    try {
+      const kernel = {
+        request: jest.fn((_method, _params, timeoutMs: number, signal?: AbortSignal) =>
+          new Promise((_resolve, reject) => {
+            const timer = window.setTimeout(
+              () => reject(new Error(`Request timeout: get_commands (${timeoutMs}ms)`)),
+              timeoutMs,
+            );
+            signal?.addEventListener('abort', () => {
+              window.clearTimeout(timer);
+              reject(signal.reason ?? new Error('aborted'));
+            }, { once: true });
+          })),
+        shutdown: jest.fn(async () => undefined),
+        start: jest.fn(),
+      };
+      const createKernel = jest.fn((_spec, callbacks) => {
+        queueMicrotask(() => callbacks.onEvent({
+          commands: [{ name: 'skill:project-probe', source: 'skill' }],
+          type: 'available_commands_update',
+        }));
+        return kernel as any;
+      });
+      const host = {
+        getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
+        settings: {},
+      } as unknown as ProviderHost;
+      const probe = new PiCommandMetadataProbe(host, createKernel);
+      const store = new ProviderCommandDiscoveryStore(
+        async (signal): Promise<ProviderCommandDiscoveryResult<string>> => {
+          const commands = await probe.load('/vault', signal);
+          return {
+            status: 'ready',
+            items: commands.map(command => command.name) as [string, ...string[]],
+          };
+        },
+        {
+          resolveTimeoutMs: () => PI_PROVIDER_CAPABILITIES.commandDiscoveryDeadline
+            === 'provider-owned'
+            ? null
+            : undefined,
+        },
+      );
+
+      const load = store.load();
+      await jest.advanceTimersByTimeAsync(8_000);
+
+      expect(store.getSnapshot()).toEqual({ status: 'loading' });
+
+      await jest.advanceTimersByTimeAsync(2_000);
+      await expect(load).resolves.toEqual({
+        status: 'ready',
+        items: ['skill:project-probe'],
+      });
+      expect(store.getSnapshot()).toEqual({
+        status: 'ready',
+        items: ['skill:project-probe'],
+      });
+      await probe.dispose();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
