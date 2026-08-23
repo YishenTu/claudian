@@ -19,6 +19,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { type GitRuntime,GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
@@ -248,6 +249,10 @@ describe('Join Project same-device LAN integration', () => {
     expect(await hostGit.resolveRef(
       workingCopy,
       localMembership.member.personalRef,
+    )).toBe(initialOid);
+    expect(await hostGit.resolveRef(
+      workingCopy,
+      COLLAB_ORIGIN_MAIN_REF,
     )).toBe(initialOid);
     expect(await hostGit.resolveRef(
       bareRepositoryPath,

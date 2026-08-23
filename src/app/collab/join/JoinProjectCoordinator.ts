@@ -26,6 +26,7 @@ import type {
   CollabProjectsFolderChildOwnership,
   CollabWorkspaceService,
 } from '@/app/collab/CollabWorkspaceService';
+import { COLLAB_MAIN_FETCH_REFSPEC } from '@/app/collab/git/collabGitRefs';
 import {
   type GitNetworkEnvironment,
   parseGitNulFields,
@@ -495,6 +496,13 @@ export class JoinProjectCoordinator {
         remoteUrl: gitRemoteUrl(record),
         signal,
       });
+      await git.repositories.fetch(
+        clonePath,
+        'origin',
+        [COLLAB_MAIN_FETCH_REFSPEC],
+        this.gitNetwork(record, caPath),
+        signal,
+      );
       await git.repositories.configureLocalRepository(clonePath, {
         memberId: record.memberId!,
         personalRef: collabMemberRef(record.memberId!),

@@ -293,8 +293,24 @@ export class LocalDevelopmentBootstrapSource {
       signal,
     );
     throwIfCancelled(signal);
+    const capturedEventSequence = decoded.comparison.sourceEventSequence;
+    const observedEventSequence = observation.comparison.sourceEventSequence;
+    const expectedHostStopAdvance = (
+      observedEventSequence === capturedEventSequence + 1
+      && observation.latestEvent?.sequence === observedEventSequence
+      && observation.latestEvent.kind === 'host.stopped'
+      && observation.latestEvent.actorMemberId === decoded.comparison.sourceHostMemberId
+    );
+    const normalizedObservedComparison = {
+      ...observation.comparison,
+      sourceEventSequence: capturedEventSequence,
+    };
     if (
-      JSON.stringify(observation.comparison) !== JSON.stringify(decoded.comparison)
+      (
+        observedEventSequence !== capturedEventSequence
+        && !expectedHostStopAdvance
+      )
+      || JSON.stringify(normalizedObservedComparison) !== JSON.stringify(decoded.comparison)
       || observation.objectFormat !== decoded.git.objectFormat
       || JSON.stringify(observation.refs) !== JSON.stringify(decoded.git.refs)
       || JSON.stringify(observation.sourceEligibility)
@@ -504,7 +520,32 @@ export class LocalDevelopmentBootstrapSource {
         connection,
         'SELECT COALESCE(MAX(sequence), 0) AS count FROM events',
       );
-      return { eligibility, members, project, sourceEventSequence };
+      const latestEventRow = connection.get(`
+        SELECT sequence, event_kind, actor_member_id
+        FROM events
+        ORDER BY sequence DESC
+        LIMIT 1
+      `);
+      const latestEvent = latestEventRow === null || latestEventRow === undefined
+        ? null
+        : {
+          actorMemberId: text(latestEventRow, 'actor_member_id'),
+          kind: text(latestEventRow, 'event_kind'),
+          sequence: latestEventRow.sequence,
+        };
+      if (
+        (sourceEventSequence === 0) !== (latestEvent === null)
+        || (
+          latestEvent !== null
+          && (
+            !Number.isSafeInteger(latestEvent.sequence)
+            || latestEvent.sequence !== sourceEventSequence
+          )
+        )
+      ) {
+        throw sourceError('cloud-bootstrap-authority-event-invalid');
+      }
+      return { eligibility, latestEvent, members, project, sourceEventSequence };
     });
     throwIfCancelled(signal);
 
@@ -575,6 +616,7 @@ export class LocalDevelopmentBootstrapSource {
       repositoryPath,
       runner: git.runner,
       sourceEligibility: source.eligibility,
+      latestEvent: source.latestEvent,
     };
   }
 

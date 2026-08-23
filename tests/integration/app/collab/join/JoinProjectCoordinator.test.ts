@@ -559,6 +559,7 @@ function fakeGitFoundation(
         return clonePath;
       }),
       configureLocalRepository: jest.fn(),
+      fetch: jest.fn(),
       getWorkingTreeStatus: jest.fn(async () => []),
       resolveRef: jest.fn(async () => OID),
     },

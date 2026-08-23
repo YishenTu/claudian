@@ -34,6 +34,8 @@ describe('LocalDevelopmentBootstrapSource', () => {
     const sourceHostMemberId = 'member-zulu';
     const otherMemberId = 'member-alpha';
     let sourceEventSequence = 12;
+    let latestEventActorMemberId = sourceHostMemberId;
+    let latestEventKind = 'project.updated';
     const authorityDirectory = path.join(vaultRoot, '.claudian', 'collab', 'authorities', PROJECT_ID);
     await mkdir(path.join(authorityDirectory, 'repository.git'), { recursive: true });
     const refs = [
@@ -133,6 +135,13 @@ describe('LocalDevelopmentBootstrapSource', () => {
             all: (sql: string) => sql.includes('FROM members') ? members : [],
             get: (sql: string) => {
               if (sql.includes('MAX(sequence)')) return { count: sourceEventSequence };
+              if (sql.includes('ORDER BY sequence DESC')) {
+                return {
+                  actor_member_id: latestEventActorMemberId,
+                  event_kind: latestEventKind,
+                  sequence: sourceEventSequence,
+                };
+              }
               return { count: 0 };
             },
           }),
@@ -197,11 +206,17 @@ describe('LocalDevelopmentBootstrapSource', () => {
       .resolves.toBeUndefined();
 
     sourceEventSequence = 13;
+    latestEventKind = 'host.stopped';
+    await expect(source.assertManifestCurrent(manifest, controller.signal))
+      .resolves.toBeUndefined();
+
+    latestEventActorMemberId = otherMemberId;
     await expect(source.assertManifestCurrent(manifest, controller.signal)).rejects.toMatchObject({
       safeContext: { reason: 'cloud-bootstrap-source-manifest-authority-changed' },
     });
 
     sourceEventSequence = 12;
+    latestEventActorMemberId = sourceHostMemberId;
     const ownership = jest.fn(async () => true);
     await expect(source.recoverArtifacts(ownership)).resolves.toBeUndefined();
     expect(ownership).toHaveBeenCalledWith(manifest);
