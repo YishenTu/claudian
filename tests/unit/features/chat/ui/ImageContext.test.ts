@@ -695,6 +695,36 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(manager['contextTray']['containerEl'].hasClass('has-content')).toBe(true);
     });
 
+    it('opens an image preview from the rendered attachment control and closes it on destroy', () => {
+      const overlayEl = createMockEl();
+      const removeOverlay = jest.spyOn(overlayEl, 'remove');
+      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
+      const originalDocument = globalThis.document;
+      (globalThis as any).document = {
+        activeElement: null,
+        body: mockBody,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      };
+
+      try {
+        manager.setImages([createImageAttachment({ name: 'photo.png' })]);
+        const previewButton = manager['contextTray']['containerEl']
+          .querySelector('.claudian-context-chip-main');
+
+        expect(previewButton.tagName).toBe('BUTTON');
+        previewButton.click();
+        expect(mockBody.createDiv).toHaveBeenCalledWith({
+          cls: 'claudian-image-modal-overlay',
+        });
+
+        manager.destroy();
+        expect(removeOverlay).toHaveBeenCalledTimes(1);
+      } finally {
+        (globalThis as any).document = originalDocument;
+      }
+    });
+
     it('renders a compact image pill without a thumbnail preview', () => {
       manager.setImages([createImageAttachment({ id: 'img-1', name: 'photo.png', size: 2048 })]);
 
@@ -746,133 +776,6 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(mgr.getAttachedImages()).toHaveLength(1);
       expect(mgr.getAttachedImages()[0].id).toBe('img-2');
       expect(cb.onImagesChanged).toHaveBeenCalled();
-    });
-  });
-
-  describe('showFullImage', () => {
-    let origDocument: typeof globalThis.document;
-    let overlayEl: any;
-    let mockBody: any;
-    let addEventSpy: jest.Mock;
-    let removeEventSpy: jest.Mock;
-    let closeButtonFocus: jest.Mock;
-    let previouslyFocusedEl: { focus: jest.Mock; isConnected: boolean };
-
-    beforeEach(() => {
-      overlayEl = createMockEl();
-      closeButtonFocus = jest.fn();
-      previouslyFocusedEl = {
-        focus: jest.fn(),
-        isConnected: true,
-      };
-      const createModal = overlayEl.createDiv.bind(overlayEl);
-      overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
-        const modalEl = createModal(options);
-        const createModalChild = modalEl.createEl.bind(modalEl);
-        modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
-          const child = createModalChild(tag, childOptions);
-          if (tag === 'button') {
-            child.focus = closeButtonFocus;
-          }
-          return child;
-        });
-        return modalEl;
-      });
-      addEventSpy = jest.fn();
-      removeEventSpy = jest.fn();
-      mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-      origDocument = globalThis.document;
-      (globalThis as any).document = {
-        activeElement: previouslyFocusedEl,
-        body: mockBody,
-        addEventListener: addEventSpy,
-        removeEventListener: removeEventSpy,
-        createElementNS: jest.fn(() => mockSvgElement()),
-      };
-    });
-
-    afterEach(() => {
-      (globalThis as any).document = origDocument;
-    });
-
-    it('should create modal overlay with image', () => {
-      const image = createImageAttachment({ name: 'test.png', mediaType: 'image/png', data: 'abc123' });
-      manager['showFullImage'](image);
-
-      expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
-    });
-
-    it('exposes a named dialog, moves focus inside, and restores it after close', () => {
-      const image = createImageAttachment({ name: 'test.png' });
-      manager['showFullImage'](image);
-
-      const modalEl = overlayEl.children[0];
-      const closeBtn = modalEl.children[1];
-      expect(modalEl.getAttribute('role')).toBe('dialog');
-      expect(modalEl.getAttribute('aria-modal')).toBe('true');
-      expect(modalEl.getAttribute('aria-label')).toBe('Image preview: test.png');
-      expect(closeButtonFocus).toHaveBeenCalledTimes(1);
-
-      closeBtn.click();
-
-      expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps Tab focus on the only control in the image dialog', () => {
-      const image = createImageAttachment();
-      manager['showFullImage'](image);
-      const tabEvent = {
-        key: 'Tab',
-        preventDefault: jest.fn(),
-      };
-
-      const keydownHandler = addEventSpy.mock.calls[0][1];
-      keydownHandler(tabEvent);
-
-      expect(tabEvent.preventDefault).toHaveBeenCalledTimes(1);
-      expect(closeButtonFocus).toHaveBeenCalledTimes(2);
-    });
-
-    it('should register Escape key handler and close button', () => {
-      const image = createImageAttachment();
-      manager['showFullImage'](image);
-
-      expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
-
-      const modalEl = overlayEl.children[0];
-      const closeBtn = modalEl.children[1];
-      expect(closeBtn.tagName).toBe('BUTTON');
-      expect(closeBtn.getAttribute('type')).toBe('button');
-      expect(closeBtn.getAttribute('aria-label')).toBe('Close image preview');
-
-      const escHandler = addEventSpy.mock.calls[0][1];
-      escHandler({ key: 'Escape' });
-
-      expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
-    });
-
-    it('should close modal when clicking on overlay background', () => {
-      const image = createImageAttachment();
-      manager['showFullImage'](image);
-
-      const clickHandler = overlayEl._eventListeners.get('click')?.[0];
-      expect(clickHandler).toBeDefined();
-
-      clickHandler({ target: overlayEl });
-
-      expect(removeEventSpy).toHaveBeenCalled();
-    });
-
-    it('should close an open modal during destruction', () => {
-      const image = createImageAttachment();
-      manager['showFullImage'](image);
-      const removeSpy = jest.spyOn(overlayEl, 'remove');
-      const escHandler = addEventSpy.mock.calls[0][1];
-
-      manager.destroy();
-
-      expect(removeSpy).toHaveBeenCalledTimes(1);
-      expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
     });
   });
 

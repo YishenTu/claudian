@@ -34,6 +34,7 @@ import {
 } from '../../../utils/markdownMath';
 import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
+import { ImagePreviewModal } from '../ui/ImagePreviewModal';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 import { renderCitationGroup as renderCitationBlock } from './CitationRenderer';
 import {
@@ -76,7 +77,7 @@ export class MessageRenderer {
   private forkCallback?: (messageId: string) => Promise<void>;
   private liveMessageEls = new Map<string, HTMLElement>();
   private removeFileLinkHandler: () => void;
-  private closeImageModal: (() => void) | null = null;
+  private readonly imagePreviewModal = new ImagePreviewModal();
   private isDisposed = false;
 
   constructor(
@@ -122,7 +123,7 @@ export class MessageRenderer {
   dispose(): void {
     if (this.isDisposed) return;
     this.isDisposed = true;
-    this.closeImageModal?.();
+    this.imagePreviewModal.close();
     this.removeFileLinkHandler();
     this.removeFileLinkHandler = () => {};
     this.liveMessageEls.clear();
@@ -702,64 +703,9 @@ export class MessageRenderer {
    */
   showFullImage(image: ImageAttachment): void {
     if (this.isDisposed) return;
-    this.closeImageModal?.();
-
-    const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
     const ownerDocument = this.messagesEl.ownerDocument ?? window.document;
-    const previouslyFocusedElement = ownerDocument.activeElement as HTMLElement | null;
-    const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
-    const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-label', `Image preview: ${image.name}`);
-
-    modal.createEl('img', {
-      attr: {
-        src: dataUri,
-        alt: image.name,
-      },
-    });
-
-    const closeBtn = modal.createEl('button', {
-      cls: 'claudian-image-modal-close',
-      attr: {
-        'aria-label': 'Close image preview',
-        type: 'button',
-      },
-    });
-    closeBtn.setText('\u00D7');
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        close();
-      } else if (e.key === 'Tab') {
-        e.preventDefault();
-        closeBtn.focus();
-      }
-    };
-
-    let isClosed = false;
-    const close = () => {
-      if (isClosed) return;
-      isClosed = true;
-      ownerDocument.removeEventListener('keydown', handleKeyDown);
-      overlay.remove();
-      if (this.closeImageModal === close) {
-        this.closeImageModal = null;
-      }
-      if (previouslyFocusedElement?.isConnected) {
-        previouslyFocusedElement.focus();
-      }
-    };
-
-    closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-    ownerDocument.addEventListener('keydown', handleKeyDown);
-    this.closeImageModal = close;
-    closeBtn.focus();
+    this.imagePreviewModal.open(ownerDocument, image);
   }
 
   /**

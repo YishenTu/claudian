@@ -1275,7 +1275,7 @@ describe('MessageRenderer', () => {
     expect(imgEl.getAttribute('src')).toBe('data:image/png;base64,abc123');
   });
 
-  it('showFullImage creates overlay with image', () => {
+  it('showFullImage opens a preview that disposal closes without allowing another', () => {
     const { renderer } = createRenderer();
     const image: ImageAttachment = {
       id: 'img-1',
@@ -1286,8 +1286,8 @@ describe('MessageRenderer', () => {
       source: 'file',
     };
 
-    // Mock document.body.createDiv (document may not exist in node env)
     const overlayEl = createMockEl();
+    const removeOverlay = jest.spyOn(overlayEl, 'remove');
     const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
     const origDocument = globalThis.document;
     (globalThis as any).document = { body: mockBody, addEventListener: jest.fn(), removeEventListener: jest.fn() };
@@ -1295,6 +1295,12 @@ describe('MessageRenderer', () => {
     try {
       renderer.showFullImage(image);
       expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
+
+      renderer.dispose();
+      renderer.showFullImage(image);
+
+      expect(removeOverlay).toHaveBeenCalledTimes(1);
+      expect(mockBody.createDiv).toHaveBeenCalledTimes(1);
     } finally {
       (globalThis as any).document = origDocument;
     }
@@ -1887,222 +1893,6 @@ describe('MessageRenderer', () => {
         outputToolCall,
         expect.anything(),
       );
-    });
-  });
-
-  // ============================================
-  // showFullImage - close behaviors
-  // ============================================
-
-  describe('showFullImage - close behaviors', () => {
-    const image: ImageAttachment = {
-      id: 'img-1',
-      name: 'test.png',
-      mediaType: 'image/png',
-      data: 'abc123',
-      size: 100,
-      source: 'file',
-    };
-
-    function setupDocumentMock() {
-      const overlayEl = createMockEl();
-      const previouslyFocusedEl = {
-        focus: jest.fn(),
-        isConnected: true,
-      };
-      let closeButtonFocus: jest.Mock | null = null;
-      const createModal = overlayEl.createDiv.bind(overlayEl);
-      overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
-        const modalEl = createModal(options);
-        const createModalChild = modalEl.createEl.bind(modalEl);
-        modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
-          const child = createModalChild(tag, childOptions);
-          if (tag === 'button') {
-            closeButtonFocus = jest.fn();
-            child.focus = closeButtonFocus;
-          }
-          return child;
-        });
-        return modalEl;
-      });
-      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-      const docListeners = new Map<string, ((...args: any[]) => void)[]>();
-      const origDocument = globalThis.document;
-
-      (globalThis as any).document = {
-        activeElement: previouslyFocusedEl,
-        body: mockBody,
-        addEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
-          if (!docListeners.has(event)) docListeners.set(event, []);
-          docListeners.get(event)!.push(handler);
-        }),
-        removeEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
-          const handlers = docListeners.get(event);
-          if (handlers) {
-            const idx = handlers.indexOf(handler);
-            if (idx !== -1) handlers.splice(idx, 1);
-          }
-        }),
-      };
-
-      return {
-        closeButtonFocus: () => closeButtonFocus,
-        docListeners,
-        mockBody,
-        origDocument,
-        overlayEl,
-        previouslyFocusedEl,
-      };
-    }
-
-    it('exposes a named dialog, moves focus inside, and restores it after close', () => {
-      const { renderer } = createRenderer();
-      const {
-        closeButtonFocus,
-        origDocument,
-        overlayEl,
-        previouslyFocusedEl,
-      } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-
-        const modalEl = overlayEl.children[0];
-        const closeBtn = modalEl.children[1];
-        expect(modalEl.getAttribute('role')).toBe('dialog');
-        expect(modalEl.getAttribute('aria-modal')).toBe('true');
-        expect(modalEl.getAttribute('aria-label')).toBe('Image preview: test.png');
-        expect(closeButtonFocus()).toHaveBeenCalledTimes(1);
-
-        closeBtn.click();
-
-        expect(previouslyFocusedEl.focus).toHaveBeenCalledTimes(1);
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('keeps Tab focus on the only control in the image dialog', () => {
-      const { renderer } = createRenderer();
-      const {
-        closeButtonFocus,
-        docListeners,
-        origDocument,
-      } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-        const tabEvent = {
-          key: 'Tab',
-          preventDefault: jest.fn(),
-        };
-
-        docListeners.get('keydown')?.[0](tabEvent);
-
-        expect(tabEvent.preventDefault).toHaveBeenCalledTimes(1);
-        expect(closeButtonFocus()).toHaveBeenCalledTimes(2);
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('closeBtn click removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, origDocument } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-
-        // The overlay has a modal child, which has a close button child
-        const modalEl = overlayEl.children[0]; // claudian-image-modal
-        // Children: img (index 0), closeBtn (index 1)
-        const closeBtn = modalEl.children[1];
-        expect(closeBtn.hasClass('claudian-image-modal-close')).toBe(true);
-        expect(closeBtn.tagName).toBe('BUTTON');
-        expect(closeBtn.getAttribute('type')).toBe('button');
-        expect(closeBtn.getAttribute('aria-label')).toBe('Close image preview');
-
-        const removeSpy = jest.spyOn(overlayEl, 'remove');
-        closeBtn.click();
-
-        expect(removeSpy).toHaveBeenCalled();
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('clicking overlay background removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, origDocument } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-
-        const removeSpy = jest.spyOn(overlayEl, 'remove');
-
-        // Simulate click on the overlay itself (e.target === overlay)
-        const clickHandlers = overlayEl._eventListeners.get('click');
-        expect(clickHandlers).toBeDefined();
-        clickHandlers![0]({ target: overlayEl });
-
-        expect(removeSpy).toHaveBeenCalled();
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('ESC key removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, docListeners, origDocument } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-
-        const removeSpy = jest.spyOn(overlayEl, 'remove');
-
-        // Simulate ESC key press via the document keydown listener
-        const keydownHandlers = docListeners.get('keydown');
-        expect(keydownHandlers).toBeDefined();
-        expect(keydownHandlers!.length).toBeGreaterThan(0);
-        keydownHandlers![0]({ key: 'Escape' });
-
-        expect(removeSpy).toHaveBeenCalled();
-        // After close, the keydown handler should be removed
-        expect(document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('dispose closes an open overlay and removes its document listener', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, docListeners, origDocument } = setupDocumentMock();
-
-      try {
-        renderer.showFullImage(image);
-        const removeSpy = jest.spyOn(overlayEl, 'remove');
-
-        renderer.dispose();
-
-        expect(removeSpy).toHaveBeenCalledTimes(1);
-        expect(docListeners.get('keydown')).toEqual([]);
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('does not acquire another modal after disposal', () => {
-      const { renderer } = createRenderer();
-      const { mockBody, origDocument } = setupDocumentMock();
-
-      try {
-        renderer.dispose();
-        renderer.showFullImage(image);
-
-        expect(mockBody.createDiv).not.toHaveBeenCalled();
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
     });
   });
 
