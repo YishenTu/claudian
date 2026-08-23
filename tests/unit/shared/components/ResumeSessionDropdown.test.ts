@@ -1,3 +1,5 @@
+/** @jest-environment jsdom */
+
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ConversationMeta } from '@/core/types';
@@ -6,19 +8,12 @@ import {
   type ResumeSessionDropdownCallbacks,
 } from '@/shared/components/ResumeSessionDropdown';
 
-function createMockInput(): any {
-  const attributes = new Map<string, string>();
-  return {
-    value: '',
-    selectionStart: 0,
-    selectionEnd: 0,
-    focus: jest.fn(),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    setAttribute: jest.fn((name: string, value: string) => attributes.set(name, value)),
-    getAttribute: jest.fn((name: string) => attributes.get(name) ?? null),
-    removeAttribute: jest.fn((name: string) => attributes.delete(name)),
-  };
+function createInput(): HTMLTextAreaElement {
+  const input = document.createElement('textarea');
+  jest.spyOn(input, 'focus');
+  jest.spyOn(input, 'addEventListener');
+  jest.spyOn(input, 'removeEventListener');
+  return input;
 }
 
 function createMockCallbacks(
@@ -74,7 +69,7 @@ function getRenderedItems(containerEl: any): { title: string; isCurrent: boolean
 
 describe('ResumeSessionDropdown', () => {
   let containerEl: any;
-  let inputEl: any;
+  let inputEl: HTMLTextAreaElement;
   let callbacks: ResumeSessionDropdownCallbacks;
 
   const conversations: ConversationMeta[] = [
@@ -85,7 +80,7 @@ describe('ResumeSessionDropdown', () => {
 
   beforeEach(() => {
     containerEl = createMockEl();
-    inputEl = createMockInput();
+    inputEl = createInput();
     callbacks = createMockCallbacks();
   });
 
@@ -157,7 +152,7 @@ describe('ResumeSessionDropdown', () => {
       dropdown.destroy();
     });
 
-    it('exposes the popup and active conversation through listbox semantics', () => {
+    it('exposes the popup while preserving native textarea semantics', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
       );
@@ -180,9 +175,10 @@ describe('ResumeSessionDropdown', () => {
         'false',
         'false',
       ]);
-      expect(inputEl.getAttribute('role')).toBe('combobox');
+      expect(inputEl).toBeInstanceOf(HTMLTextAreaElement);
+      expect(inputEl.getAttribute('role')).toBeNull();
       expect(inputEl.getAttribute('aria-haspopup')).toBe('listbox');
-      expect(inputEl.getAttribute('aria-expanded')).toBe('true');
+      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
       expect(inputEl.getAttribute('aria-controls')).toBe(listboxId);
       expect(inputEl.getAttribute('aria-activedescendant')).toBe(activeOptionId);
 
@@ -371,16 +367,20 @@ describe('ResumeSessionDropdown', () => {
     it('restores the input accessibility attributes it temporarily owns', () => {
       inputEl.setAttribute('role', 'textbox');
       inputEl.setAttribute('aria-controls', 'existing-popup');
+      inputEl.setAttribute('aria-expanded', 'false');
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
       );
+
+      expect(inputEl.getAttribute('role')).toBe('textbox');
+      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
 
       dropdown.destroy();
 
       expect(inputEl.getAttribute('role')).toBe('textbox');
       expect(inputEl.getAttribute('aria-controls')).toBe('existing-popup');
       expect(inputEl.getAttribute('aria-haspopup')).toBeNull();
-      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
+      expect(inputEl.getAttribute('aria-expanded')).toBe('false');
       expect(inputEl.getAttribute('aria-activedescendant')).toBeNull();
     });
   });

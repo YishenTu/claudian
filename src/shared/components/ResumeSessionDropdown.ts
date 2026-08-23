@@ -15,7 +15,6 @@ export interface ResumeSessionDropdownCallbacks {
 }
 
 const INPUT_ACCESSIBILITY_ATTRIBUTES = [
-  'role',
   'aria-haspopup',
   'aria-controls',
   'aria-expanded',
@@ -106,7 +105,6 @@ export class ResumeSessionDropdown {
 
   private dismiss(): void {
     this.dropdownEl.removeClass('visible');
-    this.inputEl.setAttribute('aria-expanded', 'false');
     this.inputEl.removeAttribute('aria-activedescendant');
     this.callbacks.onDismiss();
   }
@@ -217,10 +215,10 @@ export class ResumeSessionDropdown {
   }
 
   private configureInputAccessibility(): void {
-    this.inputEl.setAttribute('role', 'combobox');
+    // Preserve the textarea's native multiline textbox semantics.
     this.inputEl.setAttribute('aria-haspopup', 'listbox');
     this.inputEl.setAttribute('aria-controls', this.listboxId);
-    this.inputEl.setAttribute('aria-expanded', 'true');
+    this.inputEl.removeAttribute('aria-expanded');
   }
 
   private restoreInputAccessibility(): void {
