@@ -102,6 +102,25 @@ describe('CollabGitOriginPolicy', () => {
     expect(repository.addRemote).toHaveBeenCalledTimes(1);
   });
 
+  it('rotates a stale generated same-Project LAN origin after Host readdressing', async () => {
+    const cloudUrl = 'https://cloud.example.test/v1/projects/project-a/repository.git';
+    const staleLanUrl = 'https://192.168.1.5:54545/v1/git/project-a/repository.git';
+    const repository = git([staleLanUrl]);
+
+    await rotateCloudBootstrapOrigin(repository, {
+      newRemoteUrl: cloudUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      cloudUrl,
+    );
+  });
+
   it('rejects a non-canonical Cloud Project route', async () => {
     const repository = git([oldUrl]);
 

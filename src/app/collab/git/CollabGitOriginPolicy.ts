@@ -38,6 +38,11 @@ function isGeneratedLanHostRemoteUrl(remoteUrl: string, projectId: string): bool
     && parsed.pathname === `/v1/git/${projectId}/repository.git`;
 }
 
+function isRepairableLanHostRemoteUrl(remoteUrl: string, projectId: string): boolean {
+  return remoteUrl === collabStoppedHostRemoteUrl(projectId)
+    || isGeneratedLanHostRemoteUrl(remoteUrl, projectId);
+}
+
 function originError(reason: string): CollabError {
   return new CollabError({
     code: 'repository-invalid',
@@ -94,7 +99,11 @@ export async function rotateCloudBootstrapOrigin(
   const urls = await git.listRemoteUrls(transition.repositoryPath, 'origin');
   if (urls.length !== 1) throw originError('collab-origin-transition-mismatch');
   if (urls[0] === transition.newRemoteUrl) return;
-  if (urls[0] !== transition.oldRemoteUrl) {
+  const currentUrl = urls[0];
+  if (
+    currentUrl === undefined
+    || !isRepairableLanHostRemoteUrl(currentUrl, transition.projectId)
+  ) {
     throw originError('collab-origin-transition-mismatch');
   }
   await git.addRemote(transition.repositoryPath, 'origin', transition.newRemoteUrl);
@@ -115,10 +124,7 @@ export async function ensureTrustedCollabOrigin(
     context.allowHostRemoteRepair
     && urls.length === 1
     && currentUrl !== undefined
-    && (
-      currentUrl === collabStoppedHostRemoteUrl(context.projectId)
-      || isGeneratedLanHostRemoteUrl(currentUrl, context.projectId)
-    )
+    && isRepairableLanHostRemoteUrl(currentUrl, context.projectId)
   ) {
     await git.addRemote(context.repositoryPath, 'origin', context.remoteUrl);
     urls = await git.listRemoteUrls(context.repositoryPath, 'origin');
