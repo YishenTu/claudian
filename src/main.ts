@@ -510,24 +510,32 @@ export default class ClaudianPlugin extends Plugin {
 
   async activateView() {
     const { workspace } = this.app;
-    let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+    const existingLeaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+    const leaf = existingLeaf
+      ?? this.getLeafForPlacement(this.settings.chatViewPlacement);
+    if (!leaf) return;
 
-    if (!leaf) {
-      const newLeaf = this.getLeafForPlacement(this.settings.chatViewPlacement);
-      if (newLeaf) {
-        await newLeaf.setViewState({
+    let focusSuperseded = false;
+    const focusIntentRef = workspace.on('active-leaf-change', (activeLeaf) => {
+      if (activeLeaf && activeLeaf !== leaf) {
+        focusSuperseded = true;
+      }
+    });
+
+    try {
+      if (!existingLeaf) {
+        await leaf.setViewState({
           type: VIEW_TYPE_CLAUDIAN,
           active: true,
         });
-        leaf = newLeaf;
       }
-    }
 
-    if (leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
-      if (isClaudianView(leaf.view)) {
+      if (!focusSuperseded && isClaudianView(leaf.view)) {
         leaf.view.focusActiveInput();
       }
+    } finally {
+      workspace.offref(focusIntentRef);
     }
   }
 
