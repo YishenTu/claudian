@@ -4,14 +4,18 @@ import {
   historyKeymap,
   indentWithTab,
 } from '@codemirror/commands';
-import { markdown } from '@codemirror/lang-markdown';
+import {
+  commonmarkLanguage,
+  markdownKeymap,
+  pasteURLAsLink,
+} from '@codemirror/lang-markdown';
 import {
   bracketMatching,
   defaultHighlightStyle,
   indentOnInput,
   syntaxHighlighting,
 } from '@codemirror/language';
-import { EditorSelection, EditorState, type Extension } from '@codemirror/state';
+import { EditorSelection, EditorState, type Extension, Prec } from '@codemirror/state';
 import {
   drawSelection,
   dropCursor,
@@ -195,7 +199,9 @@ export class MarkdownDraftEditor {
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       bracketMatching(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      markdown(),
+      Prec.high(keymap.of(markdownKeymap)),
+      pasteURLAsLink,
+      commonmarkLanguage,
       EditorView.lineWrapping,
       EditorView.updateListener.of(update => {
         if (!update.docChanged && !update.selectionSet) return;

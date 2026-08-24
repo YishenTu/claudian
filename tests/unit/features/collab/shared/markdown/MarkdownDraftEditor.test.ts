@@ -190,6 +190,49 @@ describe('MarkdownDraftEditor', () => {
     expect(root.querySelector('.claudian-collab-markdown-suggestion')).toBeNull();
     editor.destroy();
   });
+
+  it('continues and exits CommonMark bullet lists with the Markdown keymap', () => {
+    const root = document.createElement('div');
+    const editor = new MarkdownDraftEditor(root, {
+      ariaLabel: 'Description',
+      initialValue: '- first item',
+      renderMarkdown: jest.fn().mockResolvedValue(undefined),
+    });
+    editor.setSelection(editor.getValue().length);
+    const view = markdownEditor(root);
+    view.focus();
+
+    dispatchEditorKey(view, 'Enter');
+    expect(editor.getValue()).toBe('- first item\n- ');
+
+    dispatchEditorKey(view, 'Backspace');
+    expect(editor.getValue()).toBe('- first item\n  ');
+    dispatchEditorKey(view, 'Backspace');
+    expect(editor.getValue()).toBe('- first item\n');
+    editor.destroy();
+  });
+
+  it('pastes a URL around selected text as a Markdown link', () => {
+    const root = document.createElement('div');
+    const editor = new MarkdownDraftEditor(root, {
+      ariaLabel: 'Description',
+      initialValue: 'Claudian',
+      renderMarkdown: jest.fn().mockResolvedValue(undefined),
+    });
+    editor.setSelection(0, editor.getValue().length);
+    const view = markdownEditor(root);
+    view.focus();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        getData: (type: string) => type === 'text/plain' ? 'https://claudian.dev' : '',
+      },
+    });
+    view.contentDOM.dispatchEvent(event);
+
+    expect(editor.getValue()).toBe('[Claudian](https://claudian.dev)');
+    editor.destroy();
+  });
 });
 
 function markdownEditor(root: HTMLElement): EditorView {
@@ -202,6 +245,15 @@ function selectedSuggestions(root: HTMLElement): string[] {
   return [...root.querySelectorAll<HTMLElement>(
     '.claudian-collab-markdown-suggestion',
   )].map(item => item.getAttribute('aria-selected') ?? 'missing');
+}
+
+function dispatchEditorKey(view: EditorView, key: string): void {
+  view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', {
+    bubbles: true,
+    cancelable: true,
+    code: key,
+    key,
+  }));
 }
 
 function setEditorValue(root: HTMLElement, value: string): void {

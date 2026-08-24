@@ -8,8 +8,12 @@ import { execSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
+import { assertRuntimeDependencyParity } from './runtimeDependencyParity.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+
+assertRuntimeDependencyParity(ROOT);
 
 // Run CSS build silently
 execSync('node scripts/build-css.mjs', { cwd: ROOT, stdio: 'inherit' });

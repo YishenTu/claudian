@@ -28,6 +28,7 @@ const {
 
 const root = path.resolve(__dirname, '../../..');
 const esbuildConfigPath = path.join(root, 'esbuild.config.mjs');
+const packageJsonPath = path.join(root, 'package.json');
 const performanceScriptPath = path.join(root, 'scripts/check-startup-performance.mjs');
 
 describe('Collab dependency envelope', () => {
@@ -204,6 +205,51 @@ describe('Collab dependency envelope', () => {
     expect(inlinedOnigurumaInputs).toEqual([]);
   });
 
+  it('does not declare or bundle the unsupported Oniguruma engine', () => {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    const normalizedInputs = bundleInputs.map(input => input.replaceAll('\\\\', '/'));
+
+    expect(packageJson.dependencies?.['@shikijs/engine-oniguruma']).toBeUndefined();
+    expect(normalizedInputs.filter(input => (
+      input.includes('/@shikijs/engine-oniguruma/dist/')
+    ))).toEqual([]);
+  });
+
+  it('keeps the Collab draft editor inside the strict CommonMark language envelope', async () => {
+    const result = await build({
+      absWorkingDir: root,
+      bundle: true,
+      entryPoints: [
+        path.join(root, 'src/features/collab/shared/markdown/MarkdownDraftEditor.ts'),
+      ],
+      external: [
+        'obsidian',
+        ...builtinModules,
+        ...builtinModules.map(moduleName => `node:${moduleName}`),
+      ],
+      logLevel: 'silent',
+      metafile: true,
+      platform: 'browser',
+      target: 'es2022',
+      treeShaking: true,
+      write: false,
+    });
+    const forbiddenInputs = Object.entries(Object.values(result.metafile.outputs)[0].inputs)
+      .filter(([, contribution]) => contribution.bytesInOutput > 0)
+      .map(([input]) => input)
+      .map(input => input.replaceAll('\\\\', '/'))
+      .filter(input => [
+        '/@codemirror/lang-css/',
+        '/@codemirror/lang-html/',
+        '/@codemirror/lang-javascript/',
+        '/@lezer/css/',
+        '/@lezer/html/',
+        '/@lezer/javascript/',
+      ].some(fragment => input.includes(fragment)));
+
+    expect(forbiddenInputs).toEqual([]);
+  });
+
   it('retains only the Pierre component surface used by Collab', () => {
     const normalizedInputs = bundleContributors.map(input => input.replaceAll('\\\\', '/'));
     const unusedComponentInputs = normalizedInputs.filter(input => (
@@ -265,13 +311,15 @@ describe('Collab dependency envelope', () => {
     `)).toBe('["function","function"]');
   });
 
-  it('enforces a 5 MB main bundle budget', () => {
+  it('enforces the hard bundle budget and reports the pre-Step-11 health baseline', () => {
     const script = readFileSync(performanceScriptPath, 'utf8');
 
     expect(script).toContain('preCollabReferenceMainBytes = 3_739_584');
-    expect(script).toContain('mainBudgetBytes = 5_000_000');
+    expect(script).toContain('preStep11BundleHealthBaselineBytes = 4_896_000');
+    expect(script).toContain('mainBudgetBytes = 5_170_000');
     expect(script).toContain('evaluationReviewThresholdMs = 150');
     expect(script).toContain('pre-Collab reference delta');
+    expect(script).toContain('pre-Step-11 health baseline delta');
     expect(script).toContain('artifact.budgetExceeded');
     expect(script).not.toContain('historicalMainWarningBytes');
     expect(script).not.toContain('mainReviewThresholdBytes');

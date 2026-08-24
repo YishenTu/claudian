@@ -6,7 +6,6 @@ import {
   stringifyTokenStyle,
 } from '@shikijs/core';
 import { createJavaScriptRegexEngine } from '@shikijs/engine-javascript';
-import { createOnigurumaEngine } from '@shikijs/engine-oniguruma';
 
 export const bundledLanguages = Object.freeze({});
 
@@ -18,10 +17,13 @@ export const createHighlighter = createBundledHighlighter({
 
 export const { codeToHtml } = createSingletonShorthands(createHighlighter);
 
+export function createOnigurumaEngine(): never {
+  throw new Error('The Collab text diff renderer does not support Shiki Wasm.');
+}
+
 export {
   createCssVariablesTheme,
   createJavaScriptRegexEngine,
-  createOnigurumaEngine,
   getTokenStyleObject,
   stringifyTokenStyle,
 };

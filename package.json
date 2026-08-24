@@ -63,7 +63,7 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
+    "@anthropic-ai/claude-agent-sdk": "0.3.226",
     "@claudian-collab/protocol": "1.0.0",
     "@codemirror/commands": "6.10.0",
     "@codemirror/lang-markdown": "^6.5.2",
@@ -76,10 +76,9 @@
     "@pierre/theming": "1.0.1",
     "@shikijs/core": "4.4.3",
     "@shikijs/engine-javascript": "4.4.3",
-    "@shikijs/engine-oniguruma": "4.4.3",
     "bonjour-service": "1.4.4",
     "node-forge": "1.4.0",
-    "smol-toml": "^1.6.1",
+    "smol-toml": "1.7.1",
     "sql.js": "1.14.1",
     "tslib": "^2.8.1",
     "ws": "8.21.2"

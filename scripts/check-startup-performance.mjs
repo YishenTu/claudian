@@ -10,13 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mainPath = path.join(root, 'main.js');
 const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
 export const preCollabReferenceMainBytes = 3_739_584;
-export const privateCloudBootstrapAllowanceBytes = 100_000;
-export const cloudAuthorityBindingAllowanceBytes = 50_000;
-export const standaloneProtocolPackagingAllowanceBytes = 20_000;
-export const mainBudgetBytes = 5_000_000
-  + privateCloudBootstrapAllowanceBytes
-  + cloudAuthorityBindingAllowanceBytes
-  + standaloneProtocolPackagingAllowanceBytes;
+export const preStep11BundleHealthBaselineBytes = 4_896_000;
+export const mainBudgetBytes = 5_170_000;
 export const evaluationIndicatorMs = 50;
 export const evaluationReviewThresholdMs = 150;
 const pluginArtifactNames = ['main.js', 'manifest.json'];
@@ -24,6 +19,7 @@ const pluginArtifactNames = ['main.js', 'manifest.json'];
 export function inspectArtifactSize(mainBytes) {
   return {
     budgetExceeded: mainBytes > mainBudgetBytes,
+    healthBaselineDeltaBytes: mainBytes - preStep11BundleHealthBaselineBytes,
     referenceDeltaBytes: mainBytes - preCollabReferenceMainBytes,
   };
 }
@@ -200,6 +196,7 @@ process.stdout.write(JSON.stringify({
     `main.js ${(mainBytes / 1024 / 1024).toFixed(2)} MiB (${mainBytes} bytes); `
     + `pre-Collab reference delta ${signed(artifact.referenceDeltaBytes)} bytes `
     + `(${signed(deltaMiB.toFixed(2))} MiB); `
+    + `pre-Step-11 health baseline delta ${signed(artifact.healthBaselineDeltaBytes)} bytes; `
     + `median cold evaluation ${medianMs.toFixed(1)} ms`,
   );
   const evaluation = inspectEvaluationDuration(medianMs);
