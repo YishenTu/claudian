@@ -112,6 +112,19 @@ describe('NodeCloudAuthorityHttpTransport', () => {
     });
   });
 
+  it('maps a non-serializable request body to a sanitized error', async () => {
+    const body: { self?: unknown } = {};
+    body.self = body;
+
+    await expect(new NodeCloudAuthorityHttpTransport().request(request(
+      'http://127.0.0.1:1/invalid-body',
+      { body, method: 'POST' },
+    ))).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'cloud-authority-request-body-invalid' },
+    });
+  });
+
   it('rejects an already-cancelled request without opening a connection', async () => {
     const controller = new AbortController();
     controller.abort();
@@ -147,7 +160,7 @@ describe('NodeCloudAuthorityHttpTransport', () => {
   it('destroys a stalled request at its configured deadline', async () => {
     const origin = await listen(createServer(() => undefined));
 
-    await expect(new NodeCloudAuthorityHttpTransport({ timeoutMs: 20 }).request(
+    await expect(new NodeCloudAuthorityHttpTransport(20).request(
       request(`${origin}/stalled`),
     )).rejects.toMatchObject({
       code: 'operation-timeout',

@@ -7,7 +7,12 @@ import { request as requestHttps } from 'node:https';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
-import { CollabError } from '@/core/collab/ClaudianCollabError';
+import {
+  cloudAuthorityError,
+  cloudAuthorityOperationError,
+  cloudAuthorityProtocolError,
+} from '@/app/collab/remote-authority/CloudAuthorityError';
+import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -29,114 +34,68 @@ export type CloudAuthorityHttpTransport = (
   input: CloudAuthorityHttpRequest,
 ) => Promise<CloudAuthorityHttpResponse>;
 
-export interface NodeCloudAuthorityHttpTransportOptions {
-  readonly timeoutMs?: number;
-}
-
-function transportError(
-  code: 'cancelled' | 'endpoint-unreachable' | 'operation-failed'
-    | 'operation-timeout' | 'protocol-payload-invalid',
-  reason: string,
-): CollabError {
-  return new CollabError({
-    code,
-    recoveryActions: code === 'protocol-payload-invalid'
-      ? ['open-diagnostics']
-      : ['retry', 'open-diagnostics'],
-    safeContext: { reason },
-  });
-}
-
 function responseTooLarge(): CollabError {
-  return transportError(
-    'protocol-payload-invalid',
-    'cloud-authority-response-too-large',
-  );
+  return cloudAuthorityProtocolError('cloud-authority-response-too-large');
 }
 
 function invalidResponse(): CollabError {
-  return transportError(
-    'protocol-payload-invalid',
-    'cloud-authority-response-invalid',
-  );
+  return cloudAuthorityProtocolError('cloud-authority-response-invalid');
 }
 
-function declaredResponseLength(response: IncomingMessage): number | null {
-  const header = response.headers['content-length'];
-  if (header === undefined) return null;
-  if (
-    typeof header !== 'string'
-    || !/^(?:0|[1-9][0-9]*)$/u.test(header)
-    || Number(header) > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes
-  ) {
-    throw responseTooLarge();
-  }
-  return Number(header);
+function cancelledRequest(): CollabError {
+  return cloudAuthorityError('cancelled', 'cloud-authority-request-cancelled');
 }
 
-function encodedRequestBody(input: CloudAuthorityHttpRequest): Buffer | undefined {
+function invalidRequestBody(): CollabError {
+  return cloudAuthorityOperationError('cloud-authority-request-body-invalid');
+}
+
+function unreachableAuthority(): CollabError {
+  return cloudAuthorityError('endpoint-unreachable', 'cloud-authority-request-failed');
+}
+
+function encodedRequestBody(
+  input: CloudAuthorityHttpRequest,
+): Buffer | null | undefined {
   if (input.body === undefined) return undefined;
   try {
     const serialized = JSON.stringify(input.body);
-    if (serialized === undefined) throw new TypeError('JSON body is undefined');
-    return Buffer.from(serialized, 'utf8');
+    return serialized === undefined ? null : Buffer.from(serialized, 'utf8');
   } catch {
-    throw transportError('operation-failed', 'cloud-authority-request-body-invalid');
+    return null;
   }
 }
 
 export class NodeCloudAuthorityHttpTransport {
   readonly #timeoutMs: number;
 
-  constructor(options: NodeCloudAuthorityHttpTransportOptions = {}) {
-    const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-      throw new TypeError('Invalid Cloud authority request timeout');
-    }
+  constructor(timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
     this.#timeoutMs = timeoutMs;
   }
 
   readonly request: CloudAuthorityHttpTransport = input => {
     if (input.signal?.aborted) {
-      return Promise.reject(transportError(
-        'cancelled',
-        'cloud-authority-request-cancelled',
-      ));
+      return Promise.reject(cancelledRequest());
     }
 
     let url: URL;
     try {
       url = new URL(input.url);
     } catch {
-      return Promise.reject(transportError(
-        'endpoint-unreachable',
-        'cloud-authority-request-failed',
-      ));
+      return Promise.reject(unreachableAuthority());
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return Promise.reject(transportError(
-        'endpoint-unreachable',
-        'cloud-authority-request-failed',
-      ));
+      return Promise.reject(unreachableAuthority());
     }
 
-    let body: Buffer | undefined;
-    try {
-      body = encodedRequestBody(input);
-    } catch (error) {
-      return Promise.reject(error instanceof CollabError
-        ? error
-        : transportError('operation-failed', 'cloud-authority-request-body-invalid'));
+    const encodedBody = encodedRequestBody(input);
+    if (encodedBody === null) return Promise.reject(invalidRequestBody());
+    const body = encodedBody;
+    const headers: Record<string, string> = { ...input.headers };
+    if (body !== undefined) {
+      headers['content-length'] = String(body.byteLength);
+      headers['content-type'] = 'application/json; charset=utf-8';
     }
-    const headers = {
-      ...input.headers,
-      ...(body === undefined
-        ? {}
-        : {
-          'content-length': String(body.byteLength),
-          'content-type': 'application/json; charset=utf-8',
-        }),
-    };
     const request = url.protocol === 'https:' ? requestHttps : requestHttp;
 
     return new Promise<CloudAuthorityHttpResponse>((resolve, reject) => {
@@ -149,41 +108,43 @@ export class NodeCloudAuthorityHttpTransport {
         if (timer !== null) window.clearTimeout(timer);
         input.signal?.removeEventListener('abort', onCallerAbort);
       };
-      const finish = (operation: () => void, destroy: boolean): void => {
-        if (settled) return;
+      const finish = (destroy: boolean): boolean => {
+        if (settled) return false;
         settled = true;
         cleanup();
         if (destroy) {
           incoming?.destroy();
           outgoing?.destroy();
         }
-        operation();
+        return true;
       };
       const fail = (error: CollabError, destroy = true): void => {
-        finish(() => reject(error), destroy);
+        if (finish(destroy)) reject(error);
       };
       const onCallerAbort = (): void => {
-        fail(transportError('cancelled', 'cloud-authority-request-cancelled'));
+        fail(cancelledRequest());
       };
       const onRequestError = (): void => {
-        fail(transportError(
-          'endpoint-unreachable',
-          'cloud-authority-request-failed',
-        ), false);
+        fail(unreachableAuthority(), false);
       };
 
       try {
         outgoing = request(url, { headers, method: input.method }, response => {
           incoming = response;
-          try {
-            declaredResponseLength(response);
-          } catch (error) {
-            fail(error instanceof CollabError ? error : invalidResponse());
+          const declaredLength = response.headers['content-length'];
+          if (
+            declaredLength !== undefined
+            && (
+              typeof declaredLength !== 'string'
+              || !/^(?:0|[1-9][0-9]*)$/u.test(declaredLength)
+              || Number(declaredLength) > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes
+            )
+          ) {
+            fail(responseTooLarge());
             return;
           }
           const chunks: Buffer[] = [];
           let byteLength = 0;
-          let ended = false;
           response.on('data', (chunk: Buffer) => {
             if (settled) return;
             const bytes = Buffer.from(chunk);
@@ -194,13 +155,10 @@ export class NodeCloudAuthorityHttpTransport {
             }
             chunks.push(bytes);
           });
-          response.once('aborted', () => {
-            if (!ended) fail(invalidResponse());
-          });
+          response.once('aborted', () => fail(invalidResponse()));
           response.once('error', () => fail(invalidResponse()));
           response.once('end', () => {
             if (settled) return;
-            ended = true;
             let parsed: unknown;
             try {
               parsed = JSON.parse(Buffer.concat(chunks, byteLength).toString('utf8')) as unknown;
@@ -208,23 +166,21 @@ export class NodeCloudAuthorityHttpTransport {
               fail(invalidResponse(), false);
               return;
             }
-            finish(() => resolve({
-              body: parsed,
-              contentType: typeof response.headers['content-type'] === 'string'
-                ? response.headers['content-type']
-                : null,
-              status: response.statusCode ?? 0,
-            }), false);
+            const contentType = response.headers['content-type'];
+            if (finish(false)) {
+              resolve({
+                body: parsed,
+                contentType: typeof contentType === 'string' ? contentType : null,
+                status: response.statusCode ?? 0,
+              });
+            }
           });
           response.once('close', () => {
-            if (!ended && !settled) fail(invalidResponse());
+            if (!settled) fail(invalidResponse());
           });
         });
       } catch {
-        fail(transportError(
-          'endpoint-unreachable',
-          'cloud-authority-request-failed',
-        ), false);
+        fail(unreachableAuthority(), false);
         return;
       }
 
@@ -235,7 +191,7 @@ export class NodeCloudAuthorityHttpTransport {
         return;
       }
       timer = window.setTimeout(() => {
-        fail(transportError('operation-timeout', 'cloud-authority-request-timeout'));
+        fail(cloudAuthorityError('operation-timeout', 'cloud-authority-request-timeout'));
       }, this.#timeoutMs);
       outgoing.end(body);
     });

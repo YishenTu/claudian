@@ -6,6 +6,7 @@
 - `CollabProjectWorkSessionRegistry` remains the sole retained per-Project lifecycle registry. A work session owns at most one authority session, event connection, refresh queue, and mutation queue and closes them before its membership generation changes.
 - `LanAuthorityAdapter` wraps the existing LAN clients and lifecycle extensions without changing LAN v9 binding, credentials, CA pinning, discovery, Host, or transfer semantics.
 - `CloudAuthorityAdapter` owns Cloud binding-v1 capability negotiation, package-owned route construction and codecs, development-principal presentation, snapshot and event adaptation, safe binding-error mapping, and Git endpoint construction. It never implements server Project policy or translates Cloud lifecycle into LAN lifecycle.
+- `CloudAuthorityError` centralizes only the shared safe-error construction mechanics used by the Cloud adapter and transport. Each caller still owns when a binding or transport condition maps to that vocabulary.
 - `NodeCloudAuthorityHttpTransport` owns the production desktop JSON request lifecycle behind `CloudAuthorityHttpTransport`: Node HTTP/HTTPS dispatch, caller cancellation, deadline teardown, bounded response consumption, JSON decoding, and sanitized transport failures. It is stateless across calls, never follows redirects, and never disables native TLS verification.
 
 ## Dependency and safety

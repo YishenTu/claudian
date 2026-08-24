@@ -25,6 +25,10 @@ import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
+import {
+  cloudAuthorityOperationError,
+  cloudAuthorityProtocolError,
+} from '@/app/collab/remote-authority/CloudAuthorityError';
 import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import { decodeCloudAuthorityProjectSnapshot } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
@@ -102,20 +106,6 @@ function createDefaultEventSocket(input: CloudProjectEventSocketInput): CloudPro
   }));
 }
 
-function adapterError(
-  code: 'cancelled' | 'endpoint-unreachable' | 'operation-failed'
-    | 'operation-timeout' | 'protocol-payload-invalid',
-  reason: string,
-): CollabError {
-  return new CollabError({
-    code,
-    recoveryActions: code === 'protocol-payload-invalid'
-      ? ['open-diagnostics']
-      : ['retry', 'open-diagnostics'],
-    safeContext: { reason },
-  });
-}
-
 function controlIntegrityError(reason: string): CollabError {
   return new CollabError({
     code: 'authority-integrity-error',
@@ -162,7 +152,7 @@ function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
     response.contentType === null
     || !/^application\/json(?:;\s*charset=utf-8)?$/iu.test(response.contentType)
   ) {
-    throw adapterError('protocol-payload-invalid', 'cloud-authority-content-type-invalid');
+    throw cloudAuthorityProtocolError('cloud-authority-content-type-invalid');
   }
 }
 
@@ -499,7 +489,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort {
 
   private requireCapability(capability: CollabCloudCapability): void {
     if (!this.capabilities.has(capability)) {
-      throw adapterError('operation-failed', 'cloud-authority-capability-unavailable');
+      throw cloudAuthorityOperationError('cloud-authority-capability-unavailable');
     }
   }
 
@@ -730,7 +720,7 @@ export class CloudProjectEventClient {
       const applied = await this.onInvalidation(invalidation);
       if (this.disposed) return;
       if (!Number.isSafeInteger(applied) || applied < invalidation.sequence) {
-        throw adapterError('operation-failed', 'cloud-event-cursor-not-applied');
+        throw cloudAuthorityOperationError('cloud-event-cursor-not-applied');
       }
       this.acknowledgedSequence = Math.max(this.acknowledgedSequence, applied);
       this.observedSequence = Math.max(this.observedSequence, applied);
@@ -817,7 +807,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     });
     assertJsonResponse(response);
     if (response.status !== 200) {
-      throw adapterError('operation-failed', 'cloud-capability-negotiation-failed');
+      throw cloudAuthorityOperationError('cloud-capability-negotiation-failed');
     }
     const document = decodeCollabCloudCapabilityDocument(response.body);
     const capabilities = new Set(document.capabilities);
@@ -838,7 +828,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       events: {
         connect: ({ afterSequence, onInvalidation }: CollabAuthorityEventConnectionInput) => {
           if (!collabCloudCapabilitySupported(document, 'project-events')) {
-            throw adapterError('operation-failed', 'cloud-authority-capability-unavailable');
+            throw cloudAuthorityOperationError('cloud-authority-capability-unavailable');
           }
           const client = this.createEventClient({
             afterSequence,
