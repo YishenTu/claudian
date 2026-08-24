@@ -25,6 +25,10 @@ describe('OPENCODE_PROVIDER_CAPABILITIES', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.supportsProviderCommands).toBe(true);
   });
 
+  it('should let provider-owned deadlines bound command discovery', () => {
+    expect(OPENCODE_PROVIDER_CAPABILITIES.commandDiscoveryDeadline).toBe('provider-owned');
+  });
+
   it('should use effort-based reasoning control', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.reasoningControl).toBe('effort');
   });

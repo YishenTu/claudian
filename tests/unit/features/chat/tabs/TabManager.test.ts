@@ -241,6 +241,10 @@ describe('TabManager provider execution orchestration', () => {
   beforeEach(() => {
     mockTabs.length = 0;
     jest.clearAllMocks();
+    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+      providerId: 'claude',
+      supportsProviderCommands: true,
+    });
     warmupPolicy.resolveMode.mockReturnValue('none');
     commandLoader.loadCommands.mockResolvedValue({
       status: 'ready',
@@ -1746,6 +1750,48 @@ describe('TabManager provider execution orchestration', () => {
       externalContextPaths: [],
     }));
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
+  });
+
+  it('lets provider-owned command discovery outlive the shared deadline', async () => {
+    jest.useFakeTimers();
+    const commandResult = deferred<any>();
+    commandLoader.loadCommands.mockReturnValueOnce(commandResult.promise);
+    commandCatalog.listDropdownEntries.mockResolvedValueOnce([{
+      id: 'opencode:review',
+      name: 'review',
+    }]);
+    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+      providerId: 'opencode',
+      supportsProviderCommands: true,
+      commandDiscoveryDeadline: 'provider-owned',
+    });
+    const { manager } = createManager();
+
+    try {
+      const tab = await manager.createTab();
+      tab!.providerId = 'opencode';
+      const catalogResolver = mockCreateTabRuntime.mock.calls[0]?.[0]
+        .getProviderCatalogConfig as (runtime: any) => any;
+      const discovery = catalogResolver(tab).discovery;
+
+      const load = discovery.load();
+      for (let attempt = 0;
+        attempt < 10 && commandLoader.loadCommands.mock.calls.length === 0;
+        attempt += 1) {
+        await Promise.resolve();
+      }
+      await jest.advanceTimersByTimeAsync(8_000);
+
+      expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
+      commandResult.resolve({
+        status: 'ready',
+        items: [{ description: 'Review changes', name: 'review' }],
+      });
+      await expect(load).resolves.toMatchObject({ status: 'ready' });
+    } finally {
+      jest.useRealTimers();
+      await manager.destroy();
+    }
   });
 
   it('rejects command context loaded for a conversation rebound during lookup', async () => {

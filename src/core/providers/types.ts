@@ -31,6 +31,8 @@ export interface ProviderCapabilities {
   supportsRewind: boolean;
   supportsFork: boolean;
   supportsProviderCommands: boolean;
+  /** Whether command discovery uses the shared UI deadline or provider-owned bounds. */
+  commandDiscoveryDeadline?: 'shared' | 'provider-owned';
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
   supportsTurnSteer?: boolean;

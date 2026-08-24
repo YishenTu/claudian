@@ -2263,6 +2263,15 @@ export class TabManager implements TabManagerInterface {
         onBeforeRetry: () => {
           this.advanceTabCommandContextRevision(tabId);
         },
+        resolveTimeoutMs: () => {
+          const tab = this.tabs.get(tabId);
+          if (!tab || !this.isTabAlive(tab)) return undefined;
+          const providerId = getTabProviderId(tab, this.plugin);
+          return ProviderRegistry.getCapabilities(providerId).commandDiscoveryDeadline
+            === 'provider-owned'
+            ? null
+            : undefined;
+        },
       },
     );
     this.providerCommandDiscoveryStores.set(tabId, discovery);
