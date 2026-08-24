@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+
 import {
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_LIMITS,
@@ -9,10 +11,12 @@ import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalP
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   CloudAuthorityAdapter,
-  type CloudAuthorityHttpRequest,
   CloudProjectEventClient,
   type CloudProjectEventSocket,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import type {
+  CloudAuthorityHttpRequest,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 
 const PROJECT_ID = 'project-cloud';
 const ACTOR_ID = 'member-alice';
@@ -138,6 +142,63 @@ function cloudSnapshot() {
 }
 
 describe('CloudAuthorityAdapter', () => {
+  it('uses the desktop transport for default capability and snapshot reads', async () => {
+    const requests: Array<{ readonly actor: string | undefined; readonly url: string }> = [];
+    const server = createServer((request, response) => {
+      requests.push({
+        actor: typeof request.headers['x-claudian-development-actor'] === 'string'
+          ? request.headers['x-claudian-development-actor']
+          : undefined,
+        url: request.url ?? '',
+      });
+      response.setHeader('content-type', 'application/json; charset=utf-8');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument([
+          'project-snapshot',
+        ], limits)));
+        return;
+      }
+      response.end(JSON.stringify(collabCloudSuccessEnvelope(
+        'request-snapshot',
+        cloudSnapshot(),
+      )));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server address missing');
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new Error('renderer fetch is disabled'),
+    );
+    const localMembership = {
+      ...membership(),
+      authority: {
+        ...membership().authority,
+        serverUrl: `http://127.0.0.1:${address.port}`,
+      },
+    } satisfies CollabLocalCloudMembershipRecord;
+
+    try {
+      const session = await new CloudAuthorityAdapter().create(localMembership);
+      await expect(session.control.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+        currentMember: { id: ACTOR_ID },
+        project: { authorityKind: 'cloud', id: PROJECT_ID },
+      });
+      expect(requests).toEqual([
+        { actor: ACTOR_ID, url: '/collab/capabilities' },
+        {
+          actor: ACTOR_ID,
+          url: `/v1/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+        },
+      ]);
+    } finally {
+      fetchMock.mockRestore();
+      await new Promise<void>((resolve, reject) => server.close(error => {
+        if (error) reject(error);
+        else resolve();
+      }));
+    }
+  });
+
   it('negotiates package capabilities and maps the strict Cloud snapshot', async () => {
     const requests: CloudAuthorityHttpRequest[] = [];
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
@@ -670,51 +731,6 @@ describe('CloudAuthorityAdapter', () => {
     });
   });
 
-  it('cancels a chunked JSON response as soon as the payload limit is crossed', async () => {
-    let pullCount = 0;
-    let cancelled = false;
-    const chunk = new Uint8Array(Math.floor(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes / 2) + 1);
-    const body = new ReadableStream<Uint8Array>({
-      cancel: () => { cancelled = true; },
-      pull: controller => {
-        pullCount += 1;
-        if (pullCount <= 2) controller.enqueue(chunk);
-        else controller.close();
-      },
-    }, { highWaterMark: 0 });
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
-      headers: { 'content-type': 'application/json' },
-      status: 200,
-    }));
-
-    await expect(new CloudAuthorityAdapter().create(membership())).rejects.toMatchObject({
-      code: 'protocol-payload-invalid',
-      safeContext: { reason: 'cloud-authority-response-too-large' },
-    });
-    expect(cancelled).toBe(true);
-    fetchMock.mockRestore();
-  });
-
-  it('cancels a response rejected by its declared content length', async () => {
-    let cancelled = false;
-    const body = new ReadableStream<Uint8Array>({
-      cancel: () => { cancelled = true; },
-    });
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
-      headers: {
-        'content-length': String(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes + 1),
-        'content-type': 'application/json',
-      },
-      status: 200,
-    }));
-
-    await expect(new CloudAuthorityAdapter().create(membership())).rejects.toMatchObject({
-      code: 'protocol-payload-invalid',
-      safeContext: { reason: 'cloud-authority-response-too-large' },
-    });
-    expect(cancelled).toBe(true);
-    fetchMock.mockRestore();
-  });
 });
 
 describe('CloudProjectEventClient', () => {

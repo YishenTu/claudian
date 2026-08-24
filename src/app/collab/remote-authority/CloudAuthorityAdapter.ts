@@ -34,30 +34,16 @@ import type {
   CollabAuthorityEventInvalidation,
   CollabAuthoritySession,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import {
+  type CloudAuthorityHttpResponse,
+  type CloudAuthorityHttpTransport,
+  NodeCloudAuthorityHttpTransport,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const REQUEST_TIMEOUT_MS = 30_000;
 const MIN_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
-
-export interface CloudAuthorityHttpRequest {
-  readonly body?: unknown;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly method: 'GET' | 'POST' | 'PUT';
-  readonly signal?: AbortSignal;
-  readonly url: string;
-}
-
-export interface CloudAuthorityHttpResponse {
-  readonly body: unknown;
-  readonly contentType: string | null;
-  readonly status: number;
-}
-
-export type CloudAuthorityHttpTransport = (
-  input: CloudAuthorityHttpRequest,
-) => Promise<CloudAuthorityHttpResponse>;
 
 export interface CloudProjectEventSocket {
   close(code: number, reason: string): void;
@@ -177,88 +163,6 @@ function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
     || !/^application\/json(?:;\s*charset=utf-8)?$/iu.test(response.contentType)
   ) {
     throw adapterError('protocol-payload-invalid', 'cloud-authority-content-type-invalid');
-  }
-}
-
-async function readBoundedResponseBody(response: Response): Promise<Uint8Array> {
-  if (!response.body) return new Uint8Array();
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-  try {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      byteLength += next.value.byteLength;
-      if (byteLength > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) {
-        await reader.cancel('response-too-large');
-        throw adapterError('protocol-payload-invalid', 'cloud-authority-response-too-large');
-      }
-      chunks.push(next.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
-
-async function defaultHttpTransport(
-  input: CloudAuthorityHttpRequest,
-): Promise<CloudAuthorityHttpResponse> {
-  const controller = new AbortController();
-  const onAbort = (): void => controller.abort('cancelled');
-  input.signal?.addEventListener('abort', onAbort, { once: true });
-  const timer = window.setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(input.url, {
-      body: input.body === undefined ? undefined : JSON.stringify(input.body),
-      headers: {
-        ...input.headers,
-        ...(input.body === undefined
-          ? {}
-          : { 'content-type': 'application/json; charset=utf-8' }),
-      },
-      method: input.method,
-      signal: controller.signal,
-    });
-    const contentLength = response.headers.get('content-length');
-    if (
-      contentLength !== null
-      && (!/^(?:0|[1-9][0-9]*)$/u.test(contentLength)
-        || Number(contentLength) > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes)
-    ) {
-      await response.body?.cancel('response-too-large').catch(() => undefined);
-      throw adapterError('protocol-payload-invalid', 'cloud-authority-response-too-large');
-    }
-    const bytes = await readBoundedResponseBody(response);
-    let body: unknown;
-    try {
-      body = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    } catch {
-      throw adapterError('protocol-payload-invalid', 'cloud-authority-response-invalid');
-    }
-    return {
-      body,
-      contentType: response.headers.get('content-type'),
-      status: response.status,
-    };
-  } catch (error: unknown) {
-    if (error instanceof CollabError) throw error;
-    if (controller.signal.aborted) {
-      throw controller.signal.reason === 'timeout'
-        ? adapterError('operation-timeout', 'cloud-authority-request-timeout')
-        : adapterError('cancelled', 'cloud-authority-request-cancelled');
-    }
-    throw adapterError('endpoint-unreachable', 'cloud-authority-request-failed');
-  } finally {
-    window.clearTimeout(timer);
-    input.signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -893,7 +797,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
   constructor(options: CloudAuthorityAdapterOptions = {}) {
     this.createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation));
-    this.request = options.request ?? defaultHttpTransport;
+    this.request = options.request ?? new NodeCloudAuthorityHttpTransport().request;
     this.requestId = options.requestIdFactory
       ?? (() => `cloud-${randomUUID().replaceAll('-', '')}`);
   }

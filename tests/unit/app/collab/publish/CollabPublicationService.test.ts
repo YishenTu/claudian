@@ -1,7 +1,17 @@
+import { createServer } from 'node:http';
+
+import {
+  COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
+  COLLAB_LIMITS,
+  collabCloudCapabilityDocument,
+  collabCloudSuccessEnvelope,
+} from '@claudian-collab/protocol';
 import {
   completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 
+import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   type CollabPublicationFoundationPort,
   CollabPublicationService,
@@ -29,7 +39,132 @@ function publicationOptions(
   return completeCollabPublicationOptions({ ...overrides, vaultRoot: '/vault' });
 }
 
+const CLOUD_PROJECT_ID = 'project-cloud';
+const CLOUD_MEMBER_ID = 'member-cloud';
+const CLOUD_CREATED_AT = '2026-08-24T00:00:00.000Z';
+
+function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
+  return {
+    authority: {
+      bindingVersion: 1,
+      developmentActorId: CLOUD_MEMBER_ID,
+      gitRemoteUrl: `${serverUrl}/v1/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      kind: 'cloud',
+      serverUrl,
+      wireVersion: 4,
+    },
+    createdAt: CLOUD_CREATED_AT,
+    lastEventSequence: 0,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Cloud member',
+      id: CLOUD_MEMBER_ID,
+      personalRef: `refs/heads/members/${CLOUD_MEMBER_ID}`,
+      role: 'manager',
+    },
+    project: {
+      id: CLOUD_PROJECT_ID,
+      name: 'Cloud Project',
+      workspacePath: `workspace/${CLOUD_PROJECT_ID}`,
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: CLOUD_CREATED_AT,
+  };
+}
+
+function cloudSnapshot() {
+  const currentMember = {
+    activatedAt: CLOUD_CREATED_AT,
+    createdAt: CLOUD_CREATED_AT,
+    displayName: 'Cloud member',
+    id: CLOUD_MEMBER_ID,
+    personalRef: `refs/heads/members/${CLOUD_MEMBER_ID}`,
+    role: 'manager' as const,
+    status: 'active' as const,
+  };
+  return COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC.decodeResponse({
+    currentMember,
+    eventSequence: 1,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      createdAt: CLOUD_CREATED_AT,
+      expectedMainOid: 'a'.repeat(40),
+      id: CLOUD_PROJECT_ID,
+      mainRef: 'refs/heads/main',
+      name: 'Cloud Project',
+    },
+    ticketHighlights: [],
+  });
+}
+
+const cloudLimits = {
+  maxDevelopmentBootstrapGitBundleBytes: 1_024,
+  maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
+  maxDevelopmentBootstrapReportUtf8Bytes: 1_024,
+  maxEventReplay: 100,
+  maxGitReceivePackBytes: 1_024,
+  maxJsonPayloadUtf8Bytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
+  maxRepositoryBytes: 1_024,
+};
+
 describe('CollabPublicationService reconnect', () => {
+  it('uses the production Cloud adapter composition without renderer fetch', async () => {
+    const routes: string[] = [];
+    const server = createServer((request, response) => {
+      routes.push(request.url ?? '');
+      response.setHeader('content-type', 'application/json; charset=utf-8');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument([
+          'project-snapshot',
+        ], cloudLimits)));
+        return;
+      }
+      response.end(JSON.stringify(collabCloudSuccessEnvelope(
+        'response-snapshot',
+        cloudSnapshot(),
+      )));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server address missing');
+    const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
+    const projects = {
+      loadMembership: jest.fn().mockResolvedValue(membership),
+      loadProjectDocument: jest.fn().mockResolvedValue(null),
+      removeProjectDocument: jest.fn().mockResolvedValue(false),
+      saveProjectDocument: jest.fn().mockResolvedValue(undefined),
+      updateMembershipProjection: jest.fn().mockResolvedValue(membership),
+    };
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} },
+      requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, publicationOptions());
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new Error('renderer fetch is disabled'),
+    );
+
+    try {
+      await expect(service.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+        currentMember: { id: CLOUD_MEMBER_ID },
+        project: { authorityKind: 'cloud', id: CLOUD_PROJECT_ID },
+      });
+      expect(routes).toEqual([
+        '/collab/capabilities',
+        `/v1/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+      ]);
+    } finally {
+      fetchMock.mockRestore();
+      await service.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => {
+        if (error) reject(error);
+        else resolve();
+      }));
+    }
+  });
+
   it('forwards terminal fallback delivery to the configured retirement handler', async () => {
     const retirement = { handle: jest.fn().mockResolvedValue(undefined) };
     const service = new CollabPublicationService({

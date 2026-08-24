@@ -28,9 +28,11 @@ import {
 } from '@/app/collab/publish/PublishCoordinator';
 import {
   CloudAuthorityAdapter,
-  type CloudAuthorityHttpRequest,
-  type CloudAuthorityHttpResponse,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import type {
+  CloudAuthorityHttpRequest,
+  CloudAuthorityHttpResponse,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 jest.setTimeout(30_000);
