@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
@@ -931,6 +933,57 @@ test('Bun lock parsing accepts the repository JSONC shape without weakening JSON
     () => parseBunLock('{ "packages": /* unsupported */ {} }'),
     /bun\.lock is not valid JSONC/,
   );
+});
+
+test('production artifact entry rejects dependency drift before emitting main.js', () => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-build-parity-'));
+  try {
+    fs.writeFileSync(path.join(fixtureRoot, 'package.json'), JSON.stringify({
+      dependencies: {
+        '@anthropic-ai/claude-agent-sdk': '0.3.226',
+        'smol-toml': '1.7.1',
+      },
+    }));
+    fs.writeFileSync(path.join(fixtureRoot, 'package-lock.json'), JSON.stringify({
+      packages: {
+        '': {
+          dependencies: {
+            '@anthropic-ai/claude-agent-sdk': '0.3.226',
+            'smol-toml': '1.7.1',
+          },
+        },
+        'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
+        'node_modules/smol-toml': { version: '1.6.1' },
+      },
+    }));
+    fs.writeFileSync(path.join(fixtureRoot, 'bun.lock'), `{
+      "workspaces": { "": { "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "0.3.226",
+        "smol-toml": "1.7.1",
+      }, }, },
+      "packages": {
+        "@anthropic-ai/claude-agent-sdk": ["@anthropic-ai/claude-agent-sdk@0.3.226"],
+        "smol-toml": ["smol-toml@1.7.1"],
+      },
+    }`);
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(process.cwd(), 'esbuild.config.mjs'), 'production'],
+      {
+        cwd: fixtureRoot,
+        encoding: 'utf8',
+        env: { ...process.env, OBSIDIAN_VAULT: '' },
+      },
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Bundle-critical runtime dependency parity failed/);
+    assert.match(result.stderr, /package-lock\.json resolution: smol-toml/);
+    assert.equal(fs.existsSync(path.join(fixtureRoot, 'main.js')), false);
+  } finally {
+    fs.rmSync(fixtureRoot, { force: true, recursive: true });
+  }
 });
 
 test('production bundle policy rejects plugin artifact filename references', () => {

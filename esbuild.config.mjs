@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
 } from 'fs';
+import { assertRuntimeDependencyParity } from './scripts/runtimeDependencyParity.mjs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
 import desktopRuntimeAliasHelpers from './scripts/desktopRuntimeAliases.js';
 import terserProductionBundleHelpers from './scripts/terserProductionBundle.js';
@@ -37,6 +38,7 @@ if (existsSync('.env.local')) {
 }
 
 const prod = process.argv[2] === 'production';
+if (prod) assertRuntimeDependencyParity(process.cwd());
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
