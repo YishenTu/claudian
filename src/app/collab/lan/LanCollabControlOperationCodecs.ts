@@ -1,4 +1,9 @@
-import { COLLAB_CONTROL_OPERATION_CODECS, type CollabControlOperationCodec, type CollabDecodeResult } from '@claudian-collab/protocol';
+import {
+  COLLAB_CONTROL_OPERATION_CODECS,
+  type CollabControlOperationCodec,
+  type CollabDecodeResult,
+  type CollabRequestTicketOperation,
+} from '@claudian-collab/protocol';
 
 import type {
   LanCollabControlOperation,
@@ -42,7 +47,7 @@ function lifecycleResponse(
 
 function codec<Operation extends Exclude<
   LanCollabControlOperation,
-  keyof typeof COLLAB_CONTROL_OPERATION_CODECS
+  CollabRequestTicketOperation
 >>(
   operation: Operation,
   decodeRequest: (input: unknown) => CollabDecodeResult<
@@ -74,7 +79,7 @@ function lifecycleCodec<Operation extends LanCollabLifecycleControlOperation>(
   );
 }
 
-function sharedCodec<Operation extends keyof typeof COLLAB_CONTROL_OPERATION_CODECS>(
+function sharedCodec<Operation extends CollabRequestTicketOperation>(
   operation: Operation,
 ): LanCodecMap[Operation] {
   const shared = COLLAB_CONTROL_OPERATION_CODECS[operation];

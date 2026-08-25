@@ -8,6 +8,7 @@ import type {
   CollabOperationId,
   CollabProjectId,
   CollabRequestId,
+  CollabRequestTicketOperation,
 } from '@claudian-collab/protocol';
 
 import type { LanCollabInvitation } from '@/app/collab/lan/InvitationCodec';
@@ -182,7 +183,12 @@ export interface LanRefreshEndpointRequest {
   readonly projectId: string;
 }
 
-export interface LanCollabControlOperationMap extends CollabControlOperationMap {
+type SharedCollabControlOperationMap = Pick<
+  CollabControlOperationMap,
+  CollabRequestTicketOperation
+>;
+
+export interface LanCollabControlOperationMap extends SharedCollabControlOperationMap {
   createJoinAttempt: CollabControlOperationDefinition<
     CreateJoinAttemptRequest,
     CreateJoinAttemptResponse

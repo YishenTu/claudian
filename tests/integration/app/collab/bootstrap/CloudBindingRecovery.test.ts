@@ -54,7 +54,7 @@ const OTHER_PERSONAL_REF = collabMemberRef(OTHER_MEMBER_ID);
 const OLD_ENDPOINT = 'https://192.168.1.20:54545/';
 const OLD_REMOTE = `${OLD_ENDPOINT}v1/git/${PROJECT_ID}/repository.git`;
 const CLOUD_ORIGIN = 'https://cloud.example.test';
-const CLOUD_REMOTE = `${CLOUD_ORIGIN}/v1/projects/${PROJECT_ID}/repository.git`;
+const CLOUD_REMOTE = `${CLOUD_ORIGIN}/v2/projects/${PROJECT_ID}/repository.git`;
 const CRASH = new Error('simulated process crash');
 
 jest.setTimeout(30_000);

@@ -5,12 +5,12 @@ import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/Col
 function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: 'member-alice',
-      gitRemoteUrl: 'https://cloud.example.test/v1/git/project-cloud/repository.git',
+      gitRemoteUrl: 'https://cloud.example.test/v2/projects/project-cloud/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 0,

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_CLOUD_BINDING_LIMITS,
   COLLAB_LIMITS,
   COLLAB_MAIN_REF,
@@ -164,6 +165,11 @@ async function runGitHttpBackend(
 
 function capabilityLimits() {
   return {
+    maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+    maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+    maxCheckpointRepositoryBundleBytes:
+      COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+    maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
     maxDevelopmentBootstrapGitBundleBytes:
       COLLAB_CLOUD_BINDING_LIMITS.maxDevelopmentBootstrapGitBundleBytes,
     maxDevelopmentBootstrapManifestUtf8Bytes:
@@ -209,7 +215,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         || match.kind === 'git-receive-pack'
         || match.kind === 'git-upload-pack'
       ) {
-        const prefix = `/v1/projects/${PROJECT_ID}/repository.git`;
+        const prefix = `/v2/projects/${PROJECT_ID}/repository.git`;
         const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
         await runGitHttpBackend(
           request,
@@ -293,12 +299,12 @@ function membership(
 ): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: actor,
-      gitRemoteUrl: `${origin}/v1/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `${origin}/v2/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: origin,
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -428,7 +434,7 @@ describe('Cloud Publish gate', () => {
           'remote',
           'set-url',
           'origin',
-          `${server.origin}/v1/projects/${PROJECT_ID}/repository.git`,
+          `${server.origin}/v2/projects/${PROJECT_ID}/repository.git`,
         ]);
         await writeFile(path.join(repositoryPath, `${actor}.md`), `${actor}\n`);
 

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 
 import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_LIMITS,
   collabCloudCapabilityDocument,
@@ -46,12 +47,12 @@ const CLOUD_CREATED_AT = '2026-08-24T00:00:00.000Z';
 function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: CLOUD_MEMBER_ID,
-      gitRemoteUrl: `${serverUrl}/v1/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `${serverUrl}/v2/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -100,6 +101,11 @@ function cloudSnapshot() {
 }
 
 const cloudLimits = {
+  maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+  maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+  maxCheckpointRepositoryBundleBytes:
+    COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+  maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
   maxDevelopmentBootstrapGitBundleBytes: 1_024,
   maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
   maxDevelopmentBootstrapReportUtf8Bytes: 1_024,
@@ -152,7 +158,7 @@ describe('CollabPublicationService reconnect', () => {
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v1/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v2/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
       fetchMock.mockRestore();

@@ -835,12 +835,12 @@ function membership(): CollabLocalLanMembershipRecord {
 function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: 'member-a',
-      gitRemoteUrl: 'https://cloud.example.test/v1/projects/project-a/repository.git',
+      gitRemoteUrl: 'https://cloud.example.test/v2/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

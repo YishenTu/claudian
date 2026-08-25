@@ -52,7 +52,7 @@ describe('CloudBootstrapTransitionRecord', () => {
       memberId: HOST_MEMBER_ID,
       newAuthority: {
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        gitRemoteUrl: `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
+        gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
         serverUrl: 'https://cloud.example.test/',
         wireVersion: COLLAB_PROTOCOL_VERSION,
       },
@@ -117,7 +117,7 @@ describe('CloudBootstrapTransitionRecord', () => {
     });
 
     expect(record.newAuthority).toMatchObject({
-      gitRemoteUrl: `http://127.0.0.1:8787/v1/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `http://127.0.0.1:8787/v2/projects/${PROJECT_ID}/repository.git`,
       serverUrl: 'http://127.0.0.1:8787/',
     });
     expect(() => createCloudBootstrapTransitionRecord({

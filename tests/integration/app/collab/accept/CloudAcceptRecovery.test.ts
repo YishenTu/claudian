@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_LIMITS,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
@@ -334,12 +335,12 @@ function fixedProject(context: PublishProjectContext) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: MANAGER_ID,
-      gitRemoteUrl: `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -413,6 +414,11 @@ function acceptedRequest(baseOid: string, acceptedOid: string) {
 
 function capabilityLimits() {
   return {
+    maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+    maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+    maxCheckpointRepositoryBundleBytes:
+      COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+    maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
     maxDevelopmentBootstrapGitBundleBytes: 1_024,
     maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
     maxDevelopmentBootstrapReportUtf8Bytes: 1_024,

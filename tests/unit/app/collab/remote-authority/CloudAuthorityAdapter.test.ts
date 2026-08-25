@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 
 import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_LIMITS,
   collabCloudCapabilityDocument,
@@ -71,12 +72,12 @@ function ticketDetail(overrides: Readonly<Record<string, unknown>> = {}) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 1,
+      bindingVersion: 2,
       developmentActorId: ACTOR_ID,
-      gitRemoteUrl: `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 4,
+      wireVersion: 5,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 3,
@@ -98,6 +99,11 @@ function membership(): CollabLocalCloudMembershipRecord {
 }
 
 const limits = {
+  maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+  maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+  maxCheckpointRepositoryBundleBytes:
+    COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+  maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
   maxDevelopmentBootstrapGitBundleBytes: 1_024,
   maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
   maxDevelopmentBootstrapReportUtf8Bytes: 1_024,
@@ -187,7 +193,7 @@ describe('CloudAuthorityAdapter', () => {
         { actor: ACTOR_ID, url: '/collab/capabilities' },
         {
           actor: ACTOR_ID,
-          url: `/v1/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+          url: `/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
         },
       ]);
     } finally {
@@ -247,7 +253,7 @@ describe('CloudAuthorityAdapter', () => {
         sensitive: false,
         value: ACTOR_ID,
       }],
-      remoteUrl: `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
+      remoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
       expect.objectContaining({
@@ -259,7 +265,7 @@ describe('CloudAuthorityAdapter', () => {
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
         headers: { 'x-claudian-development-actor': ACTOR_ID },
         method: 'POST',
-        url: `https://cloud.example.test/v1/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+        url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
     ]);
   });
@@ -307,13 +313,13 @@ describe('CloudAuthorityAdapter', () => {
           idempotencyKey: 'publish-head',
           projectId: PROJECT_ID,
         },
-        protocolVersion: 4,
+        protocolVersion: 5,
         requestId: 'request-ensure',
       },
       headers: { 'x-claudian-development-actor': ACTOR_ID },
       method: 'POST',
       signal: controller.signal,
-      url: `https://cloud.example.test/v1/projects/${PROJECT_ID}/operations/ensureMyRequest`,
+      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/ensureMyRequest`,
     });
   });
 
@@ -365,13 +371,13 @@ describe('CloudAuthorityAdapter', () => {
           projectId: PROJECT_ID,
           requestId: 'request-one',
         },
-        protocolVersion: 4,
+        protocolVersion: 5,
         requestId: expect.any(String),
       },
       headers: { 'x-claudian-development-actor': ACTOR_ID },
       method: 'POST',
       signal: controller.signal,
-      url: `https://cloud.example.test/v1/projects/${PROJECT_ID}/operations/acceptRequest`,
+      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/acceptRequest`,
     });
   });
 
@@ -701,7 +707,7 @@ describe('CloudAuthorityAdapter', () => {
     const document = collabCloudCapabilityDocument(['project-snapshot'], limits);
     const adapter = new CloudAuthorityAdapter({
       request: async () => ({
-        body: { ...document, bindingVersions: [2] },
+        body: { ...document, bindingVersions: [1] },
         contentType: 'application/json',
         status: 200,
       }),
@@ -749,7 +755,7 @@ describe('CloudProjectEventClient', () => {
         sockets.push(socket);
         expect(input).toEqual({
           headers: { 'x-claudian-development-actor': ACTOR_ID },
-          url: `wss://cloud.example.test/v1/projects/${PROJECT_ID}/events?afterSequence=${
+          url: `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 5
           }`,
         });
@@ -797,7 +803,7 @@ describe('CloudProjectEventClient', () => {
         const socket = new FakeSocket();
         sockets.push(socket);
         expect(input.url).toBe(
-          `wss://cloud.example.test/v1/projects/${PROJECT_ID}/events?afterSequence=${
+          `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 4
           }`,
         );
@@ -817,7 +823,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-one' },
       projectId: PROJECT_ID,
-      protocolVersion: 4,
+      protocolVersion: 5,
       sequence: 4,
     }));
     sockets[0]!.closed(1006);
@@ -855,7 +861,7 @@ describe('CloudProjectEventClient', () => {
         occurredAt: '2026-08-22T00:00:00.000Z',
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
-        protocolVersion: 4,
+        protocolVersion: 5,
         sequence,
       }));
     }
@@ -891,7 +897,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
-      protocolVersion: 4,
+      protocolVersion: 5,
       sequence: 4,
     }));
     await flush();

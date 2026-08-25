@@ -330,7 +330,7 @@ describe('CloudBootstrapCoordinator', () => {
       terminalCleanupCompleted: true,
     });
     expect(result.newAuthority.gitRemoteUrl).toBe(
-      `https://cloud.example.test/v1/projects/${PROJECT_ID}/repository.git`,
+      `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
     );
   });
 
