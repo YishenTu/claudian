@@ -25,7 +25,7 @@ export interface HostTransferArtifactIdentity {
 export interface HostTransferPackageManifest {
   readonly schemaVersion: typeof HOST_TRANSFER_MANIFEST_SCHEMA_VERSION;
   readonly protocolVersion: typeof COLLAB_HOST_TRANSFER_PROTOCOL_VERSION;
-  readonly authoritySchemaVersion: 8 | 9 | 10 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
+  readonly authoritySchemaVersion: 8 | 9 | 10 | 11 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
   readonly sourceAuthorityGeneration: number;
@@ -127,6 +127,7 @@ function assertManifest(
           manifest.authoritySchemaVersion !== 8
           && manifest.authoritySchemaVersion !== 9
           && manifest.authoritySchemaVersion !== 10
+          && manifest.authoritySchemaVersion !== 11
         )
       )
     )

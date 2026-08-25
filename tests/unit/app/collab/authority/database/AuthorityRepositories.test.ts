@@ -10,6 +10,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
+import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import {
@@ -80,6 +81,36 @@ describe('Collab authority schema and base repositories', () => {
         ['b'.repeat(40), 'request-one'],
       );
     })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+  });
+
+  it('binds one imported active identity idempotently without accepting another hash', async () => {
+    const memberships = new PendingMembershipRepository();
+    const credentialHash = new Uint8Array(32).fill(6);
+    await database.mutate(connection => connection.run(`
+      INSERT INTO members (
+        member_id, display_name, personal_ref, role, status, access_state,
+        credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+      ) VALUES (
+        'member-unbound', 'Unbound', 'refs/heads/members/member-unbound',
+        'member', 'active', 'unbound', NULL, NULL, ?, ?, NULL
+      )
+    `, [CREATED_AT, CREATED_AT]));
+
+    await expect(database.mutate(connection => memberships.bindImportedActive(
+      connection,
+      'member-unbound',
+      credentialHash,
+    ))).resolves.toMatchObject({ value: { status: 'bound' } });
+    await expect(database.mutate(connection => memberships.bindImportedActive(
+      connection,
+      'member-unbound',
+      credentialHash,
+    ))).resolves.toMatchObject({ value: { status: 'existing' } });
+    await expect(database.mutate(connection => memberships.bindImportedActive(
+      connection,
+      'member-unbound',
+      new Uint8Array(32).fill(7),
+    ))).rejects.toMatchObject({ code: 'authority-integrity-error' });
   });
 
   it('stores redacted monotonic events and restores them in sequence order', async () => {

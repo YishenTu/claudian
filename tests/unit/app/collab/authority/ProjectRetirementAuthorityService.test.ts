@@ -105,6 +105,34 @@ describe('ProjectRetirementAuthorityService', () => {
     });
   });
 
+  it('retires with an imported active Member still unbound', async () => {
+    await database.mutate(connection => {
+      connection.run(`
+        UPDATE members
+        SET access_state = 'unbound', credential_hash = NULL
+        WHERE member_id = 'member-third' AND status = 'active'
+      `);
+    });
+    const service = new ProjectRetirementAuthorityService(
+      database,
+      new RetirementTombstoneRepository(localProjects, { now: () => NOW }),
+      { now: () => NOW },
+    );
+
+    await expect(service.retire('member-host', request())).resolves.toEqual({
+      projectId: 'project-alpha',
+      retiredAt: NOW.toISOString(),
+    });
+
+    await expect(localProjects.loadRetirementTombstone('project-alpha'))
+      .resolves.toEqual(expect.objectContaining({
+        formerMembers: [
+          expect.objectContaining({ memberId: 'member-host' }),
+          expect.objectContaining({ memberId: 'member-second' }),
+        ],
+      }));
+  });
+
   it('allows an active Manager who is neither Host nor Project creator to Retire', async () => {
     const service = new ProjectRetirementAuthorityService(
       database,

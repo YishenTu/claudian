@@ -1,4 +1,4 @@
-import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { COLLAB_LIMITS, COLLAB_MEMBER_REF_PREFIX } from '@claudian-collab/protocol';
 import type { Database, SqlValue } from 'sql.js';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -13,7 +13,7 @@ const AUTHORITY_SCHEMA_V1 = `
     ),
     display_name TEXT NOT NULL CHECK(length(display_name) BETWEEN 1 AND 200),
     personal_ref TEXT NOT NULL UNIQUE
-      CHECK(personal_ref = 'refs/heads/members/' || member_id),
+      CHECK(personal_ref = '${COLLAB_MEMBER_REF_PREFIX}' || member_id),
     role TEXT NOT NULL CHECK(role IN ('manager', 'member')),
     status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'revoked', 'left')),
     credential_hash BLOB NOT NULL CHECK(length(credential_hash) = 32),
@@ -653,6 +653,54 @@ const AUTHORITY_SCHEMA_V11_FINITE_COLLECTION_TRIGGERS = `
     END;
 `;
 
+const AUTHORITY_SCHEMA_V12_MEMBERS_SQL = `
+  CREATE TABLE members_v12 (
+    member_id TEXT PRIMARY KEY CHECK(
+      length(member_id) BETWEEN 1 AND 64
+      AND substr(member_id, 1, 1) GLOB '[A-Za-z0-9]'
+      AND member_id NOT GLOB '*[^A-Za-z0-9_-]*'
+    ),
+    display_name TEXT NOT NULL CHECK(length(display_name) BETWEEN 1 AND 200),
+    personal_ref TEXT NOT NULL UNIQUE
+      CHECK(personal_ref = '${COLLAB_MEMBER_REF_PREFIX}' || member_id),
+    role TEXT NOT NULL CHECK(role IN ('manager', 'member')),
+    status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'revoked', 'left')),
+    access_state TEXT NOT NULL DEFAULT 'bound'
+      CHECK(access_state IN ('bound', 'unbound')),
+    credential_hash BLOB CHECK(
+      credential_hash IS NULL OR length(credential_hash) = 32
+    ),
+    join_attempt_id TEXT UNIQUE,
+    created_at TEXT NOT NULL CHECK(length(created_at) > 0),
+    activated_at TEXT,
+    revoked_at TEXT,
+    CHECK(role != 'manager' OR status = 'active'),
+    CHECK(
+      (status = 'pending' AND activated_at IS NULL AND revoked_at IS NULL)
+      OR (status = 'active' AND activated_at IS NOT NULL AND revoked_at IS NULL)
+      OR (status IN ('revoked', 'left') AND revoked_at IS NOT NULL)
+    ),
+    CHECK(
+      (access_state = 'bound' AND credential_hash IS NOT NULL)
+      OR (
+        access_state = 'unbound'
+        AND credential_hash IS NULL
+        AND status != 'pending'
+        AND join_attempt_id IS NULL
+      )
+    )
+  );
+`;
+
+const AUTHORITY_SCHEMA_V12_METADATA_SQL = `
+  CREATE TABLE authority_metadata (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    authority_generation INTEGER NOT NULL CHECK(
+      typeof(authority_generation) = 'integer' AND authority_generation >= 1
+    )
+  );
+`;
+
 function pragmaNumber(database: Database, pragma: string): number {
   const result = database.exec(pragma);
   const value = result[0]?.values[0]?.[0];
@@ -1007,6 +1055,54 @@ function repairAndAssertAuthorityV11Schema(database: Database): boolean {
   return repaired;
 }
 
+function authorityV12SchemaIsComplete(database: Database): boolean {
+  return authorityV11SchemaIsComplete(database)
+    && hasExactColumns(database, 'members', [
+      'member_id',
+      'display_name',
+      'personal_ref',
+      'role',
+      'status',
+      'access_state',
+      'credential_hash',
+      'join_attempt_id',
+      'created_at',
+      'activated_at',
+      'revoked_at',
+    ])
+    && hasExactSchemaSql(
+      database,
+      'table',
+      'members',
+      AUTHORITY_SCHEMA_V12_MEMBERS_SQL.replace('members_v12', 'members'),
+    )
+    && hasExactColumns(database, 'authority_metadata', [
+      'singleton',
+      'authority_generation',
+    ])
+    && hasExactSchemaSql(
+      database,
+      'table',
+      'authority_metadata',
+      AUTHORITY_SCHEMA_V12_METADATA_SQL,
+    )
+    && firstColumn(database, `
+      SELECT singleton FROM authority_metadata
+      WHERE singleton != 1 OR authority_generation < 1
+    `).length === 0
+    && firstColumn(database, `
+      SELECT singleton FROM authority_metadata
+    `).length === 1;
+}
+
+function repairAndAssertAuthorityV12Schema(database: Database): boolean {
+  const repaired = repairAndAssertAuthorityV11Schema(database);
+  if (!authorityV12SchemaIsComplete(database)) {
+    throw new Error('Authority V12 portability schema is incomplete');
+  }
+  return repaired;
+}
+
 function applyAuthoritySchemaV3(database: Database): void {
   const requestColumns = tableColumns(database, 'change_requests');
   const presentRequestColumns = AUTHORITY_SCHEMA_V3_REQUEST_COLUMNS.filter(column => (
@@ -1251,6 +1347,43 @@ function applyAuthoritySchemaV11(database: Database): void {
   database.run(AUTHORITY_SCHEMA_V11_FINITE_COLLECTION_TRIGGERS);
 }
 
+function applyAuthoritySchemaV12(database: Database): void {
+  repairAndAssertAuthorityV11Schema(database);
+  const memberColumns = tableColumns(database, 'members');
+  const hasAccessState = memberColumns.has('access_state');
+  const hasMetadata = tableExists(database, 'authority_metadata');
+  if (hasAccessState || hasMetadata) {
+    if (!hasAccessState || !hasMetadata || !authorityV12SchemaIsComplete(database)) {
+      throw new Error('Authority V12 portability schema is incomplete');
+    }
+    return;
+  }
+
+  database.run('PRAGMA defer_foreign_keys = ON');
+  database.run(AUTHORITY_SCHEMA_V12_MEMBERS_SQL);
+  database.run(`
+    INSERT INTO members_v12 (
+      member_id, display_name, personal_ref, role, status, access_state,
+      credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+    )
+    SELECT
+      member_id, display_name, personal_ref, role, status, 'bound',
+      credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+    FROM members;
+    DROP TABLE members;
+    ALTER TABLE members_v12 RENAME TO members;
+  `);
+  database.run(AUTHORITY_SCHEMA_V12_METADATA_SQL);
+  database.run(`
+    INSERT INTO authority_metadata (singleton, authority_generation)
+    VALUES (1, 1)
+  `);
+  if (firstColumn(database, 'PRAGMA foreign_key_check').length > 0) {
+    throw new Error('Authority V12 foreign key migration failed');
+  }
+  repairAndAssertAuthorityV12Schema(database);
+}
+
 export function applyAuthorityMigrations(database: Database): boolean {
   const version = pragmaNumber(database, 'PRAGMA user_version');
   if (version > COLLAB_AUTHORITY_SCHEMA_VERSION) {
@@ -1259,7 +1392,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
   if (version === COLLAB_AUTHORITY_SCHEMA_VERSION) {
     database.run('BEGIN IMMEDIATE');
     try {
-      const repaired = repairAndAssertAuthorityV11Schema(database);
+      const repaired = repairAndAssertAuthorityV12Schema(database);
       database.run('COMMIT');
       return repaired;
     } catch (error) {
@@ -1268,8 +1401,12 @@ export function applyAuthorityMigrations(database: Database): boolean {
     }
   }
 
-  database.run('BEGIN IMMEDIATE');
+  const restoreForeignKeys = pragmaNumber(database, 'PRAGMA foreign_keys') === 1;
+  if (restoreForeignKeys) database.run('PRAGMA foreign_keys = OFF');
+  let transactionStarted = false;
   try {
+    database.run('BEGIN IMMEDIATE');
+    transactionStarted = true;
     if (version < 1) database.run(AUTHORITY_SCHEMA_V1);
     if (version < 3) applyAuthoritySchemaV3(database);
     if (version < 4) applyAuthoritySchemaV4(database);
@@ -1278,12 +1415,16 @@ export function applyAuthorityMigrations(database: Database): boolean {
     if (version < 9) applyAuthoritySchemaV9(database);
     if (version < 10) applyAuthoritySchemaV10(database);
     if (version < 11) applyAuthoritySchemaV11(database);
-    repairAndAssertAuthorityV11Schema(database);
+    if (version < 12) applyAuthoritySchemaV12(database);
+    repairAndAssertAuthorityV12Schema(database);
     database.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION}`);
     database.run('COMMIT');
+    transactionStarted = false;
   } catch (error) {
-    database.run('ROLLBACK');
+    if (transactionStarted) database.run('ROLLBACK');
     throw error;
+  } finally {
+    if (restoreForeignKeys) database.run('PRAGMA foreign_keys = ON');
   }
   return true;
 }
@@ -1294,7 +1435,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
  */
 export function migrateLegacyAuthorityDatabaseToCurrent(database: Database): number {
   const version = pragmaNumber(database, 'PRAGMA user_version');
-  if (version !== 8 && version !== 9 && version !== 10) {
+  if (version !== 8 && version !== 9 && version !== 10 && version !== 11) {
     throw new RangeError('Host transfer authority schema is not a supported legacy version');
   }
   applyAuthorityMigrations(database);
@@ -1320,6 +1461,16 @@ export function assertAuthorityDatabaseIntegrity(
 
   if (!finiteCollectionCapacityIsValid(database)) {
     throw new Error('Authority finite collection invariant failed');
+  }
+  if (firstColumn(database, `
+    SELECT singleton FROM authority_metadata
+    WHERE singleton != 1
+      OR typeof(authority_generation) != 'integer'
+      OR authority_generation < 1
+  `).length > 0 || firstColumn(database, `
+    SELECT singleton FROM authority_metadata
+  `).length !== 1) {
+    throw new Error('Authority generation invariant failed');
   }
 
   if (firstColumn(database, `

@@ -60,12 +60,12 @@ describe('Project exit foundation gate', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('freezes the v9/v2/v11 contract and strict lifecycle envelopes', () => {
+  it('freezes the v9/v2/v12 contract and strict lifecycle envelopes', () => {
     expect({
       authority: COLLAB_AUTHORITY_SCHEMA_VERSION,
       local: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       protocol: COLLAB_CONTROL_PROTOCOL_VERSION,
-    }).toEqual({ authority: 11, local: 3, protocol: 9 });
+    }).toEqual({ authority: 12, local: 3, protocol: 9 });
     expect(lanCollabControlOperationCodec('leaveProject').decodeRequest({
       expectedHostMemberId: 'member-host',
       expectedMemberId: 'member-target',

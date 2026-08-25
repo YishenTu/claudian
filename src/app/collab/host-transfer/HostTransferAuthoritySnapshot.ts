@@ -114,7 +114,7 @@ function decodeProofChain(
   });
 }
 
-function assertSchema(database: Database, expectedVersion: 8 | 9 | 10 | 11): void {
+function assertSchema(database: Database, expectedVersion: 8 | 9 | 10 | 11 | 12): void {
   const version = one(database, 'PRAGMA user_version').user_version;
   if (version !== expectedVersion) {
     throw snapshotError('host-transfer-authority-schema-mismatch');
@@ -383,7 +383,7 @@ export class HostTransferAuthoritySnapshot {
 
   private async openRaw(
     bytes: Uint8Array,
-    expectedSchemaVersion: 8 | 9 | 10 | 11,
+    expectedSchemaVersion: 8 | 9 | 10 | 11 | 12,
   ): Promise<Database> {
     if (bytes.byteLength < 16 || Buffer.from(bytes.subarray(0, 16)).toString('binary') !== 'SQLite format 3\u0000') {
       throw snapshotError('host-transfer-authority-header-invalid');
@@ -421,12 +421,24 @@ export class HostTransferAuthoritySnapshot {
              receiver_credential, manifest_digest, activation_certificate
       FROM host_transfer_operations WHERE transfer_id = ?
     `, [input.manifest.transferId]);
-    const invalidCredential = query(database, `
-      SELECT member_id FROM members
-      WHERE status = 'active'
-        AND (typeof(credential_hash) != 'blob' OR length(credential_hash) != 32)
-      LIMIT 1
-    `).length > 0;
+    const invalidCredential = query(database, input.manifest.authoritySchemaVersion === 12
+      ? `
+        SELECT member_id FROM members
+        WHERE status = 'active' AND (
+          access_state NOT IN ('bound', 'unbound')
+          OR (access_state = 'bound' AND (
+            typeof(credential_hash) != 'blob' OR length(credential_hash) != 32
+          ))
+          OR (access_state = 'unbound' AND credential_hash IS NOT NULL)
+        )
+        LIMIT 1
+      `
+      : `
+        SELECT member_id FROM members
+        WHERE status = 'active'
+          AND (typeof(credential_hash) != 'blob' OR length(credential_hash) != 32)
+        LIMIT 1
+      `).length > 0;
     if (
       project.project_id !== input.manifest.projectId
       || project.host_member_id !== input.manifest.targetHostMemberId

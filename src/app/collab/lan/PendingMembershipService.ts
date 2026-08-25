@@ -550,7 +550,11 @@ export class PendingMembershipService {
     const actualHash = hashCredential(credential);
     let matched: AuthorityMemberCredentialRecord | null = null;
     for (const record of this.repository.listCredentialRecords(connection, statuses)) {
-      if (credentialMatches(actualHash, record.credentialHash)) matched = record;
+      if (
+        record.accessState === 'bound'
+        && record.credentialHash !== null
+        && credentialMatches(actualHash, record.credentialHash)
+      ) matched = record;
     }
     if (!matched) {
       const allMembers = this.repository.listCredentialRecords(connection, [
@@ -560,7 +564,9 @@ export class PendingMembershipService {
         'left',
       ]);
       const known = allMembers.find(record => (
-        credentialMatches(actualHash, record.credentialHash)
+        record.accessState === 'bound'
+        && record.credentialHash !== null
+        && credentialMatches(actualHash, record.credentialHash)
       ));
       if (known?.member.status === 'revoked' || known?.member.status === 'left') {
         throw serviceError('membership-revoked', 'membership-no-longer-active');

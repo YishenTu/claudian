@@ -1,2 +1,2 @@
 export const COLLAB_LOCAL_PROJECT_SCHEMA_VERSION = 3 as const;
-export const COLLAB_AUTHORITY_SCHEMA_VERSION = 11 as const;
+export const COLLAB_AUTHORITY_SCHEMA_VERSION = 12 as const;

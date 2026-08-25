@@ -94,7 +94,7 @@ describe('HostTransferPackage', () => {
     })).toThrow();
   });
 
-  it.each([8, 9, 10] as const)(
+  it.each([8, 9, 10, 11] as const)(
     'accepts schema %s only through the explicit incoming recovery decoder',
     authoritySchemaVersion => {
     const legacy = {

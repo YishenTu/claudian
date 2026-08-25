@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
@@ -14,7 +16,8 @@ export interface AuthorityInvitationRecord {
 }
 
 export interface AuthorityMemberCredentialRecord {
-  readonly credentialHash: Uint8Array;
+  readonly accessState: 'bound' | 'unbound';
+  readonly credentialHash: Uint8Array | null;
   readonly joinAttemptId: string | null;
   readonly member: CollabMember;
 }
@@ -33,6 +36,11 @@ export interface CreatePendingMembershipInput {
   readonly displayName: string;
   readonly joinAttemptId: string;
   readonly memberId: CollabMemberId;
+}
+
+export interface BindImportedActiveResult {
+  readonly record: AuthorityMemberCredentialRecord;
+  readonly status: 'bound' | 'existing';
 }
 
 function membershipError(reason: string): CollabError {
@@ -60,6 +68,13 @@ function bytes(row: Readonly<Record<string, unknown>>, field: string): Uint8Arra
     throw membershipError('authority-credential-hash-invalid');
   }
   return Uint8Array.from(value);
+}
+
+function nullableCredentialHash(
+  row: Readonly<Record<string, unknown>>,
+): Uint8Array | null {
+  if (row.credential_hash === null) return null;
+  return bytes(row, 'credential_hash');
 }
 
 function assertTimestamp(value: string, field: string): void {
@@ -90,12 +105,14 @@ function decodeMember(row: Readonly<Record<string, unknown>>): AuthorityMemberCr
   const activatedAt = text(row, 'activated_at', true);
   const revokedAt = text(row, 'revoked_at', true);
   const joinAttemptId = text(row, 'join_attempt_id', true);
+  const accessState = text(row, 'access_state');
   if (
     (role !== 'manager' && role !== 'member')
     || !isMemberStatus(status)
     || !isCollabMemberId(id)
     || (joinAttemptId !== null && !isCollabOpaqueId(joinAttemptId))
     || personalRef !== collabMemberRef(id)
+    || (accessState !== 'bound' && accessState !== 'unbound')
   ) {
     throw membershipError('authority-member-row-invalid');
   }
@@ -103,7 +120,8 @@ function decodeMember(row: Readonly<Record<string, unknown>>): AuthorityMemberCr
   if (activatedAt !== null) assertTimestamp(activatedAt, 'member-activated-at');
   if (revokedAt !== null) assertTimestamp(revokedAt, 'member-revoked-at');
   return {
-    credentialHash: bytes(row, 'credential_hash'),
+    accessState,
+    credentialHash: nullableCredentialHash(row),
     joinAttemptId,
     member: {
       ...(activatedAt === null ? {} : { activatedAt }),
@@ -184,7 +202,7 @@ function decodeChangeRequest(
 }
 
 const MEMBER_COLUMNS = `
-  member_id, display_name, personal_ref, role, status, credential_hash,
+  member_id, display_name, personal_ref, role, status, access_state, credential_hash,
   join_attempt_id, created_at, activated_at, revoked_at
 `;
 
@@ -335,6 +353,50 @@ export class PendingMembershipRepository {
     `, [memberId]);
     if (!row) throw membershipError('pending-member-missing');
     return decodeMember(row);
+  }
+
+  bindImportedActive(
+    connection: AuthorityDatabaseConnection,
+    memberId: CollabMemberId,
+    credentialHash: Uint8Array,
+  ): BindImportedActiveResult {
+    assertMemberId(memberId, 'member-id');
+    if (credentialHash.byteLength !== 32) {
+      throw membershipError('member-credential-hash-invalid');
+    }
+    const row = connection.get(`
+      SELECT ${MEMBER_COLUMNS}
+      FROM members
+      WHERE member_id = ?
+    `, [memberId]);
+    if (!row) throw membershipError('member-missing');
+    const existing = decodeMember(row);
+    if (existing.member.status !== 'active') {
+      throw membershipError('imported-member-not-active');
+    }
+    if (existing.accessState === 'bound') {
+      if (
+        existing.credentialHash !== null
+        && timingSafeEqual(existing.credentialHash, credentialHash)
+      ) return { record: existing, status: 'existing' };
+      throw membershipError('imported-member-binding-conflict');
+    }
+    const changes = connection.run(`
+      UPDATE members
+      SET access_state = 'bound', credential_hash = ?
+      WHERE member_id = ?
+        AND status = 'active'
+        AND access_state = 'unbound'
+        AND credential_hash IS NULL
+    `, [credentialHash, memberId]);
+    if (changes !== 1) throw membershipError('imported-member-binding-stale');
+    const updated = connection.get(`
+      SELECT ${MEMBER_COLUMNS}
+      FROM members
+      WHERE member_id = ?
+    `, [memberId]);
+    if (!updated) throw membershipError('member-missing');
+    return { record: decodeMember(updated), status: 'bound' };
   }
 
   activate(

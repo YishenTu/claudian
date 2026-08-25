@@ -107,6 +107,17 @@ describe('HostTransferAuthoritySnapshot', () => {
   });
 
   it('creates and validates an inert snapshot without mutating the live authority', async () => {
+    await database.mutate(connection => {
+      connection.run(`
+        INSERT INTO members (
+          member_id, display_name, personal_ref, role, status, access_state,
+          credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+        ) VALUES (
+          'member-offline', 'Offline', 'refs/heads/members/member-offline',
+          'member', 'active', 'unbound', NULL, NULL, ?, ?, NULL
+        )
+      `, [NOW, NOW]);
+    });
     const sourceGeneration = database.generation;
     const codec = new HostTransferAuthoritySnapshot({
       loadSqlJs: async () => SQL,

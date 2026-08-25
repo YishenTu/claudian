@@ -718,7 +718,7 @@ test('production consumes protocol-owned canonical Collab Git refs', () => {
   ), []);
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /refs\/heads\/members\//,
-    new Map([['src/app/collab/authority/AuthoritySchema.ts', 1]]),
+    new Map(),
   ), []);
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /refs\/remotes\/origin\/main/,

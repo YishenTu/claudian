@@ -204,13 +204,24 @@ export class ProjectRetirementRepository {
       throw retirementError('authority-integrity-error', 'retirement-row-invalid');
     }
     const formerMembers = connection.all(`
-      SELECT member_id, credential_hash
+      SELECT member_id, access_state, credential_hash
       FROM members WHERE status = 'active'
       ORDER BY created_at, member_id
     `).map(member => {
       if (
         typeof member.member_id !== 'string'
-        || !(member.credential_hash instanceof Uint8Array)
+        || (member.access_state !== 'bound' && member.access_state !== 'unbound')
+      ) {
+        throw retirementError('authority-integrity-error', 'retirement-member-row-invalid');
+      }
+      if (member.access_state === 'unbound') {
+        if (member.credential_hash !== null) {
+          throw retirementError('authority-integrity-error', 'retirement-member-row-invalid');
+        }
+        return null;
+      }
+      if (
+        !(member.credential_hash instanceof Uint8Array)
         || member.credential_hash.byteLength !== 32
       ) {
         throw retirementError('authority-integrity-error', 'retirement-member-row-invalid');
@@ -219,7 +230,7 @@ export class ProjectRetirementRepository {
         credentialHash: Buffer.from(member.credential_hash).toString('hex'),
         memberId: member.member_id,
       };
-    });
+    }).filter((member): member is ProjectRetirementFormerMember => member !== null);
     if (formerMembers.length === 0) {
       throw retirementError('authority-integrity-error', 'retirement-member-set-empty');
     }

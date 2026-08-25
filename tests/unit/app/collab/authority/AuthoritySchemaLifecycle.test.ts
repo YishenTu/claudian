@@ -169,11 +169,121 @@ function insertProject(database: Database, managerMemberId = 'member-host'): voi
   `, [managerMemberId]);
 }
 
+function downgradeCurrentSchemaToV11(database: Database): void {
+  database.run(`
+    CREATE TABLE members_v11 (
+      member_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      personal_ref TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL CHECK(role IN ('manager', 'member')),
+      status TEXT NOT NULL CHECK(status IN ('pending', 'active', 'revoked', 'left')),
+      credential_hash BLOB NOT NULL CHECK(length(credential_hash) = 32),
+      join_attempt_id TEXT UNIQUE,
+      created_at TEXT NOT NULL,
+      activated_at TEXT,
+      revoked_at TEXT
+    );
+    INSERT INTO members_v11 (
+      member_id, display_name, personal_ref, role, status, credential_hash,
+      join_attempt_id, created_at, activated_at, revoked_at
+    )
+    SELECT
+      member_id, display_name, personal_ref, role, status, credential_hash,
+      join_attempt_id, created_at, activated_at, revoked_at
+    FROM members;
+    DROP TABLE members;
+    ALTER TABLE members_v11 RENAME TO members;
+    DROP TABLE authority_metadata;
+    PRAGMA user_version = 11;
+  `);
+}
+
 describe('AuthoritySchema lifecycle migration', () => {
   let SQL: SqlJsStatic;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
+  });
+
+  it('initializes generation one and credential-bound access for new authorities', () => {
+    const database = new SQL.Database();
+    applyAuthorityMigrations(database);
+    insertMembers(database);
+    database.run(`
+      INSERT INTO project (
+        singleton, project_id, name, state, host_member_id,
+        manager_set_generation, main_ref, created_at, snapshot_generation
+      ) VALUES (
+        1, 'project-alpha', 'Alpha', 'active', 'member-host', 0,
+        'refs/heads/main', '${CREATED_AT}', 0
+      )
+    `);
+
+    expect(database.exec(`
+      SELECT authority_generation FROM authority_metadata WHERE singleton = 1
+    `)[0]?.values).toEqual([[1]]);
+    expect(database.exec(`
+      SELECT member_id, access_state, length(credential_hash)
+      FROM members ORDER BY member_id
+    `)[0]?.values).toEqual([
+      ['member-a', 'bound', 32],
+      ['member-host', 'bound', 32],
+    ]);
+    expect(() => database.run(`
+      INSERT INTO members (
+        member_id, display_name, personal_ref, role, status, access_state,
+        credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+      ) VALUES (
+        'member-unbound', 'Unbound', 'refs/heads/members/member-unbound',
+        'member', 'active', 'unbound', NULL, NULL,
+        '${CREATED_AT}', '${CREATED_AT}', NULL
+      )
+    `)).not.toThrow();
+    expect(() => database.run(`
+      INSERT INTO members (
+        member_id, display_name, personal_ref, role, status, access_state,
+        credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+      ) VALUES (
+        'member-pending-unbound', 'Pending',
+        'refs/heads/members/member-pending-unbound', 'member', 'pending',
+        'unbound', NULL, 'join-unbound', '${CREATED_AT}', NULL, NULL
+      )
+    `)).toThrow();
+  });
+
+  it('backfills a populated v11 authority without changing Member credentials', () => {
+    const database = new SQL.Database();
+    applyAuthorityMigrations(database);
+    insertMembers(database);
+    database.run(`
+      INSERT INTO project (
+        singleton, project_id, name, state, host_member_id,
+        manager_set_generation, main_ref, created_at, snapshot_generation
+      ) VALUES (
+        1, 'project-alpha', 'Alpha', 'active', 'member-host', 4,
+        'refs/heads/main', '${CREATED_AT}', 6
+      )
+    `);
+    const before = database.exec(`
+      SELECT member_id, hex(credential_hash) FROM members ORDER BY member_id
+    `)[0]?.values;
+    downgradeCurrentSchemaToV11(database);
+    database.run('PRAGMA foreign_keys = ON');
+
+    expect(applyAuthorityMigrations(database)).toBe(true);
+    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0])
+      .toBe(COLLAB_AUTHORITY_SCHEMA_VERSION);
+    expect(database.exec(`
+      SELECT authority_generation FROM authority_metadata WHERE singleton = 1
+    `)[0]?.values).toEqual([[1]]);
+    expect(database.exec(`
+      SELECT member_id, access_state, hex(credential_hash)
+      FROM members ORDER BY member_id
+    `)[0]?.values).toEqual(before?.map(row => [row[0], 'bound', row[1]]));
+    expect(assertAuthorityDatabaseIntegrity(database, {
+      full: true,
+      requireProject: true,
+    })).toBe(6);
   });
 
   it('atomically migrates a populated v8 authority to the finite multi-Manager v11 schema', () => {
@@ -400,7 +510,7 @@ describe('AuthoritySchema lifecycle migration', () => {
       },
       name: 'malformed responsibility index',
     },
-  ])('rejects a current v11 database with a $name', ({ corrupt }) => {
+  ])('rejects a current database with a $name', ({ corrupt }) => {
     const database = new SQL.Database();
     applyAuthorityMigrations(database);
     corrupt(database);
@@ -408,7 +518,8 @@ describe('AuthoritySchema lifecycle migration', () => {
     expect(() => applyAuthorityMigrations(database)).toThrow(
       'Authority V10 Manager schema is incomplete',
     );
-    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(11);
+    expect(database.exec('PRAGMA user_version')[0]?.values[0]?.[0])
+      .toBe(COLLAB_AUTHORITY_SCHEMA_VERSION);
   });
 
   it('rejects a renamed unique index that still enforces one active Manager', () => {

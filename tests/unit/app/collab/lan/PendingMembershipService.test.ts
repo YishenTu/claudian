@@ -126,6 +126,23 @@ describe('PendingMembershipService', () => {
     });
   });
 
+  it('rejects an imported active Member until an exact credential is bound', async () => {
+    await database.mutate(connection => connection.run(`
+      INSERT INTO members (
+        member_id, display_name, personal_ref, role, status, access_state,
+        credential_hash, join_attempt_id, created_at, activated_at, revoked_at
+      ) VALUES (
+        'member-unbound', 'Unbound', 'refs/heads/members/member-unbound',
+        'member', 'active', 'unbound', NULL, NULL, ?, ?, NULL
+      )
+    `, [now.toISOString(), now.toISOString()]));
+
+    await expect(service.authenticateMemberCredential(
+      Buffer.alloc(32, 8).toString('base64url'),
+      ['active'],
+    )).rejects.toMatchObject({ code: 'authentication-failed' });
+  });
+
   it('reuses one pending membership and rotates its credential on a retry', async () => {
     const invitation = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-1',

@@ -6,6 +6,6 @@ import {
 describe('CollabSchemaVersions', () => {
   it('freezes the app-owned persistence schema versions', () => {
     expect(COLLAB_LOCAL_PROJECT_SCHEMA_VERSION).toBe(3);
-    expect(COLLAB_AUTHORITY_SCHEMA_VERSION).toBe(11);
+    expect(COLLAB_AUTHORITY_SCHEMA_VERSION).toBe(12);
   });
 });

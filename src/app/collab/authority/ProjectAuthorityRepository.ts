@@ -16,6 +16,7 @@ export interface ProjectAuthorityInitializeInput {
 }
 
 export interface AuthorityProjectRecord {
+  readonly authorityGeneration: number;
   readonly createdAt: string;
   readonly hostMemberId: CollabMemberId;
   readonly mainRef: typeof COLLAB_MAIN_REF;
@@ -115,6 +116,8 @@ export class ProjectAuthorityRepository {
   get(connection: AuthorityDatabaseConnection): AuthorityProjectRecord | null {
     const row = connection.get(`
       SELECT
+        (SELECT authority_generation FROM authority_metadata WHERE singleton = 1)
+          AS authority_generation,
         project_id,
         name,
         state,
@@ -131,6 +134,7 @@ export class ProjectAuthorityRepository {
     const state = row.state;
     const mainRef = row.main_ref;
     const managerSetGeneration = row.manager_set_generation;
+    const authorityGeneration = row.authority_generation;
     if (
       typeof generation !== 'number'
       || !Number.isSafeInteger(generation)
@@ -140,10 +144,14 @@ export class ProjectAuthorityRepository {
       || typeof managerSetGeneration !== 'number'
       || !Number.isSafeInteger(managerSetGeneration)
       || managerSetGeneration < 0
+      || typeof authorityGeneration !== 'number'
+      || !Number.isSafeInteger(authorityGeneration)
+      || authorityGeneration < 1
     ) {
       throw projectError('project-row-invalid');
     }
     const project: AuthorityProjectRecord = {
+      authorityGeneration,
       createdAt: text(row, 'created_at'),
       hostMemberId: text(row, 'host_member_id'),
       mainRef,
