@@ -313,17 +313,21 @@ export class LinkedContentController {
   }
 
   private eligibleActiveFilePath(file: TFile | null): string | null {
-    if (!file || file.extension.toLocaleLowerCase() !== 'md' || this.hasExcludedTag(file)) {
+    if (
+      !file
+      || file.extension.toLocaleLowerCase() !== 'md'
+      || this.hasExcludedTag(file) !== false
+    ) {
       return null;
     }
     return normalizeLinkedContentPath(file.path);
   }
 
-  private hasExcludedTag(file: TFile): boolean {
+  private hasExcludedTag(file: TFile): boolean | null {
     const excludedTags = this.options.getExcludedTags();
     if (excludedTags.length === 0) return false;
     const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache) return false;
+    if (!cache) return null;
     const fileTags: string[] = [];
     const frontmatterTags: unknown = cache.frontmatter?.tags;
     if (Array.isArray(frontmatterTags)) {

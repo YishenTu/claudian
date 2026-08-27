@@ -348,6 +348,26 @@ describe('ClaudianView tab controls', () => {
     expect(handleActiveFileChanged).toHaveBeenLastCalledWith(null, true);
   });
 
+  it('rechecks the active tab Linked content after metadata resolution', () => {
+    const handleActiveFileChanged = jest.fn();
+    const activeFile = { path: 'Projects/Plan.md' };
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.plugin = {
+      app: {
+        workspace: { getActiveFile: jest.fn().mockReturnValue(activeFile) },
+      },
+    };
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        ui: { linkedContentController: { handleActiveFileChanged } },
+      }),
+    };
+
+    view.handleMetadataCacheResolved();
+
+    expect(handleActiveFileChanged).toHaveBeenCalledWith(activeFile, true);
+  });
+
   it('fans Vault path events to every tab Linked content owner', () => {
     const first = {
       handleCreated: jest.fn(),
@@ -3704,6 +3724,13 @@ describe('ClaudianView Escape handling', () => {
     view.eventRefs = eventRefs;
     view.plugin = {
       app: {
+        metadataCache: {
+          on: jest.fn((_event: string, handler: unknown) => {
+            const ref = { handler };
+            eventRefs.push(ref);
+            return ref;
+          }),
+        },
         vault: {
           on: jest.fn((_event: string, handler: unknown) => {
             const ref = { handler };
@@ -3766,6 +3793,13 @@ describe('ClaudianView Escape handling', () => {
     view.eventRefs = eventRefs;
     view.plugin = {
       app: {
+        metadataCache: {
+          on: jest.fn((_event: string, handler: unknown) => {
+            const ref = { handler };
+            eventRefs.push(ref);
+            return ref;
+          }),
+        },
         vault: {
           on: jest.fn((_event: string, handler: unknown) => {
             const ref = { handler };
@@ -3817,6 +3851,19 @@ describe('ClaudianView Escape handling', () => {
       expect.any(Function),
       { capture: true }
     );
+  });
+
+  it('registers metadata resolution through the Obsidian view lifecycle', () => {
+    const { view } = createEscapeHarness({ isStreaming: false });
+
+    view.wireEventHandlers();
+
+    expect(view.plugin.app.metadataCache.on).toHaveBeenCalledWith(
+      'resolved',
+      expect.any(Function),
+    );
+    const metadataRef = view.plugin.app.metadataCache.on.mock.results[0].value;
+    expect(view.registerEvent).toHaveBeenCalledWith(metadataRef);
   });
 
   it('cancels streaming and consumes scoped Escape', () => {

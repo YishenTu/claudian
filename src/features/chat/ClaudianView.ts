@@ -1700,6 +1700,10 @@ export class ClaudianView extends ItemView {
       .handleActiveFileChanged(file, true);
   }
 
+  private handleMetadataCacheResolved(): void {
+    this.handleWorkspaceFileOpen(this.plugin.app.workspace.getActiveFile());
+  }
+
   handleLinkedContentRenamed(
     oldPath: string,
     newPath: string,
@@ -2603,6 +2607,11 @@ export class ClaudianView extends ItemView {
     this.registerEvent(
       this.plugin.app.workspace.on('file-open', (file) => {
         this.handleWorkspaceFileOpen(file);
+      })
+    );
+    this.registerEvent(
+      this.plugin.app.metadataCache.on('resolved', () => {
+        this.handleMetadataCacheResolved();
       })
     );
 

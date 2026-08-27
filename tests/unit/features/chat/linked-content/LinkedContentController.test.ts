@@ -127,6 +127,47 @@ describe('LinkedContentController', () => {
     expect(excludedController.getSnapshot().path).toBeNull();
   });
 
+  it('waits for excluded-tag metadata before auto-attaching an active Note', () => {
+    const markdown = createFile('Notes/Potentially-Private.md');
+    const harness = createHarness([markdown]);
+    const excludedController = new LinkedContentController({
+      app: harness.app as never,
+      getExcludedTags: () => ['private'],
+      getCachedVaultFiles: () => [],
+      getCachedVaultFolders: () => [],
+    });
+
+    harness.setActiveFile(markdown);
+    excludedController.resetAutoDraft();
+    expect(excludedController.getSnapshot()).toMatchObject({
+      mode: 'auto-draft',
+      path: null,
+    });
+
+    (harness.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+      tags: [],
+    });
+    excludedController.handleActiveFileChanged(markdown, true);
+    expect(excludedController.getSnapshot()).toMatchObject({
+      mode: 'auto-draft',
+      path: 'Notes/Potentially-Private.md',
+    });
+
+    excludedController.selectExplicit('Projects/Explicit.md');
+    excludedController.handleActiveFileChanged(markdown, true);
+    expect(excludedController.getSnapshot()).toMatchObject({
+      mode: 'explicit-draft',
+      path: 'Projects/Explicit.md',
+    });
+
+    excludedController.lock('Projects/Locked.md');
+    excludedController.handleActiveFileChanged(markdown, true);
+    expect(excludedController.getSnapshot()).toMatchObject({
+      mode: 'locked',
+      path: 'Projects/Locked.md',
+    });
+  });
+
   it('creates one immutable path token and locks only after durable creation', () => {
     const harness = createHarness([createFolder('Projects')]);
     harness.controller.selectExplicit('Projects');
