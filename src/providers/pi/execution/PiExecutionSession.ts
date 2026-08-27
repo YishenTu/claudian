@@ -123,6 +123,7 @@ interface ActiveRun {
   nativeRequestDispatched: boolean;
   nativeAssistantId?: string;
   nativeUserMessageId?: string;
+  pendingTerminalError: Error | null;
   sequence: number;
   terminal: boolean;
   terminalSignal: Deferred<void>;
@@ -368,6 +369,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       accepted: false,
       assistantStarted: false,
       nativeRequestDispatched: false,
+      pendingTerminalError: null,
       sequence: 0,
       terminal: false,
       terminalSignal: createDeferred<void>(),
@@ -695,6 +697,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
     if (event.type === 'agent_end') {
       this.ensureAccepted(active);
+      if (event.willRetry === true) {
+        active.pendingTerminalError = null;
+        return;
+      }
+      const pendingTerminalError = active.pendingTerminalError;
+      active.pendingTerminalError = null;
+      if (pendingTerminalError) {
+        active.terminalSignal.reject(pendingTerminalError);
+        return;
+      }
       active.terminalSignal.resolve();
       return;
     }
@@ -705,14 +717,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
 
+    const terminalError = getPiTerminalErrorMessage(event);
+    if (terminalError) {
+      this.ensureAccepted(active);
+      active.pendingTerminalError = new Error(terminalError);
+      return;
+    }
+
     const chunks = normalizePiRpcEvent(event, this.normalizationState);
     if (chunks.length > 0) this.ensureAccepted(active);
     for (const chunk of chunks) {
       this.handleStreamChunk(kernel, generation, chunk);
-    }
-    const terminalError = getPiTerminalErrorMessage(event);
-    if (terminalError) {
-      active.terminalSignal.reject(new Error(terminalError));
     }
   }
 

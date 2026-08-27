@@ -557,6 +557,165 @@ describe('PiExecutionBackend', () => {
     expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
   });
 
+  it('keeps one execution open across native Pi retries and commits the recovered answer', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    let settled = false;
+    void eventsPromise.then(() => {
+      settled = true;
+    });
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit (attempt 1)',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 1, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit (attempt 2)',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 2, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    harness.responses.set('get_state', {
+      leafEntryId: 'assistant-recovered',
+      parentSession: 'parent-session',
+      sessionFile: '/tmp/pi-session.jsonl',
+      sessionId: 'pi-session-1',
+    });
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      assistantMessageEvent: { text_delta: 'Recovered answer' },
+      type: 'message_update',
+    });
+    kernel.emit({
+      message: {
+        content: [{ text: 'Recovered answer', type: 'text' }],
+        role: 'assistant',
+        stopReason: 'stop',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ attempt: 2, success: true, type: 'auto_retry_end' });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({ text: 'Recovered answer' }),
+    ]);
+    expect(events.filter(event => event.type === 'notice')).toEqual([
+      expect.objectContaining({ message: 'Pi is retrying the turn.' }),
+      expect.objectContaining({ message: 'Pi is retrying the turn.' }),
+      expect.objectContaining({ message: 'Pi retry finished.' }),
+    ]);
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'execution_error',
+    }));
+    expect(events.at(-1)).toMatchObject({
+      nativeAssistantId: 'assistant-recovered',
+      nativeCheckpointId: 'assistant-recovered',
+      type: 'turn_completed',
+    });
+  });
+
+  it('surfaces a native Pi terminal error after a non-retrying agent end', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter retry budget exhausted',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      message: 'OpenRouter retry budget exhausted',
+      type: 'execution_error',
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_completed',
+    }));
+  });
+
+  it('can cancel while native Pi is waiting to retry and fences later events', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    let settled = false;
+    void eventsPromise.then(() => {
+      settled = true;
+    });
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 1, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    run.cancel();
+    kernel.emit({
+      assistantMessageEvent: { text_delta: 'late recovered answer' },
+      type: 'message_update',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+    expect(events).not.toContainEqual(expect.objectContaining({
+      text: 'late recovered answer',
+      type: 'text_delta',
+    }));
+  });
+
   it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
