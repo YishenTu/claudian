@@ -2,6 +2,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 describe('Persistent sidebar surface pager styles', () => {
+  it('keeps the session surface bounded so its nested lists can scroll', () => {
+    const css = readFileSync(path.resolve('src/style/components/history.css'), 'utf8');
+
+    expect(css).toMatch(
+      /\.claudian-session-surface(?:,\s*\.claudian-collab-surface)?\s*{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/,
+    );
+  });
+
   it('keeps the sidebar footer visible without overlaying or clipping content', () => {
     const css = readFileSync(path.resolve('src/style/components/history.css'), 'utf8');
 

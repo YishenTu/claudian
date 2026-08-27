@@ -126,6 +126,7 @@
   background: transparent;
 }
 
+.claudian-session-surface,
 .claudian-collab-surface {
   display: flex;
   flex: 1 1 auto;
