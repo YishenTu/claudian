@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,6 +9,7 @@ const isWindows = process.platform === 'win32';
 const PATH_SEPARATOR = isWindows ? ';' : ':';
 const NODE_EXECUTABLE = isWindows ? 'node.exe' : 'node';
 const DEVICE_SETTINGS_STORAGE_KEY = 'claudian.deviceSettingsKey';
+let cachedDeviceSettingsSeed: string | null = null;
 let cachedDeviceSettingsKey: string | null = null;
 
 function getHomeDir(): string {
@@ -351,22 +354,57 @@ function getDeviceSettingsStorage(): Storage | null {
   }
 }
 
-function createOpaqueDeviceSettingsKey(): string {
+function createOpaqueDeviceSettingsSeed(): string {
   const cryptoApi = typeof window === 'undefined' ? null : window.crypto;
   const randomUUID = cryptoApi?.randomUUID?.();
   if (randomUUID) {
-    return `device:${randomUUID}`;
+    return randomUUID;
   }
 
   if (cryptoApi?.getRandomValues) {
     const randomBytes = new Uint8Array(16);
     cryptoApi.getRandomValues(randomBytes);
     const entropy = Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-    return `device:${Date.now().toString(36)}:${entropy}`;
+    return `${Date.now().toString(36)}-${entropy}`;
   }
 
   const entropy = Math.random().toString(36).slice(2);
-  return `device:${Date.now().toString(36)}:${entropy}`;
+  return `${Date.now().toString(36)}-${entropy}`;
+}
+
+function getDeviceSettingsSeed(): string {
+  if (cachedDeviceSettingsSeed) {
+    return cachedDeviceSettingsSeed;
+  }
+
+  const storage = getDeviceSettingsStorage();
+  if (!storage) {
+    throw new Error('Cannot persist the device settings key: localStorage is unavailable');
+  }
+
+  let stored: string | null;
+  try {
+    stored = storage.getItem(DEVICE_SETTINGS_STORAGE_KEY)?.trim() || null;
+  } catch (error) {
+    throw new Error('Cannot read the persisted device settings key', { cause: error });
+  }
+  if (stored) {
+    cachedDeviceSettingsSeed = stored;
+    return cachedDeviceSettingsSeed;
+  }
+
+  const candidate = createOpaqueDeviceSettingsSeed();
+  try {
+    storage.setItem(DEVICE_SETTINGS_STORAGE_KEY, candidate);
+    if (storage.getItem(DEVICE_SETTINGS_STORAGE_KEY)?.trim() !== candidate) {
+      throw new Error('localStorage did not retain the device settings key');
+    }
+  } catch (error) {
+    throw new Error('Cannot persist the device settings key', { cause: error });
+  }
+
+  cachedDeviceSettingsSeed = candidate;
+  return cachedDeviceSettingsSeed;
 }
 
 // Backward-compatible name: provider settings still store legacy `cliPathsByHost`
@@ -376,21 +414,16 @@ export function getHostnameKey(): string {
     return cachedDeviceSettingsKey;
   }
 
-  const storage = getDeviceSettingsStorage();
-  const stored = storage?.getItem(DEVICE_SETTINGS_STORAGE_KEY)?.trim();
-  if (stored) {
-    cachedDeviceSettingsKey = stored;
-    return cachedDeviceSettingsKey;
-  }
-
-  cachedDeviceSettingsKey = createOpaqueDeviceSettingsKey();
-  try {
-    storage?.setItem(DEVICE_SETTINGS_STORAGE_KEY, cachedDeviceSettingsKey);
-  } catch {
-    // Local storage can be unavailable in restricted renderer contexts.
-  }
-
+  const digest = createHash('sha256')
+    .update(getDeviceSettingsSeed(), 'utf8')
+    .digest('hex');
+  cachedDeviceSettingsKey = `device-${digest}`;
   return cachedDeviceSettingsKey;
+}
+
+export function getLegacyDeviceSettingsKey(): string | null {
+  const seed = getDeviceSettingsSeed();
+  return seed.startsWith('device:') ? seed : null;
 }
 
 export const MIN_CONTEXT_LIMIT = 1_000;

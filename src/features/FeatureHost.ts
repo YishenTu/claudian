@@ -105,6 +105,7 @@ export interface FeatureHost {
     linkedContentPath?: string;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
+  assignConversationToCurrentDevice(id: string): Promise<boolean>;
   deleteConversation(id: string): Promise<void>;
   handleMissingProviderSession(
     id: string,

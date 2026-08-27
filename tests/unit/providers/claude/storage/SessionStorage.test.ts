@@ -1,15 +1,18 @@
 import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ProviderId } from '@/core/providers/types';
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
 import {
   LEGACY_SESSIONS_PATH,
   SESSIONS_PATH,
   SessionStorage,
-} from '@/providers/claude/storage/SessionStorage';
+} from '@/core/bootstrap/SessionStorage';
+import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderId } from '@/core/providers/types';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
+
+const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 
 describe('SessionStorage', () => {
   let mockAdapter: jest.Mocked<VaultFileAdapter>;
@@ -38,7 +41,7 @@ describe('SessionStorage', () => {
       listFiles: jest.fn(),
     } as unknown as jest.Mocked<VaultFileAdapter>;
 
-    storage = new SessionStorage(mockAdapter);
+    storage = new SessionStorage(mockAdapter, DEVICE_KEY);
   });
 
   describe('SESSIONS_PATH', () => {
@@ -50,7 +53,7 @@ describe('SessionStorage', () => {
   describe('getMetadataPath', () => {
     it('returns correct file path for session id', () => {
       const path = storage.getMetadataPath('session-abc');
-      expect(path).toBe('.claudian/sessions/session-abc.meta.json');
+      expect(path).toBe(`${getDeviceSessionsPath(DEVICE_KEY)}/session-abc.meta.json`);
     });
 
     it.each(['', '.', '..', '../escape', 'nested/id', 'nested\\id', '/absolute', '%2Fescape', '%5cescape'])(
@@ -84,7 +87,7 @@ describe('SessionStorage', () => {
           lastActivityAt: 700,
         },
         needsMigration: true,
-        source: 'current',
+        source: 'unscoped',
       });
     });
 
@@ -110,7 +113,7 @@ describe('SessionStorage', () => {
           lastActivityAt: 200,
         },
         needsMigration: true,
-        source: 'current',
+        source: 'unscoped',
       });
     });
 
@@ -147,7 +150,7 @@ describe('SessionStorage', () => {
           },
         },
         needsMigration: false,
-        source: 'current',
+        source: 'unscoped',
       });
     });
 
@@ -175,7 +178,7 @@ describe('SessionStorage', () => {
           lastActivityAt: 200,
         },
         needsMigration: true,
-        source: 'current',
+        source: 'unscoped',
       });
     });
 
@@ -251,7 +254,7 @@ describe('SessionStorage', () => {
       };
 
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        !path.endsWith('.deleted.json')
+        path === `${getDeviceSessionsPath(DEVICE_KEY)}/session-abc.meta.json`
       ));
       mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
 
@@ -270,7 +273,7 @@ describe('SessionStorage', () => {
       };
 
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        !path.endsWith('.deleted.json')
+        path === `${getDeviceSessionsPath(DEVICE_KEY)}/session-codex.meta.json`
       ));
       mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
 
@@ -281,7 +284,7 @@ describe('SessionStorage', () => {
 
     it('returns null on parse error', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        !path.endsWith('.deleted.json')
+        path === `${getDeviceSessionsPath(DEVICE_KEY)}/session-bad.meta.json`
       ));
       mockAdapter.read.mockResolvedValue('invalid json');
 
@@ -292,7 +295,7 @@ describe('SessionStorage', () => {
 
     it('returns null on read error', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        !path.endsWith('.deleted.json')
+        path === `${getDeviceSessionsPath(DEVICE_KEY)}/session-error.meta.json`
       ));
       mockAdapter.read.mockRejectedValue(new Error('Read error'));
 

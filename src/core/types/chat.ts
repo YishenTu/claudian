@@ -195,6 +195,8 @@ export interface ConversationMeta {
   isArchived?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
+  /** Whether metadata still uses a writable legacy namespace. */
+  isLegacySession?: boolean;
 }
 
 /**

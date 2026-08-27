@@ -31,6 +31,7 @@ import {
   type SessionManagerOrganization,
   type StoredChatModelSelection,
 } from '../../core/types/settings';
+import { getHostnameKey, getLegacyDeviceSettingsKey } from '../../utils/env';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
 export {
@@ -202,6 +203,39 @@ function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
     }
   }
   return result;
+}
+
+function migrateCurrentDeviceProviderConfigKeys(
+  providerConfigs: ProviderConfigMap,
+): { changed: boolean; providerConfigs: ProviderConfigMap } {
+  const currentKey = getHostnameKey();
+  const legacyKey = getLegacyDeviceSettingsKey();
+  if (!legacyKey || legacyKey === currentKey) {
+    return { changed: false, providerConfigs };
+  }
+
+  let changed = false;
+  for (const { adapter, providerId } of getProviderSettingsAdapters()) {
+    const config = providerConfigs[providerId];
+    if (!config) continue;
+
+    for (const field of adapter.hostScopedFields ?? []) {
+      const value = config[field];
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const entries = value as Record<string, unknown>;
+      if (!Object.prototype.hasOwnProperty.call(entries, legacyKey)) continue;
+
+      const migrated = Object.fromEntries(Object.entries(entries));
+      if (!Object.prototype.hasOwnProperty.call(migrated, currentKey)) {
+        migrated[currentKey] = entries[legacyKey];
+      }
+      delete migrated[legacyKey];
+      config[field] = migrated;
+      changed = true;
+    }
+  }
+
+  return { changed, providerConfigs };
 }
 
 function projectPersistableProviderConfigs(value: unknown): {
@@ -438,8 +472,12 @@ export class ClaudianSettingsStorage {
     const customModelAliases = normalizeModelAliases(stored.customModelAliases);
     const {
       changed: didStripRuntimeProviderConfig,
-      providerConfigs,
+      providerConfigs: projectedProviderConfigs,
     } = projectPersistableProviderConfigs(stored.providerConfigs);
+    const {
+      changed: didMigrateCurrentDeviceProviderConfigs,
+      providerConfigs,
+    } = migrateCurrentDeviceProviderConfigKeys(projectedProviderConfigs);
     const chatViewPlacement = normalizeChatViewPlacement(
       stored.chatViewPlacement,
       stored.openInMainTab,
@@ -557,6 +595,7 @@ export class ClaudianSettingsStorage {
       )
       || didNormalizeProviderSettings
       || didStripRuntimeProviderConfig
+      || didMigrateCurrentDeviceProviderConfigs
       || didNormalizeHostScopedProviderConfigs
       || didNormalizeChatModelSelection
       )

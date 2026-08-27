@@ -1215,6 +1215,9 @@ export class ClaudianView extends ItemView {
       onSetConversationArchived: (id: string, isArchived: boolean) => (
         this.setConversationArchived(id, isArchived)
       ),
+      onAssignConversationToDevice: async (id: string) => {
+        await this.plugin.assignConversationToCurrentDevice(id);
+      },
       ...(navigationMode === 'history'
         ? {
             onBeforeRestoreListState: (target: HTMLElement) => (

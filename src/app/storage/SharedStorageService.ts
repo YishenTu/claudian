@@ -6,6 +6,7 @@ import type { SharedAppStorage } from '../../core/bootstrap/storage';
 import { normalizeTabManagerState } from '../../core/bootstrap/tabManagerState';
 import type { AppTabManagerState } from '../../core/providers/types';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
+import { getHostnameKey } from '../../utils/env';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,9 +24,10 @@ export class SharedStorageService implements SharedAppStorage {
   constructor(plugin: Plugin) {
     this.plugin = plugin;
     this.adapter = new VaultFileAdapter(plugin.app);
+    const deviceKey = getHostnameKey();
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
-    this.sessions = new SessionStorage(this.adapter);
-    this.conversationPersistence = new ConversationPersistenceStore(this.adapter);
+    this.sessions = new SessionStorage(this.adapter, deviceKey);
+    this.conversationPersistence = new ConversationPersistenceStore(this.adapter, deviceKey);
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {

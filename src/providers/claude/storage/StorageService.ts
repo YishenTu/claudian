@@ -1,8 +1,7 @@
 import type { App } from 'obsidian';
 
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../../../app/settings/ClaudianSettingsStorage';
-import { SESSIONS_PATH, SessionStorage } from '../../../core/bootstrap/SessionStorage';
-import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
+import { CLAUDIAN_STORAGE_PATH, SESSIONS_PATH } from '../../../core/bootstrap/storagePaths';
 import { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   SlashCommand,
@@ -33,7 +32,6 @@ export class StorageService {
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly commands: SlashCommandStorage;
   readonly skills: SkillStorage;
-  readonly sessions: SessionStorage;
   readonly agents: AgentVaultStorage;
 
   private adapter: VaultFileAdapter;
@@ -46,7 +44,6 @@ export class StorageService {
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
     this.skills = new SkillStorage(this.adapter);
-    this.sessions = new SessionStorage(this.adapter);
     this.agents = new AgentVaultStorage(this.adapter);
   }
 

@@ -250,6 +250,7 @@ function createHarness(options: {
     persistExecutionSnapshot: jest.fn(async () => true),
     releaseExecutionBinding: jest.fn(),
     stageConversationInput: jest.fn(async () => undefined),
+    assertConversationExecutionAuthority: jest.fn(async () => undefined),
     acceptConversationInput: jest.fn(async () => undefined),
     discardStagedConversationInput: jest.fn(async () => undefined),
     copyConversationInputsForFork: jest.fn(async () => undefined),
@@ -931,6 +932,39 @@ describe('ChatExecutionCoordinator', () => {
     });
     expect(harness.backends.get('claude')!.sessions).toHaveLength(0);
     expect(harness.repository.discardStagedConversationInput).not.toHaveBeenCalled();
+  });
+
+  it('revalidates durable ownership immediately before provider handoff', async () => {
+    const harness = createHarness();
+    const cause = new Error('conversation assigned to another device');
+    const authorityCheck = (
+      harness.repository as unknown as {
+        assertConversationExecutionAuthority: jest.MockedFunction<
+          (conversationId: string) => Promise<void>
+        >;
+      }
+    ).assertConversationExecutionAuthority;
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('claude')!.sessions[0];
+    const execute = jest.spyOn(session, 'execute').mockImplementation(() => {
+      throw new Error('provider handoff occurred');
+    });
+    authorityCheck.mockRejectedValueOnce(cause);
+
+    await expect(harness.coordinator.execute(createSubmission())).rejects.toMatchObject({
+      name: 'ChatExecutionPreHandoffError',
+      cause,
+    });
+    expect(authorityCheck).toHaveBeenCalledWith('conversation-1');
+    expect(execute).not.toHaveBeenCalled();
+    expect(harness.repository.discardStagedConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'input-1',
+    );
   });
 
   it('discards staging on definite pre-send failure but retains it after execute handoff', async () => {
@@ -2062,6 +2096,9 @@ describe('ChatExecutionCoordinator', () => {
         repository.releaseExecutionBinding(...args);
       },
       stageConversationInput: (...args) => repository.stageConversationInput(...args),
+      assertConversationExecutionAuthority: (...args) => (
+        repository.assertConversationExecutionAuthority(...args)
+      ),
       acceptConversationInput: (...args) => repository.acceptConversationInput(...args),
       discardStagedConversationInput: (...args) => (
         repository.discardStagedConversationInput(...args)

@@ -4,15 +4,17 @@ import { Notice, TFile, TFolder } from 'obsidian';
 import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
+import type { SessionMetadataReadResult } from '@/core/bootstrap/SessionStorage';
+import { SessionStorage } from '@/core/bootstrap/SessionStorage';
+import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
-import { type Conversation, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { COLLAB_DETAIL_VIEW_TYPE } from '@/features/collab/detail/CollabDetailView';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
-import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import {
@@ -97,9 +99,19 @@ describe('ClaudianPlugin', () => {
       .mockImplementation(async (id) => {
         const item = metadataById.get(id);
         return item
-          ? { metadata: item, needsMigration: false, source: 'current' as const }
+          ? { metadata: item, needsMigration: false, source: 'device' as const }
           : null;
       });
+  }
+
+  function deviceMetadataRecords(
+    ...metadata: SessionMetadata[]
+  ): SessionMetadataReadResult[] {
+    return metadata.map(item => ({
+      metadata: item,
+      needsMigration: false,
+      source: 'device',
+    }));
   }
 
   function installVaultFiles(initialFiles: Record<string, string>): Map<string, string> {
@@ -855,7 +867,7 @@ describe('ClaudianPlugin', () => {
         .mockResolvedValue({
           metadata: restoredMetadata,
           needsMigration: false,
-          source: 'current',
+          source: 'device',
         });
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
@@ -950,9 +962,9 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
         layoutReady = callback;
       });
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [backgroundMetadata],
+          records: deviceMetadataRecords(backgroundMetadata),
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -985,11 +997,11 @@ describe('ClaudianPlugin', () => {
         selectedModel: 'claude-code/retired-model',
       };
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1029,7 +1041,7 @@ describe('ClaudianPlugin', () => {
       saveSpy.mockRestore();
     });
 
-    it('migrates legacy metadata through the repository after a read-only scan', async () => {
+    it('migrates very old metadata into the unscoped namespace after scanning', async () => {
       const legacyMetadata = {
         id: 'legacy-background-conversation',
         providerId: 'claude' as const,
@@ -1037,17 +1049,16 @@ describe('ClaudianPlugin', () => {
         createdAt: 1,
         lastActivityAt: 2,
       };
-      const events: string[] = [];
-
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
-        .mockImplementation(async () => {
-          events.push('scan');
-          return {
-            metadata: [legacyMetadata],
-            complete: true,
-            invalidMetadataCount: 0,
-          };
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
+        .mockResolvedValue({
+          records: [{
+            metadata: legacyMetadata,
+            needsMigration: false,
+            source: 'legacy',
+          }],
+          complete: true,
+          invalidMetadataCount: 0,
         });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
@@ -1056,9 +1067,10 @@ describe('ClaudianPlugin', () => {
           source: 'legacy',
         });
       const persistence = getConversationPersistence(plugin);
+      const events: string[] = [];
       const saveSpy = jest.spyOn(persistence, 'saveMetadata')
         .mockImplementation(async () => {
-          events.push('save-current');
+          events.push('save-unscoped');
         });
       const deleteLegacySpy = jest.spyOn(persistence, 'deleteLegacyMetadata')
         .mockImplementation(async () => {
@@ -1067,7 +1079,7 @@ describe('ClaudianPlugin', () => {
 
       await (plugin as any).loadRemainingSessionMetadata();
 
-      expect(events).toEqual(['scan', 'save-current', 'delete-legacy']);
+      expect(events).toEqual(['save-unscoped', 'delete-legacy']);
       expect(plugin.getCachedConversation(legacyMetadata.id)?.title)
         .toBe(legacyMetadata.title);
 
@@ -1079,9 +1091,9 @@ describe('ClaudianPlugin', () => {
 
     it('recovers missing model metadata after the background session scan', async () => {
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [],
+          records: [],
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -1109,9 +1121,9 @@ describe('ClaudianPlugin', () => {
       };
       await plugin.onload();
       (plugin as any).pendingEnvironmentInvalidationGenerations.set('codex', 1);
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [metadata],
+          records: deviceMetadataRecords(metadata),
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -1205,11 +1217,11 @@ describe('ClaudianPlugin', () => {
       });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([restoredMetadata, deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(restoredMetadata, deferredMetadata));
           return {
-            metadata: [restoredMetadata, deferredMetadata],
+            records: deviceMetadataRecords(restoredMetadata, deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1271,11 +1283,11 @@ describe('ClaudianPlugin', () => {
       });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([restoredMetadata, deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(restoredMetadata, deferredMetadata));
           return {
-            metadata: [restoredMetadata, deferredMetadata],
+            records: deviceMetadataRecords(restoredMetadata, deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1340,14 +1352,14 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([firstMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(firstMetadata));
           markFirstBatchPublished();
           await laterBatchRelease;
-          options?.onBatch?.([laterMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(laterMetadata));
           return {
-            metadata: [firstMetadata, laterMetadata],
+            records: deviceMetadataRecords(firstMetadata, laterMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1419,14 +1431,14 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([firstMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(firstMetadata));
           markFirstBatchPublished();
           await scanRelease;
-          options?.onBatch?.([laterMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(laterMetadata));
           return {
-            metadata: [firstMetadata, laterMetadata],
+            records: deviceMetadataRecords(firstMetadata, laterMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1490,11 +1502,11 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: false,
             invalidMetadataCount: 0,
           };
@@ -1529,12 +1541,12 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata').mockImplementation(async (options) => {
-        options?.onBatch?.([backgroundMetadata]);
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan').mockImplementation(async (options) => {
+        options?.onBatch?.(deviceMetadataRecords(backgroundMetadata));
         markBatchPublished();
         await scanRelease;
         return {
-          metadata: [backgroundMetadata],
+          records: deviceMetadataRecords(backgroundMetadata),
           complete: true,
           invalidMetadataCount: 0,
         };
@@ -1572,11 +1584,11 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([tombstonedMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(tombstonedMetadata));
           return {
-            metadata: [tombstonedMetadata],
+            records: deviceMetadataRecords(tombstonedMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1607,11 +1619,11 @@ describe('ClaudianPlugin', () => {
         tombstonedMetadata,
       );
       (plugin as any).conversationRepository.mergeMetadataConversations([shell]);
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([tombstonedMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(tombstonedMetadata));
           return {
-            metadata: [tombstonedMetadata],
+            records: deviceMetadataRecords(tombstonedMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1662,11 +1674,11 @@ describe('ClaudianPlugin', () => {
         ConversationPersistenceStore.prototype,
         'saveMetadata',
       );
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1678,7 +1690,9 @@ describe('ClaudianPlugin', () => {
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
-        files.get('.claudian/sessions/restart-deferred-session.meta.json') ?? '{}',
+        files.get(
+          `${getDeviceSessionsPath(getHostnameKey())}/restart-deferred-session.meta.json`,
+        ) ?? '{}',
       );
       const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       const deferredInvalidationWrites = restartedSaveMetadataSpy.mock.calls.filter(
@@ -1725,11 +1739,11 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -2699,15 +2713,15 @@ describe('ClaudianPlugin', () => {
       const batchPublished = new Promise<void>(resolve => { markBatchPublished = resolve; });
       let finishScan!: () => void;
       const scanRelease = new Promise<void>(resolve => { finishScan = resolve; });
-      const scanSpy = jest.spyOn(plugin.storage.sessions, 'scanMetadata')
+      const scanSpy = jest.spyOn(plugin.storage.sessions, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           markBatchPublished();
           await scanRelease;
           return {
             complete: false,
             invalidMetadataCount: 0,
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
           };
         });
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
@@ -3168,11 +3182,11 @@ describe('ClaudianPlugin', () => {
         ConversationPersistenceStore.prototype,
         'saveMetadata',
       );
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -3184,7 +3198,9 @@ describe('ClaudianPlugin', () => {
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
-        files.get('.claudian/sessions/runtime-settings-restart-session.meta.json') ?? '{}',
+        files.get(
+          `${getDeviceSessionsPath(getHostnameKey())}/runtime-settings-restart-session.meta.json`,
+        ) ?? '{}',
       );
       const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       const invalidationWrites = saveMetadataSpy.mock.calls.filter(

@@ -90,6 +90,7 @@ export interface ChatExecutionPersistence {
     conversationId: string,
     record: ConversationInputRecord,
   ): Promise<void>;
+  assertConversationExecutionAuthority(conversationId: string): Promise<void>;
   acceptConversationInput(
     conversationId: string,
     recordId: string,
@@ -406,6 +407,12 @@ export class ChatExecutionCoordinator {
         throw new Error('Chat execution binding changed before provider handoff');
       }
       await this.prepare();
+      if (!sameConversationBinding(conversation, this.conversation)) {
+        throw new Error('Chat execution binding changed before provider handoff');
+      }
+      await this.deps.persistence.assertConversationExecutionAuthority(
+        conversation.conversationId,
+      );
       if (!sameConversationBinding(conversation, this.conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
       }

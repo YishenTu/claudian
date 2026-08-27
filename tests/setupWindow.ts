@@ -2,6 +2,7 @@ import { TextDecoder, TextEncoder } from 'node:util';
 
 type TestWindow = typeof globalThis & {
   cancelAnimationFrame?: (handle: number) => void;
+  localStorage?: Storage;
   requestAnimationFrame?: (callback: FrameRequestCallback) => number;
 };
 
@@ -35,6 +36,23 @@ if (!('window' in globalThis)) {
     configurable: true,
     value: testWindow,
     writable: true,
+  });
+}
+
+if (!testWindow.localStorage) {
+  const values = new Map<string, string>();
+  Object.defineProperty(testWindow, 'localStorage', {
+    configurable: true,
+    value: {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    } satisfies Storage,
   });
 }
 

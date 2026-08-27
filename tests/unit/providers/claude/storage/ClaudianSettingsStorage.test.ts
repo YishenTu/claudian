@@ -19,11 +19,13 @@ import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
+const mockGetLegacyDeviceSettingsKey = jest.fn<string | null, []>(() => null);
 const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
+  getLegacyDeviceSettingsKey: () => mockGetLegacyDeviceSettingsKey(),
 }));
 
 const mockAdapter = {
@@ -45,6 +47,7 @@ describe('ClaudianSettingsStorage', () => {
     mockAdapter.write.mockResolvedValue(undefined);
     mockAdapter.delete.mockResolvedValue(undefined);
     mockGetHostnameKey.mockReturnValue('host-a');
+    mockGetLegacyDeviceSettingsKey.mockReturnValue(null);
     storage = new ClaudianSettingsStorage(mockAdapter);
   });
 
@@ -524,6 +527,53 @@ describe('ClaudianSettingsStorage', () => {
         'host-b': '/custom/pi-b',
       });
       expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+
+    it('migrates current-device provider maps from the colon key to the portable key', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      mockGetHostnameKey.mockReturnValue('device-portable');
+      mockGetLegacyDeviceSettingsKey.mockReturnValue('device:legacy');
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: null,
+        providerConfigs: {
+          claude: {
+            cliPathsByHost: {
+              'device:legacy': '/legacy/claude',
+              'device:other': '/other/claude',
+            },
+          },
+          codex: {
+            cliPathsByHost: {
+              'device:legacy': '/legacy/codex',
+              'device-portable': '/portable/codex',
+            },
+            installationMethodsByHost: {
+              'device:legacy': 'wsl',
+            },
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const claudeSettings = getClaudeProviderSettings(result);
+      const codexSettings = getCodexProviderSettings(result);
+      const persisted = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(claudeSettings.cliPathsByHost).toEqual({
+        'device-portable': '/legacy/claude',
+        'device:other': '/other/claude',
+      });
+      expect(codexSettings.cliPathsByHost).toEqual({
+        'device-portable': '/portable/codex',
+      });
+      expect(codexSettings.installationMethodsByHost).toEqual({
+        'device-portable': 'wsl',
+      });
+      expect(persisted.providerConfigs.claude.cliPathsByHost)
+        .toEqual(claudeSettings.cliPathsByHost);
+      expect(persisted.providerConfigs.codex.cliPathsByHost)
+        .toEqual(codexSettings.cliPathsByHost);
     });
 
     it('clears Codex Windows installation settings on non-Windows hosts during normalization', async () => {

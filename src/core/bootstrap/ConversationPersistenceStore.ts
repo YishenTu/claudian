@@ -7,11 +7,12 @@ import {
   ConversationInputLedgerStorage,
 } from './ConversationInputLedgerStorage';
 import {
-  assertValidSessionMetadataId,
+  SESSION_METADATA_ASSIGNMENT_SCHEMA_VERSION,
+  type SessionMetadataAssignment,
+  type SessionMetadataAuthority,
   type SessionMetadataReader,
   SessionStorage,
 } from './SessionStorage';
-import { DELETION_MARKER_SUFFIX, SESSIONS_PATH } from './storagePaths';
 
 export const CONVERSATION_DELETION_MARKER_SCHEMA_VERSION = 1 as const;
 
@@ -29,13 +30,39 @@ export interface ConversationPersistence {
   saveInputLedger(
     conversationId: string,
     ledger: ConversationInputLedger,
+    target?: SessionMetadataAuthority,
   ): Promise<void>;
-  saveMetadata(metadata: SessionMetadata): Promise<void>;
-  deleteCurrentMetadata(conversationId: string): Promise<void>;
+  saveMetadata(
+    metadata: SessionMetadata,
+    target?: SessionMetadataAuthority,
+  ): Promise<void>;
+  deleteCurrentMetadata(
+    conversationId: string,
+    target?: SessionMetadataAuthority,
+  ): Promise<void>;
   deleteLegacyMetadata(conversationId: string): Promise<void>;
+  assignMetadataToDevice(conversationId: string): Promise<void>;
   deleteInputLedger(conversationId: string): Promise<void>;
-  isDeleted(conversationId: string): Promise<boolean>;
-  markDeleted(conversationId: string, deletedAt: number): Promise<void>;
+  isDeleted(
+    conversationId: string,
+    target?: SessionMetadataAuthority,
+  ): Promise<boolean>;
+  assertMetadataWriteAuthority(
+    conversationId: string,
+    target: SessionMetadataAuthority,
+  ): Promise<void>;
+  markDeleted(
+    conversationId: string,
+    deletedAt: number,
+    target?: SessionMetadataAuthority,
+  ): Promise<void>;
+}
+
+class SessionMetadataOwnershipError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionMetadataOwnershipError';
+  }
 }
 
 export class ConversationPersistenceStore implements ConversationPersistence {
@@ -44,8 +71,11 @@ export class ConversationPersistenceStore implements ConversationPersistence {
   private readonly metadataStorage: SessionStorage;
   private readonly inputLedgerStorage: ConversationInputLedgerPersistence;
 
-  constructor(private readonly adapter: VaultFileAdapter) {
-    this.metadataStorage = new SessionStorage(adapter);
+  constructor(
+    private readonly adapter: VaultFileAdapter,
+    deviceKey: string,
+  ) {
+    this.metadataStorage = new SessionStorage(adapter, deviceKey);
     this.metadataReader = this.metadataStorage;
     this.inputLedgerStorage = new ConversationInputLedgerStorage(adapter);
   }
@@ -56,23 +86,32 @@ export class ConversationPersistenceStore implements ConversationPersistence {
     return this.inputLedgerStorage.load(conversationId);
   }
 
-  saveInputLedger(
+  async saveInputLedger(
     conversationId: string,
     ledger: ConversationInputLedger,
+    target: SessionMetadataAuthority = 'device',
   ): Promise<void> {
-    return this.inputLedgerStorage.save(conversationId, ledger);
+    await this.assertMetadataWriteAuthority(conversationId, target);
+    await this.inputLedgerStorage.save(conversationId, ledger);
   }
 
-  saveMetadata(metadata: SessionMetadata): Promise<void> {
-    return this.adapter.write(
-      this.metadataStorage.getMetadataPath(metadata.id),
+  async saveMetadata(
+    metadata: SessionMetadata,
+    target: SessionMetadataAuthority = 'device',
+  ): Promise<void> {
+    await this.assertMetadataWriteAuthority(metadata.id, target);
+    await this.adapter.write(
+      this.getMetadataPath(metadata.id, target),
       JSON.stringify(metadata, null, 2),
     );
   }
 
-  deleteCurrentMetadata(conversationId: string): Promise<void> {
+  deleteCurrentMetadata(
+    conversationId: string,
+    target: SessionMetadataAuthority = 'device',
+  ): Promise<void> {
     return this.adapter.delete(
-      this.metadataStorage.getMetadataPath(conversationId),
+      this.getMetadataPath(conversationId, target),
     );
   }
 
@@ -82,28 +121,114 @@ export class ConversationPersistenceStore implements ConversationPersistence {
     );
   }
 
+  async assignMetadataToDevice(conversationId: string): Promise<void> {
+    await this.assertMetadataWriteAuthority(conversationId, 'unscoped');
+    const source = this.metadataStorage.getUnscopedMetadataPath(conversationId);
+    const target = this.metadataStorage.getMetadataPath(conversationId);
+    if (await this.adapter.exists(target)) {
+      throw new Error(`Cannot assign conversation ${conversationId}: device metadata already exists`);
+    }
+    if (!await this.adapter.exists(source)) {
+      throw new Error(
+        `Cannot assign conversation ${conversationId}: unscoped metadata is missing`,
+      );
+    }
+
+    const targetFolder = target.slice(0, target.lastIndexOf('/'));
+    await this.adapter.ensureFolder(targetFolder);
+    const assignmentPath = this.metadataStorage.getAssignmentMarkerPath(conversationId);
+    const assignment: SessionMetadataAssignment = {
+      schemaVersion: SESSION_METADATA_ASSIGNMENT_SCHEMA_VERSION,
+      conversationId,
+      deviceKey: this.metadataStorage.getDeviceKey(),
+    };
+    await this.adapter.write(
+      assignmentPath,
+      JSON.stringify(assignment, null, 2),
+    );
+    try {
+      await this.adapter.rename(source, target);
+    } catch (error) {
+      try {
+        await this.adapter.delete(assignmentPath);
+      } catch (rollbackError) {
+        throw new Error(
+          `Cannot assign conversation ${conversationId}: metadata move failed (${String(error)}) and assignment-fence rollback failed`,
+          { cause: rollbackError },
+        );
+      }
+      throw error;
+    }
+  }
+
   deleteInputLedger(conversationId: string): Promise<void> {
     return this.inputLedgerStorage.delete(conversationId);
   }
 
-  isDeleted(conversationId: string): Promise<boolean> {
-    return this.adapter.exists(this.getDeletionMarkerPath(conversationId));
+  isDeleted(
+    conversationId: string,
+    target: SessionMetadataAuthority = 'device',
+  ): Promise<boolean> {
+    return this.adapter.exists(this.getDeletionMarkerPath(conversationId, target));
   }
 
-  async markDeleted(conversationId: string, deletedAt: number): Promise<void> {
+  async markDeleted(
+    conversationId: string,
+    deletedAt: number,
+    target: SessionMetadataAuthority = 'device',
+  ): Promise<void> {
+    await this.assertMetadataWriteAuthority(conversationId, target);
     const marker: ConversationDeletionMarker = {
       schemaVersion: CONVERSATION_DELETION_MARKER_SCHEMA_VERSION,
       conversationId,
       deletedAt,
     };
     await this.adapter.write(
-      this.getDeletionMarkerPath(conversationId),
+      this.getDeletionMarkerPath(conversationId, target),
       JSON.stringify(marker, null, 2),
     );
   }
 
-  private getDeletionMarkerPath(conversationId: string): string {
-    assertValidSessionMetadataId(conversationId);
-    return `${SESSIONS_PATH}/${conversationId}${DELETION_MARKER_SUFFIX}`;
+  private getDeletionMarkerPath(
+    conversationId: string,
+    target: SessionMetadataAuthority,
+  ): string {
+    return target === 'device'
+      ? this.metadataStorage.getDeviceDeletionMarkerPath(conversationId)
+      : this.metadataStorage.getUnscopedDeletionMarkerPath(conversationId);
+  }
+
+  private getMetadataPath(
+    conversationId: string,
+    target: SessionMetadataAuthority,
+  ): string {
+    switch (target) {
+      case 'device':
+        return this.metadataStorage.getMetadataPath(conversationId);
+      case 'unscoped':
+        return this.metadataStorage.getUnscopedMetadataPath(conversationId);
+    }
+  }
+
+  async assertMetadataWriteAuthority(
+    conversationId: string,
+    target: SessionMetadataAuthority,
+  ): Promise<void> {
+    const assignment = await this.metadataStorage.loadAssignment(conversationId);
+    if (assignment.status === 'missing') return;
+    if (assignment.status === 'invalid') {
+      throw new SessionMetadataOwnershipError(
+        `Cannot write conversation ${conversationId}: assignment fence is invalid`,
+      );
+    }
+
+    const assignedToCurrentDevice = assignment.assignment.deviceKey
+      === this.metadataStorage.getDeviceKey();
+    if (target === 'device' && assignedToCurrentDevice) return;
+    throw new SessionMetadataOwnershipError(
+      `Cannot write conversation ${conversationId}: assigned to ${
+        assignedToCurrentDevice ? 'the current device' : 'another device'
+      }`,
+    );
   }
 }

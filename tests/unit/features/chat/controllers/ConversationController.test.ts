@@ -2550,6 +2550,71 @@ describe('ConversationController', () => {
         expect(menu.items.map(item => item.title)).toEqual(['Rename', 'Delete']);
       });
 
+      it('shows inline device assignment beside pin and archive only for legacy sessions', async () => {
+        const container = createMockEl();
+        const onAssignConversationToDevice = jest.fn().mockResolvedValue(undefined);
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'legacy',
+            title: 'Legacy session',
+            createdAt: 1,
+            isLegacySession: true,
+          },
+          {
+            id: 'device',
+            title: 'Device session',
+            createdAt: 0,
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onAssignConversationToDevice,
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+          sessionActionMode: 'active',
+          showOpenStateActions: false,
+        });
+
+        const items = container.querySelectorAll('.claudian-history-item');
+        const legacyItem = items.find((item: HTMLElement) => (
+          item.getAttribute('data-conversation-id') === 'legacy'
+        ))!;
+        const deviceItem = items.find((item: HTMLElement) => (
+          item.getAttribute('data-conversation-id') === 'device'
+        ))!;
+        const assignButton = legacyItem.querySelector(
+          '.claudian-assign-device-btn',
+        )!;
+        expect(assignButton).not.toBeNull();
+        expect(deviceItem.querySelector('.claudian-assign-device-btn')).toBeNull();
+        expect(
+          legacyItem.querySelector('.claudian-history-item-actions')!.children
+            .map((button: HTMLElement) => button.getAttribute('aria-label')),
+        ).toEqual(['Assign to this device', 'Pin', 'Archive']);
+
+        assignButton.dispatchEvent({
+          type: 'click',
+          stopPropagation: jest.fn(),
+        });
+        await Promise.resolve();
+        expect(onAssignConversationToDevice).toHaveBeenCalledWith('legacy');
+
+        legacyItem.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        const menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual([
+          'Pin',
+          'Rename',
+          'Archive',
+        ]);
+      });
+
       it('offers pin and unpin actions on the Sessions surface', async () => {
         const container = createMockEl();
         const onSetConversationPinned = jest.fn().mockResolvedValue(undefined);

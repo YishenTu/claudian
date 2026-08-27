@@ -15,8 +15,9 @@
 
 | Component | Authority |
 | --- | --- |
-| `ConversationRepository` | The canonical in-memory Claudian conversation collection, hydration status, pin/archive and creation-only Linked content identity, deletion transactions, per-conversation persistence queues, input-ledger coordination, historical model recovery, selected-model availability reconciliation, and execution-snapshot binding |
+| `ConversationRepository` | The canonical in-memory Claudian conversation collection, device-versus-unscoped metadata ownership and explicit assignment, hydration status, pin/archive and creation-only Linked content identity, deletion transactions, per-conversation persistence queues, input-ledger coordination, historical model recovery, selected-model availability reconciliation, and execution-snapshot binding |
 | `SharedStorageService` | Plugin-data and vault persistence I/O plus construction of shared persistence adapters |
+| `ClaudianSettingsStorage` | Settings persistence and retryable migration of current-device provider maps from legacy device-key aliases to the filesystem-safe key |
 | `SettingsCoordinator` | Serialization of settings mutations, rollback before failed persistence, and post-commit publication ordering |
 | `ChatModelSelectionCoordinator` | Application-wide ordering and durable settings commits for explicit future-tab model-seed intents |
 | `PinnedLinkedContentPathCoordinator` | Pinned Linked content path mutation, folder-descendant rewrite, deduplication, and deletion cleanup through ordered settings transactions |
@@ -158,6 +159,6 @@ Storage adapters own I/O mechanics, not domain decisions. Callers decide what st
 - Review data is derived again from exact fetched main and Member OIDs. Clean requests compare main to the candidate merge tree; conflicting or stale requests compare merge base to the reviewed head. File contents are read only for the selected path, and raster preview requires both a supported extension and matching file signature.
 - Client `cache.json` is a validated stale-read projection only. It may retain bounded exact-query Ticket-list pages and finite complete cursor-free Ticket details for explicit offline read-only rendering, but never mutation state or incomplete detail pages. Runtime first-page and continuation-page detail queries remain online-only and must never synthesize a bounded result from complete cache. Online reads remain authoritative, the membership event cursor advances only after the coordination projection is durable, and authorization or integrity failures must never fall back to cached state.
 - Conversation persistence for one conversation remains ordered, and stale execution snapshots must not overwrite newer provider state.
-- Deletion, hydration, and execution-snapshot writes must preserve their existing generation and binding fences.
+- Deletion, hydration, input-ledger, and execution-snapshot writes must preserve their ownership, generation, and binding fences. `ConversationRepository` revalidates metadata authority for staged execution immediately before provider handoff.
 - Archiving clears pin state, cannot be inferred from tab closure, and never mutates provider-native history.
 - Historical model recovery is best-effort, concurrency-bounded, provider-owned, and must not overwrite a model selected or recovered by a newer operation.

@@ -147,6 +147,7 @@ type HistoryRenderOptions = {
   searchQuery?: string;
   onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
   onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
+  onAssignConversationToDevice?: (id: string) => Promise<void>;
   onBeforeRestoreListState?: (container: HTMLElement) => void;
   onRequestInlineRename?: (request: {
     beginRename: (item: HTMLElement) => void;
@@ -1487,6 +1488,24 @@ export class ConversationController {
         );
       });
     };
+
+    if (conversation.isLegacySession && options.onAssignConversationToDevice) {
+      const assignDeviceBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-assign-device-btn',
+      });
+      setIcon(assignDeviceBtn, 'monitor-down');
+      assignDeviceBtn.setAttribute('aria-label', 'Assign to this device');
+      assignDeviceBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onAssignConversationToDevice?.(conversation.id),
+            'Failed to assign session to this device',
+          ),
+          'Failed to assign session to this device',
+        );
+      });
+    }
 
     if (options.sessionActionMode === 'active') {
       if (!showAttentionState) {
