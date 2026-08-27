@@ -7,9 +7,9 @@ const preservedComment = /^!|@preserve|@license|@cc_on/i;
 async function minifyProductionBundle(source) {
   const result = await minify(source, {
     compress: {
-      passes: 3,
-      // Multi-pass variable reduction drops sql.js's live CommonJS UMD export.
-      reduce_vars: false,
+      // A single compression pass preserves sql.js's live CommonJS UMD export
+      // while allowing ordinary variable reduction across the application bundle.
+      passes: 1,
       toplevel: true,
     },
     ecma: 2022,
