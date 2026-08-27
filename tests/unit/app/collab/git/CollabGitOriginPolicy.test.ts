@@ -1,4 +1,5 @@
 import {
+  rotateAuthorityTransferOrigin,
   rotateCloudBootstrapOrigin,
   rotateTrustedCollabOrigin,
 } from '@/app/collab/git/CollabGitOriginPolicy';
@@ -144,5 +145,64 @@ describe('CollabGitOriginPolicy', () => {
     });
 
     expect(repository.addRemote).toHaveBeenCalledTimes(1);
+  });
+
+  it('rotates exact authority-transfer origins in both directions', async () => {
+    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const toCloud = git([oldUrl]);
+    await rotateAuthorityTransferOrigin(toCloud, {
+      newRemoteUrl: cloudUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+    const toLan = git([cloudUrl]);
+    await rotateAuthorityTransferOrigin(toLan, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: cloudUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(toCloud.addRemote).toHaveBeenCalledTimes(1);
+    expect(toLan.addRemote).toHaveBeenCalledTimes(1);
+  });
+
+  it('rotates a fenced stopped-Host origin to Cloud after LAN relinquishment', async () => {
+    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const repository = git([
+      'https://127.0.0.1:1/claudian-collab/host-stopped/project-a',
+    ]);
+
+    await rotateAuthorityTransferOrigin(repository, {
+      newRemoteUrl: cloudUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      cloudUrl,
+    );
+  });
+
+  it('rejects same-kind and cross-Project authority-transfer origins', async () => {
+    const repository = git([oldUrl]);
+
+    await expect(rotateAuthorityTransferOrigin(repository, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    })).rejects.toMatchObject({ code: 'repository-invalid' });
+    await expect(rotateAuthorityTransferOrigin(repository, {
+      newRemoteUrl: 'https://cloud.example.test/v2/projects/project-b/repository.git',
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    })).rejects.toMatchObject({ code: 'repository-invalid' });
+    expect(repository.listRemoteUrls).not.toHaveBeenCalled();
   });
 });

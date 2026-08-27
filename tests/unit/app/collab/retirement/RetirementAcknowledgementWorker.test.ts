@@ -29,6 +29,7 @@ describe('RetirementAcknowledgementWorker', () => {
         projectId: 'project-a',
         retiredAt: RETIRED_AT,
       }),
+      acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
       projectRecoveryAdmission,
@@ -72,6 +73,7 @@ describe('RetirementAcknowledgementWorker', () => {
           projectId: 'project-a',
           retiredAt: RETIRED_AT,
         }),
+      acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
       projectRecoveryAdmission: admitProjectRecovery,
@@ -96,6 +98,7 @@ describe('RetirementAcknowledgementWorker', () => {
         observedSignal = input.signal;
         throw new CollabError({ code: 'endpoint-unreachable' });
       }),
+      acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
       projectRecoveryAdmission: admitProjectRecovery,
@@ -115,6 +118,7 @@ describe('RetirementAcknowledgementWorker', () => {
     const store = new MemoryRetirementStore(record());
     const client: jest.Mocked<RetirementAcknowledgementClientPort> = {
       acknowledge: jest.fn(),
+      acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
       now: () => new Date('2026-09-12T00:00:00.000Z'),
@@ -126,6 +130,56 @@ describe('RetirementAcknowledgementWorker', () => {
     expect(client.acknowledge).not.toHaveBeenCalled();
     expect(store.removed).toBe(true);
   });
+
+  it('recovers a durable Cloud acknowledgement after a transient failure and restart', async () => {
+    const store = new MemoryRetirementStore(cloudRecord());
+    const firstClient: jest.Mocked<RetirementAcknowledgementClientPort> = {
+      acknowledge: jest.fn(),
+      acknowledgeCloud: jest.fn().mockRejectedValue(
+        new CollabError({ code: 'endpoint-unreachable' }),
+      ),
+    };
+    const first = new RetirementAcknowledgementWorker(store, firstClient, {
+      projectRecoveryAdmission: admitProjectRecovery,
+      scheduleRetry: jest.fn(),
+    });
+
+    await expect(first.run('project-a')).resolves.toBe('retry-pending');
+    expect(store.value).toMatchObject({
+      acknowledgementStatus: 'pending',
+      cloudRetirementId: 'retirement-cloud-one',
+      cloudServerUrl: 'https://cloud.example.test/',
+    });
+    await first.close();
+
+    const secondClient: jest.Mocked<RetirementAcknowledgementClientPort> = {
+      acknowledge: jest.fn(),
+      acknowledgeCloud: jest.fn().mockResolvedValue({
+        acknowledgedAt: ACKNOWLEDGED_AT,
+        idempotencyKey: 'retire-ack-cloud',
+        projectId: 'project-a',
+        retirementId: 'retirement-cloud-one',
+      }),
+    };
+    const resumed = new RetirementAcknowledgementWorker(store, secondClient, {
+      projectRecoveryAdmission: admitProjectRecovery,
+    });
+
+    await expect(resumed.run('project-a')).resolves.toBe('acknowledged');
+    expect(secondClient.acknowledgeCloud).toHaveBeenCalledWith({
+      developmentActorId: 'principal-manager-device',
+      projectId: 'project-a',
+      retirementId: 'retirement-cloud-one',
+      serverUrl: 'https://cloud.example.test/',
+      signal: expect.any(AbortSignal),
+    });
+    expect(store.value).toMatchObject({
+      acknowledgedAt: ACKNOWLEDGED_AT,
+      acknowledgementStatus: 'acknowledged',
+      cloudRetirementId: null,
+      cloudServerUrl: null,
+    });
+  });
 });
 
 function record(): RetirementRecord {
@@ -134,6 +188,9 @@ function record(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'retire-local-one',
     cleanupStatus: 'pending',
+    cloudDevelopmentActorId: null,
+    cloudRetirementId: null,
+    cloudServerUrl: null,
     createdAt: RETIRED_AT,
     hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
     hostCaFingerprint: 'a'.repeat(64),
@@ -145,6 +202,19 @@ function record(): RetirementRecord {
     retiredAt: RETIRED_AT,
     schemaVersion: 1,
     updatedAt: RETIRED_AT,
+  };
+}
+
+function cloudRecord(): RetirementRecord {
+  return {
+    ...record(),
+    cloudDevelopmentActorId: 'principal-manager-device',
+    cloudRetirementId: 'retirement-cloud-one',
+    cloudServerUrl: 'https://cloud.example.test/',
+    hostCaCertificatePem: null,
+    hostCaFingerprint: null,
+    hostEndpoint: null,
+    memberCredential: null,
   };
 }
 

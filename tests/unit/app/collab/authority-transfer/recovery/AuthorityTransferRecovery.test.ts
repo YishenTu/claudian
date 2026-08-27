@@ -130,6 +130,31 @@ describe('AuthorityTransferRecovery', () => {
     );
   });
 
+  it('reconstructs a proposal runtime without starting Host-owned cutover', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository);
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'proposal',
+      localRole: 'source',
+      operationIntentId: 'intent-one',
+      stagingDirectoryName: '.claudian-authority-transfer-transfer-one',
+      status: status('collecting-readiness'),
+    }));
+    const prepare = jest.fn().mockResolvedValue(undefined);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    const recovery = new AuthorityTransferRecovery(persistence, { prepare, resume });
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+
+    await subsystem.lifecycleRecovery.resume();
+
+    expect(prepare).toHaveBeenCalledWith(expect.objectContaining({
+      lifecycleOwnership: 'proposal',
+      transferId: 'transfer-one',
+    }));
+    expect(resume).not.toHaveBeenCalled();
+  });
+
   it('repairs an interrupted unacknowledged commitment before resuming its owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository);

@@ -34,6 +34,7 @@ const PROJECTS_ROOT_MARKER = {
 const PROJECTS_ROOT_MARKER_CONTENTS = `${JSON.stringify(PROJECTS_ROOT_MARKER, null, 2)}\n`;
 
 export type CollabProjectsFolderChildPurpose =
+  | 'authority-transfer-staging'
   | 'create-clone'
   | 'create-seed'
   | 'host-transfer-staging'

@@ -105,6 +105,81 @@ describe('RetirementClientHandler', () => {
     expect(store.retirement).toMatchObject({ cleanupStatus: 'complete' });
   });
 
+  it('persists a Cloud response before scheduling its durable acknowledgement', async () => {
+    const order: string[] = [];
+    const store = new MemoryProjectionStore(order);
+    store.membership = cloudMembership();
+    const cleanup = cleanupPort(order);
+    const acknowledgement = { schedule: jest.fn(() => { order.push('ack'); }) };
+    const handler = new RetirementClientHandler(
+      store,
+      {
+        closeProject: jest.fn(async () => undefined),
+        drainProject: jest.fn(async () => undefined),
+      },
+      acknowledgement,
+      cleanup,
+      {
+        createOperationId: () => 'retire-cloud-one',
+        now: () => new Date(RETIRED_AT),
+      },
+    );
+
+    await handler.handle({
+      projectId: 'project-a',
+      retiredAt: RETIRED_AT,
+      retirementId: 'retirement-cloud-one',
+    }, 'response');
+
+    expect(store.retirement).toMatchObject({
+      acknowledgedAt: null,
+      acknowledgementStatus: 'pending',
+      cloudDevelopmentActorId: 'principal-manager-device',
+      cloudRetirementId: 'retirement-cloud-one',
+      cloudServerUrl: 'https://cloud.example.test/',
+      hostCaCertificatePem: null,
+      hostCaFingerprint: null,
+      hostEndpoint: null,
+      memberCredential: null,
+    });
+    expect(store.lastProjectionSeed?.authorityKind).toBe('cloud');
+    expect(order.indexOf('persist')).toBeLessThan(order.indexOf('ack'));
+    expect(cleanup.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces a Cloud retirement event into the same durable acknowledgement path', async () => {
+    const store = new MemoryProjectionStore([]);
+    store.membership = cloudMembership();
+    const cleanup = cleanupPort([]);
+    const acknowledgement = { schedule: jest.fn() };
+    const handler = new RetirementClientHandler(
+      store,
+      {
+        closeProject: jest.fn(async () => undefined),
+        drainProject: jest.fn(async () => undefined),
+      },
+      acknowledgement,
+      cleanup,
+      {
+        createOperationId: () => 'retire-cloud-event',
+        now: () => new Date(RETIRED_AT),
+      },
+    );
+
+    await handler.handle({
+      projectId: 'project-a',
+      retiredAt: RETIRED_AT,
+      retirementId: 'retirement-cloud-event',
+    }, 'event');
+
+    expect(store.retirement).toMatchObject({
+      acknowledgementStatus: 'pending',
+      cloudRetirementId: 'retirement-cloud-event',
+    });
+    expect(acknowledgement.schedule).toHaveBeenCalledWith('project-a');
+    expect(cleanup.cleanup).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces response, event, and fallback into one cleanup and acknowledgement identity', async () => {
     const store = new MemoryProjectionStore([]);
     const activity: jest.Mocked<RetirementClientActivityPort> = {
@@ -457,6 +532,9 @@ function pendingRecord(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'retire-local-one',
     cleanupStatus: 'pending',
+    cloudDevelopmentActorId: null,
+    cloudRetirementId: null,
+    cloudServerUrl: null,
     createdAt: RETIRED_AT,
     hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
     hostCaFingerprint: 'a'.repeat(64),
@@ -588,5 +666,26 @@ function membership(): CollabLocalMembershipRecord {
     project: { id: 'project-a', name: 'Alpha', workspacePath: 'workspace/project-a' },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
     updatedAt: RETIRED_AT,
+  };
+}
+
+function cloudMembership(): CollabLocalMembershipRecord {
+  const local = membership();
+  return {
+    ...local,
+    authority: {
+      bindingVersion: 2,
+      developmentActorId: 'principal-manager-device',
+      gitRemoteUrl: 'https://cloud.example.test/v2/projects/project-a/repository.git',
+      kind: 'cloud',
+      serverUrl: 'https://cloud.example.test/',
+      wireVersion: 6,
+    },
+    member: {
+      displayName: local.member.displayName,
+      id: local.member.id,
+      personalRef: local.member.personalRef,
+      role: local.member.role,
+    },
   };
 }

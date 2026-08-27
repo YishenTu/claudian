@@ -1,9 +1,11 @@
 import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
 
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_LIMITS,
+  type CollabAuthorityTransferStatus,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
@@ -148,6 +150,138 @@ function cloudSnapshot() {
 }
 
 describe('CloudAuthorityAdapter', () => {
+  it('binds a lifecycle-only snapshot to the canonical Member ref', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+      body: input.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot'], limits)
+        : collabCloudSuccessEnvelope('response-lifecycle-snapshot', cloudSnapshot()),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const lifecycle = await new CloudAuthorityAdapter({ request }).createLifecycle({
+      developmentActorId: ACTOR_ID,
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    });
+
+    await expect(lifecycle.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+      currentMember: {
+        id: ACTOR_ID,
+        personalRef: 'refs/heads/members/member-alice',
+      },
+      project: { id: PROJECT_ID },
+    });
+  });
+
+  it('binds negotiated lifecycle control and artifact routes without a local registry', async () => {
+    const transferStatus = {
+      batchRevision: null,
+      batchSha256: null,
+      checkpointSha256: null,
+      createdAt: CREATED_AT,
+      direction: 'cloud-to-lan',
+      expiresAt: '2026-09-21T00:00:00.000Z',
+      phase: 'collecting-readiness',
+      projectId: PROJECT_ID,
+      relinquishmentProof: null,
+      sourceAuthority: { generation: 1, kind: 'cloud' },
+      state: 'active',
+      targetAuthority: { generation: 2, kind: 'lan' },
+      targetUrl: 'https://192.168.1.10:43123',
+      transferId: 'transfer-cloud-to-lan',
+      updatedAt: CREATED_AT,
+    } satisfies CollabAuthorityTransferStatus;
+    const jsonRequests: CloudAuthorityHttpRequest[] = [];
+    const uploaded: Buffer[] = [];
+    const adapter = new CloudAuthorityAdapter({
+      artifacts: {
+        download: input => Promise.resolve({
+          body: Readable.from(['checkpoint']),
+          byteCount: 10,
+          status: 200,
+        }),
+        upload: async input => {
+          for await (const chunk of input.body) uploaded.push(Buffer.from(chunk));
+          return { body: undefined, contentType: null, status: 204 };
+        },
+      },
+      request: async input => {
+        jsonRequests.push(input);
+        if (input.method === 'GET') {
+          return {
+            body: collabCloudCapabilityDocument([
+              'authority-transfer',
+              'project-retirement',
+            ], limits),
+            contentType: 'application/json',
+            status: 200,
+          };
+        }
+        return {
+          body: collabCloudSuccessEnvelope('request-lifecycle', transferStatus),
+          contentType: 'application/json',
+          status: 200,
+        };
+      },
+    });
+    const session = await adapter.create(membership());
+    expect(session.lifecycle).toBeDefined();
+
+    await expect(session.lifecycle!.authorityTransfer(
+      'getProjectAuthorityTransfer',
+      { projectId: PROJECT_ID, transferId: transferStatus.transferId },
+    )).resolves.toEqual(transferStatus);
+    await session.lifecycle!.uploadAuthorityTransferArtifact({
+      artifact: 'checkpoint.json',
+      body: Readable.from(['checkpoint']),
+      byteCount: 10,
+      projectId: PROJECT_ID,
+      transferId: transferStatus.transferId,
+    });
+    const download = await session.lifecycle!.downloadAuthorityTransferArtifact({
+      artifact: 'checkpoint.json',
+      projectId: PROJECT_ID,
+      transferId: transferStatus.transferId,
+    });
+    const downloaded: Buffer[] = [];
+    for await (const chunk of download.body) downloaded.push(Buffer.from(chunk));
+
+    expect(jsonRequests[1]?.url).toBe(
+      `https://cloud.example.test/v2/projects/${PROJECT_ID}`
+        + '/operations/getProjectAuthorityTransfer',
+    );
+    expect(Buffer.concat(uploaded).toString('utf8')).toBe('checkpoint');
+    expect(Buffer.concat(downloaded).toString('utf8')).toBe('checkpoint');
+  });
+
+  it('keeps lifecycle calls capability-gated and rejects legacy binding documents', async () => {
+    const request = jest.fn(async () => ({
+      body: collabCloudCapabilityDocument([], limits),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const session = await new CloudAuthorityAdapter({ request }).create(membership());
+    await expect(session.lifecycle!.authorityTransfer(
+      'getProjectAuthorityTransfer',
+      { projectId: PROJECT_ID, transferId: 'transfer-unavailable' },
+    )).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'cloud-authority-capability-unavailable' },
+    });
+
+    request.mockResolvedValueOnce({
+      body: {
+        ...collabCloudCapabilityDocument([], limits),
+        bindingVersions: [1],
+        protocolVersions: [4],
+      },
+      contentType: 'application/json',
+      status: 200,
+    });
+    await expect(new CloudAuthorityAdapter({ request }).create(membership()))
+      .rejects.toMatchObject({ code: 'protocol-version-unsupported' });
+  });
+
   it('uses the desktop transport for default capability and snapshot reads', async () => {
     const requests: Array<{ readonly actor: string | undefined; readonly url: string }> = [];
     const server = createServer((request, response) => {
@@ -740,6 +874,43 @@ describe('CloudAuthorityAdapter', () => {
 });
 
 describe('CloudProjectEventClient', () => {
+  it('preserves the terminal retirement identity instead of degrading it to a snapshot', async () => {
+    const socket = new FakeSocket();
+    const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
+    const client = new CloudProjectEventClient({
+      afterSequence: 3,
+      developmentActorId: ACTOR_ID,
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    }, onInvalidation, {
+      createSocket: () => socket,
+    });
+
+    client.start();
+    socket.open();
+    await flush();
+    socket.message(JSON.stringify({
+      kind: 'project.retired',
+      occurredAt: '2026-08-27T00:00:00.000Z',
+      payload: {
+        retiredAt: '2026-08-27T00:00:00.000Z',
+        retirementId: 'retirement-cloud-one',
+      },
+      projectId: PROJECT_ID,
+      protocolVersion: 6,
+      sequence: 4,
+    }));
+    await flush();
+
+    expect(onInvalidation).toHaveBeenLastCalledWith({
+      kind: 'retired',
+      retiredAt: '2026-08-27T00:00:00.000Z',
+      retirementId: 'retirement-cloud-one',
+      sequence: 4,
+    });
+    client.dispose();
+  });
+
   it('refreshes snapshot first, detects a gap, and reconnects after the applied cursor', async () => {
     const sockets: FakeSocket[] = [];
     const scheduled: Array<() => void> = [];

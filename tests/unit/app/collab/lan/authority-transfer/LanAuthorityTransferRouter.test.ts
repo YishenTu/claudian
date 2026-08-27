@@ -433,6 +433,8 @@ describe('LanAuthorityTransferRouter', () => {
       transferId: 'transfer-alpha',
     };
     const active: jest.Mocked<LanAuthorityTransferTargetActiveService> = {
+      expire: jest.fn(async () => undefined),
+      expiresAt: '2026-09-26T00:00:00.000Z',
       claimTransferredMembership: mockAsync<
         LanAuthorityTransferTargetActiveService['claimTransferredMembership']
       >(async () => ({
@@ -518,6 +520,8 @@ describe('LanAuthorityTransferRouter', () => {
       authenticateMemberCredential: mockAsync<
         LanAuthorityTransferTerminalSourceService['authenticateMemberCredential']
       >(async () => ({ memberId: OTHER_MEMBER_ID })),
+      expire: jest.fn(),
+      expiresAt: '2026-09-25T00:00:00.000Z',
       getProjectAuthorityTransfer: mockAsync<
         LanAuthorityTransferTerminalSourceService['getProjectAuthorityTransfer']
       >(async () => transferStatus),
@@ -536,6 +540,7 @@ describe('LanAuthorityTransferRouter', () => {
       projectId: PROJECT_ID,
       service,
       state: 'terminal-source',
+      transferId: 'transfer-alpha',
     };
     const request: GetTransferredMembershipClaimRequest = {
       projectId: PROJECT_ID,
@@ -586,6 +591,8 @@ describe('LanAuthorityTransferRouter', () => {
       authenticateMemberCredential: mockAsync<
         LanAuthorityTransferTerminalSourceService['authenticateMemberCredential']
       >(async () => ({ memberId: OTHER_MEMBER_ID })),
+      expire: jest.fn(),
+      expiresAt: '2026-09-25T00:00:00.000Z',
       getProjectAuthorityTransfer: mockAsync<
         LanAuthorityTransferTerminalSourceService['getProjectAuthorityTransfer']
       >(async () => status()),
@@ -607,6 +614,7 @@ describe('LanAuthorityTransferRouter', () => {
       projectId: PROJECT_ID,
       service: terminal,
       state: 'terminal-source',
+      transferId: 'transfer-alpha',
     };
     releaseAdmission();
 

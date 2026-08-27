@@ -337,6 +337,39 @@ function requireEmptyAuthority(connection: AuthorityDatabaseConnection): void {
 }
 
 export class AuthorityTransferCheckpointRepository {
+  activateImportedAuthority(
+    connection: AuthorityDatabaseConnection,
+    input: Readonly<{
+      projectId: string;
+      targetAuthorityGeneration: number;
+    }>,
+  ): void {
+    const project = connection.get(`
+      SELECT project_id, state
+      FROM project
+      WHERE singleton = 1
+    `);
+    const generation = connection.get(`
+      SELECT authority_generation
+      FROM authority_metadata
+      WHERE singleton = 1
+    `);
+    if (
+      !project
+      || text(project, 'project_id') !== input.projectId
+      || (text(project, 'state') !== 'disabled' && text(project, 'state') !== 'active')
+      || !generation
+      || generation.authority_generation !== input.targetAuthorityGeneration
+    ) throw checkpointError('checkpoint-target-authority-identity-invalid');
+    if (text(project, 'state') === 'active') return;
+    const changes = connection.run(`
+      UPDATE project
+      SET state = 'active'
+      WHERE singleton = 1 AND project_id = ? AND state = 'disabled'
+    `, [input.projectId]);
+    if (changes !== 1) throw checkpointError('checkpoint-target-activation-stale');
+  }
+
   exportCoordination(
     connection: AuthorityDatabaseConnection,
     input: ExportAuthorityTransferCoordinationInput,

@@ -1029,6 +1029,32 @@ describe('AuthorityTransferPersistence', () => {
       .resolves.toBeNull();
   });
 
+  it('recovers terminal completion after claim files were removed before the record fence', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const completed = createAuthorityTransferRecord({
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    });
+    await repository.authorityTransferRecords.save(
+      expireAuthorityTransferTerminalResponder(completed),
+    );
+    const persistence = new AuthorityTransferPersistence(repository, {
+      now: () => new Date(EXPIRES_AT),
+    });
+
+    await expect(persistence.expireTerminalResponder(PROJECT_ID, TRANSFER_ID))
+      .resolves.toBeUndefined();
+    await expect(persistence.completeTerminalCleanup({
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    })).resolves.toBeUndefined();
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+  });
+
   it('repairs only an unacknowledged interrupted claim commitment write', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository);

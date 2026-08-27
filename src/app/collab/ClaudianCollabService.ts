@@ -22,6 +22,9 @@ import { RequestQueryGitPolicy } from '@/app/collab/authority/RequestQueryGitPol
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
+import type {
+  AuthorityTransferModule,
+} from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -54,6 +57,9 @@ import {
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import { JoinProjectCoordinator } from '@/app/collab/join/JoinProjectCoordinator';
+import {
+  AuthorityMemberCredentialAuthenticator,
+} from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   collabControlOperationPath,
@@ -199,6 +205,7 @@ export class ClaudianCollabService {
     CollabProjectId,
     Promise<CollabAuthorityFoundation>
   >();
+  private authorityTransferModule: AuthorityTransferModule | null = null;
   private closed = false;
   private readonly createAuthorityDatabase: (
     authorityDirectory: string,
@@ -311,6 +318,55 @@ export class ClaudianCollabService {
     return rescan
       ? this.gitRuntimeResolver.rescan(input)
       : this.gitRuntimeResolver.resolve(input);
+  }
+
+  bindAuthorityTransferModule(module: AuthorityTransferModule): void {
+    this.assertOpen();
+    if (this.authorityTransferModule && this.authorityTransferModule !== module) {
+      throw new Error('Authority transfer module is already bound');
+    }
+    this.authorityTransferModule = module;
+  }
+
+  async activateAuthorityTransferSourceRoute(
+    projectId: CollabProjectId,
+  ): Promise<() => Promise<void>> {
+    this.assertOpen();
+    const authority = await this.inspectAuthority(projectId);
+    if (!authority) {
+      throw collabServiceError(
+        'not-initialized',
+        'authority-transfer-source-authority-missing',
+      );
+    }
+    const project = await authority.database.read(connection => authority.projects.get(connection));
+    if (!project || project.projectId !== projectId) {
+      throw collabServiceError(
+        'not-initialized',
+        'authority-transfer-source-project-missing',
+      );
+    }
+    const authenticator = new AuthorityMemberCredentialAuthenticator(authority.database);
+    const service = this.authorityTransferModule?.sourceActiveService({
+      authenticateMemberCredential: async credential => ({
+        memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
+      }),
+      hostMemberId: project.hostMemberId,
+      projectId,
+    });
+    if (!service) {
+      throw collabServiceError(
+        'not-initialized',
+        'authority-transfer-source-runtime-missing',
+      );
+    }
+    await this.lanHost.startAuthorityTransferRoute({
+      hostMemberId: project.hostMemberId,
+      projectId,
+      service,
+      state: 'source-active',
+    });
+    return () => this.lanHost.stopAuthorityTransferRoute(projectId, 'source-active');
   }
 
   async requireGitFoundation(): Promise<CollabGitFoundation> {
@@ -739,6 +795,29 @@ export class ClaudianCollabService {
       projectId,
       repositoryPath,
     });
+    const authorityProject = await authority.database.read(connection => (
+      authority.projects.get(connection)
+    ));
+    if (!authorityProject || authorityProject.projectId !== projectId) {
+      throw new CollabError({
+        code: 'authority-integrity-error',
+        recoveryActions: ['open-diagnostics'],
+        safeContext: { reason: 'authority-transfer-project-authority-missing' },
+      });
+    }
+    const authorityTransferAuthenticator = new AuthorityMemberCredentialAuthenticator(
+      authority.database,
+    );
+    const authorityTransfer = this.authorityTransferModule?.sourceActiveService({
+      authenticateMemberCredential: async credential => ({
+        memberId: (await authorityTransferAuthenticator.authenticate(
+          credential,
+          ['active'],
+        )).member.id,
+      }),
+      hostMemberId: authorityProject.hostMemberId,
+      projectId,
+    }) ?? undefined;
     const tombstones = this.retirementTombstones;
     const retirementAuthority = new ProjectRetirementAuthorityService(
       authority.database,
@@ -816,6 +895,7 @@ export class ClaudianCollabService {
       ),
     };
     return {
+      ...(authorityTransfer ? { authorityTransfer } : {}),
       authority,
       authorityDirectory: authority.authorityDirectory,
       events,

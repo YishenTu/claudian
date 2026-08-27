@@ -12,7 +12,10 @@ import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import {
+  COLLAB_LIMITS,
+  type CollabAuthorityTransferStatus,
+} from '@claudian-collab/protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 
@@ -32,6 +35,7 @@ import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVe
 import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
+import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import {
   type CollabHostTrustStore,
   CollabHttpClient,
@@ -67,6 +71,45 @@ import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectPro
 const HOST_CREDENTIAL = Buffer.alloc(32, 1).toString('base64url');
 const PROJECT_ID = 'project-alpha';
 const MAIN_OID = 'a'.repeat(40);
+
+function authorityTransferStatus(
+  phase: 'collecting-readiness' | 'source-relinquished',
+): CollabAuthorityTransferStatus {
+  const relinquished = phase === 'source-relinquished';
+  const proof = relinquished ? {
+    batchRevision: 1,
+    batchSha256: 'b'.repeat(64),
+    certificate: Buffer.alloc(64, 7).toString('base64url'),
+    certificateAlgorithm: 'ed25519' as const,
+    checkpointSha256: 'a'.repeat(64),
+    committedAt: '2026-08-08T00:00:08.000Z',
+    operationIntentId: 'intent-listener-transfer',
+    projectId: PROJECT_ID,
+    sourceAuthority: { generation: 1, kind: 'lan' as const },
+    sourceHostMemberId: 'member-host',
+    targetAuthority: { generation: 2, kind: 'cloud' as const },
+    transferId: 'transfer-listener',
+  } : null;
+  return {
+    batchRevision: relinquished ? 1 : null,
+    batchSha256: relinquished ? 'b'.repeat(64) : null,
+    checkpointSha256: relinquished ? 'a'.repeat(64) : null,
+    createdAt: '2026-08-08T00:00:00.000Z',
+    direction: 'lan-to-cloud',
+    expiresAt: '2026-09-07T00:00:00.000Z',
+    phase,
+    projectId: PROJECT_ID,
+    relinquishmentProof: proof,
+    sourceAuthority: { generation: 1, kind: 'lan' },
+    state: 'active',
+    targetAuthority: { generation: 2, kind: 'cloud' },
+    targetUrl: 'https://cloud.example.test',
+    transferId: 'transfer-listener',
+    updatedAt: relinquished
+      ? '2026-08-08T00:00:09.000Z'
+      : '2026-08-08T00:00:01.000Z',
+  };
+}
 
 class MemoryTrustStore implements CollabHostTrustStore {
   readonly values = new Map<string, CollabTrustedHost>();
@@ -158,6 +201,7 @@ describe('LanHostCoordinator production transport', () => {
   let advertiseProject: jest.Mock;
   let advertisementStop: jest.Mock;
   let addressMonitorClose: jest.Mock;
+  let createAddressMonitor: jest.Mock;
   let checkHostAddress: () => Promise<void>;
   let issueServerIdentity: (address: string) => Promise<LanTlsServerIdentity>;
   let privateAddresses: readonly string[];
@@ -171,6 +215,9 @@ describe('LanHostCoordinator production transport', () => {
     hostTransfer: Error | null;
     retirement: Error | null;
   };
+  let authorityTransferNow: Date | null;
+  let authorityTransferTimeoutOverride: ((callback: () => void, milliseconds: number) => number)
+    | null;
   let outgoingHostTransfer: {
     close?: jest.Mock;
     inspectStartupRecovery: jest.Mock;
@@ -242,10 +289,16 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   beforeEach(async () => {
+    authorityTransferNow = null;
+    authorityTransferTimeoutOverride = null;
     advertisementStop = jest.fn(async () => undefined);
     advertiseProject = jest.fn(async () => ({ stop: advertisementStop }));
     addressMonitorClose = jest.fn();
     checkHostAddress = async () => undefined;
+    createAddressMonitor = jest.fn((check: () => Promise<void>) => {
+      checkHostAddress = check;
+      return { close: addressMonitorClose };
+    });
     issueServerIdentity = address => sharedTlsIdentity.issueServerIdentity(address);
     privateAddresses = ['127.0.0.1'];
     outgoingHostTransfer = null;
@@ -316,10 +369,10 @@ describe('LanHostCoordinator production transport', () => {
     if (!address || typeof address === 'string') throw new Error('Occupied port missing');
     occupiedPort = address.port;
     coordinator = new LanHostCoordinator({
-      createAddressMonitor: check => {
-        checkHostAddress = check;
-        return { close: addressMonitorClose };
+      clearAuthorityTransferExpiryTimeout: handle => {
+        if (!authorityTransferTimeoutOverride) window.clearTimeout(handle);
       },
+      createAddressMonitor,
       createGitProxy,
       createInvitationCodec: hostAddress => new InvitationCodec({
         isAddressAllowed: addressValue => addressValue === hostAddress,
@@ -327,6 +380,7 @@ describe('LanHostCoordinator production transport', () => {
       getPrivateIpv4Addresses: () => privateAddresses,
       discovery: { advertiseProject },
       localProjects,
+      now: () => authorityTransferNow ?? new Date(),
       openProject: async projectId => {
         openProjectCount += 1;
         if (projectId !== PROJECT_ID) throw new Error('Unexpected Project');
@@ -415,6 +469,11 @@ describe('LanHostCoordinator production transport', () => {
         };
       },
       portCandidates: [occupiedPort, 0],
+      setAuthorityTransferExpiryTimeout: (callback, milliseconds) => (
+        authorityTransferTimeoutOverride
+          ? authorityTransferTimeoutOverride(callback, milliseconds)
+          : window.setTimeout(callback, milliseconds)
+      ),
       tlsIdentity: {
         issueServerIdentity: (address: string) => issueServerIdentity(address),
       } as unknown as LanTlsIdentity,
@@ -1179,6 +1238,376 @@ describe('LanHostCoordinator production transport', () => {
     });
     expect(cancel).toHaveBeenCalledWith(PROJECT_ID, 'transfer-provisional');
   });
+
+  it('holds an unadvertised listener while a Cloud-to-LAN target is prepared', async () => {
+    const preparation = await coordinator.prepareAuthorityTransferTarget();
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: preparation.caCertificatePem,
+      caFingerprint: preparation.caFingerprint,
+      endpoint: preparation.endpoint,
+      projectId: PROJECT_ID,
+    }, { timeoutMs: 100 });
+
+    expect(advertiseProject).not.toHaveBeenCalled();
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: 'transfer-prepared-target',
+    }, HOST_CREDENTIAL)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-authentication-failed' },
+    });
+
+    await preparation.dispose();
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: 'transfer-prepared-target',
+    }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+  });
+
+  it('replaces ordinary authority-transfer routes with a restart-safe terminal responder', async () => {
+    const running = await coordinator.startProject(PROJECT_ID);
+    const membership = await localProjects.loadMembership(PROJECT_ID);
+    if (!membership || !isCollabLocalLanMembership(membership)) {
+      throw new Error('Missing LAN membership');
+    }
+    const authenticateMemberCredential = jest.fn(async (credential: string) => {
+      if (credential !== HOST_CREDENTIAL) throw new Error('Invalid credential');
+      return { memberId: 'member-host' as const };
+    });
+    const proposed = authorityTransferStatus('collecting-readiness');
+    const sourceRegistration = {
+      hostMemberId: 'member-host',
+      projectId: PROJECT_ID,
+      service: {
+        acceptLanToCloudTransferTarget: jest.fn(async () => proposed),
+        authenticateMemberCredential,
+        cancelProjectAuthorityTransfer: jest.fn(async () => proposed),
+        getProjectAuthorityTransfer: jest.fn(async () => proposed),
+        requestLanToCloudTransfer: jest.fn(async () => proposed),
+      },
+      state: 'source-active' as const,
+    };
+    await coordinator.startAuthorityTransferRoute(sourceRegistration);
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: membership.authority.hostCaCertificatePem!,
+      caFingerprint: membership.authority.hostCaFingerprint!,
+      endpoint: running.endpoint,
+      projectId: PROJECT_ID,
+    });
+
+    await expect(client.requestWithMember('requestLanToCloudTransfer', {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: 'intent-listener-transfer',
+      projectId: PROJECT_ID,
+      targetUrl: 'https://cloud.example.test',
+    }, HOST_CREDENTIAL)).resolves.toEqual(proposed);
+
+    const relinquished = authorityTransferStatus('source-relinquished');
+    const terminalStatus = jest.fn(async () => relinquished);
+    const terminalRegistration = {
+      projectId: PROJECT_ID,
+      service: {
+        acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+        authenticateMemberCredential,
+        expire: jest.fn(),
+        expiresAt: relinquished.expiresAt,
+        getProjectAuthorityTransfer: terminalStatus,
+        getTransferredMembershipClaim: jest.fn(),
+      },
+      state: 'terminal-source' as const,
+      transferId: relinquished.transferId,
+    };
+    await expect(coordinator.startAuthorityTransferRoute(
+      terminalRegistration,
+    )).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-route-conflict' },
+    });
+    await coordinator.transitionAuthorityTransferRoute({
+      expected: sourceRegistration,
+      next: terminalRegistration,
+      relinquishmentProof: relinquished.relinquishmentProof!,
+    });
+    await coordinator.quiesceProjectForHostTransfer(PROJECT_ID);
+    await coordinator.closeProjectForHostTransfer(PROJECT_ID);
+
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: 'transfer-listener',
+    }, HOST_CREDENTIAL)).resolves.toEqual(relinquished);
+    expect(terminalStatus).toHaveBeenCalledTimes(1);
+    await expect(client.requestWithMember('requestLanToCloudTransfer', {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: 'intent-after-relinquishment',
+      projectId: PROJECT_ID,
+      targetUrl: 'https://cloud.example.test',
+    }, HOST_CREDENTIAL)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-route-not-found' },
+    });
+  });
+
+  it('expires a terminal authority-transfer route and releases its listener', async () => {
+    const expire = jest.fn(async () => undefined);
+    const terminal = authorityTransferStatus('source-relinquished');
+    const session = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+        authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+        expire,
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        getProjectAuthorityTransfer: jest.fn(async () => terminal),
+        getTransferredMembershipClaim: jest.fn(),
+      },
+      state: 'terminal-source',
+      transferId: terminal.transferId,
+    });
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: session.caCertificatePem,
+      caFingerprint: session.caFingerprint,
+      endpoint: session.endpoint,
+      projectId: PROJECT_ID,
+    }, { timeoutMs: 100 });
+
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: 'transfer-listener',
+    }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+  });
+
+  it('expires a target-active claim route and releases its listener', async () => {
+    const expire = jest.fn(async () => undefined);
+    const session = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-expiry',
+    });
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: session.caCertificatePem,
+      caFingerprint: session.caFingerprint,
+      endpoint: session.endpoint,
+      projectId: PROJECT_ID,
+    }, { timeoutMs: 100 });
+
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    await expect(client.claimTransferredMembership({
+      claim: Buffer.alloc(32, 6).toString('base64url'),
+      credentialHash: 'c'.repeat(64),
+      idempotencyKey: 'intent-expired-target',
+      projectId: PROJECT_ID,
+      transferId: 'transfer-target-expiry',
+    })).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+  });
+
+  it('keeps a terminal authority-transfer route through a chunked long expiry timer', async () => {
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const expiresAt = new Date(startedAt.getTime() + 30 * 24 * 60 * 60 * 1_000);
+    const expire = jest.fn(async () => undefined);
+    const callbacks: Array<() => void> = [];
+    const delays: number[] = [];
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = (callback, milliseconds) => {
+      callbacks.push(callback);
+      delays.push(milliseconds);
+      return 9_000 + callbacks.length;
+    };
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+        authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+        expire,
+        expiresAt: expiresAt.toISOString(),
+        getProjectAuthorityTransfer: jest.fn(async () => (
+          authorityTransferStatus('source-relinquished')
+        )),
+        getTransferredMembershipClaim: jest.fn(),
+      },
+      state: 'terminal-source',
+      transferId: 'transfer-listener',
+    });
+
+    expect(delays).toEqual([2_147_483_647]);
+    authorityTransferNow = new Date(startedAt.getTime() + 2_147_483_647);
+    callbacks[0]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(expire).not.toHaveBeenCalled();
+    expect(delays).toEqual([
+      2_147_483_647,
+      expiresAt.getTime() - authorityTransferNow.getTime(),
+    ]);
+
+    authorityTransferNow = expiresAt;
+    callbacks[1]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(expire).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps terminal expiry scheduled after a stale state-specific stop', async () => {
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const expiresAt = new Date(startedAt.getTime() + 1_000);
+    const callbacks: Array<() => void> = [];
+    const expire = jest.fn(async () => undefined);
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 10_000 + callbacks.length;
+    };
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+        authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+        expire,
+        expiresAt: expiresAt.toISOString(),
+        getProjectAuthorityTransfer: jest.fn(async () => (
+          authorityTransferStatus('source-relinquished')
+        )),
+        getTransferredMembershipClaim: jest.fn(),
+      },
+      state: 'terminal-source',
+      transferId: 'transfer-listener',
+    });
+
+    await coordinator.stopAuthorityTransferRoute(PROJECT_ID, 'source-active');
+    authorityTransferNow = expiresAt;
+    callbacks[0]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(expire).toHaveBeenCalledTimes(1);
+  });
+
+  it('rebinds an authority-transfer-only listener without replacing its route', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) return;
+    const status = authorityTransferStatus('collecting-readiness');
+    const registration = {
+      hostMemberId: 'member-host',
+      projectId: PROJECT_ID,
+      service: {
+        acceptLanToCloudTransferTarget: jest.fn(async () => status),
+        authenticateMemberCredential: jest.fn(async () => ({
+          memberId: 'member-host' as const,
+        })),
+        cancelProjectAuthorityTransfer: jest.fn(async () => status),
+        getProjectAuthorityTransfer: jest.fn(async () => status),
+        requestLanToCloudTransfer: jest.fn(async () => status),
+      },
+      state: 'source-active' as const,
+    };
+    const first = await coordinator.startAuthorityTransferRoute(registration);
+
+    privateAddresses = [nextAddress];
+    await checkHostAddress();
+    const repeated = await coordinator.startAuthorityTransferRoute(registration);
+
+    expect(createAddressMonitor).toHaveBeenCalledTimes(1);
+    expect(repeated.endpoint).not.toBe(first.endpoint);
+    expect(new URL(repeated.endpoint).hostname).toBe(nextAddress);
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: repeated.caCertificatePem,
+      caFingerprint: repeated.caFingerprint,
+      endpoint: repeated.endpoint,
+      projectId: PROJECT_ID,
+    });
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: status.transferId,
+    }, HOST_CREDENTIAL)).resolves.toEqual(status);
+    await coordinator.stopAuthorityTransferRoute(PROJECT_ID, 'source-active');
+    expect(addressMonitorClose).toHaveBeenCalledTimes(1);
+  }, 30_000);
+
+  it('preserves a source-active transfer route while its hosted listener rebinds', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) return;
+    await coordinator.startProject(PROJECT_ID);
+    const status = authorityTransferStatus('collecting-readiness');
+    const registration = {
+      hostMemberId: 'member-host',
+      projectId: PROJECT_ID,
+      service: {
+        acceptLanToCloudTransferTarget: jest.fn(async () => status),
+        authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+        cancelProjectAuthorityTransfer: jest.fn(async () => status),
+        getProjectAuthorityTransfer: jest.fn(async () => status),
+        requestLanToCloudTransfer: jest.fn(async () => status),
+      },
+      state: 'source-active' as const,
+    };
+    await coordinator.startAuthorityTransferRoute(registration);
+    privateAddresses = [nextAddress];
+
+    await expect(checkHostAddress()).resolves.toBeUndefined();
+    const repeated = await coordinator.startAuthorityTransferRoute(registration);
+    const membership = await localProjects.loadMembership(PROJECT_ID);
+    if (!membership || !isCollabLocalLanMembership(membership)) {
+      throw new Error('Missing LAN membership');
+    }
+
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: membership.authority.hostCaCertificatePem!,
+      caFingerprint: membership.authority.hostCaFingerprint!,
+      endpoint: repeated.endpoint,
+      projectId: PROJECT_ID,
+    });
+    await expect(client.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: PROJECT_ID,
+      transferId: status.transferId,
+    }, HOST_CREDENTIAL)).resolves.toEqual(status);
+    expect(new URL(repeated.endpoint).hostname).toBe(nextAddress);
+    expect(coordinator.getProjectState(PROJECT_ID).status).toBe('running');
+  }, 30_000);
+
+  it.each(['target-only-staged', 'target-active'] as const)(
+    'keeps the signed Cloud-to-LAN endpoint pinned while the route is %s',
+    async (state) => {
+      const nextAddress = listPrivateIpv4Addresses()[0];
+      if (!nextAddress) return;
+      const status = authorityTransferStatus('collecting-readiness');
+      const registration = state === 'target-only-staged'
+        ? {
+            credentialHash: 'a'.repeat(64),
+            projectId: PROJECT_ID,
+            service: {
+              acceptCloudToLanTransferTarget: jest.fn(async () => status),
+              confirmCloudToLanTargetActive: jest.fn(async () => status),
+              getProjectAuthorityTransfer: jest.fn(async () => status),
+              reportCloudToLanTargetStaged: jest.fn() as never,
+            },
+            state,
+            transferId: status.transferId,
+          }
+        : {
+            projectId: PROJECT_ID,
+            service: {
+              claimTransferredMembership: jest.fn(),
+              expire: jest.fn(async () => undefined),
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+            state,
+            transferId: status.transferId,
+          };
+      const first = await coordinator.startAuthorityTransferRoute(registration);
+
+      privateAddresses = [nextAddress];
+      await expect(checkHostAddress()).rejects.toMatchObject({
+        safeContext: { reason: 'authority-transfer-endpoint-pinned' },
+      });
+      const repeated = await coordinator.startAuthorityTransferRoute(registration);
+
+      expect(repeated.endpoint).toBe(first.endpoint);
+    },
+    30_000,
+  );
 
   it('traverses bounded activity pages larger than one LAN response', async () => {
     await coordinator.startProject(PROJECT_ID);

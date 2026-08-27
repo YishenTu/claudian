@@ -194,6 +194,17 @@ describe('AuthorityTransferCheckpoint', () => {
         member_id: 'member-host',
       },
     ]);
+    await target.mutate(connection => repository.activateImportedAuthority(connection, {
+      projectId: 'project-alpha',
+      targetAuthorityGeneration: 2,
+    }));
+    await target.mutate(connection => repository.activateImportedAuthority(connection, {
+      projectId: 'project-alpha',
+      targetAuthorityGeneration: 2,
+    }));
+    expect(await target.read(connection => connection.get(
+      'SELECT state FROM project WHERE singleton = 1',
+    ))).toEqual({ state: 'active' });
     expect(await target.read(connection => connection.get(`
       SELECT
         (SELECT COUNT(*) FROM change_requests) AS requests,

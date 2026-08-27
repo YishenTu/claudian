@@ -1,4 +1,7 @@
-import { type CollabProjectId } from '@claudian-collab/protocol';
+import {
+  type CollabProjectId,
+  type CollabProjectRetirementAcknowledgement,
+} from '@claudian-collab/protocol';
 
 import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LanCollabControlOperations';
 import type {
@@ -27,6 +30,13 @@ export interface RetirementAcknowledgementClientPort {
     readonly retiredAt: string;
     readonly signal?: AbortSignal;
   }): Promise<AcknowledgeRetirementResponse>;
+  acknowledgeCloud(input: {
+    readonly developmentActorId: string;
+    readonly projectId: CollabProjectId;
+    readonly retirementId: string;
+    readonly serverUrl: string;
+    readonly signal?: AbortSignal;
+  }): Promise<CollabProjectRetirementAcknowledgement>;
 }
 
 export interface RetirementAcknowledgementScheduler {
@@ -138,6 +148,9 @@ implements RetirementAcknowledgementScheduler {
         await this.store.updateRetirementRecord(projectId, current => ({
           ...current,
           acknowledgementStatus: 'expired',
+          cloudDevelopmentActorId: null,
+          cloudRetirementId: null,
+          cloudServerUrl: null,
           hostCaCertificatePem: null,
           hostCaFingerprint: null,
           hostEndpoint: null,
@@ -150,29 +163,47 @@ implements RetirementAcknowledgementScheduler {
       return 'expired';
     }
     const {
+      cloudDevelopmentActorId,
+      cloudRetirementId,
+      cloudServerUrl,
       hostCaCertificatePem,
       hostCaFingerprint,
       hostEndpoint,
       memberCredential,
     } = record;
-    if (!hostCaCertificatePem || !hostCaFingerprint || !hostEndpoint || !memberCredential) {
+    const cloudAcknowledgement = cloudDevelopmentActorId
+      && cloudRetirementId
+      && cloudServerUrl;
+    const lanAcknowledgement = hostCaCertificatePem
+      && hostCaFingerprint
+      && hostEndpoint
+      && memberCredential;
+    if (!cloudAcknowledgement && !lanAcknowledgement) {
       throw new CollabError({
         code: 'authority-integrity-error',
         safeContext: { reason: 'retirement-acknowledgement-material-missing' },
       });
     }
-    let response: AcknowledgeRetirementResponse;
+    let response: AcknowledgeRetirementResponse | CollabProjectRetirementAcknowledgement;
     try {
-      response = await this.client.acknowledge({
-        hostCaCertificatePem,
-        hostCaFingerprint,
-        hostEndpoint,
-        idempotencyKey: record.cleanupOperationId,
-        memberCredential,
-        projectId,
-        retiredAt: record.retiredAt,
-        signal: this.controller.signal,
-      });
+      response = cloudAcknowledgement
+        ? await this.client.acknowledgeCloud({
+            developmentActorId: cloudDevelopmentActorId,
+            projectId,
+            retirementId: cloudRetirementId,
+            serverUrl: cloudServerUrl,
+            signal: this.controller.signal,
+          })
+        : await this.client.acknowledge({
+            hostCaCertificatePem: hostCaCertificatePem!,
+            hostCaFingerprint: hostCaFingerprint!,
+            hostEndpoint: hostEndpoint!,
+            idempotencyKey: record.cleanupOperationId,
+            memberCredential: memberCredential!,
+            projectId,
+            retiredAt: record.retiredAt,
+            signal: this.controller.signal,
+          });
     } catch (error) {
       if (error instanceof CollabError && RETRYABLE_CODES.has(error.code)) {
         this.requestRetry(projectId);
@@ -180,7 +211,12 @@ implements RetirementAcknowledgementScheduler {
       }
       throw error;
     }
-    if (response.projectId !== projectId || response.retiredAt !== record.retiredAt) {
+    if (
+      response.projectId !== projectId
+      || ('retiredAt' in response
+        ? response.retiredAt !== record.retiredAt
+        : response.retirementId !== cloudRetirementId)
+    ) {
       throw new CollabError({
         code: 'authority-integrity-error',
         safeContext: { reason: 'retirement-acknowledgement-result-mismatch' },
@@ -190,6 +226,9 @@ implements RetirementAcknowledgementScheduler {
       ...current,
       acknowledgedAt: response.acknowledgedAt,
       acknowledgementStatus: 'acknowledged',
+      cloudDevelopmentActorId: null,
+      cloudRetirementId: null,
+      cloudServerUrl: null,
       hostCaCertificatePem: null,
       hostCaFingerprint: null,
       hostEndpoint: null,

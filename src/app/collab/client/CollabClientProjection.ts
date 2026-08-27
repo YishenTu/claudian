@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage } from '@claudian-collab/protocol';
+import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import {
   type CollabProjectResource,
@@ -342,22 +342,35 @@ function throwIfCancelled(signal?: AbortSignal): void {
 function retirementResultFromError(
   projectId: string,
   error: unknown,
-): { readonly projectId: string; readonly retiredAt: string } | null {
+): {
+  readonly projectId: string;
+  readonly retiredAt: string;
+  readonly retirementId?: string;
+} | null {
   if (!(error instanceof CollabError) || error.code !== 'project-retired') return null;
   const contextProjectId = error.safeContext.projectId;
   const retiredAt = error.safeContext.retiredAt;
+  const retirementId = error.safeContext.operationId;
   if (
     contextProjectId !== projectId
     || typeof retiredAt !== 'string'
     || Number.isNaN(Date.parse(retiredAt))
     || new Date(retiredAt).toISOString() !== retiredAt
+    || (retirementId !== undefined && (
+      typeof retirementId !== 'string'
+      || !isCollabOpaqueId(retirementId)
+    ))
   ) {
     throw new CollabError({
       code: 'authority-integrity-error',
       safeContext: { reason: 'retirement-terminal-result-invalid' },
     });
   }
-  return { projectId, retiredAt };
+  return {
+    projectId,
+    retiredAt,
+    ...(retirementId === undefined ? {} : { retirementId }),
+  };
 }
 
 export class CollabClientProjection {
@@ -709,7 +722,11 @@ export class CollabClientProjection {
   }
 
   async handleRetirement(
-    result: { readonly projectId: string; readonly retiredAt: string },
+    result: {
+      readonly projectId: string;
+      readonly retiredAt: string;
+      readonly retirementId?: string;
+    },
     source: 'response' | 'terminal-fallback',
   ): Promise<void> {
     if (!this.retirement || !this.retirementAdmission) return;
@@ -844,6 +861,9 @@ export class CollabClientProjection {
     this.scheduleRetirement({
       projectId,
       retiredAt: invalidation.retiredAt,
+      ...(invalidation.retirementId === undefined
+        ? {}
+        : { retirementId: invalidation.retirementId }),
     }, 'event');
     return Promise.resolve(invalidation.sequence);
   }
@@ -864,7 +884,11 @@ export class CollabClientProjection {
   }
 
   private scheduleRetirement(
-    result: { readonly projectId: string; readonly retiredAt: string },
+    result: {
+      readonly projectId: string;
+      readonly retiredAt: string;
+      readonly retirementId?: string;
+    },
     source: 'event' | 'terminal-fallback',
   ): void {
     if (!this.retirement || !this.retirementAdmission) return;
@@ -872,7 +896,11 @@ export class CollabClientProjection {
   }
 
   private deliverRetirement(
-    result: { readonly projectId: string; readonly retiredAt: string },
+    result: {
+      readonly projectId: string;
+      readonly retiredAt: string;
+      readonly retirementId?: string;
+    },
     source: 'event' | 'response' | 'terminal-fallback',
   ): Promise<void> {
     if (!this.retirement || !this.retirementAdmission) return Promise.resolve();

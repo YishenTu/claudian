@@ -113,6 +113,54 @@ export async function rotateCloudBootstrapOrigin(
   }
 }
 
+export async function rotateAuthorityTransferOrigin(
+  git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
+  transition: CollabTrustedOriginTransition,
+): Promise<void> {
+  const sourceIsLan = isGeneratedLanHostRemoteUrl(
+    transition.oldRemoteUrl,
+    transition.projectId,
+  );
+  const targetIsLan = isGeneratedLanHostRemoteUrl(
+    transition.newRemoteUrl,
+    transition.projectId,
+  );
+  let sourceIsCloud: boolean;
+  let targetIsCloud: boolean;
+  try {
+    sourceIsCloud = transition.oldRemoteUrl === cloudProjectGitRemoteUrl(
+      new URL(transition.oldRemoteUrl).origin,
+      transition.projectId,
+    );
+    targetIsCloud = transition.newRemoteUrl === cloudProjectGitRemoteUrl(
+      new URL(transition.newRemoteUrl).origin,
+      transition.projectId,
+    );
+  } catch {
+    throw originError('collab-origin-transition-invalid');
+  }
+  if (
+    (sourceIsLan === sourceIsCloud)
+    || (targetIsLan === targetIsCloud)
+    || sourceIsLan === targetIsLan
+  ) {
+    throw originError('collab-origin-transition-invalid');
+  }
+  const urls = await git.listRemoteUrls(transition.repositoryPath, 'origin');
+  if (urls.length !== 1) throw originError('collab-origin-transition-mismatch');
+  if (urls[0] === transition.newRemoteUrl) return;
+  const sourceWasFencedLanHost = sourceIsLan
+    && urls[0] === collabStoppedHostRemoteUrl(transition.projectId);
+  if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost) {
+    throw originError('collab-origin-transition-mismatch');
+  }
+  await git.addRemote(transition.repositoryPath, 'origin', transition.newRemoteUrl);
+  const updated = await git.listRemoteUrls(transition.repositoryPath, 'origin');
+  if (updated.length !== 1 || updated[0] !== transition.newRemoteUrl) {
+    throw originError('collab-origin-transition-failed');
+  }
+}
+
 export async function ensureTrustedCollabOrigin(
   git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
   context: CollabGitOriginContext,

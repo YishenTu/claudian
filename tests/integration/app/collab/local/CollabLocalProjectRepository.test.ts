@@ -1289,6 +1289,25 @@ describe('CollabLocalProjectRepository', () => {
       .resolves.toEqual([PROJECT_ID]);
   });
 
+  it('ignores ordinary files while enumerating Project-local recovery documents', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      operationId: 'create-project-alpha',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    await writeFile(path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      '.DS_Store',
+    ), 'metadata');
+
+    await expect(repository.listPendingOperationProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+  });
+
   it('removes the pending index projection before discarding its authority record', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     await repository.upsertProject(indexEntry());

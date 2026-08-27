@@ -98,6 +98,7 @@ export interface CollabHostTrustTransitionProof {
 export interface CollabRetirementResult {
   projectId: CollabProjectId;
   retiredAt: CollabIsoTimestamp;
+  retirementId?: CollabOperationId;
 }
 
 export interface CollabProjectSnapshotBase {

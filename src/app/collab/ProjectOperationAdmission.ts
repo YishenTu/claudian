@@ -59,6 +59,15 @@ export class ProjectOperationAdmission {
     return this.runAdmitted(operation);
   }
 
+  runLifecycleRecovery<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(closingError());
+    return Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => {
+        throw toError(error, 'Collab lifecycle recovery failed.');
+      });
+  }
+
   runProject<T>(
     resolveProjectId: () => CollabProjectId,
     policy: ProjectOperationPolicy,

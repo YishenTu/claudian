@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  type CollabAuthorityTransferReceiptVerifier,
   type CollabAuthorityTransferStatus,
   type CollabIsoTimestamp,
   type CollabMemberId,
@@ -23,6 +24,7 @@ import {
   isAuthorityTransferProposal,
   isAuthorityTransferTerminal,
   markAuthorityTransferTerminalCleanupCompleted,
+  pinAuthorityTransferReceiptVerifier,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   type AuthorityTransferClaimBatchCommitmentRecord,
@@ -232,9 +234,9 @@ export class AuthorityTransferPersistence {
 
   completeTerminalCleanup(input: CompleteTerminalCleanupInput): Promise<void> {
     // The direction owner calls this only after it has removed the exact
-    // operation-owned staging directory named by the durable record. This
-    // persistence boundary then removes claim custody before committing
-    // terminal settlement, so every interrupted phase remains recoverable.
+    // operation-owned staging directory named by the durable record. Commit
+    // the terminal fence before removing claim files so a crash can only
+    // leave recoverable residual custody, never an uncommitted terminal.
     return this.runProject(input.projectId, async () => {
       const record = await this.stores.authorityTransferRecords.load(input.projectId);
       if (
@@ -263,12 +265,13 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferClaimCommitments.load(input.projectId),
       ]);
       await this.assertTerminalCleanupClaimOwner(record, custody, commitment);
+      if (!record.terminalCleanupCompleted) {
+        await this.stores.authorityTransferRecords.save(
+          markAuthorityTransferTerminalCleanupCompleted(record),
+        );
+      }
       await this.stores.authorityTransferClaims.remove(input.projectId);
       await this.stores.authorityTransferClaimCommitments.remove(input.projectId);
-      if (record.terminalCleanupCompleted) return;
-      await this.stores.authorityTransferRecords.save(
-        markAuthorityTransferTerminalCleanupCompleted(record),
-      );
     });
   }
 
@@ -291,6 +294,35 @@ export class AuthorityTransferPersistence {
       }
       if (record && custody) await this.assertClaimBatchOwner(custody, record);
       return record;
+    });
+  }
+
+  pinReceiptVerifier(
+    projectId: CollabProjectId,
+    transferId: string,
+    verifier: CollabAuthorityTransferReceiptVerifier,
+  ): Promise<AuthorityTransferRecord> {
+    return this.runProject(projectId, async () => {
+      const record = await this.stores.authorityTransferRecords.load(projectId);
+      if (!record || record.transferId !== transferId) {
+        throw transferError(
+          'authority-transfer-not-found',
+          'authority-transfer-record-missing',
+        );
+      }
+      let pinned: AuthorityTransferRecord;
+      try {
+        pinned = pinAuthorityTransferReceiptVerifier(record, verifier);
+      } catch {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-receipt-verifier-stale',
+        );
+      }
+      if (pinned !== record) {
+        await this.stores.authorityTransferRecords.save(pinned);
+      }
+      return pinned;
     });
   }
 
@@ -534,6 +566,46 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  loadRetainedClaimBatch(
+    projectId: CollabProjectId,
+    transferId: string,
+  ): Promise<CollabTransferredMembershipClaimBatch | null> {
+    return this.runProject(projectId, async () => {
+      const current = await this.stores.authorityTransferClaims.load(projectId);
+      if (!current) return null;
+      if (current.transferId !== transferId) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
+      }
+      await this.assertClaimBatchOwner(current);
+      if (current.claims.some(claim => claim.disposition !== 'retained' || claim.claim === null)) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-claim-batch-no-longer-replayable',
+        );
+      }
+      const batch: CollabTransferredMembershipClaimBatch = {
+        batchRevision: current.batchRevision,
+        batchSha256: current.batchSha256,
+        checkpointSha256: current.checkpointSha256,
+        claims: current.claims.map(claim => ({
+          claim: claim.claim!,
+          memberId: claim.memberId,
+        })),
+        expiresAt: current.expiresAt,
+        projectId: current.projectId,
+        targetAuthorityGeneration: current.targetAuthorityGeneration,
+        transferId: current.transferId,
+      };
+      if (batchDigest(batch) !== batch.batchSha256) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-claim-batch-digest-mismatch',
+        );
+      }
+      return batch;
+    });
+  }
+
   /**
    * Persists a scrub after the direction owner verifies the receipt signature
    * against the pinned target key. This boundary revalidates every persisted
@@ -678,7 +750,7 @@ export class AuthorityTransferPersistence {
     projectId: CollabProjectId,
     transferId: string,
   ): Promise<void> {
-    await this.runProject(projectId, async () => {
+    const hasClaimState = await this.runProject(projectId, async () => {
       const record = await this.stores.authorityTransferRecords.load(projectId);
       if (!record || record.transferId !== transferId) {
         throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
@@ -686,7 +758,13 @@ export class AuthorityTransferPersistence {
       if (this.now().getTime() < Date.parse(record.status.expiresAt)) {
         throw transferError('authority-transfer-stale', 'authority-transfer-terminal-expiry-early');
       }
-      if (record.terminalResponder?.state === 'expired') return;
+      if (record.terminalResponder?.state === 'expired') {
+        const [custody, commitment] = await Promise.all([
+          this.stores.authorityTransferClaims.load(projectId),
+          this.stores.authorityTransferClaimCommitments.load(projectId),
+        ]);
+        return custody !== null || commitment !== null;
+      }
       try {
         expireAuthorityTransferTerminalResponder(record);
       } catch {
@@ -695,8 +773,9 @@ export class AuthorityTransferPersistence {
           'authority-transfer-terminal-responder-not-expirable',
         );
       }
+      return true;
     });
-    await this.expireClaims(projectId, transferId);
+    if (hasClaimState) await this.expireClaims(projectId, transferId);
     await this.runProject(projectId, async () => {
       const record = await this.stores.authorityTransferRecords.load(projectId);
       if (!record || record.transferId !== transferId) {

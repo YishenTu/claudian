@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { collabMemberRef, type CollabProjectId } from '@claudian-collab/protocol';
 
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  CollabLocalMembershipRecord,
+} from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabRetiredProjectProjectionSeed } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import {
   decodeLocalCleanupRecord,
   type LocalCleanupRecord,
@@ -89,8 +92,8 @@ export class RetirementClientHandler {
     this.retiredCleanupRecords = options.retiredCleanupRecords;
   }
 
-  handle(result: CollabRetirementResult, _source: RetirementDeliverySource): Promise<void> {
-    return this.enqueue(result.projectId, () => this.handleUnlocked(result));
+  handle(result: CollabRetirementResult, source: RetirementDeliverySource): Promise<void> {
+    return this.enqueue(result.projectId, () => this.handleUnlocked(result, source));
   }
 
   async resume(projectId: CollabProjectId): Promise<void> {
@@ -120,7 +123,10 @@ export class RetirementClientHandler {
     return this.closePromise;
   }
 
-  private async handleUnlocked(result: CollabRetirementResult): Promise<void> {
+  private async handleUnlocked(
+    result: CollabRetirementResult,
+    source: RetirementDeliverySource,
+  ): Promise<void> {
     const existing = await this.store.loadRetirementRecord(result.projectId);
     if (existing) {
       if (existing.retiredAt !== result.retiredAt) {
@@ -145,12 +151,19 @@ export class RetirementClientHandler {
       return;
     }
     const membership = await this.store.loadMembership(result.projectId);
-    if (membership && !isCollabLocalLanMembership(membership)) {
-      throw new CollabError({
-        code: 'operation-failed',
-        safeContext: { reason: 'retirement-client-lan-only' },
-      });
+    const cloudMembership = membership && isCollabLocalCloudMembership(membership)
+      ? membership
+      : null;
+    if (cloudMembership && !result.retirementId) {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          recoveryActions: ['retry', 'open-diagnostics'],
+          safeContext: { reason: 'cloud-retirement-acknowledgement-unavailable' },
+        });
     }
+    const lanMembership = membership && isCollabLocalLanMembership(membership)
+      ? membership
+      : null;
     const pendingLeave = membership
       ? null
       : await this.pendingLeaves?.load(result.projectId) ?? null;
@@ -164,14 +177,19 @@ export class RetirementClientHandler {
       acknowledgementStatus: 'pending',
       cleanupOperationId: this.createOperationId(),
       cleanupStatus: pendingLeaveCleanupComplete ? 'complete' : 'pending',
+      cloudDevelopmentActorId: cloudMembership?.authority.developmentActorId ?? null,
+      cloudRetirementId: cloudMembership ? result.retirementId : null,
+      cloudServerUrl: cloudMembership?.authority.serverUrl ?? null,
       createdAt,
-      hostCaCertificatePem: membership?.authority.hostCaCertificatePem
-        ?? pendingLeave?.hostCaCertificatePem,
-      hostCaFingerprint: membership?.authority.hostCaFingerprint
-        ?? pendingLeave?.hostCaFingerprint,
-      hostEndpoint: membership?.authority.endpoint ?? pendingLeave?.hostEndpoint,
+      hostCaCertificatePem: lanMembership?.authority.hostCaCertificatePem
+        ?? pendingLeave?.hostCaCertificatePem
+        ?? null,
+      hostCaFingerprint: lanMembership?.authority.hostCaFingerprint
+        ?? pendingLeave?.hostCaFingerprint
+        ?? null,
+      hostEndpoint: lanMembership?.authority.endpoint ?? pendingLeave?.hostEndpoint ?? null,
       kind: 'retirement',
-      memberCredential: membership?.member.credential ?? pendingLeave?.memberCredential,
+      memberCredential: lanMembership?.member.credential ?? pendingLeave?.memberCredential ?? null,
       memberId: membership?.member.id ?? pendingLeave?.memberId,
       projectId: result.projectId,
       retiredAt: result.retiredAt,

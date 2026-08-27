@@ -1,5 +1,6 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
+import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabLocalCleanupStatus } from '@/core/collab';
 
 export const COLLAB_RETIREMENT_RECORD_SCHEMA_VERSION = 1 as const;
@@ -14,6 +15,9 @@ export interface RetirementRecord {
   readonly cleanupStatus: CollabLocalCleanupStatus;
   readonly acknowledgementStatus: RetirementAcknowledgementStatus;
   readonly acknowledgedAt: CollabIsoTimestamp | null;
+  readonly cloudDevelopmentActorId: string | null;
+  readonly cloudRetirementId: CollabOperationId | null;
+  readonly cloudServerUrl: string | null;
   readonly memberCredential: string | null;
   readonly hostEndpoint: string | null;
   readonly hostCaCertificatePem: string | null;
@@ -24,7 +28,14 @@ export interface RetirementRecord {
 type Value = Readonly<Record<string, unknown>>;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
-const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'memberId', 'retiredAt', 'cleanupOperationId', 'cleanupStatus', 'acknowledgementStatus', 'acknowledgedAt', 'memberCredential', 'hostEndpoint', 'hostCaCertificatePem', 'hostCaFingerprint', 'createdAt', 'updatedAt']);
+const DEVELOPMENT_ACTOR = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const LEGACY_KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'memberId', 'retiredAt', 'cleanupOperationId', 'cleanupStatus', 'acknowledgementStatus', 'acknowledgedAt', 'memberCredential', 'hostEndpoint', 'hostCaCertificatePem', 'hostCaFingerprint', 'createdAt', 'updatedAt']);
+const KEYS = new Set([
+  ...LEGACY_KEYS,
+  'cloudDevelopmentActorId',
+  'cloudRetirementId',
+  'cloudServerUrl',
+]);
 function field(value: Value, key: string, max: number, pattern?: RegExp): string {
   const result = value[key];
   if (typeof result !== 'string' || !result || result.length > max || (pattern && !pattern.test(result))) throw new TypeError(`Invalid ${key}`);
@@ -42,11 +53,23 @@ function timestamp(value: Value, key: string, nullableValue = false): string | n
 export function decodeRetirementRecord(value: unknown): RetirementRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid retirement record');
   const record = value as Value;
-  if (Object.keys(record).length !== KEYS.size || Object.keys(record).some(key => !KEYS.has(key)) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
+  const recordKeys = Object.keys(record);
+  const currentShape = recordKeys.length === KEYS.size
+    && recordKeys.every(key => KEYS.has(key));
+  const legacyShape = recordKeys.length === LEGACY_KEYS.size
+    && recordKeys.every(key => LEGACY_KEYS.has(key));
+  if ((!currentShape && !legacyShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
   const cleanupStatus = record.cleanupStatus;
   const acknowledgementStatus = record.acknowledgementStatus;
   if ((cleanupStatus !== 'pending' && cleanupStatus !== 'running' && cleanupStatus !== 'failed' && cleanupStatus !== 'complete') || (acknowledgementStatus !== 'pending' && acknowledgementStatus !== 'acknowledged' && acknowledgementStatus !== 'expired')) throw new TypeError('Invalid retirement state');
   const acknowledgedAt = timestamp(record, 'acknowledgedAt', true);
+  const cloudDevelopmentActorId = legacyShape
+    ? null
+    : nullable(record, 'cloudDevelopmentActorId', 128, DEVELOPMENT_ACTOR);
+  const cloudRetirementId = legacyShape
+    ? null
+    : nullable(record, 'cloudRetirementId', 128);
+  const cloudServerUrl = legacyShape ? null : nullable(record, 'cloudServerUrl', 2_048);
   const memberCredential = nullable(record, 'memberCredential', 43, CREDENTIAL);
   const hostEndpoint = nullable(record, 'hostEndpoint', 2_048);
   const hostCaCertificatePem = nullable(record, 'hostCaCertificatePem', 64 * 1024);
@@ -57,10 +80,34 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
       if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw new Error();
     } catch { throw new TypeError('Invalid hostEndpoint'); }
   }
+  if (cloudServerUrl !== null) {
+    try {
+      canonicalCloudOrigin(cloudServerUrl, 'cloudServerUrl');
+    } catch { throw new TypeError('Invalid cloudServerUrl'); }
+  }
   const pending = acknowledgementStatus === 'pending';
+  const lanAcknowledgement = memberCredential !== null
+    && hostEndpoint !== null
+    && hostCaCertificatePem !== null
+    && hostCaFingerprint !== null;
+  const cloudAcknowledgement = cloudDevelopmentActorId !== null
+    && cloudRetirementId !== null
+    && cloudServerUrl !== null;
   if (
     (acknowledgementStatus === 'acknowledged') !== (acknowledgedAt !== null)
-    || pending !== (memberCredential !== null && hostEndpoint !== null && hostCaCertificatePem !== null && hostCaFingerprint !== null)
+    || (pending && lanAcknowledgement === cloudAcknowledgement)
+    || (!pending && (lanAcknowledgement || cloudAcknowledgement))
+    || (!lanAcknowledgement && (
+      memberCredential !== null
+      || hostEndpoint !== null
+      || hostCaCertificatePem !== null
+      || hostCaFingerprint !== null
+    ))
+    || (!cloudAcknowledgement && (
+      cloudDevelopmentActorId !== null
+      || cloudRetirementId !== null
+      || cloudServerUrl !== null
+    ))
   ) throw new TypeError('Impossible retirement acknowledgement state');
   if (hostCaCertificatePem !== null && (!hostCaCertificatePem.includes('-----BEGIN CERTIFICATE-----') || !hostCaCertificatePem.includes('-----END CERTIFICATE-----') || hostCaCertificatePem.includes('PRIVATE KEY'))) throw new TypeError('Invalid Host CA certificate');
   const retiredAt = timestamp(record, 'retiredAt')!;
@@ -72,6 +119,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
   const projectId = field(record, 'projectId', 64);
   if (
     !isCollabOpaqueId(cleanupOperationId)
+    || (cloudRetirementId !== null && !isCollabOpaqueId(cloudRetirementId))
     || !isCollabMemberId(memberId)
     || !isCollabProjectId(projectId)
   ) throw new TypeError('Invalid retirement identity');
@@ -80,6 +128,9 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     acknowledgementStatus,
     cleanupOperationId,
     cleanupStatus,
+    cloudDevelopmentActorId,
+    cloudRetirementId,
+    cloudServerUrl,
     createdAt,
     hostCaCertificatePem,
     hostCaFingerprint,

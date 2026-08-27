@@ -509,6 +509,51 @@ describe('CollabFeatureService', () => {
     expect(states).toEqual(['uninitialized', 'initializing', 'initializing', 'ready']);
   });
 
+  it('isolates an incompatible legacy Cloud membership from healthy Projects', async () => {
+    await mkdir(path.join(vaultRoot, 'workspace', 'legacy', '.git'), { recursive: true });
+    currentIndex = {
+      ...currentIndex,
+      projects: [
+        ...currentIndex.projects,
+        {
+          authorityKind: 'cloud',
+          createdAt: CREATED_AT,
+          id: 'project-legacy-cloud',
+          name: 'Legacy Cloud',
+          updatedAt: CREATED_AT,
+          workspacePath: 'workspace/legacy',
+        },
+      ],
+    };
+    foundation.local.projects.loadMembership = jest.fn(async projectId => {
+      if (projectId === 'project-legacy-cloud') {
+        throw new CollabError({
+          code: 'schema-version-unsupported',
+          recoveryActions: ['open-diagnostics'],
+          safeContext: { recordKind: 'membership' },
+        });
+      }
+      return membership();
+    });
+    const service = createService();
+
+    await expect(service.initialize()).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        lifecycle: 'ready',
+        projects: [
+          expect.objectContaining({ health: 'healthy', id: 'project-alpha' }),
+          expect.objectContaining({
+            authorityKind: 'cloud',
+            connectionStatus: 'offline',
+            health: 'needs-attention',
+            id: 'project-legacy-cloud',
+          }),
+        ],
+      },
+    });
+  });
+
   it('loads the Project index and Git foundation concurrently', async () => {
     const indexRead = deferred<ReturnType<typeof projectIndex>>();
     foundation.local.projects.loadIndex = jest.fn(() => indexRead.promise);

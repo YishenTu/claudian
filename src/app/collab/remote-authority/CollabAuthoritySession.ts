@@ -3,12 +3,14 @@ import type { CollabCloudCapability } from '@claudian-collab/protocol';
 import type { CollabProjectResource } from '@/app/collab/activity/CollabProjectWorkSession';
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
+import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 import type { CollabAuthorityKind } from '@/core/collab';
 
 export type CollabAuthorityEventInvalidation =
   | {
     readonly kind: 'retired';
     readonly retiredAt: string;
+    readonly retirementId?: string;
     readonly sequence: number;
   }
   | { readonly kind: 'snapshot'; readonly sequence: number }
@@ -46,6 +48,7 @@ export interface CollabAuthoritySession extends CollabProjectResource {
   readonly control: CollabAuthorityControlPort;
   readonly events: CollabAuthorityEventPort;
   readonly git: CollabAuthorityGitNetwork;
+  readonly lifecycle?: CollabAuthorityLifecyclePort;
   supports(capability: CollabCloudCapability): boolean;
 }
 

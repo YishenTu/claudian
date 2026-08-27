@@ -393,6 +393,12 @@ function isHostRestoreLockConflict(error: unknown): boolean {
     && error.safeContext.reason === 'vault-host-already-running';
 }
 
+function isUnsupportedLocalMembership(error: unknown): boolean {
+  return error instanceof CollabError
+    && error.code === 'schema-version-unsupported'
+    && error.safeContext.recordKind === 'membership';
+}
+
 function waitForHostLockRelease(): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, 750));
 }
@@ -416,6 +422,7 @@ class CollabFeatureServiceCore {
   private initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
   private readonly listeners = new Set<CollabFeatureStateListener>();
   private lifecycleRecoveryController: AbortController | null = null;
+  private lifecycleRecoveryPromise: Promise<void> | null = null;
   private readonly publicationSubscription: { dispose(): void };
   private closePromise: Promise<void> | null = null;
   private closing = false;
@@ -1667,19 +1674,27 @@ class CollabFeatureServiceCore {
     );
   }
 
-  async restoreLifecycle(): Promise<void> {
-    if (this.lifecycleRecoveryController) return;
+  restoreLifecycle(): Promise<void> {
+    if (this.lifecycleRecoveryPromise) return this.lifecycleRecoveryPromise;
     const controller = new AbortController();
     this.lifecycleRecoveryController = controller;
-    try {
-      await this.options.lifecycleRecovery.resume({ signal: controller.signal });
-      await this.refreshProjects();
-    } finally {
-      controller.abort();
-      if (this.lifecycleRecoveryController === controller) {
-        this.lifecycleRecoveryController = null;
+    const recovery = (async () => {
+      try {
+        await this.options.lifecycleRecovery.resume({ signal: controller.signal });
+        await this.refreshProjects();
+      } finally {
+        controller.abort();
+        if (this.lifecycleRecoveryController === controller) {
+          this.lifecycleRecoveryController = null;
+        }
       }
-    }
+    })();
+    this.lifecycleRecoveryPromise = recovery;
+    const clearRecovery = () => {
+      if (this.lifecycleRecoveryPromise === recovery) this.lifecycleRecoveryPromise = null;
+    };
+    void recovery.then(clearRecovery, clearRecovery);
+    return recovery;
   }
 
   async refreshLifecycleProjection(): Promise<void> {
@@ -1707,6 +1722,8 @@ class CollabFeatureServiceCore {
     this.operationAdmission.beginClose();
     this.activeOperationController?.abort();
     this.lifecycleRecoveryController?.abort();
+    const lifecycleRecoveryDrain = this.lifecycleRecoveryPromise?.catch(() => undefined)
+      ?? Promise.resolve();
     let lifecycleRecoveryClose: Promise<void>;
     try {
       lifecycleRecoveryClose = Promise.resolve(this.options.lifecycleRecovery.close())
@@ -1716,6 +1733,7 @@ class CollabFeatureServiceCore {
     }
     const close = (async () => {
       await this.operationAdmission.drain();
+      await lifecycleRecoveryDrain;
       await this.options.cloudBootstrap.close();
       await lifecycleRecoveryClose;
       await Promise.resolve()
@@ -1826,7 +1844,10 @@ class CollabFeatureServiceCore {
     const index = await this.foundation.local.projects.loadIndex();
     const projects = await Promise.all(index.projects.map(async project => {
       const [membership, pending, workingCopyHealthy] = await Promise.all([
-        this.foundation.local.projects.loadMembership(project.id),
+        this.foundation.local.projects.loadMembership(project.id).catch(error => {
+          if (isUnsupportedLocalMembership(error)) return null;
+          throw error;
+        }),
         this.foundation.local.projects.loadProjectDocument(
           project.id,
           'pending-operation',
@@ -2270,7 +2291,10 @@ export class CollabFeatureService implements CollabFeaturePort {
   }
 
   restoreLifecycle(): Promise<void> {
-    return this.runGlobal(() => this.core.restoreLifecycle());
+    // Lifecycle recovery owns its own cancellation and may need to drain the
+    // admitted Project operations while replacing an authority binding. Do
+    // not register the recovery promise in that same admission set.
+    return this.operationAdmission.runLifecycleRecovery(() => this.core.restoreLifecycle());
   }
 
   refreshLifecycleProjection(): Promise<void> {

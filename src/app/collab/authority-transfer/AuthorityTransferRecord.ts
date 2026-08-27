@@ -2,9 +2,11 @@ import {
   COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES,
   COLLAB_CLOUD_TO_LAN_TRANSFER_PHASES,
   COLLAB_LAN_TO_CLOUD_TRANSFER_PHASES,
+  type CollabAuthorityTransferReceiptVerifier,
   type CollabAuthorityTransferStatus,
   type CollabIsoTimestamp,
   type CollabProjectId,
+  decodeCollabAuthorityTransferOperationResponse,
   decodeCollabAuthorityTransferStatus,
   isCollabOpaqueId,
 } from '@claudian-collab/protocol';
@@ -29,6 +31,7 @@ export interface AuthorityTransferRecord {
   readonly operationIntentId: string;
   readonly projectId: CollabProjectId;
   readonly restartFence: AuthorityTransferRestartFence;
+  readonly receiptVerifier: CollabAuthorityTransferReceiptVerifier | null;
   readonly stagingDirectoryName: string;
   readonly status: CollabAuthorityTransferStatus;
   readonly terminalCleanupCompleted: boolean;
@@ -44,12 +47,14 @@ const RECORD_KEYS = new Set([
   'operationIntentId',
   'projectId',
   'restartFence',
+  'receiptVerifier',
   'stagingDirectoryName',
   'status',
   'terminalCleanupCompleted',
   'terminalResponder',
   'transferId',
 ]);
+const LEGACY_RECORD_KEYS = new Set([...RECORD_KEYS].filter(key => key !== 'receiptVerifier'));
 const TERMINAL_KEYS = new Set(['expiresAt', 'state']);
 
 type UnknownRecord = Record<string, unknown>;
@@ -137,7 +142,10 @@ function decodeTerminalResponder(
 }
 
 export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransferRecord {
-  if (!isRecord(value) || !exactKeys(value, RECORD_KEYS)) {
+  if (
+    !isRecord(value)
+    || (!exactKeys(value, RECORD_KEYS) && !exactKeys(value, LEGACY_RECORD_KEYS))
+  ) {
     throw new TypeError('Invalid authority transfer record');
   }
   if (value.schemaVersion !== 1 || value.kind !== 'authority-transfer') {
@@ -158,6 +166,12 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     throw new TypeError('Invalid authority transfer identity');
   }
   const status = decodeCollabAuthorityTransferStatus(value.status);
+  const receiptVerifier = value.receiptVerifier === undefined || value.receiptVerifier === null
+    ? null
+    : decodeCollabAuthorityTransferOperationResponse(
+        'getAuthorityTransferReceiptVerifier',
+        value.receiptVerifier,
+      );
   const relinquishmentProof = status.relinquishmentProof;
   if (
     value.projectId !== status.projectId
@@ -165,6 +179,12 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     || stagingDirectoryName !== `.claudian-authority-transfer-${status.transferId}`
     || (localRole === 'source') !== (status.direction === 'lan-to-cloud')
     || (lifecycleOwnership === 'proposal' && status.phase !== 'collecting-readiness')
+    || (receiptVerifier !== null && (
+      localRole !== 'source'
+      || status.direction !== 'lan-to-cloud'
+      || receiptVerifier.projectId !== status.projectId
+      || receiptVerifier.transferId !== status.transferId
+    ))
   ) {
     throw new TypeError('Invalid authority transfer ownership');
   }
@@ -202,6 +222,7 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     localRole,
     operationIntentId,
     projectId: status.projectId,
+    receiptVerifier,
     restartFence,
     schemaVersion: 1,
     stagingDirectoryName,
@@ -216,6 +237,7 @@ export function createAuthorityTransferRecord(input: {
   readonly localRole: AuthorityTransferLocalRole;
   readonly lifecycleOwnership?: AuthorityTransferLifecycleOwnership;
   readonly operationIntentId: string;
+  readonly receiptVerifier?: CollabAuthorityTransferReceiptVerifier | null;
   readonly stagingDirectoryName: string;
   readonly status: CollabAuthorityTransferStatus;
 }): AuthorityTransferRecord {
@@ -228,6 +250,7 @@ export function createAuthorityTransferRecord(input: {
     localRole: input.localRole,
     operationIntentId: input.operationIntentId,
     projectId: status.projectId,
+    receiptVerifier: input.receiptVerifier ?? null,
     restartFence: expectedRestartFence(input.localRole, lifecycleOwnership, status),
     schemaVersion: 1,
     stagingDirectoryName: input.stagingDirectoryName,
@@ -236,6 +259,19 @@ export function createAuthorityTransferRecord(input: {
     terminalResponder: expectedTerminalResponder(input.localRole, status),
     transferId: status.transferId,
   });
+}
+
+export function pinAuthorityTransferReceiptVerifier(
+  record: AuthorityTransferRecord,
+  verifier: CollabAuthorityTransferReceiptVerifier,
+): AuthorityTransferRecord {
+  if (record.receiptVerifier !== null) {
+    if (JSON.stringify(record.receiptVerifier) !== JSON.stringify(verifier)) {
+      throw new TypeError('Authority transfer receipt verifier changed');
+    }
+    return record;
+  }
+  return decodeAuthorityTransferRecord({ ...record, receiptVerifier: verifier });
 }
 
 export function expireAuthorityTransferTerminalResponder(
@@ -292,6 +328,10 @@ export function assertAuthorityTransferTransition(
     || previous.operationIntentId !== next.operationIntentId
     || previous.localRole !== next.localRole
     || previous.stagingDirectoryName !== next.stagingDirectoryName
+    || (
+      previous.receiptVerifier !== null
+      && JSON.stringify(previous.receiptVerifier) !== JSON.stringify(next.receiptVerifier)
+    )
     || previous.terminalCleanupCompleted !== next.terminalCleanupCompleted
     || previous.status.direction !== next.status.direction
     || previous.status.sourceAuthority.kind !== next.status.sourceAuthority.kind

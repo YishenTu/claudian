@@ -15,6 +15,7 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
+  prepare?(record: AuthorityTransferRecord): Promise<void>;
   resume(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
 }
 
@@ -64,11 +65,15 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
         async () => {
           await this.persistence.recoverInterruptedClaimCommitment(projectId);
           const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
-          if (ownerState === 'absent' || ownerState === 'proposal' || ownerState === 'terminal') {
+          if (ownerState === 'absent' || ownerState === 'terminal') {
             return;
           }
           const record = await this.persistence.load(projectId);
           if (!record) return;
+          if (ownerState === 'proposal') {
+            await this.handler.prepare?.(record);
+            return;
+          }
           await this.handler.resume(record, options);
         },
       ).catch(error => {

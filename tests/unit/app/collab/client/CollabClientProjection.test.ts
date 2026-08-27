@@ -498,23 +498,36 @@ describe('CollabClientProjection', () => {
     await expect(invalidate!({
       kind: 'retired',
       retiredAt: CREATED_AT,
+      retirementId: 'retirement-project-a',
       sequence: 6,
     })).resolves.toBe(6);
     expect(retirement.handle).toHaveBeenCalledWith(
-      { projectId: 'project-a', retiredAt: CREATED_AT },
+      {
+        projectId: 'project-a',
+        retiredAt: CREATED_AT,
+        retirementId: 'retirement-project-a',
+      },
       'event',
     );
     expect(eventClient.dispose).toHaveBeenCalledTimes(1);
 
     control.readSnapshot.mockRejectedValue(new CollabError({
       code: 'project-retired',
-      safeContext: { projectId: 'project-a', retiredAt: CREATED_AT },
+      safeContext: {
+        projectId: 'project-a',
+        retiredAt: CREATED_AT,
+        operationId: 'retirement-project-a',
+      },
     }));
     await expect(projection.readSnapshot('project-a')).rejects.toMatchObject({
       code: 'project-retired',
     });
     expect(retirement.handle).toHaveBeenLastCalledWith(
-      { projectId: 'project-a', retiredAt: CREATED_AT },
+      {
+        projectId: 'project-a',
+        retiredAt: CREATED_AT,
+        retirementId: 'retirement-project-a',
+      },
       'terminal-fallback',
     );
     control.readRequest.mockRejectedValue(new CollabError({

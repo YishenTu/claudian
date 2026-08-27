@@ -73,7 +73,7 @@ export function createAuthorityTransferCheckpointManifest(
 }
 
 export function verifyAuthorityTransferCheckpointManifest(
-  manifest: CollabProjectCheckpointManifest,
+  manifest: unknown,
 ): CollabProjectCheckpointManifest {
   try {
     const decoded = decodeCollabProjectCheckpointManifest(manifest);

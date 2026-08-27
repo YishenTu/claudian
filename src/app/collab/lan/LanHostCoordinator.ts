@@ -9,7 +9,12 @@ import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import type { Duplex } from 'node:stream';
 
-import { type CollabMember, type CollabProjectId, isCollabProjectId } from '@claudian-collab/protocol';
+import {
+  type CollabAuthorityRelinquishmentProof,
+  type CollabMember,
+  type CollabProjectId,
+  isCollabProjectId,
+} from '@claudian-collab/protocol';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminService';
@@ -25,6 +30,14 @@ import type {
   CollabLanAdvertisement,
   CollabLanDiscoveryPort,
 } from '@/app/collab/discovery/CollabLanDiscoveryService';
+import {
+  LanAuthorityTransferRouter,
+  type LanAuthorityTransferRouteRegistration,
+  type LanAuthorityTransferRouteTransition,
+  type LanAuthorityTransferSourceActiveService,
+  type LanAuthorityTransferTerminalSourceService,
+} from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouter';
+import { LanAuthorityTransferRouteRegistry } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouteRegistry';
 import { CollabControlRouter } from '@/app/collab/lan/CollabControlRouter';
 import {
   isGitHttpRoute,
@@ -79,6 +92,8 @@ const HOST_LOCK_PATH = '.claudian/collab/lan-host.lock';
 const HOST_LOCK_MAX_BYTES = 1_024;
 const LISTENER_CLOSE_TIMEOUT_MS = 500;
 const HOST_ADDRESS_CHECK_INTERVAL_MS = 2_000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const AUTHORITY_TRANSFER_EXPIRY_RETRY_MS = 60_000;
 const HOST_LOCK_NONCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ACTIVE_HOST_LOCK_NONCES = (() => {
   const key = Symbol.for('claudian.collab.active-host-lock-nonces');
@@ -107,6 +122,7 @@ export type LanHostGitRuntime = Pick<
 >;
 
 export interface LanHostProjectRuntime {
+  readonly authorityTransfer?: LanAuthorityTransferSourceActiveService;
   readonly authority: PendingMembershipAuthority;
   readonly authorityDirectory: string;
   readonly events?: {
@@ -172,6 +188,7 @@ export interface LanHostProjectRuntime {
 }
 
 export interface LanHostCoordinatorOptions {
+  readonly clearAuthorityTransferExpiryTimeout?: (handle: number) => void;
   readonly createAddressMonitor?: (
     check: () => Promise<void>,
   ) => HostAddressMonitor;
@@ -193,6 +210,10 @@ export interface LanHostCoordinatorOptions {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ) => Promise<T>;
+  readonly setAuthorityTransferExpiryTimeout?: (
+    callback: () => void,
+    milliseconds: number,
+  ) => number;
   readonly tlsIdentity?: LanTlsIdentity;
   readonly vaultRoot: string;
 }
@@ -260,6 +281,20 @@ export interface LanHostProvisionalTransferSession {
   readonly caFingerprint: string;
   readonly endpoint: string;
   readonly transferId: string;
+}
+
+export interface LanHostAuthorityTransferSession {
+  readonly caCertificatePem: string;
+  readonly caFingerprint: string;
+  readonly endpoint: string;
+  readonly projectId: CollabProjectId;
+}
+
+export interface LanHostAuthorityTransferPreparation {
+  readonly caCertificatePem: string;
+  readonly caFingerprint: string;
+  readonly endpoint: string;
+  dispose(): Promise<void>;
 }
 
 interface StartedHostShutdown {
@@ -377,6 +412,16 @@ export class LanHostCoordinator {
   private addressCheckTask: Promise<void> | null = null;
   private addressMonitor: HostAddressMonitor | null = null;
   private readonly hostedProjects = new Map<CollabProjectId, HostedProject>();
+  private readonly authorityTransferRoutes = new LanAuthorityTransferRouteRegistry();
+  private readonly authorityTransferPreparations = new Set<symbol>();
+  private readonly authorityTransferExpiryTimers = new Map<
+    CollabProjectId,
+    number
+  >();
+  private readonly authorityTransferRouter = new LanAuthorityTransferRouter(
+    this.authorityTransferRoutes,
+  );
+  private readonly clearAuthorityTransferExpiryTimeout: (handle: number) => void;
   private hostLock: HeldHostLock | null = null;
   private listener: RunningListener | null = null;
   private listenerFailure: CollabError | null = null;
@@ -394,6 +439,10 @@ export class LanHostCoordinator {
     NonNullable<LanHostProjectRuntime['outgoingHostTransfer']>
   >();
   private readonly resources: HostResourceRegistry;
+  private readonly setAuthorityTransferExpiryTimeout: (
+    callback: () => void,
+    milliseconds: number,
+  ) => number;
   private readonly router = new CollabControlRouter();
   private readonly terminalProjects = new Map<CollabProjectId, TerminalProject>();
   private readonly terminalizingProjects = new Set<CollabProjectId>();
@@ -401,12 +450,16 @@ export class LanHostCoordinator {
   private readonly tlsIdentity: LanTlsIdentity;
 
   constructor(private readonly options: LanHostCoordinatorOptions) {
+    this.clearAuthorityTransferExpiryTimeout = options.clearAuthorityTransferExpiryTimeout
+      ?? (handle => window.clearTimeout(handle));
     this.now = options.now ?? (() => new Date());
     this.resources = new HostResourceRegistry({
       ...(options.resourceCloseTimeoutMs === undefined
         ? {}
         : { closeTimeoutMs: options.resourceCloseTimeoutMs }),
     });
+    this.setAuthorityTransferExpiryTimeout = options.setAuthorityTransferExpiryTimeout
+      ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
     this.tlsIdentity = options.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot);
   }
 
@@ -494,7 +547,8 @@ export class LanHostCoordinator {
       const firstListenerOwner = !this.listener
         && this.hostedProjects.size === 0
         && this.terminalProjects.size === 0
-        && this.provisionalTransfers.size === 0;
+        && this.provisionalTransfers.size === 0
+        && this.authorityTransferRoutes.size === 0;
       if (firstListenerOwner) await this.acquireHostLock();
       try {
         if (!this.listener) this.listener = await this.startListener();
@@ -509,7 +563,8 @@ export class LanHostCoordinator {
       } catch (error) {
         if (firstListenerOwner && this.hostedProjects.size === 0
           && this.terminalProjects.size === 0
-          && this.provisionalTransfers.size === 0) {
+          && this.provisionalTransfers.size === 0
+          && this.authorityTransferRoutes.size === 0) {
           await this.closeListenerAndLock().catch(() => undefined);
         }
         throw error;
@@ -521,6 +576,96 @@ export class LanHostCoordinator {
     return this.operationQueue.run(async () => {
       this.provisionalTransfers.unregister(transferId);
       await this.closeUnusedListener();
+    });
+  }
+
+  startAuthorityTransferRoute(
+    registration: LanAuthorityTransferRouteRegistration,
+  ): Promise<LanHostAuthorityTransferSession> {
+    return this.operationQueue.run(async () => {
+      this.assertOpen();
+      const firstListenerOwner = !this.listener
+        && this.hostedProjects.size === 0
+        && this.terminalProjects.size === 0
+        && this.provisionalTransfers.size === 0
+        && this.authorityTransferRoutes.size === 0;
+      if (firstListenerOwner) await this.acquireHostLock();
+      try {
+        if (!this.listener) this.listener = await this.startListener();
+        this.assertOpen();
+        await this.authorityTransferRoutes.install(registration);
+        this.scheduleAuthorityTransferExpiry(registration);
+        this.startAddressMonitor();
+        return {
+          caCertificatePem: this.listener.caCertificatePem,
+          caFingerprint: this.listener.caFingerprint,
+          endpoint: this.listener.endpoint,
+          projectId: registration.projectId,
+        };
+      } catch (error) {
+        if (firstListenerOwner) await this.closeUnusedListener().catch(() => undefined);
+        throw error;
+      }
+    });
+  }
+
+  transitionAuthorityTransferRoute(
+    transition: LanAuthorityTransferRouteTransition,
+  ): Promise<LanHostAuthorityTransferSession> {
+    return this.operationQueue.run(async () => {
+      this.assertOpen();
+      if (!this.listener) {
+        throw hostError('operation-failed', 'authority-transfer-listener-missing');
+      }
+      await this.authorityTransferRoutes.transition(transition);
+      this.scheduleAuthorityTransferExpiry(transition.next);
+      return {
+        caCertificatePem: this.listener.caCertificatePem,
+        caFingerprint: this.listener.caFingerprint,
+        endpoint: this.listener.endpoint,
+        projectId: transition.next.projectId,
+      };
+    });
+  }
+
+  stopAuthorityTransferRoute(
+    projectId: CollabProjectId,
+    expectedState?: LanAuthorityTransferRouteRegistration['state'],
+  ): Promise<void> {
+    return this.operationQueue.run(async () => {
+      const removed = await this.authorityTransferRoutes.remove(projectId, expectedState);
+      if (removed) this.clearAuthorityTransferExpiry(projectId);
+      await this.closeUnusedListener();
+    });
+  }
+
+  prepareAuthorityTransferTarget(): Promise<LanHostAuthorityTransferPreparation> {
+    return this.operationQueue.run(async () => {
+      this.assertOpen();
+      const token = Symbol('authority-transfer-target');
+      const firstListenerOwner = !this.listener
+        && this.hostedProjects.size === 0
+        && this.terminalProjects.size === 0
+        && this.provisionalTransfers.size === 0
+        && this.authorityTransferRoutes.size === 0
+        && this.authorityTransferPreparations.size === 0;
+      if (firstListenerOwner) await this.acquireHostLock();
+      try {
+        if (!this.listener) this.listener = await this.startListener();
+        this.assertOpen();
+        this.authorityTransferPreparations.add(token);
+        this.startAddressMonitor();
+        const listener = this.listener;
+        return Object.freeze({
+          caCertificatePem: listener.caCertificatePem,
+          caFingerprint: listener.caFingerprint,
+          dispose: () => this.releaseAuthorityTransferPreparation(token),
+          endpoint: listener.endpoint,
+        });
+      } catch (error) {
+        if (firstListenerOwner) await this.closeUnusedListener().catch(() => undefined);
+        throw error;
+      }
     });
   }
 
@@ -540,6 +685,18 @@ export class LanHostCoordinator {
     });
   }
 
+  quiesceProjectForAuthorityTransfer(
+    projectId: CollabProjectId,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.operationQueue.run(async () => {
+      if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+      const hosted = this.requireHostedProject(projectId);
+      await hosted.admission.quiesceAndDrain('transferred');
+      if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    });
+  }
+
   reopenProjectBeforeHostTransfer(projectId: CollabProjectId): Promise<void> {
     return this.operationQueue.run(async () => {
       const hosted = this.requireHostedProject(projectId);
@@ -547,13 +704,88 @@ export class LanHostCoordinator {
     });
   }
 
+  reopenProjectAfterAuthorityTransferCancellation(projectId: CollabProjectId): Promise<void> {
+    return this.operationQueue.run(async () => {
+      const hosted = this.requireHostedProject(projectId);
+      hosted.admission.reopen();
+    });
+  }
+
   closeProjectForHostTransfer(projectId: CollabProjectId): Promise<void> {
+    return this.closeHostedProjectForTransfer(projectId, true);
+  }
+
+  relinquishProjectForAuthorityTransfer(projectId: CollabProjectId): Promise<void> {
+    return this.closeHostedProjectForTransfer(projectId, false);
+  }
+
+  activateAuthorityTransferTerminalSource(input: {
+    readonly projectId: CollabProjectId;
+    readonly relinquishmentProof: CollabAuthorityRelinquishmentProof;
+    readonly service: LanAuthorityTransferTerminalSourceService;
+    readonly transferId: string;
+  }): Promise<LanHostAuthorityTransferSession> {
+    return this.operationQueue.run(async () => {
+      this.assertOpen();
+      if (!this.listener) {
+        throw hostError('operation-failed', 'authority-transfer-listener-missing');
+      }
+      const current = this.authorityTransferRoutes.resolve(input.projectId);
+      if (
+        current?.state === 'terminal-source'
+        && current.transferId === input.transferId
+      ) {
+        return {
+          caCertificatePem: this.listener.caCertificatePem,
+          caFingerprint: this.listener.caFingerprint,
+          endpoint: this.listener.endpoint,
+          projectId: input.projectId,
+        };
+      }
+      if (current?.state !== 'source-active') {
+        throw hostError('operation-failed', 'authority-transfer-source-route-missing');
+      }
+      const next: LanAuthorityTransferRouteRegistration = {
+        projectId: input.projectId,
+        service: input.service,
+        state: 'terminal-source',
+        transferId: input.transferId,
+      };
+      await this.authorityTransferRoutes.transition({
+        expected: current,
+        next,
+        relinquishmentProof: input.relinquishmentProof,
+      });
+      this.scheduleAuthorityTransferExpiry(next);
+      return {
+        caCertificatePem: this.listener.caCertificatePem,
+        caFingerprint: this.listener.caFingerprint,
+        endpoint: this.listener.endpoint,
+        projectId: input.projectId,
+      };
+    });
+  }
+
+  completeProjectHostTransfer(projectId: CollabProjectId): Promise<void> {
+    return this.operationQueue.run(async () => {
+      this.transferredProjects.delete(projectId);
+      await this.closeUnusedListener();
+    });
+  }
+
+  private closeHostedProjectForTransfer(
+    projectId: CollabProjectId,
+    removeAuthorityTransferRoute: boolean,
+  ): Promise<void> {
     return this.operationQueue.run(async () => {
       if (this.transferredProjects.has(projectId)) return;
       const hosted = this.hostedProjects.get(projectId);
       if (!hosted) return;
       hosted.admission.commitTerminal('transferred');
       this.router.unregisterProject(projectId);
+      if (removeAuthorityTransferRoute) {
+        await this.authorityTransferRoutes.remove(projectId, 'source-active');
+      }
       this.hostedProjects.delete(projectId);
       this.transferredProjects.set(projectId, hosted);
       let firstError: unknown;
@@ -571,14 +803,7 @@ export class LanHostCoordinator {
         firstError ??= error;
       });
       if (firstError instanceof Error) throw firstError;
-      if (firstError) throw hostError('operation-failed', 'host-transfer-route-close-failed');
-    });
-  }
-
-  completeProjectHostTransfer(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      this.transferredProjects.delete(projectId);
-      await this.closeUnusedListener();
+      if (firstError) throw hostError('operation-failed', 'authority-transfer-route-close-failed');
     });
   }
 
@@ -638,7 +863,8 @@ export class LanHostCoordinator {
       const firstListenerOwner = !this.listener
         && this.hostedProjects.size === 0
         && this.terminalProjects.size === 0
-        && this.provisionalTransfers.size === 0;
+        && this.provisionalTransfers.size === 0
+        && this.authorityTransferRoutes.size === 0;
       if (firstListenerOwner) await this.acquireHostLock();
       try {
         if (!this.listener) this.listener = await this.startListener();
@@ -780,12 +1006,14 @@ export class LanHostCoordinator {
     const firstListenerOwner = !this.listener
       && this.hostedProjects.size === 0
       && this.terminalProjects.size === 0
-      && this.provisionalTransfers.size === 0;
+      && this.provisionalTransfers.size === 0
+      && this.authorityTransferRoutes.size === 0;
     if (firstListenerOwner) {
       await this.acquireHostLock();
       this.assertOpen();
     }
     let routeRegistered = false;
+    let authorityTransferRouteRegistered = false;
     let advertisement: CollabLanAdvertisement | undefined;
     let gitProxy: LanHostGitProxy | null = null;
     let runtime: LanHostProjectRuntime | null = null;
@@ -972,6 +1200,33 @@ export class LanHostCoordinator {
         controlService.routing,
       );
       routeRegistered = true;
+      if (openedRuntime.authorityTransfer) {
+        const existingAuthorityTransferRoute = this.authorityTransferRoutes.resolve(projectId);
+        if (
+          existingAuthorityTransferRoute?.state === 'source-active'
+          && existingAuthorityTransferRoute.hostMemberId !== hostedMembership.member.id
+        ) {
+          throw hostError(
+            'operation-failed',
+            'authority-transfer-route-host-mismatch',
+          );
+        }
+        if (existingAuthorityTransferRoute?.state !== 'source-active') {
+          if (existingAuthorityTransferRoute) {
+            throw hostError(
+              'operation-failed',
+              'authority-transfer-route-conflict',
+            );
+          }
+          await this.authorityTransferRoutes.install({
+            hostMemberId: hostedMembership.member.id,
+            projectId,
+            service: openedRuntime.authorityTransfer,
+            state: 'source-active',
+          });
+          authorityTransferRouteRegistered = true;
+        }
+      }
       advertisement = await this.options.discovery?.advertiseProject({
         caFingerprint: listener.caFingerprint,
         endpoint: listener.endpoint,
@@ -995,6 +1250,10 @@ export class LanHostCoordinator {
       this.startAddressMonitor();
       return { endpoint: listener.endpoint, projectId, status: 'running' };
     } catch (error) {
+      if (authorityTransferRouteRegistered) {
+        await this.authorityTransferRoutes.remove(projectId, 'source-active')
+          .catch(() => undefined);
+      }
       if (routeRegistered) this.router.unregisterProject(projectId);
       await advertisement?.stop().catch(() => undefined);
       runtime?.events?.close();
@@ -1030,6 +1289,7 @@ export class LanHostCoordinator {
       firstError = error;
     });
     this.router.unregisterProject(projectId);
+    await this.authorityTransferRoutes.remove(projectId, 'source-active');
     await hosted.service.stopHosting().catch(error => {
       firstError ??= error;
     });
@@ -1044,7 +1304,15 @@ export class LanHostCoordinator {
     if (
       this.hostedProjects.size === 0
       && this.terminalProjects.size === 0
+      && this.authorityTransferRoutes.size === 0
+    ) {
+      this.stopAddressMonitor();
+    }
+    if (
+      this.hostedProjects.size === 0
+      && this.terminalProjects.size === 0
       && this.provisionalTransfers.size === 0
+      && this.authorityTransferRoutes.size === 0
     ) {
       this.stopAddressMonitor();
       await this.closeListenerAndLock().catch(error => {
@@ -1156,6 +1424,7 @@ export class LanHostCoordinator {
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
+    if (await this.authorityTransferRouter.handle(request, response)) return;
     const provisionalCount = this.provisionalTransfers.size;
     if (await this.provisionalTransfers.handle(request, response)) {
       if (this.provisionalTransfers.size < provisionalCount) {
@@ -1198,9 +1467,19 @@ export class LanHostCoordinator {
 
   private async closeUnusedListener(): Promise<void> {
     if (
+      this.hostedProjects.size === 0
+      && this.terminalProjects.size === 0
+      && this.authorityTransferRoutes.size === 0
+      && this.authorityTransferPreparations.size === 0
+    ) {
+      this.stopAddressMonitor();
+    }
+    if (
       this.hostedProjects.size > 0
       || this.terminalProjects.size > 0
       || this.provisionalTransfers.size > 0
+      || this.authorityTransferRoutes.size > 0
+      || this.authorityTransferPreparations.size > 0
     ) return;
     this.stopAddressMonitor();
     await this.closeListenerAndLock();
@@ -1415,8 +1694,13 @@ export class LanHostCoordinator {
 
   private beginShutdown(): StartedHostShutdown {
     this.stopAddressMonitor();
+    this.authorityTransferPreparations.clear();
+    for (const projectId of this.authorityTransferExpiryTimers.keys()) {
+      this.clearAuthorityTransferExpiry(projectId);
+    }
     const gitDrains: Promise<unknown>[] = [];
     const transferDrains: Promise<unknown>[] = [];
+    transferDrains.push(this.captureShutdown(() => this.authorityTransferRoutes.close()));
     for (const [projectId, project] of this.hostedProjects) {
       this.router.unregisterProject(projectId);
       if (project.runtime.outgoingHostTransfer) {
@@ -1446,6 +1730,47 @@ export class LanHostCoordinator {
     };
   }
 
+  private clearAuthorityTransferExpiry(projectId: CollabProjectId): void {
+    const timer = this.authorityTransferExpiryTimers.get(projectId);
+    if (timer === undefined) return;
+    this.clearAuthorityTransferExpiryTimeout(timer);
+    this.authorityTransferExpiryTimers.delete(projectId);
+  }
+
+  private scheduleAuthorityTransferExpiry(
+    registration: LanAuthorityTransferRouteRegistration,
+    retryDelayMs?: number,
+  ): void {
+    this.clearAuthorityTransferExpiry(registration.projectId);
+    if (registration.state !== 'terminal-source' && registration.state !== 'target-active') return;
+    const expiresAtMs = Date.parse(registration.service.expiresAt);
+    const remainingMs = expiresAtMs - this.now().getTime();
+    const delayMs = retryDelayMs ?? Math.max(0, Math.min(MAX_TIMEOUT_MS, remainingMs));
+    const timer = this.setAuthorityTransferExpiryTimeout(() => {
+      this.authorityTransferExpiryTimers.delete(registration.projectId);
+      void this.operationQueue.run(async () => {
+        if (this.authorityTransferRoutes.resolve(registration.projectId) !== registration) return;
+        if (this.now().getTime() < expiresAtMs) {
+          this.scheduleAuthorityTransferExpiry(registration);
+          return;
+        }
+        try {
+          await registration.service.expire();
+          await this.authorityTransferRoutes.remove(registration.projectId, registration.state);
+          await this.closeUnusedListener();
+        } catch {
+          if (this.authorityTransferRoutes.resolve(registration.projectId) === registration) {
+            this.scheduleAuthorityTransferExpiry(
+              registration,
+              AUTHORITY_TRANSFER_EXPIRY_RETRY_MS,
+            );
+          }
+        }
+      }).catch(() => undefined);
+    }, delayMs);
+    this.authorityTransferExpiryTimers.set(registration.projectId, timer);
+  }
+
   private captureShutdown(operation: () => void | Promise<void>): Promise<unknown> {
     try {
       return Promise.resolve(operation()).then(
@@ -1461,7 +1786,12 @@ export class LanHostCoordinator {
     if (
       this.closed
       || !this.listener
-      || (this.hostedProjects.size === 0 && this.terminalProjects.size === 0)
+      || (
+        this.hostedProjects.size === 0
+        && this.terminalProjects.size === 0
+        && this.authorityTransferRoutes.size === 0
+        && this.authorityTransferPreparations.size === 0
+      )
     ) {
       return Promise.resolve();
     }
@@ -1495,7 +1825,12 @@ export class LanHostCoordinator {
   private async rebindListenerIfNeeded(): Promise<void> {
     this.assertOpen();
     const previous = this.listener;
-    if (!previous || (this.hostedProjects.size === 0 && this.terminalProjects.size === 0)) {
+    if (!previous || (
+      this.hostedProjects.size === 0
+      && this.terminalProjects.size === 0
+      && this.authorityTransferRoutes.size === 0
+      && this.authorityTransferPreparations.size === 0
+    )) {
       return;
     }
     const addresses = this.options.getPrivateIpv4Addresses?.()
@@ -1507,6 +1842,13 @@ export class LanHostCoordinator {
     if (preferred === previous.address) {
       this.listenerFailure = null;
       return;
+    }
+    if (
+      this.provisionalTransfers.size > 0
+      || this.authorityTransferPreparations.size > 0
+      || this.authorityTransferRoutes.pinsEndpoint
+    ) {
+      throw hostError('endpoint-unreachable', 'authority-transfer-endpoint-pinned');
     }
     const next = await this.startListener();
     const originals: CollabLocalLanMembershipRecord[] = [];
@@ -1572,7 +1914,12 @@ export class LanHostCoordinator {
     if (
       this.addressMonitor
       || this.closed
-      || (this.hostedProjects.size === 0 && this.terminalProjects.size === 0)
+      || (
+        this.hostedProjects.size === 0
+        && this.terminalProjects.size === 0
+        && this.authorityTransferRoutes.size === 0
+        && this.authorityTransferPreparations.size === 0
+      )
     ) return;
     if (this.options.createAddressMonitor) {
       this.addressMonitor = this.options.createAddressMonitor(this.checkHostAddress);
@@ -1591,6 +1938,13 @@ export class LanHostCoordinator {
     this.addressMonitor = null;
   }
 
+  private releaseAuthorityTransferPreparation(token: symbol): Promise<void> {
+    return this.operationQueue.run(async () => {
+      if (!this.authorityTransferPreparations.delete(token)) return;
+      await this.closeUnusedListener();
+    });
+  }
+
   private closeProjectResources(projectId: CollabProjectId): Promise<void> {
     return this.resources.closeProject(projectId, 'project-stopped');
   }
@@ -1605,6 +1959,7 @@ export class LanHostCoordinator {
     }
     admission.commitTerminal('retired');
     this.router.unregisterProject(projectId);
+    await this.authorityTransferRoutes.remove(projectId, 'source-active');
     this.hostedProjects.delete(projectId);
     await hosted.advertisement?.stop().catch(() => undefined);
     hosted.events?.close();

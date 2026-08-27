@@ -6,6 +6,10 @@ import {
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
+  type AuthorityTransferClaimantStore,
+  decodeAuthorityTransferClaimantRecord,
+} from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import {
   decodeAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
 import {
@@ -139,6 +143,7 @@ export interface CollabLocalLanMembershipRecord
 export interface CollabLocalCloudMembershipRecord
   extends CollabLocalMembershipRecordBase {
   readonly authority: {
+    readonly authorityGeneration?: number;
     readonly bindingVersion: typeof COLLAB_CLOUD_BINDING_VERSION;
     readonly developmentActorId: CollabMemberId;
     readonly gitRemoteUrl: string;
@@ -176,12 +181,14 @@ export interface CollabLocalProjectPaths {
   readonly authorityTransfer: string;
   readonly authorityTransferClaimCommitment: string;
   readonly authorityTransferClaims: string;
+  readonly authorityTransferClaimant: string;
   readonly localCleanup: string;
   readonly managerResponsibilityReceipt: string;
   readonly retirement: string;
 }
 
 export type CollabLocalProjectDocumentKind =
+  | 'authority-transfer-claimant'
   | 'cache'
   | 'pending-operation'
   | 'publication-state'
@@ -241,7 +248,7 @@ function requireExactKeys(
 
 function localRecordError(
   reason: string,
-  recordKind: 'cache' | 'index' | 'membership' | 'pending-operation' | 'publication-state' | 'request-draft' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
+  recordKind: CollabLocalProjectDocumentKind | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
   projectId?: string,
 ): CollabError {
   return new CollabError({
@@ -529,7 +536,7 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     requireExactKeys(value.authority, [
       'bindingVersion', 'developmentActorId', 'gitRemoteUrl', 'kind',
       'serverUrl', 'wireVersion',
-    ]);
+    ], ['authorityGeneration']);
     requireExactKeys(value.member, [
       'displayName', 'id', 'personalRef', 'role',
     ]);
@@ -547,6 +554,12 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     if (!isCollabMemberId(developmentActorId) || developmentActorId !== memberId) {
       throw new TypeError('Invalid development actor id');
     }
+    const authorityGeneration = value.authority.authorityGeneration;
+    if (authorityGeneration !== undefined && (
+      !Number.isSafeInteger(authorityGeneration) || (authorityGeneration as number) < 1
+    )) {
+      throw new TypeError('Invalid authority generation');
+    }
     const serverUrl = canonicalCloudOrigin(
       requireString(value.authority, 'serverUrl', { maxLength: 2_048 }),
       'serverUrl',
@@ -561,6 +574,9 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     const membership: CollabLocalCloudMembershipRecord = {
       ...common,
       authority: {
+        ...(authorityGeneration === undefined
+          ? {}
+          : { authorityGeneration: authorityGeneration as number }),
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
         developmentActorId,
         gitRemoteUrl,
@@ -680,6 +696,7 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): boolean {
 }
 
 export class CollabLocalProjectRepository {
+  readonly authorityTransferClaimants: AuthorityTransferClaimantStore;
   readonly authorityTransferClaimCommitments: AuthorityTransferClaimCommitmentStorePort;
   readonly authorityTransferClaims: AuthorityTransferClaimCustodyStorePort;
   readonly authorityTransferRecords: AuthorityTransferRecordStorePort;
@@ -753,6 +770,24 @@ export class CollabLocalProjectRepository {
       ),
     };
     this.authorityTransferClaims = Object.freeze(authorityTransferClaims);
+    const authorityTransferClaimants: AuthorityTransferClaimantStore = {
+      listProjectIds: () => this.listAuthorityTransferClaimantProjectIds(),
+      load: projectId => this.loadProjectDocument(
+        projectId,
+        'authority-transfer-claimant',
+        decodeAuthorityTransferClaimantRecord,
+      ),
+      remove: projectId => this.removeProjectDocument(
+        projectId,
+        'authority-transfer-claimant',
+      ),
+      save: record => this.saveProjectDocument(
+        record.projectId,
+        'authority-transfer-claimant',
+        record,
+      ),
+    };
+    this.authorityTransferClaimants = Object.freeze(authorityTransferClaimants);
     const hostTransferRecovery: HostTransferRecoveryStorePort = {
       load: async (projectId, direction) => {
         const record = await this.loadLifecycleProjectDocument(
@@ -1133,6 +1168,7 @@ export class CollabLocalProjectRepository {
         this.getProjectPaths(projectId).pendingOperation,
         this.getProjectPaths(projectId).publicationState,
         this.getProjectPaths(projectId).requestDraft,
+        this.getProjectPaths(projectId).authorityTransferClaimant,
         this.getProjectPaths(projectId).managerResponsibilityReceipt,
         this.getProjectPaths(projectId).hostTransferRecovery,
       ];
@@ -1418,6 +1454,10 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  listAuthorityTransferClaimantProjectIds(): Promise<readonly CollabProjectId[]> {
+    return this.listProjectDocumentProjectIds('authority-transfer-claimant');
+  }
+
   listAuthorityTransferProjectIds(): Promise<readonly CollabProjectId[]> {
     return this.operationQueue.run(async () => {
       const catalog = await this.scanAuthorityTransferProjectCatalogUnlocked();
@@ -1681,6 +1721,7 @@ export class CollabLocalProjectRepository {
       authorityTransfer: `${projectDirectory}/authority-transfer.json`,
       authorityTransferClaimCommitment: `${projectDirectory}/authority-transfer-claim-commitment.json`,
       authorityTransferClaims: `${projectDirectory}/authority-transfer-claims.json`,
+      authorityTransferClaimant: `${projectDirectory}/authority-transfer-claimant.json`,
       cache: `${projectDirectory}/cache.json`,
       conflictDirectory: this.getConflictDirectoryPath(),
       hostTransferRecovery: `${projectDirectory}/host-transfer-recovery.json`,
@@ -2090,7 +2131,7 @@ export class CollabLocalProjectRepository {
 
   private async readJson(
     relativePath: string,
-    recordKind: 'cache' | 'index' | 'membership' | 'pending-operation' | 'publication-state' | 'request-draft' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
+    recordKind: CollabLocalProjectDocumentKind | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
     projectId?: string,
   ): Promise<unknown> {
     let absolutePath: string;
@@ -2113,10 +2154,45 @@ export class CollabLocalProjectRepository {
     kind: CollabLocalProjectDocumentKind,
   ): string {
     const paths = this.getProjectPaths(projectId);
+    if (kind === 'authority-transfer-claimant') return paths.authorityTransferClaimant;
     if (kind === 'cache') return paths.cache;
     if (kind === 'pending-operation') return paths.pendingOperation;
     if (kind === 'publication-state') return paths.publicationState;
     return paths.requestDraft;
+  }
+
+  private listProjectDocumentProjectIds(
+    kind: CollabLocalProjectDocumentKind,
+  ): Promise<readonly CollabProjectId[]> {
+    return this.operationQueue.run(async () => {
+      const projectsDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        `${PRIVATE_STATE_DIRECTORY}/projects`,
+      );
+      const entries = await readdir(projectsDirectory, { withFileTypes: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw localRecordError('local-project-directory-read-failed', kind);
+      });
+      const projectIds: CollabProjectId[] = [];
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isDirectory()) {
+          if (entry.isSymbolicLink()) {
+            throw localRecordError('local-project-directory-invalid', kind, entry.name);
+          }
+          continue;
+        }
+        if (!isCollabProjectId(entry.name)) {
+          throw localRecordError('local-project-directory-invalid', kind, entry.name);
+        }
+        const value = await this.readJson(
+          this.projectDocumentPath(entry.name, kind),
+          kind,
+          entry.name,
+        );
+        if (value !== null) projectIds.push(entry.name);
+      }
+      return projectIds;
+    });
   }
 
   private lifecycleDocumentPath(

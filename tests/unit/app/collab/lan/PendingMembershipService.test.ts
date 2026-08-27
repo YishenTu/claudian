@@ -9,6 +9,9 @@ import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventR
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import {
+  AuthorityMemberCredentialAuthenticator,
+} from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { PendingMembershipService } from '@/app/collab/lan/PendingMembershipService';
 
@@ -83,6 +86,16 @@ describe('PendingMembershipService', () => {
   afterEach(async () => {
     await database.close();
     await rm(root, { force: true, recursive: true });
+  });
+
+  it('authenticates a bound active Member through the narrow terminal boundary', async () => {
+    const authenticator = new AuthorityMemberCredentialAuthenticator(database);
+
+    await expect(authenticator.authenticate(HOST_CREDENTIAL, ['active']))
+      .resolves.toMatchObject({ member: { id: 'member-host' } });
+    await expect(authenticator.authenticate(Buffer.alloc(32, 8).toString('base64url'), [
+      'active',
+    ])).rejects.toMatchObject({ code: 'authentication-failed' });
   });
 
   it('rotates and revokes invitations while persisting only their digest', async () => {

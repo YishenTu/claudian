@@ -9,6 +9,7 @@ import {
   type ClaimTransferredMembershipRequest,
   COLLAB_LIMITS,
   COLLAB_PROTOCOL_VERSION,
+  type CollabAuthorityRelinquishmentProof,
   type CollabAuthorityTransferOperation,
   type CollabAuthorityTransferOperationMap,
   type CollabMemberId,
@@ -88,13 +89,16 @@ export interface LanAuthorityTransferTargetStagedService {
 }
 
 export interface LanAuthorityTransferTargetActiveService {
+  readonly expiresAt: string;
   claimTransferredMembership(
     request: LanClaimTransferredMembershipRequest,
   ): Promise<OperationResponse<'claimTransferredMembership'>>;
+  expire(): Promise<void>;
 }
 
 export interface LanAuthorityTransferTerminalSourceService
   extends LanAuthorityTransferMemberAuthenticator {
+  readonly expiresAt: string;
   getProjectAuthorityTransfer(
     actor: LanAuthorityTransferActor,
     request: GetProjectAuthorityTransferRequest,
@@ -107,6 +111,7 @@ export interface LanAuthorityTransferTerminalSourceService
     actor: LanAuthorityTransferActor,
     request: AcknowledgeTransferredMembershipClaimRedemptionRequest,
   ): Promise<OperationResponse<'acknowledgeTransferredMembershipClaimRedemption'>>;
+  expire(): Promise<void>;
 }
 
 interface RouteRegistrationBase {
@@ -139,6 +144,7 @@ export interface LanAuthorityTransferTerminalSourceRegistration
   extends RouteRegistrationBase {
   readonly service: LanAuthorityTransferTerminalSourceService;
   readonly state: 'terminal-source';
+  readonly transferId: string;
 }
 
 export type LanAuthorityTransferRouteRegistration =
@@ -146,6 +152,12 @@ export type LanAuthorityTransferRouteRegistration =
   | LanAuthorityTransferTargetOnlyStagedRegistration
   | LanAuthorityTransferTargetActiveRegistration
   | LanAuthorityTransferTerminalSourceRegistration;
+
+export interface LanAuthorityTransferRouteTransition {
+  readonly expected: LanAuthorityTransferRouteRegistration;
+  readonly next: LanAuthorityTransferRouteRegistration;
+  readonly relinquishmentProof: CollabAuthorityRelinquishmentProof;
+}
 
 export type LanAuthorityTransferRouteAdmissionResult<T> =
   | { readonly admitted: false }
