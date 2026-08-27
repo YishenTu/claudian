@@ -127,6 +127,51 @@ describe('LinkedContentController', () => {
     expect(excludedController.getSnapshot().path).toBeNull();
   });
 
+  it('waits for metadata before auto-linking when excluded tags are configured', () => {
+    const markdown = createFile('Notes/Startup.md');
+    const harness = createHarness([markdown]);
+    let cache: unknown = null;
+    (harness.app.metadataCache.getFileCache as jest.Mock).mockImplementation(() => cache);
+    const controller = new LinkedContentController({
+      app: harness.app as never,
+      getExcludedTags: () => ['private'],
+      getCachedVaultFiles: () => [],
+      getCachedVaultFolders: () => [],
+    });
+
+    harness.setActiveFile(markdown);
+    controller.resetAutoDraft();
+
+    expect(controller.getSnapshot().path).toBeNull();
+
+    cache = { tags: [] };
+    controller.handleActiveFileMetadataChanged(markdown);
+
+    expect(controller.getSnapshot().path).toBe('Notes/Startup.md');
+  });
+
+  it('unloads the auto-linked active Note when metadata gains an excluded tag', () => {
+    const markdown = createFile('Notes/Public.md');
+    const harness = createHarness([markdown]);
+    let cache: unknown = { tags: [] };
+    (harness.app.metadataCache.getFileCache as jest.Mock).mockImplementation(() => cache);
+    const controller = new LinkedContentController({
+      app: harness.app as never,
+      getExcludedTags: () => ['private'],
+      getCachedVaultFiles: () => [],
+      getCachedVaultFolders: () => [],
+    });
+
+    harness.setActiveFile(markdown);
+    controller.resetAutoDraft();
+    expect(controller.getSnapshot().path).toBe('Notes/Public.md');
+
+    cache = { tags: [{ tag: '#private' }] };
+    controller.handleActiveFileMetadataChanged(markdown);
+
+    expect(controller.getSnapshot().path).toBeNull();
+  });
+
   it('creates one immutable path token and locks only after durable creation', () => {
     const harness = createHarness([createFolder('Projects')]);
     harness.controller.selectExplicit('Projects');

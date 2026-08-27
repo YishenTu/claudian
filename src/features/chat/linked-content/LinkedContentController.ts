@@ -22,6 +22,8 @@ export interface LinkedContentSnapshot {
   readonly path: string | null;
 }
 
+type ExcludedTagState = 'excluded' | 'not-excluded' | 'unknown';
+
 export interface LinkedContentSubmissionToken {
   readonly path?: string;
 }
@@ -130,10 +132,14 @@ export class LinkedContentController {
 
   handleActiveFileChanged(file: TFile | null, isActiveOwner: boolean): void {
     if (this.destroyed || !isActiveOwner || this.mode !== 'auto-draft') return;
-    const nextPath = this.eligibleActiveFilePath(file);
-    if (nextPath === this.path) return;
-    this.path = nextPath;
-    this.publish();
+    this.reconcileAutoDraftPath(file);
+  }
+
+  handleActiveFileMetadataChanged(file: TFile | null): void {
+    if (this.destroyed || this.mode !== 'auto-draft') return;
+    const activeFile = this.app.workspace.getActiveFile();
+    if (file !== null && activeFile?.path !== file.path) return;
+    this.reconcileAutoDraftPath(activeFile);
   }
 
   lock(path: string | undefined): void {
@@ -312,18 +318,29 @@ export class LinkedContentController {
     return true;
   }
 
+  private reconcileAutoDraftPath(file: TFile | null): void {
+    const nextPath = this.eligibleActiveFilePath(file);
+    if (nextPath === this.path) return;
+    this.path = nextPath;
+    this.publish();
+  }
+
   private eligibleActiveFilePath(file: TFile | null): string | null {
-    if (!file || file.extension.toLocaleLowerCase() !== 'md' || this.hasExcludedTag(file)) {
+    if (
+      !file
+      || file.extension.toLocaleLowerCase() !== 'md'
+      || this.getExcludedTagState(file) !== 'not-excluded'
+    ) {
       return null;
     }
     return normalizeLinkedContentPath(file.path);
   }
 
-  private hasExcludedTag(file: TFile): boolean {
+  private getExcludedTagState(file: TFile): ExcludedTagState {
     const excludedTags = this.options.getExcludedTags();
-    if (excludedTags.length === 0) return false;
+    if (excludedTags.length === 0) return 'not-excluded';
     const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache) return false;
+    if (!cache) return 'unknown';
     const fileTags: string[] = [];
     const frontmatterTags: unknown = cache.frontmatter?.tags;
     if (Array.isArray(frontmatterTags)) {
@@ -335,7 +352,9 @@ export class LinkedContentController {
     }
     if (cache.tags) fileTags.push(...cache.tags.map(tag => tag.tag));
     const normalizedExcluded = new Set(excludedTags.map(tag => tag.replace(/^#/, '')));
-    return fileTags.some(tag => normalizedExcluded.has(tag.replace(/^#/, '')));
+    return fileTags.some(tag => normalizedExcluded.has(tag.replace(/^#/, '')))
+      ? 'excluded'
+      : 'not-excluded';
   }
 
   private publish(): void {
