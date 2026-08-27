@@ -99,6 +99,42 @@ describe('production authority-transfer effects', () => {
     ]);
   });
 
+  it('releases a source endpoint pin when pre-ownership membership loading fails', async () => {
+    const endpoint = 'https://127.0.0.1:54545';
+    const pinAuthorityTransferSourceEndpoint = jest.fn(async () => endpoint);
+    const unpinAuthorityTransferSourceEndpoint = jest.fn(async () => undefined);
+    const loadMembership = jest.fn(async () => {
+      throw new Error('simulated membership read failure');
+    });
+    const effects = new ProductionLanToCloudSourceEffects({
+      cloudSession: null,
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: {
+        lanHost: {
+          pinAuthorityTransferSourceEndpoint,
+          unpinAuthorityTransferSourceEndpoint,
+        },
+        local: { projects: { loadMembership } },
+      } as never,
+      persistence: {} as never,
+      projectId: PROJECT_ID,
+    });
+    const record = createAuthorityTransferRecord({
+      lifecycleOwnership: 'proposal',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
+    });
+
+    await expect(effects.sourceEndpoint(record)).rejects.toThrow(
+      'simulated membership read failure',
+    );
+
+    expect(pinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID);
+    expect(unpinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID, endpoint);
+  });
+
   it('captures LAN data, stages Cloud-to-LAN inertly, and activates exactly once', async () => {
     const sourceFoundation = foundation(sourceRoot);
     const sourceSetup = new CollabProjectSetupService(sourceFoundation, {

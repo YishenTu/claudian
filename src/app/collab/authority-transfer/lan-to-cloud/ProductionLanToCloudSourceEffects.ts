@@ -264,15 +264,19 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
   async sourceEndpoint(record: AuthorityTransferRecord): Promise<string> {
     const endpoint = await this.options.foundation.lanHost
       .pinAuthorityTransferSourceEndpoint(record.projectId);
-    const membership = await this.requireLanMembership(record.projectId);
-    if (!membership.authority.endpoint || membership.authority.endpoint !== endpoint) {
+    try {
+      const membership = await this.requireLanMembership(record.projectId);
+      if (!membership.authority.endpoint || membership.authority.endpoint !== endpoint) {
+        throw effectsError('authority-transfer-source-endpoint-missing');
+      }
+      return endpoint;
+    } catch (error) {
       await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
         record.projectId,
         endpoint,
-      );
-      throw effectsError('authority-transfer-source-endpoint-missing');
+      ).catch(() => undefined);
+      throw error;
     }
-    return endpoint;
   }
 
   releaseSourceEndpoint(record: AuthorityTransferRecord, endpoint: string): Promise<void> {
