@@ -73,8 +73,13 @@ export interface AuthorityTransferModuleOptions {
     projectId: CollabProjectId,
     session: CloudAuthorityLifecycleSession,
   ) => LanToCloudSourceCoordinatorOptions['source'];
+  readonly createLanTargetSnapshotReader?: (
+    projectId: CollabProjectId,
+    targetHost: BindCloudToLanClaimantInput['targetHost'],
+  ) => Pick<ProjectControlClient, 'readSnapshot'>;
   readonly activateLanToCloudSourceRoute?: (
     projectId: CollabProjectId,
+    expectedEndpoint?: string,
   ) => Promise<() => Promise<void>>;
   readonly lifecycle: CollabProjectLifecycleSubsystem;
   readonly persistence: AuthorityTransferPersistence;
@@ -89,11 +94,13 @@ export interface AuthorityTransferModuleOptions {
 
 export interface BindLanToCloudSourceInput {
   readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly expectedSourceEndpoint?: string;
   readonly projectId: CollabProjectId;
 }
 
 export interface BindCloudToLanTargetInput {
   readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly expectedTargetUrl?: string;
   readonly projectId: CollabProjectId;
 }
 
@@ -126,12 +133,28 @@ export type RecoveredAuthorityTransferClaimantBinding =
       readonly direction: 'lan-to-cloud';
       readonly lanClient: LanAuthorityTransferClient;
       readonly memberCredential: string;
+      readonly mode: 'full';
     }>
   | Readonly<{
       readonly cloudSession: CloudAuthorityLifecycleSession;
       readonly direction: 'cloud-to-lan';
       readonly lanClient: LanAuthorityTransferClient;
+      readonly mode: 'full';
       readonly targetHost: BindCloudToLanClaimantInput['targetHost'];
+    }>
+  | Readonly<{
+      readonly cloudSession: CloudAuthorityLifecycleSession;
+      readonly direction: 'lan-to-cloud';
+      readonly mode: 'target-only';
+    }>
+  | Readonly<{
+      readonly direction: 'cloud-to-lan';
+      readonly mode: 'target-only';
+      readonly targetHost: BindCloudToLanClaimantInput['targetHost'];
+    }>
+  | Readonly<{
+      readonly direction: 'cloud-to-lan' | 'lan-to-cloud';
+      readonly mode: 'local-only';
     }>;
 
 export interface AuthorityTransferDirectionBinding<Coordinator> {
@@ -220,6 +243,7 @@ export class AuthorityTransferModule {
     try {
       cleanupRoute = await this.options.activateLanToCloudSourceRoute?.(
         input.projectId,
+        input.expectedSourceEndpoint,
       ) ?? (async () => undefined);
       return Object.freeze({
         coordinator,
@@ -259,7 +283,10 @@ export class AuthorityTransferModule {
     const binding = Object.freeze({ coordinator, unregister });
     this.targetBindings.set(input.projectId, binding);
     try {
-      const prepared = await target.prepareTarget();
+      const prepared = await target.prepareTarget(input.expectedTargetUrl);
+      if (input.expectedTargetUrl && prepared.targetUrl !== input.expectedTargetUrl) {
+        throw moduleError('authority-transfer-target-recovery-endpoint-mismatch');
+      }
       return Object.freeze({
         coordinator,
         dispose: () => {
@@ -338,10 +365,7 @@ export class AuthorityTransferModule {
     input: BindCloudToLanClaimantInput,
   ): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
     this.assertCloudSession(input.projectId, input.cloudSession);
-    const control = new ProjectControlClient(new PinnedCollabHttpClient({
-      ...input.targetHost,
-      projectId: input.projectId,
-    }, 10_000));
+    const control = this.lanTargetSnapshotReader(input.projectId, input.targetHost);
     return this.bindClaimant({
       convergence: {
         converge: async (record, options) => {
@@ -396,6 +420,107 @@ export class AuthorityTransferModule {
     });
   }
 
+  private bindLanToCloudTargetOnlyClaimant(input: Readonly<{
+    readonly cloudSession: CloudAuthorityLifecycleSession;
+    readonly projectId: CollabProjectId;
+  }>): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
+    this.assertCloudSession(input.projectId, input.cloudSession);
+    return this.bindClaimant({
+      convergence: {
+        converge: async (record, options) => {
+          const snapshot = await input.cloudSession.readSnapshot(record.projectId, options);
+          await this.convergence.lanToCloudMember({
+            developmentActorId: input.cloudSession.developmentActorId,
+            snapshot,
+            status: record.status,
+          });
+        },
+      },
+      projectId: input.projectId,
+      lanTarget: null,
+      source: {
+        acknowledgeRedemption: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+        getClaim: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+      },
+      target: {
+        claimTransferredMembership: () => {
+          throw moduleError('authority-transfer-claimant-target-replay-invalid');
+        },
+      },
+    });
+  }
+
+  private bindCloudToLanTargetOnlyClaimant(input: Readonly<{
+    readonly projectId: CollabProjectId;
+    readonly targetHost: BindCloudToLanClaimantInput['targetHost'];
+  }>): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
+    const control = this.lanTargetSnapshotReader(input.projectId, input.targetHost);
+    return this.bindClaimant({
+      convergence: {
+        converge: async (record, options) => {
+          const targetCredential = this.requireTargetCredential(record);
+          const snapshot = await control.readSnapshot(
+            record.projectId,
+            targetCredential,
+            options,
+          );
+          await this.convergence.cloudToLanMember({
+            endpoint: input.targetHost.endpoint,
+            hostCaCertificatePem: input.targetHost.caCertificatePem,
+            hostCaFingerprint: input.targetHost.caFingerprint,
+            memberCredential: targetCredential,
+            snapshot,
+            status: record.status,
+          });
+        },
+      },
+      projectId: input.projectId,
+      lanTarget: input.targetHost,
+      source: {
+        acknowledgeRedemption: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+        getClaim: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+      },
+      target: {
+        claimTransferredMembership: () => {
+          throw moduleError('authority-transfer-claimant-target-replay-invalid');
+        },
+      },
+    });
+  }
+
+  private bindLocalOnlyClaimant(
+    record: AuthorityTransferClaimantRecord,
+  ): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
+    return this.bindClaimant({
+      convergence: {
+        converge: current => this.convergence.recoverConvertedClaimant(current),
+      },
+      projectId: record.projectId,
+      lanTarget: record.lanTarget,
+      source: {
+        acknowledgeRedemption: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+        getClaim: () => {
+          throw moduleError('authority-transfer-claimant-source-unavailable');
+        },
+      },
+      target: {
+        claimTransferredMembership: () => {
+          throw moduleError('authority-transfer-claimant-target-replay-invalid');
+        },
+      },
+    });
+  }
+
   private bindClaimant(
     input: BindAuthorityTransferClaimantInput,
   ): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
@@ -419,39 +544,65 @@ export class AuthorityTransferModule {
     return record.targetCredential;
   }
 
+  private lanTargetSnapshotReader(
+    projectId: CollabProjectId,
+    targetHost: BindCloudToLanClaimantInput['targetHost'],
+  ): Pick<ProjectControlClient, 'readSnapshot'> {
+    return this.options.createLanTargetSnapshotReader?.(projectId, targetHost)
+      ?? new ProjectControlClient(new PinnedCollabHttpClient({
+        ...targetHost,
+        projectId,
+      }, 10_000));
+  }
+
   private async resolveClaimantRuntime(
     record: AuthorityTransferClaimantRecord,
   ): Promise<AuthorityTransferClaimantRuntimeResolution | null> {
     const recover = this.options.recoverClaimant;
     if (!recover) return null;
     const recovered = await recover(record);
+    const disposeCloudSession = (): void => {
+      if ('cloudSession' in recovered) recovered.cloudSession.dispose();
+    };
     if (recovered.direction !== record.status.direction) {
-      recovered.cloudSession.dispose();
+      disposeCloudSession();
       throw moduleError('authority-transfer-claimant-direction-mismatch');
     }
     try {
-      const binding = recovered.direction === 'lan-to-cloud'
-        ? this.bindLanToCloudClaimant({
+      const binding = recovered.mode === 'local-only'
+        ? this.bindLocalOnlyClaimant(record)
+        : recovered.direction === 'lan-to-cloud' && recovered.mode === 'full'
+          ? this.bindLanToCloudClaimant({
             cloudSession: recovered.cloudSession,
             lanClient: recovered.lanClient,
             memberCredential: recovered.memberCredential,
             projectId: record.projectId,
           })
-        : this.bindCloudToLanClaimant({
-            cloudSession: recovered.cloudSession,
-            lanClient: recovered.lanClient,
-            projectId: record.projectId,
-            targetHost: recovered.targetHost,
-          });
+          : recovered.direction === 'lan-to-cloud'
+            ? this.bindLanToCloudTargetOnlyClaimant({
+                cloudSession: recovered.cloudSession,
+                projectId: record.projectId,
+              })
+            : recovered.mode === 'full'
+              ? this.bindCloudToLanClaimant({
+                  cloudSession: recovered.cloudSession,
+                  lanClient: recovered.lanClient,
+                  projectId: record.projectId,
+                  targetHost: recovered.targetHost,
+                })
+              : this.bindCloudToLanTargetOnlyClaimant({
+                  projectId: record.projectId,
+                  targetHost: recovered.targetHost,
+                });
       return {
         dispose: async () => {
           await binding.dispose();
-          recovered.cloudSession.dispose();
+          disposeCloudSession();
         },
         runtime: binding.coordinator,
       };
     } catch (error) {
-      recovered.cloudSession.dispose();
+      disposeCloudSession();
       throw error;
     }
   }
@@ -536,10 +687,14 @@ export class AuthorityTransferModule {
       return record.localRole === 'source'
         ? (await this.bindLanToCloudSource({
             cloudSession: session,
+            ...(record.sourceLanEndpoint
+              ? { expectedSourceEndpoint: record.sourceLanEndpoint }
+              : {}),
             projectId: record.projectId,
           })).coordinator
         : (await this.bindCloudToLanTarget({
             cloudSession: session,
+            expectedTargetUrl: record.status.targetUrl,
             projectId: record.projectId,
           })).coordinator;
     } catch (error) {

@@ -330,6 +330,7 @@ export class ClaudianCollabService {
 
   async activateAuthorityTransferSourceRoute(
     projectId: CollabProjectId,
+    expectedEndpoint?: string,
   ): Promise<() => Promise<void>> {
     this.assertOpen();
     const authority = await this.inspectAuthority(projectId);
@@ -361,6 +362,7 @@ export class ClaudianCollabService {
       );
     }
     await this.lanHost.startAuthorityTransferRoute({
+      ...(expectedEndpoint ? { expectedEndpoint } : {}),
       hostMemberId: project.hostMemberId,
       projectId,
       service,

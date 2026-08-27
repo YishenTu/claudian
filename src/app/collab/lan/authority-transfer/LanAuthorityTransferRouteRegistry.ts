@@ -51,8 +51,39 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
 
   get pinsEndpoint(): boolean {
     return [...this.registrations.values()].some(
-      registration => registration.state !== 'source-active',
+      registration => registration.state !== 'source-active'
+        || registration.expectedEndpoint !== undefined,
     );
+  }
+
+  pinSourceActiveEndpoint(
+    projectId: CollabProjectId,
+    expectedEndpoint: string,
+  ): LanAuthorityTransferRouteRegistration {
+    if (this.closed) throw new Error('Authority-transfer routes are closed');
+    const current = this.registrations.get(projectId);
+    if (!current || current.state !== 'source-active') {
+      throw routeStateError('authority-transfer-source-route-missing');
+    }
+    if (current.expectedEndpoint && current.expectedEndpoint !== expectedEndpoint) {
+      throw routeStateError('authority-transfer-source-endpoint-conflict');
+    }
+    if (current.expectedEndpoint === expectedEndpoint) return current;
+    const pinned = { ...current, expectedEndpoint };
+    this.registrations.set(projectId, pinned);
+    return pinned;
+  }
+
+  unpinSourceActiveEndpoint(projectId: CollabProjectId, expectedEndpoint: string): void {
+    if (this.closed) return;
+    const current = this.registrations.get(projectId);
+    if (
+      !current
+      || current.state !== 'source-active'
+      || current.expectedEndpoint !== expectedEndpoint
+    ) return;
+    const { expectedEndpoint: _removed, ...unpinned } = current;
+    this.registrations.set(projectId, unpinned);
   }
 
   resolve(projectId: CollabProjectId): LanAuthorityTransferRouteRegistration | null {

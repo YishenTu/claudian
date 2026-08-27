@@ -4,6 +4,9 @@ import type {
 
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import type {
+  AuthorityTransferClaimantRecord,
+} from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -141,6 +144,13 @@ describe('AuthorityTransferLocalConvergence', () => {
 
     await convergence.lanToCloudHost(input);
     await convergence.lanToCloudHost(input);
+    await convergence.recoverConvertedClaimant({
+      lanTarget: null,
+      memberId: 'member-host',
+      projectId: PROJECT_ID,
+      status: input.status,
+      targetCredential: null,
+    } as AuthorityTransferClaimantRecord);
 
     expect(membership).toMatchObject({
       authority: {
@@ -154,8 +164,8 @@ describe('AuthorityTransferLocalConvergence', () => {
       member: { id: 'member-host' },
     });
     expect(rotate).toHaveBeenCalledTimes(1);
-    expect(projects.repairIndexFromMemberships).toHaveBeenCalledTimes(2);
-    expect(transitionProject).toHaveBeenCalledTimes(2);
+    expect(projects.repairIndexFromMemberships).toHaveBeenCalledTimes(3);
+    expect(transitionProject).toHaveBeenCalledTimes(3);
   });
 
   it('replaces Cloud target membership with the exact bound LAN Host identity', async () => {
@@ -295,11 +305,23 @@ describe('AuthorityTransferLocalConvergence', () => {
       snapshot: snapshot('lan'),
       status: completed('cloud-to-lan'),
     });
+    await convergence.recoverConvertedClaimant({
+      lanTarget: {
+        caCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
+        caFingerprint: 'e'.repeat(64),
+        endpoint: 'https://192.168.1.20:54545',
+      },
+      memberId: 'member-host',
+      projectId: PROJECT_ID,
+      status: completed('cloud-to-lan'),
+      targetCredential: credential,
+    } as AuthorityTransferClaimantRecord);
 
     expect(membership).toMatchObject({
       authority: { kind: 'lan' },
       hostOwnership: { autoStart: false, ownsAuthority: false },
       member: { credential },
     });
+    expect(projects.repairIndexFromMemberships).toHaveBeenCalledTimes(2);
   });
 });

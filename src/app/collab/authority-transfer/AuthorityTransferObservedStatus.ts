@@ -130,6 +130,7 @@ export async function advanceThroughObservedAuthorityStatus(
       localRole: current.localRole,
       operationIntentId: current.operationIntentId,
       receiptVerifier: current.receiptVerifier,
+      sourceLanEndpoint: current.sourceLanEndpoint,
       stagingDirectoryName: current.stagingDirectoryName,
       status,
     });

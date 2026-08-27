@@ -6,6 +6,9 @@ import {
 } from '@claudian-collab/protocol';
 
 import type {
+  AuthorityTransferClaimantRecord,
+} from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
   CollabLocalProjectIndex,
@@ -163,6 +166,49 @@ export class AuthorityTransferLocalConvergence {
     );
   }
 
+  async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
+    assertCompleted(record.status, record.status.direction);
+    return this.options.activity.transitionProject(record.projectId, async () => {
+      const membership = await this.requireMembership(record.projectId);
+      if (membership.member.id !== record.memberId) {
+        throw convergenceError('authority-transfer-claimant-member-conflict');
+      }
+      if (record.status.direction === 'lan-to-cloud') {
+        const serverUrl = canonicalCloudOrigin(
+          record.status.targetUrl,
+          'authorityTransferTargetUrl',
+        );
+        if (
+          !isCollabLocalCloudMembership(membership)
+          || membership.authority.developmentActorId !== record.memberId
+          || (membership.authority.authorityGeneration ?? 1)
+            !== record.status.targetAuthority.generation
+          || membership.authority.serverUrl !== serverUrl
+          || membership.authority.gitRemoteUrl
+            !== cloudRemoteUrl(record.status.targetUrl, record.projectId)
+        ) throw convergenceError('authority-transfer-cloud-membership-conflict');
+        await this.finish(record.projectId, 'cloud');
+        return;
+      }
+      const lanTarget = record.lanTarget;
+      const targetCredential = record.targetCredential;
+      if (!lanTarget || !targetCredential || !isCollabLocalLanMembership(membership)) {
+        throw convergenceError('authority-transfer-lan-membership-conflict');
+      }
+      const endpoint = new URL(lanTarget.endpoint).origin;
+      if (
+        membership.authority.endpoint !== endpoint
+        || membership.authority.gitRemoteUrl !== lanRemoteUrl(lanTarget.endpoint, record.projectId)
+        || membership.authority.hostCaCertificatePem !== lanTarget.caCertificatePem
+        || membership.authority.hostCaFingerprint !== lanTarget.caFingerprint
+        || membership.member.credential !== targetCredential
+        || membership.hostOwnership.autoStart
+        || membership.hostOwnership.ownsAuthority
+      ) throw convergenceError('authority-transfer-lan-membership-conflict');
+      await this.finish(record.projectId, 'lan');
+    });
+  }
+
   private async lanToCloud(
     input: LanToCloudHostConvergenceInput,
     sourceOwnsAuthority: boolean,
@@ -257,7 +303,10 @@ export class AuthorityTransferLocalConvergence {
     } else if (
       membership.authority.endpoint !== new URL(input.endpoint).origin
       || membership.authority.gitRemoteUrl !== newRemoteUrl
+      || membership.authority.hostCaCertificatePem !== input.hostCaCertificatePem
+      || membership.authority.hostCaFingerprint !== input.hostCaFingerprint
       || membership.member.credential !== input.memberCredential
+      || membership.hostOwnership.autoStart !== targetOwnsAuthority
       || membership.hostOwnership.ownsAuthority !== targetOwnsAuthority
     ) {
       throw convergenceError('authority-transfer-lan-membership-conflict');

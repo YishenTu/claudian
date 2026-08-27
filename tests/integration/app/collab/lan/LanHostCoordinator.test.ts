@@ -1376,6 +1376,56 @@ describe('LanHostCoordinator production transport', () => {
     }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
   });
 
+  it('reuses a restored terminal route for the same durable transfer', async () => {
+    const terminal = authorityTransferStatus('source-relinquished');
+    const service = () => ({
+      acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+      authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+      expire: jest.fn(async () => undefined),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      getProjectAuthorityTransfer: jest.fn(async () => terminal),
+      getTransferredMembershipClaim: jest.fn(),
+    });
+    const first = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: service(),
+      state: 'terminal-source',
+      transferId: terminal.transferId,
+    });
+
+    const repeated = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: service(),
+      state: 'terminal-source',
+      transferId: terminal.transferId,
+    });
+
+    expect(repeated).toEqual(first);
+  });
+
+  it('reuses a restored target-active route for the same durable transfer', async () => {
+    const service = () => ({
+      claimTransferredMembership: jest.fn(),
+      expire: jest.fn(async () => undefined),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const first = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: service(),
+      state: 'target-active',
+      transferId: 'transfer-target-retry',
+    });
+
+    const repeated = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: service(),
+      state: 'target-active',
+      transferId: 'transfer-target-retry',
+    });
+
+    expect(repeated).toEqual(first);
+  });
+
   it('expires a target-active claim route and releases its listener', async () => {
     const expire = jest.fn(async () => undefined);
     const session = await coordinator.startAuthorityTransferRoute({
@@ -1567,6 +1617,32 @@ describe('LanHostCoordinator production transport', () => {
     expect(coordinator.getProjectState(PROJECT_ID).status).toBe('running');
   }, 30_000);
 
+  it('pins an accepted source-active route until cancellation releases it', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) return;
+    const transferStatus = authorityTransferStatus('collecting-readiness');
+    await coordinator.startAuthorityTransferRoute({
+      hostMemberId: 'member-host',
+      projectId: PROJECT_ID,
+      service: {
+        acceptLanToCloudTransferTarget: jest.fn(async () => transferStatus),
+        authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+        cancelProjectAuthorityTransfer: jest.fn(async () => transferStatus),
+        getProjectAuthorityTransfer: jest.fn(async () => transferStatus),
+        requestLanToCloudTransfer: jest.fn(async () => transferStatus),
+      },
+      state: 'source-active',
+    });
+    const expectedEndpoint = await coordinator.pinAuthorityTransferSourceEndpoint(PROJECT_ID);
+    privateAddresses = [nextAddress];
+
+    await expect(checkHostAddress()).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
+    });
+    await coordinator.unpinAuthorityTransferSourceEndpoint(PROJECT_ID, expectedEndpoint);
+    await expect(checkHostAddress()).resolves.toBeUndefined();
+  }, 30_000);
+
   it.each(['target-only-staged', 'target-active'] as const)(
     'keeps the signed Cloud-to-LAN endpoint pinned while the route is %s',
     async (state) => {
@@ -1608,6 +1684,101 @@ describe('LanHostCoordinator production transport', () => {
     },
     30_000,
   );
+
+  it.each(['target-only-staged', 'target-active', 'terminal-source'] as const)(
+    'fails closed instead of moving a reconstructed %s route to a fallback port',
+    async (state) => {
+      const preparation = await coordinator.prepareAuthorityTransferTarget();
+      const expectedEndpoint = preparation.endpoint;
+      await preparation.dispose();
+      const expectedUrl = new URL(expectedEndpoint);
+      const pinnedPortBlocker = createServer();
+      await new Promise<void>((resolve, reject) => {
+        pinnedPortBlocker.once('error', reject);
+        pinnedPortBlocker.listen(Number(expectedUrl.port), expectedUrl.hostname, resolve);
+      });
+      const transferStatus = authorityTransferStatus('source-relinquished');
+      const registration = state === 'target-only-staged'
+        ? {
+            credentialHash: 'a'.repeat(64),
+            expectedEndpoint,
+            projectId: PROJECT_ID,
+            service: {
+              acceptCloudToLanTransferTarget: jest.fn(async () => transferStatus),
+              confirmCloudToLanTargetActive: jest.fn(async () => transferStatus),
+              getProjectAuthorityTransfer: jest.fn(async () => transferStatus),
+              reportCloudToLanTargetStaged: jest.fn() as never,
+            },
+            state,
+            transferId: transferStatus.transferId,
+          }
+        : state === 'target-active'
+          ? {
+              expectedEndpoint,
+              projectId: PROJECT_ID,
+              service: {
+                claimTransferredMembership: jest.fn(),
+                expire: jest.fn(async () => undefined),
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              },
+              state,
+              transferId: transferStatus.transferId,
+            }
+          : {
+              expectedEndpoint,
+              projectId: PROJECT_ID,
+              service: {
+                acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+                authenticateMemberCredential: jest.fn(async () => ({
+                  memberId: 'member-host' as const,
+                })),
+                expire: jest.fn(async () => undefined),
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                getProjectAuthorityTransfer: jest.fn(async () => transferStatus),
+                getTransferredMembershipClaim: jest.fn(),
+              },
+              state,
+              transferId: transferStatus.transferId,
+            };
+
+      await expect(coordinator.startAuthorityTransferRoute(registration)).rejects.toMatchObject({
+        safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
+      });
+      await new Promise<void>(resolve => {
+        pinnedPortBlocker.close(() => resolve());
+        pinnedPortBlocker.closeAllConnections();
+      });
+      await expect(coordinator.startAuthorityTransferRoute(registration)).resolves.toMatchObject({
+        endpoint: expectedEndpoint,
+      });
+    },
+    30_000,
+  );
+
+  it('retries Cloud-to-LAN recovery preparation on the exact durable endpoint', async () => {
+    const initial = await coordinator.prepareAuthorityTransferTarget();
+    const expectedEndpoint = initial.endpoint;
+    await initial.dispose();
+    const expectedUrl = new URL(expectedEndpoint);
+    const pinnedPortBlocker = createServer();
+    await new Promise<void>((resolve, reject) => {
+      pinnedPortBlocker.once('error', reject);
+      pinnedPortBlocker.listen(Number(expectedUrl.port), expectedUrl.hostname, resolve);
+    });
+
+    await expect(
+      coordinator.prepareAuthorityTransferTarget(expectedEndpoint),
+    ).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
+    });
+    await new Promise<void>(resolve => {
+      pinnedPortBlocker.close(() => resolve());
+      pinnedPortBlocker.closeAllConnections();
+    });
+    const recovered = await coordinator.prepareAuthorityTransferTarget(expectedEndpoint);
+    expect(recovered.endpoint).toBe(expectedEndpoint);
+    await recovered.dispose();
+  }, 30_000);
 
   it('traverses bounded activity pages larger than one LAN response', async () => {
     await coordinator.startProject(PROJECT_ID);

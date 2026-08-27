@@ -101,6 +101,7 @@ function receipt(): CollabTransferredMembershipRedemptionReceipt {
 
 class MemoryStore implements AuthorityTransferClaimantStore {
   failNextRemove = false;
+  failNextSavePhase: AuthorityTransferClaimantRecord['phase'] | null = null;
   record: AuthorityTransferClaimantRecord | null = null;
   readonly phases: string[] = [];
 
@@ -116,6 +117,10 @@ class MemoryStore implements AuthorityTransferClaimantStore {
     return existed;
   };
   save = async (record: AuthorityTransferClaimantRecord) => {
+    if (this.failNextSavePhase === record.phase) {
+      this.failNextSavePhase = null;
+      throw new Error('simulated claimant progress crash');
+    }
     this.record = record;
     this.phases.push(record.phase);
   };
@@ -212,6 +217,57 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         expect.objectContaining({ phase: 'source-acknowledged' }),
         expect.any(Object),
       );
+    },
+  );
+
+  it.each(['lan-to-cloud', 'cloud-to-lan'] as const)(
+    'recovers %s after convergence commits before claimant progress',
+    async (direction) => {
+      const store = new MemoryStore();
+      let membershipConverted = false;
+      store.failNextSavePhase = 'membership-converged';
+      const first = new AuthorityTransferClaimantCoordinator({
+        convergence: {
+          converge: async () => { membershipConverted = true; },
+        },
+        createCredential: () => TARGET_CREDENTIAL,
+        lanTarget: direction === 'cloud-to-lan' ? LAN_TARGET : null,
+        now: () => new Date('2026-08-27T00:02:00.000Z'),
+        source: {
+          acknowledgeRedemption: async () => undefined,
+          getClaim: async () => claim(),
+        },
+        store,
+        target: { claimTransferredMembership: async () => receipt() },
+      });
+
+      await expect(first.start({
+        memberId: MEMBER_ID,
+        operationIntentId: INTENT_ID,
+        status: completed(direction),
+      })).rejects.toThrow('simulated claimant progress crash');
+      expect(membershipConverted).toBe(true);
+      expect(store.record?.phase).toBe('source-acknowledged');
+
+      const recoverConvertedMembership = jest.fn(async () => {
+        expect(membershipConverted).toBe(true);
+      });
+      const unavailable = jest.fn(async () => {
+        throw new Error('remote transport must remain unavailable');
+      });
+      const restarted = new AuthorityTransferClaimantCoordinator({
+        convergence: { converge: recoverConvertedMembership },
+        lanTarget: direction === 'cloud-to-lan' ? LAN_TARGET : null,
+        source: { acknowledgeRedemption: unavailable, getClaim: unavailable },
+        store,
+        target: { claimTransferredMembership: unavailable },
+      });
+
+      await restarted.resume(PROJECT_ID);
+
+      expect(recoverConvertedMembership).toHaveBeenCalledTimes(1);
+      expect(unavailable).not.toHaveBeenCalled();
+      expect(store.record).toBeNull();
     },
   );
 

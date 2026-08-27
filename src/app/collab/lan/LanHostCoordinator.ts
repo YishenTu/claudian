@@ -591,8 +591,36 @@ export class LanHostCoordinator {
         && this.authorityTransferRoutes.size === 0;
       if (firstListenerOwner) await this.acquireHostLock();
       try {
-        if (!this.listener) this.listener = await this.startListener();
+        const expectedEndpoint = registration.expectedEndpoint
+          ?? (registration.state === 'source-active' ? null : (this.listener?.endpoint ?? null));
+        if (!this.listener) this.listener = await this.startListener(expectedEndpoint);
         this.assertOpen();
+        if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
+          throw hostError(
+            'endpoint-unreachable',
+            'authority-transfer-expected-endpoint-unavailable',
+          );
+        }
+        const current = this.authorityTransferRoutes.resolve(registration.projectId);
+        if (
+          (
+            current?.state === 'terminal-source'
+            && registration.state === 'terminal-source'
+            && current.transferId === registration.transferId
+          )
+          || (
+            current?.state === 'target-active'
+            && registration.state === 'target-active'
+            && current.transferId === registration.transferId
+          )
+        ) {
+          return {
+            caCertificatePem: this.listener.caCertificatePem,
+            caFingerprint: this.listener.caFingerprint,
+            endpoint: this.listener.endpoint,
+            projectId: registration.projectId,
+          };
+        }
         await this.authorityTransferRoutes.install(registration);
         this.scheduleAuthorityTransferExpiry(registration);
         this.startAddressMonitor();
@@ -617,6 +645,15 @@ export class LanHostCoordinator {
       if (!this.listener) {
         throw hostError('operation-failed', 'authority-transfer-listener-missing');
       }
+      const expectedEndpoint = transition.next.state === 'source-active'
+        ? null
+        : (transition.next.expectedEndpoint ?? this.listener.endpoint);
+      if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
+        throw hostError(
+          'endpoint-unreachable',
+          'authority-transfer-expected-endpoint-unavailable',
+        );
+      }
       await this.authorityTransferRoutes.transition(transition);
       this.scheduleAuthorityTransferExpiry(transition.next);
       return {
@@ -639,7 +676,30 @@ export class LanHostCoordinator {
     });
   }
 
-  prepareAuthorityTransferTarget(): Promise<LanHostAuthorityTransferPreparation> {
+  pinAuthorityTransferSourceEndpoint(projectId: CollabProjectId): Promise<string> {
+    return this.operationQueue.run(async () => {
+      this.assertOpen();
+      if (!this.listener) {
+        throw hostError('endpoint-unreachable', 'authority-transfer-listener-missing');
+      }
+      const endpoint = this.listener.endpoint;
+      this.authorityTransferRoutes.pinSourceActiveEndpoint(projectId, endpoint);
+      return endpoint;
+    });
+  }
+
+  unpinAuthorityTransferSourceEndpoint(
+    projectId: CollabProjectId,
+    expectedEndpoint: string,
+  ): Promise<void> {
+    return this.operationQueue.run(async () => {
+      this.authorityTransferRoutes.unpinSourceActiveEndpoint(projectId, expectedEndpoint);
+    });
+  }
+
+  prepareAuthorityTransferTarget(
+    expectedEndpoint: string | null = null,
+  ): Promise<LanHostAuthorityTransferPreparation> {
     return this.operationQueue.run(async () => {
       this.assertOpen();
       const token = Symbol('authority-transfer-target');
@@ -651,8 +711,14 @@ export class LanHostCoordinator {
         && this.authorityTransferPreparations.size === 0;
       if (firstListenerOwner) await this.acquireHostLock();
       try {
-        if (!this.listener) this.listener = await this.startListener();
+        if (!this.listener) this.listener = await this.startListener(expectedEndpoint);
         this.assertOpen();
+        if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
+          throw hostError(
+            'endpoint-unreachable',
+            'authority-transfer-expected-endpoint-unavailable',
+          );
+        }
         this.authorityTransferPreparations.add(token);
         this.startAddressMonitor();
         const listener = this.listener;
@@ -720,6 +786,7 @@ export class LanHostCoordinator {
   }
 
   activateAuthorityTransferTerminalSource(input: {
+    readonly expectedEndpoint: string;
     readonly projectId: CollabProjectId;
     readonly relinquishmentProof: CollabAuthorityRelinquishmentProof;
     readonly service: LanAuthorityTransferTerminalSourceService;
@@ -729,6 +796,12 @@ export class LanHostCoordinator {
       this.assertOpen();
       if (!this.listener) {
         throw hostError('operation-failed', 'authority-transfer-listener-missing');
+      }
+      if (this.listener.endpoint !== input.expectedEndpoint) {
+        throw hostError(
+          'endpoint-unreachable',
+          'authority-transfer-expected-endpoint-unavailable',
+        );
       }
       const current = this.authorityTransferRoutes.resolve(input.projectId);
       if (
@@ -746,6 +819,7 @@ export class LanHostCoordinator {
         throw hostError('operation-failed', 'authority-transfer-source-route-missing');
       }
       const next: LanAuthorityTransferRouteRegistration = {
+        expectedEndpoint: input.expectedEndpoint,
         projectId: input.projectId,
         service: input.service,
         state: 'terminal-source',
@@ -1324,19 +1398,38 @@ export class LanHostCoordinator {
     return { projectId, status: 'stopped' };
   }
 
-  private async startListener(): Promise<RunningListener> {
+  private async startListener(expectedEndpoint: string | null = null): Promise<RunningListener> {
     const addresses = this.options.getPrivateIpv4Addresses?.()
       ?? listPrivateIpv4Addresses();
-    const address = addresses[0];
+    let expected: URL | null = null;
+    if (expectedEndpoint !== null) {
+      try {
+        expected = new URL(expectedEndpoint);
+      } catch {
+        throw hostError('endpoint-unreachable', 'authority-transfer-expected-endpoint-invalid');
+      }
+      if (
+        expected.protocol !== 'https:'
+        || expected.origin !== expectedEndpoint
+        || expected.port === ''
+        || isIP(expected.hostname) !== 4
+      ) {
+        throw hostError('endpoint-unreachable', 'authority-transfer-expected-endpoint-invalid');
+      }
+    }
+    const address = expected?.hostname ?? addresses[0];
     if (
       !address
       || isIP(address) !== 4
       || (!isPrivateIpv4(address) && address !== '127.0.0.1')
+      || (expected !== null && !addresses.includes(address))
     ) {
       throw hostError('endpoint-unreachable', 'private-ipv4-unavailable');
     }
     const identity = await this.tlsIdentity.issueServerIdentity(address);
-    const candidates = this.options.portCandidates ?? defaultPortCandidates();
+    const candidates = expected
+      ? [Number(expected.port)]
+      : (this.options.portCandidates ?? defaultPortCandidates());
     if (
       candidates.length === 0
       || candidates.some(port => !Number.isInteger(port) || port < 0 || port > 65_535)
@@ -1393,7 +1486,12 @@ export class LanHostCoordinator {
         webSocketServer,
       };
     }
-    throw hostError('endpoint-unreachable', 'host-port-range-unavailable');
+    throw hostError(
+      'endpoint-unreachable',
+      expected
+        ? 'authority-transfer-expected-endpoint-unavailable'
+        : 'host-port-range-unavailable',
+    );
   }
 
   private createGitProxy(

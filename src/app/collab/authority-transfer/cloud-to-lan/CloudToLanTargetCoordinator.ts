@@ -49,7 +49,7 @@ export interface CloudToLanTargetStageResult {
 
 export interface CloudToLanTargetEffects {
   dispose?(): void;
-  prepareTarget?(): Promise<Readonly<{ readonly targetUrl: string }>>;
+  prepareTarget?(expectedEndpoint?: string): Promise<Readonly<{ readonly targetUrl: string }>>;
   acceptanceRequest(
     record: AuthorityTransferRecord,
     options?: CollabOperationOptions,

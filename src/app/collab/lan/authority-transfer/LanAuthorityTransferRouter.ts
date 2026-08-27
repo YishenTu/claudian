@@ -120,6 +120,7 @@ interface RouteRegistrationBase {
 
 export interface LanAuthorityTransferSourceActiveRegistration
   extends RouteRegistrationBase {
+  readonly expectedEndpoint?: string;
   readonly hostMemberId: CollabMemberId;
   readonly service: LanAuthorityTransferSourceActiveService;
   readonly state: 'source-active';
@@ -128,6 +129,7 @@ export interface LanAuthorityTransferSourceActiveRegistration
 export interface LanAuthorityTransferTargetOnlyStagedRegistration
   extends RouteRegistrationBase {
   readonly credentialHash: string;
+  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTargetStagedService;
   readonly state: 'target-only-staged';
   readonly transferId: string;
@@ -135,6 +137,7 @@ export interface LanAuthorityTransferTargetOnlyStagedRegistration
 
 export interface LanAuthorityTransferTargetActiveRegistration
   extends RouteRegistrationBase {
+  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTargetActiveService;
   readonly state: 'target-active';
   readonly transferId: string;
@@ -142,6 +145,7 @@ export interface LanAuthorityTransferTargetActiveRegistration
 
 export interface LanAuthorityTransferTerminalSourceRegistration
   extends RouteRegistrationBase {
+  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTerminalSourceService;
   readonly state: 'terminal-source';
   readonly transferId: string;

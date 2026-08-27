@@ -73,6 +73,8 @@ export interface LanToCloudSourceEffects {
     request: RequestLanToCloudTransferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus>;
+  releaseSourceEndpoint?(record: AuthorityTransferRecord, endpoint: string): Promise<void>;
+  sourceEndpoint?(record: AuthorityTransferRecord): Promise<string>;
 }
 
 export interface LanToCloudSourceCoordinatorOptions {
@@ -139,18 +141,43 @@ export class LanToCloudSourceCoordinator {
     if (!existing || existing.transferId !== request.transferId) {
       throw transferError('lan-to-cloud-proposal-missing');
     }
+    const sourceLanEndpoint = await this.options.source.sourceEndpoint?.(existing);
+    if (!sourceLanEndpoint) {
+      throw transferError('lan-to-cloud-source-endpoint-missing');
+    }
     const owned = createAuthorityTransferRecord({
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: existing.operationIntentId,
+      sourceLanEndpoint,
       stagingDirectoryName: existing.stagingDirectoryName,
       status: existing.status,
     });
-    const recoverableRequest = await this.options.source.acceptanceRequest(owned, options);
-    if (JSON.stringify(recoverableRequest) !== JSON.stringify(request)) {
-      throw transferError('lan-to-cloud-host-acceptance-mismatch');
+    try {
+      const recoverableRequest = await this.options.source.acceptanceRequest(owned, options);
+      if (JSON.stringify(recoverableRequest) !== JSON.stringify(request)) {
+        throw transferError('lan-to-cloud-host-acceptance-mismatch');
+      }
+      await this.options.persistence.advance(owned, existing.status.phase);
+    } catch (error) {
+      let durable: AuthorityTransferRecord | null = null;
+      let durableReadSucceeded = false;
+      try {
+        durable = await this.options.persistence.load(existing.projectId);
+        durableReadSucceeded = true;
+      } catch {
+        // An ambiguous durable write must retain the runtime endpoint pin.
+      }
+      const proposalProven = durableReadSucceeded
+        && durable?.transferId === existing.transferId
+        && durable.lifecycleOwnership === 'proposal'
+        && durable.sourceLanEndpoint === null;
+      if (proposalProven && this.options.source.releaseSourceEndpoint) {
+        await this.options.source.releaseSourceEndpoint(existing, sourceLanEndpoint)
+          .catch(() => undefined);
+      }
+      throw error;
     }
-    await this.options.persistence.advance(owned, existing.status.phase);
     return this.resumeRecord(owned, options);
   }
 

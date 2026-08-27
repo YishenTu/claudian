@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -26,6 +26,7 @@ import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/A
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
 import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
+import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import type { CloudAuthorityLifecycleSession } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -433,8 +434,69 @@ describe('production authority-transfer effects', () => {
       stagingDirectoryName: proposed.stagingDirectoryName,
       status: completedStatus,
     });
+    await targetFoundation.local.projects.authorityTransferRecords.save(completedRecord);
     await targetEffects.activate(completedRecord, relinquishmentProof);
-    await targetEffects.converge(completedRecord, relinquishmentProof);
+    const recoveringEffects = () => new ProductionCloudToLanTargetEffects({
+      cloudSession: null,
+      convergence,
+      foundation: targetFoundation,
+      persistence: targetFoundation.authorityTransfers,
+      projectId: PROJECT_ID,
+    });
+    if (!targetAuthority) throw new Error('Missing imported target authority');
+    const targetStatePath = path.join(
+      targetAuthority.authorityDirectory,
+      'authority-transfer-target.json',
+    );
+    const exactTargetState = await readFile(targetStatePath, 'utf8');
+    const tamperedTargetState = JSON.parse(exactTargetState) as {
+      targetProof: string;
+    };
+    const tamperedTargetProof = JSON.parse(
+      Buffer.from(tamperedTargetState.targetProof, 'base64url').toString('utf8'),
+    ) as { payload: { receiptKeyId: string } };
+    tamperedTargetProof.payload.receiptKeyId = 'tampered-receipt-key';
+    tamperedTargetState.targetProof = Buffer.from(
+      JSON.stringify(tamperedTargetProof),
+      'utf8',
+    ).toString('base64url');
+    await writeFile(targetStatePath, `${JSON.stringify(tamperedTargetState)}\n`);
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-proof-invalid' },
+    });
+    await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID))
+      .resolves.toMatchObject({ authority: { kind: 'cloud' } });
+    await writeFile(targetStatePath, exactTargetState);
+
+    const snapshotReadsBeforeRecovery = cloudSession.readSnapshot as jest.Mock;
+    const snapshotReadCount = snapshotReadsBeforeRecovery.mock.calls.length;
+    const repairIndex = jest.spyOn(
+      targetFoundation.local.projects,
+      'repairIndexFromMemberships',
+    );
+    repairIndex.mockRejectedValueOnce(new Error('simulated post-membership crash'));
+
+    await expect(recoveringEffects().restoreCompleted(completedRecord))
+      .rejects.toThrow('simulated post-membership crash');
+    const convertedMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!convertedMembership || convertedMembership.authority.kind !== 'lan') {
+      throw new Error('Missing converted target membership');
+    }
+    const exactConvertedMembership = convertedMembership as CollabLocalLanMembershipRecord;
+    await targetFoundation.local.projects.saveMembership({
+      ...exactConvertedMembership,
+      authority: {
+        ...exactConvertedMembership.authority,
+        hostCaFingerprint: 'f'.repeat(64),
+      },
+    });
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
+    });
+    expect(repairIndex).toHaveBeenCalledTimes(1);
+    await targetFoundation.local.projects.saveMembership(exactConvertedMembership);
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    expect(snapshotReadsBeforeRecovery).toHaveBeenCalledTimes(snapshotReadCount);
 
     expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
     await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({

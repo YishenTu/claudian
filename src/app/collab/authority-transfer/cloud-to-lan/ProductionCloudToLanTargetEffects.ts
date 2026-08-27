@@ -1,10 +1,14 @@
 import {
+  constants as cryptoConstants,
   createHash,
   createPrivateKey,
+  createPublicKey,
   generateKeyPairSync,
   randomBytes,
   sign,
   timingSafeEqual,
+  verify,
+  X509Certificate,
 } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { createReadStream } from 'node:fs';
@@ -47,14 +51,21 @@ import type {
   CloudToLanTargetStageResult,
 } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
 import type { AuthorityTransferPersistence } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
-import type { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
-import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  ClaudianCollabService,
+  CollabAuthorityFoundation,
+} from '@/app/collab/ClaudianCollabService';
+import {
+  isCollabLocalCloudMembership,
+  isCollabLocalLanMembership,
+} from '@/app/collab/CollabLocalProjectRepository';
 import type {
   LanAuthorityTransferRouteRegistration,
   LanAuthorityTransferTargetStagedService,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouter';
 import { PersistentLanAuthorityTransferTargetActiveService } from '@/app/collab/lan/authority-transfer/PersistentLanAuthorityTransferServices';
 import type { LanHostAuthorityTransferPreparation } from '@/app/collab/lan/LanHostCoordinator';
+import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
 import type { CloudAuthorityLifecycleSession } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabCloudProjectSnapshot, CollabOperationOptions } from '@/core/collab';
@@ -99,6 +110,92 @@ interface TargetProofEnvelope {
     readonly transferId: string;
   }>;
   readonly schemaVersion: 1;
+}
+
+const TARGET_PROOF_KEYS = [
+  'caCertificatePem',
+  'caFingerprint',
+  'certificate',
+  'payload',
+  'schemaVersion',
+] as const;
+const TARGET_PROOF_PAYLOAD_KEYS = [
+  'projectId',
+  'receiptKeyId',
+  'receiptPublicKey',
+  'targetAuthorityGeneration',
+  'targetHostMemberId',
+  'targetUrl',
+  'transferCredential',
+  'transferId',
+] as const;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+
+function hasExactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+function isCanonicalBase64Url(value: unknown, byteLength?: number): value is string {
+  if (typeof value !== 'string' || !BASE64URL_PATTERN.test(value)) return false;
+  const decoded = Buffer.from(value, 'base64url');
+  return decoded.toString('base64url') === value
+    && (byteLength === undefined || decoded.byteLength === byteLength);
+}
+
+function encodeTargetProofPayload(payload: TargetProofEnvelope['payload']): string {
+  return JSON.stringify({
+    projectId: payload.projectId,
+    receiptKeyId: payload.receiptKeyId,
+    receiptPublicKey: payload.receiptPublicKey,
+    targetAuthorityGeneration: payload.targetAuthorityGeneration,
+    targetHostMemberId: payload.targetHostMemberId,
+    targetUrl: payload.targetUrl,
+    transferCredential: payload.transferCredential,
+    transferId: payload.transferId,
+  });
+}
+
+function decodeTargetProof(value: string): TargetProofEnvelope {
+  if (!isCanonicalBase64Url(value) || Buffer.from(value, 'base64url').byteLength > 128 * 1024) {
+    throw targetError('authority-transfer-target-proof-invalid');
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+  } catch {
+    throw targetError('authority-transfer-target-proof-invalid');
+  }
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw targetError('authority-transfer-target-proof-invalid');
+  }
+  const envelope = decoded as Readonly<Record<string, unknown>>;
+  if (!hasExactKeys(envelope, TARGET_PROOF_KEYS) || envelope.schemaVersion !== 1) {
+    throw targetError('authority-transfer-target-proof-invalid');
+  }
+  if (!envelope.payload || typeof envelope.payload !== 'object' || Array.isArray(envelope.payload)) {
+    throw targetError('authority-transfer-target-proof-invalid');
+  }
+  const payload = envelope.payload as Readonly<Record<string, unknown>>;
+  if (
+    !hasExactKeys(payload, TARGET_PROOF_PAYLOAD_KEYS)
+    || typeof envelope.caCertificatePem !== 'string'
+    || envelope.caCertificatePem.length > 64 * 1024
+    || typeof envelope.caFingerprint !== 'string'
+    || !FINGERPRINT_PATTERN.test(envelope.caFingerprint)
+    || !isCanonicalBase64Url(envelope.certificate)
+    || Buffer.from(envelope.certificate, 'base64url').byteLength > 2048
+    || typeof payload.projectId !== 'string'
+    || typeof payload.receiptKeyId !== 'string'
+    || !isCanonicalBase64Url(payload.receiptPublicKey, 32)
+    || !Number.isSafeInteger(payload.targetAuthorityGeneration)
+    || (payload.targetAuthorityGeneration as number) < 1
+    || typeof payload.targetHostMemberId !== 'string'
+    || typeof payload.targetUrl !== 'string'
+    || !isCanonicalBase64Url(payload.transferCredential, 32)
+    || typeof payload.transferId !== 'string'
+  ) throw targetError('authority-transfer-target-proof-invalid');
+  return decoded as TargetProofEnvelope;
 }
 
 export interface ProductionCloudToLanTargetEffectsOptions {
@@ -324,9 +421,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     void preparation?.dispose().catch(() => undefined);
   }
 
-  async prepareTarget(): Promise<Readonly<{ readonly targetUrl: string }>> {
+  async prepareTarget(expectedEndpoint?: string): Promise<Readonly<{ readonly targetUrl: string }>> {
     if (!this.preparation) {
-      this.preparation = await this.options.foundation.lanHost.prepareAuthorityTransferTarget();
+      this.preparation = await this.options.foundation.lanHost.prepareAuthorityTransferTarget(
+        expectedEndpoint ?? null,
+      );
+    }
+    if (expectedEndpoint && this.preparation.endpoint !== expectedEndpoint) {
+      throw targetError('authority-transfer-target-url-mismatch');
     }
     return { targetUrl: this.preparation.endpoint };
   }
@@ -360,7 +462,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
           caCertificatePem: preparation.caCertificatePem,
           caFingerprint: preparation.caFingerprint,
           certificate: await signer.signRsaPssSha256(
-            Buffer.from(JSON.stringify(payload), 'utf8'),
+            Buffer.from(encodeTargetProofPayload(payload), 'utf8'),
           ),
           payload,
           schemaVersion: 1,
@@ -496,23 +598,30 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         record.projectId,
       );
       if (!membership) throw targetError('authority-transfer-membership-missing');
-      if (isCollabLocalCloudMembership(membership)) {
-        await this.convergeLocal(record, proof);
-        return;
-      }
-      if (this.now().getTime() >= Date.parse(record.status.expiresAt)) {
-        await this.expireActiveRouteUnlocked(record);
-        return;
-      }
+      const expired = this.now().getTime() >= Date.parse(record.status.expiresAt);
       const authority = await this.options.foundation.inspectAuthority(record.projectId);
       if (!authority) throw targetError('authority-transfer-target-authority-missing');
       const state = await readState(
         path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
       );
-      if (!state || state.transferId !== record.transferId || !state.claimBatch) {
+      if (!state) {
+        if (
+          expired
+          && isCollabLocalLanMembership(membership)
+          && membership.authority.endpoint === new URL(record.status.targetUrl).origin
+          && membership.hostOwnership.autoStart
+          && membership.hostOwnership.ownsAuthority
+        ) {
+          await this.options.foundation.lanHost.startProject(record.projectId);
+          await this.expireActiveRouteUnlocked(record);
+          return;
+        }
         throw targetError('authority-transfer-target-state-owner-mismatch');
       }
-      await this.startActiveRoute(record, state);
+      const targetProof = await this.assertActiveState(record, proof, state, authority);
+      if (!expired) await this.startActiveRoute(record, state);
+      await this.convergePersistedState(record, state, targetProof);
+      if (expired) await this.expireActiveRouteUnlocked(record);
     });
   }
 
@@ -540,6 +649,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!expected) throw targetError('authority-transfer-target-route-missing');
     const service = this.activeService(record);
     const next: LanAuthorityTransferRouteRegistration = {
+      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service,
       state: 'target-active',
@@ -600,6 +710,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   ): Promise<void> {
     if (this.activeRegistration) return;
     const registration: LanAuthorityTransferRouteRegistration = {
+      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service: this.activeService(record),
       state: 'target-active',
@@ -613,7 +724,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   private async activateLocal(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
-  ): Promise<Readonly<{ readonly state: TargetPrivateState }>> {
+  ): Promise<Readonly<{
+    readonly state: TargetPrivateState;
+    readonly targetProof: TargetProofEnvelope;
+  }>> {
     if (
       proof.projectId !== record.projectId
       || proof.transferId !== record.transferId
@@ -633,6 +747,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!state.claimBatch || !state.snapshot) {
       throw targetError('authority-transfer-target-stage-incomplete');
     }
+    const targetProof = await this.validateProof(state);
     const checkpoint = new AuthorityTransferCheckpointRepository();
     await authority.database.mutate(connection => checkpoint.activateImportedAuthority(
       connection,
@@ -642,7 +757,65 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       },
     ));
     await this.activateRoute(record, proof, state);
-    return { state };
+    return { state, targetProof };
+  }
+
+  private async assertActiveState(
+    record: AuthorityTransferRecord,
+    proof: CollabAuthorityRelinquishmentProof,
+    state: TargetPrivateState,
+    authority: CollabAuthorityFoundation,
+  ): Promise<TargetProofEnvelope> {
+    const targetProof = await this.validateProof(state);
+    if (
+      proof.projectId !== record.projectId
+      || proof.transferId !== record.transferId
+      || proof.sourceAuthority.kind !== 'cloud'
+      || proof.targetAuthority.kind !== 'lan'
+      || state.transferId !== record.transferId
+      || !state.claimBatch
+      || !state.snapshot
+      || state.claimBatch.projectId !== record.projectId
+      || state.claimBatch.transferId !== record.transferId
+      || state.claimBatch.targetAuthorityGeneration
+        !== record.status.targetAuthority.generation
+      || state.claimBatch.checkpointSha256 !== record.status.checkpointSha256
+      || state.snapshot.project.id !== record.projectId
+      || state.snapshot.currentMember.id !== targetProof.payload.targetHostMemberId
+      || targetProof.payload.projectId !== record.projectId
+      || targetProof.payload.transferId !== record.transferId
+      || targetProof.payload.targetAuthorityGeneration
+        !== record.status.targetAuthority.generation
+      || targetProof.payload.targetUrl !== record.status.targetUrl
+      || targetProof.payload.receiptKeyId !== state.receiptKey.receiptKeyId
+      || targetProof.payload.receiptPublicKey !== state.receiptKey.publicKey
+      || targetProof.payload.transferCredential !== state.transferCredential
+    ) throw targetError('authority-transfer-target-state-owner-mismatch');
+    let receiptPublicKey: string | undefined;
+    try {
+      receiptPublicKey = createPublicKey(createPrivateKey({
+        format: 'der',
+        key: Buffer.from(state.receiptKey.privateKey, 'base64url'),
+        type: 'pkcs8',
+      })).export({ format: 'jwk' }).x;
+    } catch {
+      throw targetError('authority-transfer-target-state-owner-mismatch');
+    }
+    if (
+      receiptPublicKey !== state.receiptKey.publicKey
+      || state.receiptKey.receiptKeyId !== `lan-${sha256(receiptPublicKey).slice(0, 32)}`
+    ) throw targetError('authority-transfer-target-state-owner-mismatch');
+    const project = await authority.database.read(connection => authority.projects.get(connection));
+    if (!project || project.hostMemberId !== targetProof.payload.targetHostMemberId) {
+      throw targetError('authority-transfer-target-host-mismatch');
+    }
+    await authority.database.mutate(connection => (
+      new AuthorityTransferCheckpointRepository().activateImportedAuthority(connection, {
+        projectId: record.projectId,
+        targetAuthorityGeneration: record.status.targetAuthority.generation,
+      })
+    ));
+    return targetProof;
   }
 
   private async bindClaim(
@@ -733,6 +906,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     };
     const registration: LanAuthorityTransferRouteRegistration = {
       credentialHash: sha256(Buffer.from(state.transferCredential, 'base64url')),
+      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service,
       state: 'target-only-staged',
@@ -834,23 +1008,34 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     ).toString('base64url');
   }
 
-  private requireProof(state: TargetPrivateState): TargetProofEnvelope {
+  private async validateProof(state: TargetPrivateState): Promise<TargetProofEnvelope> {
     if (!state.targetProof) throw targetError('authority-transfer-target-proof-missing');
+    const proof = decodeTargetProof(state.targetProof);
+    let certificate: X509Certificate;
     try {
-      return JSON.parse(
-        Buffer.from(state.targetProof, 'base64url').toString('utf8'),
-      ) as TargetProofEnvelope;
+      certificate = new X509Certificate(proof.caCertificatePem);
     } catch {
       throw targetError('authority-transfer-target-proof-invalid');
     }
-  }
-
-  private requirePreparationCertificate(state: TargetPrivateState): string {
-    return this.requireProof(state).caCertificatePem;
-  }
-
-  private requirePreparationFingerprint(state: TargetPrivateState): string {
-    return this.requireProof(state).caFingerprint;
+    const signer = await this.options.foundation.lanHost.hostCaSigner();
+    if (
+      !certificate.ca
+      || !certificate.verify(certificate.publicKey)
+      || fingerprintCertificatePem(proof.caCertificatePem) !== proof.caFingerprint
+      || proof.caCertificatePem !== signer.caCertificatePem
+      || proof.caFingerprint !== signer.caFingerprint
+      || !verify(
+        'sha256',
+        Buffer.from(encodeTargetProofPayload(proof.payload), 'utf8'),
+        {
+          key: certificate.publicKey,
+          padding: cryptoConstants.RSA_PKCS1_PSS_PADDING,
+          saltLength: 32,
+        },
+        Buffer.from(proof.certificate, 'base64url'),
+      )
+    ) throw targetError('authority-transfer-target-proof-invalid');
+    return proof;
   }
 
   private async cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
@@ -878,15 +1063,23 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<void> {
-    const { state } = await this.activateLocal(record, proof);
+    const { state, targetProof } = await this.activateLocal(record, proof);
+    await this.convergePersistedState(record, state, targetProof);
+  }
+
+  private async convergePersistedState(
+    record: AuthorityTransferRecord,
+    state: TargetPrivateState,
+    targetProof: TargetProofEnvelope,
+  ): Promise<void> {
     if (!state.snapshot) throw targetError('authority-transfer-target-stage-incomplete');
     const preparation = this.preparation;
     this.preparation = null;
     await preparation?.dispose();
     await this.options.convergence.cloudToLanHost({
       endpoint: record.status.targetUrl,
-      hostCaCertificatePem: this.requirePreparationCertificate(state),
-      hostCaFingerprint: this.requirePreparationFingerprint(state),
+      hostCaCertificatePem: targetProof.caCertificatePem,
+      hostCaFingerprint: targetProof.caFingerprint,
       memberCredential: state.hostCredential,
       snapshot: state.snapshot,
       status: record.status,

@@ -23,6 +23,19 @@ function assertNotCancelled(options: CollabOperationOptions): void {
   if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
 }
 
+export function authorityTransferClaimantRequiresSource(
+  record: AuthorityTransferClaimantRecord,
+  now: Date,
+): boolean {
+  if (
+    record.phase === 'prepared'
+    || record.phase === 'claim-retained'
+    || record.phase === 'credential-persisted'
+  ) return true;
+  return record.phase === 'target-claimed'
+    && now.getTime() < Date.parse(record.status.expiresAt);
+}
+
 function requiresNoRuntime(
   record: AuthorityTransferClaimantRecord,
   now: Date,
