@@ -1,35 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabMember, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
+import { type CollabMember, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
-import type {
-  CollabLocalLanMembershipRecord,
-  CollabLocalProjectRepository,
-} from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
-import type {
-  DemoteManagerResponse,
-  MembershipTerminationResponse,
-  PromoteManagerResponse,
-} from '@/app/collab/lan/LanCollabControlOperations';
 import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
 import type {
   ManagerResponsibilityOperationPort,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
-import {
-  type CancelManagerResponsibilityOfferInput,
-  type CreateInvitationInput,
-  type CreateManagerResponsibilityOfferInput,
-  type DemoteManagerInput,
-  type ManagerResponsibilityOfferInput,
-  MembershipControlClient,
-  type PromoteManagerInput,
-  type RemoveMemberInput,
-  type RevokeInvitationInput,
-} from '@/app/collab/membership/MembershipControlClient';
+import type {
+  CollabAuthorityMembershipControlPort,
+} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabLanProjectSnapshot,
   CollabManagerResponsibilityOfferSummary,
@@ -38,8 +19,6 @@ import type {
 import { type CollabCancelManagerResponsibilityOfferRequest, type CollabCoordinationSnapshot, type CollabCreateManagerResponsibilityOfferRequest, type CollabDemoteManagerRequest, type CollabInvitationView, type CollabOperationOptions, type CollabPromoteManagerRequest, type CollabRemoveMemberRequest, isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CONTROL_TIMEOUT_MS = 10_000;
-
 export interface CollabMembershipSnapshotPort {
   readCoordinationSnapshot(
     projectId: CollabProjectId,
@@ -47,43 +26,7 @@ export interface CollabMembershipSnapshotPort {
   ): Promise<CollabCoordinationSnapshot>;
 }
 
-export interface CollabMembershipControlClientPort {
-  acknowledgeManagerResponsibility(
-    input: ManagerResponsibilityOfferInput,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
-  createInvitation(input: CreateInvitationInput): Promise<CollabInvitationView>;
-  createManagerResponsibilityOffer(
-    input: CreateManagerResponsibilityOfferInput,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
-  cancelManagerResponsibilityOffer(
-    input: CancelManagerResponsibilityOfferInput,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
-  declineManagerResponsibility(
-    input: ManagerResponsibilityOfferInput,
-  ): Promise<CollabManagerResponsibilityOfferSummary>;
-  getManagerResponsibilityOffer(input: {
-    readonly memberCredential: string;
-    readonly offerId: string;
-    readonly projectId: string;
-    readonly signal?: AbortSignal;
-  }): Promise<CollabManagerResponsibilityOfferSummary>;
-  demoteManager(input: DemoteManagerInput): Promise<DemoteManagerResponse>;
-  promoteManager(input: PromoteManagerInput): Promise<PromoteManagerResponse>;
-  removeMember(input: RemoveMemberInput): Promise<MembershipTerminationResponse>;
-  revokeInvitation(input: RevokeInvitationInput): Promise<void>;
-}
-
-export interface CollabMembershipStoredHostTrust {
-  readonly caCertificatePem: string;
-  readonly caFingerprint: string;
-  readonly endpoint: string;
-  readonly projectId: string;
-}
-
 export interface CollabMembershipServiceOptions {
-  readonly createClient?: (
-    trust: CollabMembershipStoredHostTrust,
-  ) => CollabMembershipControlClientPort;
   readonly createIdempotencyKey?: (kind: string) => string;
 }
 
@@ -110,25 +53,10 @@ export interface CollabMembershipSafetyContext {
   readonly pendingLeaves: CollabMembershipPendingLeavePort;
 }
 
-interface MembershipSession {
-  readonly client: CollabMembershipControlClientPort;
-  readonly membership: CollabLocalLanMembershipRecord;
-}
-
 interface ManagerResponsibilityReconciliationRequest {
+  readonly memberId: CollabMemberId;
   readonly offerId: CollabOperationId;
   readonly projectId: CollabProjectId;
-}
-
-function membershipError(
-  code: 'host-stopped' | 'project-not-found',
-  reason: string,
-): CollabError {
-  return new CollabError({
-    code,
-    recoveryActions: code === 'host-stopped' ? ['restart-host', 'retry'] : ['retry'],
-    safeContext: { reason },
-  });
 }
 
 function administrationIntentKey(
@@ -148,19 +76,15 @@ function administrationIntentKey(
 }
 
 export class CollabMembershipService {
-  private readonly createClient: NonNullable<CollabMembershipServiceOptions['createClient']>;
   private readonly createIdempotencyKey: NonNullable<
     CollabMembershipServiceOptions['createIdempotencyKey']
   >;
   constructor(
-    private readonly projects: Pick<CollabLocalProjectRepository, 'loadMembership'>,
+    private readonly control: CollabAuthorityMembershipControlPort,
     private readonly snapshots: CollabMembershipSnapshotPort,
     options: CollabMembershipServiceOptions = {},
     private readonly safety: CollabMembershipSafetyContext,
   ) {
-    this.createClient = options.createClient ?? (trust => new MembershipControlClient(
-      new PinnedCollabHttpClient(trust, CONTROL_TIMEOUT_MS),
-    ));
     this.createIdempotencyKey = options.createIdempotencyKey ?? (kind => (
       `${kind}-${randomUUID().replaceAll('-', '')}`
     ));
@@ -172,7 +96,11 @@ export class CollabMembershipService {
   ): Promise<readonly CollabMember[]> {
     const result = await this.snapshots.readCoordinationSnapshot(projectId, options);
     if (result.snapshot.project.id !== projectId) {
-      throw membershipError('project-not-found', 'membership-snapshot-project-mismatch');
+      throw new CollabError({
+        code: 'project-not-found',
+        recoveryActions: ['retry'],
+        safeContext: { reason: 'membership-snapshot-project-mismatch' },
+      });
     }
     return result.snapshot.members;
   }
@@ -181,27 +109,22 @@ export class CollabMembershipService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabInvitationView> {
-    const session = await this.loadSession(projectId);
-    return session.client.createInvitation({
+    return this.control.membership('createInvitation', {
       idempotencyKey: this.createIdempotencyKey('create-invitation'),
-      memberCredential: session.membership.member.credential,
       projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
   }
 
   async revokeInvitation(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    const session = await this.loadSession(projectId);
-    await session.client.revokeInvitation({
+    const coordination = await this.snapshots.readCoordinationSnapshot(projectId, options);
+    await this.control.membership('revokeInvitation', {
       idempotencyKey: this.createIdempotencyKey('revoke-invitation'),
-      memberCredential: session.membership.member.credential,
-      memberId: session.membership.member.id,
+      memberId: coordination.snapshot.currentMember.id,
       projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
   }
 
   async promoteManager(
@@ -209,19 +132,16 @@ export class CollabMembershipService {
     options: CollabOperationOptions = {},
   ): Promise<void> {
     await this.safety.managerResponsibilityAdmission(request.projectId, async () => {
-      const session = await this.loadSession(request.projectId);
-      await session.client.promoteManager({
+      await this.control.membership('promoteManager', {
         idempotencyKey: administrationIntentKey(
           'promote-manager',
           request.intentId,
           this.createIdempotencyKey,
         ),
         managerResponsibilityOfferId: request.managerResponsibilityOfferId,
-        memberCredential: session.membership.member.credential,
         projectId: request.projectId,
         targetMemberId: request.targetMemberId,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
+      }, options);
     });
     await this.refreshProjection(request.projectId, options);
   }
@@ -230,18 +150,15 @@ export class CollabMembershipService {
     request: CollabDemoteManagerRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    const session = await this.loadSession(request.projectId);
-    await session.client.demoteManager({
+    await this.control.membership('demoteManager', {
       idempotencyKey: administrationIntentKey(
         'demote-manager',
         request.intentId,
         this.createIdempotencyKey,
       ),
-      memberCredential: session.membership.member.credential,
       projectId: request.projectId,
       targetMemberId: request.targetMemberId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
     await this.refreshProjection(request.projectId, options);
   }
 
@@ -249,18 +166,15 @@ export class CollabMembershipService {
     request: CollabRemoveMemberRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    const session = await this.loadSession(request.projectId);
-    await session.client.removeMember({
+    await this.control.membership('removeMember', {
       idempotencyKey: administrationIntentKey(
         'remove-member',
         request.intentId,
         this.createIdempotencyKey,
       ),
-      memberCredential: session.membership.member.credential,
       memberId: request.memberId,
       projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
     await this.refreshProjection(request.projectId, options);
   }
 
@@ -268,19 +182,16 @@ export class CollabMembershipService {
     request: CollabCreateManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    const session = await this.loadSession(request.projectId);
-    const summary = await session.client.createManagerResponsibilityOffer({
+    const summary = await this.control.membership('createManagerResponsibilityOffer', {
       idempotencyKey: administrationIntentKey(
         'manager-responsibility-offer',
         request.intentId,
         this.createIdempotencyKey,
       ),
-      memberCredential: session.membership.member.credential,
       projectId: request.projectId,
       purpose: request.purpose,
       targetMemberId: request.targetMemberId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
     return summary;
   }
 
@@ -294,14 +205,11 @@ export class CollabMembershipService {
         safeContext: { reason: 'manager-responsibility-target-leaving' },
       });
     }
-    const session = await this.loadSession(request.projectId);
-    const offered = await session.client.getManagerResponsibilityOffer({
-      memberCredential: session.membership.member.credential,
+    const offered = await this.control.membership('getManagerResponsibilityOffer', {
       offerId: request.offerId,
       projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
-    if (offered.targetMemberId !== session.membership.member.id) {
+    }, options);
+    if (offered.targetMemberId !== request.memberId) {
       throw new CollabError({
         code: 'manager-responsibility-pending',
         safeContext: { reason: 'manager-responsibility-offer-not-acknowledgeable' },
@@ -315,14 +223,12 @@ export class CollabMembershipService {
         safeContext: { reason: 'manager-responsibility-offer-not-acknowledgeable' },
       });
     }
-    const acknowledged = await session.client.acknowledgeManagerResponsibility({
-      expectedTargetMemberId: session.membership.member.id,
+    const acknowledged = await this.control.membership('acknowledgeManagerResponsibility', {
+      expectedTargetMemberId: request.memberId,
       idempotencyKey: `manager-ack-${request.offerId}`,
-      memberCredential: session.membership.member.credential,
       offerId: request.offerId,
       projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
     await this.safety.managerReceipts.save(request.projectId, acknowledged);
     return acknowledged;
   }
@@ -366,6 +272,7 @@ export class CollabMembershipService {
     }
     if (await this.safety.pendingLeaves.load(snapshot.project.id)) {
       const declined = await this.declineManagerResponsibilityUnlocked({
+        memberId: snapshot.currentMember.id,
         offerId: offer.offerId,
         projectId: snapshot.project.id,
       }, options);
@@ -373,6 +280,7 @@ export class CollabMembershipService {
       return declined;
     }
     return this.acknowledgeManagerResponsibilityUnlocked({
+      memberId: snapshot.currentMember.id,
       offerId: offer.offerId,
       projectId: snapshot.project.id,
     }, options);
@@ -382,15 +290,12 @@ export class CollabMembershipService {
     request: ManagerResponsibilityReconciliationRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    const session = await this.loadSession(request.projectId);
-    const summary = await session.client.declineManagerResponsibility({
-      expectedTargetMemberId: session.membership.member.id,
+    const summary = await this.control.membership('declineManagerResponsibility', {
+      expectedTargetMemberId: request.memberId,
       idempotencyKey: `manager-decline-${request.offerId}`,
-      memberCredential: session.membership.member.credential,
       offerId: request.offerId,
       projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
     await this.safety.managerReceipts.save(request.projectId, summary);
     return summary;
   }
@@ -399,14 +304,11 @@ export class CollabMembershipService {
     request: CollabCancelManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    const session = await this.loadSession(request.projectId);
-    return session.client.cancelManagerResponsibilityOffer({
+    return this.control.membership('cancelManagerResponsibilityOffer', {
       idempotencyKey: `manager-cancel-${request.offerId}`,
-      memberCredential: session.membership.member.credential,
       offerId: request.offerId,
       projectId: request.projectId,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    }, options);
   }
 
   private async refreshProjection(
@@ -416,29 +318,4 @@ export class CollabMembershipService {
     await this.snapshots.readCoordinationSnapshot(projectId, options).catch(() => undefined);
   }
 
-  private async loadSession(projectId: CollabProjectId): Promise<MembershipSession> {
-    const membership = await this.projects.loadMembership(projectId);
-    if (
-      !membership
-      || !isCollabLocalLanMembership(membership)
-      || membership.project.id !== projectId
-    ) {
-      throw membershipError('project-not-found', 'membership-control-membership-missing');
-    }
-    const endpoint = membership.authority.endpoint;
-    const caCertificatePem = membership.authority.hostCaCertificatePem;
-    const caFingerprint = membership.authority.hostCaFingerprint;
-    if (!endpoint || !caCertificatePem || !caFingerprint) {
-      throw membershipError('host-stopped', 'membership-control-host-unavailable');
-    }
-    return {
-      client: this.createClient({
-        caCertificatePem,
-        caFingerprint,
-        endpoint,
-        projectId,
-      }),
-      membership,
-    };
-  }
 }

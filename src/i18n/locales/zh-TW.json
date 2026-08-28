@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "區域網路 Host",
+      "hostedHere": "託管於此裝置",
+      "hostedElsewhere": "託管於另一台裝置",
+      "legacyClaimConfirmation": "使用此裝置作為 Host 擁有者？",
+      "legacyClaimAction": "使用此裝置",
       "status": {
         "stopped": "已停止",
         "starting": "正在啟動",

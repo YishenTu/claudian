@@ -15,11 +15,10 @@ import { CollabError, type CollabRecoveryAction } from '@/core/collab/ClaudianCo
 const PUBLISH_COMMIT_MESSAGE = 'Update project files';
 
 export interface PublishProjectContext {
-  readonly allowHostRemoteRepair: boolean;
   readonly memberId: string;
   readonly personalRef: string;
   readonly projectId: CollabProjectId;
-  readonly remoteUrl: string;
+  readonly remoteUrl: string | null;
   readonly repositoryPath: string;
 }
 
@@ -324,9 +323,9 @@ function conflictDescriptorFingerprint(descriptor: CollabConflictDescriptor): st
 }
 
 export class PublishCoordinator {
-  private readonly createOperationId: () => CollabOperationId;
+   readonly #createOperationId: () => CollabOperationId;
   private readonly now: () => Date;
-  private readonly operationQueue = new SerialTaskQueue();
+   readonly #operationQueue = new SerialTaskQueue();
 
   constructor(
     private readonly projects: PublishProjectPort,
@@ -338,7 +337,7 @@ export class PublishCoordinator {
     private readonly comparisons: PublishComparisonPort,
     private readonly options: PublishCoordinatorOptions = {},
   ) {
-    this.createOperationId = options.createOperationId ?? randomUUID;
+    this.#createOperationId = options.createOperationId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -346,7 +345,7 @@ export class PublishCoordinator {
     request: CollabPublishRequest,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.operationQueue.run(() => this.publishExclusive(
+    return this.#operationQueue.run(() => this.#publishExclusive(
       request.projectId,
       normalizeCollabPublishDescription(request.description),
       options.signal,
@@ -358,7 +357,7 @@ export class PublishCoordinator {
     conflict: CollabConflictDescriptor,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.operationQueue.run(() => this.publishConflictResolutionExclusive(
+    return this.#operationQueue.run(() => this.#publishConflictResolutionExclusive(
       request,
       conflict,
       options.signal,
@@ -369,14 +368,14 @@ export class PublishCoordinator {
     request: CollabConfirmPublishRequest,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.operationQueue.run(() => this.confirmExclusive(request, options.signal));
+    return this.#operationQueue.run(() => this.#confirmExclusive(request, options.signal));
   }
 
   captureConflict(
     descriptor: CollabConflictDescriptor,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<void> {
-    return this.operationQueue.run(() => this.captureConflictExclusive(descriptor, options.signal));
+    return this.#operationQueue.run(() => this.#captureConflictExclusive(descriptor, options.signal));
   }
 
   prepareReview(
@@ -384,14 +383,14 @@ export class PublishCoordinator {
     operationId: CollabOperationId,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabPublicationReview> {
-    return this.operationQueue.run(() => this.prepareReviewExclusive(
+    return this.#operationQueue.run(() => this.#prepareReviewExclusive(
       projectId,
       operationId,
       options.signal,
     ));
   }
 
-  private async prepareReviewExclusive(
+   async #prepareReviewExclusive(
     projectId: CollabProjectId,
     operationId: CollabOperationId,
     signal?: AbortSignal,
@@ -399,28 +398,28 @@ export class PublishCoordinator {
     throwIfCancelled(signal);
     const context = await this.projects.load(projectId);
     await this.projects.revalidate(context);
-    const state = await this.loadState(projectId);
-    const operation = this.requirePhase(state, 'review-ready');
+    const state = await this.#loadState(projectId);
+    const operation = this.#requirePhase(state, 'review-ready');
     if (operation.operationId !== operationId) {
       throw publishError('stale-request-head', 'publication-review-operation-changed', [
         'retry',
       ]);
     }
     const current = await this.repository.inspect(context, signal);
-    this.assertCapturedSnapshot(current, operation);
-    await this.candidates.assertRetained(context, this.candidateInput(operation), signal);
-    await this.assertStateExact(state);
-    return this.buildReview(state, context, operation, signal);
+    this.#assertCapturedSnapshot(current, operation);
+    await this.candidates.assertRetained(context, this.#candidateInput(operation), signal);
+    await this.#assertStateExact(state);
+    return this.#buildReview(state, context, operation, signal);
   }
 
-  private async captureConflictExclusive(
+   async #captureConflictExclusive(
     descriptor: CollabConflictDescriptor,
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfCancelled(signal);
     const context = await this.projects.load(descriptor.projectId);
     await this.projects.revalidate(context);
-    const state = await this.loadState(descriptor.projectId);
+    const state = await this.#loadState(descriptor.projectId);
     const current = await this.repository.inspect(context, signal);
     if (
       current.headOid !== descriptor.startingPersonalOid
@@ -454,7 +453,7 @@ export class PublishCoordinator {
       ) return;
       throw publishError('working-tree-busy', 'publication-operation-already-active', ['retry']);
     }
-    await this.assertStateExact(state);
+    await this.#assertStateExact(state);
     const timestamp = this.now().toISOString();
     await this.publicationState.save({
       ...state,
@@ -471,12 +470,12 @@ export class PublishCoordinator {
     });
   }
 
-  private async publishExclusive(
+   async #publishExclusive(
     projectId: CollabProjectId,
     description: string,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    const nextOperationId = this.createOperationId();
+    const nextOperationId = this.#createOperationId();
     let operationId = nextOperationId;
     const progress: PublishProgress = {
       durablePhase: null,
@@ -487,12 +486,12 @@ export class PublishCoordinator {
       throwIfCancelled(signal);
       const context = await this.projects.load(projectId);
       await this.projects.revalidate(context);
-      let state = await this.loadState(projectId);
+      let state = await this.#loadState(projectId);
       if (state.operation) {
         const activeOperation = state.operation;
         operationId = activeOperation.operationId;
         progress.headOid = activeOperation.contributionHeadOid;
-        progress.durablePhase = this.durablePhase(activeOperation.phase);
+        progress.durablePhase = this.#durablePhase(activeOperation.phase);
         if (activeOperation.phase === 'review-ready') {
           const current = await this.repository.inspect(context, signal);
           if (
@@ -500,9 +499,9 @@ export class PublishCoordinator {
             && current.workingTreeClean
             && current.changedFiles.length === 0
           ) {
-            return await this.resumeReview(state, context, progress, description, signal);
+            return await this.#resumeReview(state, context, progress, description, signal);
           }
-          const candidateOid = this.requireOperationOid(
+          const candidateOid = this.#requireOperationOid(
             activeOperation.candidateOid,
             'publication-review-candidate-missing',
           );
@@ -522,7 +521,7 @@ export class PublishCoordinator {
           return await this.finalize(state, context, progress, description, signal);
         }
         if (state.operation?.phase === 'captured') {
-          return await this.prepareCaptured(
+          return await this.#prepareCaptured(
             state,
             context,
             progress,
@@ -535,13 +534,13 @@ export class PublishCoordinator {
 
       let current = await this.repository.inspect(context, signal);
       progress.headOid = requireHead(current);
-      await this.reportPhase('validating');
+      await this.#reportPhase('validating');
 
       if (!current.workingTreeClean) {
         await this.repository.validateChangedFiles(context, current, signal);
         await this.beforeWrite(context, 'stage', current, signal);
         await this.repository.stageAll(context, current, signal);
-        await this.reportPhase('staging');
+        await this.#reportPhase('staging');
         current = await this.repository.inspect(context, signal);
 
         if (!current.workingTreeClean) {
@@ -555,7 +554,7 @@ export class PublishCoordinator {
           );
           progress.headOid = committedHead;
           progress.durablePhase = 'committed';
-          await this.reportPhase('committed');
+          await this.#reportPhase('committed');
           current = await this.repository.inspect(context, signal);
           if (current.headOid !== committedHead || !current.workingTreeClean) {
             throw publishError('working-tree-busy', 'publish-post-commit-state-changed', ['retry']);
@@ -586,7 +585,7 @@ export class PublishCoordinator {
       };
       await this.publicationState.save(state);
       progress.durablePhase = 'committed';
-      return await this.prepareCaptured(
+      return await this.#prepareCaptured(
         state,
         context,
         progress,
@@ -595,11 +594,11 @@ export class PublishCoordinator {
         signal,
       );
     } catch (error) {
-      return this.failureResult(projectId, operationId, progress, asCollabError(error));
+      return this.#failureResult(projectId, operationId, progress, asCollabError(error));
     }
   }
 
-  private async publishConflictResolutionExclusive(
+   async #publishConflictResolutionExclusive(
     request: CollabPublishRequest,
     conflict: CollabConflictDescriptor,
     signal?: AbortSignal,
@@ -614,8 +613,8 @@ export class PublishCoordinator {
       const description = normalizeCollabPublishDescription(request.description);
       const context = await this.projects.load(request.projectId);
       await this.projects.revalidate(context);
-      let state = await this.loadState(request.projectId);
-      const operation = this.requirePhase(state, 'captured');
+      let state = await this.#loadState(request.projectId);
+      const operation = this.#requirePhase(state, 'captured');
       if (
         conflict.projectId !== request.projectId
         || conflict.operationId !== operation.operationId
@@ -645,7 +644,7 @@ export class PublishCoordinator {
         await this.repository.validateChangedFiles(context, current, signal);
         await this.beforeWrite(context, 'stage', current, signal);
         await this.repository.stageAll(context, current, signal);
-        await this.reportPhase('staging');
+        await this.#reportPhase('staging');
         current = await this.repository.inspect(context, signal);
         if (!current.workingTreeClean) {
           await this.beforeWrite(context, 'commit', current, signal);
@@ -657,7 +656,7 @@ export class PublishCoordinator {
             signal,
           );
           progress.headOid = committedHead;
-          await this.reportPhase('committed');
+          await this.#reportPhase('committed');
           current = await this.repository.inspect(context, signal);
           if (
             current.headOid !== committedHead
@@ -702,7 +701,7 @@ export class PublishCoordinator {
         });
         await this.publicationState.save(state);
       }
-      return await this.prepareCaptured(
+      return await this.#prepareCaptured(
         state,
         context,
         progress,
@@ -711,7 +710,7 @@ export class PublishCoordinator {
         signal,
       );
     } catch (error) {
-      return this.failureResult(
+      return this.#failureResult(
         request.projectId,
         conflict.operationId,
         progress,
@@ -720,7 +719,7 @@ export class PublishCoordinator {
     }
   }
 
-  private async confirmExclusive(
+   async #confirmExclusive(
     request: CollabConfirmPublishRequest,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabPublishOutcome>> {
@@ -734,16 +733,16 @@ export class PublishCoordinator {
       const description = normalizeCollabPublishDescription(request.description);
       const context = await this.projects.load(request.projectId);
       await this.projects.revalidate(context);
-      const state = await this.loadState(request.projectId);
+      const state = await this.#loadState(request.projectId);
       const operation = state.operation;
       if (!operation || operation.phase !== 'review-ready') {
         throw publishError('stale-request-head', 'publication-review-not-current', ['retry']);
       }
-      const candidateOid = this.requireOperationOid(
+      const candidateOid = this.#requireOperationOid(
         operation.candidateOid,
         'publication-review-candidate-missing',
       );
-      const currentMainOid = this.requireOperationOid(
+      const currentMainOid = this.#requireOperationOid(
         operation.currentMainOid,
         'publication-review-main-missing',
       );
@@ -760,9 +759,9 @@ export class PublishCoordinator {
       }
       progress.headOid = operation.contributionHeadOid;
       const current = await this.repository.inspect(context, signal);
-      this.assertCapturedSnapshot(current, operation);
-      await this.candidates.assertRetained(context, this.candidateInput(operation), signal);
-      await this.assertStateExact(state);
+      this.#assertCapturedSnapshot(current, operation);
+      await this.candidates.assertRetained(context, this.#candidateInput(operation), signal);
+      await this.#assertStateExact(state);
       const confirmed = this.transition(state, operation, {
         phase: 'confirmed',
       });
@@ -770,7 +769,7 @@ export class PublishCoordinator {
       progress.durablePhase = 'prepared';
       return await this.finalize(confirmed, context, progress, description, signal);
     } catch (error) {
-      return this.failureResult(
+      return this.#failureResult(
         request.projectId,
         request.operationId,
         progress,
@@ -779,7 +778,7 @@ export class PublishCoordinator {
     }
   }
 
-  private async prepareCaptured(
+   async #prepareCaptured(
     state: CollabPublicationStateRecord,
     context: PublishProjectContext,
     progress: PublishProgress,
@@ -787,16 +786,16 @@ export class PublishCoordinator {
     requiresReview: boolean,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    const operation = this.requirePhase(state, 'captured');
+    const operation = this.#requirePhase(state, 'captured');
     let current = await this.repository.inspect(context, signal);
-    this.assertCapturedSnapshot(current, operation);
+    this.#assertCapturedSnapshot(current, operation);
     await this.beforeWrite(context, 'fetch', current, signal);
     await this.repository.fetch(context, current, signal);
     progress.durablePhase = 'fetching';
-    await this.reportPhase('fetching');
+    await this.#reportPhase('fetching');
     current = await this.repository.inspect(context, signal);
-    this.assertCapturedSnapshot(current, operation);
-    const personalProblem = this.personalRefProblem(current);
+    this.#assertCapturedSnapshot(current, operation);
+    const personalProblem = this.#personalRefProblem(current);
     if (personalProblem) throw personalProblem;
     const currentMainOid = requireAcceptedMain(current);
     const acceptedState = await this.repository.classifyAcceptedState(
@@ -806,9 +805,9 @@ export class PublishCoordinator {
       signal,
     );
     if (acceptedState.kind === 'conflicting') {
-      return this.conflict(acceptedState.conflict);
+      return this.#conflict(acceptedState.conflict);
     }
-    await this.assertStateExact(state);
+    await this.#assertStateExact(state);
 
     if (state.baseMainOid === currentMainOid) {
       if (acceptedState.kind !== 'current') {
@@ -824,10 +823,10 @@ export class PublishCoordinator {
         });
         await this.publicationState.save(reviewReady);
         progress.durablePhase = 'prepared';
-        return this.reviewRequired(
+        return this.#reviewRequired(
           reviewReady,
           context,
-          this.requirePhase(reviewReady, 'review-ready'),
+          this.#requirePhase(reviewReady, 'review-ready'),
           signal,
         );
       }
@@ -853,34 +852,34 @@ export class PublishCoordinator {
     });
     await this.publicationState.save(reviewReady);
     progress.durablePhase = 'prepared';
-    return this.reviewRequired(
+    return this.#reviewRequired(
       reviewReady,
       context,
-      this.requirePhase(reviewReady, 'review-ready'),
+      this.#requirePhase(reviewReady, 'review-ready'),
       signal,
     );
   }
 
-  private async resumeReview(
+   async #resumeReview(
     state: CollabPublicationStateRecord,
     context: PublishProjectContext,
     progress: PublishProgress,
     description: string,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    const operation = this.requirePhase(state, 'review-ready');
+    const operation = this.#requirePhase(state, 'review-ready');
     let current = await this.repository.inspect(context, signal);
-    this.assertCapturedSnapshot(current, operation);
+    this.#assertCapturedSnapshot(current, operation);
     await this.beforeWrite(context, 'fetch', current, signal);
     await this.repository.fetch(context, current, signal);
     current = await this.repository.inspect(context, signal);
-    this.assertCapturedSnapshot(current, operation);
+    this.#assertCapturedSnapshot(current, operation);
     const currentMainOid = requireAcceptedMain(current);
     if (operation.currentMainOid !== currentMainOid) {
-      return this.reprepare(state, context, current, progress, description, signal);
+      return this.#reprepare(state, context, current, progress, description, signal);
     }
-    await this.candidates.assertRetained(context, this.candidateInput(operation), signal);
-    return this.reviewRequired(state, context, operation, signal);
+    await this.candidates.assertRetained(context, this.#candidateInput(operation), signal);
+    return this.#reviewRequired(state, context, operation, signal);
   }
 
   private async finalize(
@@ -901,21 +900,21 @@ export class PublishCoordinator {
     await this.repository.fetch(context, current, signal);
     current = await this.repository.inspect(context, signal);
     const currentMainOid = requireAcceptedMain(current);
-    const preparedMainOid = this.requireOperationOid(
+    const preparedMainOid = this.#requireOperationOid(
       operation.currentMainOid,
       'publication-current-main-missing',
     );
     if (currentMainOid !== preparedMainOid) {
-      return this.reprepare(state, context, current, progress, description, signal);
+      return this.#reprepare(state, context, current, progress, description, signal);
     }
-    const candidateOid = this.requireOperationOid(
+    const candidateOid = this.#requireOperationOid(
       operation.candidateOid,
       'publication-candidate-missing',
     );
     if (operation.phase === 'confirmed') {
       if (candidateOid !== operation.contributionHeadOid) {
         await this.beforeWrite(context, 'integrate', current, signal);
-        await this.candidates.apply(context, current, this.candidateInput(operation), signal);
+        await this.candidates.apply(context, current, this.#candidateInput(operation), signal);
         current = await this.repository.inspect(context, signal);
       } else if (
         current.headOid !== operation.contributionHeadOid
@@ -929,10 +928,10 @@ export class PublishCoordinator {
         { phase: 'applied' },
       );
       await this.publicationState.save(state);
-      operation = this.requirePhase(state, 'applied');
+      operation = this.#requirePhase(state, 'applied');
       progress.headOid = candidateOid;
       progress.durablePhase = 'ref-updated';
-      await this.reportPhase('ref-updated');
+      await this.#reportPhase('ref-updated');
     }
 
     if (operation.phase === 'applied') {
@@ -960,11 +959,11 @@ export class PublishCoordinator {
       }
       state = this.transition(state, operation, { phase: 'pushed' });
       await this.publicationState.save(state);
-      operation = this.requirePhase(state, 'pushed');
+      operation = this.#requirePhase(state, 'pushed');
       progress.headOid = candidateOid;
       progress.remoteHeadOid = candidateOid;
       progress.durablePhase = 'pushed';
-      await this.reportPhase('pushed');
+      await this.#reportPhase('pushed');
     }
 
     current = await this.repository.inspect(context, signal);
@@ -999,7 +998,7 @@ export class PublishCoordinator {
       await this.repository.fetch(context, current, signal);
       current = await this.repository.inspect(context, signal);
       if (requireAcceptedMain(current) === preparedMainOid) throw collabError;
-      return this.reprepare(state, context, current, progress, description, signal);
+      return this.#reprepare(state, context, current, progress, description, signal);
     }
     if (
       request.memberId !== context.memberId
@@ -1023,7 +1022,7 @@ export class PublishCoordinator {
       updatedAt: completedAt,
     });
     progress.durablePhase = 'request-synchronized';
-    await this.reportPhase('request-synchronized');
+    await this.#reportPhase('request-synchronized');
     return {
       status: 'success',
       value: {
@@ -1036,7 +1035,7 @@ export class PublishCoordinator {
     };
   }
 
-  private async reprepare(
+   async #reprepare(
     state: CollabPublicationStateRecord,
     context: PublishProjectContext,
     current: PublishRepositorySnapshot,
@@ -1066,7 +1065,7 @@ export class PublishCoordinator {
         contributionHeadOid: headOid,
         createdAt: timestamp,
         currentMainOid: null,
-        operationId: this.createOperationId(),
+        operationId: this.#createOperationId(),
         phase: 'captured',
         updatedAt: timestamp,
       },
@@ -1075,16 +1074,16 @@ export class PublishCoordinator {
     await this.publicationState.save(next);
     progress.headOid = headOid;
     progress.durablePhase = 'committed';
-    return this.prepareCaptured(next, context, progress, description, true, signal);
+    return this.#prepareCaptured(next, context, progress, description, true, signal);
   }
 
-  private async reviewRequired(
+   async #reviewRequired(
     state: CollabPublicationStateRecord,
     context: PublishProjectContext,
     operation: CollabPublicationOperationRecord,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    const review = await this.buildReview(state, context, operation, signal);
+    const review = await this.#buildReview(state, context, operation, signal);
     return {
       status: 'success',
       value: {
@@ -1096,17 +1095,17 @@ export class PublishCoordinator {
     };
   }
 
-  private async buildReview(
+   async #buildReview(
     state: CollabPublicationStateRecord,
     context: PublishProjectContext,
     operation: CollabPublicationOperationRecord,
     signal?: AbortSignal,
   ): Promise<CollabPublicationReview> {
-    const candidateOid = this.requireOperationOid(
+    const candidateOid = this.#requireOperationOid(
       operation.candidateOid,
       'publication-review-candidate-missing',
     );
-    const currentMainOid = this.requireOperationOid(
+    const currentMainOid = this.#requireOperationOid(
       operation.currentMainOid,
       'publication-review-main-missing',
     );
@@ -1131,7 +1130,7 @@ export class PublishCoordinator {
     };
   }
 
-  private conflict(
+   #conflict(
     descriptor: CollabConflictDescriptor,
   ): CollabResult<CollabPublishOutcome> {
     return {
@@ -1143,7 +1142,7 @@ export class PublishCoordinator {
     };
   }
 
-  private assertCapturedSnapshot(
+   #assertCapturedSnapshot(
     snapshot: PublishRepositorySnapshot,
     operation: CollabPublicationOperationRecord,
   ): void {
@@ -1158,26 +1157,26 @@ export class PublishCoordinator {
     }
   }
 
-  private async assertStateExact(expected: CollabPublicationStateRecord): Promise<void> {
+   async #assertStateExact(expected: CollabPublicationStateRecord): Promise<void> {
     const actual = await this.publicationState.load(expected.projectId);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       throw publishError('working-tree-busy', 'publication-state-changed', ['retry']);
     }
   }
 
-  private candidateInput(operation: CollabPublicationOperationRecord): {
+   #candidateInput(operation: CollabPublicationOperationRecord): {
     readonly candidateOid: string;
     readonly contributionHeadOid: string;
     readonly currentMainOid: string;
     readonly operationId: CollabOperationId;
   } {
     return {
-      candidateOid: this.requireOperationOid(
+      candidateOid: this.#requireOperationOid(
         operation.candidateOid,
         'publication-candidate-missing',
       ),
       contributionHeadOid: operation.contributionHeadOid,
-      currentMainOid: this.requireOperationOid(
+      currentMainOid: this.#requireOperationOid(
         operation.currentMainOid,
         'publication-current-main-missing',
       ),
@@ -1185,7 +1184,7 @@ export class PublishCoordinator {
     };
   }
 
-  private durablePhase(
+   #durablePhase(
     phase: CollabPublicationOperationRecord['phase'],
   ): CollabOperationPhase {
     if (phase === 'captured') return 'committed';
@@ -1194,7 +1193,7 @@ export class PublishCoordinator {
     return 'pushed';
   }
 
-  private async loadState(projectId: CollabProjectId): Promise<CollabPublicationStateRecord> {
+   async #loadState(projectId: CollabProjectId): Promise<CollabPublicationStateRecord> {
     const state = await this.publicationState.load(projectId);
     if (state.projectId !== projectId) {
       throw publishError('repository-invalid', 'publication-state-project-mismatch', [
@@ -1204,12 +1203,12 @@ export class PublishCoordinator {
     return state;
   }
 
-  private requireOperationOid(value: string | null, reason: string): string {
+   #requireOperationOid(value: string | null, reason: string): string {
     if (!value) throw publishError('repository-invalid', reason, ['open-diagnostics']);
     return value;
   }
 
-  private requirePhase(
+   #requirePhase(
     state: CollabPublicationStateRecord,
     phase: CollabPublicationOperationRecord['phase'],
   ): CollabPublicationOperationRecord {
@@ -1234,7 +1233,7 @@ export class PublishCoordinator {
     });
   }
 
-  private personalRefProblem(snapshot: PublishRepositorySnapshot): CollabError | null {
+   #personalRefProblem(snapshot: PublishRepositorySnapshot): CollabError | null {
     if (!snapshot.personalRemoteOid) {
       return publishError('repository-invalid', 'publish-personal-remote-missing', [
         'retry',
@@ -1264,7 +1263,7 @@ export class PublishCoordinator {
     throwIfCancelled(signal);
   }
 
-  private failureResult(
+   #failureResult(
     projectId: CollabProjectId,
     operationId: CollabOperationId,
     progress: PublishProgress,
@@ -1325,7 +1324,7 @@ export class PublishCoordinator {
     return { error, status: 'failure' };
   }
 
-  private async reportPhase(phase: CollabOperationPhase): Promise<void> {
+   async #reportPhase(phase: CollabOperationPhase): Promise<void> {
     await this.options.onPhase?.(phase);
   }
 

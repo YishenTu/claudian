@@ -1,4 +1,9 @@
 import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
+
+import {
   CloudBootstrapCoordinator,
   type CloudBootstrapCoordinatorOptions,
 } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
@@ -36,6 +41,158 @@ function admitProjectRecovery(
 }
 
 describe('CloudBootstrapService', () => {
+  it('rejects a foreign former Host before creating a bootstrap coordinator', async () => {
+    const createCoordinator = jest.fn();
+    const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => {
+        throw new Error('foreign Host installation');
+      },
+      assertRecoveryOwner: () => undefined,
+      createCoordinator,
+      fenceUncertainProject: async () => undefined,
+      projectRecoveryAdmission: admitProjectRecovery,
+      recoverLocalArtifacts: async () => undefined,
+      transitions: {
+        load: async () => null,
+        list: async () => ({ blockedProjectIds: [], records: [], retryRequired: false }),
+      },
+    });
+
+    await expect(service.startFormerHost({
+      memberId: HOST_MEMBER_ID,
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    })).rejects.toThrow('foreign Host installation');
+    expect(createCoordinator).not.toHaveBeenCalled();
+    await service.close();
+  });
+
+  it('rejects foreign recovery before local fencing or coordinator effects', async () => {
+    const record = {
+      ...pendingTransition(),
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    };
+    const fenceUncertainProject = jest.fn(async () => undefined);
+    const createCoordinator = jest.fn();
+    const assertRecoveryOwner = jest.fn(() => {
+      throw new Error('foreign bootstrap recovery');
+    });
+    const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner,
+      createCoordinator,
+      fenceUncertainProject,
+      projectRecoveryAdmission: admitProjectRecovery,
+      recoverLocalArtifacts: jest.fn(async () => undefined),
+      transitions: {
+        load: async () => record,
+        list: async () => ({
+          blockedProjectIds: [],
+          records: [record],
+          retryRequired: false,
+        }),
+      },
+    });
+
+    await expect(service.prepareLocalRecovery())
+      .rejects.toThrow('foreign bootstrap recovery');
+    expect(assertRecoveryOwner).toHaveBeenCalledWith(TEST_INSTALLATION_A, PROJECT_ID);
+    expect(fenceUncertainProject).not.toHaveBeenCalled();
+    expect(createCoordinator).not.toHaveBeenCalled();
+    await service.close();
+  });
+
+  it('ignores a foreign terminal transition while preparing and recovering local Projects', async () => {
+    const local = {
+      ...pendingTransition(),
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      terminalCleanupCompleted: false,
+    } as CloudBootstrapTransitionRecord;
+    const foreignTerminal = {
+      ...pendingTransition('project-foreign-terminal', OTHER_MEMBER_ID),
+      attemptState: 'activated' as const,
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      terminalCleanupCompleted: true,
+    } as CloudBootstrapTransitionRecord;
+    const fenceUncertainProject = jest.fn(async () => undefined);
+    const recoverProject = jest.fn(async () => null);
+    const assertRecoveryOwner = jest.fn((ownerInstallationKey: string | undefined) => {
+      if (ownerInstallationKey !== TEST_INSTALLATION_A) {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
+        });
+      }
+    });
+    const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner,
+      createCoordinator: () => ({ recoverProject }) as unknown as CloudBootstrapCoordinator,
+      fenceUncertainProject,
+      projectRecoveryAdmission: admitProjectRecovery,
+      recoverLocalArtifacts: async () => undefined,
+      transitions: {
+        load: async projectId => projectId === PROJECT_ID ? local : foreignTerminal,
+        list: async () => ({
+          blockedProjectIds: [],
+          records: [local, foreignTerminal],
+          retryRequired: false,
+        }),
+      },
+    });
+
+    await expect(service.prepareLocalRecovery()).resolves.toBeUndefined();
+    await expect(service.recoverPending()).resolves.toBeUndefined();
+
+    expect(fenceUncertainProject).toHaveBeenCalledWith(PROJECT_ID);
+    expect(fenceUncertainProject).not.toHaveBeenCalledWith('project-foreign-terminal');
+    expect(recoverProject).toHaveBeenCalledWith(PROJECT_ID, expect.any(AbortSignal));
+    expect(recoverProject).not.toHaveBeenCalledWith(
+      'project-foreign-terminal',
+      expect.anything(),
+    );
+    await service.close();
+  });
+
+  it('surfaces an ownerless legacy transition instead of treating it as foreign', async () => {
+    const ownerless = {
+      ...pendingTransition(),
+      ownerInstallationKey: undefined,
+      terminalCleanupCompleted: false,
+    } as CloudBootstrapTransitionRecord;
+    const fenceUncertainProject = jest.fn(async () => undefined);
+    const assertRecoveryOwner = jest.fn((ownerInstallationKey: string | undefined) => {
+      if (ownerInstallationKey === undefined) {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
+        });
+      }
+    });
+    const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner,
+      createCoordinator: jest.fn(),
+      fenceUncertainProject,
+      projectRecoveryAdmission: admitProjectRecovery,
+      recoverLocalArtifacts: async () => undefined,
+      transitions: {
+        load: async () => ownerless,
+        list: async () => ({
+          blockedProjectIds: [],
+          records: [ownerless],
+          retryRequired: false,
+        }),
+      },
+    });
+
+    await expect(service.prepareLocalRecovery()).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+    expect(fenceUncertainProject).not.toHaveBeenCalled();
+    await service.close();
+  });
+
   it('fences every uncertain transition before local recovery preparation completes', async () => {
     const fenceUncertainProject = jest.fn(async (_projectId: string) => undefined);
     const recoverLocalArtifacts = jest.fn(async () => undefined);
@@ -45,6 +202,8 @@ describe('CloudBootstrapService', () => {
       operation: () => Promise<void>,
     ) => operation());
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator,
       fenceUncertainProject,
       projectRecoveryAdmission,
@@ -105,6 +264,7 @@ describe('CloudBootstrapService', () => {
       save: async (next: CloudBootstrapTransitionRecord) => { record = next; },
     };
     const createCoordinator = () => new CloudBootstrapCoordinator({
+      installationKey: TEST_INSTALLATION_A,
       binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud: {
         activate: async () => { throw new Error('unexpected activation'); },
@@ -158,6 +318,8 @@ describe('CloudBootstrapService', () => {
       },
     } satisfies CloudBootstrapCoordinatorOptions);
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission: admitProjectRecovery,
@@ -191,6 +353,8 @@ describe('CloudBootstrapService', () => {
       operation: () => Promise<void>,
     ) => operation());
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator,
       fenceUncertainProject,
       projectRecoveryAdmission,
@@ -261,6 +425,8 @@ describe('CloudBootstrapService', () => {
   it('fails closed before recovery or cancellation with a mismatched durable actor', async () => {
     const createCoordinator = jest.fn();
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission: admitProjectRecovery,
@@ -298,6 +464,8 @@ describe('CloudBootstrapService', () => {
     const startFormerHost = jest.fn(async () => ({ projectId: PROJECT_ID }));
     const submitParticipant = jest.fn(async () => ({ projectId: PROJECT_ID }));
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({
         startFormerHost,
         submitParticipant,
@@ -344,6 +512,8 @@ describe('CloudBootstrapService', () => {
       attemptState: 'activated' as const,
     }));
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({
         recoverProject,
         startFormerHost,
@@ -392,6 +562,8 @@ describe('CloudBootstrapService', () => {
       expect(delayMs).toBe(1_000);
     });
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({
         recoverProject,
         startFormerHost,
@@ -428,6 +600,8 @@ describe('CloudBootstrapService', () => {
     const startFormerHost = jest.fn().mockRejectedValue(failure);
     const scheduleRetry = jest.fn();
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({
         startFormerHost,
       }) as unknown as CloudBootstrapCoordinator,
@@ -463,6 +637,8 @@ describe('CloudBootstrapService', () => {
       expect(delayMs).toBe(1_000);
     });
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({ recoverProject }) as unknown as CloudBootstrapCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission,
@@ -515,6 +691,8 @@ describe('CloudBootstrapService', () => {
       return cancelRetry;
     });
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: ({ developmentActorId }) => ({
         recoverProject: developmentActorId === HOST_MEMBER_ID
           ? recoverHost
@@ -568,6 +746,8 @@ describe('CloudBootstrapService', () => {
       expect(delayMs).toBe(1_000);
     });
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({ recoverProject }) as unknown as CloudBootstrapCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission: admitProjectRecovery,
@@ -614,6 +794,8 @@ describe('CloudBootstrapService', () => {
       expect(delayMs).toBe(1_000);
     });
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({ recoverProject }) as unknown as CloudBootstrapCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission: admitProjectRecovery,
@@ -656,6 +838,8 @@ describe('CloudBootstrapService', () => {
       })
     ));
     const service = new CloudBootstrapService({
+      assertHostInstallationOwned: async () => undefined,
+      assertRecoveryOwner: () => undefined,
       createCoordinator: () => ({ recoverProject }) as unknown as CloudBootstrapCoordinator,
       fenceUncertainProject: async () => undefined,
       projectRecoveryAdmission: admitProjectRecovery,

@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "LAN-Host",
+      "hostedHere": "Auf diesem Gerät gehostet",
+      "hostedElsewhere": "Auf einem anderen Gerät gehostet",
+      "legacyClaimConfirmation": "Dieses Gerät als Host-Eigentümer verwenden?",
+      "legacyClaimAction": "Dieses Gerät verwenden",
       "status": {
         "stopped": "Gestoppt",
         "starting": "Wird gestartet",

@@ -31,7 +31,6 @@ describe('LocalReviewProjectPort', () => {
 
 function publishContext() {
   return {
-    allowHostRemoteRepair: false,
     memberId: 'member-reviewer',
     personalRef: 'refs/heads/members/member-reviewer',
     projectId: 'project-a',

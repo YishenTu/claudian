@@ -5,7 +5,6 @@ import type { PublishProjectContext } from '@/app/collab/publish/PublishCoordina
 const MAIN = '1'.repeat(40);
 const PERSONAL = '2'.repeat(40);
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',
@@ -15,7 +14,9 @@ const CONTEXT: PublishProjectContext = {
 
 function repository(includesAcceptedMain: boolean) {
   const git = {
+    addRemote: jest.fn().mockResolvedValue(undefined),
     countDivergence: jest.fn().mockResolvedValue({ leftOnly: 0, rightOnly: 0 }),
+    fetchFromUrl: jest.fn().mockResolvedValue(undefined),
     getWorkingTreeState: jest.fn().mockResolvedValue({
       branch: {
         aheadBy: 3,
@@ -28,6 +29,7 @@ function repository(includesAcceptedMain: boolean) {
     }),
     getWorkingTreeStatus: jest.fn().mockResolvedValue([]),
     isAncestor: jest.fn().mockResolvedValue(includesAcceptedMain),
+    listRemoteUrls: jest.fn().mockResolvedValue([CONTEXT.remoteUrl]),
     resolveRefs: jest.fn().mockResolvedValue(new Map([
       [CONTEXT.personalRef, PERSONAL],
       ['refs/remotes/origin/members/member-a', PERSONAL],
@@ -71,4 +73,19 @@ describe('NativeGitPublishRepository', () => {
       expect(git.countDivergence).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    'https://attacker.example/repository.git',
+    'https://192.168.0.2/v1/git/project-b/repository.git',
+  ])('rejects configured origin %s outside the synchronized Project authority before fetch', async remoteUrl => {
+    const { git, subject } = repository(true);
+    git.listRemoteUrls.mockResolvedValue([remoteUrl]);
+    const snapshot = await subject.inspect(CONTEXT);
+
+    await expect(subject.fetch(CONTEXT, snapshot)).rejects.toMatchObject({
+      code: 'repository-invalid',
+      safeContext: { reason: 'publish-origin-mismatch' },
+    });
+    expect(git.fetchFromUrl).not.toHaveBeenCalled();
+  });
 });

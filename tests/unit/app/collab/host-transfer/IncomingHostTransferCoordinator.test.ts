@@ -1,4 +1,7 @@
 import { createHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
+import {
+  createIncomingHostTransferIntentRecord,
+} from '@/app/collab/host-transfer/HostTransferRecovery';
 import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import {
@@ -109,7 +112,9 @@ describe('IncomingHostTransferCoordinator', () => {
       projections,
       recovery,
       {
+        installationKey: 'device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         now: () => new Date(currentNow),
+        syncProjection: projectId => events.push(`projection-${projectId}`),
         scheduleTerminalReceiptExpiry: (_delay, expire) => {
           scheduledReceiptExpiry = expire;
           return () => {
@@ -167,11 +172,12 @@ describe('IncomingHostTransferCoordinator', () => {
     };
   }
 
-  it('persists the provisional receiver before accepting and never activates before certificate', async () => {
+  it('persists installation ownership before provisional preparation and never activates before certificate', async () => {
     const instance = await acceptAndStage();
 
-    expect(events.slice(0, 4)).toEqual([
+    expect(events.slice(0, 5)).toEqual([
       'eligible',
+      'save-offered',
       'provisional',
       'save-accepted',
       'authority-accept',
@@ -188,7 +194,11 @@ describe('IncomingHostTransferCoordinator', () => {
       'activate-route',
       'save-target-active',
       'save-completed',
+      'projection-project-alpha',
     ]));
+    expect(events.indexOf('activate-route')).toBeLessThan(
+      events.indexOf('projection-project-alpha'),
+    );
     expect(projections.promoteTargetHost).toHaveBeenCalledWith({
       autoStart: true,
       endpoint: 'https://192.168.1.9:54545',
@@ -202,6 +212,89 @@ describe('IncomingHostTransferCoordinator', () => {
     });
     expect(record?.phase).toBe('completed');
     expect(recovery.remove).not.toHaveBeenCalled();
+  });
+
+  it('retains an owner-bound offered record when provisional preparation fails', async () => {
+    preparation.startProvisional.mockImplementationOnce(async () => {
+      events.push('provisional');
+      throw new Error('fault after owner journal');
+    });
+
+    await expect(coordinator().accept({
+      idempotencyKey: 'accept-one',
+      projectId: 'project-alpha',
+      sourceHostMemberId: 'member-host',
+      targetHostMemberId: 'member-target',
+      transferId: 'transfer-one',
+    })).rejects.toThrow('fault after owner journal');
+
+    expect(events).toEqual(['eligible', 'save-offered', 'provisional']);
+    expect(record).toMatchObject({
+      direction: 'incoming',
+      ownerInstallationKey:
+        'device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      phase: 'offered',
+      projectId: 'project-alpha',
+      transferId: 'transfer-one',
+    });
+  });
+
+  it('replays owner-bound offered acceptance after restart', async () => {
+    preparation.startProvisional.mockImplementationOnce(async () => {
+      events.push('provisional');
+      throw new Error('power loss after offered journal');
+    });
+    const input = {
+      idempotencyKey: 'accept-one',
+      projectId: 'project-alpha',
+      sourceHostMemberId: 'member-host',
+      targetHostMemberId: 'member-target',
+      transferId: 'transfer-one',
+    } as const;
+    await expect(coordinator().accept(input)).rejects.toThrow('power loss');
+    events = [];
+
+    await expect(coordinator().resume('project-alpha')).resolves.toBeUndefined();
+
+    expect(events.slice(0, 5)).toEqual([
+      'eligible',
+      'provisional',
+      'save-accepted',
+      'authority-accept',
+    ]);
+    expect(record).toMatchObject({ phase: 'accepted' });
+    expect(authority.accept).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: expect.stringMatching(/^accept-host-transfer-[a-f0-9]{64}$/),
+      projectId: 'project-alpha',
+      transferId: 'transfer-one',
+    }));
+  });
+
+  it('rejects a foreign owner-bound intent before eligibility or provisional work', async () => {
+    record = createIncomingHostTransferIntentRecord({
+      createdAt: NOW,
+      ownerInstallationKey:
+        'device-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      projectId: 'project-alpha',
+      sourceHostMemberId: 'member-host',
+      targetHostMemberId: 'member-target',
+      transferId: 'transfer-one',
+    });
+
+    await expect(coordinator().accept({
+      idempotencyKey: 'accept-one',
+      projectId: 'project-alpha',
+      sourceHostMemberId: 'member-host',
+      targetHostMemberId: 'member-target',
+      transferId: 'transfer-one',
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
+    });
+
+    expect(preparation.assertEligible).not.toHaveBeenCalled();
+    expect(preparation.startProvisional).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
   });
 
   it('recovers the same staged activation after a crash without guessing', async () => {

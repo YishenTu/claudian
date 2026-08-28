@@ -1,3 +1,5 @@
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
 import {
   CloudBootstrapBindingFinalizer,
 } from '@/app/collab/bootstrap/CloudBootstrapBindingFinalizer';
@@ -19,6 +21,7 @@ import {
 
 function activatedRecord(): CloudBootstrapTransitionRecord {
   const pending = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
     developmentActorId: HOST_MEMBER_ID,
     fenceId: 'bootstrap-fence-one',
     manifest: bootstrapManifest(),

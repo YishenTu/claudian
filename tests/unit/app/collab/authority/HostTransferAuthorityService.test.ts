@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -56,9 +57,11 @@ describe('HostTransferAuthorityService', () => {
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
     sourceIdentity = new LanTlsIdentity(sourceVault, {
+      installationKey: TEST_INSTALLATION_A,
       now: () => new Date(CREATED_AT),
     });
     targetIdentity = new LanTlsIdentity(targetVault, {
+      installationKey: TEST_INSTALLATION_B,
       now: () => new Date(CREATED_AT),
     });
     clock = new Date(CREATED_AT);

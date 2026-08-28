@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { CollabProjectId } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -212,6 +213,7 @@ describe('M6 publish conflict gate', () => {
     ownsAuthority = false,
   ): ClaudianCollabService {
     const foundation = new ClaudianCollabService({
+      installationKey: TEST_INSTALLATION_A,
       ...(ownsAuthority
         ? {
           createAuthorityDatabase: (authorityDirectory: string) => (
@@ -239,7 +241,7 @@ describe('M6 publish conflict gate', () => {
   ): CollabFeatureService {
     const feature = createCollabFeatureSubcomposition({
       foundation,
-      projectSetup: new CollabProjectSetupService(foundation, { vaultRoot }),
+      projectSetup: new CollabProjectSetupService(foundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
       vaultRoot,
     }).feature;
     features.push(feature);

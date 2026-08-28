@@ -1,4 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
@@ -10,9 +13,15 @@ import {
 import {
   completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
-import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  CollabLocalCloudMembershipRecord,
+  CollabLocalLanMembershipRecord,
+} from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
   type CollabPublicationFoundationPort,
   CollabPublicationService,
@@ -43,6 +52,13 @@ function publicationOptions(
 const CLOUD_PROJECT_ID = 'project-cloud';
 const CLOUD_MEMBER_ID = 'member-cloud';
 const CLOUD_CREATED_AT = '2026-08-24T00:00:00.000Z';
+const LAN_PROJECT_ID = 'project-lan-lanes';
+const LAN_MEMBER_ID = 'member-lan-lanes';
+const LAN_CREDENTIAL = 'A'.repeat(43);
+let LAN_CA: string;
+let LAN_FINGERPRINT: string;
+const LAN_STORED_ENDPOINT = 'https://192.168.1.20:41730';
+const LAN_ACTIVE_ENDPOINT = 'https://192.168.1.44:41731';
 
 function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
@@ -100,6 +116,66 @@ function cloudSnapshot() {
   });
 }
 
+function lanMembership(ownsAuthority: boolean): CollabLocalLanMembershipRecord {
+  return {
+    authority: {
+      endpoint: LAN_STORED_ENDPOINT,
+      gitRemoteUrl: `${LAN_STORED_ENDPOINT}/v1/git/${LAN_PROJECT_ID}/repository.git`,
+      hostCaCertificatePem: LAN_CA,
+      hostCaFingerprint: LAN_FINGERPRINT,
+      kind: 'lan',
+    },
+    createdAt: CLOUD_CREATED_AT,
+    hostOwnership: { ownsAuthority },
+    lastEventSequence: 0,
+    lifecycle: 'active',
+    member: {
+      credential: LAN_CREDENTIAL,
+      displayName: 'LAN member',
+      id: LAN_MEMBER_ID,
+      personalRef: `refs/heads/members/${LAN_MEMBER_ID}`,
+      role: 'manager',
+    },
+    project: {
+      id: LAN_PROJECT_ID,
+      name: 'LAN Project',
+      workspacePath: `workspace/${LAN_PROJECT_ID}`,
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: CLOUD_CREATED_AT,
+  };
+}
+
+function lanSnapshot() {
+  const currentMember = {
+    activatedAt: CLOUD_CREATED_AT,
+    createdAt: CLOUD_CREATED_AT,
+    displayName: 'LAN member',
+    id: LAN_MEMBER_ID,
+    personalRef: `refs/heads/members/${LAN_MEMBER_ID}`,
+    role: 'manager' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 1,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityKind: 'lan' as const,
+      createdAt: CLOUD_CREATED_AT,
+      hostMemberId: LAN_MEMBER_ID,
+      id: LAN_PROJECT_ID,
+      mainOid: 'a'.repeat(40),
+      mainRef: 'refs/heads/main' as const,
+      managerSetGeneration: 1,
+      name: 'LAN Project',
+    },
+    ticketHighlights: [],
+  };
+}
+
 const cloudLimits = {
   maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
   maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
@@ -116,6 +192,206 @@ const cloudLimits = {
 };
 
 describe('CollabPublicationService reconnect', () => {
+  let tlsRoot: string;
+
+  beforeAll(async () => {
+    tlsRoot = await mkdtemp(path.join(tmpdir(), 'claudian-publication-lanes-'));
+    const identity = await new LanTlsIdentity(tlsRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    }).loadOrCreate();
+    LAN_CA = identity.caCertificatePem;
+    LAN_FINGERPRINT = identity.caFingerprint;
+  });
+
+  afterAll(async () => {
+    await rm(tlsRoot, { force: true, recursive: true });
+  });
+
+  it.each([
+    ['ordinary Member', false, 'absent', null, LAN_STORED_ENDPOINT],
+    ['Host Member hosted elsewhere', true, 'hosted-elsewhere', null, LAN_STORED_ENDPOINT],
+    ['Host Member hosted here', true, 'hosted-here', LAN_ACTIVE_ENDPOINT, LAN_ACTIVE_ENDPOINT],
+  ] as const)(
+    'keeps snapshot and mutation on one LAN client seam for the %s lane',
+    async (_lane, ownsAuthority, installationStatus, localEndpoint, expectedEndpoint) => {
+      const membership = lanMembership(ownsAuthority);
+      const requests: Array<{ credential: string; endpoint: string; path: string }> = [];
+      const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+        .mockImplementation(function (this: PinnedCollabHttpClient, request, credential) {
+          requests.push({ credential, endpoint: this.trust.endpoint, path: request.path });
+          return Promise.resolve(
+            request.path.endsWith('/snapshot')
+              ? lanSnapshot()
+              : { ticket: { id: 'ticket-lane' } },
+          ) as never;
+        });
+      const projects = {
+        loadMembership: jest.fn().mockResolvedValue(membership),
+        loadProjectDocument: jest.fn().mockResolvedValue(null),
+        removeProjectDocument: jest.fn().mockResolvedValue(false),
+        saveProjectDocument: jest.fn().mockResolvedValue(undefined),
+        updateMembershipProjection: jest.fn().mockResolvedValue(membership),
+      };
+      const service = new CollabPublicationService({
+        local: { pathPolicy: {}, projects, workspace: {} },
+        requireGitFoundation: jest.fn(),
+      } as unknown as CollabPublicationFoundationPort, publicationOptions({
+        inspectHostInstallation: async () => installationStatus,
+        readActiveLocalRoute: () => localEndpoint === null ? null : {
+          caCertificatePem: LAN_CA,
+          caFingerprint: LAN_FINGERPRINT,
+          endpoint: localEndpoint,
+          projectId: LAN_PROJECT_ID,
+        },
+      }));
+
+      try {
+        await expect(service.readSnapshot(LAN_PROJECT_ID)).resolves.toMatchObject({
+          currentMember: {
+            id: LAN_MEMBER_ID,
+            personalRef: membership.member.personalRef,
+            role: membership.member.role,
+          },
+          project: { id: LAN_PROJECT_ID },
+        });
+        await expect(service.createTicket({
+          body: 'Body',
+          projectId: LAN_PROJECT_ID,
+          title: 'Title',
+        }, {}, 'ticket-lane-intent')).resolves.toMatchObject({
+          ticket: { id: 'ticket-lane' },
+        });
+        expect(requests).toEqual([
+          { credential: LAN_CREDENTIAL, endpoint: expectedEndpoint, path: expect.any(String) },
+          { credential: LAN_CREDENTIAL, endpoint: expectedEndpoint, path: expect.any(String) },
+        ]);
+        expect(membership.member).toMatchObject({
+          credential: LAN_CREDENTIAL,
+          id: LAN_MEMBER_ID,
+          role: 'manager',
+        });
+      } finally {
+        request.mockRestore();
+        await service.close();
+      }
+    },
+  );
+
+  it('reads an authoritative lifecycle snapshot without re-entering projection reconciliation', async () => {
+    const membership = lanMembership(false);
+    const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+      .mockResolvedValue(lanSnapshot() as never);
+    const projects = {
+      loadMembership: jest.fn().mockResolvedValue(membership),
+      loadProjectDocument: jest.fn().mockResolvedValue(null),
+      removeProjectDocument: jest.fn().mockResolvedValue(false),
+      saveProjectDocument: jest.fn().mockResolvedValue(undefined),
+      updateMembershipProjection: jest.fn().mockResolvedValue(membership),
+    };
+    const reconcileSnapshot = jest.fn().mockRejectedValue(
+      new Error('lifecycle re-entry must not be attempted'),
+    );
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} },
+      requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({
+      managerResponsibility: { reconcileSnapshot },
+      inspectHostInstallation: async () => 'absent',
+      readActiveLocalRoute: () => null,
+    }));
+
+    try {
+      await expect(
+        service.transferSnapshot(LAN_PROJECT_ID),
+      ).resolves.toMatchObject({
+        snapshot: {
+          currentMember: { id: LAN_MEMBER_ID },
+          project: { id: LAN_PROJECT_ID },
+        },
+        source: 'online',
+        stale: false,
+        syncState: {
+          eventSequence: 1,
+          projectId: LAN_PROJECT_ID,
+          status: 'synchronized',
+        },
+      });
+      expect(reconcileSnapshot).not.toHaveBeenCalled();
+      expect(projects.saveProjectDocument).not.toHaveBeenCalled();
+      expect(projects.updateMembershipProjection).not.toHaveBeenCalled();
+    } finally {
+      request.mockRestore();
+      await service.close();
+    }
+  });
+
+  it('reconnects a direct LAN mutation after stale endpoint failure without a prior snapshot', async () => {
+    let currentMembership = lanMembership(false);
+    const requests: string[] = [];
+    const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+      .mockImplementation(function (this: PinnedCollabHttpClient, input) {
+        requests.push(this.trust.endpoint);
+        if (this.trust.endpoint === LAN_STORED_ENDPOINT) {
+          return Promise.reject(new CollabError({ code: 'endpoint-unreachable' }));
+        }
+        return Promise.resolve({ ticket: { id: 'ticket-after-reconnect' } }) as never;
+      });
+    const projects = {
+      loadMembership: jest.fn(async () => currentMembership),
+      loadProjectDocument: jest.fn().mockResolvedValue(null),
+      removeProjectDocument: jest.fn().mockResolvedValue(false),
+      saveProjectDocument: jest.fn().mockResolvedValue(undefined),
+      updateMembershipProjection: jest.fn().mockResolvedValue(undefined),
+    };
+    const candidate = {
+      caFingerprint: LAN_FINGERPRINT,
+      endpoint: LAN_ACTIVE_ENDPOINT,
+      projectId: LAN_PROJECT_ID,
+    };
+    const reconnectDiscoveredProject = jest.fn(async () => {
+      currentMembership = {
+        ...currentMembership,
+        authority: {
+          ...currentMembership.authority,
+          endpoint: LAN_ACTIVE_ENDPOINT,
+          gitRemoteUrl: `${LAN_ACTIVE_ENDPOINT}/v1/git/${LAN_PROJECT_ID}/repository.git`,
+        },
+      };
+      return { status: 'success' as const, value: {} as never };
+    });
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} },
+      requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({
+      discovery: {
+        discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+      },
+      inspectHostInstallation: async () => 'hosted-elsewhere',
+      reconnect: {
+        reconnectDiscoveredProject,
+        reconnectProject: jest.fn(),
+      },
+    }));
+
+    try {
+      await expect(service.createTicket({
+        body: 'Body',
+        projectId: LAN_PROJECT_ID,
+        title: 'Title',
+      }, {}, 'ticket-stale-endpoint')).resolves.toMatchObject({
+        ticket: { id: 'ticket-after-reconnect' },
+      });
+      expect(requests).toEqual([LAN_STORED_ENDPOINT, LAN_ACTIVE_ENDPOINT]);
+      expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
+        candidates: [candidate],
+        projectId: LAN_PROJECT_ID,
+      }, {});
+    } finally {
+      request.mockRestore();
+      await service.close();
+    }
+  });
+
   it('uses the production Cloud adapter composition without renderer fetch', async () => {
     const routes: string[] = [];
     const server = createServer((request, response) => {
@@ -251,8 +527,19 @@ describe('CollabPublicationService reconnect', () => {
     }, {});
   });
 
-  it('does not browse for a Host-owned Project', async () => {
-    const discovery = { discoverProjectCandidates: jest.fn() };
+  it('uses ordinary trusted discovery for a hosted-here Host Member', async () => {
+    const candidate = {
+      caFingerprint: 'ab'.repeat(32),
+      endpoint: 'https://192.168.1.21:54545',
+      projectId: 'project-a',
+    };
+    const discovery = {
+      discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+    };
+    const reconnectDiscoveredProject = jest.fn().mockResolvedValue({
+      status: 'success',
+      value: {},
+    });
     const service = new CollabPublicationService({
       local: {
         pathPolicy: {},
@@ -266,14 +553,19 @@ describe('CollabPublicationService reconnect', () => {
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
       discovery,
+      inspectHostInstallation: async () => 'hosted-here',
       reconnect: {
-        reconnectDiscoveredProject: jest.fn(),
+        reconnectDiscoveredProject,
         reconnectProject: jest.fn(),
       },
     }));
 
-    await expect(service.tryAutoReconnect('project-a')).resolves.toBe(false);
-    expect(discovery.discoverProjectCandidates).not.toHaveBeenCalled();
+    await expect(service.tryAutoReconnect('project-a')).resolves.toBe(true);
+    expect(discovery.discoverProjectCandidates).toHaveBeenCalled();
+    expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
+      candidates: [candidate],
+      projectId: 'project-a',
+    }, {});
   });
 
   it('coalesces concurrent automatic reconnect attempts for one Project', async () => {

@@ -405,42 +405,42 @@ function claimBatch(
 }
 
 export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffects {
-  private activeRegistration: LanAuthorityTransferRouteRegistration | null = null;
+   #activeRegistration: LanAuthorityTransferRouteRegistration | null = null;
   private readonly now: () => Date;
-  private preparation: LanHostAuthorityTransferPreparation | null = null;
+   #preparation: LanHostAuthorityTransferPreparation | null = null;
   private readonly queue = new SerialTaskQueue();
-  private stagedRegistration: LanAuthorityTransferRouteRegistration | null = null;
+   #stagedRegistration: LanAuthorityTransferRouteRegistration | null = null;
 
   constructor(private readonly options: ProductionCloudToLanTargetEffectsOptions) {
     this.now = options.now ?? (() => new Date());
   }
 
   dispose(): void {
-    const preparation = this.preparation;
-    this.preparation = null;
+    const preparation = this.#preparation;
+    this.#preparation = null;
     void preparation?.dispose().catch(() => undefined);
   }
 
   async prepareTarget(expectedEndpoint?: string): Promise<Readonly<{ readonly targetUrl: string }>> {
-    if (!this.preparation) {
-      this.preparation = await this.options.foundation.lanHost.prepareAuthorityTransferTarget(
+    if (!this.#preparation) {
+      this.#preparation = await this.options.foundation.lanHost.prepareAuthorityTransferTarget(
         expectedEndpoint ?? null,
       );
     }
-    if (expectedEndpoint && this.preparation.endpoint !== expectedEndpoint) {
+    if (expectedEndpoint && this.#preparation.endpoint !== expectedEndpoint) {
       throw targetError('authority-transfer-target-url-mismatch');
     }
-    return { targetUrl: this.preparation.endpoint };
+    return { targetUrl: this.#preparation.endpoint };
   }
 
   async acceptanceRequest(
     record: AuthorityTransferRecord,
   ): Promise<AcceptCloudToLanTransferTargetRequest> {
     return this.queue.run(async () => {
-      const { stagingPath, state: initial } = await this.prepareState(record);
-      const cloudSession = this.requireCloudSession();
-      const prepared = await this.prepareTarget();
-      const preparation = this.preparation;
+      const { stagingPath, state: initial } = await this.#prepareState(record);
+      const cloudSession = this.#requireCloudSession();
+      const prepared = await this.prepareTarget(record.status.targetUrl);
+      const preparation = this.#preparation;
       if (!preparation) throw targetError('authority-transfer-target-preparation-missing');
       if (record.status.targetUrl !== prepared.targetUrl) {
         throw targetError('authority-transfer-target-url-mismatch');
@@ -477,7 +477,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (state.transferId !== record.transferId || !state.targetProof) {
         throw targetError('authority-transfer-target-state-owner-mismatch');
       }
-      await this.ensureStagedRoute(record, state);
+      await this.#ensureStagedRoute(record, state);
       return {
         idempotencyKey: `${record.operationIntentId}-accept`,
         projectId: record.projectId,
@@ -494,7 +494,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     options: CollabOperationOptions = {},
   ): Promise<CloudToLanTargetStageResult> {
     return this.queue.run(async () => {
-      const { stagingPath } = await this.prepareState(record);
+      const { stagingPath } = await this.#prepareState(record);
       for (const artifact of artifacts) {
         await receiveArtifact(stagingPath, artifact, options.signal);
       }
@@ -515,29 +515,39 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       await assertArtifactFile(manifest, BUNDLE_FILE, path.join(stagingPath, BUNDLE_FILE));
       let state = (await readState(path.join(stagingPath, TARGET_STATE_FILE)))!;
       if (state.claimBatch === null) {
-        const cloudSession = this.requireCloudSession();
+        const cloudSession = this.#requireCloudSession();
         const snapshot = await cloudSession.readSnapshot(record.projectId, options);
         if (snapshot.currentMember.id !== cloudSession.developmentActorId) {
           throw targetError('authority-transfer-target-host-snapshot-mismatch');
         }
-        await this.options.foundation.discardProvisionalAuthority(record.projectId);
-        const authority = await this.options.foundation.openAuthority(record.projectId);
+        await this.options.foundation.discardAuthorityTransferTarget(
+          record.projectId,
+          record.ownerInstallationKey,
+        );
+        const authority = await this.options.foundation.openAuthorityTransferTarget(
+          record.projectId,
+          record.ownerInstallationKey,
+        );
         const git = await this.options.foundation.requireGitFoundation();
         const checkpoint = new AuthorityTransferCheckpointRepository();
-        await authority.database.mutate(connection => checkpoint.importCoordination(connection, {
-          coordinationNdjson: coordinationBytes.toString('utf8'),
-          manifest,
-          targetHostCredentialHash: createHash('sha256')
-            .update(Buffer.from(state.hostCredential, 'base64url'))
-            .digest(),
-          targetHostMemberId: cloudSession.developmentActorId,
-        }));
-        await new AuthorityTransferCheckpointGit(git.runner).importIntoEmptyBareRepository({
-          bundlePath: path.join(stagingPath, BUNDLE_FILE),
-          manifest,
-          ...(options.signal ? { signal: options.signal } : {}),
-          targetRepositoryPath: path.join(authority.authorityDirectory, 'repository.git'),
-        });
+        try {
+          await authority.database.mutate(connection => checkpoint.importCoordination(connection, {
+            coordinationNdjson: coordinationBytes.toString('utf8'),
+            manifest,
+            targetHostCredentialHash: createHash('sha256')
+              .update(Buffer.from(state.hostCredential, 'base64url'))
+              .digest(),
+            targetHostMemberId: cloudSession.developmentActorId,
+          }));
+          await new AuthorityTransferCheckpointGit(git.runner).importIntoEmptyBareRepository({
+            bundlePath: path.join(stagingPath, BUNDLE_FILE),
+            manifest,
+            ...(options.signal ? { signal: options.signal } : {}),
+            targetRepositoryPath: path.join(authority.authorityDirectory, 'repository.git'),
+          });
+        } finally {
+          await authority.database.close();
+        }
         state = {
           ...state,
           claimBatch: claimBatch(
@@ -575,7 +585,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<string> {
     return this.queue.run(async () => (
-      this.activateLocal(record, proof).then(({ state }) => (
+      this.#activateLocal(record, proof).then(({ state }) => (
         this.signActivation(record, proof, state)
       ))
     ));
@@ -585,7 +595,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<void> {
-    return this.queue.run(() => this.convergeLocal(record, proof));
+    return this.queue.run(() => this.#convergeLocal(record, proof));
   }
 
   async restoreCompleted(record: AuthorityTransferRecord): Promise<void> {
@@ -613,15 +623,15 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
           && membership.hostOwnership.ownsAuthority
         ) {
           await this.options.foundation.lanHost.startProject(record.projectId);
-          await this.expireActiveRouteUnlocked(record);
+          await this.#expireActiveRouteUnlocked(record);
           return;
         }
         throw targetError('authority-transfer-target-state-owner-mismatch');
       }
-      const targetProof = await this.assertActiveState(record, proof, state, authority);
-      if (!expired) await this.startActiveRoute(record, state);
-      await this.convergePersistedState(record, state, targetProof);
-      if (expired) await this.expireActiveRouteUnlocked(record);
+      const targetProof = await this.#assertActiveState(record, proof, state, authority);
+      if (!expired) await this.#startActiveRoute(record, state);
+      await this.#convergePersistedState(record, state, targetProof);
+      if (expired) await this.#expireActiveRouteUnlocked(record);
     });
   }
 
@@ -630,24 +640,27 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       record.projectId,
       'target-only-staged',
     );
-    this.stagedRegistration = null;
-    const preparation = this.preparation;
-    this.preparation = null;
+    this.#stagedRegistration = null;
+    const preparation = this.#preparation;
+    this.#preparation = null;
     await preparation?.dispose();
-    await this.options.foundation.discardProvisionalAuthority(record.projectId);
-    await this.cleanupStaging(record);
+    await this.options.foundation.discardAuthorityTransferTarget(
+      record.projectId,
+      record.ownerInstallationKey,
+    );
+    await this.#cleanupStaging(record);
   }
 
-  private async activateRoute(
+   async #activateRoute(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
     state: TargetPrivateState,
   ): Promise<void> {
-    if (this.activeRegistration) return;
-    await this.ensureStagedRoute(record, state);
-    const expected = this.stagedRegistration;
+    if (this.#activeRegistration) return;
+    await this.#ensureStagedRoute(record, state);
+    const expected = this.#stagedRegistration;
     if (!expected) throw targetError('authority-transfer-target-route-missing');
-    const service = this.activeService(record);
+    const service = this.#activeService(record);
     const next: LanAuthorityTransferRouteRegistration = {
       expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
@@ -660,14 +673,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       next,
       relinquishmentProof: proof,
     });
-    this.activeRegistration = next;
-    this.stagedRegistration = null;
+    this.#activeRegistration = next;
+    this.#stagedRegistration = null;
   }
 
-  private activeService(record: AuthorityTransferRecord) {
+   #activeService(record: AuthorityTransferRecord) {
     return new PersistentLanAuthorityTransferTargetActiveService({
-      bind: request => this.bindClaim(record, request),
-      expire: () => this.expireActiveRoute(record),
+      bind: request => this.#bindClaim(record, request),
+      expire: () => this.#expireActiveRoute(record),
       expiresAt: record.status.expiresAt,
       projectId: record.projectId,
       targetAuthorityGeneration: record.status.targetAuthority.generation,
@@ -675,11 +688,11 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
-  private async expireActiveRoute(record: AuthorityTransferRecord): Promise<void> {
-    return this.queue.run(() => this.expireActiveRouteUnlocked(record));
+   async #expireActiveRoute(record: AuthorityTransferRecord): Promise<void> {
+    return this.queue.run(() => this.#expireActiveRouteUnlocked(record));
   }
 
-  private async expireActiveRouteUnlocked(record: AuthorityTransferRecord): Promise<void> {
+   async #expireActiveRouteUnlocked(record: AuthorityTransferRecord): Promise<void> {
     if (this.now().getTime() < Date.parse(record.status.expiresAt)) {
       throw targetError('authority-transfer-target-expiry-early');
     }
@@ -704,24 +717,24 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
-  private async startActiveRoute(
+   async #startActiveRoute(
     record: AuthorityTransferRecord,
     state: TargetPrivateState,
   ): Promise<void> {
-    if (this.activeRegistration) return;
+    if (this.#activeRegistration) return;
     const registration: LanAuthorityTransferRouteRegistration = {
       expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
-      service: this.activeService(record),
+      service: this.#activeService(record),
       state: 'target-active',
       transferId: record.transferId,
     };
     await this.options.foundation.lanHost.startAuthorityTransferRoute(registration);
-    this.activeRegistration = registration;
+    this.#activeRegistration = registration;
     if (!state.claimBatch) throw targetError('authority-transfer-target-claims-missing');
   }
 
-  private async activateLocal(
+   async #activateLocal(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<Readonly<{
@@ -734,12 +747,15 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || proof.sourceAuthority.kind !== 'cloud'
       || proof.targetAuthority.kind !== 'lan'
     ) throw targetError('authority-transfer-target-relinquishment-mismatch');
-    const { stagingPath } = await this.prepareState(record);
-    let state = await this.loadTargetState(record, stagingPath);
+    const { stagingPath } = await this.#prepareState(record);
+    let state = await this.#loadTargetState(record, stagingPath);
     if (!state.claimBatch || !state.snapshot) {
       throw targetError('authority-transfer-target-stage-incomplete');
     }
-    const authority = await this.options.foundation.openAuthority(record.projectId);
+    const authority = await this.options.foundation.activateAuthorityTransferTarget(
+      record.projectId,
+      record.ownerInstallationKey,
+    );
     const authorityStatePath = path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE);
     const persistedAuthorityState = await readState(authorityStatePath);
     if (persistedAuthorityState) state = persistedAuthorityState;
@@ -747,7 +763,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!state.claimBatch || !state.snapshot) {
       throw targetError('authority-transfer-target-stage-incomplete');
     }
-    const targetProof = await this.validateProof(state);
+    const targetProof = await this.#validateProof(state);
     const checkpoint = new AuthorityTransferCheckpointRepository();
     await authority.database.mutate(connection => checkpoint.activateImportedAuthority(
       connection,
@@ -756,17 +772,17 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         targetAuthorityGeneration: record.status.targetAuthority.generation,
       },
     ));
-    await this.activateRoute(record, proof, state);
+    await this.#activateRoute(record, proof, state);
     return { state, targetProof };
   }
 
-  private async assertActiveState(
+   async #assertActiveState(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
     state: TargetPrivateState,
     authority: CollabAuthorityFoundation,
   ): Promise<TargetProofEnvelope> {
-    const targetProof = await this.validateProof(state);
+    const targetProof = await this.#validateProof(state);
     if (
       proof.projectId !== record.projectId
       || proof.transferId !== record.transferId
@@ -818,7 +834,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return targetProof;
   }
 
-  private async bindClaim(
+   async #bindClaim(
     record: AuthorityTransferRecord,
     request: LanClaimRequest,
   ): Promise<CollabTransferredMembershipRedemptionReceipt> {
@@ -890,17 +906,17 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
-  private async ensureStagedRoute(
+   async #ensureStagedRoute(
     record: AuthorityTransferRecord,
     state: TargetPrivateState,
   ): Promise<void> {
-    if (this.stagedRegistration || this.activeRegistration) return;
+    if (this.#stagedRegistration || this.#activeRegistration) return;
     const service: LanAuthorityTransferTargetStagedService = {
-      acceptCloudToLanTransferTarget: request => this.stagedStatus(record, request),
-      confirmCloudToLanTargetActive: request => this.stagedStatus(record, request),
-      getProjectAuthorityTransfer: request => this.stagedStatus(record, request),
+      acceptCloudToLanTransferTarget: request => this.#stagedStatus(record, request),
+      confirmCloudToLanTargetActive: request => this.#stagedStatus(record, request),
+      getProjectAuthorityTransfer: request => this.#stagedStatus(record, request),
       reportCloudToLanTargetStaged: async request => {
-        await this.stagedStatus(record, request);
+        await this.#stagedStatus(record, request);
         throw targetError('authority-transfer-target-custody-pending');
       },
     };
@@ -913,13 +929,13 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       transferId: record.transferId,
     };
     await this.options.foundation.lanHost.startAuthorityTransferRoute(registration);
-    this.stagedRegistration = registration;
-    const preparation = this.preparation;
-    this.preparation = null;
+    this.#stagedRegistration = registration;
+    const preparation = this.#preparation;
+    this.#preparation = null;
     await preparation?.dispose();
   }
 
-  private async stagedStatus(
+   async #stagedStatus(
     record: AuthorityTransferRecord,
     request: Readonly<{ readonly projectId: string; readonly transferId: string }>,
   ) {
@@ -934,14 +950,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return current.status;
   }
 
-  private async prepareState(record: AuthorityTransferRecord): Promise<{
+   async #prepareState(record: AuthorityTransferRecord): Promise<{
     readonly stagingPath: string;
     readonly state: TargetPrivateState;
   }> {
     if (record.projectId !== this.options.projectId) {
       throw targetError('authority-transfer-project-mismatch');
     }
-    const cloudSession = this.requireCloudSession();
+    const cloudSession = this.#requireCloudSession();
     const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
     if (
       !membership
@@ -969,16 +985,18 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return { stagingPath: staging.absolutePath, state };
   }
 
-  private async loadTargetState(
+   async #loadTargetState(
     record: AuthorityTransferRecord,
     stagingPath: string,
   ): Promise<TargetPrivateState> {
-    const authority = await this.options.foundation.inspectAuthority(record.projectId);
+    const staged = await readState(path.join(stagingPath, TARGET_STATE_FILE));
+    const authority = staged
+      ? null
+      : await this.options.foundation.inspectAuthority(record.projectId);
     const active = authority
       ? await readState(path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE))
       : null;
-    const staged = await readState(path.join(stagingPath, TARGET_STATE_FILE));
-    const state = active ?? staged;
+    const state = staged ?? active;
     if (!state || state.transferId !== record.transferId) {
       throw targetError('authority-transfer-target-state-owner-mismatch');
     }
@@ -1008,7 +1026,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     ).toString('base64url');
   }
 
-  private async validateProof(state: TargetPrivateState): Promise<TargetProofEnvelope> {
+   async #validateProof(state: TargetPrivateState): Promise<TargetProofEnvelope> {
     if (!state.targetProof) throw targetError('authority-transfer-target-proof-missing');
     const proof = decodeTargetProof(state.targetProof);
     let certificate: X509Certificate;
@@ -1038,7 +1056,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return proof;
   }
 
-  private async cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
+   async #cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
     const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
     if (!membership) throw targetError('authority-transfer-membership-missing');
     await this.options.foundation.local.workspace.removeReservedProjectsFolderChild(
@@ -1052,29 +1070,29 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     );
   }
 
-  private requireCloudSession(): CloudAuthorityLifecycleSession {
+   #requireCloudSession(): CloudAuthorityLifecycleSession {
     if (!this.options.cloudSession) {
       throw targetError('authority-transfer-cloud-session-missing');
     }
     return this.options.cloudSession;
   }
 
-  private async convergeLocal(
+   async #convergeLocal(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<void> {
-    const { state, targetProof } = await this.activateLocal(record, proof);
-    await this.convergePersistedState(record, state, targetProof);
+    const { state, targetProof } = await this.#activateLocal(record, proof);
+    await this.#convergePersistedState(record, state, targetProof);
   }
 
-  private async convergePersistedState(
+   async #convergePersistedState(
     record: AuthorityTransferRecord,
     state: TargetPrivateState,
     targetProof: TargetProofEnvelope,
   ): Promise<void> {
     if (!state.snapshot) throw targetError('authority-transfer-target-stage-incomplete');
-    const preparation = this.preparation;
-    this.preparation = null;
+    const preparation = this.#preparation;
+    this.#preparation = null;
     await preparation?.dispose();
     await this.options.convergence.cloudToLanHost({
       endpoint: record.status.targetUrl,
@@ -1085,6 +1103,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       status: record.status,
     });
     await this.options.foundation.lanHost.startProject(record.projectId);
-    await this.cleanupStaging(record);
+    await this.#cleanupStaging(record);
   }
 }

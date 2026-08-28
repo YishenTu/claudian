@@ -2,15 +2,20 @@ import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId, isC
 
 import { decodeLanCollabHostTrustTransitionProof } from '@/app/collab/lan/LanCollabHostTrustTransitionProof';
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';
+import {
+  type InstallationKey,
+  parseInstallationKey,
+} from '@/core/device/InstallationKey';
 
-export const COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION = 1 as const;
+export const COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION = 2 as const;
 export interface RetirementTombstoneMember {
   readonly memberId: CollabMemberId;
   readonly credentialHash: string;
   readonly acknowledgedAt: CollabIsoTimestamp | null;
 }
 export interface RetirementTombstoneRecord {
-  readonly schemaVersion: typeof COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION;
+  readonly schemaVersion: 1 | typeof COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION;
+  readonly ownerInstallationKey?: InstallationKey;
   readonly kind: 'retirement-tombstone';
   readonly projectId: CollabProjectId;
   readonly retiredAt: CollabIsoTimestamp;
@@ -26,7 +31,8 @@ export interface RetirementTombstoneRecord {
 }
 type Value = Readonly<Record<string, unknown>>;
 const DIGEST = /^[0-9a-f]{64}$/;
-const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'retiredAt', 'expiresAt', 'result', 'replay', 'hostTransitionProofs', 'formerMembers']);
+const LEGACY_KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'retiredAt', 'expiresAt', 'result', 'replay', 'hostTransitionProofs', 'formerMembers']);
+const KEYS = new Set([...LEGACY_KEYS, 'ownerInstallationKey']);
 function exact(value: unknown, keys: ReadonlySet<string>, name: string): Value {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`Invalid ${name}`);
   const record = value as Value;
@@ -45,8 +51,19 @@ function timestamp(value: Value, key: string, nullable = false): string | null {
   return result;
 }
 export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombstoneRecord {
-  const record = exact(value, KEYS, 'retirement tombstone');
-  if (record.schemaVersion !== 1 || record.kind !== 'retirement-tombstone' || !Array.isArray(record.hostTransitionProofs) || !Array.isArray(record.formerMembers) || record.hostTransitionProofs.length > 64 || record.formerMembers.length === 0 || record.formerMembers.length > 10_000) throw new TypeError('Invalid retirement tombstone');
+  const candidate = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Value
+    : {};
+  const schemaVersion = candidate.schemaVersion;
+  const record = exact(
+    value,
+    schemaVersion === 1 ? LEGACY_KEYS : KEYS,
+    'retirement tombstone',
+  );
+  if ((schemaVersion !== 1 && schemaVersion !== COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION) || record.kind !== 'retirement-tombstone' || !Array.isArray(record.hostTransitionProofs) || !Array.isArray(record.formerMembers) || record.hostTransitionProofs.length > 64 || record.formerMembers.length === 0 || record.formerMembers.length > 10_000) throw new TypeError('Invalid retirement tombstone');
+  const ownerInstallationKey = schemaVersion === COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION
+    ? parseInstallationKey(record.ownerInstallationKey)
+    : undefined;
   const projectId = text(record, 'projectId', 64);
   if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   const retiredAt = timestamp(record, 'retiredAt')!;
@@ -78,6 +95,7 @@ export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombs
     formerMembers,
     hostTransitionProofs,
     kind: 'retirement-tombstone',
+    ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
     projectId,
     replay: {
       actorMemberId: (() => {
@@ -94,6 +112,6 @@ export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombs
     },
     result: { projectId, retiredAt },
     retiredAt,
-    schemaVersion: 1,
+    schemaVersion,
   };
 }

@@ -21,10 +21,10 @@ import {
   writeCollabFileAtomically,
 } from '@/app/collab/CollabFilesystemBoundary';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { type InstallationKey, parseInstallationKey } from '@/core/device/InstallationKey';
 
-const TLS_DIRECTORY = '.claudian/collab/tls';
-const HOST_CA_PATH = `${TLS_DIRECTORY}/host-ca.json`;
-const HOST_CA_LOCK_PATH = `${TLS_DIRECTORY}/host-ca.lock`;
+const LEGACY_TLS_DIRECTORY = '.claudian/collab/tls';
+const LEGACY_HOST_CA_PATH = `${LEGACY_TLS_DIRECTORY}/host-ca.json`;
 const HOST_CA_SCHEMA_VERSION = 1;
 const CA_VALIDITY_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 const LEAF_VALIDITY_MS = 24 * 60 * 60 * 1000;
@@ -66,6 +66,7 @@ export interface LanTlsHostCaSigner {
 }
 
 export interface LanTlsIdentityOptions {
+  readonly installationKey: InstallationKey;
   readonly now?: () => Date;
 }
 
@@ -161,13 +162,21 @@ export function fingerprintCertificatePem(certificatePem: string): string {
 }
 
 export class LanTlsIdentity {
+  private readonly hostCaLockPath: string;
+  private readonly hostCaPath: string;
   private identityPromise: Promise<LanTlsHostCa> | null = null;
+  private readonly installationKey: InstallationKey;
   private readonly now: () => Date;
+  private readonly tlsDirectory: string;
 
   constructor(
     private readonly vaultRoot: string,
-    options: LanTlsIdentityOptions = {},
+    options: LanTlsIdentityOptions,
   ) {
+    this.installationKey = parseInstallationKey(options.installationKey);
+    this.tlsDirectory = `.claudian/collab/installations/${this.installationKey}/tls`;
+    this.hostCaPath = `${this.tlsDirectory}/host-ca.json`;
+    this.hostCaLockPath = `${this.tlsDirectory}/host-ca.lock`;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -196,6 +205,39 @@ export class LanTlsIdentity {
           saltLength: 32,
         },
       ).toString('base64url'),
+    });
+  }
+
+  async adoptLegacyGlobalIdentity(
+    expectedFingerprint: string | null,
+  ): Promise<LanTlsHostCa> {
+    await ensureCollabContainerGuard(this.vaultRoot, '.claudian/collab', {
+      privateContainer: true,
+    });
+    await ensureCollabVaultDirectory(
+      this.vaultRoot,
+      `.claudian/collab/installations/${this.installationKey}`,
+      { mode: 0o700 },
+    );
+    await ensureCollabVaultDirectory(this.vaultRoot, this.tlsDirectory, { mode: 0o700 });
+    return this.withIdentityLock(async () => {
+      const current = await this.readPersistedIdentity(this.hostCaPath);
+      if (current) {
+        this.assertExpectedFingerprint(current, expectedFingerprint);
+        return current;
+      }
+      const legacy = await this.readPersistedIdentity(LEGACY_HOST_CA_PATH);
+      if (!legacy) {
+        if (expectedFingerprint !== null) {
+          throw tlsIdentityError('legacy-host-ca-missing');
+        }
+        const created = await this.createHostCa();
+        await this.persistHostCa(created);
+        return created;
+      }
+      this.assertExpectedFingerprint(legacy, expectedFingerprint);
+      await this.persistHostCa(legacy);
+      return legacy;
     });
   }
 
@@ -258,32 +300,27 @@ export class LanTlsIdentity {
     await ensureCollabContainerGuard(this.vaultRoot, '.claudian/collab', {
       privateContainer: true,
     });
-    await ensureCollabVaultDirectory(this.vaultRoot, TLS_DIRECTORY, { mode: 0o700 });
+    await ensureCollabVaultDirectory(
+      this.vaultRoot,
+      `.claudian/collab/installations/${this.installationKey}`,
+      { mode: 0o700 },
+    );
+    await ensureCollabVaultDirectory(this.vaultRoot, this.tlsDirectory, { mode: 0o700 });
     return this.withIdentityLock(async () => {
-      const existing = await this.readPersistedIdentity();
+      const existing = await this.readPersistedIdentity(this.hostCaPath);
       if (existing) return existing;
       const created = await this.createHostCa();
-      const persisted: PersistedHostCa = {
-        certificatePem: created.caCertificatePem,
-        privateKeyPem: created.caPrivateKeyPem,
-        schemaVersion: HOST_CA_SCHEMA_VERSION,
-      };
-      await writeCollabFileAtomically(
-        this.vaultRoot,
-        HOST_CA_PATH,
-        `${JSON.stringify(persisted)}\n`,
-        { mode: 0o600 },
-      );
+      await this.persistHostCa(created);
       return created;
     });
   }
 
-  private async readPersistedIdentity(): Promise<LanTlsHostCa | null> {
+  private async readPersistedIdentity(relativePath: string): Promise<LanTlsHostCa | null> {
     let contents: string;
     try {
       const absolutePath = await resolveCollabVaultPath(
         this.vaultRoot,
-        HOST_CA_PATH,
+        relativePath,
         { mustExist: true },
       );
       contents = await readFile(absolutePath, 'utf8');
@@ -316,6 +353,32 @@ export class LanTlsIdentity {
       (persisted as Record<string, string>).certificatePem,
       (persisted as Record<string, string>).privateKeyPem,
     );
+  }
+
+  private persistHostCa(hostCa: LanTlsHostCa): Promise<void> {
+    const persisted: PersistedHostCa = {
+      certificatePem: hostCa.caCertificatePem,
+      privateKeyPem: hostCa.caPrivateKeyPem,
+      schemaVersion: HOST_CA_SCHEMA_VERSION,
+    };
+    return writeCollabFileAtomically(
+      this.vaultRoot,
+      this.hostCaPath,
+      `${JSON.stringify(persisted)}\n`,
+      { mode: 0o600 },
+    );
+  }
+
+  private assertExpectedFingerprint(
+    hostCa: LanTlsHostCa,
+    expectedFingerprint: string | null,
+  ): void {
+    if (
+      expectedFingerprint !== null
+      && hostCa.caFingerprint !== expectedFingerprint.toLocaleLowerCase('en-US')
+    ) {
+      throw tlsIdentityError('legacy-host-ca-fingerprint-mismatch');
+    }
   }
 
   private async createHostCa(): Promise<LanTlsHostCa> {
@@ -378,7 +441,7 @@ export class LanTlsIdentity {
   }
 
   private async withIdentityLock<T>(operation: () => Promise<T>): Promise<T> {
-    const lockPath = await resolveCollabVaultPath(this.vaultRoot, HOST_CA_LOCK_PATH);
+    const lockPath = await resolveCollabVaultPath(this.vaultRoot, this.hostCaLockPath);
     const startedAt = Date.now();
     let handle: Awaited<ReturnType<typeof open>> | null = null;
     while (!handle) {

@@ -1,3 +1,5 @@
+import { type InstallationKey, isInstallationKey } from '@/core/device/InstallationKey';
+
 export const CLAUDIAN_STORAGE_PATH = '.claudian';
 
 export const LEGACY_CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
@@ -10,10 +12,8 @@ export const INPUT_LEDGER_SUFFIX = '.inputs.json';
 export const DELETION_MARKER_SUFFIX = '.deleted.json';
 export const ASSIGNMENT_MARKER_SUFFIX = '.assigned.json';
 
-const DEVICE_SETTINGS_KEY_PATTERN = /^device-[a-f0-9]{64}$/;
-
-export function isDeviceSettingsKey(value: unknown): value is string {
-  return typeof value === 'string' && DEVICE_SETTINGS_KEY_PATTERN.test(value);
+export function isDeviceSettingsKey(value: unknown): value is InstallationKey {
+  return isInstallationKey(value);
 }
 
 export function getDeviceSessionsPath(deviceKey: string): string {

@@ -19,6 +19,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 
 import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminService';
 import {
+  ensureCollabVaultDirectory,
   resolveCollabVaultPath,
 } from '@/app/collab/CollabFilesystemBoundary';
 import type {
@@ -87,8 +88,8 @@ import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabRetirementResult } from '@/core/collab';
 import { type CollabHostSession, type CollabHostStatus, type CollabInvitationView } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { type InstallationKey, parseInstallationKey } from '@/core/device/InstallationKey';
 
-const HOST_LOCK_PATH = '.claudian/collab/lan-host.lock';
 const HOST_LOCK_MAX_BYTES = 1_024;
 const LISTENER_CLOSE_TIMEOUT_MS = 500;
 const HOST_ADDRESS_CHECK_INTERVAL_MS = 2_000;
@@ -188,15 +189,21 @@ export interface LanHostProjectRuntime {
 }
 
 export interface LanHostCoordinatorOptions {
+  readonly assertHostInstallationOwned: (projectId: CollabProjectId) => Promise<void>;
   readonly clearAuthorityTransferExpiryTimeout?: (handle: number) => void;
   readonly createAddressMonitor?: (
     check: () => Promise<void>,
   ) => HostAddressMonitor;
   readonly createInvitationCodec?: (address: string) => InvitationCodec;
+  readonly commitHostedRoute: (
+    expected: CollabLocalLanMembershipRecord,
+    next: CollabLocalLanMembershipRecord,
+  ) => Promise<void>;
   readonly createGitProxy?: (
     options: GitHttpBackendProxyOptions,
   ) => LanHostGitProxy;
   readonly getPrivateIpv4Addresses?: () => readonly string[];
+  readonly installationKey: InstallationKey;
   readonly discovery?: Pick<CollabLanDiscoveryPort, 'advertiseProject'>;
   readonly localProjects: Pick<
     CollabLocalProjectRepository,
@@ -274,6 +281,13 @@ export interface LanHostProjectState {
   readonly endpoint?: string;
   readonly projectId: CollabProjectId;
   readonly status: Exclude<CollabHostStatus, 'not-host'>;
+}
+
+export interface LanHostActiveProjectRoute {
+  readonly caCertificatePem: string;
+  readonly caFingerprint: string;
+  readonly endpoint: string;
+  readonly projectId: CollabProjectId;
 }
 
 export interface LanHostProvisionalTransferSession {
@@ -408,49 +422,52 @@ function parseHostLock(contents: string): HostLockRecord {
 
 export class LanHostCoordinator {
   private closed = false;
-  private closePromise: Promise<void> | null = null;
-  private addressCheckTask: Promise<void> | null = null;
-  private addressMonitor: HostAddressMonitor | null = null;
-  private readonly hostedProjects = new Map<CollabProjectId, HostedProject>();
-  private readonly authorityTransferRoutes = new LanAuthorityTransferRouteRegistry();
-  private readonly authorityTransferPreparations = new Set<symbol>();
-  private readonly authorityTransferExpiryTimers = new Map<
+   #closePromise: Promise<void> | null = null;
+   #addressCheckTask: Promise<void> | null = null;
+   #addressMonitor: HostAddressMonitor | null = null;
+   readonly #hostedProjects = new Map<CollabProjectId, HostedProject>();
+   readonly #authorityTransferRoutes = new LanAuthorityTransferRouteRegistry();
+   readonly #authorityTransferPreparations = new Set<symbol>();
+   readonly #authorityTransferExpiryTimers = new Map<
     CollabProjectId,
     number
   >();
-  private readonly authorityTransferRouter = new LanAuthorityTransferRouter(
-    this.authorityTransferRoutes,
+   readonly #authorityTransferRouter = new LanAuthorityTransferRouter(
+    this.#authorityTransferRoutes,
   );
-  private readonly clearAuthorityTransferExpiryTimeout: (handle: number) => void;
+   readonly #clearAuthorityTransferExpiryTimeout: (handle: number) => void;
   private hostLock: HeldHostLock | null = null;
+   readonly #hostLockPath: string;
   private listener: RunningListener | null = null;
-  private listenerFailure: CollabError | null = null;
-  private connectionProjection: LanHostConnectionProjectionPort | null = null;
+   #listenerFailure: CollabError | null = null;
+   #connectionProjection: LanHostConnectionProjectionPort | null = null;
   private readonly now: () => Date;
-  private readonly operationQueue = new SerialTaskQueue();
-  private readonly projectTransitions = new Map<
+   readonly #operationQueue = new SerialTaskQueue();
+   readonly #projectTransitions = new Map<
     CollabProjectId,
     Extract<CollabHostStatus, 'starting' | 'stopping'>
   >();
   private readonly provisionalTransfers = new HostTransferProvisionalRouter();
-  private projectLifecycleAdmissions: LanHostProjectLifecycleAdmissions | null = null;
-  private readonly recoveringHostTransfers = new Map<
+   #projectLifecycleAdmissions: LanHostProjectLifecycleAdmissions | null = null;
+   readonly #recoveringHostTransfers = new Map<
     CollabProjectId,
     NonNullable<LanHostProjectRuntime['outgoingHostTransfer']>
   >();
   private readonly resources: HostResourceRegistry;
-  private readonly setAuthorityTransferExpiryTimeout: (
+   readonly #setAuthorityTransferExpiryTimeout: (
     callback: () => void,
     milliseconds: number,
   ) => number;
-  private readonly router = new CollabControlRouter();
+   readonly #router = new CollabControlRouter();
   private readonly terminalProjects = new Map<CollabProjectId, TerminalProject>();
-  private readonly terminalizingProjects = new Set<CollabProjectId>();
-  private readonly transferredProjects = new Map<CollabProjectId, HostedProject>();
-  private readonly tlsIdentity: LanTlsIdentity;
+   readonly #terminalizingProjects = new Set<CollabProjectId>();
+   readonly #transferredProjects = new Map<CollabProjectId, HostedProject>();
+   readonly #tlsIdentity: LanTlsIdentity;
 
   constructor(private readonly options: LanHostCoordinatorOptions) {
-    this.clearAuthorityTransferExpiryTimeout = options.clearAuthorityTransferExpiryTimeout
+    const installationKey = parseInstallationKey(options.installationKey);
+    this.#hostLockPath = `.claudian/collab/installations/${installationKey}/lan-host.lock`;
+    this.#clearAuthorityTransferExpiryTimeout = options.clearAuthorityTransferExpiryTimeout
       ?? (handle => window.clearTimeout(handle));
     this.now = options.now ?? (() => new Date());
     this.resources = new HostResourceRegistry({
@@ -458,32 +475,37 @@ export class LanHostCoordinator {
         ? {}
         : { closeTimeoutMs: options.resourceCloseTimeoutMs }),
     });
-    this.setAuthorityTransferExpiryTimeout = options.setAuthorityTransferExpiryTimeout
+    this.#setAuthorityTransferExpiryTimeout = options.setAuthorityTransferExpiryTimeout
       ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
-    this.tlsIdentity = options.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot);
+    this.#tlsIdentity = options.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot, {
+      installationKey,
+    });
   }
 
   bindConnectionProjection(projection: LanHostConnectionProjectionPort): void {
-    if (this.connectionProjection) {
+    if (this.#connectionProjection) {
       throw new Error('LAN Host connection projection is already bound');
     }
-    this.connectionProjection = projection;
+    this.#connectionProjection = projection;
   }
 
   bindProjectLifecycleAdmissions(admissions: LanHostProjectLifecycleAdmissions): void {
-    if (this.projectLifecycleAdmissions) {
+    if (this.#projectLifecycleAdmissions) {
       throw new Error('LAN Host Project lifecycle admissions are already bound');
     }
-    this.projectLifecycleAdmissions = admissions;
+    this.#projectLifecycleAdmissions = admissions;
   }
 
   startProject(projectId: CollabProjectId): Promise<CollabHostSession & { endpoint: string }> {
-    this.projectTransitions.set(projectId, 'starting');
-    const operation = () => this.operationQueue.run(() => this.startProjectUnlocked(projectId));
-    const guarded = this.options.runWithProjectStartGuard
-      ? this.options.runWithProjectStartGuard(projectId, operation)
-      : operation();
-    return this.withTransition(
+    this.#projectTransitions.set(projectId, 'starting');
+    const operation = () => this.#operationQueue.run(() => this.#startProjectUnlocked(projectId));
+    const guarded = (async () => {
+      await this.options.assertHostInstallationOwned(projectId);
+      return this.options.runWithProjectStartGuard
+        ? this.options.runWithProjectStartGuard(projectId, operation)
+        : operation();
+    })();
+    return this.#withTransition(
       projectId,
       'starting',
       guarded,
@@ -491,19 +513,20 @@ export class LanHostCoordinator {
   }
 
   stopProject(projectId: CollabProjectId): Promise<CollabHostSession> {
-    this.projectTransitions.set(projectId, 'stopping');
+    this.#projectTransitions.set(projectId, 'stopping');
     const operation = (async () => {
-      const outgoing = await this.operationQueue.run(async () => {
-        const current = this.hostedProjects.get(projectId)?.runtime.outgoingHostTransfer
-          ?? this.transferredProjects.get(projectId)?.runtime.outgoingHostTransfer
-          ?? this.recoveringHostTransfers.get(projectId);
-        if (current) this.router.unregisterProject(projectId);
+      await this.options.assertHostInstallationOwned(projectId);
+      const outgoing = await this.#operationQueue.run(async () => {
+        const current = this.#hostedProjects.get(projectId)?.runtime.outgoingHostTransfer
+          ?? this.#transferredProjects.get(projectId)?.runtime.outgoingHostTransfer
+          ?? this.#recoveringHostTransfers.get(projectId);
+        if (current) this.#router.unregisterProject(projectId);
         return current;
       });
       await outgoing?.close();
-      return this.operationQueue.run(() => this.stopProjectUnlocked(projectId));
+      return this.#operationQueue.run(() => this.#stopProjectUnlocked(projectId));
     })();
-    return this.withTransition(
+    return this.#withTransition(
       projectId,
       'stopping',
       operation,
@@ -511,9 +534,9 @@ export class LanHostCoordinator {
   }
 
   createInvitation(projectId: CollabProjectId): Promise<CollabInvitationView> {
-    return this.operationQueue.run(async () => {
-      const hosted = this.requireHostedProject(projectId);
-      const membership = await this.requireHostMembership(projectId);
+    return this.#operationQueue.run(async () => {
+      const hosted = this.#requireHostedProject(projectId);
+      const membership = await this.#requireHostMembership(projectId);
       const invitation = await hosted.service.createInvitation(
         membership.member.credential,
         {
@@ -529,9 +552,9 @@ export class LanHostCoordinator {
   }
 
   revokeInvitation(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      const hosted = this.requireHostedProject(projectId);
-      const membership = await this.requireHostMembership(projectId);
+    return this.#operationQueue.run(async () => {
+      const hosted = this.#requireHostedProject(projectId);
+      const membership = await this.#requireHostMembership(projectId);
       await hosted.service.revokeInvitation(membership.member.credential, {
         idempotencyKey: `revoke-${randomUUID().replaceAll('-', '')}`,
         projectId,
@@ -542,17 +565,17 @@ export class LanHostCoordinator {
   startProvisionalTransfer(
     registration: HostTransferProvisionalRegistration,
   ): Promise<LanHostProvisionalTransferSession> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       const firstListenerOwner = !this.listener
-        && this.hostedProjects.size === 0
+        && this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
         && this.provisionalTransfers.size === 0
-        && this.authorityTransferRoutes.size === 0;
-      if (firstListenerOwner) await this.acquireHostLock();
+        && this.#authorityTransferRoutes.size === 0;
+      if (firstListenerOwner) await this.#acquireHostLock();
       try {
-        if (!this.listener) this.listener = await this.startListener();
-        this.assertOpen();
+        if (!this.listener) this.listener = await this.#startListener();
+        this.#assertOpen();
         this.provisionalTransfers.register(registration);
         return {
           caCertificatePem: this.listener.caCertificatePem,
@@ -561,11 +584,11 @@ export class LanHostCoordinator {
           transferId: registration.transferId,
         };
       } catch (error) {
-        if (firstListenerOwner && this.hostedProjects.size === 0
+        if (firstListenerOwner && this.#hostedProjects.size === 0
           && this.terminalProjects.size === 0
           && this.provisionalTransfers.size === 0
-          && this.authorityTransferRoutes.size === 0) {
-          await this.closeListenerAndLock().catch(() => undefined);
+          && this.#authorityTransferRoutes.size === 0) {
+          await this.#closeListenerAndLock().catch(() => undefined);
         }
         throw error;
       }
@@ -573,35 +596,35 @@ export class LanHostCoordinator {
   }
 
   stopProvisionalTransfer(transferId: string): Promise<void> {
-    return this.operationQueue.run(async () => {
+    return this.#operationQueue.run(async () => {
       this.provisionalTransfers.unregister(transferId);
-      await this.closeUnusedListener();
+      await this.#closeUnusedListener();
     });
   }
 
   startAuthorityTransferRoute(
     registration: LanAuthorityTransferRouteRegistration,
   ): Promise<LanHostAuthorityTransferSession> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       const firstListenerOwner = !this.listener
-        && this.hostedProjects.size === 0
+        && this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
         && this.provisionalTransfers.size === 0
-        && this.authorityTransferRoutes.size === 0;
-      if (firstListenerOwner) await this.acquireHostLock();
+        && this.#authorityTransferRoutes.size === 0;
+      if (firstListenerOwner) await this.#acquireHostLock();
       try {
         const expectedEndpoint = registration.expectedEndpoint
           ?? (registration.state === 'source-active' ? null : (this.listener?.endpoint ?? null));
-        if (!this.listener) this.listener = await this.startListener(expectedEndpoint);
-        this.assertOpen();
+        if (!this.listener) this.listener = await this.#startListener(expectedEndpoint);
+        this.#assertOpen();
         if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
           throw hostError(
             'endpoint-unreachable',
             'authority-transfer-expected-endpoint-unavailable',
           );
         }
-        const current = this.authorityTransferRoutes.resolve(registration.projectId);
+        const current = this.#authorityTransferRoutes.resolve(registration.projectId);
         if (
           (
             current?.state === 'terminal-source'
@@ -621,9 +644,9 @@ export class LanHostCoordinator {
             projectId: registration.projectId,
           };
         }
-        await this.authorityTransferRoutes.install(registration);
-        this.scheduleAuthorityTransferExpiry(registration);
-        this.startAddressMonitor();
+        await this.#authorityTransferRoutes.install(registration);
+        this.#scheduleAuthorityTransferExpiry(registration);
+        this.#startAddressMonitor();
         return {
           caCertificatePem: this.listener.caCertificatePem,
           caFingerprint: this.listener.caFingerprint,
@@ -631,7 +654,7 @@ export class LanHostCoordinator {
           projectId: registration.projectId,
         };
       } catch (error) {
-        if (firstListenerOwner) await this.closeUnusedListener().catch(() => undefined);
+        if (firstListenerOwner) await this.#closeUnusedListener().catch(() => undefined);
         throw error;
       }
     });
@@ -640,8 +663,8 @@ export class LanHostCoordinator {
   transitionAuthorityTransferRoute(
     transition: LanAuthorityTransferRouteTransition,
   ): Promise<LanHostAuthorityTransferSession> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       if (!this.listener) {
         throw hostError('operation-failed', 'authority-transfer-listener-missing');
       }
@@ -654,8 +677,8 @@ export class LanHostCoordinator {
           'authority-transfer-expected-endpoint-unavailable',
         );
       }
-      await this.authorityTransferRoutes.transition(transition);
-      this.scheduleAuthorityTransferExpiry(transition.next);
+      await this.#authorityTransferRoutes.transition(transition);
+      this.#scheduleAuthorityTransferExpiry(transition.next);
       return {
         caCertificatePem: this.listener.caCertificatePem,
         caFingerprint: this.listener.caFingerprint,
@@ -669,21 +692,21 @@ export class LanHostCoordinator {
     projectId: CollabProjectId,
     expectedState?: LanAuthorityTransferRouteRegistration['state'],
   ): Promise<void> {
-    return this.operationQueue.run(async () => {
-      const removed = await this.authorityTransferRoutes.remove(projectId, expectedState);
-      if (removed) this.clearAuthorityTransferExpiry(projectId);
-      await this.closeUnusedListener();
+    return this.#operationQueue.run(async () => {
+      const removed = await this.#authorityTransferRoutes.remove(projectId, expectedState);
+      if (removed) this.#clearAuthorityTransferExpiry(projectId);
+      await this.#closeUnusedListener();
     });
   }
 
   pinAuthorityTransferSourceEndpoint(projectId: CollabProjectId): Promise<string> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       if (!this.listener) {
         throw hostError('endpoint-unreachable', 'authority-transfer-listener-missing');
       }
       const endpoint = this.listener.endpoint;
-      this.authorityTransferRoutes.pinSourceActiveEndpoint(projectId, endpoint);
+      this.#authorityTransferRoutes.pinSourceActiveEndpoint(projectId, endpoint);
       return endpoint;
     });
   }
@@ -692,60 +715,60 @@ export class LanHostCoordinator {
     projectId: CollabProjectId,
     expectedEndpoint: string,
   ): Promise<void> {
-    return this.operationQueue.run(async () => {
-      this.authorityTransferRoutes.unpinSourceActiveEndpoint(projectId, expectedEndpoint);
+    return this.#operationQueue.run(async () => {
+      this.#authorityTransferRoutes.unpinSourceActiveEndpoint(projectId, expectedEndpoint);
     });
   }
 
   prepareAuthorityTransferTarget(
     expectedEndpoint: string | null = null,
   ): Promise<LanHostAuthorityTransferPreparation> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       const token = Symbol('authority-transfer-target');
       const firstListenerOwner = !this.listener
-        && this.hostedProjects.size === 0
+        && this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
         && this.provisionalTransfers.size === 0
-        && this.authorityTransferRoutes.size === 0
-        && this.authorityTransferPreparations.size === 0;
-      if (firstListenerOwner) await this.acquireHostLock();
+        && this.#authorityTransferRoutes.size === 0
+        && this.#authorityTransferPreparations.size === 0;
+      if (firstListenerOwner) await this.#acquireHostLock();
       try {
-        if (!this.listener) this.listener = await this.startListener(expectedEndpoint);
-        this.assertOpen();
+        if (!this.listener) this.listener = await this.#startListener(expectedEndpoint);
+        this.#assertOpen();
         if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
           throw hostError(
             'endpoint-unreachable',
             'authority-transfer-expected-endpoint-unavailable',
           );
         }
-        this.authorityTransferPreparations.add(token);
-        this.startAddressMonitor();
+        this.#authorityTransferPreparations.add(token);
+        this.#startAddressMonitor();
         const listener = this.listener;
         return Object.freeze({
           caCertificatePem: listener.caCertificatePem,
           caFingerprint: listener.caFingerprint,
-          dispose: () => this.releaseAuthorityTransferPreparation(token),
+          dispose: () => this.#releaseAuthorityTransferPreparation(token),
           endpoint: listener.endpoint,
         });
       } catch (error) {
-        if (firstListenerOwner) await this.closeUnusedListener().catch(() => undefined);
+        if (firstListenerOwner) await this.#closeUnusedListener().catch(() => undefined);
         throw error;
       }
     });
   }
 
   hostCaSigner(): Promise<LanTlsHostCaSigner> {
-    return this.tlsIdentity.hostCaSigner();
+    return this.#tlsIdentity.hostCaSigner();
   }
 
   quiesceProjectForHostTransfer(
     projectId: CollabProjectId,
     signal?: AbortSignal,
   ): Promise<void> {
-    return this.operationQueue.run(async () => {
+    return this.#operationQueue.run(async () => {
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
-      const hosted = this.requireHostedProject(projectId);
+      const hosted = this.#requireHostedProject(projectId);
       await hosted.admission.quiesceAndDrain('transferred');
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
     });
@@ -755,34 +778,34 @@ export class LanHostCoordinator {
     projectId: CollabProjectId,
     signal?: AbortSignal,
   ): Promise<void> {
-    return this.operationQueue.run(async () => {
+    return this.#operationQueue.run(async () => {
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
-      const hosted = this.requireHostedProject(projectId);
+      const hosted = this.#requireHostedProject(projectId);
       await hosted.admission.quiesceAndDrain('transferred');
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
     });
   }
 
   reopenProjectBeforeHostTransfer(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      const hosted = this.requireHostedProject(projectId);
+    return this.#operationQueue.run(async () => {
+      const hosted = this.#requireHostedProject(projectId);
       hosted.admission.reopen();
     });
   }
 
   reopenProjectAfterAuthorityTransferCancellation(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      const hosted = this.requireHostedProject(projectId);
+    return this.#operationQueue.run(async () => {
+      const hosted = this.#requireHostedProject(projectId);
       hosted.admission.reopen();
     });
   }
 
   closeProjectForHostTransfer(projectId: CollabProjectId): Promise<void> {
-    return this.closeHostedProjectForTransfer(projectId, true);
+    return this.#closeHostedProjectForTransfer(projectId, true);
   }
 
   relinquishProjectForAuthorityTransfer(projectId: CollabProjectId): Promise<void> {
-    return this.closeHostedProjectForTransfer(projectId, false);
+    return this.#closeHostedProjectForTransfer(projectId, false);
   }
 
   activateAuthorityTransferTerminalSource(input: {
@@ -792,8 +815,8 @@ export class LanHostCoordinator {
     readonly service: LanAuthorityTransferTerminalSourceService;
     readonly transferId: string;
   }): Promise<LanHostAuthorityTransferSession> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       if (!this.listener) {
         throw hostError('operation-failed', 'authority-transfer-listener-missing');
       }
@@ -803,7 +826,7 @@ export class LanHostCoordinator {
           'authority-transfer-expected-endpoint-unavailable',
         );
       }
-      const current = this.authorityTransferRoutes.resolve(input.projectId);
+      const current = this.#authorityTransferRoutes.resolve(input.projectId);
       if (
         current?.state === 'terminal-source'
         && current.transferId === input.transferId
@@ -825,12 +848,12 @@ export class LanHostCoordinator {
         state: 'terminal-source',
         transferId: input.transferId,
       };
-      await this.authorityTransferRoutes.transition({
+      await this.#authorityTransferRoutes.transition({
         expected: current,
         next,
         relinquishmentProof: input.relinquishmentProof,
       });
-      this.scheduleAuthorityTransferExpiry(next);
+      this.#scheduleAuthorityTransferExpiry(next);
       return {
         caCertificatePem: this.listener.caCertificatePem,
         caFingerprint: this.listener.caFingerprint,
@@ -841,27 +864,28 @@ export class LanHostCoordinator {
   }
 
   completeProjectHostTransfer(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      this.transferredProjects.delete(projectId);
-      await this.closeUnusedListener();
+    return this.#operationQueue.run(async () => {
+      this.#transferredProjects.delete(projectId);
+      await this.#closeUnusedListener();
     });
   }
 
-  private closeHostedProjectForTransfer(
+   #closeHostedProjectForTransfer(
     projectId: CollabProjectId,
     removeAuthorityTransferRoute: boolean,
   ): Promise<void> {
-    return this.operationQueue.run(async () => {
-      if (this.transferredProjects.has(projectId)) return;
-      const hosted = this.hostedProjects.get(projectId);
+    return this.#operationQueue.run(async () => {
+      if (this.#transferredProjects.has(projectId)) return;
+      const hosted = this.#hostedProjects.get(projectId);
       if (!hosted) return;
       hosted.admission.commitTerminal('transferred');
-      this.router.unregisterProject(projectId);
+      this.#router.unregisterProject(projectId);
       if (removeAuthorityTransferRoute) {
-        await this.authorityTransferRoutes.remove(projectId, 'source-active');
+        await this.#authorityTransferRoutes.remove(projectId, 'source-active');
       }
-      this.hostedProjects.delete(projectId);
-      this.transferredProjects.set(projectId, hosted);
+      this.#hostedProjects.delete(projectId);
+      this.#connectionProjection?.resetProjectConnection(projectId);
+      this.#transferredProjects.set(projectId, hosted);
       let firstError: unknown;
       await hosted.advertisement?.stop().catch(error => {
         firstError = error;
@@ -870,10 +894,10 @@ export class LanHostCoordinator {
       await hosted.gitProxy.close().catch(error => {
         firstError ??= error;
       });
-      await this.closeProjectResources(projectId).catch(error => {
+      await this.#closeProjectResources(projectId).catch(error => {
         firstError ??= error;
       });
-      await this.closeUnusedListener().catch(error => {
+      await this.#closeUnusedListener().catch(error => {
         firstError ??= error;
       });
       if (firstError instanceof Error) throw firstError;
@@ -882,14 +906,24 @@ export class LanHostCoordinator {
   }
 
   isProjectRunning(projectId: CollabProjectId): boolean {
-    return this.hostedProjects.has(projectId);
+    return this.#hostedProjects.has(projectId);
+  }
+
+  getActiveProjectRoute(projectId: CollabProjectId): LanHostActiveProjectRoute | null {
+    if (!this.#hostedProjects.has(projectId) || !this.listener) return null;
+    return {
+      caCertificatePem: this.listener.caCertificatePem,
+      caFingerprint: this.listener.caFingerprint,
+      endpoint: this.listener.endpoint,
+      projectId,
+    };
   }
 
   getProjectState(projectId: CollabProjectId): LanHostProjectState {
-    const transition = this.projectTransitions.get(projectId);
+    const transition = this.#projectTransitions.get(projectId);
     if (transition) return { projectId, status: transition };
-    if (this.listenerFailure) return { projectId, status: 'needs-attention' };
-    if (this.hostedProjects.has(projectId) && this.listener) {
+    if (this.#listenerFailure) return { projectId, status: 'needs-attention' };
+    if (this.#hostedProjects.has(projectId) && this.listener) {
       return {
         endpoint: this.listener.endpoint,
         projectId,
@@ -904,14 +938,14 @@ export class LanHostCoordinator {
     memberId: string,
     close: HostResourceCloser,
   ): () => void {
-    if (!this.hostedProjects.has(projectId)) {
+    if (!this.#hostedProjects.has(projectId)) {
       throw hostError('project-not-found', 'host-project-not-running');
     }
     return this.resources.register(projectId, memberId, close);
   }
 
   registerTerminalProject(runtime: LanHostTerminalProjectRuntime): void {
-    this.router.registerTerminalProject(runtime.projectId, runtime.service);
+    this.#router.registerTerminalProject(runtime.projectId, runtime.service);
     const existing = this.terminalProjects.get(runtime.projectId);
     if (existing && existing.service !== runtime.service) {
       throw hostError('operation-failed', 'host-terminal-project-already-registered');
@@ -921,12 +955,12 @@ export class LanHostCoordinator {
 
   unregisterTerminalProject(projectId: CollabProjectId): boolean {
     this.terminalProjects.delete(projectId);
-    return this.router.unregisterTerminalProject(projectId);
+    return this.#router.unregisterTerminalProject(projectId);
   }
 
   startTerminalProject(runtime: LanHostTerminalProjectRuntime): Promise<void> {
-    return this.operationQueue.run(async () => {
-      this.assertOpen();
+    return this.#operationQueue.run(async () => {
+      this.#assertOpen();
       const existing = this.terminalProjects.get(runtime.projectId);
       if (existing) {
         if (existing.service !== runtime.service) {
@@ -935,14 +969,14 @@ export class LanHostCoordinator {
         return;
       }
       const firstListenerOwner = !this.listener
-        && this.hostedProjects.size === 0
+        && this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
         && this.provisionalTransfers.size === 0
-        && this.authorityTransferRoutes.size === 0;
-      if (firstListenerOwner) await this.acquireHostLock();
+        && this.#authorityTransferRoutes.size === 0;
+      if (firstListenerOwner) await this.#acquireHostLock();
       try {
-        if (!this.listener) this.listener = await this.startListener();
-        this.assertOpen();
+        if (!this.listener) this.listener = await this.#startListener();
+        this.#assertOpen();
         const listener = this.listener;
         this.registerTerminalProject(runtime);
         const terminal = this.terminalProjects.get(runtime.projectId)!;
@@ -951,22 +985,22 @@ export class LanHostCoordinator {
           endpoint: listener.endpoint,
           projectId: runtime.projectId,
         }).catch(() => undefined);
-        this.startAddressMonitor();
+        this.#startAddressMonitor();
       } catch (error) {
         this.unregisterTerminalProject(runtime.projectId);
-        if (firstListenerOwner) await this.closeUnusedListener().catch(() => undefined);
+        if (firstListenerOwner) await this.#closeUnusedListener().catch(() => undefined);
         throw error;
       }
     });
   }
 
   stopTerminalProject(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
+    return this.#operationQueue.run(async () => {
       const terminal = this.terminalProjects.get(projectId);
       if (!terminal) return;
       this.unregisterTerminalProject(projectId);
       await terminal.advertisement?.stop().catch(() => undefined);
-      await this.closeUnusedListener();
+      await this.#closeUnusedListener();
     });
   }
 
@@ -975,18 +1009,18 @@ export class LanHostCoordinator {
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
+    if (this.#closePromise) return this.#closePromise;
     this.closed = true;
     this.provisionalTransfers.clear();
-    this.stopAddressMonitor();
-    for (const projectId of this.hostedProjects.keys()) {
-      this.projectTransitions.set(projectId, 'stopping');
+    this.#stopAddressMonitor();
+    for (const projectId of this.#hostedProjects.keys()) {
+      this.#projectTransitions.set(projectId, 'stopping');
     }
     const started = this.beginShutdown();
-    this.closePromise = (async () => {
+    this.#closePromise = (async () => {
       const transferErrors = await Promise.all(started.transferDrains);
-      return this.operationQueue.run(async () => {
-        const hosted = [...this.hostedProjects.entries()];
+      return this.#operationQueue.run(async () => {
+        const hosted = [...this.#hostedProjects.entries()];
         const terminal = [...this.terminalProjects.entries()];
         let firstError: unknown = transferErrors.find(error => error !== null) ?? null;
         for (const [projectId, project] of hosted) {
@@ -995,7 +1029,8 @@ export class LanHostCoordinator {
           } catch (error) {
             firstError ??= error;
           }
-          this.hostedProjects.delete(projectId);
+          this.#hostedProjects.delete(projectId);
+          this.#connectionProjection?.resetProjectConnection(projectId);
         }
         for (const [projectId, project] of terminal) {
           this.unregisterTerminalProject(projectId);
@@ -1013,7 +1048,7 @@ export class LanHostCoordinator {
           });
         }
         this.provisionalTransfers.clear();
-        await this.closeListenerAndLock().catch(error => {
+        await this.#closeListenerAndLock().catch(error => {
           firstError ??= error;
         });
         for (const drain of [
@@ -1024,32 +1059,33 @@ export class LanHostCoordinator {
           const error = await drain;
           if (error) firstError ??= error;
         }
-        this.projectTransitions.clear();
-        this.recoveringHostTransfers.clear();
-        this.transferredProjects.clear();
+        this.#projectTransitions.clear();
+        this.#recoveringHostTransfers.clear();
+        this.#transferredProjects.clear();
         if (firstError instanceof Error) throw firstError;
         if (firstError) throw hostError('operation-failed', 'lan-host-close-failed');
       });
     })();
-    return this.closePromise;
+    return this.#closePromise;
   }
 
-  private async startProjectUnlocked(
+   async #startProjectUnlocked(
     projectId: CollabProjectId,
   ): Promise<CollabHostSession & { endpoint: string }> {
-    this.assertOpen();
+    this.#assertOpen();
     if (!isCollabProjectId(projectId)) {
       throw hostError('project-not-found', 'host-project-id-invalid');
     }
-    if (this.terminalizingProjects.has(projectId) || this.terminalProjects.has(projectId)) {
+    this.#assertOpen();
+    if (this.#terminalizingProjects.has(projectId) || this.terminalProjects.has(projectId)) {
       throw hostError('project-retired', 'host-project-terminal');
     }
-    if (this.listenerFailure) throw this.listenerFailure;
-    const existing = this.hostedProjects.get(projectId);
+    if (this.#listenerFailure) throw this.#listenerFailure;
+    const existing = this.#hostedProjects.get(projectId);
     if (existing && this.listener) {
       return { endpoint: this.listener.endpoint, projectId, status: 'running' };
     }
-    if (this.recoveringHostTransfers.has(projectId)) {
+    if (this.#recoveringHostTransfers.has(projectId)) {
       throw hostError(
         'durable-progress-recovery-required',
         'host-transfer-post-relinquishment-recovery-in-progress',
@@ -1059,10 +1095,10 @@ export class LanHostCoordinator {
       projectId,
       'incoming',
     );
-    this.assertOpen();
+    this.#assertOpen();
     if (incomingRecovery) {
       const membership = await this.options.localProjects.loadMembership(projectId);
-      this.assertOpen();
+      this.#assertOpen();
       if (
         !membership
         || !isCollabLocalLanMembership(membership)
@@ -1075,16 +1111,16 @@ export class LanHostCoordinator {
       }
     }
 
-    const membership = await this.requireLanMembership(projectId);
-    this.assertOpen();
+    const membership = await this.#requireLanMembership(projectId);
+    this.#assertOpen();
     const firstListenerOwner = !this.listener
-      && this.hostedProjects.size === 0
+      && this.#hostedProjects.size === 0
       && this.terminalProjects.size === 0
       && this.provisionalTransfers.size === 0
-      && this.authorityTransferRoutes.size === 0;
+      && this.#authorityTransferRoutes.size === 0;
     if (firstListenerOwner) {
-      await this.acquireHostLock();
-      this.assertOpen();
+      await this.#acquireHostLock();
+      this.#assertOpen();
     }
     let routeRegistered = false;
     let authorityTransferRouteRegistered = false;
@@ -1094,12 +1130,12 @@ export class LanHostCoordinator {
     try {
       const openedRuntime = await this.options.openProject(projectId);
       runtime = openedRuntime;
-      this.assertOpen();
+      this.#assertOpen();
       await openedRuntime.validate();
-      this.assertOpen();
+      this.#assertOpen();
       const transferRecovery = await openedRuntime.outgoingHostTransfer
         ?.inspectStartupRecovery?.();
-      this.assertOpen();
+      this.#assertOpen();
       if (transferRecovery === 'pre-relinquishment-cleanup') {
         const outgoingHostTransfer = openedRuntime.outgoingHostTransfer;
         if (!outgoingHostTransfer?.prepareTerminalRecoveryBeforeStartup) {
@@ -1112,13 +1148,13 @@ export class LanHostCoordinator {
       }
       if (transferRecovery === 'post-relinquishment') {
         const outgoingHostTransfer = openedRuntime.outgoingHostTransfer!;
-        this.recoveringHostTransfers.set(projectId, outgoingHostTransfer);
+        this.#recoveringHostTransfers.set(projectId, outgoingHostTransfer);
         queueMicrotask(() => {
           void outgoingHostTransfer.resume?.()
             .catch(() => undefined)
             .finally(() => {
-              if (this.recoveringHostTransfers.get(projectId) === outgoingHostTransfer) {
-                this.recoveringHostTransfers.delete(projectId);
+              if (this.#recoveringHostTransfers.get(projectId) === outgoingHostTransfer) {
+                this.#recoveringHostTransfers.delete(projectId);
               }
             });
         });
@@ -1140,8 +1176,8 @@ export class LanHostCoordinator {
       ) {
         throw hostError('authorization-denied', 'host-authority-ownership-mismatch');
       }
-      if (!this.listener) this.listener = await this.startListener();
-      this.assertOpen();
+      if (!this.listener) this.listener = await this.#startListener();
+      this.#assertOpen();
       const listener = this.listener;
       if (
         membership.authority.hostCaFingerprint !== null
@@ -1157,7 +1193,7 @@ export class LanHostCoordinator {
       const codec = this.options.createInvitationCodec?.(listener.address)
         ?? new InvitationCodec();
       const service = new PendingMembershipService(openedRuntime.authority, {
-        getHostEndpoint: () => this.currentHostEndpoint(),
+        getHostEndpoint: () => this.#currentHostEndpoint(),
         getInvitationCodec: () => {
           const address = this.listener?.address ?? listener.address;
           return this.options.createInvitationCodec?.(address) ?? new InvitationCodec();
@@ -1171,9 +1207,9 @@ export class LanHostCoordinator {
         readMainOid: openedRuntime.readMainOid,
       });
       await service.garbageCollectExpiredPending();
-      gitProxy = this.createGitProxy(projectId, openedRuntime, service);
+      gitProxy = this.#createGitProxy(projectId, openedRuntime, service);
       await gitProxy.enable();
-      this.assertOpen();
+      this.#assertOpen();
       const hostedMembership: CollabLocalLanMembershipRecord = {
         ...membership,
         authority: {
@@ -1186,8 +1222,8 @@ export class LanHostCoordinator {
         hostOwnership: { autoStart: true, ownsAuthority: true },
         updatedAt: this.now().toISOString(),
       };
-      await this.options.localProjects.saveMembership(hostedMembership);
-      this.assertOpen();
+      await this.#commitHostedRoute(membership, hostedMembership);
+      this.#assertOpen();
       const administration = new MembershipAdminService(openedRuntime.authority, {
         now: this.now,
         onMembershipTerminated: result => (
@@ -1208,7 +1244,7 @@ export class LanHostCoordinator {
             openedRuntime.outgoingHostTransfer,
             {
               projectLifecycleAdmission: (admissionProjectId, operation) => (
-                this.requireProjectLifecycleAdmissions().hostTransfer(
+                this.#requireProjectLifecycleAdmissions().hostTransfer(
                   admissionProjectId,
                   operation,
                 )
@@ -1228,24 +1264,24 @@ export class LanHostCoordinator {
         } : {}),
         ...openedRuntime.lifecycle.createRetirementCoordinator({
           projectLifecycleAdmission: (admissionProjectId, operation) => (
-            this.requireProjectLifecycleAdmissions().retirement(
+            this.#requireProjectLifecycleAdmissions().retirement(
               admissionProjectId,
               operation,
             )
           ),
           admission: {
             quiesceAndDrain: async () => {
-              await this.beginRetirement(projectId);
+              await this.#beginRetirement(projectId);
               try {
                 await admission.quiesceAndDrain('retired');
               } catch (error) {
-                await this.resumeRetirement(projectId).catch(() => undefined);
+                await this.#resumeRetirement(projectId).catch(() => undefined);
                 throw error;
               }
             },
             resume: async () => {
               admission.reopen();
-              await this.resumeRetirement(projectId);
+              await this.#resumeRetirement(projectId);
             },
           },
           activateTerminal: async terminal => {
@@ -1256,7 +1292,7 @@ export class LanHostCoordinator {
             await openedRuntime.events?.publishRetirement?.(result);
           },
           teardown: async () => {
-            await this.retireActiveProject(projectId, admission);
+            await this.#retireActiveProject(projectId, admission);
           },
         }),
       };
@@ -1268,14 +1304,14 @@ export class LanHostCoordinator {
         lifecycle,
         admission,
       );
-      this.router.registerProject(
+      this.#router.registerProject(
         projectId,
         controlService,
         controlService.routing,
       );
       routeRegistered = true;
       if (openedRuntime.authorityTransfer) {
-        const existingAuthorityTransferRoute = this.authorityTransferRoutes.resolve(projectId);
+        const existingAuthorityTransferRoute = this.#authorityTransferRoutes.resolve(projectId);
         if (
           existingAuthorityTransferRoute?.state === 'source-active'
           && existingAuthorityTransferRoute.hostMemberId !== hostedMembership.member.id
@@ -1292,7 +1328,7 @@ export class LanHostCoordinator {
               'authority-transfer-route-conflict',
             );
           }
-          await this.authorityTransferRoutes.install({
+          await this.#authorityTransferRoutes.install({
             hostMemberId: hostedMembership.member.id,
             projectId,
             service: openedRuntime.authorityTransfer,
@@ -1306,8 +1342,8 @@ export class LanHostCoordinator {
         endpoint: listener.endpoint,
         projectId,
       }).catch(() => undefined);
-      this.assertOpen();
-      this.hostedProjects.set(projectId, {
+      this.#assertOpen();
+      this.#hostedProjects.set(projectId, {
         admission,
         ...(advertisement ? { advertisement } : {}),
         ...(openedRuntime.events ? { events: openedRuntime.events } : {}),
@@ -1316,80 +1352,82 @@ export class LanHostCoordinator {
         runtime: openedRuntime,
         service,
       });
+      this.#connectionProjection?.resetProjectConnection(projectId);
       if (openedRuntime.outgoingHostTransfer?.resume) {
         queueMicrotask(() => {
           void openedRuntime.outgoingHostTransfer!.resume!().catch(() => undefined);
         });
       }
-      this.startAddressMonitor();
+      this.#startAddressMonitor();
       return { endpoint: listener.endpoint, projectId, status: 'running' };
     } catch (error) {
       if (authorityTransferRouteRegistered) {
-        await this.authorityTransferRoutes.remove(projectId, 'source-active')
+        await this.#authorityTransferRoutes.remove(projectId, 'source-active')
           .catch(() => undefined);
       }
-      if (routeRegistered) this.router.unregisterProject(projectId);
+      if (routeRegistered) this.#router.unregisterProject(projectId);
       await advertisement?.stop().catch(() => undefined);
       runtime?.events?.close();
       await gitProxy?.close().catch(() => undefined);
-      if (firstListenerOwner && this.hostedProjects.size === 0) {
-        await this.closeUnusedListener().catch(() => undefined);
+      if (firstListenerOwner && this.#hostedProjects.size === 0) {
+        await this.#closeUnusedListener().catch(() => undefined);
       }
       throw error;
     }
   }
 
-  private requireProjectLifecycleAdmissions(): LanHostProjectLifecycleAdmissions {
-    if (!this.projectLifecycleAdmissions) {
+   #requireProjectLifecycleAdmissions(): LanHostProjectLifecycleAdmissions {
+    if (!this.#projectLifecycleAdmissions) {
       throw hostError('host-stopped', 'project-lifecycle-admission-not-bound');
     }
-    return this.projectLifecycleAdmissions;
+    return this.#projectLifecycleAdmissions;
   }
 
-  private async stopProjectUnlocked(projectId: CollabProjectId): Promise<CollabHostSession> {
-    if (this.terminalizingProjects.has(projectId) || this.terminalProjects.has(projectId)) {
+   async #stopProjectUnlocked(projectId: CollabProjectId): Promise<CollabHostSession> {
+    if (this.#terminalizingProjects.has(projectId) || this.terminalProjects.has(projectId)) {
       throw hostError('project-retired', 'host-project-terminal');
     }
-    const membership = await this.requireHostMembership(projectId);
+    const membership = await this.#requireHostMembership(projectId);
     await this.options.localProjects.saveMembership({
       ...membership,
       hostOwnership: { autoStart: false, ownsAuthority: true },
       updatedAt: this.now().toISOString(),
     });
-    const hosted = this.hostedProjects.get(projectId);
+    const hosted = this.#hostedProjects.get(projectId);
     if (!hosted) return { projectId, status: 'stopped' };
     let firstError: unknown;
     await hosted.advertisement?.stop().catch(error => {
       firstError = error;
     });
-    this.router.unregisterProject(projectId);
-    await this.authorityTransferRoutes.remove(projectId, 'source-active');
+    this.#router.unregisterProject(projectId);
+    this.#hostedProjects.delete(projectId);
+    this.#connectionProjection?.resetProjectConnection(projectId);
+    await this.#authorityTransferRoutes.remove(projectId, 'source-active');
     await hosted.service.stopHosting().catch(error => {
       firstError ??= error;
     });
-    this.hostedProjects.delete(projectId);
     hosted.events?.close();
     await hosted.gitProxy.close().catch(error => {
       firstError ??= error;
     });
-    await this.closeProjectResources(projectId).catch(error => {
+    await this.#closeProjectResources(projectId).catch(error => {
       firstError ??= error;
     });
     if (
-      this.hostedProjects.size === 0
+      this.#hostedProjects.size === 0
       && this.terminalProjects.size === 0
-      && this.authorityTransferRoutes.size === 0
+      && this.#authorityTransferRoutes.size === 0
     ) {
-      this.stopAddressMonitor();
+      this.#stopAddressMonitor();
     }
     if (
-      this.hostedProjects.size === 0
+      this.#hostedProjects.size === 0
       && this.terminalProjects.size === 0
       && this.provisionalTransfers.size === 0
-      && this.authorityTransferRoutes.size === 0
+      && this.#authorityTransferRoutes.size === 0
     ) {
-      this.stopAddressMonitor();
-      await this.closeListenerAndLock().catch(error => {
+      this.#stopAddressMonitor();
+      await this.#closeListenerAndLock().catch(error => {
         firstError ??= error;
       });
     }
@@ -1398,7 +1436,7 @@ export class LanHostCoordinator {
     return { projectId, status: 'stopped' };
   }
 
-  private async startListener(expectedEndpoint: string | null = null): Promise<RunningListener> {
+   async #startListener(expectedEndpoint: string | null = null): Promise<RunningListener> {
     const addresses = this.options.getPrivateIpv4Addresses?.()
       ?? listPrivateIpv4Addresses();
     let expected: URL | null = null;
@@ -1426,7 +1464,7 @@ export class LanHostCoordinator {
     ) {
       throw hostError('endpoint-unreachable', 'private-ipv4-unavailable');
     }
-    const identity = await this.tlsIdentity.issueServerIdentity(address);
+    const identity = await this.#tlsIdentity.issueServerIdentity(address);
     const candidates = expected
       ? [Number(expected.port)]
       : (this.options.portCandidates ?? defaultPortCandidates());
@@ -1449,7 +1487,7 @@ export class LanHostCoordinator {
         maxHeaderSize: 16 * 1024,
         minVersion: 'TLSv1.2',
       }, (request, response) => {
-        void this.handleHttpRequest(request, response);
+        void this.#handleHttpRequest(request, response);
       });
       server.headersTimeout = 10_000;
       server.keepAliveTimeout = 5_000;
@@ -1465,13 +1503,13 @@ export class LanHostCoordinator {
       }
       const bound = server.address();
       if (!bound || typeof bound === 'string') {
-        await this.closeHttpsServer(server);
+        await this.#closeHttpsServer(server);
         webSocketServer.close();
         throw hostError('endpoint-unreachable', 'host-listener-address-missing');
       }
       server.on('error', () => {
         if (this.listener?.server === server) {
-          this.listenerFailure = hostError(
+          this.#listenerFailure = hostError(
             'endpoint-unreachable',
             'host-listener-runtime-failed',
           );
@@ -1494,7 +1532,7 @@ export class LanHostCoordinator {
     );
   }
 
-  private createGitProxy(
+   #createGitProxy(
     projectId: CollabProjectId,
     runtime: LanHostProjectRuntime,
     service: PendingMembershipService,
@@ -1518,36 +1556,36 @@ export class LanHostCoordinator {
       ?? new GitHttpBackendProxy(proxyOptions);
   }
 
-  private async handleHttpRequest(
+   async #handleHttpRequest(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
-    if (await this.authorityTransferRouter.handle(request, response)) return;
+    if (await this.#authorityTransferRouter.handle(request, response)) return;
     const provisionalCount = this.provisionalTransfers.size;
     if (await this.provisionalTransfers.handle(request, response)) {
       if (this.provisionalTransfers.size < provisionalCount) {
         response.once('finish', () => {
-          void this.operationQueue.run(() => this.closeUnusedListener()).catch(() => undefined);
+          void this.#operationQueue.run(() => this.#closeUnusedListener()).catch(() => undefined);
         });
       }
       return;
     }
     if (!isGitHttpRoute(request.url)) {
-      await this.router.handle(request, response);
+      await this.#router.handle(request, response);
       return;
     }
     let projectId: string;
     try {
       projectId = parseGitHttpRoute(request.method ?? '', request.url!).projectId;
     } catch {
-      this.writeGitRouteUnavailable(response);
+      this.#writeGitRouteUnavailable(response);
       return;
     }
-    const hosted = this.hostedProjects.get(projectId);
+    const hosted = this.#hostedProjects.get(projectId);
     if (!hosted) {
-      this.writeGitRouteUnavailable(
+      this.#writeGitRouteUnavailable(
         response,
-        this.router.hasTerminalProject(projectId) ? 410 : 404,
+        this.#router.hasTerminalProject(projectId) ? 410 : 404,
       );
       return;
     }
@@ -1563,27 +1601,27 @@ export class LanHostCoordinator {
     }
   }
 
-  private async closeUnusedListener(): Promise<void> {
+   async #closeUnusedListener(): Promise<void> {
     if (
-      this.hostedProjects.size === 0
+      this.#hostedProjects.size === 0
       && this.terminalProjects.size === 0
-      && this.authorityTransferRoutes.size === 0
-      && this.authorityTransferPreparations.size === 0
+      && this.#authorityTransferRoutes.size === 0
+      && this.#authorityTransferPreparations.size === 0
     ) {
-      this.stopAddressMonitor();
+      this.#stopAddressMonitor();
     }
     if (
-      this.hostedProjects.size > 0
+      this.#hostedProjects.size > 0
       || this.terminalProjects.size > 0
       || this.provisionalTransfers.size > 0
-      || this.authorityTransferRoutes.size > 0
-      || this.authorityTransferPreparations.size > 0
+      || this.#authorityTransferRoutes.size > 0
+      || this.#authorityTransferPreparations.size > 0
     ) return;
-    this.stopAddressMonitor();
-    await this.closeListenerAndLock();
+    this.#stopAddressMonitor();
+    await this.#closeListenerAndLock();
   }
 
-  private writeGitRouteUnavailable(response: ServerResponse, statusCode = 404): void {
+   #writeGitRouteUnavailable(response: ServerResponse, statusCode = 404): void {
     response.statusCode = statusCode;
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1618,7 +1656,7 @@ export class LanHostCoordinator {
   ): Promise<void> {
     let authenticated: Awaited<ReturnType<CollabControlRouter['authenticateEvent']>>;
     try {
-      authenticated = await this.router.authenticateEvent({
+      authenticated = await this.#router.authenticateEvent({
         ...(typeof request.headers.authorization === 'string'
           ? { authorization: request.headers.authorization }
           : {}),
@@ -1632,7 +1670,7 @@ export class LanHostCoordinator {
       return;
     }
     webSocketServer.handleUpgrade(request, socket, head, webSocket => {
-      const hosted = this.hostedProjects.get(authenticated.projectId);
+      const hosted = this.#hostedProjects.get(authenticated.projectId);
       if (!hosted || hosted.admission.mode !== 'active') {
         webSocket.close(1008, 'Project unavailable');
         return;
@@ -1679,10 +1717,15 @@ export class LanHostCoordinator {
     });
   }
 
-  private async acquireHostLock(): Promise<void> {
+   async #acquireHostLock(): Promise<void> {
     if (this.hostLock) return;
     await this.options.localProjects.ensurePrivateStateContainer();
-    const lockPath = await resolveCollabVaultPath(this.options.vaultRoot, HOST_LOCK_PATH);
+    await ensureCollabVaultDirectory(
+      this.options.vaultRoot,
+      this.#hostLockPath.slice(0, this.#hostLockPath.lastIndexOf('/')),
+      { mode: 0o700 },
+    );
+    const lockPath = await resolveCollabVaultPath(this.options.vaultRoot, this.#hostLockPath);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const nonce = randomUUID().replaceAll('-', '');
       let handle: Awaited<ReturnType<typeof open>> | null = null;
@@ -1725,7 +1768,7 @@ export class LanHostCoordinator {
     throw hostError('authorization-denied', 'vault-host-lock-unavailable');
   }
 
-  private async releaseHostLock(): Promise<void> {
+   async #releaseHostLock(): Promise<void> {
     const lock = this.hostLock;
     if (!lock) return;
     this.hostLock = null;
@@ -1745,22 +1788,22 @@ export class LanHostCoordinator {
     }
   }
 
-  private async closeListenerAndLock(): Promise<void> {
+   async #closeListenerAndLock(): Promise<void> {
     const listener = this.listener;
     this.listener = null;
-    this.listenerFailure = null;
+    this.#listenerFailure = null;
     if (listener) await this.closeListener(listener);
-    await this.releaseHostLock();
+    await this.#releaseHostLock();
   }
 
   private closeListener(listener: RunningListener): Promise<void> {
     return Promise.all([
-      this.closeHttpsServer(listener.server),
-      this.closeWebSocketServer(listener.webSocketServer),
+      this.#closeHttpsServer(listener.server),
+      this.#closeWebSocketServer(listener.webSocketServer),
     ]).then(() => undefined);
   }
 
-  private closeHttpsServer(server: HttpsServer): Promise<void> {
+   #closeHttpsServer(server: HttpsServer): Promise<void> {
     return new Promise(resolve => {
       let settled = false;
       const finish = () => {
@@ -1775,7 +1818,7 @@ export class LanHostCoordinator {
     });
   }
 
-  private closeWebSocketServer(server: WebSocketServer): Promise<void> {
+   #closeWebSocketServer(server: WebSocketServer): Promise<void> {
     return new Promise(resolve => {
       let settled = false;
       const finish = () => {
@@ -1791,74 +1834,74 @@ export class LanHostCoordinator {
   }
 
   private beginShutdown(): StartedHostShutdown {
-    this.stopAddressMonitor();
-    this.authorityTransferPreparations.clear();
-    for (const projectId of this.authorityTransferExpiryTimers.keys()) {
-      this.clearAuthorityTransferExpiry(projectId);
+    this.#stopAddressMonitor();
+    this.#authorityTransferPreparations.clear();
+    for (const projectId of this.#authorityTransferExpiryTimers.keys()) {
+      this.#clearAuthorityTransferExpiry(projectId);
     }
     const gitDrains: Promise<unknown>[] = [];
     const transferDrains: Promise<unknown>[] = [];
-    transferDrains.push(this.captureShutdown(() => this.authorityTransferRoutes.close()));
-    for (const [projectId, project] of this.hostedProjects) {
-      this.router.unregisterProject(projectId);
+    transferDrains.push(this.#captureShutdown(() => this.#authorityTransferRoutes.close()));
+    for (const [projectId, project] of this.#hostedProjects) {
+      this.#router.unregisterProject(projectId);
       if (project.runtime.outgoingHostTransfer) {
-        transferDrains.push(this.captureShutdown(
+        transferDrains.push(this.#captureShutdown(
           () => project.runtime.outgoingHostTransfer!.close(),
         ));
       }
-      gitDrains.push(this.captureShutdown(() => project.advertisement?.stop()));
-      gitDrains.push(this.captureShutdown(() => project.events?.close()));
-      gitDrains.push(this.captureShutdown(() => project.gitProxy.close()));
+      gitDrains.push(this.#captureShutdown(() => project.advertisement?.stop()));
+      gitDrains.push(this.#captureShutdown(() => project.events?.close()));
+      gitDrains.push(this.#captureShutdown(() => project.gitProxy.close()));
     }
-    for (const project of this.transferredProjects.values()) {
+    for (const project of this.#transferredProjects.values()) {
       if (project.runtime.outgoingHostTransfer) {
-        transferDrains.push(this.captureShutdown(
+        transferDrains.push(this.#captureShutdown(
           () => project.runtime.outgoingHostTransfer!.close(),
         ));
       }
     }
-    for (const outgoing of this.recoveringHostTransfers.values()) {
-      transferDrains.push(this.captureShutdown(() => outgoing.close()));
+    for (const outgoing of this.#recoveringHostTransfers.values()) {
+      transferDrains.push(this.#captureShutdown(() => outgoing.close()));
     }
     return {
       gitDrains,
-      listenerDrain: this.captureShutdown(() => this.closeListenerAndLock()),
-      resourceDrain: this.captureShutdown(() => this.resources.closeAll('host-stopped')),
+      listenerDrain: this.#captureShutdown(() => this.#closeListenerAndLock()),
+      resourceDrain: this.#captureShutdown(() => this.resources.closeAll('host-stopped')),
       transferDrains,
     };
   }
 
-  private clearAuthorityTransferExpiry(projectId: CollabProjectId): void {
-    const timer = this.authorityTransferExpiryTimers.get(projectId);
+   #clearAuthorityTransferExpiry(projectId: CollabProjectId): void {
+    const timer = this.#authorityTransferExpiryTimers.get(projectId);
     if (timer === undefined) return;
-    this.clearAuthorityTransferExpiryTimeout(timer);
-    this.authorityTransferExpiryTimers.delete(projectId);
+    this.#clearAuthorityTransferExpiryTimeout(timer);
+    this.#authorityTransferExpiryTimers.delete(projectId);
   }
 
-  private scheduleAuthorityTransferExpiry(
+   #scheduleAuthorityTransferExpiry(
     registration: LanAuthorityTransferRouteRegistration,
     retryDelayMs?: number,
   ): void {
-    this.clearAuthorityTransferExpiry(registration.projectId);
+    this.#clearAuthorityTransferExpiry(registration.projectId);
     if (registration.state !== 'terminal-source' && registration.state !== 'target-active') return;
     const expiresAtMs = Date.parse(registration.service.expiresAt);
     const remainingMs = expiresAtMs - this.now().getTime();
     const delayMs = retryDelayMs ?? Math.max(0, Math.min(MAX_TIMEOUT_MS, remainingMs));
-    const timer = this.setAuthorityTransferExpiryTimeout(() => {
-      this.authorityTransferExpiryTimers.delete(registration.projectId);
-      void this.operationQueue.run(async () => {
-        if (this.authorityTransferRoutes.resolve(registration.projectId) !== registration) return;
+    const timer = this.#setAuthorityTransferExpiryTimeout(() => {
+      this.#authorityTransferExpiryTimers.delete(registration.projectId);
+      void this.#operationQueue.run(async () => {
+        if (this.#authorityTransferRoutes.resolve(registration.projectId) !== registration) return;
         if (this.now().getTime() < expiresAtMs) {
-          this.scheduleAuthorityTransferExpiry(registration);
+          this.#scheduleAuthorityTransferExpiry(registration);
           return;
         }
         try {
           await registration.service.expire();
-          await this.authorityTransferRoutes.remove(registration.projectId, registration.state);
-          await this.closeUnusedListener();
+          await this.#authorityTransferRoutes.remove(registration.projectId, registration.state);
+          await this.#closeUnusedListener();
         } catch {
-          if (this.authorityTransferRoutes.resolve(registration.projectId) === registration) {
-            this.scheduleAuthorityTransferExpiry(
+          if (this.#authorityTransferRoutes.resolve(registration.projectId) === registration) {
+            this.#scheduleAuthorityTransferExpiry(
               registration,
               AUTHORITY_TRANSFER_EXPIRY_RETRY_MS,
             );
@@ -1866,10 +1909,10 @@ export class LanHostCoordinator {
         }
       }).catch(() => undefined);
     }, delayMs);
-    this.authorityTransferExpiryTimers.set(registration.projectId, timer);
+    this.#authorityTransferExpiryTimers.set(registration.projectId, timer);
   }
 
-  private captureShutdown(operation: () => void | Promise<void>): Promise<unknown> {
+   #captureShutdown(operation: () => void | Promise<void>): Promise<unknown> {
     try {
       return Promise.resolve(operation()).then(
         () => null,
@@ -1880,27 +1923,27 @@ export class LanHostCoordinator {
     }
   }
 
-  private checkHostAddress = (): Promise<void> => {
+   #checkHostAddress = (): Promise<void> => {
     if (
       this.closed
       || !this.listener
       || (
-        this.hostedProjects.size === 0
+        this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
-        && this.authorityTransferRoutes.size === 0
-        && this.authorityTransferPreparations.size === 0
+        && this.#authorityTransferRoutes.size === 0
+        && this.#authorityTransferPreparations.size === 0
       )
     ) {
       return Promise.resolve();
     }
-    if (this.addressCheckTask) return this.addressCheckTask;
-    const pending = this.operationQueue.run(() => this.rebindListenerIfNeeded());
-    this.addressCheckTask = pending;
+    if (this.#addressCheckTask) return this.#addressCheckTask;
+    const pending = this.#operationQueue.run(() => this.#rebindListenerIfNeeded());
+    this.#addressCheckTask = pending;
     const clear = () => {
-      if (this.addressCheckTask === pending) this.addressCheckTask = null;
+      if (this.#addressCheckTask === pending) this.#addressCheckTask = null;
     };
     void pending.then(clear, error => {
-      this.listenerFailure = error instanceof CollabError
+      this.#listenerFailure = error instanceof CollabError
         ? error
         : hostError('endpoint-unreachable', 'host-address-rebind-failed');
       clear();
@@ -1908,7 +1951,7 @@ export class LanHostCoordinator {
     return pending;
   };
 
-  private currentHostEndpoint(): {
+   #currentHostEndpoint(): {
     readonly caFingerprint: string;
     readonly endpoint: string;
   } {
@@ -1920,14 +1963,14 @@ export class LanHostCoordinator {
     };
   }
 
-  private async rebindListenerIfNeeded(): Promise<void> {
-    this.assertOpen();
+   async #rebindListenerIfNeeded(): Promise<void> {
+    this.#assertOpen();
     const previous = this.listener;
     if (!previous || (
-      this.hostedProjects.size === 0
+      this.#hostedProjects.size === 0
       && this.terminalProjects.size === 0
-      && this.authorityTransferRoutes.size === 0
-      && this.authorityTransferPreparations.size === 0
+      && this.#authorityTransferRoutes.size === 0
+      && this.#authorityTransferPreparations.size === 0
     )) {
       return;
     }
@@ -1938,25 +1981,27 @@ export class LanHostCoordinator {
       throw hostError('endpoint-unreachable', 'private-ipv4-unavailable');
     }
     if (preferred === previous.address) {
-      this.listenerFailure = null;
+      this.#listenerFailure = null;
       return;
     }
     if (
       this.provisionalTransfers.size > 0
-      || this.authorityTransferPreparations.size > 0
-      || this.authorityTransferRoutes.pinsEndpoint
+      || this.#authorityTransferPreparations.size > 0
+      || this.#authorityTransferRoutes.pinsEndpoint
     ) {
       throw hostError('endpoint-unreachable', 'authority-transfer-endpoint-pinned');
     }
-    const next = await this.startListener();
-    const originals: CollabLocalLanMembershipRecord[] = [];
+    const next = await this.#startListener();
+    const committed: Array<{
+      readonly original: CollabLocalLanMembershipRecord;
+      readonly updated: CollabLocalLanMembershipRecord;
+    }> = [];
     let promoted = false;
     try {
-      this.assertOpen();
-      for (const projectId of this.hostedProjects.keys()) {
-        const membership = await this.requireHostMembership(projectId);
-        originals.push(membership);
-        await this.options.localProjects.saveMembership({
+      this.#assertOpen();
+      for (const projectId of this.#hostedProjects.keys()) {
+        const membership = await this.#requireHostMembership(projectId);
+        const updated: CollabLocalLanMembershipRecord = {
           ...membership,
           authority: {
             endpoint: next.endpoint,
@@ -1966,20 +2011,22 @@ export class LanHostCoordinator {
             kind: 'lan',
           },
           updatedAt: this.now().toISOString(),
-        });
-        this.assertOpen();
+        };
+        await this.#commitHostedRoute(membership, updated);
+        committed.push({ original: membership, updated });
+        this.#assertOpen();
       }
       this.listener = next;
-      this.listenerFailure = null;
+      this.#listenerFailure = null;
       promoted = true;
-      for (const [projectId, hosted] of this.hostedProjects) {
+      for (const [projectId, hosted] of this.#hostedProjects) {
         await hosted.advertisement?.stop().catch(() => undefined);
         hosted.advertisement = await this.options.discovery?.advertiseProject({
           caFingerprint: next.caFingerprint,
           endpoint: next.endpoint,
           projectId,
         }).catch(() => undefined);
-        this.assertOpen();
+        this.#assertOpen();
       }
       for (const [projectId, terminal] of this.terminalProjects) {
         await terminal.advertisement?.stop().catch(() => undefined);
@@ -1988,14 +2035,15 @@ export class LanHostCoordinator {
           endpoint: next.endpoint,
           projectId,
         }).catch(() => undefined);
-        this.assertOpen();
+        this.#assertOpen();
       }
-      for (const projectId of this.hostedProjects.keys()) {
-        this.connectionProjection?.resetProjectConnection(projectId);
+      for (const projectId of this.#hostedProjects.keys()) {
+        this.#connectionProjection?.resetProjectConnection(projectId);
       }
     } catch (error) {
-      for (const membership of originals) {
-        await this.options.localProjects.saveMembership(membership).catch(() => undefined);
+      for (const projection of [...committed].reverse()) {
+        await this.#commitHostedRoute(projection.updated, projection.original)
+          .catch(() => undefined);
       }
       if (this.listener === next) this.listener = null;
       // Once promoted, the superseded listener is referenced nowhere else: a
@@ -2008,64 +2056,72 @@ export class LanHostCoordinator {
     await this.closeListener(previous);
   }
 
-  private startAddressMonitor(): void {
+  #commitHostedRoute(
+    expected: CollabLocalLanMembershipRecord,
+    next: CollabLocalLanMembershipRecord,
+  ): Promise<void> {
+    return this.options.commitHostedRoute(expected, next);
+  }
+
+   #startAddressMonitor(): void {
     if (
-      this.addressMonitor
+      this.#addressMonitor
       || this.closed
       || (
-        this.hostedProjects.size === 0
+        this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
-        && this.authorityTransferRoutes.size === 0
-        && this.authorityTransferPreparations.size === 0
+        && this.#authorityTransferRoutes.size === 0
+        && this.#authorityTransferPreparations.size === 0
       )
     ) return;
     if (this.options.createAddressMonitor) {
-      this.addressMonitor = this.options.createAddressMonitor(this.checkHostAddress);
+      this.#addressMonitor = this.options.createAddressMonitor(this.#checkHostAddress);
       return;
     }
     const interval = window.setInterval(() => {
-      void this.checkHostAddress().catch(() => undefined);
+      void this.#checkHostAddress().catch(() => undefined);
     }, HOST_ADDRESS_CHECK_INTERVAL_MS);
-    this.addressMonitor = {
+    this.#addressMonitor = {
       close: () => window.clearInterval(interval),
     };
   }
 
-  private stopAddressMonitor(): void {
-    this.addressMonitor?.close();
-    this.addressMonitor = null;
+   #stopAddressMonitor(): void {
+    this.#addressMonitor?.close();
+    this.#addressMonitor = null;
   }
 
-  private releaseAuthorityTransferPreparation(token: symbol): Promise<void> {
-    return this.operationQueue.run(async () => {
-      if (!this.authorityTransferPreparations.delete(token)) return;
-      await this.closeUnusedListener();
+   #releaseAuthorityTransferPreparation(token: symbol): Promise<void> {
+    return this.#operationQueue.run(async () => {
+      if (!this.#authorityTransferPreparations.delete(token)) return;
+      await this.#closeUnusedListener();
     });
   }
 
-  private closeProjectResources(projectId: CollabProjectId): Promise<void> {
+   #closeProjectResources(projectId: CollabProjectId): Promise<void> {
     return this.resources.closeProject(projectId, 'project-stopped');
   }
 
-  private async retireActiveProject(
+   async #retireActiveProject(
     projectId: CollabProjectId,
     admission: HostedProjectAdmissionGate,
   ): Promise<void> {
-    const hosted = this.hostedProjects.get(projectId);
+    const hosted = this.#hostedProjects.get(projectId);
     if (!hosted || hosted.admission !== admission) {
       throw hostError('operation-failed', 'retired-host-project-missing');
     }
     admission.commitTerminal('retired');
-    this.router.unregisterProject(projectId);
-    await this.authorityTransferRoutes.remove(projectId, 'source-active');
-    this.hostedProjects.delete(projectId);
+    this.#router.unregisterProject(projectId);
+    await this.#authorityTransferRoutes.remove(projectId, 'source-active');
+    this.#hostedProjects.delete(projectId);
+    this.#connectionProjection?.resetProjectConnection(projectId);
     await hosted.advertisement?.stop().catch(() => undefined);
     hosted.events?.close();
     let firstError: unknown;
     await hosted.gitProxy.close().catch(error => {
       firstError = error;
     });
-    await this.closeProjectResources(projectId).catch(error => {
+    await this.#closeProjectResources(projectId).catch(error => {
       firstError ??= error;
     });
     await (hosted.runtime.retireAuthority?.()
@@ -2073,49 +2129,49 @@ export class LanHostCoordinator {
       .catch(error => {
       firstError ??= error;
       });
-    await this.closeUnusedListener().catch(error => {
+    await this.#closeUnusedListener().catch(error => {
       firstError ??= error;
     });
-    if (!firstError) this.terminalizingProjects.delete(projectId);
+    if (!firstError) this.#terminalizingProjects.delete(projectId);
     if (firstError instanceof Error) throw firstError;
     if (firstError) throw hostError('operation-failed', 'retired-host-teardown-failed');
   }
 
-  private beginRetirement(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
-      if (!this.hostedProjects.has(projectId)) {
+   #beginRetirement(projectId: CollabProjectId): Promise<void> {
+    return this.#operationQueue.run(async () => {
+      if (!this.#hostedProjects.has(projectId)) {
         throw hostError('host-stopped', 'retirement-host-project-not-running');
       }
-      this.terminalizingProjects.add(projectId);
+      this.#terminalizingProjects.add(projectId);
     });
   }
 
-  private resumeRetirement(projectId: CollabProjectId): Promise<void> {
-    return this.operationQueue.run(async () => {
+   #resumeRetirement(projectId: CollabProjectId): Promise<void> {
+    return this.#operationQueue.run(async () => {
       if (this.terminalProjects.has(projectId)) {
         throw hostError('durable-progress-recovery-required', 'retirement-already-terminal');
       }
-      this.terminalizingProjects.delete(projectId);
+      this.#terminalizingProjects.delete(projectId);
     });
   }
 
-  private requireHostedProject(projectId: CollabProjectId): HostedProject {
-    const hosted = this.hostedProjects.get(projectId);
+   #requireHostedProject(projectId: CollabProjectId): HostedProject {
+    const hosted = this.#hostedProjects.get(projectId);
     if (!hosted) throw hostError('project-not-found', 'host-project-not-running');
     return hosted;
   }
 
-  private async requireHostMembership(
+   async #requireHostMembership(
     projectId: CollabProjectId,
   ): Promise<CollabLocalLanMembershipRecord> {
-    const membership = await this.requireLanMembership(projectId);
+    const membership = await this.#requireLanMembership(projectId);
     if (!membership.hostOwnership.ownsAuthority) {
       throw hostError('authorization-denied', 'host-membership-required');
     }
     return membership;
   }
 
-  private async requireLanMembership(
+   async #requireLanMembership(
     projectId: CollabProjectId,
   ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.localProjects.loadMembership(projectId);
@@ -2129,11 +2185,11 @@ export class LanHostCoordinator {
     return membership;
   }
 
-  private assertOpen(): void {
+   #assertOpen(): void {
     if (this.closed) throw hostError('not-initialized', 'lan-host-coordinator-closed');
   }
 
-  private async withTransition<T>(
+   async #withTransition<T>(
     projectId: CollabProjectId,
     transition: Extract<CollabHostStatus, 'starting' | 'stopping'>,
     operation: Promise<T>,
@@ -2141,8 +2197,8 @@ export class LanHostCoordinator {
     try {
       return await operation;
     } finally {
-      if (this.projectTransitions.get(projectId) === transition) {
-        this.projectTransitions.delete(projectId);
+      if (this.#projectTransitions.get(projectId) === transition) {
+        this.#projectTransitions.delete(projectId);
       }
     }
   }

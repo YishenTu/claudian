@@ -6,6 +6,7 @@ import type {
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
+import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type { HostTransitionProofClientPort } from '@/app/collab/HostTransitionCandidateResolver';
 import {
@@ -20,6 +21,9 @@ import {
   InvitationCodec,
   type LanCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
+import type {
+  LanAuthorityProjectionTransitionPort,
+} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { MembershipControlClient } from '@/app/collab/membership/MembershipControlClient';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
@@ -58,6 +62,7 @@ export interface ReconnectDiscoveredProjectRequest {
 interface DiscoveredCandidateValidation {
   readonly candidate?: CollabTrustedEndpointCandidate;
   readonly error?: CollabError;
+  readonly expectedMembership?: CollabLocalLanMembershipRecord;
   readonly membership?: CollabLocalLanMembershipRecord;
 }
 
@@ -74,10 +79,12 @@ const DISCOVERED_ENDPOINT_TIMEOUT_MS = 2_000;
 const MAX_DISCOVERED_CANDIDATES = 8;
 
 export interface ReconnectProjectCoordinatorOptions {
+  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
   readonly createHttpClient?: (trustStore: CollabHostTrustStore) => ReconnectHttpClientPort;
   readonly invitationCodec?: InvitationCodec;
   readonly hostTransitionProofClient?: HostTransitionProofClientPort;
   readonly hostTrustTransitionVerifier?: HostTrustTransitionVerifierPort;
+  readonly hostInstallation: Pick<HostInstallationBindingService, 'inspect'>;
   readonly now?: () => Date;
   readonly vaultRoot: string;
 }
@@ -122,12 +129,18 @@ function remoteUrl(endpoint: string, projectId: string): string {
   return `${endpoint}/v1/git/${projectId}/repository.git`;
 }
 
-function summary(record: CollabLocalLanMembershipRecord): CollabLocalProjectSummary {
+function summary(
+  record: CollabLocalLanMembershipRecord,
+  installationStatus: Awaited<ReturnType<HostInstallationBindingService['inspect']>>,
+): CollabLocalProjectSummary {
   return {
     authorityKind: record.authority.kind,
     connectionStatus: 'connected',
     health: 'healthy',
-    hostStatus: record.hostOwnership.ownsAuthority ? 'stopped' : 'not-host',
+    hostInstallationStatus: record.hostOwnership.ownsAuthority
+      ? installationStatus === 'absent' ? 'not-host' : installationStatus
+      : 'not-host',
+    hostStatus: 'not-host',
     id: record.project.id,
     name: record.project.name,
     role: record.member.role,
@@ -244,7 +257,7 @@ export class ReconnectProjectCoordinator {
       ) {
         throw reconnectError('operation-failed', 'reconnect-response-mismatch');
       }
-      return await this.commitReconnect(membership, invitation, options);
+      return await this.commitReconnect(membership, membership, invitation, options);
     } catch (error) {
       return this.failure(error);
     }
@@ -291,7 +304,15 @@ export class ReconnectProjectCoordinator {
       if (!selected?.membership) {
         throw reconnectError('operation-failed', 'reconnect-trust-transition-missing');
       }
-      return await this.commitReconnect(selected.membership, valid[0], options);
+      if (!selected.expectedMembership) {
+        throw reconnectError('operation-failed', 'reconnect-projection-generation-missing');
+      }
+      return await this.commitReconnect(
+        selected.expectedMembership,
+        selected.membership,
+        valid[0],
+        options,
+      );
     } catch (error) {
       return this.failure(error);
     }
@@ -354,7 +375,7 @@ export class ReconnectProjectCoordinator {
       ) {
         throw reconnectError('operation-failed', 'reconnect-response-mismatch');
       }
-      return { candidate, membership: trustedMembership };
+      return { candidate, expectedMembership: membership, membership: trustedMembership };
     } catch (error) {
       return {
         error: error instanceof CollabError
@@ -410,9 +431,6 @@ export class ReconnectProjectCoordinator {
     if (!membership || !isCollabLocalLanMembership(membership)) {
       throw reconnectError('project-not-found', 'reconnect-membership-missing');
     }
-    if (membership.hostOwnership.ownsAuthority) {
-      throw reconnectError('authorization-denied', 'host-project-reconnect-not-supported');
-    }
     const authority = membership.authority;
     if (
       !authority.endpoint
@@ -426,41 +444,51 @@ export class ReconnectProjectCoordinator {
   }
 
   private async commitReconnect(
+    expectedMembership: CollabLocalLanMembershipRecord,
     membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    throwIfCancelled(options.signal);
-    const git = await this.foundation.requireGitFoundation();
-    const repositoryPath = await this.foundation.local.workspace.resolveManagedProjectPath(
-      membership.project.workspacePath,
-    );
-    await git.repositories.assertLocalRepositoryIdentity(repositoryPath, {
-      memberId: membership.member.id,
-      personalRef: membership.member.personalRef,
-      projectId: membership.project.id,
+    return this.options.authorityProjectionTransitions.run(membership.project.id, async () => {
+      throwIfCancelled(options.signal);
+      const current = await this.foundation.local.projects.loadMembership(membership.project.id);
+      if (JSON.stringify(current) !== JSON.stringify(expectedMembership)) {
+        throw reconnectError('endpoint-unreachable', 'reconnect-projection-changed');
+      }
+      const git = await this.foundation.requireGitFoundation();
+      const repositoryPath = await this.foundation.local.workspace.resolveManagedProjectPath(
+        membership.project.workspacePath,
+      );
+      await git.repositories.assertLocalRepositoryIdentity(repositoryPath, {
+        memberId: membership.member.id,
+        personalRef: membership.member.personalRef,
+        projectId: membership.project.id,
+      });
+      const authority = membership.authority;
+      const gitRemoteUrl = remoteUrl(candidate.endpoint, candidate.projectId);
+      await rotateTrustedCollabOrigin(git.repositories, {
+        newRemoteUrl: gitRemoteUrl,
+        oldRemoteUrl: authority.gitRemoteUrl!,
+        projectId: membership.project.id,
+        repositoryPath,
+      });
+      const updated: CollabLocalLanMembershipRecord = {
+        ...membership,
+        authority: {
+          ...authority,
+          endpoint: candidate.endpoint,
+          gitRemoteUrl,
+          hostCaCertificatePem: authority.hostCaCertificatePem,
+          hostCaFingerprint: candidate.caFingerprint,
+        },
+        updatedAt: this.now().toISOString(),
+      };
+      await this.foundation.local.projects.saveMembership(updated);
+      const installationStatus = updated.hostOwnership.ownsAuthority
+        ? await this.options.hostInstallation.inspect(updated.project.id)
+        : 'absent';
+      return { status: 'success' as const, value: summary(updated, installationStatus) };
     });
-    const authority = membership.authority;
-    const gitRemoteUrl = remoteUrl(candidate.endpoint, candidate.projectId);
-    await rotateTrustedCollabOrigin(git.repositories, {
-      newRemoteUrl: gitRemoteUrl,
-      oldRemoteUrl: authority.gitRemoteUrl!,
-      projectId: membership.project.id,
-      repositoryPath,
-    });
-    const updated: CollabLocalLanMembershipRecord = {
-      ...membership,
-      authority: {
-        ...authority,
-        endpoint: candidate.endpoint,
-        gitRemoteUrl,
-        hostCaCertificatePem: authority.hostCaCertificatePem,
-        hostCaFingerprint: candidate.caFingerprint,
-      },
-      updatedAt: this.now().toISOString(),
-    };
-    await this.foundation.local.projects.saveMembership(updated);
-    return { status: 'success', value: summary(updated) };
   }
 
   private failure(error: unknown): CollabResult<CollabLocalProjectSummary> {

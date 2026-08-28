@@ -15,6 +15,7 @@ import {
   type DevelopmentBootstrapAttemptStatus,
   type DevelopmentBootstrapManifest,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   CloudBootstrapBindingFinalizer,
@@ -210,7 +211,9 @@ async function createClient(
   const source = sourceMembership(descriptor, memberId);
   const vaultRoot = path.join(root, memberId);
   await mkdir(vaultRoot);
-  const projects = new CollabLocalProjectRepository(vaultRoot);
+  const projects = new CollabLocalProjectRepository(vaultRoot, {
+    installationKey: TEST_INSTALLATION_A,
+  });
   const workspace = new CollabWorkspaceService(vaultRoot);
   await workspace.claimProjectsFolder('workspace');
   const emptyConfigPath = await projects.ensureGitEmptyConfig();
@@ -242,7 +245,9 @@ async function createClient(
   });
   await projects.saveMembership(source);
   if (source.hostOwnership.ownsAuthority) {
-    const authorityDirectory = await projects.ensureAuthorityDirectory(projectId);
+    const authorityDirectory = (
+      await projects.createOwnedAuthorityDirectory(projectId)
+    ).authorityDirectory;
     await writeFile(path.join(authorityDirectory, 'collab.db'), 'must remain retired');
     await writeFile(path.join(repositoryPath, 'unpublished.md'), 'Alice local unpublished work\n');
     await new CollabRequestDraftStore(projects).save({
@@ -263,9 +268,10 @@ async function createClient(
     updatedAt: '2026-08-23T00:00:00.000Z',
   });
 
-  const transitions = new CloudBootstrapTransitionStore(vaultRoot);
+  const transitions = new CloudBootstrapTransitionStore(vaultRoot, { isRecoveryOwner: () => true });
   let transition: CloudBootstrapTransitionRecord = await transitions.create(
     createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: memberId,
       ...(source.hostOwnership.ownsAuthority ? { fenceId: 'local-milestone-fence' } : {}),
       manifest: descriptor.manifest,
@@ -300,7 +306,6 @@ async function createClient(
       authorityLifecycle: { closeAuthority: async () => undefined },
       git: {
         assertOrigin: (record, localPath) => ensureTrustedCollabOrigin(repositories, {
-          allowHostRemoteRepair: false,
           projectId: record.projectId,
           remoteUrl: record.newAuthority.gitRemoteUrl,
           repositoryPath: localPath,
@@ -319,6 +324,12 @@ async function createClient(
       readiness: new CloudBootstrapReadinessCollector({
         inspect: async () => readiness(descriptor, memberId),
       }),
+      retireLanAuthorityDirectory: async (retiredProjectId, attemptId) => (
+        projects.retireOwnedAuthorityDirectory(
+          await projects.assertOwnedAuthorityDirectory(retiredProjectId),
+          attemptId,
+        )
+      ),
       workspace,
     }),
     now: () => new Date('2026-08-23T00:01:00.000Z'),
@@ -360,7 +371,7 @@ class SessionNetwork implements PublishGitNetworkPort {
     operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
     return this.environment.resolve(context.projectId, this.session.git)
-      .then(network => operation(network) as Promise<T>);
+      .then(network => operation(network, this.session.git.remoteUrl) as Promise<T>);
   }
 }
 
@@ -421,7 +432,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
       const clientByMember = new Map(clients.map(client => [client.memberId, client]));
       const initialSessions = await Promise.all(clients.map(async client => {
         const restartedProjects = new CollabLocalProjectRepository(client.vaultRoot);
-        const transition = await new CloudBootstrapTransitionStore(client.vaultRoot)
+        const transition = await new CloudBootstrapTransitionStore(client.vaultRoot, { isRecoveryOwner: () => true })
           .load(projectId);
         expect(transition).toMatchObject({
           attemptState: 'activated',
@@ -452,7 +463,6 @@ describeWithServer('Cloud localhost client milestone gate', () => {
       const bobMembership = await bob.projects.loadMembership(projectId) as
         CollabLocalCloudMembershipRecord;
       const publishContext: PublishProjectContext = {
-        allowHostRemoteRepair: false,
         memberId: OTHER_MEMBER_ID,
         personalRef: bobMembership.member.personalRef,
         projectId,
@@ -579,7 +589,6 @@ describeWithServer('Cloud localhost client milestone gate', () => {
       const aliceMembership = await alice.projects.loadMembership(projectId) as
         CollabLocalCloudMembershipRecord;
       const aliceContext: PublishProjectContext = {
-        allowHostRemoteRepair: false,
         memberId: HOST_MEMBER_ID,
         personalRef: aliceMembership.member.personalRef,
         projectId,

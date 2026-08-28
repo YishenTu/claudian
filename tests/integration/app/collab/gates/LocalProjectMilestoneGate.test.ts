@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   rm,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import {
   type CollabTransferredMembershipClaimBatch,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -38,6 +40,8 @@ import {
   createAuthorityTransferClaimCustodyRecord,
   decodeAuthorityTransferClaimCustodyRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimCustodyRecord';
+import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
+import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
 import type {
   CloudAuthorityLifecycleSession,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -78,6 +82,7 @@ describe('G3 local Project milestone gate', () => {
         new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => configuredGitPath,
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
@@ -86,6 +91,7 @@ describe('G3 local Project milestone gate', () => {
   it('creates and reloads one independent empty Project', async () => {
     const foundation = createFoundation();
     const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
       createCredential: () => CREDENTIAL,
       createId: kind => {
         if (kind === 'member') return MEMBER_ID;
@@ -139,7 +145,7 @@ describe('G3 local Project milestone gate', () => {
     ]);
 
     const reopenedFoundation = createFoundation(runtime.runtime.executablePath);
-    const reopenedSetup = new CollabProjectSetupService(reopenedFoundation, { vaultRoot });
+    const reopenedSetup = new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot });
     const reopenedFeature = createCollabFeatureSubcomposition({
       foundation: reopenedFoundation,
       projectSetup: reopenedSetup,
@@ -168,9 +174,75 @@ describe('G3 local Project milestone gate', () => {
     await reopenedFoundation.close();
   });
 
+  it('publishes through the universal LAN lane after the owning Host address rebinds', async () => {
+    const reboundAddress = listPrivateIpv4Addresses()[0];
+    if (!reboundAddress) return;
+    let addresses = ['127.0.0.1'];
+    let checkAddress!: () => Promise<void>;
+    const invitationCodec = new InvitationCodec({ isAddressAllowed: () => true });
+    const foundation = new ClaudianCollabService({
+      createAuthorityDatabase: authorityDirectory => (
+        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      ),
+      getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
+      invitationCodec,
+      lanHost: {
+        createAddressMonitor: check => {
+          checkAddress = check;
+          return { close: jest.fn() };
+        },
+        createInvitationCodec: () => invitationCodec,
+        getPrivateIpv4Addresses: () => addresses,
+        portCandidates: [0],
+      },
+      obsidianConfigDirectory: '.obsidian',
+      vaultRoot,
+    });
+    const feature = createCollabFeatureSubcomposition({
+      foundation,
+      projectSetup: new CollabProjectSetupService(foundation, {
+        installationKey: TEST_INSTALLATION_A,
+        createCredential: () => CREDENTIAL,
+        createId: kind => {
+          if (kind === 'member') return MEMBER_ID;
+          if (kind === 'operation') return OPERATION_ID;
+          return PROJECT_ID;
+        },
+        vaultRoot,
+      }),
+      vaultRoot,
+    }).feature;
+
+    try {
+      await feature.initialize();
+      const project = await feature.createProject({
+        memberDisplayName: 'Alice',
+        name: 'M2 Notes',
+      });
+      expect(project.status).toBe('success');
+      await feature.startHost(PROJECT_ID);
+      const repositoryPath = path.join(vaultRoot, 'workspace', 'm2-notes');
+      await writeFile(path.join(repositoryPath, 'note.md'), 'before rebind\n');
+      await expect(feature.publish({ description: 'Before rebind', projectId: PROJECT_ID }))
+        .resolves.toMatchObject({ status: 'success' });
+
+      addresses = [reboundAddress];
+      await checkAddress();
+      await writeFile(path.join(repositoryPath, 'note.md'), 'after rebind\n');
+
+      await expect(feature.publish({ description: 'After rebind', projectId: PROJECT_ID }))
+        .resolves.toMatchObject({ status: 'success' });
+    } finally {
+      await feature.close();
+      await foundation.close();
+    }
+  });
+
   it('recovers a completed LAN-to-Cloud source and converges its old Host membership', async () => {
     const foundation = createFoundation();
     const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
       createCredential: () => CREDENTIAL,
       createId: kind => {
         if (kind === 'member') return MEMBER_ID;
@@ -240,6 +312,7 @@ describe('G3 local Project milestone gate', () => {
         : '2026-08-27T00:02:00.000Z',
     });
     const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId,
@@ -332,6 +405,7 @@ describe('G3 local Project milestone gate', () => {
     ) throw new Error('Expected running LAN source membership');
     await foundation.local.projects.authorityTransferRecords.save(
       createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
         lifecycleOwnership: record.lifecycleOwnership,
         localRole: record.localRole,
         operationIntentId: record.operationIntentId,
@@ -357,7 +431,7 @@ describe('G3 local Project milestone gate', () => {
         createLifecycle: jest.fn(async () => cloudSession),
       },
       foundation: reopenedFoundation,
-      projectSetup: new CollabProjectSetupService(reopenedFoundation, { vaultRoot }),
+      projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
       vaultRoot,
     });
     const restoreTerminalRoute = jest.spyOn(
@@ -386,6 +460,7 @@ describe('G3 local Project milestone gate', () => {
     async (direction) => {
       const foundation = createFoundation();
       const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
         createCredential: () => CREDENTIAL,
         createId: kind => {
           if (kind === 'member') return MEMBER_ID;
@@ -552,7 +627,7 @@ describe('G3 local Project milestone gate', () => {
       const reopened = createCollabFeatureSubcomposition({
         cloudAuthority: { create: jest.fn() as never, createLifecycle },
         foundation: reopenedFoundation,
-        projectSetup: new CollabProjectSetupService(reopenedFoundation, { vaultRoot }),
+        projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
         vaultRoot,
       });
 
@@ -569,6 +644,7 @@ describe('G3 local Project milestone gate', () => {
   it('finishes expired terminal-source staging cleanup after restart', async () => {
     const foundation = createFoundation();
     const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
       createCredential: () => CREDENTIAL,
       createId: kind => {
         if (kind === 'member') return MEMBER_ID;
@@ -614,6 +690,7 @@ describe('G3 local Project milestone gate', () => {
     await mkdir(reserved.absolutePath, { mode: 0o700 });
     await foundation.local.projects.authorityTransferRecords.save(
       createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId,
@@ -682,7 +759,7 @@ describe('G3 local Project milestone gate', () => {
     const reopenedFoundation = createFoundation();
     const reopened = createCollabFeatureSubcomposition({
       foundation: reopenedFoundation,
-      projectSetup: new CollabProjectSetupService(reopenedFoundation, { vaultRoot }),
+      projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
       vaultRoot,
     }).feature;
     await expect(reopened.restoreLifecycle()).resolves.toBeUndefined();

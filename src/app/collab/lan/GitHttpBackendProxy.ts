@@ -252,35 +252,35 @@ function responseForError(
 }
 
 export class GitHttpBackendProxy {
-  private readonly activeChildren = new Set<ActiveGitChild>();
+   readonly #activeChildren = new Set<ActiveGitChild>();
   private closed = false;
   private enabled: EnabledGitProject | null = null;
-  private readonly maxConcurrentChildren: number;
-  private readonly maxConcurrentChildrenPerMember: number;
-  private readonly maxHostRepositoryBytes: number;
+   readonly #maxConcurrentChildren: number;
+   readonly #maxConcurrentChildrenPerMember: number;
+   readonly #maxHostRepositoryBytes: number;
   private readonly maxReceivedPackBytes: number;
-  private readonly reservedChildrenByMember = new Map<string, number>();
-  private reservedChildCount = 0;
-  private readonly requestTimeoutMs: number;
-  private reservedReceiveBytes = 0;
-  private readonly terminationGraceMs: number;
+   readonly #reservedChildrenByMember = new Map<string, number>();
+   #reservedChildCount = 0;
+   readonly #requestTimeoutMs: number;
+   #reservedReceiveBytes = 0;
+   readonly #terminationGraceMs: number;
 
   constructor(private readonly options: GitHttpBackendProxyOptions) {
-    this.maxConcurrentChildren = options.maxConcurrentChildren
+    this.#maxConcurrentChildren = options.maxConcurrentChildren
       ?? DEFAULT_GLOBAL_CHILD_LIMIT;
-    this.maxConcurrentChildrenPerMember = options.maxConcurrentChildrenPerMember
+    this.#maxConcurrentChildrenPerMember = options.maxConcurrentChildrenPerMember
       ?? DEFAULT_MEMBER_CHILD_LIMIT;
-    this.maxHostRepositoryBytes = options.maxHostRepositoryBytes
+    this.#maxHostRepositoryBytes = options.maxHostRepositoryBytes
       ?? CLAUDIAN_COLLAB_LIMITS.hostRepositorySoftLimitBytes;
     this.maxReceivedPackBytes = options.maxReceivedPackBytes
       ?? CLAUDIAN_COLLAB_LIMITS.maxReceivedPackBytes;
-    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    this.terminationGraceMs = options.terminationGraceMs
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.#terminationGraceMs = options.terminationGraceMs
       ?? DEFAULT_TERMINATION_GRACE_MS;
   }
 
   get activeChildCount(): number {
-    return this.activeChildren.size;
+    return this.#activeChildren.size;
   }
 
   async enable(): Promise<void> {
@@ -291,18 +291,18 @@ export class GitHttpBackendProxy {
       || !path.isAbsolute(this.options.emptyConfigPath)
       || !path.isAbsolute(this.options.gitExecutablePath)
       || !path.isAbsolute(this.options.gitHttpBackendPath)
-      || !Number.isSafeInteger(this.maxConcurrentChildren)
-      || this.maxConcurrentChildren < 1
-      || !Number.isSafeInteger(this.maxConcurrentChildrenPerMember)
-      || this.maxConcurrentChildrenPerMember < 1
+      || !Number.isSafeInteger(this.#maxConcurrentChildren)
+      || this.#maxConcurrentChildren < 1
+      || !Number.isSafeInteger(this.#maxConcurrentChildrenPerMember)
+      || this.#maxConcurrentChildrenPerMember < 1
       || !Number.isSafeInteger(this.maxReceivedPackBytes)
       || this.maxReceivedPackBytes < 1
-      || !Number.isSafeInteger(this.maxHostRepositoryBytes)
-      || this.maxHostRepositoryBytes < 1
-      || !Number.isSafeInteger(this.requestTimeoutMs)
-      || this.requestTimeoutMs < 1
-      || !Number.isSafeInteger(this.terminationGraceMs)
-      || this.terminationGraceMs < 0
+      || !Number.isSafeInteger(this.#maxHostRepositoryBytes)
+      || this.#maxHostRepositoryBytes < 1
+      || !Number.isSafeInteger(this.#requestTimeoutMs)
+      || this.#requestTimeoutMs < 1
+      || !Number.isSafeInteger(this.#terminationGraceMs)
+      || this.#terminationGraceMs < 0
     ) {
       throw proxyError('repository-invalid', 'git-proxy-configuration-invalid');
     }
@@ -337,8 +337,8 @@ export class GitHttpBackendProxy {
     );
     await this.options.repository.assertHealthy(repositoryPath);
     const storageBytes = await this.options.repository.measureStorageBytes(repositoryPath);
-    if (storageBytes > this.maxHostRepositoryBytes) {
-      throw storageQuotaError(storageBytes, this.maxHostRepositoryBytes);
+    if (storageBytes > this.#maxHostRepositoryBytes) {
+      throw storageQuotaError(storageBytes, this.#maxHostRepositoryBytes);
     }
     this.enabled = { authorityDirectory, repositoryPath };
   }
@@ -386,7 +386,7 @@ export class GitHttpBackendProxy {
       return true;
     }
 
-    if (!this.reserveChild(memberId)) {
+    if (!this.#reserveChild(memberId)) {
       responseForError(response, 429, 'Too many Git operations.');
       return true;
     }
@@ -398,7 +398,7 @@ export class GitHttpBackendProxy {
         throw proxyError('operation-failed', 'git-proxy-disabled');
       }
       if (route.phase === 'rpc' && route.service === 'git-receive-pack') {
-        receiveReservationBytes = await this.reserveReceiveStorage(contentLength);
+        receiveReservationBytes = await this.#reserveReceiveStorage(contentLength);
       }
       const reauthenticated = await authenticateGitBasicRequest({
         authorization: singleHeader(request, 'authorization'),
@@ -411,9 +411,9 @@ export class GitHttpBackendProxy {
       if (this.closed || !this.enabled) {
         throw proxyError('operation-failed', 'git-proxy-disabled');
       }
-      this.releaseReservation(memberId);
+      this.#releaseReservation(memberId);
       reserved = false;
-      await this.runBackend(
+      await this.#runBackend(
         request,
         response,
         route,
@@ -437,8 +437,8 @@ export class GitHttpBackendProxy {
         responseForError(response, 502, 'Git operation failed.');
       }
     } finally {
-      this.releaseReceiveStorage(receiveReservationBytes);
-      if (reserved) this.releaseReservation(memberId);
+      this.#releaseReceiveStorage(receiveReservationBytes);
+      if (reserved) this.#releaseReservation(memberId);
     }
     return true;
   }
@@ -447,71 +447,71 @@ export class GitHttpBackendProxy {
     if (this.closed) return;
     this.closed = true;
     this.enabled = null;
-    const children = [...this.activeChildren];
+    const children = [...this.#activeChildren];
     for (const child of children) this.terminate(child);
     await Promise.all(children.map(child => child.closed));
   }
 
-  private hasChildCapacity(memberId: string): boolean {
+   #hasChildCapacity(memberId: string): boolean {
     if (
-      this.activeChildren.size + this.reservedChildCount
-      >= this.maxConcurrentChildren
+      this.#activeChildren.size + this.#reservedChildCount
+      >= this.#maxConcurrentChildren
     ) {
       return false;
     }
-    let memberChildren = this.reservedChildrenByMember.get(memberId) ?? 0;
-    for (const active of this.activeChildren) {
+    let memberChildren = this.#reservedChildrenByMember.get(memberId) ?? 0;
+    for (const active of this.#activeChildren) {
       if (active.memberId === memberId) memberChildren += 1;
     }
-    return memberChildren < this.maxConcurrentChildrenPerMember;
+    return memberChildren < this.#maxConcurrentChildrenPerMember;
   }
 
-  private reserveChild(memberId: string): boolean {
-    if (!this.hasChildCapacity(memberId)) return false;
-    this.reservedChildCount += 1;
-    this.reservedChildrenByMember.set(
+   #reserveChild(memberId: string): boolean {
+    if (!this.#hasChildCapacity(memberId)) return false;
+    this.#reservedChildCount += 1;
+    this.#reservedChildrenByMember.set(
       memberId,
-      (this.reservedChildrenByMember.get(memberId) ?? 0) + 1,
+      (this.#reservedChildrenByMember.get(memberId) ?? 0) + 1,
     );
     return true;
   }
 
-  private releaseReservation(memberId: string): void {
-    const count = this.reservedChildrenByMember.get(memberId) ?? 0;
-    if (count <= 0 || this.reservedChildCount <= 0) return;
-    this.reservedChildCount -= 1;
-    if (count === 1) this.reservedChildrenByMember.delete(memberId);
-    else this.reservedChildrenByMember.set(memberId, count - 1);
+   #releaseReservation(memberId: string): void {
+    const count = this.#reservedChildrenByMember.get(memberId) ?? 0;
+    if (count <= 0 || this.#reservedChildCount <= 0) return;
+    this.#reservedChildCount -= 1;
+    if (count === 1) this.#reservedChildrenByMember.delete(memberId);
+    else this.#reservedChildrenByMember.set(memberId, count - 1);
   }
 
-  private async reserveReceiveStorage(contentLength: number): Promise<number> {
+   async #reserveReceiveStorage(contentLength: number): Promise<number> {
     const enabled = this.enabled;
     if (!enabled) throw proxyError('operation-failed', 'git-proxy-disabled');
     const storageBytes = await this.options.repository.measureStorageBytes(
       enabled.repositoryPath,
     );
-    const available = this.maxHostRepositoryBytes
+    const available = this.#maxHostRepositoryBytes
       - storageBytes
-      - this.reservedReceiveBytes;
+      - this.#reservedReceiveBytes;
     const requested = contentLength >= 0
       ? Math.max(1, contentLength)
       : Math.min(this.maxReceivedPackBytes, available);
     if (available < 1 || requested > available) {
       throw storageQuotaError(
-        storageBytes + this.reservedReceiveBytes + Math.max(requested, 0),
-        this.maxHostRepositoryBytes,
+        storageBytes + this.#reservedReceiveBytes + Math.max(requested, 0),
+        this.#maxHostRepositoryBytes,
       );
     }
-    this.reservedReceiveBytes += requested;
+    this.#reservedReceiveBytes += requested;
     return requested;
   }
 
-  private releaseReceiveStorage(bytes: number): void {
+   #releaseReceiveStorage(bytes: number): void {
     if (bytes <= 0) return;
-    this.reservedReceiveBytes = Math.max(0, this.reservedReceiveBytes - bytes);
+    this.#reservedReceiveBytes = Math.max(0, this.#reservedReceiveBytes - bytes);
   }
 
-  private buildEnvironment(
+   #buildEnvironment(
     request: IncomingMessage,
     route: ParsedGitHttpRoute,
     memberId: string,
@@ -579,7 +579,7 @@ export class GitHttpBackendProxy {
     return environment;
   }
 
-  private runBackend(
+   #runBackend(
     request: IncomingMessage,
     response: ServerResponse,
     route: ParsedGitHttpRoute,
@@ -594,7 +594,7 @@ export class GitHttpBackendProxy {
     });
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: this.enabled!.authorityDirectory,
-      env: this.buildEnvironment(
+      env: this.#buildEnvironment(
         request,
         route,
         memberId,
@@ -621,7 +621,7 @@ export class GitHttpBackendProxy {
       terminated: false,
       terminationTimer: null,
     };
-    this.activeChildren.add(active);
+    this.#activeChildren.add(active);
 
     return new Promise((resolve, reject) => {
       let bodyBytes = 0;
@@ -631,7 +631,7 @@ export class GitHttpBackendProxy {
       let stderrBytes = 0;
       const requestTimer = window.setTimeout(
         () => this.terminate(active),
-        this.requestTimeoutMs,
+        this.#requestTimeoutMs,
       );
 
       const finish = (error?: Error): void => {
@@ -640,7 +640,7 @@ export class GitHttpBackendProxy {
         window.clearTimeout(requestTimer);
         if (active.terminationTimer !== null) window.clearTimeout(active.terminationTimer);
         active.unregisterOwnedResource?.();
-        this.activeChildren.delete(active);
+        this.#activeChildren.delete(active);
         resolveClosed();
         if (error) reject(error);
         else resolve();
@@ -764,7 +764,7 @@ export class GitHttpBackendProxy {
         } catch {
           // The process close/error event remains authoritative for cleanup.
         }
-      }, this.terminationGraceMs);
+      }, this.#terminationGraceMs);
     }
   }
 }

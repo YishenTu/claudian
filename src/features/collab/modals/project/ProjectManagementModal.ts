@@ -14,12 +14,14 @@ import {
   type LatestTaskHandle,
   LatestTaskScope,
 } from '@/shared/async/LatestTaskScope';
+import { confirm } from '@/shared/modals/ConfirmModal';
 
 export type ProjectManagementModalPort = Pick<
   CollabFeaturePort,
   | 'acceptHostTransfer'
   | 'cancelHostTransfer'
   | 'cancelManagerResponsibilityOffer'
+  | 'claimLegacyHostInstallation'
   | 'createInvitation'
   | 'createHostTransfer'
   | 'createManagerResponsibilityOffer'
@@ -167,10 +169,15 @@ export class ProjectManagementModal extends Modal {
     });
     if (
       this.hostProject.authorityKind === 'lan'
-      && this.hostProject.hostStatus !== 'not-host'
+      && this.hostProject.hostInstallationStatus !== 'not-host'
     ) {
       const host = primary.createDiv({ cls: 'claudian-collab-project-host-action' });
       this.hostSection = new LanHostSection(host, {
+        confirmLegacyClaim: () => confirm(
+          this.appInstance,
+          t('collab.host.legacyClaimConfirmation'),
+          t('collab.host.legacyClaimAction'),
+        ),
         onOpenDiagnostics: diagnostics => this.openHostDiagnostics(diagnostics),
         onStatusChanged: status => {
           this.hostProject = { ...this.hostProject, hostStatus: status };

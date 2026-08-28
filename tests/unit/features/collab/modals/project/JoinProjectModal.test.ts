@@ -23,6 +23,7 @@ function project() {
     authorityKind: 'lan' as const,
     connectionStatus: 'connected' as const,
     health: 'healthy' as const,
+    hostInstallationStatus: 'not-host' as const,
     hostStatus: 'not-host' as const,
     id: 'project-alpha',
     name: 'Alpha',

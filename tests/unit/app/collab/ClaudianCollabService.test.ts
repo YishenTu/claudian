@@ -1,3 +1,5 @@
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -27,9 +29,45 @@ describe('ClaudianCollabService retirement recovery', () => {
     jest.restoreAllMocks();
   });
 
+  it('rejects a foreign tombstone before starting a responder or cleanup', async () => {
+    const service = new ClaudianCollabService({
+      getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
+      obsidianConfigDirectory: '.obsidian',
+      vaultRoot: '/tmp/claudian-retirement-foreign-owner',
+    });
+    const internal = service as never as {
+      closeAuthority: jest.Mock;
+      removeOwnedAuthorityDirectory: jest.Mock;
+      retirementTombstones: { restore: jest.Mock };
+      startRetirementResponder: jest.Mock;
+    };
+    internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
+      expiredProjectIds: [],
+      tombstones: [{
+        ownerInstallationKey: TEST_INSTALLATION_B,
+        projectId: 'project-a',
+        result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
+      }],
+    });
+    internal.startRetirementResponder = jest.fn();
+    internal.closeAuthority = jest.fn();
+    internal.removeOwnedAuthorityDirectory = jest.fn();
+
+    await expect(service.restoreRetirementResponders(admitProjectRecovery))
+      .rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
+      });
+    expect(internal.startRetirementResponder).not.toHaveBeenCalled();
+    expect(internal.closeAuthority).not.toHaveBeenCalled();
+    expect(internal.removeOwnedAuthorityDirectory).not.toHaveBeenCalled();
+  });
+
   it('treats an authenticated terminal Retired result as Retire replay success', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-retirement-replay',
     });
@@ -81,13 +119,19 @@ describe('ClaudianCollabService retirement recovery', () => {
   it('fences LAN Host startup as soon as a retirement tombstone is durable', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-retirement-start-fence',
     });
     const internal = service as never as {
       local: { projects: { loadRetirementTombstone: jest.Mock } };
     };
+    jest.spyOn(service.hostInstallations, 'assertOwned').mockResolvedValue({
+      authorityDirectory: '/tmp/claudian-retirement-start-fence/authority',
+      projectId: 'project-a',
+    } as never);
     internal.local.projects.loadRetirementTombstone = jest.fn().mockResolvedValue({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
       result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
     });
@@ -102,6 +146,7 @@ describe('ClaudianCollabService retirement recovery', () => {
   it('restores a terminal responder without recreating finalized local projection', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-retirement-restore',
     });
@@ -110,8 +155,8 @@ describe('ClaudianCollabService retirement recovery', () => {
       local: { projects: {
         loadIndex: jest.Mock;
         loadRetirementRecord: jest.Mock;
-        removeAuthorityDirectory: jest.Mock;
       } };
+      removeOwnedAuthorityDirectory: jest.Mock;
       retiredAuthorityCleanupComplete: Set<string>;
       retirementHandler: { handle: jest.Mock };
       retirementTombstones: { restore: jest.Mock };
@@ -120,6 +165,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
       expiredProjectIds: [],
       tombstones: [{
+        ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: 'project-a',
         result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
       }],
@@ -131,7 +177,7 @@ describe('ClaudianCollabService retirement recovery', () => {
       selectedProjectId: null,
     });
     internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.local.projects.removeAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
+    internal.removeOwnedAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
     internal.closeAuthority = jest.fn().mockResolvedValue(undefined);
     internal.retirementHandler = { handle: jest.fn() };
     const projectRecoveryAdmission = jest.fn(async (
@@ -153,6 +199,7 @@ describe('ClaudianCollabService retirement recovery', () => {
   it('tears down retired authority after local projection recovery fails', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-retirement-local-recovery-failure',
     });
@@ -161,8 +208,8 @@ describe('ClaudianCollabService retirement recovery', () => {
       local: { projects: {
         loadIndex: jest.Mock;
         loadRetirementRecord: jest.Mock;
-        removeAuthorityDirectory: jest.Mock;
       } };
+      removeOwnedAuthorityDirectory: jest.Mock;
       retiredAuthorityCleanupComplete: Set<string>;
       retirementHandler: { handle: jest.Mock };
       retirementTombstones: { restore: jest.Mock };
@@ -171,6 +218,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
       expiredProjectIds: [],
       tombstones: [{
+        ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: 'project-a',
         result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
       }],
@@ -182,7 +230,7 @@ describe('ClaudianCollabService retirement recovery', () => {
       selectedProjectId: null,
     });
     internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.local.projects.removeAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
+    internal.removeOwnedAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
     internal.closeAuthority = jest.fn().mockResolvedValue(undefined);
     internal.retirementHandler = {
       handle: jest.fn().mockRejectedValue(new Error('local cleanup failed')),
@@ -196,13 +244,14 @@ describe('ClaudianCollabService retirement recovery', () => {
       'terminal-fallback',
     );
     expect(internal.closeAuthority).toHaveBeenCalledWith('project-a');
-    expect(internal.local.projects.removeAuthorityDirectory).toHaveBeenCalledWith('project-a');
+    expect(internal.removeOwnedAuthorityDirectory).toHaveBeenCalledWith('project-a');
     expect(internal.retiredAuthorityCleanupComplete.has('project-a')).toBe(true);
   });
 
   it('continues restoring other terminal responders after one Project fails', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-retirement-isolation',
     });
@@ -211,13 +260,14 @@ describe('ClaudianCollabService retirement recovery', () => {
       local: { projects: {
         loadIndex: jest.Mock;
         loadRetirementRecord: jest.Mock;
-        removeAuthorityDirectory: jest.Mock;
       } };
+      removeOwnedAuthorityDirectory: jest.Mock;
       retirementHandler: { handle: jest.Mock };
       retirementTombstones: { restore: jest.Mock };
       startRetirementResponder: jest.Mock;
     };
     const tombstone = (projectId: string) => ({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId,
       result: { projectId, retiredAt: '2026-08-13T00:00:00.000Z' },
     });
@@ -232,7 +282,7 @@ describe('ClaudianCollabService retirement recovery', () => {
       projects: [], schemaVersion: 2, selectedProjectId: null,
     });
     internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.local.projects.removeAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
+    internal.removeOwnedAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
     internal.closeAuthority = jest.fn().mockResolvedValue(undefined);
     internal.retirementHandler = { handle: jest.fn() };
 
@@ -246,6 +296,7 @@ describe('ClaudianCollabService retirement recovery', () => {
   it('converges an expired tombstone before removing its terminal state', async () => {
     const service = new ClaudianCollabService({
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: '/tmp/claudian-expired-retirement-convergence',
     });
@@ -258,8 +309,8 @@ describe('ClaudianCollabService retirement recovery', () => {
         loadIndex: jest.Mock;
         loadRetirementRecord: jest.Mock;
         loadRetirementTombstone: jest.Mock;
-        removeAuthorityDirectory: jest.Mock;
       } };
+      removeOwnedAuthorityDirectory: jest.Mock;
       retirementHandler: { handle: jest.Mock };
       retirementTombstones: { remove: jest.Mock; restore: jest.Mock };
     };
@@ -268,6 +319,7 @@ describe('ClaudianCollabService retirement recovery', () => {
       tombstones: [],
     });
     internal.local.projects.loadRetirementTombstone = jest.fn().mockResolvedValue({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
       result,
     });
@@ -282,7 +334,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     };
     internal.lanHost.stopTerminalProject = jest.fn(async () => { order.push('host-stopped'); });
     internal.closeAuthority = jest.fn(async () => { order.push('authority-closed'); });
-    internal.local.projects.removeAuthorityDirectory = jest.fn(async () => {
+    internal.removeOwnedAuthorityDirectory = jest.fn(async () => {
       order.push('authority-removed');
     });
     internal.retirementTombstones.remove = jest.fn(async () => {

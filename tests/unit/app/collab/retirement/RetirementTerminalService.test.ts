@@ -1,3 +1,5 @@
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
 import {
   RetirementTerminalService,
 } from '@/app/collab/retirement/RetirementTerminalService';
@@ -92,6 +94,7 @@ function record(
     }],
     hostTransitionProofs: [],
     kind: 'retirement-tombstone',
+    ownerInstallationKey: TEST_INSTALLATION_A,
     projectId: 'project-alpha',
     replay: {
       actorMemberId: 'member-a',

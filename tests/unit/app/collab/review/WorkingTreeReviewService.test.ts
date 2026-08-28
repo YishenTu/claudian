@@ -75,7 +75,6 @@ function reviewFiles(): jest.Mocked<WorkingTreeReviewFilePort> {
 function projectPort(): jest.Mocked<PublishProjectPort> {
   return {
     load: jest.fn().mockResolvedValue({
-      allowHostRemoteRepair: false,
       memberId: 'member-a',
       personalRef: 'refs/heads/members/member-a',
       projectId: 'project-a',

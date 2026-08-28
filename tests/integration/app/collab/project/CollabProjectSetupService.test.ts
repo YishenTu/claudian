@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -65,6 +66,7 @@ function setupOptions(
       return PROJECT_ID;
     },
     getProjectsFolder,
+    installationKey: TEST_INSTALLATION_A,
     now: () => new Date(CREATED_AT),
     vaultRoot,
   };
@@ -92,6 +94,7 @@ describe('CollabProjectSetupService', () => {
         new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       ...(getProjectsFolder ? { getProjectsFolder } : {}),
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
@@ -118,6 +121,7 @@ describe('CollabProjectSetupService', () => {
         authorityKind: 'lan',
         connectionStatus: 'host-stopped',
         health: 'healthy',
+        hostInstallationStatus: 'hosted-here',
         hostStatus: 'stopped',
         id: PROJECT_ID,
         name: 'Alpha Notes',
@@ -141,8 +145,13 @@ describe('CollabProjectSetupService', () => {
     expect(git(bareRepository, ['rev-parse', `refs/heads/members/${MEMBER_ID}`]))
       .toBe(mainOid);
     expect(git(workingCopy, ['rev-parse', 'HEAD'])).toBe(mainOid);
-    expect(git(workingCopy, ['config', '--get', 'remote.origin.url']))
-      .toBe(`https://127.0.0.1:1/claudian-collab/host-stopped/${PROJECT_ID}`);
+    const origin = spawnSync(
+      'git',
+      ['config', '--get', 'remote.origin.url'],
+      { cwd: workingCopy, encoding: 'utf8' },
+    );
+    expect(origin.status).toBe(1);
+    expect(origin.stdout).toBe('');
     expect(git(vaultRoot, [
       'check-ignore',
       'Shared/Collab Projects/alpha-notes/.git/config',
@@ -215,13 +224,14 @@ describe('CollabProjectSetupService', () => {
     const controller = new AbortController();
     const port: CollabProjectFoundationPort = {
       local: foundation.local,
+      createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
         foundation.discardProvisionalAuthority(projectId)
       ),
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
         controller.abort();
-        return foundation.openAuthority(projectId);
+        return foundation.createAuthority(projectId);
       },
       requireGitFoundation: () => foundation.requireGitFoundation(),
     };
@@ -275,13 +285,14 @@ describe('CollabProjectSetupService', () => {
     const controller = new AbortController();
     const port: CollabProjectFoundationPort = {
       local: foundation.local,
+      createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: async () => {
         throw new Error('injected provisional authority cleanup failure');
       },
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
         controller.abort();
-        return foundation.openAuthority(projectId);
+        return foundation.createAuthority(projectId);
       },
       requireGitFoundation: () => foundation.requireGitFoundation(),
     };
@@ -356,12 +367,13 @@ describe('CollabProjectSetupService', () => {
     let wrappedAuthority: CollabAuthorityFoundation | null = null;
     const abortingPort: CollabProjectFoundationPort = {
       local: firstFoundation.local,
+      createAuthority: projectId => abortingPort.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
         firstFoundation.discardProvisionalAuthority(projectId)
       ),
       inspectAuthority: projectId => firstFoundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
-        const authority = await firstFoundation.openAuthority(projectId);
+        const authority = await firstFoundation.createAuthority(projectId);
         if (wrappedAuthority) return wrappedAuthority;
         wrappedAuthority = {
           ...authority,
@@ -416,7 +428,7 @@ describe('CollabProjectSetupService', () => {
     await reopenedFoundation.close();
   });
 
-  it('preserves version-1 clone recovery provenance across a retryable placement failure', async () => {
+  it('refuses ownerless version-1 clone recovery without rewriting durable state', async () => {
     const foundation = createFoundation();
     const service = new CollabProjectSetupService(foundation, setupOptions(vaultRoot));
     await expect(service.createProject({
@@ -456,8 +468,13 @@ describe('CollabProjectSetupService', () => {
     );
 
     await expect(service.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
-      durablePhase: 'committed',
-      status: 'recovery-required',
+      error: expect.objectContaining({
+        code: 'durable-progress-recovery-required',
+        safeContext: expect.objectContaining({
+          reason: 'host-installation-recovery-owner-mismatch',
+        }),
+      }),
+      status: 'failure',
     });
     await expect(foundation.local.projects.loadProjectDocument(
       PROJECT_ID,
@@ -467,16 +484,9 @@ describe('CollabProjectSetupService', () => {
         projectId: string;
         schemaVersion: number;
       },
-    )).resolves.toMatchObject({ legacySetupRecord: true, schemaVersion: 2 });
-
-    await rm(finalPath);
-    const resumed = new CollabProjectSetupService(foundation, setupOptions(vaultRoot));
-    await expect(resumed.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
-      status: 'success',
-      value: { workspacePath: 'workspace/legacy-recovery' },
-    });
+    )).resolves.toMatchObject({ schemaVersion: 1 });
     await expect(stat(finalPath)).resolves.toBeDefined();
-    await expect(stat(legacyClonePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(legacyClonePath)).resolves.toBeDefined();
     await foundation.close();
   });
 
@@ -520,7 +530,10 @@ describe('CollabProjectSetupService', () => {
 
     await expect(service.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
       error: expect.objectContaining({
-        safeContext: expect.objectContaining({ reason: 'legacy-planned-create-unsupported' }),
+        code: 'durable-progress-recovery-required',
+        safeContext: expect.objectContaining({
+          reason: 'host-installation-recovery-owner-mismatch',
+        }),
       }),
       status: 'failure',
     });
@@ -528,7 +541,9 @@ describe('CollabProjectSetupService', () => {
       .resolves.toBe('keep me\n');
     await expect(stat(path.join(vaultRoot, 'workspace', `.claudian-seed-${PROJECT_ID}`)))
       .resolves.toBeDefined();
-    await expect(foundation.local.projects.loadIndex()).resolves.toMatchObject({ projects: [] });
+    await expect(foundation.local.projects.loadIndex()).resolves.toMatchObject({
+      projects: [expect.objectContaining({ id: PROJECT_ID })],
+    });
     await expect(stat(path.join(
       vaultRoot,
       '.claudian',
@@ -598,12 +613,13 @@ describe('CollabProjectSetupService', () => {
     const controller = new AbortController();
     const port: CollabProjectFoundationPort = {
       local: foundation.local,
+      createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
         foundation.discardProvisionalAuthority(projectId)
       ),
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
-        const authority = await foundation.openAuthority(projectId);
+        const authority = await foundation.createAuthority(projectId);
         return {
           ...authority,
           database: {
@@ -647,6 +663,7 @@ describe('CollabProjectSetupService', () => {
     const foundation = createFoundation();
     const port: CollabProjectFoundationPort = {
       local: foundation.local,
+      createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
         foundation.discardProvisionalAuthority(projectId)
       ),
@@ -735,7 +752,12 @@ describe('CollabProjectSetupService', () => {
     const service = new CollabProjectSetupService(foundation, setupOptions(vaultRoot));
 
     await expect(service.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
-      error: expect.objectContaining({ code: 'workspace-boundary-invalid' }),
+      error: expect.objectContaining({
+        code: 'durable-progress-recovery-required',
+        safeContext: expect.objectContaining({
+          reason: 'host-installation-recovery-owner-mismatch',
+        }),
+      }),
       status: 'failure',
     });
     await expect(readFile(path.join(seedPath, 'keep.md'), 'utf8'))

@@ -14,6 +14,7 @@ function project(
     authorityKind: 'lan',
     connectionStatus: 'host-stopped',
     health: 'healthy',
+    hostInstallationStatus: 'hosted-here',
     hostStatus: 'stopped',
     id: 'project-alpha',
     name: 'Alpha',
@@ -27,6 +28,10 @@ function createPort(
   overrides: Partial<jest.Mocked<LanHostSectionPort>> = {},
 ): jest.Mocked<LanHostSectionPort> {
   return {
+    claimLegacyHostInstallation: jest.fn().mockResolvedValue({
+      status: 'success',
+      value: project({ hostInstallationStatus: 'hosted-here' }),
+    }),
     startHost: jest.fn().mockResolvedValue({
       status: 'success',
       value: { projectId: 'project-alpha', status: 'running' },
@@ -57,6 +62,7 @@ describe('LanHostSection', () => {
     const sectionEl = container.querySelector<HTMLElement>('.claudian-collab-host-section')!;
     expect(sectionEl.tagName).toBe('DIV');
     expect(sectionEl.textContent).toContain('LAN Host');
+    expect(sectionEl.textContent).toContain('Hosted on this device');
     expect(sectionEl.textContent).toContain('Stopped');
     expect(sectionEl.querySelectorAll('button')).toHaveLength(1);
     expect(sectionEl.querySelector('[data-action="create-invitation"]')).toBeNull();
@@ -141,6 +147,83 @@ describe('LanHostSection', () => {
       project: project({ hostStatus: 'not-host', role: 'manager' }),
     });
 
+    expect(container.childElementCount).toBe(0);
+  });
+
+  it('shows a foreign Host installation as status-only with no Host action', () => {
+    const container = document.body.createDiv();
+    const port = createPort();
+    new LanHostSection(container, {
+      port,
+      project: project({
+        connectionStatus: 'offline',
+        hostInstallationStatus: 'hosted-elsewhere',
+        hostStatus: 'not-host',
+      }),
+    });
+
+    expect(container.textContent).toContain('LAN Host');
+    expect(container.textContent).toContain('Hosted on another device');
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+    expect(port.startHost).not.toHaveBeenCalled();
+  });
+
+  it('claims a legacy Host only after the accepted explicit confirmation', async () => {
+    const cancelledContainer = document.body.createDiv();
+    const cancelledPort = createPort();
+    const cancelConfirmation = jest.fn().mockResolvedValue(false);
+    new LanHostSection(cancelledContainer, {
+      confirmLegacyClaim: cancelConfirmation,
+      port: cancelledPort,
+      project: project({ hostInstallationStatus: 'legacy-unbound' }),
+    });
+
+    cancelledContainer.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
+    await flush();
+    expect(cancelConfirmation).toHaveBeenCalledTimes(1);
+    expect(cancelledPort.claimLegacyHostInstallation).not.toHaveBeenCalled();
+    expect(cancelledPort.startHost).not.toHaveBeenCalled();
+    expect(cancelledContainer.textContent).toContain('Stopped');
+
+    const confirmedContainer = document.body.createDiv();
+    const confirmedPort = createPort();
+    new LanHostSection(confirmedContainer, {
+      confirmLegacyClaim: jest.fn().mockResolvedValue(true),
+      port: confirmedPort,
+      project: project({ hostInstallationStatus: 'legacy-unbound' }),
+    });
+
+    confirmedContainer.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
+    await flush();
+    await flush();
+    expect(confirmedPort.claimLegacyHostInstallation).toHaveBeenCalledWith(
+      'project-alpha',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(confirmedPort.startHost).toHaveBeenCalledWith(
+      'project-alpha',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(confirmedContainer.textContent).toContain('Running');
+  });
+
+  it('suppresses a late legacy confirmation after the Host section is destroyed', async () => {
+    let confirm!: (accepted: boolean) => void;
+    const port = createPort();
+    const container = document.body.createDiv();
+    const section = new LanHostSection(container, {
+      confirmLegacyClaim: jest.fn(() => new Promise(resolve => { confirm = resolve; })),
+      port,
+      project: project({ hostInstallationStatus: 'legacy-unbound' }),
+    });
+    container.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
+
+    section.destroy();
+    confirm(true);
+    await flush();
+
+    expect(port.claimLegacyHostInstallation).not.toHaveBeenCalled();
+    expect(port.startHost).not.toHaveBeenCalled();
     expect(container.childElementCount).toBe(0);
   });
 

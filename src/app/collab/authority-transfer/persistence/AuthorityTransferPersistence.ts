@@ -19,6 +19,7 @@ import {
 import {
   assertAuthorityTransferTransition,
   type AuthorityTransferRecord,
+  bindLegacyAuthorityTransferSourceOwner,
   decodeAuthorityTransferRecord,
   expireAuthorityTransferTerminalResponder,
   isAuthorityTransferProposal,
@@ -42,8 +43,10 @@ import {
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistenceStores';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface AuthorityTransferPersistenceOptions {
+  readonly isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean;
   readonly now?: () => Date;
 }
 
@@ -137,39 +140,41 @@ function batchDigest(batch: CollabTransferredMembershipClaimBatch): string {
 }
 
 export class AuthorityTransferPersistence {
-  private closePromise: Promise<void> | null = null;
+   #closePromise: Promise<void> | null = null;
   private closed = false;
-  private readonly enumerationQueue = new SerialTaskQueue();
+   readonly #enumerationQueue = new SerialTaskQueue();
+   readonly #isRecoveryOwner: AuthorityTransferPersistenceOptions['isRecoveryOwner'];
   private readonly now: () => Date;
-  private readonly projectQueues = new Map<CollabProjectId, SerialTaskQueue>();
+   readonly #projectQueues = new Map<CollabProjectId, SerialTaskQueue>();
 
   constructor(
     private readonly stores: AuthorityTransferPersistenceStores,
-    options: AuthorityTransferPersistenceOptions = {},
+    options: AuthorityTransferPersistenceOptions,
   ) {
+    this.#isRecoveryOwner = options.isRecoveryOwner;
     this.now = options.now ?? (() => new Date());
   }
 
   listProjectIds(): Promise<readonly CollabProjectId[]> {
-    if (this.closed) return Promise.reject(this.closedError());
-    return this.enumerationQueue.run(() => this.stores.authorityTransferRecords.listProjectIds());
+    if (this.closed) return Promise.reject(this.#closedError());
+    return this.#enumerationQueue.run(() => this.stores.authorityTransferRecords.listProjectIds());
   }
 
   scanProjectCatalog(): Promise<AuthorityTransferProjectCatalog> {
-    if (this.closed) return Promise.reject(this.closedError());
-    return this.enumerationQueue.run(
+    if (this.closed) return Promise.reject(this.#closedError());
+    return this.#enumerationQueue.run(
       () => this.stores.authorityTransferRecords.scanProjectCatalog(),
     );
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
+    if (this.#closePromise) return this.#closePromise;
     this.closed = true;
-    this.closePromise = Promise.all([
-      this.enumerationQueue.drain(),
-      ...[...this.projectQueues.values()].map(queue => queue.drain()),
+    this.#closePromise = Promise.all([
+      this.#enumerationQueue.drain(),
+      ...[...this.#projectQueues.values()].map(queue => queue.drain()),
     ]).then(() => undefined);
-    return this.closePromise;
+    return this.#closePromise;
   }
 
   inspectLifecycleOwner(
@@ -182,6 +187,10 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferClaimCommitments.load(projectId),
       ]);
       if (!record) return custody || commitment ? 'nonterminal' : 'absent';
+      if (
+        record.ownerInstallationKey !== undefined
+        && !this.#isRecoveryOwner(record.ownerInstallationKey)
+      ) return 'absent';
       if (custody || commitment) {
         return 'nonterminal';
       }
@@ -189,6 +198,27 @@ export class AuthorityTransferPersistence {
       return isAuthorityTransferTerminal(record) && record.terminalCleanupCompleted
         ? 'terminal'
         : 'nonterminal';
+    });
+  }
+
+  loadRecoveryOwnerRecord(
+    projectId: CollabProjectId,
+  ): Promise<AuthorityTransferRecord | null> {
+    return this.runProject(
+      projectId,
+      () => this.stores.authorityTransferRecords.load(projectId),
+    );
+  }
+
+  bindLegacySourceOwner(
+    projectId: CollabProjectId,
+    ownerInstallationKey: InstallationKey,
+  ): Promise<void> {
+    return this.runProject(projectId, async () => {
+      const record = await this.stores.authorityTransferRecords.load(projectId);
+      if (!record || record.localRole !== 'source') return;
+      const bound = bindLegacyAuthorityTransferSourceOwner(record, ownerInstallationKey);
+      if (bound !== record) await this.stores.authorityTransferRecords.save(bound);
     });
   }
 
@@ -212,17 +242,17 @@ export class AuthorityTransferPersistence {
             'authority-transfer-claim-commitment-orphaned',
           );
         }
-        await this.assertTerminalCleanupClaimOwner(record, null, commitment);
+        await this.#assertTerminalCleanupClaimOwner(record, null, commitment);
         await this.stores.authorityTransferClaimCommitments.remove(projectId);
         return;
       }
       const expected = createAuthorityTransferClaimBatchCommitmentRecord(custody);
       if (sameValue(commitment, expected)) return;
-      await this.assertClaimBatchOwner(custody, undefined, false);
+      await this.#assertClaimBatchOwner(custody, undefined, false);
       const recoverablePredecessor = commitment === null
         ? custody.rotationPredecessor === null
-        : this.isRotationPredecessorCommitment(commitment, custody);
-      if (!recoverablePredecessor || !this.isCompleteUnacknowledgedBatch(custody)) {
+        : this.#isRotationPredecessorCommitment(commitment, custody);
+      if (!recoverablePredecessor || !this.#isCompleteUnacknowledgedBatch(custody)) {
         throw transferError(
           'durable-progress-recovery-required',
           'authority-transfer-claim-commitment-mismatch',
@@ -264,7 +294,7 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferClaims.load(input.projectId),
         this.stores.authorityTransferClaimCommitments.load(input.projectId),
       ]);
-      await this.assertTerminalCleanupClaimOwner(record, custody, commitment);
+      await this.#assertTerminalCleanupClaimOwner(record, custody, commitment);
       if (!record.terminalCleanupCompleted) {
         await this.stores.authorityTransferRecords.save(
           markAuthorityTransferTerminalCleanupCompleted(record),
@@ -292,7 +322,7 @@ export class AuthorityTransferPersistence {
           'authority-transfer-claim-commitment-orphaned',
         );
       }
-      if (record && custody) await this.assertClaimBatchOwner(custody, record);
+      if (record && custody) await this.#assertClaimBatchOwner(custody, record);
       return record;
     });
   }
@@ -327,7 +357,7 @@ export class AuthorityTransferPersistence {
   }
 
   create(record: AuthorityTransferRecord): Promise<void> {
-    return this.saveAbsent(record);
+    return this.#saveAbsent(record);
   }
 
   advance(
@@ -365,7 +395,7 @@ export class AuthorityTransferPersistence {
             : 'authority-transfer-phase-invalid',
         );
       }
-      await this.assertClaimCustodyForStatus(decoded.status);
+      await this.#assertClaimCustodyForStatus(decoded.status);
       await this.stores.authorityTransferRecords.save(decoded);
     });
   }
@@ -388,17 +418,17 @@ export class AuthorityTransferPersistence {
       ));
     }
     return this.runProject(record.projectId, async () => {
-      await this.assertClaimBatchOwner(record, undefined, false);
+      await this.#assertClaimBatchOwner(record, undefined, false);
       const existing = await this.stores.authorityTransferClaims.load(record.projectId);
       if (existing) {
         if (sameClaimBatch(existing, record)) {
-          await this.persistClaimCommitment(existing);
+          await this.#persistClaimCommitment(existing);
           return existing;
         }
         throw transferError('authority-transfer-stale', 'authority-transfer-claim-batch-conflict');
       }
       await this.stores.authorityTransferClaims.save(record);
-      await this.persistClaimCommitment(record);
+      await this.#persistClaimCommitment(record);
       return record;
     });
   }
@@ -415,8 +445,8 @@ export class AuthorityTransferPersistence {
       ));
     }
     return this.runProject(batch.projectId, async () => {
-      const current = await this.requireClaimCustody(batch.projectId, batch.transferId);
-      await this.assertClaimBatchOwner(current, undefined, false);
+      const current = await this.#requireClaimCustody(batch.projectId, batch.transferId);
+      await this.#assertClaimBatchOwner(current, undefined, false);
       const rotated = createAuthorityTransferClaimCustodyRecord({
         batch,
         createdAt: current.createdAt,
@@ -430,10 +460,10 @@ export class AuthorityTransferPersistence {
         && current.rotationPredecessor?.batchRevision === input.expectedBatchRevision
         && current.rotationPredecessor.batchSha256 === input.expectedBatchSha256
       ) {
-        await this.persistClaimCommitment(current);
+        await this.#persistClaimCommitment(current);
         return current;
       }
-      await this.assertClaimBatchOwner(current);
+      await this.#assertClaimBatchOwner(current);
       if (
         current.custodyReceipt !== null
         || current.claims.some(claim => claim.disposition !== 'retained')
@@ -467,7 +497,7 @@ export class AuthorityTransferPersistence {
           : current.updatedAt,
       });
       await this.stores.authorityTransferClaims.save(persisted);
-      await this.persistClaimCommitment(persisted);
+      await this.#persistClaimCommitment(persisted);
       return persisted;
     });
   }
@@ -485,12 +515,12 @@ export class AuthorityTransferPersistence {
       ));
     }
     return this.runProject(receipt.projectId, async () => {
-      const current = await this.requireClaimCustody(receipt.projectId, receipt.transferId);
+      const current = await this.#requireClaimCustody(receipt.projectId, receipt.transferId);
       const record = await this.stores.authorityTransferRecords.load(receipt.projectId);
       if (!record || record.transferId !== receipt.transferId) {
         throw transferError('authority-transfer-stale', 'authority-transfer-custody-owner-stale');
       }
-      await this.assertClaimBatchOwner(current, record);
+      await this.#assertClaimBatchOwner(current, record);
       if (current.custodyReceipt) {
         if (sameValue(current.custodyReceipt, receipt)) return current.custodyReceipt;
         throw transferError('authority-transfer-stale', 'authority-transfer-custody-receipt-stale');
@@ -526,9 +556,9 @@ export class AuthorityTransferPersistence {
     memberId: CollabMemberId,
   ): Promise<CollabTransferredMembershipClaim> {
     return this.runProject(projectId, async () => {
-      const current = await this.requireClaimCustody(projectId, transferId);
+      const current = await this.#requireClaimCustody(projectId, transferId);
       const record = await this.stores.authorityTransferRecords.load(projectId);
-      await this.assertClaimBatchOwner(current, record ?? undefined);
+      await this.#assertClaimBatchOwner(current, record ?? undefined);
       if (
         !record
         || record.localRole !== 'source'
@@ -576,7 +606,7 @@ export class AuthorityTransferPersistence {
       if (current.transferId !== transferId) {
         throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
       }
-      await this.assertClaimBatchOwner(current);
+      await this.#assertClaimBatchOwner(current);
       if (current.claims.some(claim => claim.disposition !== 'retained' || claim.claim === null)) {
         throw transferError(
           'durable-progress-recovery-required',
@@ -623,8 +653,8 @@ export class AuthorityTransferPersistence {
       ));
     }
     return this.runProject(receipt.projectId, async () => {
-      const current = await this.requireClaimCustody(receipt.projectId, receipt.transferId);
-      await this.assertClaimBatchOwner(current);
+      const current = await this.#requireClaimCustody(receipt.projectId, receipt.transferId);
+      await this.#assertClaimBatchOwner(current);
       const retained = current.claims.find(claim => claim.memberId === receipt.memberId);
       if (!retained) {
         throw transferError('membership-claim-invalid', 'authority-transfer-member-claim-missing');
@@ -668,7 +698,7 @@ export class AuthorityTransferPersistence {
   }
 
   assertAuthorityRestartAllowed(projectId: CollabProjectId): Promise<void> {
-    return this.runProject(projectId, () => this.assertAuthorityRestartAllowedUnlocked(projectId));
+    return this.runProject(projectId, () => this.#assertAuthorityRestartAllowedUnlocked(projectId));
   }
 
   runWithAuthorityStartGuard<T>(
@@ -676,7 +706,7 @@ export class AuthorityTransferPersistence {
     operation: () => Promise<T>,
   ): Promise<T> {
     return this.runProject(projectId, async () => {
-      await this.assertAuthorityRestartAllowedUnlocked(projectId);
+      await this.#assertAuthorityRestartAllowedUnlocked(projectId);
       return operation();
     });
   }
@@ -686,9 +716,9 @@ export class AuthorityTransferPersistence {
     transferId: string,
   ): Promise<void> {
     return this.runProject(projectId, async () => {
-      const current = await this.requireClaimCustody(projectId, transferId);
+      const current = await this.#requireClaimCustody(projectId, transferId);
       const record = await this.stores.authorityTransferRecords.load(projectId);
-      await this.assertClaimBatchOwner(current, record ?? undefined);
+      await this.#assertClaimBatchOwner(current, record ?? undefined);
       if (!record || !claimCustodyMatchesStatus(current, record.status)) {
         throw transferError(
           'durable-progress-recovery-required',
@@ -718,12 +748,19 @@ export class AuthorityTransferPersistence {
     });
   }
 
-  private async assertAuthorityRestartAllowedUnlocked(
+   async #assertAuthorityRestartAllowedUnlocked(
     projectId: CollabProjectId,
   ): Promise<void> {
     const record = await this.stores.authorityTransferRecords.load(projectId);
     const custody = await this.stores.authorityTransferClaims.load(projectId);
     const commitment = await this.stores.authorityTransferClaimCommitments.load(projectId);
+    if (record && record.ownerInstallationKey === undefined) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-legacy-owner-missing',
+      );
+    }
+    if (record && !this.#isRecoveryOwner(record.ownerInstallationKey)) return;
     if (!record && (custody || commitment)) {
       throw transferError(
         'durable-progress-recovery-required',
@@ -736,7 +773,7 @@ export class AuthorityTransferPersistence {
         'authority-transfer-claim-commitment-orphaned',
       );
     }
-    if (record && custody) await this.assertClaimBatchOwner(custody, record);
+    if (record && custody) await this.#assertClaimBatchOwner(custody, record);
     if (!record || record.restartFence === 'open') return;
     throw transferError(
       'durable-progress-recovery-required',
@@ -799,23 +836,23 @@ export class AuthorityTransferPersistence {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    if (this.closed) return Promise.reject(this.closedError());
-    let queue = this.projectQueues.get(projectId);
+    if (this.closed) return Promise.reject(this.#closedError());
+    let queue = this.#projectQueues.get(projectId);
     if (!queue) {
       queue = new SerialTaskQueue();
-      this.projectQueues.set(projectId, queue);
+      this.#projectQueues.set(projectId, queue);
     }
     return queue.run(operation);
   }
 
-  private closedError(): CollabError {
+   #closedError(): CollabError {
     return transferError(
       'durable-progress-recovery-required',
       'authority-transfer-persistence-closed',
     );
   }
 
-  private saveAbsent(record: AuthorityTransferRecord): Promise<void> {
+   #saveAbsent(record: AuthorityTransferRecord): Promise<void> {
     let decoded: AuthorityTransferRecord;
     try {
       decoded = decodeAuthorityTransferRecord(record);
@@ -852,10 +889,10 @@ export class AuthorityTransferPersistence {
     });
   }
 
-  private async assertClaimCustodyForStatus(status: CollabAuthorityTransferStatus): Promise<void> {
+   async #assertClaimCustodyForStatus(status: CollabAuthorityTransferStatus): Promise<void> {
     if (status.batchRevision === null || status.batchSha256 === null) return;
-    const custody = await this.requireClaimCustody(status.projectId, status.transferId);
-    await this.assertClaimBatchOwner(custody);
+    const custody = await this.#requireClaimCustody(status.projectId, status.transferId);
+    await this.#assertClaimBatchOwner(custody);
     if (!claimCustodyMatchesStatus(custody, status)) {
       throw transferError(
         'durable-progress-recovery-required',
@@ -864,7 +901,7 @@ export class AuthorityTransferPersistence {
     }
   }
 
-  private async assertClaimBatchOwner(
+   async #assertClaimBatchOwner(
     custody: AuthorityTransferClaimCustodyRecord,
     knownRecord?: AuthorityTransferRecord,
     requireCommitment = true,
@@ -900,13 +937,13 @@ export class AuthorityTransferPersistence {
     }
   }
 
-  private async assertTerminalCleanupClaimOwner(
+   async #assertTerminalCleanupClaimOwner(
     record: AuthorityTransferRecord,
     custody: AuthorityTransferClaimCustodyRecord | null,
     commitment: AuthorityTransferClaimBatchCommitmentRecord | null,
   ): Promise<void> {
     if (custody) {
-      await this.assertClaimBatchOwner(custody, record);
+      await this.#assertClaimBatchOwner(custody, record);
       if (
         custody.batchRevision !== record.status.batchRevision
         || custody.batchSha256 !== record.status.batchSha256
@@ -936,7 +973,7 @@ export class AuthorityTransferPersistence {
     }
   }
 
-  private async persistClaimCommitment(
+   async #persistClaimCommitment(
     custody: AuthorityTransferClaimCustodyRecord,
   ): Promise<void> {
     const expected = createAuthorityTransferClaimBatchCommitmentRecord(custody);
@@ -944,7 +981,7 @@ export class AuthorityTransferPersistence {
       custody.projectId,
     );
     if (sameValue(existing, expected)) return;
-    if (existing && !this.isRotationPredecessorCommitment(existing, custody)) {
+    if (existing && !this.#isRotationPredecessorCommitment(existing, custody)) {
       throw transferError(
         'durable-progress-recovery-required',
         'authority-transfer-claim-commitment-mismatch',
@@ -953,7 +990,7 @@ export class AuthorityTransferPersistence {
     await this.stores.authorityTransferClaimCommitments.save(expected);
   }
 
-  private isRotationPredecessorCommitment(
+   #isRotationPredecessorCommitment(
     commitment: AuthorityTransferClaimBatchCommitmentRecord,
     custody: AuthorityTransferClaimCustodyRecord,
   ): boolean {
@@ -965,7 +1002,7 @@ export class AuthorityTransferPersistence {
       && commitment.batchSha256 === custody.rotationPredecessor.batchSha256;
   }
 
-  private isCompleteUnacknowledgedBatch(
+   #isCompleteUnacknowledgedBatch(
     custody: AuthorityTransferClaimCustodyRecord,
   ): boolean {
     if (
@@ -995,7 +1032,7 @@ export class AuthorityTransferPersistence {
     return batchDigest(batch) === custody.batchSha256;
   }
 
-  private async requireClaimCustody(
+   async #requireClaimCustody(
     projectId: CollabProjectId,
     transferId: string,
   ): Promise<AuthorityTransferClaimCustodyRecord> {

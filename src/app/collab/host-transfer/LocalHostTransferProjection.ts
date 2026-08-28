@@ -6,9 +6,13 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferProjectionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
+import type {
+  LanAuthorityProjectionTransitionPort,
+} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface LocalHostTransferProjectionOptions {
+  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
   readonly loadMembership: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;
@@ -61,42 +65,46 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
   async promoteTargetHost(
     input: Parameters<HostTransferProjectionPort['promoteTargetHost']>[0],
   ): Promise<void> {
-    const membership = await this.requireMembership(input.projectId);
-    if (membership.member.id !== input.targetHostMemberId) {
-      throw projectionError('host-transfer-projection-target-mismatch');
-    }
-    await this.rotate(membership, input.endpoint);
-    await this.options.saveMembership({
-      ...membership,
-      authority: {
-        ...membership.authority,
-        endpoint: input.endpoint,
-        gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
-        hostCaCertificatePem: input.targetCaCertificatePem,
-        hostCaFingerprint: input.targetCaFingerprint,
-      },
-      hostOwnership: { autoStart: true, ownsAuthority: true },
-      lastEventSequence: input.eventSequence,
-      updatedAt: this.now().toISOString(),
+    await this.options.authorityProjectionTransitions.run(input.projectId, async () => {
+      const membership = await this.requireMembership(input.projectId);
+      if (membership.member.id !== input.targetHostMemberId) {
+        throw projectionError('host-transfer-projection-target-mismatch');
+      }
+      await this.rotate(membership, input.endpoint);
+      await this.options.saveMembership({
+        ...membership,
+        authority: {
+          ...membership.authority,
+          endpoint: input.endpoint,
+          gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
+          hostCaCertificatePem: input.targetCaCertificatePem,
+          hostCaFingerprint: input.targetCaFingerprint,
+        },
+        hostOwnership: { autoStart: true, ownsAuthority: true },
+        lastEventSequence: input.eventSequence,
+        updatedAt: this.now().toISOString(),
+      });
     });
   }
 
   async demoteSourceHost(
     input: Parameters<HostTransferProjectionPort['demoteSourceHost']>[0],
   ): Promise<void> {
-    const membership = await this.requireMembership(input.projectId);
-    await this.rotate(membership, input.endpoint);
-    await this.options.saveMembership({
-      ...membership,
-      authority: {
-        ...membership.authority,
-        endpoint: input.endpoint,
-        gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
-        hostCaCertificatePem: input.targetCaCertificatePem,
-        hostCaFingerprint: input.targetCaFingerprint,
-      },
-      hostOwnership: { autoStart: false, ownsAuthority: false },
-      updatedAt: this.now().toISOString(),
+    await this.options.authorityProjectionTransitions.run(input.projectId, async () => {
+      const membership = await this.requireMembership(input.projectId);
+      await this.rotate(membership, input.endpoint);
+      await this.options.saveMembership({
+        ...membership,
+        authority: {
+          ...membership.authority,
+          endpoint: input.endpoint,
+          gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
+          hostCaCertificatePem: input.targetCaCertificatePem,
+          hostCaFingerprint: input.targetCaFingerprint,
+        },
+        hostOwnership: { autoStart: false, ownsAuthority: false },
+        updatedAt: this.now().toISOString(),
+      });
     });
   }
 

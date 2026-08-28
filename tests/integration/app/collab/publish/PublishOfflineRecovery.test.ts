@@ -94,7 +94,6 @@ describe('Publish offline recovery integration', () => {
     await writeFile(path.join(repositoryPath, 'note.md'), 'offline change\n');
 
     const context: PublishProjectContext = {
-      allowHostRemoteRepair: false,
       memberId: 'member-a',
       personalRef: PERSONAL_REF,
       projectId: PROJECT_ID,
@@ -134,23 +133,6 @@ describe('Publish offline recovery integration', () => {
       .toEqual({ leftOnly: 1, rightOnly: 0 });
 
     network.online = true;
-    await git.addRemote(repositoryPath, 'origin', path.join(root, 'unexpected.git'));
-    const mismatchedRemote = new PublishCoordinator(
-      fixedProject(context),
-      nativeRepository,
-      requests,
-      noOpSafety(),
-      publicationState,
-      candidates,
-      comparisons,
-      { createOperationId: () => 'mismatched-remote-publish' },
-    );
-    await expect(mismatchedRemote.publish(publishRequest)).resolves.toMatchObject({
-      error: { code: 'repository-invalid' },
-      status: 'recovery-required',
-    });
-    expect(network.calls).toBe(1);
-    await git.addRemote(repositoryPath, 'origin', authorityPath);
 
     const resumed = new PublishCoordinator(
       fixedProject(context),
@@ -176,6 +158,8 @@ describe('Publish offline recovery integration', () => {
       },
     });
     expect(await git.resolveRef(authorityPath, PERSONAL_REF)).toBe(committedOid);
+    expect(await git.listRemoteUrls(repositoryPath, 'origin')).toEqual([authorityPath]);
+    expect(network.calls).toBe(4);
     expect(requests.heads).toEqual([committedOid]);
     expect(await git.countDivergence(repositoryPath, committedOid!, mainOid))
       .toEqual({ leftOnly: 1, rightOnly: 0 });
@@ -187,12 +171,12 @@ class ToggleNetworkPort implements PublishGitNetworkPort {
   online = true;
 
   async withNetwork<T>(
-    _context: PublishProjectContext,
-    operation: () => Promise<T>,
+    context: PublishProjectContext,
+    operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
     this.calls += 1;
     if (!this.online) throw new CollabError({ code: 'endpoint-unreachable' });
-    return operation();
+    return operation(undefined, context.remoteUrl!) as Promise<T>;
   }
 }
 

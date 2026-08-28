@@ -20,7 +20,6 @@ import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVe
 import type {
   CollabProjectsFolderChildOwnership,
 } from '@/app/collab/CollabWorkspaceService';
-import { collabStoppedHostRemoteUrl } from '@/app/collab/git/GitRepositoryService';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import {
   COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
@@ -32,6 +31,7 @@ import {
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabCreateProjectRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { type InstallationKey, isInstallationKey } from '@/core/device/InstallationKey';
 
 const RECEIVE_DISABLED_HOOK = `#!/bin/sh
 echo "Claudian Collab hosting is not active." >&2
@@ -56,6 +56,7 @@ export interface CollabProjectAuthorityFoundation extends Omit<
 export interface CollabProjectFoundationPort {
   readonly local: CollabLocalFoundation;
   requireGitFoundation(): Promise<CollabGitFoundation>;
+  createAuthority(projectId: CollabProjectId): Promise<CollabProjectAuthorityFoundation>;
   openAuthority(projectId: CollabProjectId): Promise<CollabProjectAuthorityFoundation>;
   inspectAuthority(
     projectId: CollabProjectId,
@@ -67,6 +68,7 @@ export interface CollabProjectSetupServiceOptions {
   readonly createCredential?: () => string;
   readonly createId?: (kind: 'member' | 'operation' | 'project') => string;
   readonly getProjectsFolder?: () => string;
+  readonly installationKey: InstallationKey;
   readonly now?: () => Date;
   readonly vaultRoot: string;
 }
@@ -129,6 +131,7 @@ function projectSummary(record: CollabProjectSetupRecord): CollabLocalProjectSum
     authorityKind: 'lan',
     connectionStatus: 'host-stopped',
     health: 'healthy',
+    hostInstallationStatus: 'hosted-here',
     hostStatus: 'stopped',
     id: record.projectId,
     name: record.name,
@@ -150,19 +153,19 @@ function slugBase(name: string): string {
 }
 
 export class CollabProjectSetupService {
-  private readonly createCredential: () => string;
-  private readonly createId: (kind: 'member' | 'operation' | 'project') => string;
+   readonly #createCredential: () => string;
+   readonly #createId: (kind: 'member' | 'operation' | 'project') => string;
   private readonly getProjectsFolder: () => string;
   private readonly now: () => Date;
-  private readonly operationQueue = new SerialTaskQueue();
+   readonly #operationQueue = new SerialTaskQueue();
 
   constructor(
     private readonly foundation: CollabProjectFoundationPort,
     private readonly options: CollabProjectSetupServiceOptions,
   ) {
-    this.createCredential = options.createCredential
+    this.#createCredential = options.createCredential
       ?? (() => randomBytes(32).toString('base64url'));
-    this.createId = options.createId ?? (kind => {
+    this.#createId = options.createId ?? (kind => {
       const compactUuid = randomUUID().replaceAll('-', '');
       return kind === 'operation'
         ? `create-${compactUuid}`
@@ -176,17 +179,17 @@ export class CollabProjectSetupService {
     request: CollabCreateProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.operationQueue.run(() => this.createProjectUnlocked(request, options));
+    return this.#operationQueue.run(() => this.#createProjectUnlocked(request, options));
   }
 
   resumeSetup(
     request: CollabResumeSetupRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.operationQueue.run(() => this.resumeSetupUnlocked(request, options));
+    return this.#operationQueue.run(() => this.#resumeSetupUnlocked(request, options));
   }
 
-  private async createProjectUnlocked(
+   async #createProjectUnlocked(
     request: CollabCreateProjectRequest,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -206,25 +209,25 @@ export class CollabProjectSetupService {
       await this.foundation.local.workspace.claimProjectsFolder(projectsFolder);
       throwIfCancelled(options.signal);
       const projectId = validateGeneratedId(
-        this.createId('project'),
+        this.#createId('project'),
         isCollabProjectId,
         'project-id',
       );
       const memberId = validateGeneratedId(
-        this.createId('member'),
+        this.#createId('member'),
         isCollabMemberId,
         'member-id',
       );
       const operationId = validateGeneratedId(
-        this.createId('operation'),
+        this.#createId('operation'),
         isCollabOpaqueId,
         'operation-id',
       );
-      const credential = this.createCredential();
+      const credential = this.#createCredential();
       if (!/^[A-Za-z0-9_-]{43}$/.test(credential)) {
         throw setupError('operation-failed', 'member-credential-invalid', ['open-diagnostics']);
       }
-      const slug = await this.claimSlug(projectsFolder, name);
+      const slug = await this.#claimSlug(projectsFolder, name);
       const timestamp = this.now().toISOString();
       record = {
         cloneDirectoryName: `.claudian-clone-${projectId}`,
@@ -235,6 +238,7 @@ export class CollabProjectSetupService {
         memberId,
         name,
         operationId,
+        ownerInstallationKey: this.options.installationKey,
         phase: 'planned',
         projectId,
         projectsFolder,
@@ -243,55 +247,70 @@ export class CollabProjectSetupService {
         slug,
         updatedAt: timestamp,
       };
-      await this.savePending(record);
-      await this.foundation.local.projects.upsertProject(this.indexEntry(record));
-      record = await this.prepareSeed(record, options.signal);
-      record = await this.commitAuthority(record, options.signal);
+      await this.#savePending(record);
+      await this.foundation.local.projects.upsertProject(this.#indexEntry(record));
+      record = await this.#prepareSeed(record, options.signal);
+      record = await this.#commitAuthority(record, options.signal);
       throwIfCancelled(options.signal);
-      return await this.finishCommittedSetup(record, options.signal);
+      return await this.#finishCommittedSetup(record, options.signal);
     } catch (error) {
-      return this.handleSetupFailure(record, error);
+      return this.#handleSetupFailure(record, error);
     }
   }
 
-  private async resumeSetupUnlocked(
+   async #resumeSetupUnlocked(
     request: CollabResumeSetupRequest,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     let record: CollabProjectSetupRecord | null = null;
     try {
       throwIfCancelled(options.signal);
-      record = await this.findPending(request.operationId);
-      if (!record) throw setupError('project-not-found', 'pending-setup-not-found');
+      const pending = await this.#findPending(request.operationId);
+      if (!pending) throw setupError('project-not-found', 'pending-setup-not-found');
+      this.#assertRecoveryOwner(pending);
+      record = pending;
       if (record.legacyImportPlanned) {
-        await this.cleanupUncommitted(record);
+        await this.#cleanupUncommitted(record);
         return {
           error: setupError('operation-failed', 'legacy-planned-create-unsupported'),
           status: 'failure',
         };
       }
-      const authorityCommitted = await this.isAuthorityCommitted(record);
+      const authorityCommitted = await this.#isAuthorityCommitted(record);
       if (!authorityCommitted) {
         await this.foundation.local.workspace.claimProjectsFolder(record.projectsFolder);
         if (record.phase === 'planned') {
-          record = await this.prepareSeed(record, options.signal);
+          record = await this.#prepareSeed(record, options.signal);
         }
-        record = await this.commitAuthority(record, options.signal);
+        record = await this.#commitAuthority(record, options.signal);
       } else if (record.phase === 'planned' || record.phase === 'staged') {
-        record = await this.updateRecord(record, { phase: 'committed' });
+        record = await this.#updateRecord(record, { phase: 'committed' });
       }
       throwIfCancelled(options.signal);
-      return await this.finishCommittedSetup(record, options.signal);
+      return await this.#finishCommittedSetup(record, options.signal);
     } catch (error) {
-      return this.handleSetupFailure(record, error);
+      return this.#handleSetupFailure(record, error);
     }
   }
 
-  private async prepareSeed(
+   #assertRecoveryOwner(record: CollabProjectSetupRecord): void {
+    if (
+      !isInstallationKey(record.ownerInstallationKey)
+      || record.ownerInstallationKey !== this.options.installationKey
+    ) {
+      throw setupError(
+        'durable-progress-recovery-required',
+        'host-installation-recovery-owner-mismatch',
+        ['resume', 'open-diagnostics'],
+      );
+    }
+  }
+
+   async #prepareSeed(
     record: CollabProjectSetupRecord,
     signal?: AbortSignal,
   ): Promise<CollabProjectSetupRecord> {
-    const ownership = this.workspaceChildOwnership(record, 'create-seed');
+    const ownership = this.#workspaceChildOwnership(record, 'create-seed');
     await this.foundation.local.workspace.removeReservedProjectsFolderChild(
       record.projectsFolder,
       ownership,
@@ -330,20 +349,20 @@ export class CollabProjectSetupService {
       collabMemberRef(record.memberId),
       initialCommitOid,
     );
-    return this.updateRecord(record, {
+    return this.#updateRecord(record, {
       initialCommitOid,
       phase: 'staged',
     });
   }
 
-  private async commitAuthority(
+   async #commitAuthority(
     record: CollabProjectSetupRecord,
     signal?: AbortSignal,
   ): Promise<CollabProjectSetupRecord> {
     if (!record.initialCommitOid) {
       throw setupError('repository-invalid', 'initial-commit-missing', ['open-diagnostics']);
     }
-    const authority = await this.foundation.openAuthority(record.projectId);
+    const authority = await this.foundation.createAuthority(record.projectId);
     const existing = await authority.database.read(connection => authority.projects.get(connection));
     if (!existing) {
       const credentialHash = createHash('sha256')
@@ -369,21 +388,21 @@ export class CollabProjectSetupService {
         });
       });
     } else {
-      this.assertMatchingAuthority(record, existing);
+      this.#assertMatchingAuthority(record, existing);
     }
-    return this.updateRecord(record, { phase: 'committed' });
+    return this.#updateRecord(record, { phase: 'committed' });
   }
 
-  private async finishCommittedSetup(
+   async #finishCommittedSetup(
     record: CollabProjectSetupRecord,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const git = await this.foundation.requireGitFoundation();
     const authority = await this.foundation.openAuthority(record.projectId);
-    await this.ensureBareAuthority(record, authority, git, signal);
+    await this.#ensureBareAuthority(record, authority, git, signal);
     throwIfCancelled(signal);
-    const workingCopy = await this.ensureWorkingCopy(record, authority, git, signal);
-    record = await this.updateRecord(record, { phase: 'clone-completed' });
+    const workingCopy = await this.#ensureWorkingCopy(record, authority, git, signal);
+    record = await this.#updateRecord(record, { phase: 'clone-completed' });
     await this.saveMembership(record);
     await this.foundation.local.projects.saveProjectDocument(
       record.projectId,
@@ -396,10 +415,10 @@ export class CollabProjectSetupService {
         updatedAt: this.now().toISOString(),
       },
     );
-    await this.foundation.local.projects.upsertProject(this.indexEntry(record));
+    await this.foundation.local.projects.upsertProject(this.#indexEntry(record));
     await this.foundation.local.projects.selectProject(record.projectId);
-    await this.removeOwnedWorkspaceChild(record, 'create-seed');
-    await this.removeOwnedWorkspaceChild(record, 'create-clone');
+    await this.#removeOwnedWorkspaceChild(record, 'create-seed');
+    await this.#removeOwnedWorkspaceChild(record, 'create-clone');
     await this.foundation.local.projects.removeProjectDocument(
       record.projectId,
       'pending-operation',
@@ -408,7 +427,7 @@ export class CollabProjectSetupService {
     return { status: 'success', value: projectSummary(record) };
   }
 
-  private async ensureBareAuthority(
+   async #ensureBareAuthority(
     record: CollabProjectSetupRecord,
     authority: CollabProjectAuthorityFoundation,
     git: CollabGitFoundation,
@@ -435,7 +454,7 @@ export class CollabProjectSetupService {
         ]);
       }
       if (oid === null) {
-        const seedPath = this.workspaceChildPath(record, record.seedDirectoryName);
+        const seedPath = this.#workspaceChildPath(record, record.seedDirectoryName);
         await git.repositories.addRemote(seedPath, 'origin', barePath);
         await git.repositories.push(seedPath, 'origin', `${ref}:${ref}`, undefined, signal);
       }
@@ -444,7 +463,7 @@ export class CollabProjectSetupService {
     await git.repositories.assertHealthy(barePath);
   }
 
-  private async ensureWorkingCopy(
+   async #ensureWorkingCopy(
     record: CollabProjectSetupRecord,
     authority: CollabProjectAuthorityFoundation,
     git: CollabGitFoundation,
@@ -453,7 +472,7 @@ export class CollabProjectSetupService {
     if (!record.initialCommitOid) {
       throw setupError('repository-invalid', 'initial-commit-missing', ['open-diagnostics']);
     }
-    const finalPath = this.workspaceChildPath(record, record.slug);
+    const finalPath = this.#workspaceChildPath(record, record.slug);
     const existing = await lstat(finalPath).catch(() => null);
     if (existing) {
       if (!existing.isDirectory() || existing.isSymbolicLink()) {
@@ -471,7 +490,7 @@ export class CollabProjectSetupService {
       return finalPath;
     }
 
-    const clonePathForRecovery = this.workspaceChildPath(
+    const clonePathForRecovery = this.#workspaceChildPath(
       record,
       record.cloneDirectoryName,
     );
@@ -496,11 +515,7 @@ export class CollabProjectSetupService {
           projectId: record.projectId,
           userDisplayName: record.memberDisplayName,
         });
-        await git.repositories.addRemote(
-          clonePathForRecovery,
-          'origin',
-          collabStoppedHostRemoteUrl(record.projectId),
-        );
+        await git.repositories.removeRemote(clonePathForRecovery, 'origin');
         throwIfCancelled(signal);
         await rename(clonePathForRecovery, finalPath).catch(() => {
           throw setupError(
@@ -513,8 +528,8 @@ export class CollabProjectSetupService {
       }
     }
 
-    await this.removeOwnedWorkspaceChild(record, 'create-clone');
-    const cloneOwnership = this.workspaceChildOwnership(record, 'create-clone');
+    await this.#removeOwnedWorkspaceChild(record, 'create-clone');
+    const cloneOwnership = this.#workspaceChildOwnership(record, 'create-clone');
     await this.foundation.local.workspace.reserveProjectsFolderChild(
       record.projectsFolder,
       cloneOwnership,
@@ -534,7 +549,7 @@ export class CollabProjectSetupService {
         signal,
       });
     } catch (error) {
-      await this.removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
+      await this.#removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
       throw error;
     }
     await git.repositories.configureLocalRepository(clonePath, {
@@ -543,11 +558,7 @@ export class CollabProjectSetupService {
       projectId: record.projectId,
       userDisplayName: record.memberDisplayName,
     });
-    await git.repositories.addRemote(
-      clonePath,
-      'origin',
-      collabStoppedHostRemoteUrl(record.projectId),
-    );
+    await git.repositories.removeRemote(clonePath, 'origin');
     throwIfCancelled(signal);
     await rename(clonePath, finalPath).catch(() => {
       throw setupError('workspace-boundary-invalid', 'working-copy-placement-failed', [
@@ -591,13 +602,13 @@ export class CollabProjectSetupService {
     });
   }
 
-  private async handleSetupFailure(
+   async #handleSetupFailure(
     record: CollabProjectSetupRecord | null,
     error: unknown,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const collabError = asCollabError(error);
-    if (record && await this.isAuthorityCommitted(record).catch(() => true)) {
-      await this.updateRecord(record, { phase: 'committed' }).catch(() => undefined);
+    if (record && await this.#isAuthorityCommitted(record).catch(() => true)) {
+      await this.#updateRecord(record, { phase: 'committed' }).catch(() => undefined);
       return {
         durablePhase: 'committed',
         durableProgress: true,
@@ -614,7 +625,7 @@ export class CollabProjectSetupService {
     }
     if (record) {
       try {
-        await this.cleanupUncommitted(record);
+        await this.#cleanupUncommitted(record);
       } catch {
         return {
           error: setupError(
@@ -636,29 +647,29 @@ export class CollabProjectSetupService {
     return { error: collabError, status: 'failure' };
   }
 
-  private async cleanupUncommitted(record: CollabProjectSetupRecord): Promise<void> {
+   async #cleanupUncommitted(record: CollabProjectSetupRecord): Promise<void> {
     // Authority cleanup is the safety boundary: keep the discoverable local
     // setup record and resumable staging artifacts until the provisional
     // foundation is actually gone.
     await this.foundation.discardProvisionalAuthority(record.projectId);
-    await this.removeOwnedWorkspaceChild(record, 'create-seed').catch(() => undefined);
-    await this.removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
+    await this.#removeOwnedWorkspaceChild(record, 'create-seed').catch(() => undefined);
+    await this.#removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
     await this.foundation.local.projects.discardPendingOperation(record.projectId);
     await this.foundation.local.projects.pruneProjectPrivateDirectoryIfEmpty(
       record.projectId,
     ).catch(() => undefined);
   }
 
-  private async isAuthorityCommitted(record: CollabProjectSetupRecord): Promise<boolean> {
+   async #isAuthorityCommitted(record: CollabProjectSetupRecord): Promise<boolean> {
     const authority = await this.foundation.inspectAuthority(record.projectId);
     if (!authority) return false;
     const project = await authority.database.read(connection => authority.projects.get(connection));
     if (!project) return false;
-    this.assertMatchingAuthority(record, project);
+    this.#assertMatchingAuthority(record, project);
     return true;
   }
 
-  private assertMatchingAuthority(
+   #assertMatchingAuthority(
     record: CollabProjectSetupRecord,
     project: {
       readonly hostMemberId: string;
@@ -679,7 +690,7 @@ export class CollabProjectSetupService {
     }
   }
 
-  private async findPending(operationId: string): Promise<CollabProjectSetupRecord | null> {
+   async #findPending(operationId: string): Promise<CollabProjectSetupRecord | null> {
     const projectIds = await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: CollabProjectSetupRecord | null = null;
@@ -697,7 +708,7 @@ export class CollabProjectSetupService {
     return match;
   }
 
-  private async claimSlug(projectsFolder: string, name: string): Promise<string> {
+   async #claimSlug(projectsFolder: string, name: string): Promise<string> {
     const base = slugBase(name);
     const index = await this.foundation.local.projects.loadIndex();
     const reservedPaths = new Set(index.projects.map(project => project.workspacePath));
@@ -716,13 +727,13 @@ export class CollabProjectSetupService {
     for (let suffix = 1; suffix <= 9_999; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
       if (reservedPaths.has(`${projectsFolder}/${candidate}`)) continue;
-      const absolutePath = this.workspaceChildPathForRoot(projectsFolder, candidate);
+      const absolutePath = this.#workspaceChildPathForRoot(projectsFolder, candidate);
       if (!await lstat(absolutePath).then(() => true, () => false)) return candidate;
     }
     throw setupError('workspace-boundary-invalid', 'project-slug-unavailable');
   }
 
-  private indexEntry(record: CollabProjectSetupRecord) {
+   #indexEntry(record: CollabProjectSetupRecord) {
     return {
       authorityKind: 'lan' as const,
       createdAt: record.createdAt,
@@ -733,7 +744,7 @@ export class CollabProjectSetupService {
     };
   }
 
-  private savePending(record: CollabProjectSetupRecord): Promise<void> {
+   #savePending(record: CollabProjectSetupRecord): Promise<void> {
     const {
       legacyImportPlanned: _legacyImportPlanned,
       ...persisted
@@ -745,7 +756,7 @@ export class CollabProjectSetupService {
     );
   }
 
-  private async updateRecord(
+   async #updateRecord(
     record: CollabProjectSetupRecord,
     changes: Partial<Pick<
       CollabProjectSetupRecord,
@@ -757,19 +768,19 @@ export class CollabProjectSetupService {
       ...changes,
       updatedAt: this.now().toISOString(),
     };
-    await this.savePending(updated);
+    await this.#savePending(updated);
     return updated;
   }
 
-  private workspaceChildPath(record: CollabProjectSetupRecord, childName: string): string {
-    return this.workspaceChildPathForRoot(record.projectsFolder, childName);
+   #workspaceChildPath(record: CollabProjectSetupRecord, childName: string): string {
+    return this.#workspaceChildPathForRoot(record.projectsFolder, childName);
   }
 
-  private workspaceChildPathForRoot(projectsFolder: string, childName: string): string {
+   #workspaceChildPathForRoot(projectsFolder: string, childName: string): string {
     return path.join(this.options.vaultRoot, ...projectsFolder.split('/'), childName);
   }
 
-  private workspaceChildOwnership(
+   #workspaceChildOwnership(
     record: CollabProjectSetupRecord,
     purpose: 'create-clone' | 'create-seed',
   ): CollabProjectsFolderChildOwnership {
@@ -787,13 +798,13 @@ export class CollabProjectSetupService {
     };
   }
 
-  private async removeOwnedWorkspaceChild(
+   async #removeOwnedWorkspaceChild(
     record: CollabProjectSetupRecord,
     purpose: 'create-clone' | 'create-seed',
   ): Promise<void> {
     await this.foundation.local.workspace.removeReservedProjectsFolderChild(
       record.projectsFolder,
-      this.workspaceChildOwnership(record, purpose),
+      this.#workspaceChildOwnership(record, purpose),
     );
   }
 

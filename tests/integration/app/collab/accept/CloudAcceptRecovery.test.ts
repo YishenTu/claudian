@@ -205,7 +205,6 @@ describe('Cloud Accept recovery integration', () => {
     expect((await projects.loadMembership(PROJECT_ID))?.lastEventSequence).toBe(1);
 
     const context: PublishProjectContext = {
-      allowHostRemoteRepair: false,
       memberId: MANAGER_ID,
       personalRef: MANAGER_REF,
       projectId: PROJECT_ID,
@@ -318,10 +317,10 @@ class CommitThenDisconnectTransport {
 
 class DirectNetwork implements PublishGitNetworkPort {
   withNetwork<T>(
-    _context: PublishProjectContext,
-    operation: () => Promise<T>,
+    context: PublishProjectContext,
+    operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
-    return operation();
+    return operation(undefined, context.remoteUrl!) as Promise<T>;
   }
 }
 

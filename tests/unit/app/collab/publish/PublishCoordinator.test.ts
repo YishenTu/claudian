@@ -18,7 +18,6 @@ import {
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

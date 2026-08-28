@@ -374,12 +374,12 @@ function retirementResultFromError(
 }
 
 export class CollabClientProjection {
-  private readonly createEventClient: CollabClientProjectionEventFactory;
-  private readonly authoritySessions?: CollabAuthoritySessionFactory;
+   readonly #createEventClient: CollabClientProjectionEventFactory;
+   readonly #authoritySessions?: CollabAuthoritySessionFactory;
   private disposed = false;
   private readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   private readonly now: () => Date;
-  private readonly ownsSessions: boolean;
+   readonly #ownsSessions: boolean;
   private readonly retirement?: Pick<RetirementClientHandler, 'handle'>;
   private readonly retirementAdmission?: CollabClientRetirementAdmission;
   private readonly sessions: CollabProjectWorkSessionRegistry;
@@ -389,12 +389,12 @@ export class CollabClientProjection {
     private readonly control: CollabClientProjectionControlPort,
     options: CollabClientProjectionOptions = {},
   ) {
-    this.authoritySessions = options.authoritySessions;
-    this.createEventClient = options.createEventClient
+    this.#authoritySessions = options.authoritySessions;
+    this.#createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new ProjectEventClient(input, onInvalidation));
     this.managerResponsibility = options.managerResponsibility;
     this.now = options.now ?? (() => new Date());
-    this.ownsSessions = options.sessions === undefined;
+    this.#ownsSessions = options.sessions === undefined;
     this.retirement = options.retirement;
     this.retirementAdmission = options.retirementAdmission;
     this.sessions = options.sessions ?? new CollabProjectWorkSessionRegistry();
@@ -404,10 +404,10 @@ export class CollabClientProjection {
     projectId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
-    this.assertOpen();
+    this.#assertOpen();
     throwIfCancelled(options.signal);
     try {
-      const snapshot = await this.readOnlineCoalesced(projectId);
+      const snapshot = await this.#readOnlineCoalesced(projectId);
       throwIfCancelled(options.signal);
       return {
         snapshot,
@@ -415,7 +415,7 @@ export class CollabClientProjection {
         stale: false,
         syncState: {
           eventSequence: snapshot.eventSequence,
-          generation: this.projectGeneration(projectId),
+          generation: this.#projectGeneration(projectId),
           projectId,
           status: 'synchronized',
         },
@@ -424,7 +424,7 @@ export class CollabClientProjection {
       throwIfCancelled(options.signal);
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
-      const cached = await this.loadCache(projectId);
+      const cached = await this.#loadCache(projectId);
       if (!cached) throw error;
       return {
         snapshot: cached.snapshot,
@@ -432,7 +432,7 @@ export class CollabClientProjection {
         stale: true,
         syncState: {
           eventSequence: cached.snapshot.eventSequence,
-          generation: this.projectGeneration(projectId),
+          generation: this.#projectGeneration(projectId),
           projectId,
           status: 'offline',
         },
@@ -444,18 +444,18 @@ export class CollabClientProjection {
     request: CollabListTicketsRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketPageProjection> {
-    this.assertOpen();
+    this.#assertOpen();
     throwIfCancelled(options.signal);
-    const generation = this.projectGeneration(request.projectId);
+    const generation = this.#projectGeneration(request.projectId);
     const key = ticketPageKey(request);
     try {
-      const page = await this.runWithRetirementFallback(
+      const page = await this.#runWithRetirementFallback(
         request.projectId,
         () => this.control.listTickets(request, options),
       );
       throwIfCancelled(options.signal);
-      this.assertProjectGeneration(request.projectId, generation);
-      await this.updateTicketCache(request.projectId, cache => {
+      this.#assertProjectGeneration(request.projectId, generation);
+      await this.#updateTicketCache(request.projectId, cache => {
         if (!cache) return null;
         const entry = { cachedAt: this.now().toISOString(), key, page };
         return {
@@ -471,7 +471,7 @@ export class CollabClientProjection {
       throwIfCancelled(options.signal);
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
-      const cache = await this.loadCache(request.projectId);
+      const cache = await this.#loadCache(request.projectId);
       throwIfCancelled(options.signal);
       const page = cache?.ticketPages.find(entry => entry.key === key)?.page;
       if (!page) throw error;
@@ -484,23 +484,23 @@ export class CollabClientProjection {
     ticketId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketDetailProjection> {
-    this.assertOpen();
+    this.#assertOpen();
     throwIfCancelled(options.signal);
-    const generation = this.projectGeneration(projectId);
+    const generation = this.#projectGeneration(projectId);
     try {
-      const detail = await this.runWithRetirementFallback(
+      const detail = await this.#runWithRetirementFallback(
         projectId,
         () => this.control.readTicket(projectId, ticketId, options),
       );
       throwIfCancelled(options.signal);
-      this.assertProjectGeneration(projectId, generation);
+      this.#assertProjectGeneration(projectId, generation);
       if (detail.ticket.id !== ticketId) {
         throw new CollabError({
           code: 'authority-integrity-error',
           safeContext: { reason: 'projection-ticket-detail-mismatch' },
         });
       }
-      await this.updateTicketCache(projectId, cache => {
+      await this.#updateTicketCache(projectId, cache => {
         if (!cache) return null;
         const entry = { cachedAt: this.now().toISOString(), detail, ticketId };
         return {
@@ -516,7 +516,7 @@ export class CollabClientProjection {
       throwIfCancelled(options.signal);
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
-      const cache = await this.loadCache(projectId);
+      const cache = await this.#loadCache(projectId);
       throwIfCancelled(options.signal);
       const detail = cache?.ticketDetails.find(entry => entry.ticketId === ticketId)?.detail;
       if (!detail) throw error;
@@ -529,9 +529,9 @@ export class CollabClientProjection {
     ticketId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketDetailProjection> {
-    this.assertOpen();
+    this.#assertOpen();
     throwIfCancelled(options.signal);
-    const detail = await this.runWithRetirementFallback(
+    const detail = await this.#runWithRetirementFallback(
       projectId,
       () => this.control.readTicketPage(projectId, ticketId, options),
     );
@@ -550,8 +550,8 @@ export class CollabClientProjection {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestDetail> {
-    this.assertOpen();
-    return this.runWithRetirementFallback(
+    this.#assertOpen();
+    return this.#runWithRetirementFallback(
       projectId,
       () => this.control.readRequest(projectId, requestId, options),
     );
@@ -563,8 +563,8 @@ export class CollabClientProjection {
     query: { readonly cursor?: string; readonly limit?: number },
     options: CollabOperationOptions = {},
   ): Promise<CollabCommentPage> {
-    this.assertOpen();
-    return this.runWithRetirementFallback(
+    this.#assertOpen();
+    return this.#runWithRetirementFallback(
       projectId,
       () => this.control.listRequestComments(projectId, requestId, query, options),
     );
@@ -576,8 +576,8 @@ export class CollabClientProjection {
     query: { readonly cursor?: string; readonly limit?: number },
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketCommentPage> {
-    this.assertOpen();
-    return this.runWithRetirementFallback(
+    this.#assertOpen();
+    return this.#runWithRetirementFallback(
       projectId,
       () => this.control.listTicketComments(projectId, ticketId, query, options),
     );
@@ -589,8 +589,8 @@ export class CollabClientProjection {
     query: { readonly cursor?: string; readonly limit?: number },
     options: CollabOperationOptions = {},
   ): Promise<CollabTicketAcceptedRelationPage> {
-    this.assertOpen();
-    return this.runWithRetirementFallback(
+    this.#assertOpen();
+    return this.#runWithRetirementFallback(
       projectId,
       () => this.control.listTicketAcceptedRelations(projectId, ticketId, query, options),
     );
@@ -600,8 +600,8 @@ export class CollabClientProjection {
     input: CollabClientCommentInput,
     options: CollabOperationOptions = {},
   ): Promise<CollabComment> {
-    this.assertOpen();
-    const response = await this.runWithRetirementFallback(
+    this.#assertOpen();
+    const response = await this.#runWithRetirementFallback(
       input.projectId,
       () => this.control.createComment({
         body: input.body,
@@ -625,8 +625,8 @@ export class CollabClientProjection {
     options: CollabOperationOptions = {},
     idempotencyKey?: string,
   ): Promise<AcceptResponse> {
-    this.assertOpen();
-    return this.runWithRetirementFallback(
+    this.#assertOpen();
+    return this.#runWithRetirementFallback(
       projectId,
       () => this.control.acceptRequest({
         expectedHeadOid,
@@ -645,28 +645,28 @@ export class CollabClientProjection {
     projectId: string,
     listener: (snapshot: CollabProjectSnapshot) => void,
   ): Promise<{ dispose(): void }> {
-    this.assertOpen();
+    this.#assertOpen();
     const work = this.sessions.acquire(projectId);
     let session = work.getEventConnection<ProjectionEventSession>();
     if (!session) {
       const generation = work.generation;
       const membership = await this.store.loadMembership(projectId);
-      this.assertOpen();
+      this.#assertOpen();
       work.assertGeneration(generation);
       if (!membership) {
         throw projectionError('project-not-found', 'projection-membership-missing');
       }
       const listeners = new Set<(snapshot: CollabProjectSnapshot) => void>();
       let client: CollabProjectResource;
-      if (this.authoritySessions) {
+      if (this.#authoritySessions) {
         const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
-          () => this.authoritySessions!.create(membership),
+          () => this.#authoritySessions!.create(membership),
         );
-        this.assertOpen();
+        this.#assertOpen();
         work.assertGeneration(generation);
         client = authority.events.connect({
           afterSequence: membership.lastEventSequence,
-          onInvalidation: invalidation => this.refreshFromEvent(projectId, invalidation),
+          onInvalidation: invalidation => this.#refreshFromEvent(projectId, invalidation),
         });
       } else {
         if (!isCollabLocalLanMembership(membership)) {
@@ -677,13 +677,13 @@ export class CollabClientProjection {
         if (!endpoint || !caCertificatePem) {
           throw projectionError('host-stopped', 'projection-host-endpoint-unavailable');
         }
-        const lanClient = this.createEventClient({
+        const lanClient = this.#createEventClient({
           caCertificatePem,
           endpoint,
           lastSequence: membership.lastEventSequence,
           memberCredential: membership.member.credential,
           projectId,
-        }, invalidation => this.refreshFromEvent(projectId, invalidation));
+        }, invalidation => this.#refreshFromEvent(projectId, invalidation));
         lanClient.start();
         client = lanClient;
       }
@@ -708,7 +708,7 @@ export class CollabClientProjection {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.ownsSessions) void this.sessions.close();
+    if (this.#ownsSessions) void this.sessions.close();
   }
 
   async closeProject(projectId: string): Promise<void> {
@@ -717,7 +717,7 @@ export class CollabClientProjection {
   }
 
   resetProjectConnection(projectId: string): void {
-    this.assertOpen();
+    this.#assertOpen();
     this.sessions.resetProject(projectId);
   }
 
@@ -730,17 +730,17 @@ export class CollabClientProjection {
     source: 'response' | 'terminal-fallback',
   ): Promise<void> {
     if (!this.retirement || !this.retirementAdmission) return;
-    await this.deliverRetirement(result, source);
+    await this.#deliverRetirement(result, source);
   }
 
-  private readOnlineCoalesced(projectId: string): Promise<CollabProjectSnapshot> {
+   #readOnlineCoalesced(projectId: string): Promise<CollabProjectSnapshot> {
     const session = this.sessions.acquire(projectId);
     return session.coalesceSnapshot(() => (
-      this.readOnlineSnapshot(projectId, session.generation)
+      this.#readOnlineSnapshot(projectId, session.generation)
     ));
   }
 
-  private async readOnlineSnapshot(
+   async #readOnlineSnapshot(
     projectId: string,
     generation: number,
   ): Promise<CollabProjectSnapshot> {
@@ -750,7 +750,7 @@ export class CollabClientProjection {
     } catch (error) {
       const retirement = retirementResultFromError(projectId, error);
       if (retirement && this.retirement) {
-        this.scheduleRetirement(retirement, 'terminal-fallback');
+        this.#scheduleRetirement(retirement, 'terminal-fallback');
       }
       throw error;
     }
@@ -780,7 +780,7 @@ export class CollabClientProjection {
       });
     }
     const writeSnapshotCache = async (cachedSnapshot: CollabProjectSnapshot): Promise<void> => {
-      await this.updateTicketCache(projectId, cache => ({
+      await this.#updateTicketCache(projectId, cache => ({
         cachedAt: this.now().toISOString(),
         projectId,
         schemaVersion: CACHE_SCHEMA_VERSION,
@@ -824,18 +824,18 @@ export class CollabClientProjection {
     return snapshot;
   }
 
-  private refreshFromEvent(
+   #refreshFromEvent(
     projectId: string,
     invalidation: ProjectEventInvalidation,
   ): Promise<number> {
     if (invalidation.kind === 'retired') {
-      return this.handleRetirementEvent(projectId, invalidation);
+      return this.#handleRetirementEvent(projectId, invalidation);
     }
     const work = this.sessions.acquire(projectId);
     const generation = work.generation;
     return work.coalesceEventRefresh(
       invalidation.sequence,
-      () => this.readOnlineCoalesced(projectId).then(snapshot => {
+      () => this.#readOnlineCoalesced(projectId).then(snapshot => {
         work.assertGeneration(generation);
         const connection = work.getEventConnection<ProjectionEventSession>();
         for (const listener of connection?.listeners ?? []) {
@@ -850,7 +850,7 @@ export class CollabClientProjection {
     );
   }
 
-  private handleRetirementEvent(
+   #handleRetirementEvent(
     projectId: string,
     invalidation: Extract<ProjectEventInvalidation, { readonly kind: 'retired' }>,
   ): Promise<number> {
@@ -858,7 +858,7 @@ export class CollabClientProjection {
     // convergence closes and drains that session, then let the lifecycle-owned
     // handler settle independently so the callback cannot await itself.
     this.resetProjectConnection(projectId);
-    this.scheduleRetirement({
+    this.#scheduleRetirement({
       projectId,
       retiredAt: invalidation.retiredAt,
       ...(invalidation.retirementId === undefined
@@ -868,7 +868,7 @@ export class CollabClientProjection {
     return Promise.resolve(invalidation.sequence);
   }
 
-  private async runWithRetirementFallback<T>(
+   async #runWithRetirementFallback<T>(
     projectId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
@@ -877,13 +877,13 @@ export class CollabClientProjection {
     } catch (error) {
       const retirement = retirementResultFromError(projectId, error);
       if (retirement && this.retirement) {
-        this.scheduleRetirement(retirement, 'terminal-fallback');
+        this.#scheduleRetirement(retirement, 'terminal-fallback');
       }
       throw error;
     }
   }
 
-  private scheduleRetirement(
+   #scheduleRetirement(
     result: {
       readonly projectId: string;
       readonly retiredAt: string;
@@ -892,10 +892,10 @@ export class CollabClientProjection {
     source: 'event' | 'terminal-fallback',
   ): void {
     if (!this.retirement || !this.retirementAdmission) return;
-    void this.deliverRetirement(result, source).catch(() => undefined);
+    void this.#deliverRetirement(result, source).catch(() => undefined);
   }
 
-  private deliverRetirement(
+   #deliverRetirement(
     result: {
       readonly projectId: string;
       readonly retiredAt: string;
@@ -909,30 +909,30 @@ export class CollabClientProjection {
     });
   }
 
-  private assertOpen(): void {
+   #assertOpen(): void {
     if (this.disposed) throw projectionError('host-stopped', 'projection-disposed');
   }
 
-  private assertProjectGeneration(projectId: string, generation: number): void {
+   #assertProjectGeneration(projectId: string, generation: number): void {
     this.sessions.acquire(projectId).assertGeneration(generation);
   }
 
-  private projectGeneration(projectId: string): number {
+   #projectGeneration(projectId: string): number {
     return this.sessions.acquire(projectId).generation;
   }
 
-  private updateTicketCache(
+   #updateTicketCache(
     projectId: string,
     update: (cache: CollabSnapshotCache | null) => CollabSnapshotCache | null,
   ): Promise<void> {
     return this.sessions.acquire(projectId).enqueueCacheUpdate(async () => {
-      const cache = await this.loadCache(projectId).catch(() => null);
+      const cache = await this.#loadCache(projectId).catch(() => null);
       const next = update(cache);
       if (next) await this.store.saveProjectDocument(projectId, 'cache', next);
     });
   }
 
-  private async loadCache(projectId: string): Promise<CollabSnapshotCache | null> {
+   async #loadCache(projectId: string): Promise<CollabSnapshotCache | null> {
     const cache = await this.store.loadProjectDocument(projectId, 'cache', decodeCache);
     if (cache && cache.schemaVersion !== CACHE_SCHEMA_VERSION) {
       await this.store.removeProjectDocument(projectId, 'cache');

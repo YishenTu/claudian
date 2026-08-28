@@ -65,6 +65,7 @@ function project(
     authorityKind: 'lan',
     connectionStatus: 'host-stopped',
     health: 'healthy',
+    hostInstallationStatus: 'hosted-here',
     hostStatus: 'stopped',
     id: 'project-alpha',
     name: 'Alpha',

@@ -397,6 +397,9 @@ describe('GitRepositoryService integration', () => {
       personalClonePath,
       'refs/heads/members/member-host',
     )).toBe(mainOid);
+    await service.removeRemote(personalClonePath, 'origin');
+    await service.removeRemote(personalClonePath, 'origin');
+    await expect(service.listRemoteUrls(personalClonePath, 'origin')).resolves.toEqual([]);
   });
 
   it('requires the configured personal ref to match the member identity', async () => {

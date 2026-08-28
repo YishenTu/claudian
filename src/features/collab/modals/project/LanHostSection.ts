@@ -5,7 +5,10 @@ import type {
 } from '@/core/collab';
 import { t } from '@/i18n/i18n';
 
-export type LanHostSectionPort = Pick<CollabFeaturePort, 'startHost' | 'stopHost'>;
+export type LanHostSectionPort = Pick<
+  CollabFeaturePort,
+  'claimLegacyHostInstallation' | 'startHost' | 'stopHost'
+>;
 
 export interface LanHostDiagnostics {
   readonly error?: Readonly<Record<string, unknown>>;
@@ -14,6 +17,7 @@ export interface LanHostDiagnostics {
 }
 
 export interface LanHostSectionOptions {
+  readonly confirmLegacyClaim?: () => Promise<boolean>;
   readonly onOpenDiagnostics?: (diagnostics: LanHostDiagnostics) => void;
   readonly onStatusChanged?: (status: Exclude<CollabHostStatus, 'not-host'>) => void;
   readonly port: LanHostSectionPort;
@@ -63,8 +67,9 @@ export class LanHostSection {
 
   private render(): void {
     if (this.destroyed) return;
+    const installationStatus = this.project.hostInstallationStatus;
     const hostStatus = this.project.hostStatus;
-    if (hostStatus === 'not-host') {
+    if (installationStatus === 'not-host') {
       this.rootEl.remove();
       return;
     }
@@ -74,6 +79,21 @@ export class LanHostSection {
 
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-host-section-header' });
     header.createSpan({ text: t('collab.host.summary') });
+    if (installationStatus === 'hosted-elsewhere') {
+      header.createSpan({
+        cls: 'claudian-collab-host-badge',
+        text: t('collab.host.hostedElsewhere'),
+      });
+      return;
+    }
+    if (hostStatus === 'not-host') {
+      this.rootEl.remove();
+      return;
+    }
+    header.createSpan({
+      cls: 'claudian-collab-host-badge',
+      text: t('collab.host.hostedHere'),
+    });
     this.renderStatusButton(header, hostStatus, warning);
     if (!warning) return;
 
@@ -150,6 +170,40 @@ export class LanHostSection {
     this.errorAction = null;
     this.errorText = null;
     this.lastError = null;
+    if (
+      action === 'start'
+      && this.project.hostInstallationStatus === 'legacy-unbound'
+    ) {
+      const confirmed = await (this.options.confirmLegacyClaim?.() ?? Promise.resolve(false));
+      if (
+        !confirmed
+        || this.destroyed
+        || this.abortController.signal.aborted
+        || generation !== this.operationGeneration
+      ) {
+        return;
+      }
+      const claim = await this.options.port.claimLegacyHostInstallation(
+        this.project.id,
+        { signal: this.abortController.signal },
+      );
+      if (
+        this.destroyed
+        || this.abortController.signal.aborted
+        || generation !== this.operationGeneration
+      ) {
+        return;
+      }
+      if (claim.status !== 'success') {
+        this.project = { ...this.project, hostStatus: 'needs-attention' };
+        this.errorAction = action;
+        this.lastError = 'error' in claim ? claim.error.toJSON() : null;
+        this.errorText = t('collab.host.startFailed');
+        this.render();
+        return;
+      }
+      this.project = claim.value;
+    }
     this.project = {
       ...this.project,
       hostStatus: action === 'start' ? 'starting' : 'stopping',

@@ -104,6 +104,9 @@ describe('LocalDevelopmentBootstrapSource', () => {
       }),
     };
     const foundation = {
+      hostInstallations: {
+        inspect: async () => 'hosted-here',
+      },
       local: {
         projects: {
           loadMembership: async () => ({

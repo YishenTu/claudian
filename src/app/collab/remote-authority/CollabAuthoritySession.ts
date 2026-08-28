@@ -4,6 +4,9 @@ import type { CollabProjectResource } from '@/app/collab/activity/CollabProjectW
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
+import type {
+  CollabAuthorityMembershipControlPort,
+} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthorityKind } from '@/core/collab';
 
 export type CollabAuthorityEventInvalidation =
@@ -49,6 +52,7 @@ export interface CollabAuthoritySession extends CollabProjectResource {
   readonly events: CollabAuthorityEventPort;
   readonly git: CollabAuthorityGitNetwork;
   readonly lifecycle?: CollabAuthorityLifecyclePort;
+  readonly membership?: CollabAuthorityMembershipControlPort;
   supports(capability: CollabCloudCapability): boolean;
 }
 

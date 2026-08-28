@@ -34,6 +34,14 @@ const proof: CollabHostTrustTransitionProof = {
   signatureAlgorithm: 'rsa-pss-sha256',
   transferId: 'transfer-alpha',
 };
+const priorProof: CollabHostTrustTransitionProof = {
+  ...proof,
+  nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\nsource\n-----END CERTIFICATE-----\n',
+  nextCaFingerprint: proof.previousCaFingerprint,
+  previousCaFingerprint: 'd'.repeat(64),
+  signature: 'e'.repeat(64),
+  transferId: 'transfer-prior',
+};
 
 describe('HostTransferAuthoritySnapshot', () => {
   let SQL: SqlJsStatic;
@@ -119,11 +127,12 @@ describe('HostTransferAuthoritySnapshot', () => {
       `, [NOW, NOW]);
     });
     const sourceGeneration = database.generation;
+    const verifyChain = jest.fn().mockReturnValue(proof.nextCaCertificatePem);
     const codec = new HostTransferAuthoritySnapshot({
       loadSqlJs: async () => SQL,
-      trust: { verifyChain: jest.fn().mockReturnValue(proof.nextCaCertificatePem) },
+      trust: { verifyChain },
     });
-    const inert = await codec.createInert({
+    const inertWithoutHistory = await codec.createInert({
       bytes: await database.exportSnapshot(),
       createdAt: LATER,
       projectId: 'project-alpha',
@@ -131,6 +140,42 @@ describe('HostTransferAuthoritySnapshot', () => {
       targetHostMemberId: 'member-target',
       transferId: 'transfer-alpha',
     });
+    const inertDatabase = new SQL.Database(inertWithoutHistory);
+    inertDatabase.run(`
+      INSERT INTO host_transfer_operations (
+        transfer_id, source_host_member_id, target_host_member_id, phase,
+        offered_at, expires_at, target_endpoint, target_ca_certificate_pem,
+        target_ca_fingerprint, receiver_credential, manifest_digest,
+        activation_certificate, updated_at
+      ) VALUES (?, 'member-target', 'member-source', 'completed', ?, ?, ?, ?, ?,
+                NULL, ?, '{}', ?)
+    `, [
+      priorProof.transferId,
+      NOW,
+      EXPIRY,
+      'https://192.168.1.10:27000',
+      priorProof.nextCaCertificatePem,
+      priorProof.nextCaFingerprint,
+      'f'.repeat(64),
+      NOW,
+    ]);
+    inertDatabase.run(`
+      INSERT INTO host_transition_proofs (
+        sequence, transfer_id, source_host_member_id, target_host_member_id,
+        previous_ca_fingerprint, next_ca_certificate_pem, next_ca_fingerprint,
+        issued_at, signature_algorithm, signature
+      ) VALUES (0, ?, 'member-target', 'member-source', ?, ?, ?, ?, ?, ?)
+    `, [
+      priorProof.transferId,
+      priorProof.previousCaFingerprint,
+      priorProof.nextCaCertificatePem,
+      priorProof.nextCaFingerprint,
+      priorProof.issuedAt,
+      priorProof.signatureAlgorithm,
+      priorProof.signature,
+    ]);
+    const inert = Uint8Array.from(inertDatabase.export());
+    inertDatabase.close();
     const manifest = createHostTransferPackageManifest({
       authorityMainOid: '1'.repeat(40),
       authoritySnapshot: { byteCount: inert.byteLength, sha256: '2'.repeat(64) },
@@ -138,7 +183,7 @@ describe('HostTransferAuthoritySnapshot', () => {
       gitBundle: { byteCount: 1, sha256: '3'.repeat(64) },
       gitObjectFormat: 'sha1',
       projectId: 'project-alpha',
-      proofChainDigest: digestHostTransitionProofChain([proof]),
+      proofChainDigest: digestHostTransitionProofChain([priorProof, proof]),
       sourceAuthorityGeneration: sourceGeneration,
       targetCaFingerprint: proof.nextCaFingerprint,
       targetHostMemberId: 'member-target',
@@ -152,7 +197,13 @@ describe('HostTransferAuthoritySnapshot', () => {
       sourceHostMemberId: 'member-source',
     })).resolves.toMatchObject({
       eventSequence: expect.any(Number),
-      proofChain: [proof],
+      proofChain: [priorProof, proof],
+    });
+    expect(verifyChain).toHaveBeenCalledWith({
+      expectedCurrentCaFingerprint: proof.nextCaFingerprint,
+      pinnedCaCertificatePem: 'source-ca',
+      projectId: 'project-alpha',
+      proofs: [proof],
     });
     await expect(database.read(connection => ({
       host: connection.get('SELECT host_member_id FROM project')?.host_member_id,

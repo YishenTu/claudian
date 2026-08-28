@@ -197,7 +197,6 @@ describe('ConflictResolution integration', () => {
       personalOid,
     );
     const context: PublishProjectContext = {
-      allowHostRemoteRepair: false,
       memberId: 'member-a',
       personalRef,
       projectId: 'project-a',

@@ -93,8 +93,8 @@ const OFFLINE_CODES = new Set([
 ]);
 
 export class LocalProjectExitCoordinator {
-  private readonly createOperationId: () => string;
-  private readonly managerResponsibilityOperations: ManagerResponsibilityOperationPort;
+   readonly #createOperationId: () => string;
+   readonly #managerResponsibilityOperations: ManagerResponsibilityOperationPort;
   private readonly managerReceipts: Pick<CollabMembershipManagerReceiptPort, 'load'>;
   private readonly now: () => Date;
   private readonly operations = new Map<CollabProjectId, Promise<unknown>>();
@@ -108,9 +108,9 @@ export class LocalProjectExitCoordinator {
     private readonly activity: LocalExitActivityPort,
     options: LocalProjectExitCoordinatorOptions,
   ) {
-    this.createOperationId = options.createOperationId
+    this.#createOperationId = options.createOperationId
       ?? (() => `leave-${randomUUID().replaceAll('-', '')}`);
-    this.managerResponsibilityOperations = options.managerResponsibilityOperations;
+    this.#managerResponsibilityOperations = options.managerResponsibilityOperations;
     this.managerReceipts = options.managerReceipts;
     this.now = options.now ?? (() => new Date());
     this.retirement = options.retirement;
@@ -120,17 +120,17 @@ export class LocalProjectExitCoordinator {
     request: CollabLeaveProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<LocalProjectExitResult> {
-    return this.enqueue(request.projectId, () => this.leaveUnlocked(request, options));
+    return this.enqueue(request.projectId, () => this.#leaveUnlocked(request, options));
   }
 
   async resume(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<LocalProjectExitResult> {
-    return this.enqueue(projectId, () => this.resumeUnlocked(projectId, options));
+    return this.enqueue(projectId, () => this.#resumeUnlocked(projectId, options));
   }
 
-  private async leaveUnlocked(
+   async #leaveUnlocked(
     request: CollabLeaveProjectRequest,
     options: CollabOperationOptions,
   ): Promise<LocalProjectExitResult> {
@@ -139,7 +139,7 @@ export class LocalProjectExitCoordinator {
       if (existing.cleanupChoice !== request.cleanupChoice) {
         throw new TypeError('Pending Leave cleanup choice cannot be changed');
       }
-      return this.settleAndCleanup(
+      return this.#settleAndCleanup(
         existing,
         request.managerResponsibilityOfferId,
         true,
@@ -170,7 +170,7 @@ export class LocalProjectExitCoordinator {
         safeContext: { reason: 'local-exit-pinned-host-trust-required' },
       });
     }
-    const operationId = this.createOperationId();
+    const operationId = this.#createOperationId();
     const timestamp = this.now().toISOString();
     const pending = decodePendingLeaveRecord({
       authorityReplay: null,
@@ -196,7 +196,7 @@ export class LocalProjectExitCoordinator {
       workspacePath: membership.project.workspacePath,
     });
     await this.pendingLeaves.save(pending);
-    return this.settleAndCleanup(
+    return this.#settleAndCleanup(
       pending,
       request.managerResponsibilityOfferId,
       false,
@@ -204,24 +204,24 @@ export class LocalProjectExitCoordinator {
     );
   }
 
-  private async resumeUnlocked(
+   async #resumeUnlocked(
     projectId: CollabProjectId,
     options: CollabOperationOptions,
   ): Promise<LocalProjectExitResult> {
     const pending = await this.pendingLeaves.load(projectId);
     if (!pending) throw new CollabError({ code: 'project-not-found' });
-    return this.settleAndCleanup(pending, undefined, true, options);
+    return this.#settleAndCleanup(pending, undefined, true, options);
   }
 
-  private async settleAndCleanup(
+   async #settleAndCleanup(
     initial: PendingLeaveRecord,
     managerResponsibilityOfferId: string | undefined,
     recovering: boolean,
     options: CollabOperationOptions,
   ): Promise<LocalProjectExitResult> {
-    const authorityPhase = await this.managerResponsibilityOperations.run(
+    const authorityPhase = await this.#managerResponsibilityOperations.run(
       initial.projectId,
-      () => this.settleAuthorityPhase(
+      () => this.#settleAuthorityPhase(
         initial,
         managerResponsibilityOfferId,
         recovering,
@@ -237,9 +237,9 @@ export class LocalProjectExitCoordinator {
       ? null
       : await this.activity.suspendProject(authorityPhase.pending.projectId);
     try {
-      const result = await this.managerResponsibilityOperations.run(
+      const result = await this.#managerResponsibilityOperations.run(
         authorityPhase.pending.projectId,
-        () => this.cleanupAfterDrain(
+        () => this.#cleanupAfterDrain(
           authorityPhase.pending,
           authorityPhase.authorityConfirmed,
           recovering,
@@ -249,14 +249,14 @@ export class LocalProjectExitCoordinator {
       if (suspension) await this.activity.completeProject(suspension);
       return result;
     } catch (error) {
-      if (suspension && this.isOfflineCleanupEligibilityError(error)) {
+      if (suspension && this.#isOfflineCleanupEligibilityError(error)) {
         await this.activity.resumeProject(suspension);
       }
       throw error;
     }
   }
 
-  private async settleAuthorityPhase(
+   async #settleAuthorityPhase(
     initial: PendingLeaveRecord,
     managerResponsibilityOfferId: string | undefined,
     recovering: boolean,
@@ -268,7 +268,7 @@ export class LocalProjectExitCoordinator {
       pending = await this.transition(pending, 'submitting');
       try {
         if (!pending.authorityReplay) {
-          const prepared = await this.withPersistedHostContinuity(
+          const prepared = await this.#withPersistedHostContinuity(
             pending,
             current => this.authority.prepareLeave({
               ...(managerResponsibilityOfferId === undefined ? {} : {
@@ -287,21 +287,21 @@ export class LocalProjectExitCoordinator {
           });
         }
         try {
-          const settled = await this.withPersistedHostContinuity(
+          const settled = await this.#withPersistedHostContinuity(
             pending,
-            current => this.settleAuthority(current, options),
+            current => this.#settleAuthority(current, options),
             options,
           );
           pending = settled.pending;
         } catch (error) {
           pending = await this.pendingLeaves.load(pending.projectId) ?? pending;
-          if (this.isDeterministicObsoleteOffer(pending, error)) {
+          if (this.#isDeterministicObsoleteOffer(pending, error)) {
             throw error;
           }
           if (!(error instanceof CollabError) || error.code !== 'stale-project-selection') {
             throw error;
           }
-          const refreshed = await this.withPersistedHostContinuity(
+          const refreshed = await this.#withPersistedHostContinuity(
             pending,
             current => this.authority.refreshLeave({
               pending: current,
@@ -315,9 +315,9 @@ export class LocalProjectExitCoordinator {
             authorityReplay: preparation.authorityReplay,
             localRole: preparation.memberRole,
           });
-          const settled = await this.withPersistedHostContinuity(
+          const settled = await this.#withPersistedHostContinuity(
             pending,
-            current => this.settleAuthority(current, options),
+            current => this.#settleAuthority(current, options),
             options,
           );
           pending = settled.pending;
@@ -326,15 +326,15 @@ export class LocalProjectExitCoordinator {
         authorityConfirmed = true;
       } catch (error) {
         pending = await this.pendingLeaves.load(pending.projectId) ?? pending;
-        if (this.isDeterministicObsoleteOffer(pending, error)) {
-          await this.clearObsoleteManagerLeave(pending);
+        if (this.#isDeterministicObsoleteOffer(pending, error)) {
+          await this.#clearObsoleteManagerLeave(pending);
           throw error;
         }
-        const retirement = this.retirementResult(pending.projectId, error);
+        const retirement = this.#retirementResult(pending.projectId, error);
         if (retirement && this.retirement) {
           return { authorityConfirmed, pending, retirement };
         }
-        if (this.isCancelled(error, options.signal)) {
+        if (this.#isCancelled(error, options.signal)) {
           pending = await this.transition(pending, 'queued');
           return { authorityConfirmed, outcome: { status: 'cancelled' }, pending };
         }
@@ -351,16 +351,16 @@ export class LocalProjectExitCoordinator {
           !recovering
           && pending.localRole === 'manager'
           && pending.authorityReplay !== null
-          && this.isUncertainAuthorityOutcome(error)
+          && this.#isUncertainAuthorityOutcome(error)
         ) {
           await this.transition(pending, 'recovery-required');
           await this.projects.markLeaving(pending.projectId, 'failed');
           throw error;
         }
         const hasUnresolvedManagerReceipt = pending.localRole === 'member'
-          && await this.hasUnresolvedManagerReceipt(pending.projectId);
+          && await this.#hasUnresolvedManagerReceipt(pending.projectId);
         if (
-          !this.isOffline(error)
+          !this.#isOffline(error)
           || pending.localRole !== 'member'
           || hasUnresolvedManagerReceipt
         ) {
@@ -378,7 +378,7 @@ export class LocalProjectExitCoordinator {
     return { authorityConfirmed, pending };
   }
 
-  private async cleanupAfterDrain(
+   async #cleanupAfterDrain(
     initial: PendingLeaveRecord,
     authorityConfirmed: boolean,
     recovering: boolean,
@@ -387,7 +387,7 @@ export class LocalProjectExitCoordinator {
     let pending = initial;
     if (!pending.localCleanupComplete) {
       if (!authorityConfirmed) {
-        await this.assertOfflineCleanupPermitted(pending, recovering);
+        await this.#assertOfflineCleanupPermitted(pending, recovering);
       }
       await this.projects.markLeaving(pending.projectId, 'running');
       try {
@@ -422,12 +422,12 @@ export class LocalProjectExitCoordinator {
     return { status: 'queued' };
   }
 
-  private async assertOfflineCleanupPermitted(
+   async #assertOfflineCleanupPermitted(
     pending: PendingLeaveRecord,
     recovering: boolean,
   ): Promise<void> {
     const membership = await this.projects.loadMembership(pending.projectId);
-    const hasUnresolvedManagerReceipt = await this.hasUnresolvedManagerReceipt(
+    const hasUnresolvedManagerReceipt = await this.#hasUnresolvedManagerReceipt(
       pending.projectId,
     );
     if (
@@ -464,7 +464,7 @@ export class LocalProjectExitCoordinator {
     return updated;
   }
 
-  private settleAuthority(
+   #settleAuthority(
     pending: PendingLeaveRecord,
     options: CollabOperationOptions,
   ): Promise<MembershipTerminationResponse> {
@@ -474,7 +474,7 @@ export class LocalProjectExitCoordinator {
     });
   }
 
-  private async withPersistedHostContinuity<T>(
+   async #withPersistedHostContinuity<T>(
     pending: PendingLeaveRecord,
     operation: (current: PendingLeaveRecord) => Promise<T>,
     options: CollabOperationOptions,
@@ -523,18 +523,18 @@ export class LocalProjectExitCoordinator {
     return updated;
   }
 
-  private async hasUnresolvedManagerReceipt(projectId: CollabProjectId): Promise<boolean> {
+   async #hasUnresolvedManagerReceipt(projectId: CollabProjectId): Promise<boolean> {
     const receipt = await this.managerReceipts.load(projectId);
     return receipt?.status === 'offered' || receipt?.status === 'acknowledged';
   }
 
-  private isOfflineCleanupEligibilityError(error: unknown): boolean {
+   #isOfflineCleanupEligibilityError(error: unknown): boolean {
     return error instanceof CollabError
       && error.code === 'manager-responsibility-pending'
       && error.safeContext.reason === 'offline-leave-role-not-confirmed-member';
   }
 
-  private retirementResult(
+   #retirementResult(
     projectId: CollabProjectId,
     error: unknown,
   ): { readonly projectId: CollabProjectId; readonly retiredAt: string } | null {
@@ -555,17 +555,17 @@ export class LocalProjectExitCoordinator {
     return { projectId, retiredAt };
   }
 
-  private isOffline(error: unknown): boolean {
+   #isOffline(error: unknown): boolean {
     return error instanceof CollabError && OFFLINE_CODES.has(error.code);
   }
 
-  private isUncertainAuthorityOutcome(error: unknown): boolean {
+   #isUncertainAuthorityOutcome(error: unknown): boolean {
     // Once exact replay inputs are durable and mutation has started, every
     // transport failure is ambiguous: authority may have committed first.
-    return this.isOffline(error);
+    return this.#isOffline(error);
   }
 
-  private isDeterministicObsoleteOffer(
+   #isDeterministicObsoleteOffer(
     pending: PendingLeaveRecord,
     error: unknown,
   ): boolean {
@@ -583,12 +583,12 @@ export class LocalProjectExitCoordinator {
     );
   }
 
-  private async clearObsoleteManagerLeave(pending: PendingLeaveRecord): Promise<void> {
+   async #clearObsoleteManagerLeave(pending: PendingLeaveRecord): Promise<void> {
     await this.projects.restoreActive(pending.projectId);
     await this.pendingLeaves.remove(pending.projectId);
   }
 
-  private isCancelled(error: unknown, signal?: AbortSignal): boolean {
+   #isCancelled(error: unknown, signal?: AbortSignal): boolean {
     return signal?.aborted === true
       || (error instanceof CollabError && error.code === 'cancelled');
   }

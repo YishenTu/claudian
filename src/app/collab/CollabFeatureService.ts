@@ -14,12 +14,14 @@ import type {
 } from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
+  CollabAuthorityInstallationStatus,
   CollabLocalMembershipRecord,
   CollabLocalProjectIndex,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import {
   type CollabPendingProjectOperation,
   decodeCollabPendingProjectOperation,
@@ -332,6 +334,7 @@ export interface CollabPublicationPort {
 export interface CollabFeatureServiceOptions {
   readonly cloudBootstrap: CollabCloudBootstrapPort;
   readonly hostTransfer: CollabHostTransferPort;
+  readonly hostInstallation: Pick<HostInstallationBindingService, 'claimLegacy' | 'inspect'>;
   readonly join: CollabJoinProjectPort;
   readonly lanHost: CollabLanHostPort;
   readonly lifecycleRecovery: CollabLifecycleRecoveryPort;
@@ -416,19 +419,19 @@ interface CollabProjectProjection {
 }
 
 class CollabFeatureServiceCore {
-  private activeOperationController: AbortController | null = null;
-  private activeOperationProjectId: CollabProjectId | null = null;
-  private activeProjectSelections = 0;
-  private initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
+   #activeOperationController: AbortController | null = null;
+   #activeOperationProjectId: CollabProjectId | null = null;
+   #activeProjectSelections = 0;
+   #initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
   private readonly listeners = new Set<CollabFeatureStateListener>();
-  private lifecycleRecoveryController: AbortController | null = null;
-  private lifecycleRecoveryPromise: Promise<void> | null = null;
-  private readonly publicationSubscription: { dispose(): void };
-  private closePromise: Promise<void> | null = null;
-  private closing = false;
+   #lifecycleRecoveryController: AbortController | null = null;
+   #lifecycleRecoveryPromise: Promise<void> | null = null;
+   readonly #publicationSubscription: { dispose(): void };
+   #closePromise: Promise<void> | null = null;
+   #closing = false;
   private disposed = false;
-  private refreshGeneration = 0;
-  private stateValue: CollabFeatureState = cloneState({
+   #refreshGeneration = 0;
+   #stateValue: CollabFeatureState = cloneState({
     lifecycle: 'uninitialized',
     projects: [],
     selectedProjectId: null,
@@ -440,18 +443,18 @@ class CollabFeatureServiceCore {
     private readonly options: CollabFeatureServiceOptions,
     private readonly operationAdmission: ProjectOperationAdmission,
   ) {
-    this.publicationSubscription = options.publication.subscribeCoordination((
+    this.#publicationSubscription = options.publication.subscribeCoordination((
       projectId,
       reason,
     ) => {
       if (reason === 'accepted-main-changed') {
         this.scheduleAcceptedMainSynchronization(projectId);
       }
-      if (this.stateValue.selectedProjectId === projectId) {
+      if (this.#stateValue.selectedProjectId === projectId) {
         void this.operationAdmission.runGlobal(async () => {
-          await this.refreshProjects().catch(error => {
-            this.publishState({
-              ...this.stateValue,
+          await this.#refreshProjects().catch(error => {
+            this.#publishState({
+              ...this.#stateValue,
               error: error instanceof CollabError
                 ? error
                 : operationError('collab-project-refresh-failed'),
@@ -463,17 +466,17 @@ class CollabFeatureServiceCore {
   }
 
   get state(): CollabFeatureState {
-    return this.stateValue;
+    return this.#stateValue;
   }
 
   initialize(
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabFeatureState>> {
-    if (this.initializePromise) return this.initializePromise;
-    const pending = this.initializeUnlocked(options);
-    this.initializePromise = pending;
+    if (this.#initializePromise) return this.#initializePromise;
+    const pending = this.#initializeUnlocked(options);
+    this.#initializePromise = pending;
     const clearPending = () => {
-      if (this.initializePromise === pending) this.initializePromise = null;
+      if (this.#initializePromise === pending) this.#initializePromise = null;
     };
     void pending.then(clearPending, clearPending);
     return pending;
@@ -484,11 +487,11 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<readonly CollabLocalProjectSummary[]>> {
     try {
       throwIfCancelled(options.signal);
-      const projects = await this.refreshProjects();
+      const projects = await this.#refreshProjects();
       throwIfCancelled(options.signal);
       return { status: 'success', value: projects };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -511,7 +514,7 @@ class CollabFeatureServiceCore {
         },
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -519,15 +522,15 @@ class CollabFeatureServiceCore {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabProjectInspection>> {
-    this.activeProjectSelections += 1;
+    this.#activeProjectSelections += 1;
     try {
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       throwIfCancelled(options.signal);
-      if (this.activeOperationProjectId !== null && this.activeOperationProjectId !== projectId) {
-        this.activeOperationController?.abort();
+      if (this.#activeOperationProjectId !== null && this.#activeOperationProjectId !== projectId) {
+        this.#activeOperationController?.abort();
       }
-      const projects = await this.refreshProjects({ publish: false });
-      this.throwIfDisposed();
+      const projects = await this.#refreshProjects({ publish: false });
+      this.#throwIfDisposed();
       const project = projects.find(candidate => candidate.id === projectId);
       if (!project) {
         return {
@@ -536,16 +539,16 @@ class CollabFeatureServiceCore {
         };
       }
       await this.foundation.local.projects.selectProject(projectId);
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       const inspection = await this.inspectProject(projectId, options);
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       this.scheduleAcceptedMainSynchronization(projectId);
-      this.publishState({ ...this.stateValue, projects, selectedProjectId: projectId });
+      this.#publishState({ ...this.#stateValue, projects, selectedProjectId: projectId });
       return inspection;
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     } finally {
-      this.activeProjectSelections -= 1;
+      this.#activeProjectSelections -= 1;
     }
   }
 
@@ -557,10 +560,10 @@ class CollabFeatureServiceCore {
     try {
       inspection = this.beginProjectInspection(projectId);
     } catch (error) {
-      return this.inspectClosedRetiredProject(projectId, options, error);
+      return this.#inspectClosedRetiredProject(projectId, options, error);
     }
     try {
-      return await this.inspectProjectWhileStable(
+      return await this.#inspectProjectWhileStable(
         projectId,
         options,
         inspection.precedingSynchronization,
@@ -570,28 +573,28 @@ class CollabFeatureServiceCore {
     }
   }
 
-  private async inspectClosedRetiredProject(
+   async #inspectClosedRetiredProject(
     projectId: CollabProjectId,
     options: CollabOperationOptions,
     sessionError: unknown,
   ): Promise<CollabResult<CollabProjectInspection>> {
     if (!(sessionError instanceof CollabError) || sessionError.code !== 'project-retired') {
-      return this.failureResult(sessionError);
+      return this.#failureResult(sessionError);
     }
     try {
       throwIfCancelled(options.signal);
-      const projection = await this.readProjectProjection();
+      const projection = await this.#readProjectProjection();
       throwIfCancelled(options.signal);
       const project = projection.projects.find(candidate => candidate.id === projectId);
       return project?.lifecycle === 'retired'
         ? { status: 'success', value: { project } }
-        : this.failureResult(sessionError);
+        : this.#failureResult(sessionError);
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
-  private async inspectProjectWhileStable(
+   async #inspectProjectWhileStable(
     projectId: CollabProjectId,
     options: CollabOperationOptions,
     precedingSynchronization: Promise<void> | null,
@@ -599,10 +602,10 @@ class CollabFeatureServiceCore {
     let projection: CollabProjectProjection;
     try {
       throwIfCancelled(options.signal);
-      projection = await this.readProjectProjection();
+      projection = await this.#readProjectProjection();
       throwIfCancelled(options.signal);
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
     let project = projection.projects.find(candidate => candidate.id === projectId);
     if (!project) {
@@ -616,7 +619,7 @@ class CollabFeatureServiceCore {
     }
     try {
       if (precedingSynchronization) {
-        await this.waitForBackgroundTask(precedingSynchronization, options.signal);
+        await this.#waitForBackgroundTask(precedingSynchronization, options.signal);
       }
       const conflictResult = await this.options.publication.findConflict(projectId, options);
       if (conflictResult.status !== 'success') return conflictResult;
@@ -624,7 +627,10 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       let coordination: CollabCoordinationSnapshot | undefined;
       try {
-        coordination = await this.readCoordinationWithReconnect(projectId, options);
+        coordination = await this.options.publication.readCoordinationSnapshot(
+          projectId,
+          options,
+        );
         if (coordination.stale) {
           project = {
             ...project,
@@ -673,57 +679,7 @@ class CollabFeatureServiceCore {
         },
       };
     } catch (error) {
-      return this.failureResult(error);
-    }
-  }
-
-  private async readCoordinationWithReconnect(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions,
-  ): Promise<CollabCoordinationSnapshot> {
-    const publication = this.options.publication;
-    let coordination: CollabCoordinationSnapshot;
-    try {
-      coordination = await publication.readCoordinationSnapshot(projectId, options);
-    } catch (error) {
-      const reconnectableEndpointFailure = error instanceof CollabError
-        && (error.group === 'connectivity' || error.code === 'operation-timeout');
-      if (
-        reconnectableEndpointFailure
-        && !options.signal?.aborted
-        && await this.tryAutoReconnect(projectId, options)
-      ) {
-        return publication.readCoordinationSnapshot(projectId, options);
-      }
-      throw error;
-    }
-    if (
-      coordination.stale
-      && !options.signal?.aborted
-      && await this.tryAutoReconnect(projectId, options)
-    ) {
-      return publication.readCoordinationSnapshot(projectId, options);
-    }
-    return coordination;
-  }
-
-  private async tryAutoReconnect(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions,
-  ): Promise<boolean> {
-    try {
-      return await this.options.publication.tryAutoReconnect(projectId, options);
-    } catch (error) {
-      if (
-        error instanceof CollabError
-        && (
-          error.code === 'authority-integrity-error'
-          || error.group === 'authorization'
-        )
-      ) {
-        throw error;
-      }
-      return false;
+      return this.#failureResult(error);
     }
   }
 
@@ -733,7 +689,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const result = await this.projectSetup.createProject(request, options);
     if (result.status !== 'success') {
-      await this.refreshAfterMutation(result);
+      await this.#refreshAfterMutation(result);
       return result;
     }
     try {
@@ -746,12 +702,12 @@ class CollabFeatureServiceCore {
           hostStatus: session.status,
         },
       };
-      await this.refreshAfterMutation(started);
+      await this.#refreshAfterMutation(started);
       return started;
     } catch {
       // Project creation is durable even when the local listener cannot start.
       // The saved auto-start intent and Project management retry remain available.
-      await this.refreshAfterMutation(result);
+      await this.#refreshAfterMutation(result);
       return result;
     }
   }
@@ -761,7 +717,7 @@ class CollabFeatureServiceCore {
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     try {
-      const pending = await this.findPendingOperation(request.operationId);
+      const pending = await this.#findPendingOperation(request.operationId);
       if (!pending) {
         return {
           error: new CollabError({
@@ -774,10 +730,10 @@ class CollabFeatureServiceCore {
       const result = pending.kind === 'join-project'
         ? await this.options.join.resumeJoin(request, options)
         : await this.projectSetup.resumeSetup(request, options);
-      await this.refreshAfterMutation(result);
+      await this.#refreshAfterMutation(result);
       return result;
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -819,7 +775,7 @@ class CollabFeatureServiceCore {
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const result = await this.options.join.joinProject(request, options);
-    await this.refreshAfterMutation(result);
+    await this.#refreshAfterMutation(result);
     return result;
   }
 
@@ -827,7 +783,7 @@ class CollabFeatureServiceCore {
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    if (this.activeOperationController) {
+    if (this.#activeOperationController) {
       return {
         error: new CollabError({
           code: 'working-tree-busy',
@@ -841,11 +797,11 @@ class CollabFeatureServiceCore {
     const onAbort = () => controller.abort();
     if (options.signal?.aborted) controller.abort();
     options.signal?.addEventListener('abort', onAbort, { once: true });
-    this.activeOperationController = controller;
-    this.activeOperationProjectId = request.projectId;
+    this.#activeOperationController = controller;
+    this.#activeOperationProjectId = request.projectId;
     const operationId = `reconnect-${randomUUID().replaceAll('-', '')}`;
-    this.publishState({
-      ...this.stateValue,
+    this.#publishState({
+      ...this.#stateValue,
       activeOperation: {
         cancellable: true,
         id: operationId,
@@ -859,17 +815,17 @@ class CollabFeatureServiceCore {
       const result = await this.options.publication.reconnectProject(request, {
         signal: controller.signal,
       });
-      await this.refreshAfterMutation(result);
+      await this.#refreshAfterMutation(result);
       return result;
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     } finally {
       options.signal?.removeEventListener('abort', onAbort);
-      if (this.activeOperationController === controller) {
-        this.activeOperationController = null;
-        this.activeOperationProjectId = null;
-        const { activeOperation: _activeOperation, ...state } = this.stateValue;
-        this.publishState(state);
+      if (this.#activeOperationController === controller) {
+        this.#activeOperationController = null;
+        this.#activeOperationProjectId = null;
+        const { activeOperation: _activeOperation, ...state } = this.#stateValue;
+        this.#publishState(state);
       }
     }
   }
@@ -884,7 +840,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: status };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -894,11 +850,14 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<CollabCoordinationSnapshot>> {
     try {
       throwIfCancelled(options.signal);
-      const snapshot = await this.readCoordinationWithReconnect(projectId, options);
+      const snapshot = await this.options.publication.readCoordinationSnapshot(
+        projectId,
+        options,
+      );
       throwIfCancelled(options.signal);
       return { status: 'success', value: snapshot };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -912,7 +871,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: description };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -920,7 +879,7 @@ class CollabFeatureServiceCore {
     request: CollabPublishRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    if (this.activeOperationController) {
+    if (this.#activeOperationController) {
       return {
         error: new CollabError({
           code: 'working-tree-busy',
@@ -934,11 +893,11 @@ class CollabFeatureServiceCore {
     const onAbort = () => controller.abort();
     if (options.signal?.aborted) controller.abort();
     options.signal?.addEventListener('abort', onAbort, { once: true });
-    this.activeOperationController = controller;
-    this.activeOperationProjectId = request.projectId;
+    this.#activeOperationController = controller;
+    this.#activeOperationProjectId = request.projectId;
     const operationId = `publish-${randomUUID().replaceAll('-', '')}`;
-    this.publishState({
-      ...this.stateValue,
+    this.#publishState({
+      ...this.#stateValue,
       activeOperation: {
         cancellable: true,
         id: operationId,
@@ -953,14 +912,14 @@ class CollabFeatureServiceCore {
         signal: controller.signal,
       });
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     } finally {
       options.signal?.removeEventListener('abort', onAbort);
-      if (this.activeOperationController === controller) {
-        this.activeOperationController = null;
-        this.activeOperationProjectId = null;
-        const { activeOperation: _activeOperation, ...state } = this.stateValue;
-        this.publishState(state);
+      if (this.#activeOperationController === controller) {
+        this.#activeOperationController = null;
+        this.#activeOperationProjectId = null;
+        const { activeOperation: _activeOperation, ...state } = this.#stateValue;
+        this.#publishState(state);
       }
     }
   }
@@ -973,7 +932,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return await this.options.publication.confirmPublish(request, options);
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -985,7 +944,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return await this.options.publication.readConflict(operationId, options);
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -997,7 +956,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return await this.options.publication.readConflictFile(request, options);
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1012,7 +971,7 @@ class CollabFeatureServiceCore {
         value: await this.options.membership.createInvitation(projectId, options),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1025,7 +984,7 @@ class CollabFeatureServiceCore {
       await this.options.membership.revokeInvitation(projectId, options);
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1035,14 +994,54 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<CollabHostSession>> {
     try {
       throwIfCancelled(options.signal);
+      if (await this.options.hostInstallation.inspect(projectId) !== 'hosted-here') {
+        throw operationError('host-installation-not-owned');
+      }
       const session = await this.options.lanHost.startProject(projectId);
-      await this.refreshAfterMutation({ status: 'success', value: session });
+      await this.#refreshAfterMutation({ status: 'success', value: session });
       return {
         status: 'success',
         value: { projectId: session.projectId, status: session.status },
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
+    }
+  }
+
+  async claimLegacyHostInstallation(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    try {
+      throwIfCancelled(options.signal);
+      const [index, membership] = await Promise.all([
+        this.foundation.local.projects.loadIndex(),
+        this.foundation.local.projects.loadMembership(projectId),
+      ]);
+      const project = index.projects.find(candidate => candidate.id === projectId);
+      const lifecycle = project?.lifecycle ?? membership?.lifecycle ?? 'active';
+      if (
+        !project
+        || lifecycle !== 'active'
+        || !membership
+        || !isCollabLocalLanMembership(membership)
+        || !membership.hostOwnership.ownsAuthority
+      ) {
+        throw operationError('host-installation-claim-unavailable');
+      }
+      const status = await this.options.hostInstallation.inspect(projectId);
+      if (status === 'legacy-unbound' || status === 'hosted-here') {
+        await this.options.hostInstallation.claimLegacy(projectId);
+      } else {
+        throw operationError('host-installation-claim-unavailable');
+      }
+      throwIfCancelled(options.signal);
+      const projects = await this.#refreshProjects();
+      const summary = projects.find(candidate => candidate.id === projectId);
+      if (!summary) throw operationError('host-installation-claim-unavailable');
+      return { status: 'success', value: summary };
+    } catch (error) {
+      return this.#failureResult(error);
     }
   }
 
@@ -1053,10 +1052,10 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       const session = await this.options.lanHost.stopProject(projectId);
-      await this.refreshAfterMutation({ status: 'success', value: session });
+      await this.#refreshAfterMutation({ status: 'success', value: session });
       return { status: 'success', value: session };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1071,6 +1070,7 @@ class CollabFeatureServiceCore {
           !membership
           || !isCollabLocalLanMembership(membership)
           || !membership.hostOwnership.ownsAuthority
+          || await this.options.hostInstallation.inspect(project.id) !== 'hosted-here'
           || membership.hostOwnership.autoStart === false
         ) {
           continue;
@@ -1091,7 +1091,7 @@ class CollabFeatureServiceCore {
           });
       }
     }
-    await this.refreshProjects();
+    await this.#refreshProjects();
     if (firstError instanceof Error) throw firstError;
     if (firstError) throw operationError('collab-host-restore-failed');
   }
@@ -1111,7 +1111,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: detail };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1133,7 +1133,7 @@ class CollabFeatureServiceCore {
         ),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1156,7 +1156,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: comment };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1171,7 +1171,7 @@ class CollabFeatureServiceCore {
         value: await this.options.publication.listTickets(request, options),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1187,7 +1187,7 @@ class CollabFeatureServiceCore {
         value: await this.options.publication.readTicket(projectId, ticketId, options),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1203,7 +1203,7 @@ class CollabFeatureServiceCore {
         value: await this.options.publication.readTicketPage(projectId, ticketId, options),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1225,7 +1225,7 @@ class CollabFeatureServiceCore {
         ),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1247,7 +1247,7 @@ class CollabFeatureServiceCore {
         ),
       };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1264,7 +1264,7 @@ class CollabFeatureServiceCore {
       );
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1281,7 +1281,7 @@ class CollabFeatureServiceCore {
       );
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1298,7 +1298,7 @@ class CollabFeatureServiceCore {
       );
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1306,14 +1306,14 @@ class CollabFeatureServiceCore {
     request: CollabChangeTicketStatusRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabTicketSummary>> {
-    return this.changeTicketStatus('close', request, options);
+    return this.#changeTicketStatus('close', request, options);
   }
 
   async reopenTicket(
     request: CollabChangeTicketStatusRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabTicketSummary>> {
-    return this.changeTicketStatus('reopen', request, options);
+    return this.#changeTicketStatus('reopen', request, options);
   }
 
   async updateRequestMetadata(
@@ -1329,11 +1329,11 @@ class CollabFeatureServiceCore {
       );
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
-  private async changeTicketStatus(
+   async #changeTicketStatus(
     action: 'close' | 'reopen',
     request: CollabChangeTicketStatusRequest,
     options: CollabOperationOptions,
@@ -1350,7 +1350,7 @@ class CollabFeatureServiceCore {
       );
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1369,7 +1369,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: review };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1388,7 +1388,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: review };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1402,7 +1402,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: content };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1421,7 +1421,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: review };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1440,7 +1440,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: review };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1457,7 +1457,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: content };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1474,7 +1474,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: content };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1484,7 +1484,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<CollabAcceptOutcome>> {
     try {
       throwIfCancelled(options.signal);
-      const coordination = await this.readCoordinationWithReconnect(
+      const coordination = await this.options.publication.readCoordinationSnapshot(
         request.projectId,
         options,
       );
@@ -1508,11 +1508,11 @@ class CollabFeatureServiceCore {
         mutationIntentKey('accept', request.intentId),
       );
       throwIfCancelled(options.signal);
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       this.scheduleAcceptedMainSynchronization(request.projectId);
       return { status: 'success', value: outcome };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1526,7 +1526,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(options.signal);
       return { status: 'success', value: members };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1537,10 +1537,10 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.membership.removeMember(request, options);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1551,10 +1551,10 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.localExit.leaveProject(request, options);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1562,7 +1562,7 @@ class CollabFeatureServiceCore {
     request: CollabCreateManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>> {
-    return this.runMembershipMutation(
+    return this.#runMembershipMutation(
       membership => membership.createManagerResponsibilityOffer(request, options),
     );
   }
@@ -1571,7 +1571,7 @@ class CollabFeatureServiceCore {
     request: CollabCancelManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>> {
-    return this.runMembershipMutation(
+    return this.#runMembershipMutation(
       membership => membership.cancelManagerResponsibilityOffer(request, options),
     );
   }
@@ -1583,10 +1583,10 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.membership.promoteManager(request, options);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1597,10 +1597,10 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.membership.demoteManager(request, options);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
@@ -1608,7 +1608,7 @@ class CollabFeatureServiceCore {
     request: CollabCreateHostTransferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.hostTransfer,
       port => port.createHostTransfer(request, options),
     );
@@ -1618,7 +1618,7 @@ class CollabFeatureServiceCore {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.hostTransfer,
       port => port.acceptHostTransfer(request, options),
     );
@@ -1628,7 +1628,7 @@ class CollabFeatureServiceCore {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.hostTransfer,
       port => port.declineHostTransfer(request, options),
     );
@@ -1638,7 +1638,7 @@ class CollabFeatureServiceCore {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.hostTransfer,
       port => port.cancelHostTransfer(request, options),
     );
@@ -1648,7 +1648,7 @@ class CollabFeatureServiceCore {
     request: CollabRetireProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.retirement,
       port => port.retireProject(request, options),
     );
@@ -1658,7 +1658,7 @@ class CollabFeatureServiceCore {
     request: CollabFinalizeRetiredProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.retirement,
       port => port.finalizeRetiredProject(request, options),
     );
@@ -1668,37 +1668,37 @@ class CollabFeatureServiceCore {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
-    return this.runLifecycleMutation(
+    return this.#runLifecycleMutation(
       this.options.retirement,
       port => port.retryProjectCleanup(projectId, options),
     );
   }
 
   restoreLifecycle(): Promise<void> {
-    if (this.lifecycleRecoveryPromise) return this.lifecycleRecoveryPromise;
+    if (this.#lifecycleRecoveryPromise) return this.#lifecycleRecoveryPromise;
     const controller = new AbortController();
-    this.lifecycleRecoveryController = controller;
+    this.#lifecycleRecoveryController = controller;
     const recovery = (async () => {
       try {
         await this.options.lifecycleRecovery.resume({ signal: controller.signal });
-        await this.refreshProjects();
+        await this.#refreshProjects();
       } finally {
         controller.abort();
-        if (this.lifecycleRecoveryController === controller) {
-          this.lifecycleRecoveryController = null;
+        if (this.#lifecycleRecoveryController === controller) {
+          this.#lifecycleRecoveryController = null;
         }
       }
     })();
-    this.lifecycleRecoveryPromise = recovery;
+    this.#lifecycleRecoveryPromise = recovery;
     const clearRecovery = () => {
-      if (this.lifecycleRecoveryPromise === recovery) this.lifecycleRecoveryPromise = null;
+      if (this.#lifecycleRecoveryPromise === recovery) this.#lifecycleRecoveryPromise = null;
     };
     void recovery.then(clearRecovery, clearRecovery);
     return recovery;
   }
 
   async refreshLifecycleProjection(): Promise<void> {
-    await this.refreshProjects();
+    await this.#refreshProjects();
   }
 
   abortProjectBackgroundWork(projectId: CollabProjectId): void {
@@ -1706,10 +1706,10 @@ class CollabFeatureServiceCore {
   }
 
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription {
-    if (this.closing || this.disposed) return { dispose: () => undefined };
+    if (this.#closing || this.disposed) return { dispose: () => undefined };
     this.listeners.add(listener);
     try {
-      listener(this.stateValue);
+      listener(this.#stateValue);
     } catch {
       // Presentation subscribers cannot invalidate application state.
     }
@@ -1717,12 +1717,12 @@ class CollabFeatureServiceCore {
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
-    this.closing = true;
+    if (this.#closePromise) return this.#closePromise;
+    this.#closing = true;
     this.operationAdmission.beginClose();
-    this.activeOperationController?.abort();
-    this.lifecycleRecoveryController?.abort();
-    const lifecycleRecoveryDrain = this.lifecycleRecoveryPromise?.catch(() => undefined)
+    this.#activeOperationController?.abort();
+    this.#lifecycleRecoveryController?.abort();
+    const lifecycleRecoveryDrain = this.#lifecycleRecoveryPromise?.catch(() => undefined)
       ?? Promise.resolve();
     let lifecycleRecoveryClose: Promise<void>;
     try {
@@ -1743,52 +1743,56 @@ class CollabFeatureServiceCore {
         .then(() => this.options.hostTransfer.close())
         .catch(() => undefined);
       this.disposed = true;
-      this.publicationSubscription.dispose();
+      this.#publicationSubscription.dispose();
       try {
         await this.options.publication.close();
       } finally {
         this.listeners.clear();
       }
     })();
-    this.closePromise = close;
+    this.#closePromise = close;
     return close;
   }
 
-  private async initializeUnlocked(
+   async #initializeUnlocked(
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabFeatureState>> {
-    this.publishState({ ...this.stateValue, error: undefined, lifecycle: 'initializing' });
+    this.#publishState({ ...this.#stateValue, error: undefined, lifecycle: 'initializing' });
     try {
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       throwIfCancelled(options.signal);
       const gitFoundation = this.foundation.requireGitFoundation().then(
         () => ({ status: 'fulfilled' as const }),
         (reason: unknown) => ({ reason, status: 'rejected' as const }),
       );
-      const projects = await this.refreshProjects();
+      const projects = await this.#refreshProjects();
       const gitFoundationResult = await gitFoundation;
-      this.throwIfDisposed();
+      this.#throwIfDisposed();
       throwIfCancelled(options.signal);
-      const selected = projects.find(project => project.id === this.stateValue.selectedProjectId);
+      const selected = projects.find(project => project.id === this.#stateValue.selectedProjectId);
       if (
         gitFoundationResult.status === 'rejected'
         && selected?.lifecycle !== 'retired'
       ) throw gitFoundationResult.reason;
-      if (selected && selected.lifecycle !== 'retired') {
+      if (
+        selected
+        && selected.lifecycle !== 'retired'
+        && selected.health === 'healthy'
+      ) {
         this.scheduleAcceptedMainSynchronization(selected.id);
       }
-      this.publishState({ ...this.stateValue, error: undefined, lifecycle: 'ready' });
-      return { status: 'success', value: this.stateValue };
+      this.#publishState({ ...this.#stateValue, error: undefined, lifecycle: 'ready' });
+      return { status: 'success', value: this.#stateValue };
     } catch (error) {
       const collabError = error instanceof CollabError
         ? error
         : operationError('collab-initialize-failed');
       if (collabError.code === 'cancelled') {
-        this.publishState({ ...this.stateValue, lifecycle: 'uninitialized' });
+        this.#publishState({ ...this.#stateValue, lifecycle: 'uninitialized' });
         return { durableProgress: false, status: 'cancelled' };
       }
-      this.publishState({
-        ...this.stateValue,
+      this.#publishState({
+        ...this.#stateValue,
         error: collabError,
         lifecycle: 'failed',
       });
@@ -1797,11 +1801,11 @@ class CollabFeatureServiceCore {
   }
 
   private scheduleAcceptedMainSynchronization(projectId: CollabProjectId): void {
-    if (this.closing || this.disposed) return;
+    if (this.#closing || this.disposed) return;
     this.options.publication.scheduleAcceptedMainSynchronization(projectId);
   }
 
-  private waitForBackgroundTask(task: Promise<void>, signal?: AbortSignal): Promise<void> {
+   #waitForBackgroundTask(task: Promise<void>, signal?: AbortSignal): Promise<void> {
     if (!signal) return task;
     if (signal.aborted) return Promise.reject(new CollabError({ code: 'cancelled' }));
     return new Promise<void>((resolve, reject) => {
@@ -1821,18 +1825,18 @@ class CollabFeatureServiceCore {
     return this.options.publication.beginProjectInspection(projectId);
   }
 
-  private async refreshProjects(
+   async #refreshProjects(
     options: { readonly publish?: boolean } = {},
   ): Promise<readonly CollabLocalProjectSummary[]> {
-    const generation = ++this.refreshGeneration;
-    const projection = await this.readProjectProjection();
+    const generation = ++this.#refreshGeneration;
+    const projection = await this.#readProjectProjection();
     if (
       options.publish !== false
-      && generation === this.refreshGeneration
-      && this.activeProjectSelections === 0
+      && generation === this.#refreshGeneration
+      && this.#activeProjectSelections === 0
     ) {
-      this.publishState({
-        ...this.stateValue,
+      this.#publishState({
+        ...this.#stateValue,
         projects: projection.projects,
         selectedProjectId: projection.selectedProjectId,
       });
@@ -1840,7 +1844,7 @@ class CollabFeatureServiceCore {
     return projection.projects;
   }
 
-  private async readProjectProjection(): Promise<CollabProjectProjection> {
+   async #readProjectProjection(): Promise<CollabProjectProjection> {
     const index = await this.foundation.local.projects.loadIndex();
     const projects = await Promise.all(index.projects.map(async project => {
       const [membership, pending, workingCopyHealthy] = await Promise.all([
@@ -1853,14 +1857,14 @@ class CollabFeatureServiceCore {
           'pending-operation',
           decodeCollabPendingProjectOperation,
         ),
-        this.hasWorkingCopy(project.workspacePath),
+        this.#hasWorkingCopy(project.workspacePath),
       ]);
-      return this.projectSummary(project, membership, pending !== null, workingCopyHealthy);
+      return this.#projectSummary(project, membership, pending !== null, workingCopyHealthy);
     }));
     return { projects, selectedProjectId: index.selectedProjectId };
   }
 
-  private async hasWorkingCopy(workspacePath: string): Promise<boolean> {
+   async #hasWorkingCopy(workspacePath: string): Promise<boolean> {
     try {
       const absolutePath = await this.foundation.local.workspace.resolveManagedProjectPath(
         workspacePath,
@@ -1879,22 +1883,36 @@ class CollabFeatureServiceCore {
     }
   }
 
-  private projectSummary(
+   async #projectSummary(
     project: CollabLocalProjectIndex['projects'][number],
     membership: CollabLocalMembershipRecord | null,
     pending: boolean,
     workingCopyExists: boolean,
-  ): CollabLocalProjectSummary {
+  ): Promise<CollabLocalProjectSummary> {
     const lifecycle = project.lifecycle ?? membership?.lifecycle;
     const effectiveLifecycle = lifecycle ?? 'active';
     const lanMembership = membership && isCollabLocalLanMembership(membership)
       ? membership
       : null;
     const ownsAuthority = lanMembership?.hostOwnership.ownsAuthority === true;
+    let installationInspectionFailed = false;
+    let inspectedInstallationStatus: CollabAuthorityInstallationStatus = 'absent';
+    if (effectiveLifecycle !== 'retired' && ownsAuthority) {
+      try {
+        inspectedInstallationStatus = await this.options.hostInstallation.inspect(project.id);
+      } catch {
+        installationInspectionFailed = true;
+      }
+    }
+    const hostInstallationStatus = inspectedInstallationStatus === 'absent'
+      ? 'not-host'
+      : inspectedInstallationStatus;
     const hostStatus = effectiveLifecycle === 'retired'
       ? 'not-host'
-      : ownsAuthority
+      : hostInstallationStatus === 'hosted-here'
       ? this.options.lanHost.getProjectState(project.id).status
+      : hostInstallationStatus === 'legacy-unbound'
+        ? 'stopped'
       : 'not-host';
     return {
       authorityKind: project.authorityKind,
@@ -1904,14 +1922,15 @@ class CollabFeatureServiceCore {
         ? 'connected'
         : hostStatus === 'needs-attention'
           ? 'needs-attention'
-          : ownsAuthority
+          : hostInstallationStatus === 'hosted-here'
+            || hostInstallationStatus === 'legacy-unbound'
           ? 'host-stopped'
           : membership?.authority.kind === 'cloud'
             ? 'connected'
             : lanMembership?.authority.endpoint
             ? 'connected'
             : 'offline',
-      health: project.cleanupStatus === 'failed'
+      health: project.cleanupStatus === 'failed' || installationInspectionFailed
         ? 'needs-attention'
         : effectiveLifecycle === 'retired'
           ? 'healthy'
@@ -1923,6 +1942,7 @@ class CollabFeatureServiceCore {
             ? 'needs-attention'
             : 'missing',
       hostStatus,
+      hostInstallationStatus,
       id: project.id,
       name: project.name,
       ...(lifecycle === undefined ? {} : { lifecycle }),
@@ -1935,11 +1955,11 @@ class CollabFeatureServiceCore {
     };
   }
 
-  private async refreshAfterMutation<T>(result: CollabResult<T>): Promise<void> {
+   async #refreshAfterMutation<T>(result: CollabResult<T>): Promise<void> {
     if (result.status === 'success' || result.status === 'recovery-required') {
-      await this.refreshProjects().catch(error => {
-        this.publishState({
-          ...this.stateValue,
+      await this.#refreshProjects().catch(error => {
+        this.#publishState({
+          ...this.#stateValue,
           error: error instanceof CollabError
             ? error
             : operationError('collab-project-refresh-failed'),
@@ -1948,32 +1968,32 @@ class CollabFeatureServiceCore {
     }
   }
 
-  private async runMembershipMutation<T>(
+   async #runMembershipMutation<T>(
     mutation: (membership: CollabMembershipPort) => Promise<T>,
   ): Promise<CollabResult<T>> {
     try {
       const value = await mutation(this.options.membership);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
-  private async runLifecycleMutation<Port>(
+   async #runLifecycleMutation<Port>(
     port: Port,
     mutation: (port: Port) => Promise<void>,
   ): Promise<CollabResult<void>> {
     try {
       await mutation(port);
-      await this.refreshProjects();
+      await this.#refreshProjects();
       return { status: 'success', value: undefined };
     } catch (error) {
-      return this.failureResult(error);
+      return this.#failureResult(error);
     }
   }
 
-  private async findPendingOperation(
+   async #findPendingOperation(
     operationId: CollabOperationId,
   ): Promise<CollabPendingProjectOperation | null> {
     const projectIds = await this.foundation.local.projects
@@ -1993,7 +2013,7 @@ class CollabFeatureServiceCore {
     return match;
   }
 
-  private failureResult<T>(error: unknown): CollabResult<T> {
+   #failureResult<T>(error: unknown): CollabResult<T> {
     const collabError = error instanceof CollabError
       ? error
       : operationError('collab-operation-failed');
@@ -2002,20 +2022,20 @@ class CollabFeatureServiceCore {
       : { error: collabError, status: 'failure' };
   }
 
-  private publishState(state: CollabFeatureState): void {
+   #publishState(state: CollabFeatureState): void {
     if (this.disposed) return;
-    this.stateValue = cloneState(state);
+    this.#stateValue = cloneState(state);
     for (const listener of this.listeners) {
       try {
-        listener(this.stateValue);
+        listener(this.#stateValue);
       } catch {
         // Presentation subscribers cannot invalidate application state.
       }
     }
   }
 
-  private throwIfDisposed(): void {
-    if (this.closing || this.disposed) {
+   #throwIfDisposed(): void {
+    if (this.#closing || this.disposed) {
       throw new CollabError({
         code: 'cancelled',
         safeContext: { reason: 'collab-feature-closing' },
@@ -2028,7 +2048,7 @@ class CollabFeatureServiceCore {
 export class CollabFeatureService implements CollabFeaturePort {
   readonly boundedQueries: CollabBoundedQueryPort;
   private readonly cloudBootstrap: CollabCloudBootstrapPort;
-  private readonly operationAdmission = new ProjectOperationAdmission();
+   readonly #operationAdmission = new ProjectOperationAdmission();
   private readonly core: CollabFeatureServiceCore;
 
   constructor(
@@ -2041,7 +2061,7 @@ export class CollabFeatureService implements CollabFeaturePort {
       foundation,
       projectSetup,
       options,
-      this.operationAdmission,
+      this.#operationAdmission,
     );
     this.boundedQueries = Object.freeze({
       listRequestComments: (
@@ -2162,6 +2182,15 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   revokeInvitation: CollabFeaturePort['revokeInvitation'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.revokeInvitation(...args))
+  );
+  claimLegacyHostInstallation: CollabFeaturePort[
+    'claimLegacyHostInstallation'
+  ] = (...args) => (
+    this.project(
+      () => args[0],
+      'active',
+      () => this.core.claimLegacyHostInstallation(...args),
+    )
   );
   startHost: CollabFeaturePort['startHost'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.startHost(...args))
@@ -2294,7 +2323,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     // Lifecycle recovery owns its own cancellation and may need to drain the
     // admitted Project operations while replacing an authority binding. Do
     // not register the recovery promise in that same admission set.
-    return this.operationAdmission.runLifecycleRecovery(() => this.core.restoreLifecycle());
+    return this.#operationAdmission.runLifecycleRecovery(() => this.core.restoreLifecycle());
   }
 
   refreshLifecycleProjection(): Promise<void> {
@@ -2302,12 +2331,12 @@ export class CollabFeatureService implements CollabFeaturePort {
   }
 
   closeProjectAdmission(projectId: CollabProjectId): void {
-    this.operationAdmission.closeProject(projectId);
+    this.#operationAdmission.closeProject(projectId);
     this.core.abortProjectBackgroundWork(projectId);
   }
 
   suspendProjectAdmission(projectId: CollabProjectId): ProjectOperationSuspension {
-    const suspension = this.operationAdmission.suspendProject(projectId);
+    const suspension = this.#operationAdmission.suspendProject(projectId);
     this.core.abortProjectBackgroundWork(projectId);
     return suspension;
   }
@@ -2315,11 +2344,11 @@ export class CollabFeatureService implements CollabFeaturePort {
   resumeProjectAdmission(
     suspension: ProjectOperationSuspension,
   ): boolean {
-    return this.operationAdmission.resumeProject(suspension);
+    return this.#operationAdmission.resumeProject(suspension);
   }
 
   drainAdmittedOperations(): Promise<void> {
-    return this.operationAdmission.drain();
+    return this.#operationAdmission.drain();
   }
 
   recoverPendingCloudBootstraps(): Promise<void> {
@@ -2351,7 +2380,7 @@ export class CollabFeatureService implements CollabFeaturePort {
   }
 
   private runGlobal<T>(operation: () => Promise<T>): Promise<T> {
-    return this.operationAdmission.runGlobal(operation);
+    return this.#operationAdmission.runGlobal(operation);
   }
 
   private project<T>(
@@ -2359,6 +2388,6 @@ export class CollabFeatureService implements CollabFeaturePort {
     policy: ProjectOperationPolicy,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.operationAdmission.runProject(resolveProjectId, policy, operation);
+    return this.#operationAdmission.runProject(resolveProjectId, policy, operation);
   }
 }

@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { collabMemberRef, type CollabMemberStatus } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -165,7 +166,9 @@ describe('GitHttpBackendProxy integration', () => {
     });
     await proxy.enable();
 
-    const identity = await new LanTlsIdentity(root).issueServerIdentity('127.0.0.1');
+    const identity = await new LanTlsIdentity(root, {
+      installationKey: TEST_INSTALLATION_A,
+    }).issueServerIdentity('127.0.0.1');
     caCertificatePem = identity.caCertificatePem;
     const caPath = path.join(root, 'host-ca.pem');
     await writeFile(caPath, identity.caCertificatePem, { mode: 0o600 });

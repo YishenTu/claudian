@@ -45,7 +45,8 @@ export interface PublishAcceptedStatePort {
 export interface PublishGitNetworkPort {
   withNetwork<T>(
     context: PublishProjectContext,
-    operation: (network?: GitNetworkEnvironment) => Promise<T>,
+    operation: (network: GitNetworkEnvironment | undefined, remoteUrl: string) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T>;
 }
 
@@ -128,7 +129,10 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
   ) {
     this.pathPolicy = options.pathPolicy ?? new CollabPathPolicy();
     this.network = options.network ?? {
-      withNetwork: (_context, operation) => operation(),
+      withNetwork: (context, operation) => {
+        if (!context.remoteUrl) throw repositoryError('repository-invalid', 'publish-remote-missing');
+        return operation(undefined, context.remoteUrl);
+      },
     };
   }
 
@@ -236,17 +240,17 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.assertExpected(context, expected, signal);
-    await this.assertRemote(context);
-    await this.network.withNetwork(context, network => this.git.fetch(
+    await ensureTrustedCollabOrigin(this.git, context, 'publish-origin-mismatch');
+    await this.network.withNetwork(context, (network, remoteUrl) => this.git.fetchFromUrl(
       context.repositoryPath,
-      ORIGIN,
+      remoteUrl,
       [
         COLLAB_MAIN_FETCH_REFSPEC,
         `+${context.personalRef}:${remotePersonalRef(context.personalRef)}`,
       ],
       network,
       signal,
-    ));
+    ), signal);
   }
 
   async classifyAcceptedState(
@@ -291,14 +295,23 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.assertExpected(context, expected, signal);
-    await this.assertRemote(context);
-    await this.network.withNetwork(context, network => this.git.push(
-      context.repositoryPath,
-      ORIGIN,
-      `${context.personalRef}:${context.personalRef}`,
-      network,
-      signal,
-    ));
+    await ensureTrustedCollabOrigin(this.git, context, 'publish-origin-mismatch');
+    await this.network.withNetwork(context, async (network, remoteUrl) => {
+      await this.git.pushToUrl(
+        context.repositoryPath,
+        remoteUrl,
+        `${context.personalRef}:${context.personalRef}`,
+        network,
+        signal,
+      );
+      await this.git.fetchFromUrl(
+        context.repositoryPath,
+        remoteUrl,
+        [`+${context.personalRef}:${remotePersonalRef(context.personalRef)}`],
+        network,
+        signal,
+      );
+    }, signal);
   }
 
   private async assertExpected(
@@ -310,14 +323,6 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     if (publishSnapshotFingerprint(actual) !== publishSnapshotFingerprint(expected)) {
       throw repositoryError('working-tree-busy', 'publish-repository-state-changed');
     }
-  }
-
-  private async assertRemote(context: PublishProjectContext): Promise<void> {
-    await ensureTrustedCollabOrigin(
-      this.git,
-      context,
-      'publish-origin-url-mismatch',
-    );
   }
 
   private async changedFile(

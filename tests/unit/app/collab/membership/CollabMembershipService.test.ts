@@ -1,9 +1,4 @@
-import type {
-  CollabLocalLanMembershipRecord,
-} from '@/app/collab/CollabLocalProjectRepository';
-import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
-  type CollabMembershipControlClientPort,
   type CollabMembershipSafetyContext,
   CollabMembershipService,
   type CollabMembershipSnapshotPort,
@@ -11,42 +6,14 @@ import {
 import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import type {
+  CollabAuthorityMembershipControlPort,
+  CollabAuthorityMembershipOperation,
+} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import { type CollabCoordinationSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
-
-function membership(
-  overrides: Partial<CollabLocalLanMembershipRecord> = {},
-): CollabLocalLanMembershipRecord {
-  return {
-    authority: {
-      endpoint: 'https://192.168.1.10:54545',
-      gitRemoteUrl: 'https://192.168.1.10:54545/v1/git/project-alpha/repository.git',
-      hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
-      hostCaFingerprint: 'ab'.repeat(32),
-      kind: 'lan',
-    },
-    createdAt: CREATED_AT,
-    hostOwnership: { ownsAuthority: false },
-    lastEventSequence: 3,
-    member: {
-      credential: Buffer.alloc(32, 1).toString('base64url'),
-      displayName: 'Alice',
-      id: 'member-manager',
-      personalRef: 'refs/heads/members/member-manager',
-      role: 'manager',
-    },
-    project: {
-      id: 'project-alpha',
-      name: 'Alpha',
-      workspacePath: 'workspace/alpha',
-    },
-    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: CREATED_AT,
-    ...overrides,
-  };
-}
 
 function coordination(): CollabCoordinationSnapshot {
   const currentMember = {
@@ -95,8 +62,12 @@ function coordination(): CollabCoordinationSnapshot {
   };
 }
 
-function client(): jest.Mocked<CollabMembershipControlClientPort> {
-  return {
+type TestMembershipControl = jest.Mocked<CollabAuthorityMembershipControlPort> & {
+  readonly operations: Record<CollabAuthorityMembershipOperation, jest.Mock>;
+};
+
+function client(): TestMembershipControl {
+  const operations = {
     acknowledgeManagerResponsibility: jest.fn(),
     cancelManagerResponsibilityOffer: jest.fn(),
     createInvitation: jest.fn().mockResolvedValue({
@@ -124,6 +95,16 @@ function client(): jest.Mocked<CollabMembershipControlClientPort> {
       projectId: 'project-alpha',
     }),
   };
+  return {
+    membership: jest.fn((
+      operation: CollabAuthorityMembershipOperation,
+      input: unknown,
+      options: unknown,
+    ) => (
+      operations[operation](input, options)
+    )),
+    operations,
+  } as unknown as TestMembershipControl;
 }
 
 function safetyContext(
@@ -143,18 +124,12 @@ function safetyContext(
 }
 
 describe('CollabMembershipService', () => {
-  it('lists projected Members and uses pinned trust for a non-Host Manager', async () => {
-    const membershipRecord = membership();
-    const projects = {
-      loadMembership: jest.fn().mockResolvedValue(membershipRecord),
-    };
+  it('lists projected Members and routes invitations through shared authority control', async () => {
     const snapshot: jest.Mocked<CollabMembershipSnapshotPort> = {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     };
     const control = client();
-    const createClient = jest.fn(() => control);
-    const service = new CollabMembershipService(projects, snapshot, {
-      createClient,
+    const service = new CollabMembershipService(control, snapshot, {
       createIdempotencyKey: kind => `${kind}-key`,
     }, safetyContext());
 
@@ -163,30 +138,18 @@ describe('CollabMembershipService', () => {
       encodedInvitation: 'claudian-collab:v2:invite-alpha',
     });
 
-    expect(createClient).toHaveBeenCalledWith({
-      caCertificatePem: membershipRecord.authority.hostCaCertificatePem,
-      caFingerprint: membershipRecord.authority.hostCaFingerprint,
-      endpoint: membershipRecord.authority.endpoint,
-      projectId: 'project-alpha',
-    });
-    expect(control.createInvitation).toHaveBeenCalledWith({
+    expect(control.operations.createInvitation).toHaveBeenCalledWith({
       idempotencyKey: 'create-invitation-key',
-      memberCredential: membershipRecord.member.credential,
       projectId: 'project-alpha',
-    });
+    }, {});
   });
 
   it('routes administration with local identity and refreshes projection after mutations', async () => {
-    const membershipRecord = membership();
-    const projects = {
-      loadMembership: jest.fn().mockResolvedValue(membershipRecord),
-    };
     const snapshot: jest.Mocked<CollabMembershipSnapshotPort> = {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     };
     const control = client();
-    const service = new CollabMembershipService(projects, snapshot, {
-      createClient: () => control,
+    const service = new CollabMembershipService(control, snapshot, {
       createIdempotencyKey: kind => `${kind}-key`,
     }, safetyContext());
 
@@ -204,25 +167,22 @@ describe('CollabMembershipService', () => {
       projectId: 'project-alpha',
     });
 
-    expect(control.promoteManager).toHaveBeenCalledWith({
+    expect(control.operations.promoteManager).toHaveBeenCalledWith({
       idempotencyKey: 'promote-manager-key',
       managerResponsibilityOfferId: 'offer-transfer',
-      memberCredential: membershipRecord.member.credential,
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
-    });
-    expect(control.demoteManager).toHaveBeenCalledWith({
+    }, {});
+    expect(control.operations.demoteManager).toHaveBeenCalledWith({
       idempotencyKey: 'demote-manager-key',
-      memberCredential: membershipRecord.member.credential,
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
-    });
-    expect(control.removeMember).toHaveBeenCalledWith({
+    }, {});
+    expect(control.operations.removeMember).toHaveBeenCalledWith({
       idempotencyKey: 'remove-member-key',
-      memberCredential: membershipRecord.member.credential,
       memberId: 'member-a',
       projectId: 'project-alpha',
-    });
+    }, {});
     expect(snapshot.readCoordinationSnapshot).toHaveBeenCalledTimes(3);
   });
 
@@ -236,11 +196,12 @@ describe('CollabMembershipService', () => {
     const snapshot: jest.Mocked<CollabMembershipSnapshotPort> = {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership()),
-    }, snapshot, {
-      createClient: () => control,
-    }, safetyContext({ managerResponsibilityAdmission }));
+    const service = new CollabMembershipService(
+      control,
+      snapshot,
+      {},
+      safetyContext({ managerResponsibilityAdmission }),
+    );
 
     await expect(service.promoteManager({
       managerResponsibilityOfferId: 'offer-transfer',
@@ -250,13 +211,13 @@ describe('CollabMembershipService', () => {
       safeContext: { reason: 'lifecycle-owner-pending' },
     });
 
-    expect(control.promoteManager).not.toHaveBeenCalled();
+    expect(control.operations.promoteManager).not.toHaveBeenCalled();
     expect(snapshot.readCoordinationSnapshot).not.toHaveBeenCalled();
   });
 
   it('reuses a caller mutation intent after a lost administration response', async () => {
     const control = client();
-    control.demoteManager
+    control.operations.demoteManager
       .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
       .mockResolvedValueOnce({
         demotedMemberId: 'member-a',
@@ -264,12 +225,9 @@ describe('CollabMembershipService', () => {
         projectId: 'project-alpha',
       });
     const createIdempotencyKey = jest.fn((kind: string) => `${kind}-generated`);
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership()),
-    }, {
+    const service = new CollabMembershipService(control, {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     }, {
-      createClient: () => control,
       createIdempotencyKey,
     }, safetyContext());
     const request = {
@@ -283,7 +241,7 @@ describe('CollabMembershipService', () => {
     });
     await expect(service.demoteManager(request)).resolves.toBeUndefined();
 
-    expect(control.demoteManager.mock.calls.map(([input]) => input.idempotencyKey))
+    expect(control.operations.demoteManager.mock.calls.map(([input]) => input.idempotencyKey))
       .toEqual([
         'demote-manager-retry_same_demotion',
         'demote-manager-retry_same_demotion',
@@ -293,7 +251,7 @@ describe('CollabMembershipService', () => {
 
   it('maps every Manager administration intent to a stable operation-specific key', async () => {
     const control = client();
-    control.createManagerResponsibilityOffer.mockResolvedValue({
+    control.operations.createManagerResponsibilityOffer.mockResolvedValue({
       expiresAt: '2026-08-08T00:15:00.000Z',
       offeredAt: CREATED_AT,
       offerId: 'offer-one',
@@ -303,12 +261,9 @@ describe('CollabMembershipService', () => {
       targetMemberId: 'member-a',
     });
     const createIdempotencyKey = jest.fn((kind: string) => `${kind}-generated`);
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership()),
-    }, {
+    const service = new CollabMembershipService(control, {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     }, {
-      createClient: () => control,
       createIdempotencyKey,
     }, safetyContext());
 
@@ -335,45 +290,35 @@ describe('CollabMembershipService', () => {
       projectId: 'project-alpha',
     });
 
-    expect(control.createManagerResponsibilityOffer).toHaveBeenCalledWith(
+    expect(control.operations.createManagerResponsibilityOffer).toHaveBeenCalledWith(
       expect.objectContaining({
         idempotencyKey: 'manager-responsibility-offer-offer_intent',
       }),
+      {},
     );
-    expect(control.promoteManager).toHaveBeenCalledWith(expect.objectContaining({
+    expect(control.operations.promoteManager).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: 'promote-manager-promote_intent',
-    }));
-    expect(control.demoteManager).toHaveBeenCalledWith(expect.objectContaining({
+    }), {});
+    expect(control.operations.demoteManager).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: 'demote-manager-demote_intent',
-    }));
-    expect(control.removeMember).toHaveBeenCalledWith(expect.objectContaining({
+    }), {});
+    expect(control.operations.removeMember).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: 'remove-member-remove_intent',
-    }));
+    }), {});
     expect(createIdempotencyKey).not.toHaveBeenCalled();
   });
 
-  it('fails closed before constructing a client when stored Host trust is absent', async () => {
-    const record = membership({
-      authority: {
-        endpoint: null,
-        gitRemoteUrl: null,
-        hostCaCertificatePem: null,
-        hostCaFingerprint: null,
-        kind: 'lan',
-      },
-    });
-    const createClient = jest.fn();
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(record),
-    }, {
+  it('propagates shared authority control failures', async () => {
+    const control = client();
+    control.operations.removeMember.mockRejectedValue(new CollabError({ code: 'host-stopped' }));
+    const service = new CollabMembershipService(control, {
       readCoordinationSnapshot: jest.fn(),
-    }, { createClient }, safetyContext());
+    }, {}, safetyContext());
 
     await expect(service.removeMember({
       memberId: 'member-a',
       projectId: 'project-alpha',
     })).rejects.toMatchObject({ code: 'host-stopped' });
-    expect(createClient).not.toHaveBeenCalled();
   });
 
   it('recovers a lost Manager acknowledgement response without sending another mutation', async () => {
@@ -392,25 +337,15 @@ describe('CollabMembershipService', () => {
       acknowledgedAt: '2026-08-08T00:01:00.000Z',
       status: 'acknowledged' as const,
     };
-    control.getManagerResponsibilityOffer.mockResolvedValue(acknowledged);
+    control.operations.getManagerResponsibilityOffer.mockResolvedValue(acknowledged);
     const receipts = {
       load: jest.fn(async () => null),
       remove: jest.fn(async () => false),
       save: jest.fn(async () => undefined),
     };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership({
-        member: {
-          credential: Buffer.alloc(32, 1).toString('base64url'),
-          displayName: 'Target',
-          id: 'member-target',
-          personalRef: 'refs/heads/members/member-target',
-          role: 'member',
-        },
-      })),
-    }, {
+    const service = new CollabMembershipService(control, {
       readCoordinationSnapshot: jest.fn(),
-    }, { createClient: () => control }, safetyContext({
+    }, {}, safetyContext({
       managerReceipts: receipts,
     }));
 
@@ -427,7 +362,7 @@ describe('CollabMembershipService', () => {
 
     await expect(service.reconcileManagerResponsibilitySnapshot(projected))
       .resolves.toEqual(acknowledged);
-    expect(control.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
+    expect(control.operations.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
     expect(receipts.save).toHaveBeenCalledWith('project-alpha', acknowledged);
   });
 
@@ -447,26 +382,19 @@ describe('CollabMembershipService', () => {
       acknowledgedAt: '2026-08-08T00:01:00.000Z',
       status: 'acknowledged' as const,
     };
-    control.getManagerResponsibilityOffer.mockResolvedValue(offered);
-    control.acknowledgeManagerResponsibility.mockResolvedValue(acknowledged);
+    control.operations.getManagerResponsibilityOffer.mockResolvedValue(offered);
+    control.operations.acknowledgeManagerResponsibility.mockResolvedValue(acknowledged);
     const receipts = {
       load: jest.fn(async () => null),
       remove: jest.fn(async () => false),
       save: jest.fn(async () => undefined),
     };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership({
-        member: {
-          credential: Buffer.alloc(32, 1).toString('base64url'),
-          displayName: 'Target',
-          id: 'member-target',
-          personalRef: 'refs/heads/members/member-target',
-          role: 'member',
-        },
-      })),
-    }, { readCoordinationSnapshot: jest.fn() }, {
-      createClient: () => control,
-    }, safetyContext({ managerReceipts: receipts }));
+    const service = new CollabMembershipService(
+      control,
+      { readCoordinationSnapshot: jest.fn() },
+      {},
+      safetyContext({ managerReceipts: receipts }),
+    );
     const projected = {
       ...coordination().snapshot,
       currentMember: {
@@ -480,9 +408,9 @@ describe('CollabMembershipService', () => {
 
     await expect(service.reconcileManagerResponsibilitySnapshot(projected))
       .resolves.toEqual(acknowledged);
-    expect(control.acknowledgeManagerResponsibility).toHaveBeenCalledWith(expect.objectContaining({
+    expect(control.operations.acknowledgeManagerResponsibility).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: 'manager-ack-offer-one',
-    }));
+    }), {});
     expect(receipts.save).toHaveBeenNthCalledWith(1, 'project-alpha', offered);
     expect(receipts.save).toHaveBeenNthCalledWith(2, 'project-alpha', acknowledged);
   });
@@ -504,11 +432,12 @@ describe('CollabMembershipService', () => {
       remove: jest.fn(async () => true),
       save: jest.fn(async () => undefined),
     };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership()),
-    }, { readCoordinationSnapshot: jest.fn() }, {
-      createClient: () => control,
-    }, safetyContext({ managerReceipts: receipts }));
+    const service = new CollabMembershipService(
+      control,
+      { readCoordinationSnapshot: jest.fn() },
+      {},
+      safetyContext({ managerReceipts: receipts }),
+    );
     const projected = {
       ...coordination().snapshot,
       currentMember: {
@@ -524,8 +453,8 @@ describe('CollabMembershipService', () => {
       .resolves.toEqual(acknowledged);
     expect(receipts.remove).toHaveBeenCalledWith('project-alpha');
     expect(receipts.save).toHaveBeenCalledWith('project-alpha', acknowledged);
-    expect(control.getManagerResponsibilityOffer).not.toHaveBeenCalled();
-    expect(control.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
+    expect(control.operations.getManagerResponsibilityOffer).not.toHaveBeenCalled();
+    expect(control.operations.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
   });
 
   it('removes a receipt after the authority no longer projects its offer', async () => {
@@ -534,11 +463,12 @@ describe('CollabMembershipService', () => {
       remove: jest.fn(async () => true),
       save: jest.fn(async () => undefined),
     };
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership()),
-    }, { readCoordinationSnapshot: jest.fn() }, {}, safetyContext({
-      managerReceipts: receipts,
-    }));
+    const service = new CollabMembershipService(
+      client(),
+      { readCoordinationSnapshot: jest.fn() },
+      {},
+      safetyContext({ managerReceipts: receipts }),
+    );
 
     await expect(service.reconcileManagerResponsibilitySnapshot(coordination().snapshot))
       .resolves.toBeNull();
@@ -556,22 +486,15 @@ describe('CollabMembershipService', () => {
       status: 'declined' as const,
       targetMemberId: 'member-target',
     };
-    control.declineManagerResponsibility.mockResolvedValue(declined);
-    const service = new CollabMembershipService({
-      loadMembership: jest.fn().mockResolvedValue(membership({
-        member: {
-          credential: Buffer.alloc(32, 1).toString('base64url'),
-          displayName: 'Target',
-          id: 'member-target',
-          personalRef: 'refs/heads/members/member-target',
-          role: 'member',
-        },
-      })),
-    }, { readCoordinationSnapshot: jest.fn() }, {
-      createClient: () => control,
-    }, safetyContext({
-      pendingLeaves: { load: jest.fn().mockResolvedValue({ phase: 'queued' }) },
-    }));
+    control.operations.declineManagerResponsibility.mockResolvedValue(declined);
+    const service = new CollabMembershipService(
+      control,
+      { readCoordinationSnapshot: jest.fn() },
+      {},
+      safetyContext({
+        pendingLeaves: { load: jest.fn().mockResolvedValue({ phase: 'queued' }) },
+      }),
+    );
     const projected = {
       ...coordination().snapshot,
       currentMember: {
@@ -585,9 +508,9 @@ describe('CollabMembershipService', () => {
 
     await expect(service.reconcileManagerResponsibilitySnapshot(projected))
       .resolves.toEqual(declined);
-    expect(control.declineManagerResponsibility).toHaveBeenCalledWith(expect.objectContaining({
+    expect(control.operations.declineManagerResponsibility).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: 'manager-decline-offer-one',
-    }));
-    expect(control.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
+    }), {});
+    expect(control.operations.acknowledgeManagerResponsibility).not.toHaveBeenCalled();
   });
 });

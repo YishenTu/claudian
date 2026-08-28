@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -121,6 +122,7 @@ describe('Project exit foundation gate', () => {
   it('keeps terminal storage behind a minimum no-secret record boundary', async () => {
     const store = new MemoryTombstoneStore();
     const repository = new RetirementTombstoneRepository(store, {
+      isRecoveryOwner: () => true,
       now: () => new Date('2026-08-13T08:00:00.000Z'),
     });
     await repository.savePrepared({
@@ -132,6 +134,7 @@ describe('Project exit foundation gate', () => {
       }],
       hostTransitionProofs: [],
       kind: 'retirement-tombstone',
+    ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-alpha',
       replay: {
         actorMemberId: 'member-host',
@@ -143,7 +146,7 @@ describe('Project exit foundation gate', () => {
         retiredAt: '2026-08-13T08:00:00.000Z',
       },
       retiredAt: '2026-08-13T08:00:00.000Z',
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     const json = JSON.stringify(store.record);
@@ -212,8 +215,12 @@ describe('Project exit foundation gate', () => {
     const sourceVault = path.join(root, 'source-vault');
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
-    const sourceIdentity = new LanTlsIdentity(sourceVault);
-    const targetIdentity = new LanTlsIdentity(targetVault);
+    const sourceIdentity = new LanTlsIdentity(sourceVault, {
+      installationKey: TEST_INSTALLATION_A,
+    });
+    const targetIdentity = new LanTlsIdentity(targetVault, {
+      installationKey: TEST_INSTALLATION_B,
+    });
     const [sourceSigner, targetCa] = await Promise.all([
       sourceIdentity.hostCaSigner(),
       targetIdentity.loadOrCreate(),
@@ -277,9 +284,11 @@ describe('Project exit foundation gate', () => {
     ));
 
     const tombstones = new RetirementTombstoneRepository(new MemoryTombstoneStore(), {
+      isRecoveryOwner: () => true,
       now: () => new Date('2026-08-13T01:04:00.000Z'),
     });
     const retirement = new ProjectRetirementAuthorityService(database, tombstones, {
+      installationKey: TEST_INSTALLATION_A,
       now: () => new Date('2026-08-13T01:04:00.000Z'),
     });
     const retired = await retirement.retire('member-successor', {

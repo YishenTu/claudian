@@ -25,6 +25,7 @@ function project(
     authorityKind: 'lan',
     connectionStatus: 'connected',
     health: 'healthy',
+    hostInstallationStatus: 'not-host',
     hostStatus: 'not-host',
     id,
     name: id === 'project-a' ? 'Alpha' : 'Beta',

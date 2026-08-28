@@ -9,6 +9,7 @@ import type { RetirementTombstoneRecord } from '@/app/collab/retirement/Retireme
 import type { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 import type { CollabRetirementResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 
@@ -22,6 +23,7 @@ export interface ProjectRetirementAuthorityRequest {
 }
 
 export interface ProjectRetirementAuthorityServiceOptions {
+  readonly installationKey: InstallationKey;
   readonly now?: () => Date;
   readonly onAuthorityCommitted?: () => void;
   readonly onTombstoneCommitted?: () => void;
@@ -45,7 +47,7 @@ export class ProjectRetirementAuthorityService {
   constructor(
     private readonly database: SqlJsProjectDatabase,
     private readonly tombstones: RetirementTombstoneRepository,
-    options: ProjectRetirementAuthorityServiceOptions = {},
+    private readonly options: ProjectRetirementAuthorityServiceOptions,
   ) {
     this.now = options.now ?? (() => new Date());
     this.onAuthorityCommitted = options.onAuthorityCommitted;
@@ -120,6 +122,7 @@ export class ProjectRetirementAuthorityService {
       })),
       hostTransitionProofs: prepared.hostTransitionProofs,
       kind: 'retirement-tombstone',
+      ownerInstallationKey: this.options.installationKey,
       projectId: prepared.projectId,
       replay: {
         actorMemberId: prepared.actorMemberId,
@@ -128,7 +131,7 @@ export class ProjectRetirementAuthorityService {
       },
       result: { projectId: prepared.projectId, retiredAt },
       retiredAt,
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
   }
 }

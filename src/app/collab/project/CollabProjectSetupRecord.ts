@@ -1,8 +1,9 @@
 import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabGitOid, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { parseCollabProjectsFolder } from '@/core/collab';
+import { type InstallationKey, parseInstallationKey } from '@/core/device/InstallationKey';
 
-export const COLLAB_PROJECT_SETUP_SCHEMA_VERSION = 2 as const;
+export const COLLAB_PROJECT_SETUP_SCHEMA_VERSION = 3 as const;
 
 export type CollabProjectSetupPhase =
   | 'planned'
@@ -11,7 +12,8 @@ export type CollabProjectSetupPhase =
   | 'clone-completed';
 
 export interface CollabProjectSetupRecord {
-  readonly schemaVersion: typeof COLLAB_PROJECT_SETUP_SCHEMA_VERSION;
+  readonly schemaVersion: 2 | typeof COLLAB_PROJECT_SETUP_SCHEMA_VERSION;
+  readonly ownerInstallationKey?: InstallationKey;
   readonly projectId: CollabProjectId;
   readonly operationId: CollabOperationId;
   readonly phase: CollabProjectSetupPhase;
@@ -68,10 +70,22 @@ function timestampField(value: UnknownRecord, key: string): string {
 }
 
 export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSetupRecord {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
+  if (
+    !isRecord(value)
+    || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3)
+  ) {
     throw new TypeError('Invalid Project setup record');
   }
   const legacy = value.schemaVersion === 1;
+  if (
+    value.schemaVersion !== COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+    && value.ownerInstallationKey !== undefined
+  ) {
+    throw new TypeError('Invalid Project setup owner');
+  }
+  const ownerInstallationKey = value.schemaVersion === COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+    ? parseInstallationKey(value.ownerInstallationKey)
+    : undefined;
   const phase = value.phase;
   if (
     phase !== 'planned'
@@ -134,10 +148,13 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       if (!isCollabOpaqueId(operationId)) throw new TypeError('Invalid operationId');
       return operationId;
     })(),
+    ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
     phase,
     projectId,
     projectsFolder,
-    schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
+    schemaVersion: value.schemaVersion === COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+      ? COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+      : 2,
     seedDirectoryName,
     slug: stringField(value, 'slug', 64, SAFE_SLUG_PATTERN),
     updatedAt: timestampField(value, 'updatedAt'),
@@ -146,4 +163,21 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       : {}),
     ...(legacy && phase === 'planned' ? { legacyImportPlanned: true as const } : {}),
   };
+}
+
+export function bindLegacyCollabProjectSetupOwner(
+  record: CollabProjectSetupRecord,
+  ownerInstallationKey: InstallationKey,
+): CollabProjectSetupRecord {
+  if (record.schemaVersion === COLLAB_PROJECT_SETUP_SCHEMA_VERSION) {
+    if (record.ownerInstallationKey !== ownerInstallationKey) {
+      throw new TypeError('Project setup owner changed');
+    }
+    return record;
+  }
+  return decodeCollabProjectSetupRecord({
+    ...record,
+    ownerInstallationKey,
+    schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
+  });
 }

@@ -1,10 +1,7 @@
 import { type CollabRequestDetail } from '@claudian-collab/protocol';
 
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
-import {
-  collabStoppedHostRemoteUrl,
-  type GitRepositoryService,
-} from '@/app/collab/git/GitRepositoryService';
+import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {
   NativeGitReviewRepository,
   type ReviewGitNetworkPort,
@@ -17,7 +14,6 @@ const HEAD = '2'.repeat(40);
 const TREE = '3'.repeat(40);
 const ADVANCED = '4'.repeat(40);
 const REMOTE_URL = 'https://192.168.1.20/repository.git';
-const PREVIOUS_HOST_URL = 'https://192.168.1.20:54545/v1/git/project-a/repository.git';
 const CURRENT_HOST_URL = 'https://192.168.1.21:54545/v1/git/project-a/repository.git';
 const NETWORK: GitNetworkEnvironment = {
   headers: [{ name: 'Authorization', value: 'Basic Zm9vOmJhcg==' }],
@@ -37,7 +33,7 @@ describe('NativeGitReviewRepository', () => {
     });
 
     expect(reviewNetwork.withNetwork).not.toHaveBeenCalled();
-    expect(git.fetch).not.toHaveBeenCalled();
+    expect(git.fetchFromUrl).not.toHaveBeenCalled();
   });
 
   it('fetches exact refs and compares current main with the clean candidate tree', async () => {
@@ -77,9 +73,9 @@ describe('NativeGitReviewRepository', () => {
       }],
       projectId: 'project-a',
     });
-    expect(git.fetch).toHaveBeenCalledWith(
+    expect(git.fetchFromUrl).toHaveBeenCalledWith(
       '/vault/workspace/project-a',
-      'origin',
+      REMOTE_URL,
       [
         '+refs/heads/main:refs/remotes/origin/main',
         '+refs/heads/members/member-a:refs/remotes/origin/members/member-a',
@@ -161,19 +157,8 @@ describe('NativeGitReviewRepository', () => {
     )).rejects.toMatchObject({ code: 'stale-request-head' });
   });
 
-  it('rejects remote and advertised OID drift before building review data', async () => {
+  it('rejects advertised OID drift before building review data', async () => {
     const git = fakeGit();
-    git.listRemoteUrls.mockResolvedValue(['https://other.test/repository.git']);
-    await expect(new NativeGitReviewRepository(git, network()).prepare(
-      context(),
-      detail('clean'),
-    )).rejects.toMatchObject({
-      code: 'repository-invalid',
-      safeContext: { reason: 'review-origin-url-mismatch' },
-    });
-    expect(git.fetch).not.toHaveBeenCalled();
-
-    git.listRemoteUrls.mockResolvedValue([REMOTE_URL]);
     git.resolveRefs.mockResolvedValue(new Map([
       ['refs/remotes/origin/main', ADVANCED],
       ['refs/remotes/origin/members/member-a', HEAD],
@@ -185,55 +170,44 @@ describe('NativeGitReviewRepository', () => {
     expect(git.listChangedBlobs).not.toHaveBeenCalled();
   });
 
-  it('repairs only the generated stopped-Host origin for an authority owner', async () => {
+  it('uses the operation-scoped authority target without rewriting the configured origin', async () => {
     const git = fakeGit();
-    git.listRemoteUrls
-      .mockResolvedValueOnce([collabStoppedHostRemoteUrl('project-a')])
-      .mockResolvedValueOnce([REMOTE_URL]);
+    git.resolveRefs
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(new Map([
+        ['refs/remotes/origin/main', MAIN],
+        ['refs/remotes/origin/members/member-a', HEAD],
+      ]));
 
-    await expect(new NativeGitReviewRepository(git, network()).prepare(
-      context({ allowHostRemoteRepair: true }),
+    await expect(new NativeGitReviewRepository(git, network(CURRENT_HOST_URL)).prepare(
+      context(),
       detail('clean'),
     )).resolves.toMatchObject({ projectId: 'project-a' });
-    expect(git.addRemote).toHaveBeenCalledWith(
+    expect(git.fetchFromUrl).toHaveBeenCalledWith(
       '/vault/workspace/project-a',
-      'origin',
-      REMOTE_URL,
+      CURRENT_HOST_URL,
+      expect.any(Array),
+      NETWORK,
+      undefined,
     );
-
-    git.listRemoteUrls.mockReset()
-      .mockResolvedValue(['https://other.test/repository.git']);
-    await expect(new NativeGitReviewRepository(git, network()).prepare(
-      context({ allowHostRemoteRepair: true }),
-      detail('clean'),
-    )).rejects.toMatchObject({ code: 'repository-invalid' });
-    expect(git.addRemote).toHaveBeenCalledTimes(1);
+    expect(git.addRemote).not.toHaveBeenCalled();
+    expect(git.listRemoteUrls).toHaveBeenCalledWith('/vault/workspace/project-a', 'origin');
   });
 
-  it('repairs a generated same-Project Host origin after the LAN address changes', async () => {
+  it('rejects a configured origin outside the synchronized Project authority before local review', async () => {
     const git = fakeGit();
-    git.listRemoteUrls
-      .mockResolvedValueOnce([PREVIOUS_HOST_URL])
-      .mockResolvedValueOnce([CURRENT_HOST_URL]);
+    const reviewNetwork = network();
+    git.listRemoteUrls.mockResolvedValue(['https://attacker.example/repository.git']);
 
-    await expect(new NativeGitReviewRepository(git, network()).prepare(
-      context({ allowHostRemoteRepair: true, remoteUrl: CURRENT_HOST_URL }),
+    await expect(new NativeGitReviewRepository(git, reviewNetwork).prepare(
+      context(),
       detail('clean'),
-    )).resolves.toMatchObject({ projectId: 'project-a' });
-    expect(git.addRemote).toHaveBeenCalledWith(
-      '/vault/workspace/project-a',
-      'origin',
-      CURRENT_HOST_URL,
-    );
-
-    git.listRemoteUrls.mockReset().mockResolvedValue([
-      'https://192.168.1.20:54545/v1/git/project-other/repository.git',
-    ]);
-    await expect(new NativeGitReviewRepository(git, network()).prepare(
-      context({ allowHostRemoteRepair: true, remoteUrl: CURRENT_HOST_URL }),
-      detail('clean'),
-    )).rejects.toMatchObject({ code: 'repository-invalid' });
-    expect(git.addRemote).toHaveBeenCalledTimes(1);
+    )).rejects.toMatchObject({
+      code: 'repository-invalid',
+      safeContext: { reason: 'review-origin-mismatch' },
+    });
+    expect(git.withReadSession).not.toHaveBeenCalled();
+    expect(reviewNetwork.withNetwork).not.toHaveBeenCalled();
   });
 
   it('returns text, large-text, and safe binary-preview models one file at a time', async () => {
@@ -302,7 +276,6 @@ function context(overrides: Partial<ReturnType<typeof baseContext>> = {}) {
 
 function baseContext() {
   return {
-    allowHostRemoteRepair: false,
     memberId: 'member-reviewer',
     personalRef: 'refs/heads/members/member-reviewer',
     projectId: 'project-a',
@@ -349,16 +322,16 @@ function fileRequest(file: {
   };
 }
 
-function network(): ReviewGitNetworkPort {
+function network(remoteUrl = REMOTE_URL): ReviewGitNetworkPort {
   return {
-    withNetwork: jest.fn(async (_context, operation) => operation(NETWORK)),
+    withNetwork: jest.fn(async (_context, operation) => operation(NETWORK, remoteUrl)),
   };
 }
 
 function fakeGit(): jest.Mocked<GitRepositoryService> {
   const git = {
     addRemote: jest.fn().mockResolvedValue(undefined),
-    fetch: jest.fn().mockResolvedValue(undefined),
+    fetchFromUrl: jest.fn().mockResolvedValue(undefined),
     findMergeBase: jest.fn().mockResolvedValue(BASE),
     getWorkingTreeState: jest.fn(),
     isAncestor: jest.fn().mockResolvedValue(false),

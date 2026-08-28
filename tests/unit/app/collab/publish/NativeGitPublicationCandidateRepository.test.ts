@@ -19,7 +19,6 @@ const MAIN = '2'.repeat(40);
 const TREE = '3'.repeat(40);
 const CANDIDATE = '4'.repeat(40);
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

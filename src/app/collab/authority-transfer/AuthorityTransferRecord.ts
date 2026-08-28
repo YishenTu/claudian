@@ -11,7 +11,12 @@ import {
   isCollabOpaqueId,
 } from '@claudian-collab/protocol';
 
-export const AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION = 1 as const;
+import {
+  type InstallationKey,
+  parseInstallationKey,
+} from '@/core/device/InstallationKey';
+
+export const AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION = 2 as const;
 
 export type AuthorityTransferLocalRole = 'source' | 'target';
 export type AuthorityTransferLifecycleOwnership = 'owned' | 'proposal';
@@ -24,7 +29,8 @@ export interface AuthorityTransferTerminalResponder {
 }
 
 export interface AuthorityTransferRecord {
-  readonly schemaVersion: typeof AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION;
+  readonly schemaVersion: 1 | typeof AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION;
+  readonly ownerInstallationKey?: InstallationKey;
   readonly kind: 'authority-transfer';
   readonly lifecycleOwnership: AuthorityTransferLifecycleOwnership;
   readonly localRole: AuthorityTransferLocalRole;
@@ -40,7 +46,7 @@ export interface AuthorityTransferRecord {
   readonly transferId: string;
 }
 
-const RECORD_KEYS = new Set([
+const LEGACY_RECORD_KEYS = new Set([
   'schemaVersion',
   'kind',
   'lifecycleOwnership',
@@ -56,10 +62,12 @@ const RECORD_KEYS = new Set([
   'terminalResponder',
   'transferId',
 ]);
+const RECORD_KEYS = new Set([...LEGACY_RECORD_KEYS, 'ownerInstallationKey']);
 const LEGACY_RECORD_KEY_SETS = [
-  new Set([...RECORD_KEYS].filter(key => key !== 'receiptVerifier')),
-  new Set([...RECORD_KEYS].filter(key => key !== 'sourceLanEndpoint')),
-  new Set([...RECORD_KEYS].filter(
+  LEGACY_RECORD_KEYS,
+  new Set([...LEGACY_RECORD_KEYS].filter(key => key !== 'receiptVerifier')),
+  new Set([...LEGACY_RECORD_KEYS].filter(key => key !== 'sourceLanEndpoint')),
+  new Set([...LEGACY_RECORD_KEYS].filter(
     key => key !== 'receiptVerifier' && key !== 'sourceLanEndpoint',
   )),
 ];
@@ -168,18 +176,25 @@ function decodeTerminalResponder(
 }
 
 export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransferRecord {
+  const schemaVersion = isRecord(value) ? value.schemaVersion : undefined;
   if (
     !isRecord(value)
     || (
-      !exactKeys(value, RECORD_KEYS)
-      && !LEGACY_RECORD_KEY_SETS.some(keys => exactKeys(value, keys))
+      (schemaVersion === AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION
+        && !exactKeys(value, RECORD_KEYS))
+      || (schemaVersion === 1
+        && !LEGACY_RECORD_KEY_SETS.some(keys => exactKeys(value, keys)))
+      || (schemaVersion !== 1 && schemaVersion !== AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION)
     )
   ) {
     throw new TypeError('Invalid authority transfer record');
   }
-  if (value.schemaVersion !== 1 || value.kind !== 'authority-transfer') {
+  if (value.kind !== 'authority-transfer') {
     throw new TypeError('Invalid authority transfer record');
   }
+  const ownerInstallationKey = schemaVersion === AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION
+    ? parseInstallationKey(value.ownerInstallationKey)
+    : undefined;
   const localRole = value.localRole;
   const lifecycleOwnership = value.lifecycleOwnership;
   const operationIntentId = value.operationIntentId;
@@ -258,10 +273,11 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     lifecycleOwnership,
     localRole,
     operationIntentId,
+    ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
     projectId: status.projectId,
     receiptVerifier,
     restartFence,
-    schemaVersion: 1,
+    schemaVersion,
     sourceLanEndpoint,
     stagingDirectoryName,
     status,
@@ -275,6 +291,7 @@ export function createAuthorityTransferRecord(input: {
   readonly localRole: AuthorityTransferLocalRole;
   readonly lifecycleOwnership?: AuthorityTransferLifecycleOwnership;
   readonly operationIntentId: string;
+  readonly ownerInstallationKey: InstallationKey | string;
   readonly receiptVerifier?: CollabAuthorityTransferReceiptVerifier | null;
   readonly sourceLanEndpoint?: string | null;
   readonly stagingDirectoryName: string;
@@ -288,16 +305,37 @@ export function createAuthorityTransferRecord(input: {
     lifecycleOwnership,
     localRole: input.localRole,
     operationIntentId: input.operationIntentId,
+    ownerInstallationKey: input.ownerInstallationKey,
     projectId: status.projectId,
     receiptVerifier: input.receiptVerifier ?? null,
     restartFence: expectedRestartFence(input.localRole, lifecycleOwnership, status),
-    schemaVersion: 1,
+    schemaVersion: AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION,
     sourceLanEndpoint: input.sourceLanEndpoint ?? null,
     stagingDirectoryName: input.stagingDirectoryName,
     status,
     terminalCleanupCompleted: false,
     terminalResponder: expectedTerminalResponder(input.localRole, status),
     transferId: status.transferId,
+  });
+}
+
+export function bindLegacyAuthorityTransferSourceOwner(
+  record: AuthorityTransferRecord,
+  ownerInstallationKey: InstallationKey,
+): AuthorityTransferRecord {
+  if (record.localRole !== 'source') {
+    throw new TypeError('Authority transfer target owner is ambiguous');
+  }
+  if (record.schemaVersion === AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION) {
+    if (record.ownerInstallationKey !== ownerInstallationKey) {
+      throw new TypeError('Authority transfer owner changed');
+    }
+    return record;
+  }
+  return decodeAuthorityTransferRecord({
+    ...record,
+    ownerInstallationKey,
+    schemaVersion: AUTHORITY_TRANSFER_RECORD_SCHEMA_VERSION,
   });
 }
 
@@ -377,6 +415,7 @@ export function assertAuthorityTransferTransition(
     previous.projectId !== next.projectId
     || previous.transferId !== next.transferId
     || previous.operationIntentId !== next.operationIntentId
+    || previous.ownerInstallationKey !== next.ownerInstallationKey
     || previous.localRole !== next.localRole
     || previous.stagingDirectoryName !== next.stagingDirectoryName
     || (

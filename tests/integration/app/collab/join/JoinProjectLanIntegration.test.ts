@@ -11,6 +11,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian-collab/protocol';
+import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -131,7 +135,9 @@ describe('Join Project same-device LAN integration', () => {
       projectId: PROJECT_ID,
     }));
 
-    const identity = await new LanTlsIdentity(hostRoot).issueServerIdentity('127.0.0.1');
+    const identity = await new LanTlsIdentity(hostRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    }).issueServerIdentity('127.0.0.1');
     const router = new CollabControlRouter();
     server = createServer({
       cert: identity.certificateChainPem,
@@ -198,6 +204,7 @@ describe('Join Project same-device LAN integration', () => {
     });
     memberFoundation = new ClaudianCollabService({
       getConfiguredGitPath: () => runtime.executablePath,
+      installationKey: TEST_INSTALLATION_B,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: memberRoot,
     });

@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "LAN Host",
+      "hostedHere": "이 기기에서 호스팅됨",
+      "hostedElsewhere": "다른 기기에서 호스팅됨",
+      "legacyClaimConfirmation": "이 기기를 Host 소유 기기로 사용하시겠습니까?",
+      "legacyClaimAction": "이 기기 사용",
       "status": {
         "stopped": "중지됨",
         "starting": "시작 중",

@@ -10,6 +10,7 @@ const PROJECT: CollabLocalProjectSummary = {
   authorityKind: 'lan',
   connectionStatus: 'connected',
   health: 'healthy',
+  hostInstallationStatus: 'hosted-here',
   hostStatus: 'running',
   id: 'project-alpha',
   name: 'Alpha',

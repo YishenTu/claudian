@@ -1,4 +1,5 @@
 import {
+  ensureTrustedCollabOrigin,
   rotateAuthorityTransferOrigin,
   rotateCloudBootstrapOrigin,
   rotateTrustedCollabOrigin,
@@ -47,6 +48,90 @@ describe('CollabGitOriginPolicy', () => {
     });
 
     expect(repository.addRemote).not.toHaveBeenCalled();
+  });
+
+  it('establishes the first trusted origin for a fresh Host Project', async () => {
+    const repository = git([]);
+
+    await rotateTrustedCollabOrigin(repository, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      newUrl,
+    );
+  });
+
+  it('repairs a legacy stopped-Host origin without creating a new sentinel', async () => {
+    const repository = git([
+      'https://127.0.0.1:1/claudian-collab/host-stopped/project-a',
+    ]);
+
+    await rotateTrustedCollabOrigin(repository, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      newUrl,
+    );
+  });
+
+  it('establishes an absent origin from the exact trusted membership route', async () => {
+    const repository = git([]);
+
+    await ensureTrustedCollabOrigin(repository, {
+      projectId,
+      remoteUrl: newUrl,
+      repositoryPath: '/vault/workspace/project-a',
+    }, 'origin-mismatch');
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      newUrl,
+    );
+  });
+
+  it('rejects a failed first-origin write', async () => {
+    const repository = {
+      addRemote: jest.fn().mockResolvedValue(undefined),
+      listRemoteUrls: jest.fn().mockResolvedValue([]),
+    };
+
+    await expect(rotateTrustedCollabOrigin(repository, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    })).rejects.toMatchObject({ code: 'repository-invalid' });
+  });
+
+  it('rotates an older same-Project origin after the Host address changed', async () => {
+    const previousUrl = 'https://192.168.1.5:54545/v1/git/project-a/repository.git';
+    const repository = git([previousUrl]);
+
+    await rotateTrustedCollabOrigin(repository, {
+      newRemoteUrl: newUrl,
+      oldRemoteUrl: oldUrl,
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    });
+
+    expect(repository.addRemote).toHaveBeenCalledWith(
+      '/vault/workspace/project-a',
+      'origin',
+      newUrl,
+    );
   });
 
   it.each([

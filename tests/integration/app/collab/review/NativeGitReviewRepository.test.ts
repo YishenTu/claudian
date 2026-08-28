@@ -88,10 +88,9 @@ describe('NativeGitReviewRepository integration', () => {
     });
     const detail = requestDetail(mainOid, headOid);
     const repository = new NativeGitReviewRepository(git, {
-      withNetwork: async (_context, operation) => operation(),
+      withNetwork: async (context, operation) => operation(undefined, context.remoteUrl!),
     });
     const context = {
-      allowHostRemoteRepair: false,
       memberId: 'member-reviewer',
       personalRef: 'refs/heads/members/member-reviewer',
       projectId: 'project-a',

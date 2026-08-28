@@ -28,13 +28,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const SAFE_REMOTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-export function collabStoppedHostRemoteUrl(projectId: string): string {
-  if (!isCollabProjectId(projectId)) {
-    throw repositoryError('repository-invalid', 'collab-project-id-invalid');
-  }
-  return `https://127.0.0.1:1/claudian-collab/host-stopped/${projectId}`;
-}
-
 export type GitStatusEntryKind = 'ordinary' | 'renamed' | 'unmerged' | 'untracked';
 
 export interface GitStatusEntry {
@@ -655,7 +648,7 @@ export class GitRepositoryService {
     expectedKind: GitRepositoryKind,
     operation: (session: GitRepositoryReadSession) => Promise<T>,
   ): Promise<T> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if ((repository.bare ? 'bare' : 'working') !== expectedKind) {
       throw repositoryError(
         'repository-invalid',
@@ -671,62 +664,62 @@ export class GitRepositoryService {
     const session: GitRepositoryReadSession = {
       countDivergence: async (leftOid, rightOid) => {
         ensureActive();
-        return this.countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid);
+        return this.#countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid);
       },
       findMergeBase: async (leftOid, rightOid) => {
         ensureActive();
-        return this.findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid);
+        return this.#findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid);
       },
       getWorkingTreeState: async () => {
         ensureActive();
-        return this.getWorkingTreeStateUnchecked(repository.repositoryPath);
+        return this.#getWorkingTreeStateUnchecked(repository.repositoryPath);
       },
       getWorkingTreeStatus: async () => {
         ensureActive();
-        return this.getWorkingTreeStatusUnchecked(repository.repositoryPath);
+        return this.#getWorkingTreeStatusUnchecked(repository.repositoryPath);
       },
       isAncestor: async (ancestorOid, descendantOid) => {
         ensureActive();
-        return this.isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid);
+        return this.#isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid);
       },
       listChangedBlobs: async (baseOid, headOid) => {
         ensureActive();
-        return this.listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid);
+        return this.#listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid);
       },
       listChangedFiles: async (baseOid, headOid) => {
         ensureActive();
-        return this.listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid);
+        return this.#listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid);
       },
       listWorkingTreeChangedFiles: async baseOid => {
         ensureActive();
-        return this.listWorkingTreeChangedFilesUnchecked(
+        return this.#listWorkingTreeChangedFilesUnchecked(
           repository.repositoryPath,
           baseOid,
         );
       },
       listRemoteUrls: async remote => {
         ensureActive();
-        return this.listRemoteUrlsUnchecked(repository.repositoryPath, remote);
+        return this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote);
       },
       listTreeRecursive: async commitOid => {
         ensureActive();
-        return this.listTreeRecursiveUnchecked(repository.repositoryPath, commitOid);
+        return this.#listTreeRecursiveUnchecked(repository.repositoryPath, commitOid);
       },
       mergeTree: async (acceptedOid, memberOid) => {
         ensureActive();
-        return this.mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid);
+        return this.#mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid);
       },
       readBlobsAtPaths: async requests => {
         ensureActive();
-        return this.readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
+        return this.#readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
       },
       resolveRef: async ref => {
         ensureActive();
-        return this.resolveRefUnchecked(repository.repositoryPath, ref);
+        return this.#resolveRefUnchecked(repository.repositoryPath, ref);
       },
       resolveRefs: async refs => {
         ensureActive();
-        return this.resolveRefsUnchecked(repository.repositoryPath, refs);
+        return this.#resolveRefsUnchecked(repository.repositoryPath, refs);
       },
     };
     try {
@@ -737,22 +730,22 @@ export class GitRepositoryService {
   }
 
   async initializeWorkingRepository(repositoryPath: string): Promise<void> {
-    await this.assertInitializationTarget(repositoryPath);
+    await this.#assertInitializationTarget(repositoryPath);
     await this.runner.run({
       args: ['init', '--quiet', '--initial-branch=main'],
       cwd: repositoryPath,
     });
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if (repository.bare) throw repositoryError('repository-invalid', 'working-repository-is-bare');
   }
 
   async initializeBareRepository(repositoryPath: string): Promise<void> {
-    await this.assertInitializationTarget(repositoryPath);
+    await this.#assertInitializationTarget(repositoryPath);
     await this.runner.run({
       args: ['init', '--bare', '--quiet', '--initial-branch=main'],
       cwd: repositoryPath,
     });
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if (!repository.bare) throw repositoryError('repository-invalid', 'authority-repository-not-bare');
   }
 
@@ -760,7 +753,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     config: GitLocalRepositoryConfig,
   ): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     if (!isCollabMemberId(config.memberId) || !isCollabProjectId(config.projectId)) {
       throw repositoryError('repository-invalid', 'collab-local-config-id-invalid');
     }
@@ -793,7 +786,7 @@ export class GitRepositoryService {
     expected: GitLocalRepositoryIdentity,
     signal?: AbortSignal,
   ): Promise<void> {
-    const repository = await this.inspectRepository(repositoryPath, signal);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
     if (repository.bare) {
       throw repositoryError('repository-invalid', 'collab-local-repository-is-bare');
     }
@@ -827,7 +820,7 @@ export class GitRepositoryService {
   }
 
   async configureHostedRepository(repositoryPath: string): Promise<void> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if (!repository.bare) {
       throw repositoryError('repository-invalid', 'hosted-repository-not-bare');
     }
@@ -845,7 +838,7 @@ export class GitRepositoryService {
   }
 
   async measureStorageBytes(repositoryPath: string): Promise<number> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if (!repository.bare) {
       throw repositoryError('repository-invalid', 'hosted-repository-not-bare');
     }
@@ -887,7 +880,7 @@ export class GitRepositoryService {
   }
 
   async stageAll(repositoryPath: string, signal?: AbortSignal): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     await this.runner.run({ args: ['add', '-A', '--'], cwd: repositoryPath, signal });
   }
 
@@ -895,7 +888,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     input: GitCommitFromIndexInput,
   ): Promise<string> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRef(input.ref);
     input.parents.forEach(assertOid);
     if (input.expectedRefOid !== null) assertOid(input.expectedRefOid);
@@ -903,12 +896,12 @@ export class GitRepositoryService {
       args: ['write-tree'],
       cwd: repositoryPath,
     })).stdout);
-    const commitOid = await this.commitTreeUnchecked(repositoryPath, {
+    const commitOid = await this.#commitTreeUnchecked(repositoryPath, {
       message: input.message,
       parents: input.parents,
       treeOid,
     });
-    const update = await this.compareAndSwapRefUnchecked(
+    const update = await this.#compareAndSwapRefUnchecked(
       repositoryPath,
       input.ref,
       commitOid,
@@ -919,25 +912,25 @@ export class GitRepositoryService {
   }
 
   async getWorkingTreeStatus(repositoryPath: string): Promise<readonly GitStatusEntry[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.getWorkingTreeStatusUnchecked(repository.repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#getWorkingTreeStatusUnchecked(repository.repositoryPath);
   }
 
-  private async getWorkingTreeStatusUnchecked(
+   async #getWorkingTreeStatusUnchecked(
     repositoryPath: string,
   ): Promise<readonly GitStatusEntry[]> {
-    return (await this.getWorkingTreeStateUnchecked(repositoryPath)).entries;
+    return (await this.#getWorkingTreeStateUnchecked(repositoryPath)).entries;
   }
 
   async getWorkingTreeState(
     repositoryPath: string,
     signal?: AbortSignal,
   ): Promise<GitWorkingTreeState> {
-    const repository = await this.inspectRepository(repositoryPath, signal);
-    return this.getWorkingTreeStateUnchecked(repository.repositoryPath, signal);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
+    return this.#getWorkingTreeStateUnchecked(repository.repositoryPath, signal);
   }
 
-  private async getWorkingTreeStateUnchecked(
+   async #getWorkingTreeStateUnchecked(
     repositoryPath: string,
     signal?: AbortSignal,
   ): Promise<GitWorkingTreeState> {
@@ -948,8 +941,8 @@ export class GitRepositoryService {
     });
     const state = parseGitWorkingTreeState(result.stdout);
     for (const entry of state.entries) {
-      this.requireRepositoryPath(entry.path);
-      if (entry.originalPath) this.requireRepositoryPath(entry.originalPath);
+      this.#requireRepositoryPath(entry.path);
+      if (entry.originalPath) this.#requireRepositoryPath(entry.originalPath);
     }
     return state;
   }
@@ -959,8 +952,8 @@ export class GitRepositoryService {
     ref: string,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    const repository = await this.inspectRepository(repositoryPath, signal);
-    return this.resolveRefUnchecked(repository.repositoryPath, ref, signal);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
+    return this.#resolveRefUnchecked(repository.repositoryPath, ref, signal);
   }
 
   async resolveRefs(
@@ -968,11 +961,11 @@ export class GitRepositoryService {
     refs: readonly string[],
     signal?: AbortSignal,
   ): Promise<ReadonlyMap<string, string | null>> {
-    const repository = await this.inspectRepository(repositoryPath, signal);
-    return this.resolveRefsUnchecked(repository.repositoryPath, refs, signal);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
+    return this.#resolveRefsUnchecked(repository.repositoryPath, refs, signal);
   }
 
-  private async resolveRefUnchecked(
+   async #resolveRefUnchecked(
     repositoryPath: string,
     ref: string,
     signal?: AbortSignal,
@@ -987,7 +980,7 @@ export class GitRepositoryService {
     return result.exitCode === 0 ? parseSingleOid(result.stdout) : null;
   }
 
-  private async resolveRefsUnchecked(
+   async #resolveRefsUnchecked(
     repositoryPath: string,
     refs: readonly string[],
     signal?: AbortSignal,
@@ -1015,8 +1008,8 @@ export class GitRepositoryService {
   }
 
   async createRef(repositoryPath: string, ref: string, oid: string): Promise<void> {
-    await this.inspectRepository(repositoryPath);
-    const result = await this.compareAndSwapRefUnchecked(repositoryPath, ref, oid, null);
+    await this.#inspectRepository(repositoryPath);
+    const result = await this.#compareAndSwapRefUnchecked(repositoryPath, ref, oid, null);
     if (!result.updated) throw repositoryError('stale-main', 'git-ref-already-exists');
   }
 
@@ -1026,8 +1019,8 @@ export class GitRepositoryService {
     nextOid: string,
     expectedOid: string,
   ): Promise<GitRefUpdateResult> {
-    await this.inspectRepository(repositoryPath);
-    return this.compareAndSwapRefUnchecked(repositoryPath, ref, nextOid, expectedOid);
+    await this.#inspectRepository(repositoryPath);
+    return this.#compareAndSwapRefUnchecked(repositoryPath, ref, nextOid, expectedOid);
   }
 
   async deleteRefIfMatches(
@@ -1035,7 +1028,7 @@ export class GitRepositoryService {
     ref: string,
     expectedOid: string,
   ): Promise<GitRefUpdateResult> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRef(ref);
     assertOid(expectedOid);
     const result = await this.runner.run({
@@ -1062,11 +1055,11 @@ export class GitRepositoryService {
     ancestorOid: string,
     descendantOid: string,
   ): Promise<boolean> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid);
   }
 
-  private async isAncestorUnchecked(
+   async #isAncestorUnchecked(
     repositoryPath: string,
     ancestorOid: string,
     descendantOid: string,
@@ -1086,11 +1079,11 @@ export class GitRepositoryService {
     leftOid: string,
     rightOid: string,
   ): Promise<string> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid);
   }
 
-  private async findMergeBaseUnchecked(
+   async #findMergeBaseUnchecked(
     repositoryPath: string,
     leftOid: string,
     rightOid: string,
@@ -1109,11 +1102,11 @@ export class GitRepositoryService {
     leftOid: string,
     rightOid: string,
   ): Promise<GitDivergence> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid);
   }
 
-  private async countDivergenceUnchecked(
+   async #countDivergenceUnchecked(
     repositoryPath: string,
     leftOid: string,
     rightOid: string,
@@ -1143,11 +1136,11 @@ export class GitRepositoryService {
     baseOid: string,
     headOid: string,
   ): Promise<readonly GitChangedFile[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid);
   }
 
-  private async listChangedFilesUnchecked(
+   async #listChangedFilesUnchecked(
     repositoryPath: string,
     baseOid: string,
     headOid: string,
@@ -1169,8 +1162,8 @@ export class GitRepositoryService {
     });
     const changes = parseGitNameStatus(result.stdout);
     for (const change of changes) {
-      this.requireRepositoryPath(change.path);
-      if (change.previousPath) this.requireRepositoryPath(change.previousPath);
+      this.#requireRepositoryPath(change.path);
+      if (change.previousPath) this.#requireRepositoryPath(change.previousPath);
     }
     return changes;
   }
@@ -1180,19 +1173,19 @@ export class GitRepositoryService {
     baseOid: string,
     headOid: string,
   ): Promise<readonly GitChangedBlob[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid);
   }
 
   async listWorkingTreeChangedFiles(
     repositoryPath: string,
     baseOid: string,
   ): Promise<readonly GitChangedFile[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.listWorkingTreeChangedFilesUnchecked(repository.repositoryPath, baseOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#listWorkingTreeChangedFilesUnchecked(repository.repositoryPath, baseOid);
   }
 
-  private async listWorkingTreeChangedFilesUnchecked(
+   async #listWorkingTreeChangedFilesUnchecked(
     repositoryPath: string,
     baseOid: string,
   ): Promise<readonly GitChangedFile[]> {
@@ -1204,7 +1197,7 @@ export class GitRepositoryService {
     });
     const changes = [...parseGitNameStatus(result.stdout)];
     const changedPaths = new Set(changes.map(change => change.path));
-    const workingTree = await this.getWorkingTreeStateUnchecked(repositoryPath);
+    const workingTree = await this.#getWorkingTreeStateUnchecked(repositoryPath);
     for (const entry of workingTree.entries) {
       if (entry.kind !== 'untracked' || changedPaths.has(entry.path)) continue;
       changes.push({ kind: 'added', path: entry.path });
@@ -1214,13 +1207,13 @@ export class GitRepositoryService {
       left.path < right.path ? -1 : left.path > right.path ? 1 : 0
     ));
     for (const change of changes) {
-      this.requireRepositoryPath(change.path);
-      if (change.previousPath) this.requireRepositoryPath(change.previousPath);
+      this.#requireRepositoryPath(change.path);
+      if (change.previousPath) this.#requireRepositoryPath(change.previousPath);
     }
     return changes;
   }
 
-  private async listChangedBlobsUnchecked(
+   async #listChangedBlobsUnchecked(
     repositoryPath: string,
     baseOid: string,
     headOid: string,
@@ -1264,8 +1257,8 @@ export class GitRepositoryService {
       sizes.set(oid, object.size);
     });
     return changes.map(change => {
-      this.requireRepositoryPath(change.path);
-      if (change.previousPath) this.requireRepositoryPath(change.previousPath);
+      this.#requireRepositoryPath(change.path);
+      if (change.previousPath) this.#requireRepositoryPath(change.previousPath);
       return {
         ...change,
         ...(change.newOid ? { newSize: sizes.get(change.newOid)! } : {}),
@@ -1279,9 +1272,9 @@ export class GitRepositoryService {
     commitOid: string,
     repositoryRelativePath: string,
   ): Promise<Buffer | null> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     assertOid(commitOid);
-    this.requireRepositoryPath(repositoryRelativePath);
+    this.#requireRepositoryPath(repositoryRelativePath);
     const treeResult = await this.runner.run({
       args: ['ls-tree', '-z', commitOid, '--', repositoryRelativePath],
       cwd: repository.repositoryPath,
@@ -1293,18 +1286,18 @@ export class GitRepositoryService {
     if (!match || match[2] !== 'blob' || match[4] !== repositoryRelativePath) {
       throw repositoryError('repository-invalid', 'git-tree-entry-invalid');
     }
-    return this.readBlobUnchecked(repository.repositoryPath, match[3]);
+    return this.#readBlobUnchecked(repository.repositoryPath, match[3]);
   }
 
   async readBlobsAtPaths(
     repositoryPath: string,
     requests: readonly GitBlobPathRequest[],
   ): Promise<readonly (Buffer | null)[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
   }
 
-  private async readBlobsAtPathsUnchecked(
+   async #readBlobsAtPathsUnchecked(
     repositoryPath: string,
     requests: readonly GitBlobPathRequest[],
   ): Promise<readonly (Buffer | null)[]> {
@@ -1314,7 +1307,7 @@ export class GitRepositoryService {
     }
     for (const request of requests) {
       assertOid(request.treeish);
-      this.requireRepositoryPath(request.repositoryRelativePath);
+      this.#requireRepositoryPath(request.repositoryRelativePath);
     }
     const result = await this.runner.run({
       args: ['cat-file', '--batch'],
@@ -1331,11 +1324,11 @@ export class GitRepositoryService {
     repositoryPath: string,
     commitOid: string,
   ): Promise<readonly GitRecursiveTreeEntry[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.listTreeRecursiveUnchecked(repository.repositoryPath, commitOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#listTreeRecursiveUnchecked(repository.repositoryPath, commitOid);
   }
 
-  private async listTreeRecursiveUnchecked(
+   async #listTreeRecursiveUnchecked(
     repositoryPath: string,
     commitOid: string,
   ): Promise<readonly GitRecursiveTreeEntry[]> {
@@ -1349,8 +1342,8 @@ export class GitRepositoryService {
   }
 
   async commitTree(repositoryPath: string, input: GitCommitTreeInput): Promise<string> {
-    await this.inspectRepository(repositoryPath);
-    return this.commitTreeUnchecked(repositoryPath, input);
+    await this.#inspectRepository(repositoryPath);
+    return this.#commitTreeUnchecked(repositoryPath, input);
   }
 
   async mergeTree(
@@ -1358,11 +1351,11 @@ export class GitRepositoryService {
     acceptedOid: string,
     memberOid: string,
   ): Promise<GitMergeTreeResult> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid);
   }
 
-  private async mergeTreeUnchecked(
+   async #mergeTreeUnchecked(
     repositoryPath: string,
     acceptedOid: string,
     memberOid: string,
@@ -1391,7 +1384,7 @@ export class GitRepositoryService {
     remote: string,
     remoteUrl: string,
   ): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRemoteName(remote);
     assertRemoteUrl(remoteUrl);
     await this.runner.run({
@@ -1400,8 +1393,20 @@ export class GitRepositoryService {
     });
   }
 
+  async removeRemote(repositoryPath: string, remote: string): Promise<void> {
+    const repository = await this.#inspectRepository(repositoryPath);
+    assertRemoteName(remote);
+    if ((await this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote)).length === 0) {
+      return;
+    }
+    await this.runner.run({
+      args: ['remote', 'remove', remote],
+      cwd: repository.repositoryPath,
+    });
+  }
+
   async configureOriginFetchRefspecs(repositoryPath: string): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     const key = 'remote.origin.fetch';
     await this.runner.run({
       args: [
@@ -1429,11 +1434,11 @@ export class GitRepositoryService {
     repositoryPath: string,
     remote: string,
   ): Promise<readonly string[]> {
-    const repository = await this.inspectRepository(repositoryPath);
-    return this.listRemoteUrlsUnchecked(repository.repositoryPath, remote);
+    const repository = await this.#inspectRepository(repositoryPath);
+    return this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote);
   }
 
-  private async listRemoteUrlsUnchecked(
+   async #listRemoteUrlsUnchecked(
     repositoryPath: string,
     remote: string,
   ): Promise<readonly string[]> {
@@ -1454,7 +1459,7 @@ export class GitRepositoryService {
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRemoteName(remote);
     refspecs.forEach(assertRefspec);
     await this.runner.run({
@@ -1472,7 +1477,7 @@ export class GitRepositoryService {
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRemoteUrl(remoteUrl);
     refspecs.forEach(assertRefspec);
     await this.runner.run({
@@ -1490,11 +1495,29 @@ export class GitRepositoryService {
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     assertRemoteName(remote);
     assertRefspec(refspec);
     await this.runner.run({
       args: ['push', '--porcelain', remote, refspec],
+      cwd: repositoryPath,
+      network,
+      signal,
+    });
+  }
+
+  async pushToUrl(
+    repositoryPath: string,
+    remoteUrl: string,
+    refspec: string,
+    network?: GitNetworkEnvironment,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#inspectRepository(repositoryPath);
+    assertRemoteUrl(remoteUrl);
+    assertRefspec(refspec);
+    await this.runner.run({
+      args: ['push', '--porcelain', remoteUrl, refspec],
       cwd: repositoryPath,
       network,
       signal,
@@ -1538,7 +1561,7 @@ export class GitRepositoryService {
       network: input.network,
       signal: input.signal,
     });
-    await this.inspectRepository(clonePath);
+    await this.#inspectRepository(clonePath);
     await this.configureOriginFetchRefspecs(clonePath);
     return clonePath;
   }
@@ -1548,7 +1571,7 @@ export class GitRepositoryService {
     hookName: 'pre-receive',
     contents: string,
   ): Promise<string> {
-    const repository = await this.inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath);
     if (!contents.startsWith('#!') || contents.includes('\u0000')) {
       throw repositoryError('repository-invalid', 'git-hook-invalid');
     }
@@ -1582,7 +1605,7 @@ export class GitRepositoryService {
   }
 
   async assertHealthy(repositoryPath: string): Promise<void> {
-    await this.inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath);
     await this.runner.run({
       args: ['fsck', '--full', '--strict', '--no-dangling'],
       cwd: repositoryPath,
@@ -1590,14 +1613,14 @@ export class GitRepositoryService {
     });
   }
 
-  private async assertInitializationTarget(repositoryPath: string): Promise<void> {
+   async #assertInitializationTarget(repositoryPath: string): Promise<void> {
     const targetStat = await lstat(repositoryPath).catch(() => null);
     if (!targetStat?.isDirectory() || targetStat.isSymbolicLink()) {
       throw repositoryError('path-invalid', 'git-initialization-target-invalid');
     }
   }
 
-  private async inspectRepository(
+   async #inspectRepository(
     repositoryPath: string,
     signal?: AbortSignal,
   ): Promise<InspectedRepository> {
@@ -1662,7 +1685,7 @@ export class GitRepositoryService {
     };
   }
 
-  private async commitTreeUnchecked(
+   async #commitTreeUnchecked(
     repositoryPath: string,
     input: GitCommitTreeInput,
   ): Promise<string> {
@@ -1684,7 +1707,7 @@ export class GitRepositoryService {
     })).stdout);
   }
 
-  private async compareAndSwapRefUnchecked(
+   async #compareAndSwapRefUnchecked(
     repositoryPath: string,
     ref: string,
     nextOid: string,
@@ -1711,7 +1734,7 @@ export class GitRepositoryService {
     return { currentOid, updated: false };
   }
 
-  private async readBlobUnchecked(repositoryPath: string, oid: string): Promise<Buffer> {
+   async #readBlobUnchecked(repositoryPath: string, oid: string): Promise<Buffer> {
     assertOid(oid);
     const result = await this.runner.run({
       args: ['cat-file', '--batch'],
@@ -1722,7 +1745,7 @@ export class GitRepositoryService {
     return parseGitBatchBlob(result.stdout, oid);
   }
 
-  private requireRepositoryPath(repositoryPath: string): void {
+   #requireRepositoryPath(repositoryPath: string): void {
     const result = this.pathPolicy.validateRepositoryPath(repositoryPath);
     if (!result.ok) throw result.error;
   }

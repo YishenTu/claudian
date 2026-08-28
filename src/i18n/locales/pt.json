@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "Host LAN",
+      "hostedHere": "Hospedado neste dispositivo",
+      "hostedElsewhere": "Hospedado em outro dispositivo",
+      "legacyClaimConfirmation": "Usar este dispositivo como proprietário do Host?",
+      "legacyClaimAction": "Usar este dispositivo",
       "status": {
         "stopped": "Parado",
         "starting": "A iniciar",

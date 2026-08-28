@@ -496,6 +496,7 @@ describe('CollabFeatureService', () => {
           authorityKind: 'lan',
           connectionStatus: 'host-stopped',
           health: 'healthy',
+          hostInstallationStatus: 'hosted-here',
           hostStatus: 'stopped',
           id: 'project-alpha',
           name: 'Alpha',
@@ -507,6 +508,60 @@ describe('CollabFeatureService', () => {
     });
     expect(foundation.requireGitFoundation).toHaveBeenCalledTimes(1);
     expect(states).toEqual(['uninitialized', 'initializing', 'initializing', 'ready']);
+  });
+
+  it.each([
+    ['hosted-here', 'stopped', 'host-stopped'],
+    ['hosted-elsewhere', 'not-host', 'offline'],
+    ['legacy-unbound', 'stopped', 'host-stopped'],
+    ['absent', 'not-host', 'offline'],
+  ] as const)(
+    'projects a Host Member with %s authority independently from Member identity',
+    async (installationStatus, hostStatus, connectionStatus) => {
+      const service = createService({
+        hostInstallation: {
+          inspect: jest.fn().mockResolvedValue(installationStatus),
+        },
+      });
+
+      await expect(service.listProjects()).resolves.toMatchObject({
+        status: 'success',
+        value: [{
+          connectionStatus,
+          hostInstallationStatus: installationStatus === 'absent'
+            ? 'not-host'
+            : installationStatus,
+          hostStatus,
+          role: 'manager',
+        }],
+      });
+    },
+  );
+
+  it('keeps non-Host and Retired Projects outside installation inspection', async () => {
+    const inspect = jest.fn().mockResolvedValue('hosted-here');
+    foundation.local.projects.loadMembership = jest.fn().mockResolvedValue({
+      ...membership(),
+      hostOwnership: { ownsAuthority: false },
+    });
+    const active = createService({ hostInstallation: { inspect } });
+
+    await expect(active.listProjects()).resolves.toMatchObject({
+      status: 'success',
+      value: [{ hostInstallationStatus: 'not-host', hostStatus: 'not-host' }],
+    });
+
+    currentIndex = {
+      ...currentIndex,
+      projects: [{ ...currentIndex.projects[0], lifecycle: 'retired' }],
+    };
+    foundation.local.projects.loadMembership = jest.fn().mockResolvedValue(membership());
+    const retired = createService({ hostInstallation: { inspect } });
+    await expect(retired.listProjects()).resolves.toMatchObject({
+      status: 'success',
+      value: [{ hostInstallationStatus: 'not-host', hostStatus: 'not-host' }],
+    });
+    expect(inspect).not.toHaveBeenCalled();
   });
 
   it('isolates an incompatible legacy Cloud membership from healthy Projects', async () => {
@@ -548,6 +603,113 @@ describe('CollabFeatureService', () => {
             connectionStatus: 'offline',
             health: 'needs-attention',
             id: 'project-legacy-cloud',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('does not let a selected Project needing attention block healthy Projects', async () => {
+    await mkdir(path.join(vaultRoot, 'workspace', 'legacy', '.git'), { recursive: true });
+    currentIndex = {
+      ...currentIndex,
+      projects: [
+        ...currentIndex.projects,
+        {
+          authorityKind: 'cloud',
+          createdAt: CREATED_AT,
+          id: 'project-legacy-cloud',
+          name: 'Legacy Cloud',
+          updatedAt: CREATED_AT,
+          workspacePath: 'workspace/legacy',
+        },
+      ],
+      selectedProjectId: 'project-legacy-cloud',
+    };
+    foundation.local.projects.loadMembership = jest.fn(async projectId => {
+      if (projectId === 'project-legacy-cloud') {
+        throw new CollabError({
+          code: 'schema-version-unsupported',
+          recoveryActions: ['open-diagnostics'],
+          safeContext: { recordKind: 'membership' },
+        });
+      }
+      return membership();
+    });
+    const publish = publication();
+    publish.scheduleAcceptedMainSynchronization.mockImplementation(() => {
+      throw new CollabError({
+        code: 'project-retired',
+        safeContext: {
+          projectId: 'project-legacy-cloud',
+          reason: 'project-activity-closed',
+        },
+      });
+    });
+    const service = createService({ publication: publish });
+
+    await expect(service.initialize()).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        lifecycle: 'ready',
+        projects: [
+          expect.objectContaining({ health: 'healthy', id: 'project-alpha' }),
+          expect.objectContaining({
+            health: 'needs-attention',
+            id: 'project-legacy-cloud',
+          }),
+        ],
+      },
+    });
+    expect(publish.scheduleAcceptedMainSynchronization).not.toHaveBeenCalled();
+  });
+
+  it('isolates invalid Host marker state without blocking other Project summaries', async () => {
+    await mkdir(path.join(vaultRoot, 'workspace', 'beta', '.git'), { recursive: true });
+    currentIndex = {
+      ...currentIndex,
+      projects: [
+        ...currentIndex.projects,
+        {
+          ...currentIndex.projects[0],
+          id: 'project-beta',
+          name: 'Beta',
+          workspacePath: 'workspace/beta',
+        },
+      ],
+    };
+    foundation.local.projects.loadMembership = jest.fn(async projectId => ({
+      ...membership(),
+      project: {
+        id: projectId,
+        name: projectId === 'project-beta' ? 'Beta' : 'Alpha',
+        workspacePath: projectId === 'project-beta' ? 'workspace/beta' : 'workspace/alpha',
+      },
+    }));
+    const service = createService({
+      hostInstallation: {
+        inspect: jest.fn(async projectId => {
+          if (projectId === 'project-alpha') throw new Error('corrupt marker');
+          return 'hosted-elsewhere';
+        }),
+      },
+    });
+
+    await expect(service.initialize()).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        lifecycle: 'ready',
+        projects: [
+          expect.objectContaining({
+            connectionStatus: 'offline',
+            health: 'needs-attention',
+            hostInstallationStatus: 'not-host',
+            id: 'project-alpha',
+          }),
+          expect.objectContaining({
+            health: 'healthy',
+            hostInstallationStatus: 'hosted-elsewhere',
+            id: 'project-beta',
           }),
         ],
       },
@@ -654,6 +816,7 @@ describe('CollabFeatureService', () => {
         authorityKind: 'lan',
         connectionStatus: 'host-stopped',
         health: 'healthy',
+        hostInstallationStatus: 'hosted-here',
         hostStatus: 'stopped',
         id: 'project-alpha',
         name: 'Alpha',
@@ -706,6 +869,7 @@ describe('CollabFeatureService', () => {
         authorityKind: 'lan',
         connectionStatus: 'host-stopped',
         health: 'healthy',
+        hostInstallationStatus: 'hosted-here',
         hostStatus: 'stopped',
         id: 'project-alpha',
         name: 'Alpha',
@@ -736,6 +900,7 @@ describe('CollabFeatureService', () => {
           authorityKind: 'lan',
           connectionStatus: 'connected',
           health: 'healthy',
+          hostInstallationStatus: 'not-host',
           hostStatus: 'not-host',
           id: 'project-alpha',
           name: 'Alpha',
@@ -749,6 +914,7 @@ describe('CollabFeatureService', () => {
           authorityKind: 'lan',
           connectionStatus: 'connected',
           health: 'healthy',
+          hostInstallationStatus: 'not-host',
           hostStatus: 'not-host',
           id: 'project-alpha',
           name: 'Alpha',
@@ -786,6 +952,7 @@ describe('CollabFeatureService', () => {
           authorityKind: 'lan',
           connectionStatus: 'connected',
           health: 'healthy',
+          hostInstallationStatus: 'not-host',
           hostStatus: 'not-host',
           id: 'project-alpha',
           name: 'Alpha',
@@ -861,6 +1028,74 @@ describe('CollabFeatureService', () => {
     });
   });
 
+  it('claims a legacy Host explicitly, refreshes its projection, and is idempotent when owned', async () => {
+    let status = 'legacy-unbound' as 'legacy-unbound' | 'hosted-here';
+    const claimLegacy = jest.fn(async () => {
+      status = 'hosted-here';
+      return {} as never;
+    });
+    const service = createService({
+      hostInstallation: {
+        claimLegacy,
+        inspect: jest.fn(async () => status),
+      },
+    });
+
+    await expect(service.claimLegacyHostInstallation('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'stopped',
+      },
+    });
+    await expect(service.claimLegacyHostInstallation('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+      value: { hostInstallationStatus: 'hosted-here' },
+    });
+    expect(claimLegacy).toHaveBeenCalledTimes(2);
+  });
+
+  it('resumes legacy recovery migration after marker ownership committed', async () => {
+    let status = 'legacy-unbound' as 'legacy-unbound' | 'hosted-here';
+    const claimLegacy = jest.fn()
+      .mockImplementationOnce(async () => {
+        status = 'hosted-here';
+        throw new Error('fault after marker upgrade');
+      })
+      .mockResolvedValue({});
+    const service = createService({
+      hostInstallation: {
+        claimLegacy,
+        inspect: jest.fn(async () => status),
+      },
+    });
+
+    await expect(service.claimLegacyHostInstallation('project-alpha')).resolves.toMatchObject({
+      status: 'failure',
+    });
+    await expect(service.claimLegacyHostInstallation('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+      value: { hostInstallationStatus: 'hosted-here' },
+    });
+    expect(claimLegacy).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects legacy claim for a foreign authority', async () => {
+    const claimLegacy = jest.fn();
+    const service = createService({
+      hostInstallation: {
+        claimLegacy,
+        inspect: jest.fn().mockResolvedValue('hosted-elsewhere'),
+      },
+    });
+
+    await expect(service.claimLegacyHostInstallation('project-alpha')).resolves.toMatchObject({
+      error: { safeContext: { reason: 'host-installation-claim-unavailable' } },
+      status: 'failure',
+    });
+    expect(claimLegacy).not.toHaveBeenCalled();
+  });
+
   it('restores legacy and enabled Host-owned Projects but respects explicit stop intent', async () => {
     const lanHost = {
       getProjectState: jest.fn(() => ({
@@ -888,6 +1123,29 @@ describe('CollabFeatureService', () => {
 
     expect(lanHost.startProject).not.toHaveBeenCalled();
   });
+
+  it.each(['hosted-elsewhere', 'legacy-unbound', 'absent'] as const)(
+    'does not auto-start a Host Member whose authority is %s',
+    async installationStatus => {
+      const lanHost = {
+        getProjectState: jest.fn(() => ({
+          projectId: 'project-alpha',
+          status: 'stopped' as const,
+        })),
+        startProject: jest.fn(),
+        stopProject: jest.fn(),
+      };
+      const service = createService({
+        hostInstallation: {
+          inspect: jest.fn().mockResolvedValue(installationStatus),
+        },
+        lanHost,
+      });
+
+      await expect(service.restoreHosts()).resolves.toBeUndefined();
+      expect(lanHost.startProject).not.toHaveBeenCalled();
+    },
+  );
 
   it('retries Host restoration once while the previous plugin instance releases its lock', async () => {
     jest.useFakeTimers();
@@ -1484,22 +1742,12 @@ describe('CollabFeatureService', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('retries one connectivity failure after automatic LAN discovery', async () => {
+  it('leaves a final connectivity failure from publication visible as offline', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot
-      .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
-      .mockResolvedValueOnce({
-        snapshot: authoritySnapshot(),
-        source: 'online',
-        stale: false,
-        syncState: {
-          eventSequence: 2,
-          generation: 1,
-          projectId: 'project-alpha',
-          status: 'synchronized',
-        },
-      });
+    publish.readCoordinationSnapshot.mockRejectedValueOnce(
+      new CollabError({ code: 'endpoint-unreachable' }),
+    );
     const service = createService({
       publication: publish,
     });
@@ -1507,31 +1755,18 @@ describe('CollabFeatureService', () => {
 
     await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
       status: 'success',
-      value: {
-        coordination: { source: 'online', stale: false },
-        project: { id: 'project-alpha' },
-      },
+      value: { project: { id: 'project-alpha' } },
     });
-    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
+    expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
+    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
   });
 
-  it('retries a timed-out old endpoint after automatic LAN discovery', async () => {
+  it('leaves a final operation timeout from publication visible as offline', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot
-      .mockRejectedValueOnce(new CollabError({ code: 'operation-timeout' }))
-      .mockResolvedValueOnce({
-        snapshot: authoritySnapshot(),
-        source: 'online',
-        stale: false,
-        syncState: {
-          eventSequence: 2,
-          generation: 1,
-          projectId: 'project-alpha',
-          status: 'synchronized',
-        },
-      });
+    publish.readCoordinationSnapshot.mockRejectedValueOnce(
+      new CollabError({ code: 'operation-timeout' }),
+    );
     const service = createService({
       publication: publish,
     });
@@ -1539,41 +1774,26 @@ describe('CollabFeatureService', () => {
 
     await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
       status: 'success',
-      value: {
-        coordination: { source: 'online', stale: false },
-        project: { id: 'project-alpha' },
-      },
+      value: { project: { id: 'project-alpha' } },
     });
-    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
+    expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
+    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
   });
 
-  it('retries an offline cached snapshot after automatic LAN discovery', async () => {
+  it('accepts the publication session offline projection without reconnecting again', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot
-      .mockResolvedValueOnce({
-        snapshot: authoritySnapshot(),
-        source: 'cache',
-        stale: true,
-        syncState: {
-          eventSequence: 1,
-          generation: 1,
-          projectId: 'project-alpha',
-          status: 'offline',
-        },
-      })
-      .mockResolvedValueOnce({
-        snapshot: authoritySnapshot(),
-        source: 'online',
-        stale: false,
-        syncState: {
-          eventSequence: 2,
-          generation: 1,
-          projectId: 'project-alpha',
-          status: 'synchronized',
-        },
-      });
+    publish.readCoordinationSnapshot.mockResolvedValueOnce({
+      snapshot: authoritySnapshot(),
+      source: 'cache',
+      stale: true,
+      syncState: {
+        eventSequence: 1,
+        generation: 1,
+        projectId: 'project-alpha',
+        status: 'offline',
+      },
+    });
     const service = createService({
       publication: publish,
     });
@@ -1582,12 +1802,12 @@ describe('CollabFeatureService', () => {
     await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
       status: 'success',
       value: {
-        coordination: { source: 'online', stale: false },
+        coordination: { source: 'cache', stale: true },
         project: { id: 'project-alpha' },
       },
     });
-    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(2);
+    expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
+    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('keeps an old-endpoint TLS failure visible when discovery cannot verify a Host', async () => {
@@ -1607,19 +1827,16 @@ describe('CollabFeatureService', () => {
         project: { connectionStatus: 'needs-attention' },
       },
     });
-    expect(publish.tryAutoReconnect).toHaveBeenCalledWith('project-alpha', {});
+    expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
   });
 
-  it('surfaces an authority split discovered while recovering connectivity', async () => {
+  it('surfaces an authority split reported by the publication session', async () => {
     const publish = publication();
     const integrityError = new CollabError({
       code: 'authority-integrity-error',
       recoveryActions: ['open-diagnostics'],
     });
-    publish.tryAutoReconnect = jest.fn().mockRejectedValue(integrityError);
-    publish.readCoordinationSnapshot.mockRejectedValue(
-      new CollabError({ code: 'endpoint-unreachable' }),
-    );
+    publish.readCoordinationSnapshot.mockRejectedValue(integrityError);
     const service = createService({
       publication: publish,
     });

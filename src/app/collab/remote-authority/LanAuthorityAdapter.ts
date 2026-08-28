@@ -6,13 +6,18 @@ import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { LocalMembershipControlPort } from '@/app/collab/membership/LocalMembershipControlPort';
 import { LocalProjectControlPort } from '@/app/collab/publish/LocalProjectControlPort';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
+import type {
+  CollabAuthorityMembershipControlPort,
+} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabAuthorityAdapter,
   CollabAuthorityEventConnectionInput,
   CollabAuthoritySession,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { LanAuthorityTarget } from '@/app/collab/remote-authority/LanAuthorityTargetResolver';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const LAN_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new Set([
@@ -33,6 +38,12 @@ export interface LanAuthorityAdapterOptions {
     input: ConstructorParameters<typeof ProjectEventClient>[0],
     onInvalidation: ConstructorParameters<typeof ProjectEventClient>[1],
   ) => { dispose(): void; start?(): void };
+  readonly createMembershipControl?: (
+    membership: CollabLocalLanMembershipRecord,
+  ) => CollabAuthorityMembershipControlPort;
+  readonly resolveLocalTarget?: (
+    membership: CollabLocalLanMembershipRecord,
+  ) => Promise<LanAuthorityTarget | null>;
 }
 
 function adapterError(reason: string): CollabError {
@@ -47,6 +58,12 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
   readonly authorityKind = 'lan' as const;
   private readonly createControl: NonNullable<LanAuthorityAdapterOptions['createControl']>;
   private readonly createEvent: NonNullable<LanAuthorityAdapterOptions['createEvent']>;
+  private readonly createMembershipControl: NonNullable<
+    LanAuthorityAdapterOptions['createMembershipControl']
+  >;
+  private readonly resolveLocalTarget: NonNullable<
+    LanAuthorityAdapterOptions['resolveLocalTarget']
+  >;
 
   constructor(options: LanAuthorityAdapterOptions = {}) {
     this.createControl = options.createControl ?? (membership => new LocalProjectControlPort({
@@ -56,6 +73,9 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
     }));
     this.createEvent = options.createEvent
       ?? ((input, onInvalidation) => new ProjectEventClient(input, onInvalidation));
+    this.createMembershipControl = options.createMembershipControl
+      ?? (membership => new LocalMembershipControlPort(membership));
+    this.resolveLocalTarget = options.resolveLocalTarget ?? (async () => null);
   }
 
   async create(membership: CollabLocalMembershipRecord): Promise<CollabAuthoritySession> {
@@ -67,7 +87,22 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
     if (!endpoint || !gitRemoteUrl || !hostCaCertificatePem || !hostCaFingerprint) {
       throw adapterError('lan-authority-session-trust-unavailable');
     }
-    const control = this.createControl(membership);
+    const localTarget = await this.resolveLocalTarget(membership);
+    const effectiveEndpoint = localTarget?.endpoint ?? endpoint;
+    const effectiveGitRemoteUrl = localTarget
+      ? `${localTarget.endpoint}/v1/git/${membership.project.id}/repository.git`
+      : gitRemoteUrl;
+    const effectiveMembership: CollabLocalLanMembershipRecord = localTarget
+      ? {
+        ...membership,
+        authority: {
+          ...membership.authority,
+          endpoint: effectiveEndpoint,
+          gitRemoteUrl: effectiveGitRemoteUrl,
+        },
+      }
+      : membership;
+    const control = this.createControl(effectiveMembership);
     return {
       authorityKind: 'lan',
       control,
@@ -76,7 +111,7 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
         connect: ({ afterSequence, onInvalidation }: CollabAuthorityEventConnectionInput) => {
           const event = this.createEvent({
             caCertificatePem: hostCaCertificatePem,
-            endpoint,
+            endpoint: effectiveEndpoint,
             lastSequence: afterSequence,
             memberCredential: membership.member.credential,
             projectId: membership.project.id,
@@ -93,8 +128,9 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
             `${membership.member.id}:${membership.member.credential}`,
           ).toString('base64')}`,
         }],
-        remoteUrl: gitRemoteUrl,
+        remoteUrl: effectiveGitRemoteUrl,
       },
+      membership: this.createMembershipControl(effectiveMembership),
       supports: capability => LAN_CAPABILITIES.has(capability),
     };
   }

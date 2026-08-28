@@ -23,7 +23,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const MAIN = '1'.repeat(40);
 const PERSONAL = '2'.repeat(40);
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

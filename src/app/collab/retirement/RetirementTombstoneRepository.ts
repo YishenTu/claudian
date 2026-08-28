@@ -23,6 +23,7 @@ export interface RetirementTombstoneStore {
 }
 
 export interface RetirementTombstoneRepositoryOptions {
+  readonly isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean;
   readonly now?: () => Date;
 }
 
@@ -70,13 +71,15 @@ function sameRecord(
 }
 
 export class RetirementTombstoneRepository {
+  private readonly isRecoveryOwner: RetirementTombstoneRepositoryOptions['isRecoveryOwner'];
   private readonly now: () => Date;
   private readonly queue = new SerialTaskQueue();
 
   constructor(
     private readonly store: RetirementTombstoneStore | CollabLocalProjectRepository,
-    options: RetirementTombstoneRepositoryOptions = {},
+    options: RetirementTombstoneRepositoryOptions,
   ) {
+    this.isRecoveryOwner = options.isRecoveryOwner;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -196,6 +199,10 @@ export class RetirementTombstoneRepository {
       for (const projectId of await this.store.listRetirementTombstoneProjectIds()) {
         const tombstone = await this.store.loadRetirementTombstone(projectId);
         if (!tombstone) continue;
+        if (
+          tombstone.ownerInstallationKey !== undefined
+          && !this.isRecoveryOwner(tombstone.ownerInstallationKey)
+        ) continue;
         if (Date.parse(tombstone.expiresAt) <= now) {
           expiredProjectIds.push(projectId);
         } else {

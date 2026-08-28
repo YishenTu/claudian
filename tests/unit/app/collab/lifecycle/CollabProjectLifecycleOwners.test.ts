@@ -1,4 +1,9 @@
 import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
+
+import {
   createCollabProjectLifecycleDurableOwners,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleOwners';
 
@@ -25,7 +30,7 @@ describe('CollabProjectLifecycleOwners', () => {
     backing.managerReceipts.load.mockResolvedValue({ status: 'acknowledged' });
     backing.retirements.loadRetirementRecord.mockResolvedValue({ cleanupStatus: 'complete' });
     backing.cloudBootstrapTransitions.inspectLifecycleOwner.mockResolvedValue('nonterminal');
-    const owners = createCollabProjectLifecycleDurableOwners(backing);
+    const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
 
     await expect(Promise.all(owners.map(async owner => ({
       name: owner.name,
@@ -42,7 +47,7 @@ describe('CollabProjectLifecycleOwners', () => {
   it('treats completed bootstrap cleanup as terminal and absent stores as absent', async () => {
     const backing = stores();
     backing.cloudBootstrapTransitions.inspectLifecycleOwner.mockResolvedValue('terminal');
-    const owners = createCollabProjectLifecycleDurableOwners(backing);
+    const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
 
     await expect(Promise.all(owners.map(async owner => ({
       name: owner.name,
@@ -59,7 +64,7 @@ describe('CollabProjectLifecycleOwners', () => {
   it('classifies a reversible Manager offer as a proposal until the target acknowledges it', async () => {
     const backing = stores();
     backing.managerReceipts.load.mockResolvedValue({ status: 'offered' });
-    const owner = createCollabProjectLifecycleDurableOwners(backing)
+    const owner = createCollabProjectLifecycleDurableOwners(backing, () => true)
       .find(candidate => candidate.name === 'manager-responsibility')!;
 
     await expect(owner.inspect('project-alpha')).resolves.toBe('proposal');
@@ -72,7 +77,7 @@ describe('CollabProjectLifecycleOwners', () => {
     const backing = stores();
     backing.managerReceipts.load.mockResolvedValue({ status: 'acknowledged' });
     backing.pendingLeaves.load.mockResolvedValue({ phase: 'queued' });
-    const owners = createCollabProjectLifecycleDurableOwners(backing);
+    const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
     const managerResponsibility = owners.find(owner => owner.name === 'manager-responsibility')!;
     const localExit = owners.find(owner => owner.name === 'local-exit')!;
 
@@ -83,18 +88,37 @@ describe('CollabProjectLifecycleOwners', () => {
   it('fails closed when both Host-transfer directions exist', async () => {
     const backing = stores();
     backing.hostTransferRecovery.load.mockResolvedValue({ phase: 'accepted' });
-    const hostTransfer = createCollabProjectLifecycleDurableOwners(backing)
+    const hostTransfer = createCollabProjectLifecycleDurableOwners(backing, () => true)
       .find(owner => owner.name === 'host-transfer')!;
 
     await expect(hostTransfer.inspect('project-alpha'))
       .rejects.toThrow('Conflicting Host transfer recovery records');
   });
 
+  it('treats a retained incoming terminal receipt as terminal after staging cleanup', async () => {
+    const backing = stores();
+    backing.hostTransferRecovery.load.mockImplementation(async (_projectId, direction) => (
+      direction === 'incoming'
+        ? {
+            direction,
+            ownerInstallationKey: TEST_INSTALLATION_A,
+            phase: 'completed',
+            receiverCredentialHash: 'a'.repeat(64),
+            stagingDirectoryName: null,
+          }
+        : null
+    ));
+    const hostTransfer = createCollabProjectLifecycleDurableOwners(backing, () => true)
+      .find(owner => owner.name === 'host-transfer')!;
+
+    await expect(hostTransfer.inspect('project-alpha')).resolves.toBe('terminal');
+  });
+
   it('lets a durable retirement absorb an overlapping pending Leave', async () => {
     const backing = stores();
     backing.pendingLeaves.load.mockResolvedValue({ phase: 'recovery-required' });
     backing.retirements.loadRetirementRecord.mockResolvedValue({ cleanupStatus: 'pending' });
-    const owners = createCollabProjectLifecycleDurableOwners(backing);
+    const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
     const localExit = owners.find(owner => owner.name === 'local-exit')!;
     const retirement = owners.find(owner => owner.name === 'retirement')!;
 
@@ -106,10 +130,53 @@ describe('CollabProjectLifecycleOwners', () => {
     const backing = stores();
     backing.retirementTombstones.loadRetirementTombstone.mockResolvedValue({
       kind: 'retirement-tombstone',
+    ownerInstallationKey: TEST_INSTALLATION_A,
     });
-    const retirement = createCollabProjectLifecycleDurableOwners(backing)
+    const retirement = createCollabProjectLifecycleDurableOwners(backing, () => true)
       .find(owner => owner.name === 'retirement')!;
 
     await expect(retirement.inspect('project-alpha')).resolves.toBe('nonterminal');
+  });
+
+  it('keeps foreign Host-transfer and retirement journals out of local lifecycle ownership', async () => {
+    const backing = stores();
+    backing.hostTransferRecovery.load.mockImplementation(async (_projectId, direction) => (
+      direction === 'incoming'
+        ? { direction, ownerInstallationKey: TEST_INSTALLATION_A }
+        : null
+    ));
+    backing.retirementTombstones.loadRetirementTombstone.mockResolvedValue({
+      kind: 'retirement-tombstone',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    });
+    const owners = createCollabProjectLifecycleDurableOwners(
+      backing,
+      ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_B,
+    );
+
+    await expect(owners.find(owner => owner.name === 'host-transfer')!
+      .inspect('project-alpha')).resolves.toBe('absent');
+    await expect(owners.find(owner => owner.name === 'retirement')!
+      .inspect('project-alpha')).resolves.toBe('absent');
+  });
+
+  it('keeps ownerless legacy Host-transfer and retirement journals visible for recovery', async () => {
+    const backing = stores();
+    backing.hostTransferRecovery.load.mockImplementation(async (_projectId, direction) => (
+      direction === 'incoming' ? { direction, ownerInstallationKey: undefined } : null
+    ));
+    backing.retirementTombstones.loadRetirementTombstone.mockResolvedValue({
+      kind: 'retirement-tombstone',
+      ownerInstallationKey: undefined,
+    });
+    const owners = createCollabProjectLifecycleDurableOwners(
+      backing,
+      ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
+    );
+
+    await expect(owners.find(owner => owner.name === 'host-transfer')!
+      .inspect('project-alpha')).resolves.toBe('nonterminal');
+    await expect(owners.find(owner => owner.name === 'retirement')!
+      .inspect('project-alpha')).resolves.toBe('nonterminal');
   });
 });

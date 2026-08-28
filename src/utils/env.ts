@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { type InstallationKey, parseInstallationKey } from '@/core/device/InstallationKey';
+
 import { parsePathEntries, resolveNvmDefaultBin } from './path';
 
 const isWindows = process.platform === 'win32';
@@ -409,16 +411,22 @@ function getDeviceSettingsSeed(): string {
 
 // Backward-compatible name: provider settings still store legacy `cliPathsByHost`
 // maps, but new keys are opaque per-install identifiers rather than hostnames.
-export function getHostnameKey(): string {
+export function getInstallationKey(): InstallationKey {
   if (cachedDeviceSettingsKey) {
-    return cachedDeviceSettingsKey;
+    return parseInstallationKey(cachedDeviceSettingsKey);
   }
 
   const digest = createHash('sha256')
     .update(getDeviceSettingsSeed(), 'utf8')
     .digest('hex');
   cachedDeviceSettingsKey = `device-${digest}`;
-  return cachedDeviceSettingsKey;
+  return parseInstallationKey(cachedDeviceSettingsKey);
+}
+
+// Backward-compatible name for provider settings whose persisted maps retain
+// the historical `ByHost` terminology.
+export function getHostnameKey(): InstallationKey {
+  return getInstallationKey();
 }
 
 export function getLegacyDeviceSettingsKey(): string | null {

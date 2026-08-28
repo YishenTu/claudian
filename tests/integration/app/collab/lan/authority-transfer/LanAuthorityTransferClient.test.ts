@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import {
@@ -53,7 +54,9 @@ describe('LanAuthorityTransferClient', () => {
 
   it('uses pinned TLS, sends Member auth, decodes the independent envelope, and replays', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-client-'));
-    const identity = await new LanTlsIdentity(directory).issueServerIdentity('127.0.0.1');
+    const identity = await new LanTlsIdentity(directory, {
+      installationKey: TEST_INSTALLATION_A,
+    }).issueServerIdentity('127.0.0.1');
     const requestLanToCloudTransfer = jest.fn(async () => status());
     const service: LanAuthorityTransferSourceActiveService = {
       acceptLanToCloudTransferTarget: jest.fn(),
@@ -147,9 +150,11 @@ describe('LanAuthorityTransferClient', () => {
     ]);
     const pinnedIdentity = await new LanTlsIdentity(
       pinnedDirectory,
+      { installationKey: TEST_INSTALLATION_A },
     ).issueServerIdentity('127.0.0.1');
     const attackerIdentity = await new LanTlsIdentity(
       attackerDirectory,
+      { installationKey: TEST_INSTALLATION_B },
     ).issueServerIdentity('127.0.0.1');
 
     expect(() => new LanAuthorityTransferClient({
@@ -165,7 +170,9 @@ describe('LanAuthorityTransferClient', () => {
 
   it('rejects a response with the wrong LAN binding version', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-version-'));
-    const identity = await new LanTlsIdentity(directory).issueServerIdentity('127.0.0.1');
+    const identity = await new LanTlsIdentity(directory, {
+      installationKey: TEST_INSTALLATION_A,
+    }).issueServerIdentity('127.0.0.1');
     server = createServer({
       cert: identity.certificateChainPem,
       key: identity.privateKeyPem,

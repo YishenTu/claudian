@@ -32,6 +32,9 @@ describe('LocalCloudBootstrapReadinessInspector', () => {
     const refs = new Map(manifest.git.refs.map(ref => [ref.name, ref.oid]));
     const inspector = new LocalCloudBootstrapReadinessInspector({
       foundation: {
+        hostInstallations: {
+          inspect: async () => 'hosted-here',
+        },
         inspectAuthority: async () => ({
           authorityDirectory: path.join(vaultRoot, 'authority'),
         }),

@@ -238,31 +238,10 @@ export function createCollabFeatureSubcomposition(
     },
   );
   foundation.setRetirementHandler(retirementHandler);
-  const membership = new CollabMembershipService(
-    foundation.local.projects,
-    {
-      readCoordinationSnapshot: (...args) => (
-        requirePublication().readCoordinationSnapshot(...args)
-      ),
-    },
-    {},
-    {
-      managerResponsibilityAdmission: (projectId, operation) => (
-        requireLifecycle().runExclusive(
-          projectId,
-          'manager-responsibility',
-          'operation',
-          operation,
-        )
-      ),
-      managerReceipts,
-      managerResponsibilityOperations,
-      pendingLeaves,
-    },
-  );
   publication = new CollabPublicationService(foundation, {
     discovery: foundation.discovery,
-    isLocalHostRunning: projectId => foundation.lanHost.isProjectRunning(projectId),
+    inspectHostInstallation: projectId => foundation.hostInstallations.inspect(projectId),
+    readActiveLocalRoute: projectId => foundation.lanHost.getActiveProjectRoute(projectId),
     managerResponsibility: {
       reconcileSnapshot: snapshot => requireLifecycle().runExclusive(
           snapshot.project.id,
@@ -279,17 +258,44 @@ export function createCollabFeatureSubcomposition(
     ),
     vaultRoot,
   });
+  const membership = new CollabMembershipService(
+    publication.membershipControl,
+    {
+      readCoordinationSnapshot: (...args) => publication.readCoordinationSnapshot(...args),
+    },
+    {},
+    {
+      managerResponsibilityAdmission: (projectId, operation) => (
+        requireLifecycle().runExclusive(
+          projectId,
+          'manager-responsibility',
+          'operation',
+          operation,
+        )
+      ),
+      managerReceipts,
+      managerResponsibilityOperations,
+      pendingLeaves,
+    },
+  );
   foundation.lanHost.bindConnectionProjection({
     resetProjectConnection: projectId => requirePublication().resetProjectConnection(projectId),
   });
   const hostTransfer = foundation.createHostTransferService(
-    publication,
+    {
+      readCoordinationSnapshot: (...args) => (
+        requirePublication().transferSnapshot(...args)
+      ),
+    },
     (projectId, operation) => requireLifecycle().runExclusive(
       projectId,
       'host-transfer',
       'recovery',
       operation,
     ),
+    () => {
+      void requireLifecycle().refreshLifecycleProjection().catch(() => undefined);
+    },
   );
   let exitCoordinator: LocalProjectExitCoordinator | null = null;
   const requireExitCoordinator = (): Promise<LocalProjectExitCoordinator> => {
@@ -390,16 +396,21 @@ export function createCollabFeatureSubcomposition(
   };
   lifecycle = new CollabProjectLifecycleSubsystem({
     closeRecovery: () => acknowledgementWorker.close(),
-    durableOwners: createCollabProjectLifecycleDurableOwners({
-      cloudBootstrapTransitions: transitions,
-      hostTransferRecovery: foundation.local.projects.hostTransferRecovery,
-      localCleanup: foundation.local.projects.localCleanup,
-      managerReceipts,
-      pendingLeaves,
-      retiredCleanups: retiredCleanupRecords,
-      retirements: foundation.local.projects,
-      retirementTombstones: foundation.local.projects,
-    }),
+    durableOwners: createCollabProjectLifecycleDurableOwners(
+      {
+        cloudBootstrapTransitions: transitions,
+        hostTransferRecovery: foundation.local.projects.hostTransferRecovery,
+        localCleanup: foundation.local.projects.localCleanup,
+        managerReceipts,
+        pendingLeaves,
+        retiredCleanups: retiredCleanupRecords,
+        retirements: foundation.local.projects,
+        retirementTombstones: foundation.local.projects,
+      },
+      ownerInstallationKey => foundation.hostInstallations.isRecoveryOwner(
+        ownerInstallationKey,
+      ),
+    ),
     hostTransfer,
     localExit,
     recoveryStages: [
@@ -501,7 +512,6 @@ export function createCollabFeatureSubcomposition(
         assertOrigin: async (record, repositoryPath) => ensureTrustedCollabOrigin(
           (await foundation.requireGitFoundation()).repositories,
           {
-            allowHostRemoteRepair: false,
             projectId: record.projectId,
             remoteUrl: record.newAuthority.gitRemoteUrl,
             repositoryPath,
@@ -527,11 +537,31 @@ export function createCollabFeatureSubcomposition(
       },
       projects: foundation.local.projects,
       readiness,
+      retireLanAuthorityDirectory: async (projectId, attemptId) => {
+        const capability = await foundation.hostInstallations.assertOwnedRetirement(
+          projectId,
+          attemptId,
+        );
+        return foundation.local.projects.retireOwnedAuthorityDirectory(
+          capability,
+          attemptId,
+        );
+      },
       workspace: foundation.local.workspace,
     }),
     transitions,
   });
   const cloudBootstrap = new CloudBootstrapService({
+    assertHostInstallationOwned: async projectId => {
+      await foundation.hostInstallations.assertOwned(projectId, 'recover');
+    },
+    assertRecoveryOwner: (ownerInstallationKey, projectId) => (
+      foundation.hostInstallations.assertRecoveryOwner(
+        ownerInstallationKey,
+        projectId,
+        'cloud-bootstrap',
+      )
+    ),
     createCoordinator: ({ developmentActorId, serverUrl }) => (
       new CloudBootstrapCoordinator({
         binding,
@@ -542,6 +572,7 @@ export function createCollabFeatureSubcomposition(
         createFenceId: () => `bootstrap-fence-${randomUUID().replaceAll('-', '')}`,
         formerHost: {
           stopAndDrain: async projectId => {
+            await foundation.hostInstallations.assertOwned(projectId, 'recover');
             const stopped = await foundation.lanHost.stopProject(projectId);
             const membership = await foundation.local.projects.loadMembership(projectId);
             if (
@@ -588,6 +619,7 @@ export function createCollabFeatureSubcomposition(
             };
           },
         },
+        installationKey: foundation.installationKey,
         readiness,
         source,
         transitions,
@@ -617,6 +649,7 @@ export function createCollabFeatureSubcomposition(
   const feature: CollabFeatureService = new CollabFeatureService(foundation, projectSetup, {
     cloudBootstrap: lifecycleCloudBootstrap,
     hostTransfer: lifecycle.hostTransfer,
+    hostInstallation: foundation.hostInstallations,
     join: foundation.join,
     lanHost: foundation.lanHost,
     lifecycleRecovery: lifecycle.lifecycleRecovery,
@@ -665,6 +698,13 @@ export function createCollabFeatureSubcomposition(
     activateLanToCloudSourceRoute: (projectId, expectedEndpoint) => (
       foundation.activateAuthorityTransferSourceRoute(projectId, expectedEndpoint)
     ),
+    assertRecoveryOwner: (ownerInstallationKey, projectId) => (
+      foundation.hostInstallations.assertRecoveryOwner(
+        ownerInstallationKey,
+        projectId,
+        'authority-transfer',
+      )
+    ),
     claimantStore: foundation.local.projects.authorityTransferClaimants,
     convergence: authorityTransferConvergence,
     createCloudToLanTarget: (projectId, cloudSession) => (
@@ -686,6 +726,7 @@ export function createCollabFeatureSubcomposition(
       })
     ),
     lifecycle,
+    installationKey: foundation.installationKey,
     persistence: foundation.authorityTransfers,
     recoverCloudSession: async record => {
       const membership = await foundation.local.projects.loadMembership(record.projectId);

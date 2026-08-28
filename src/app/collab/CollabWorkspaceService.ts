@@ -116,16 +116,16 @@ function isOperationChildMarker(
 }
 
 export class CollabWorkspaceService {
-  private readonly obsidianConfigDirectory?: string;
-  private readonly onDiagnostic?: CollabFilesystemDiagnosticSink;
+   readonly #obsidianConfigDirectory?: string;
+   readonly #onDiagnostic?: CollabFilesystemDiagnosticSink;
   private readonly pathPolicy: CollabPathPolicy;
 
   constructor(
     private readonly vaultRoot: string,
     options: CollabWorkspaceServiceOptions = {},
   ) {
-    this.obsidianConfigDirectory = options.obsidianConfigDirectory;
-    this.onDiagnostic = options.onDiagnostic;
+    this.#obsidianConfigDirectory = options.obsidianConfigDirectory;
+    this.#onDiagnostic = options.onDiagnostic;
     this.pathPolicy = options.pathPolicy ?? new CollabPathPolicy({
       obsidianConfigDirectory: options.obsidianConfigDirectory,
     });
@@ -136,28 +136,28 @@ export class CollabWorkspaceService {
   }
 
   async claimProjectsFolder(projectsFolder: string): Promise<void> {
-    const normalizedFolder = this.requireProjectsFolder(projectsFolder);
+    const normalizedFolder = this.#requireProjectsFolder(projectsFolder);
     const candidateRootPath = await resolveCollabVaultPath(
       this.vaultRoot,
       normalizedFolder,
     );
-    await this.rejectUnownedNonEmptyRoot(candidateRootPath, normalizedFolder);
+    await this.#rejectUnownedNonEmptyRoot(candidateRootPath, normalizedFolder);
     const rootAbsolutePath = await ensureCollabVaultDirectory(
       this.vaultRoot,
       normalizedFolder,
       {
         mode: 0o755,
-        onDiagnostic: this.onDiagnostic,
+        onDiagnostic: this.#onDiagnostic,
         preserveExistingMode: true,
       },
     );
     const markerRelativePath = `${normalizedFolder}/${PROJECTS_ROOT_MARKER_NAME}`;
     const markerAbsolutePath = path.join(rootAbsolutePath, PROJECTS_ROOT_MARKER_NAME);
-    const markerExists = await this.validateExistingProjectsMarker(markerAbsolutePath);
+    const markerExists = await this.#validateExistingProjectsMarker(markerAbsolutePath);
     if (!markerExists) {
       const entries = await readdir(rootAbsolutePath);
       const canAdoptLegacyWorkspace = normalizedFolder === 'workspace'
-        && await this.hasStandaloneGuard(rootAbsolutePath);
+        && await this.#hasStandaloneGuard(rootAbsolutePath);
       if (entries.length > 0 && !canAdoptLegacyWorkspace) {
         throw workspaceBoundaryError('projects-root-unowned-nonempty');
       }
@@ -165,17 +165,17 @@ export class CollabWorkspaceService {
         this.vaultRoot,
         markerRelativePath,
         PROJECTS_ROOT_MARKER_CONTENTS,
-        { mode: 0o644, onDiagnostic: this.onDiagnostic },
+        { mode: 0o644, onDiagnostic: this.#onDiagnostic },
       );
       if (!created) {
-        const validAfterRace = await this.validateExistingProjectsMarker(markerAbsolutePath);
+        const validAfterRace = await this.#validateExistingProjectsMarker(markerAbsolutePath);
         if (!validAfterRace) {
           throw workspaceBoundaryError('projects-root-marker-invalid');
         }
       }
     }
     await ensureCollabContainerGuard(this.vaultRoot, normalizedFolder, {
-      onDiagnostic: this.onDiagnostic,
+      onDiagnostic: this.#onDiagnostic,
       preserveExistingDirectoryMode: true,
     });
   }
@@ -196,7 +196,7 @@ export class CollabWorkspaceService {
     // ownership marker existed. Claiming here performs that one safe migration;
     // arbitrary non-empty roots remain ineligible for adoption.
     await this.claimProjectsFolder(projectsFolder);
-    await this.requireOwnedProjectsFolder(projectsFolder);
+    await this.#requireOwnedProjectsFolder(projectsFolder);
     const absolutePath = await resolveCollabVaultPath(
       this.vaultRoot,
       expectedPath,
@@ -239,7 +239,7 @@ export class CollabWorkspaceService {
       this.vaultRoot,
       markerRelativePath,
       `${JSON.stringify(decodeDetachedProjectMarker(marker), null, 2)}\n`,
-      { mode: 0o600, onDiagnostic: this.onDiagnostic },
+      { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
     if (!created) {
       await this.assertDetachedProjectMarker(workspacePath, operationId, marker);
@@ -254,7 +254,7 @@ export class CollabWorkspaceService {
     operationId: string,
     expected: DetachedProjectMarker,
   ): Promise<void> {
-    const markerPath = await this.resolveCleanupMarkerPath(workspacePath, operationId);
+    const markerPath = await this.#resolveCleanupMarkerPath(workspacePath, operationId);
     const markerStat = await lstat(markerPath).catch(() => null);
     if (!markerStat?.isFile() || markerStat.isSymbolicLink()) {
       throw workspaceBoundaryError('detached-marker-invalid');
@@ -275,7 +275,7 @@ export class CollabWorkspaceService {
     operationId: string,
     expected: DetachedProjectMarker,
   ): Promise<void> {
-    const markerPath = await this.resolveCleanupMarkerPath(workspacePath, operationId);
+    const markerPath = await this.#resolveCleanupMarkerPath(workspacePath, operationId);
     const markerStat = await lstat(markerPath).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw workspaceBoundaryError('detached-marker-remove-failed');
@@ -289,17 +289,17 @@ export class CollabWorkspaceService {
 
   async detachProjectGit(workspacePath: string, operationId: string): Promise<void> {
     const paths = await this.resolveCleanupPaths(workspacePath, operationId);
-    const sourceExists = await this.cleanupPathExists(paths.gitPath);
-    const detachedExists = await this.cleanupPathExists(paths.detachedGitPath);
+    const sourceExists = await this.#cleanupPathExists(paths.gitPath);
+    const detachedExists = await this.#cleanupPathExists(paths.detachedGitPath);
     if (sourceExists && detachedExists) {
       throw workspaceBoundaryError('detached-git-collision');
     }
     if (detachedExists) {
-      await this.requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
+      await this.#requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
       return;
     }
     if (!sourceExists) throw workspaceBoundaryError('project-git-invalid');
-    await this.requireCleanupDirectory(paths.gitPath, 'project-git-invalid');
+    await this.#requireCleanupDirectory(paths.gitPath, 'project-git-invalid');
     await rename(paths.gitPath, paths.detachedGitPath).catch(() => {
       throw workspaceBoundaryError('project-git-detach-failed');
     });
@@ -307,24 +307,24 @@ export class CollabWorkspaceService {
 
   async isProjectGitDetached(workspacePath: string, operationId: string): Promise<boolean> {
     const paths = await this.resolveCleanupPaths(workspacePath, operationId);
-    const sourceExists = await this.cleanupPathExists(paths.gitPath);
-    const detachedExists = await this.cleanupPathExists(paths.detachedGitPath);
+    const sourceExists = await this.#cleanupPathExists(paths.gitPath);
+    const detachedExists = await this.#cleanupPathExists(paths.detachedGitPath);
     if (sourceExists === detachedExists) {
       throw workspaceBoundaryError(sourceExists ? 'detached-git-collision' : 'project-git-invalid');
     }
     if (detachedExists) {
-      await this.requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
+      await this.#requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
       return true;
     }
-    await this.requireCleanupDirectory(paths.gitPath, 'project-git-invalid');
+    await this.#requireCleanupDirectory(paths.gitPath, 'project-git-invalid');
     return false;
   }
 
   async removeDetachedProjectGit(workspacePath: string, operationId: string): Promise<void> {
     const paths = await this.resolveCleanupPaths(workspacePath, operationId);
-    const exists = await this.cleanupPathExists(paths.detachedGitPath);
+    const exists = await this.#cleanupPathExists(paths.detachedGitPath);
     if (!exists) return;
-    await this.requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
+    await this.#requireCleanupDirectory(paths.detachedGitPath, 'detached-git-invalid');
     await rm(paths.detachedGitPath, { recursive: true }).catch(() => {
       throw workspaceBoundaryError('detached-git-remove-failed');
     });
@@ -335,7 +335,7 @@ export class CollabWorkspaceService {
     if (separatorIndex <= 0) throw workspaceBoundaryError('project-workspace-path-invalid');
     const projectsFolder = workspacePath.slice(0, separatorIndex);
     const childName = workspacePath.slice(separatorIndex + 1);
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
@@ -345,13 +345,13 @@ export class CollabWorkspaceService {
     const projectPath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
     const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
     const detachedProjectPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
-    if (await this.cleanupPathExists(detachedProjectPath)) {
-      const projectStillExists = await this.cleanupPathExists(projectPath);
+    if (await this.#cleanupPathExists(detachedProjectPath)) {
+      const projectStillExists = await this.#cleanupPathExists(projectPath);
       if (projectStillExists) throw workspaceBoundaryError('detached-project-collision');
-      await this.requireCleanupDirectory(detachedProjectPath, 'detached-project-invalid');
+      await this.#requireCleanupDirectory(detachedProjectPath, 'detached-project-invalid');
       return;
     }
-    await this.requireCleanupDirectory(projectPath, 'project-workspace-boundary-invalid');
+    await this.#requireCleanupDirectory(projectPath, 'project-workspace-boundary-invalid');
     await rename(projectPath, detachedProjectPath).catch(() => {
       throw workspaceBoundaryError('project-root-detach-failed');
     });
@@ -365,12 +365,12 @@ export class CollabWorkspaceService {
     const separatorIndex = workspacePath.lastIndexOf('/');
     if (separatorIndex <= 0) throw workspaceBoundaryError('project-workspace-path-invalid');
     const projectsFolder = workspacePath.slice(0, separatorIndex);
-    await this.requireOwnedProjectsFolder(projectsFolder);
+    await this.#requireOwnedProjectsFolder(projectsFolder);
     const childName = workspacePath.slice(separatorIndex + 1);
     const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
     const detachedPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
-    if (!await this.cleanupPathExists(detachedPath)) return;
-    await this.requireCleanupDirectory(detachedPath, 'detached-project-invalid');
+    if (!await this.#cleanupPathExists(detachedPath)) return;
+    await this.#requireCleanupDirectory(detachedPath, 'detached-project-invalid');
     await this.assertDetachedProjectMarker(workspacePath, operationId, expectedMarker);
     await rm(detachedPath, { recursive: true }).catch(() => {
       throw workspaceBoundaryError('detached-project-remove-failed');
@@ -378,7 +378,7 @@ export class CollabWorkspaceService {
   }
 
   getProjectsFolderChildPath(projectsFolder: string, childName: string): string {
-    const normalizedFolder = this.requireProjectsFolder(projectsFolder);
+    const normalizedFolder = this.#requireProjectsFolder(projectsFolder);
     const childResult = this.pathPolicy.validateRepositoryPath(childName);
     if (!childResult.ok || childName.includes('/')) {
       throw workspaceBoundaryError('projects-child-name-invalid');
@@ -390,14 +390,14 @@ export class CollabWorkspaceService {
     projectsFolder: string,
     ownership: CollabProjectsFolderChildOwnership,
   ): Promise<CollabProjectsFolderChild> {
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     const relativePath = this.getProjectsFolderChildPath(
       normalizedFolder,
       ownership.childName,
     );
     const absolutePath = await resolveCollabVaultPath(this.vaultRoot, relativePath);
     const marker = operationChildMarker(ownership);
-    const markerRelativePath = this.operationChildMarkerRelativePath(
+    const markerRelativePath = this.#operationChildMarkerRelativePath(
       normalizedFolder,
       marker,
     );
@@ -405,7 +405,7 @@ export class CollabWorkspaceService {
       this.vaultRoot,
       markerRelativePath,
     );
-    const markerExists = await this.validateExistingOperationChildMarker(
+    const markerExists = await this.#validateExistingOperationChildMarker(
       markerAbsolutePath,
       marker,
     );
@@ -424,9 +424,9 @@ export class CollabWorkspaceService {
         this.vaultRoot,
         markerRelativePath,
         `${JSON.stringify(marker, null, 2)}\n`,
-        { mode: 0o600, onDiagnostic: this.onDiagnostic },
+        { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
-      if (!created && !await this.validateExistingOperationChildMarker(
+      if (!created && !await this.#validateExistingOperationChildMarker(
         markerAbsolutePath,
         marker,
       )) {
@@ -440,9 +440,9 @@ export class CollabWorkspaceService {
     projectsFolder: string,
     ownership: CollabProjectsFolderChildOwnership,
   ): Promise<boolean> {
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     const marker = operationChildMarker(ownership);
-    const markerRelativePath = this.operationChildMarkerRelativePath(
+    const markerRelativePath = this.#operationChildMarkerRelativePath(
       normalizedFolder,
       marker,
     );
@@ -450,7 +450,7 @@ export class CollabWorkspaceService {
       this.vaultRoot,
       markerRelativePath,
     );
-    if (!await this.validateExistingOperationChildMarker(markerAbsolutePath, marker)) {
+    if (!await this.#validateExistingOperationChildMarker(markerAbsolutePath, marker)) {
       return false;
     }
     const relativePath = this.getProjectsFolderChildPath(
@@ -480,13 +480,13 @@ export class CollabWorkspaceService {
     projectsFolder: string,
     ownership: CollabProjectsFolderChildOwnership,
   ): Promise<boolean> {
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     const marker = operationChildMarker(ownership);
     const markerAbsolutePath = await resolveCollabVaultPath(
       this.vaultRoot,
-      this.operationChildMarkerRelativePath(normalizedFolder, marker),
+      this.#operationChildMarkerRelativePath(normalizedFolder, marker),
     );
-    if (!await this.validateExistingOperationChildMarker(markerAbsolutePath, marker)) {
+    if (!await this.#validateExistingOperationChildMarker(markerAbsolutePath, marker)) {
       return false;
     }
     await unlink(markerAbsolutePath).catch(error => {
@@ -497,9 +497,9 @@ export class CollabWorkspaceService {
     return true;
   }
 
-  private requireProjectsFolder(projectsFolder: string): string {
+   #requireProjectsFolder(projectsFolder: string): string {
     const parsed = parseCollabProjectsFolder(projectsFolder, {
-      obsidianConfigDirectory: this.obsidianConfigDirectory,
+      obsidianConfigDirectory: this.#obsidianConfigDirectory,
     });
     if (!parsed.ok) {
       throw workspaceBoundaryError('projects-folder-invalid');
@@ -507,8 +507,8 @@ export class CollabWorkspaceService {
     return parsed.value;
   }
 
-  private async requireOwnedProjectsFolder(projectsFolder: string): Promise<string> {
-    const normalizedFolder = this.requireProjectsFolder(projectsFolder);
+   async #requireOwnedProjectsFolder(projectsFolder: string): Promise<string> {
+    const normalizedFolder = this.#requireProjectsFolder(projectsFolder);
     const rootAbsolutePath = await resolveCollabVaultPath(
       this.vaultRoot,
       normalizedFolder,
@@ -518,7 +518,7 @@ export class CollabWorkspaceService {
     if (!rootStat?.isDirectory() || rootStat.isSymbolicLink()) {
       throw workspaceBoundaryError('projects-root-boundary-invalid');
     }
-    if (!await this.validateExistingProjectsMarker(
+    if (!await this.#validateExistingProjectsMarker(
       path.join(rootAbsolutePath, PROJECTS_ROOT_MARKER_NAME),
     )) {
       throw workspaceBoundaryError('projects-root-unowned');
@@ -526,7 +526,7 @@ export class CollabWorkspaceService {
     return normalizedFolder;
   }
 
-  private operationChildMarkerRelativePath(
+   #operationChildMarkerRelativePath(
     projectsFolder: string,
     marker: CollabProjectsFolderChildMarker,
   ): string {
@@ -535,7 +535,7 @@ export class CollabWorkspaceService {
     return `${projectsFolder}/.claudian-operation-${digest}.json`;
   }
 
-  private async validateExistingOperationChildMarker(
+   async #validateExistingOperationChildMarker(
     markerAbsolutePath: string,
     expected: CollabProjectsFolderChildMarker,
   ): Promise<boolean> {
@@ -561,7 +561,7 @@ export class CollabWorkspaceService {
     return true;
   }
 
-  private async validateExistingProjectsMarker(markerAbsolutePath: string): Promise<boolean> {
+   async #validateExistingProjectsMarker(markerAbsolutePath: string): Promise<boolean> {
     let markerStat: Awaited<ReturnType<typeof lstat>>;
     try {
       markerStat = await lstat(markerAbsolutePath);
@@ -584,7 +584,7 @@ export class CollabWorkspaceService {
     return true;
   }
 
-  private async rejectUnownedNonEmptyRoot(
+   async #rejectUnownedNonEmptyRoot(
     rootAbsolutePath: string,
     normalizedFolder: string,
   ): Promise<void> {
@@ -598,19 +598,19 @@ export class CollabWorkspaceService {
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
       throw workspaceBoundaryError('projects-root-boundary-invalid');
     }
-    const markerExists = await this.validateExistingProjectsMarker(
+    const markerExists = await this.#validateExistingProjectsMarker(
       path.join(rootAbsolutePath, PROJECTS_ROOT_MARKER_NAME),
     );
     if (markerExists) return;
     const entries = await readdir(rootAbsolutePath);
     const canAdoptLegacyWorkspace = normalizedFolder === 'workspace'
-      && await this.hasStandaloneGuard(rootAbsolutePath);
+      && await this.#hasStandaloneGuard(rootAbsolutePath);
     if (entries.length > 0 && !canAdoptLegacyWorkspace) {
       throw workspaceBoundaryError('projects-root-unowned-nonempty');
     }
   }
 
-  private async hasStandaloneGuard(rootAbsolutePath: string): Promise<boolean> {
+   async #hasStandaloneGuard(rootAbsolutePath: string): Promise<boolean> {
     const guardAbsolutePath = path.join(rootAbsolutePath, '.gitignore');
     let guardStat: Awaited<ReturnType<typeof lstat>>;
     try {
@@ -628,14 +628,14 @@ export class CollabWorkspaceService {
     return contents.split(/\r?\n/).includes('/*');
   }
 
-  private async cleanupPathExists(absolutePath: string): Promise<boolean> {
+   async #cleanupPathExists(absolutePath: string): Promise<boolean> {
     return lstat(absolutePath).then(() => true).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
       throw workspaceBoundaryError('cleanup-path-inspection-failed');
     });
   }
 
-  private async resolveCleanupMarkerPath(
+   async #resolveCleanupMarkerPath(
     workspacePath: string,
     operationId: string,
   ): Promise<string> {
@@ -643,7 +643,7 @@ export class CollabWorkspaceService {
     if (separatorIndex <= 0) throw workspaceBoundaryError('project-workspace-path-invalid');
     const projectsFolder = workspacePath.slice(0, separatorIndex);
     const childName = workspacePath.slice(separatorIndex + 1);
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
@@ -653,13 +653,13 @@ export class CollabWorkspaceService {
     const sourcePath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
     const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
     const detachedPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
-    const sourceExists = await this.cleanupPathExists(sourcePath);
-    const detachedExists = await this.cleanupPathExists(detachedPath);
+    const sourceExists = await this.#cleanupPathExists(sourcePath);
+    const detachedExists = await this.#cleanupPathExists(detachedPath);
     if (sourceExists === detachedExists) {
       throw workspaceBoundaryError('cleanup-project-location-invalid');
     }
     const rootPath = sourceExists ? sourcePath : detachedPath;
-    await this.requireCleanupDirectory(rootPath, 'project-workspace-boundary-invalid');
+    await this.#requireCleanupDirectory(rootPath, 'project-workspace-boundary-invalid');
     return path.join(rootPath, '.claudian-collab-detached.json');
   }
 
@@ -671,7 +671,7 @@ export class CollabWorkspaceService {
     if (separatorIndex <= 0) throw workspaceBoundaryError('project-workspace-path-invalid');
     const projectsFolder = workspacePath.slice(0, separatorIndex);
     const childName = workspacePath.slice(separatorIndex + 1);
-    const normalizedFolder = await this.requireOwnedProjectsFolder(projectsFolder);
+    const normalizedFolder = await this.#requireOwnedProjectsFolder(projectsFolder);
     if (this.getProjectsFolderChildPath(normalizedFolder, childName) !== workspacePath) {
       throw workspaceBoundaryError('project-workspace-path-invalid');
     }
@@ -683,11 +683,11 @@ export class CollabWorkspaceService {
       this.vaultRoot,
       `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`,
     );
-    return !await this.cleanupPathExists(sourcePath)
-      && !await this.cleanupPathExists(detachedPath);
+    return !await this.#cleanupPathExists(sourcePath)
+      && !await this.#cleanupPathExists(detachedPath);
   }
 
-  private async requireCleanupDirectory(absolutePath: string, reason: string): Promise<void> {
+   async #requireCleanupDirectory(absolutePath: string, reason: string): Promise<void> {
     const targetStat = await lstat(absolutePath).catch(() => null);
     if (!targetStat?.isDirectory() || targetStat.isSymbolicLink()) {
       throw workspaceBoundaryError(reason);

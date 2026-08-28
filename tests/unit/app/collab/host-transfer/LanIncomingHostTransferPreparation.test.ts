@@ -95,6 +95,7 @@ describe('LanIncomingHostTransferPreparation', () => {
       projectId: 'project-alpha', transferId: 'transfer-alpha',
     });
     const record = createHostTransferRecoveryRecord({
+      ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       createdAt: '2026-08-13T00:00:00.000Z',
       direction: 'incoming',
       projectId: 'project-alpha',
@@ -128,6 +129,7 @@ describe('LanIncomingHostTransferPreparation', () => {
       transferId: 'transfer-alpha',
     })).rejects.toMatchObject({ code: 'authorization-denied' });
     const validRecord = createHostTransferRecoveryRecord({
+      ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       createdAt: '2026-08-13T00:00:00.000Z', direction: 'incoming',
       projectId: 'project-alpha', receiverCredential: Buffer.alloc(32, 1).toString('base64url'),
       sourceHostMemberId: 'member-source',

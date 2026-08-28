@@ -4,6 +4,8 @@ import { createServer, type Server } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
 import { createHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { CollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
@@ -41,7 +43,7 @@ describe('Host transfer provisional LAN transport', () => {
 
   it('pins the target CA and authenticates probe, streamed stage, activation, and cancellation', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-lan-'));
-    const tls = new LanTlsIdentity(vaultRoot);
+    const tls = new LanTlsIdentity(vaultRoot, { installationKey: TEST_INSTALLATION_A });
     const identity = await tls.issueServerIdentity('127.0.0.1');
     const router = new HostTransferProvisionalRouter();
     const gitBundle = Buffer.from('git bundle bytes');
@@ -241,7 +243,7 @@ describe('Host transfer provisional LAN transport', () => {
 
   it('fetches only the public Host-transition chain after pinning the advertised CA', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transition-lan-'));
-    const tls = new LanTlsIdentity(vaultRoot);
+    const tls = new LanTlsIdentity(vaultRoot, { installationKey: TEST_INSTALLATION_A });
     const identity = await tls.issueServerIdentity('127.0.0.1');
     const proof = {
       issuedAt: '2026-08-13T00:00:00.000Z',

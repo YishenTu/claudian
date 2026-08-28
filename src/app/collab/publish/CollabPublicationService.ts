@@ -16,6 +16,7 @@ import {
   type CollabManagerResponsibilityProjectionPort,
 } from '@/app/collab/client/CollabClientProjection';
 import type {
+  CollabAuthorityInstallationStatus,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
@@ -62,8 +63,15 @@ import type {
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
+import type {
+  CollabAuthorityMembershipControlPort,
+} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
+import {
+  LanAuthorityTargetResolver,
+  type LanAuthorityTargetResolverOptions,
+} from '@/app/collab/remote-authority/LanAuthorityTargetResolver';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { CollabReviewService } from '@/app/collab/review/CollabReviewService';
 import { LocalReviewProjectPort } from '@/app/collab/review/LocalReviewProjectPort';
@@ -89,7 +97,12 @@ export interface CollabPublicationFoundationPort {
 
 export interface CollabPublicationServiceOptions {
   readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidates'>;
-  readonly isLocalHostRunning: (projectId: CollabProjectId) => boolean;
+  readonly inspectHostInstallation: (
+    projectId: CollabProjectId,
+  ) => Promise<CollabAuthorityInstallationStatus>;
+  readonly readActiveLocalRoute: (
+    projectId: CollabProjectId,
+  ) => ReturnType<LanAuthorityTargetResolverOptions['readActiveRoute']>;
   readonly managerResponsibility: CollabManagerResponsibilityProjectionPort;
   readonly reconnect: CollabPublicationReconnectPort;
   readonly retirement: Pick<RetirementClientHandler, 'handle'>;
@@ -138,6 +151,11 @@ function conflictResult<T>(descriptor: CollabConflictDescriptor): CollabResult<T
   };
 }
 
+function isReconnectableEndpointFailure(error: unknown): error is CollabError {
+  return error instanceof CollabError
+    && (error.group === 'connectivity' || error.code === 'operation-timeout');
+}
+
 function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boolean {
   return left.path === right.path
     && left.previousPath === right.previousPath
@@ -165,14 +183,21 @@ export class CollabPublicationService {
     private readonly foundation: CollabPublicationFoundationPort,
     private readonly options: CollabPublicationServiceOptions,
   ) {
+    const lanTargets = new LanAuthorityTargetResolver({
+      inspectInstallation: options.inspectHostInstallation,
+      readActiveRoute: options.readActiveLocalRoute,
+    });
     this.authoritySessions = new CollabAuthoritySessionFactory([
-      new LanAuthorityAdapter(),
+      new LanAuthorityAdapter({
+        resolveLocalTarget: membership => lanTargets.resolve(membership),
+      }),
       new CloudAuthorityAdapter(),
     ]);
     this.control = new CollabAuthorityControlRouter(
       foundation.local.projects,
       this.sessions,
       this.authoritySessions,
+      { tryReconnect: (projectId, options) => this.tryAutoReconnect(projectId, options) },
     );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
       authoritySessions: this.authoritySessions,
@@ -181,6 +206,10 @@ export class CollabPublicationService {
       retirementAdmission: options.retirementAdmission,
       sessions: this.sessions,
     });
+  }
+
+  get membershipControl(): CollabAuthorityMembershipControlPort {
+    return this.control;
   }
 
   async readGitStatus(
@@ -208,6 +237,24 @@ export class CollabPublicationService {
     this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
     await this.ensureEventSubscription(projectId);
     return snapshot;
+  }
+
+  async transferSnapshot(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCoordinationSnapshot> {
+    const snapshot = await this.control.readSnapshot(projectId, options);
+    return {
+      snapshot,
+      source: 'online',
+      stale: false,
+      syncState: {
+        eventSequence: snapshot.eventSequence,
+        generation: this.sessions.acquire(projectId).generation,
+        projectId,
+        status: 'synchronized',
+      },
+    };
   }
 
   readRequest(
@@ -747,12 +794,11 @@ export class CollabPublicationService {
     const reconnect = this.options.reconnect;
     if (this.disposed) return Promise.resolve(false);
     const session = this.sessions.acquire(projectId);
-    return session.coalesceAutoReconnect(() => this.enqueueProjectMutation(projectId, async () => {
+    return session.coalesceAutoReconnect(async () => {
       const membership = await this.foundation.local.projects.loadMembership(projectId);
       if (
         !membership
         || !isCollabLocalLanMembership(membership)
-        || membership.hostOwnership.ownsAuthority
         || !membership.authority.hostCaFingerprint
       ) {
         return false;
@@ -781,7 +827,7 @@ export class CollabPublicationService {
       }
       this.resetProjectConnection(projectId);
       return true;
-    }));
+    });
   }
 
   async synchronizeAcceptedMain(
@@ -872,9 +918,16 @@ export class CollabPublicationService {
       this.foundation.local.projects,
       this.sessions,
       this.authoritySessions,
-      this.options.isLocalHostRunning,
-      async projectId => {
-        await this.control.readSnapshot(projectId);
+      async (control, projectId, signal) => {
+        try {
+          await control.readSnapshot(projectId, signal ? { signal } : {});
+        } catch (error) {
+          if (
+            !isReconnectableEndpointFailure(error)
+            || signal?.aborted
+            || !await this.tryAutoReconnect(projectId, signal ? { signal } : {})
+          ) throw error;
+        }
       },
     );
     const acceptedState = new NativeGitAcceptedStateIntegrator(

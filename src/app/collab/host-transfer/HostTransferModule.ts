@@ -32,10 +32,14 @@ import { HostTransferControlClient } from '@/app/collab/lan/HostTransferControlC
 import { HostTransferTargetTransport } from '@/app/collab/lan/HostTransferTargetTransport';
 import type { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
 import type {
+  LanAuthorityProjectionTransitionPort,
+} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
+import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
 import { type CollabCoordinationSnapshot, type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface HostTransferModuleGitFoundation {
   readonly repositories: GitRepositoryService;
@@ -65,7 +69,14 @@ export interface HostTransferModuleOptions {
     readonly targetHostMemberId: string;
     readonly transferId: CollabOperationId;
   }) => Promise<{ readonly endpoint: string }>;
+  readonly assertRecoveryOwner: (
+    ownerInstallationKey: string | undefined,
+    projectId: CollabProjectId,
+  ) => Promise<void>;
   readonly finalizeOldAuthority: (projectId: CollabProjectId) => Promise<void>;
+  readonly installationKey: InstallationKey;
+  readonly syncProjection: (projectId: CollabProjectId) => void;
+  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
   readonly lanHost: Pick<
     LanHostCoordinator,
     | 'closeProjectForHostTransfer'
@@ -81,9 +92,9 @@ export interface HostTransferModuleOptions {
     membership: CollabLocalLanMembershipRecord,
   ) => HostTransferControlPort;
   readonly createTargetTransport?: () => HostTransferTargetTransportPort;
+  readonly bindTransferTarget: (projectId: CollabProjectId) => Promise<string>;
   readonly projects: Pick<
     CollabLocalProjectRepository,
-    | 'ensureAuthorityDirectory'
     | 'hostTransferRecovery'
     | 'loadIndex'
     | 'loadMembership'
@@ -122,19 +133,48 @@ function projectsFolder(membership: CollabLocalMembershipRecord): string {
   return normalized.slice(0, separator);
 }
 
+function isRecoveryOwnerMismatch(error: unknown): boolean {
+  return error instanceof CollabError
+    && error.safeContext.reason === 'host-installation-recovery-owner-mismatch';
+}
+
 export class HostTransferModule {
   readonly clientService: CollabHostTransferService;
   private readonly recovery: HostTransferRecoveryStorePort;
 
   constructor(private readonly options: HostTransferModuleOptions) {
-    this.recovery = options.projects.hostTransferRecovery;
+    const durableRecovery = options.projects.hostTransferRecovery;
+    this.recovery = {
+      load: async (projectId, direction) => {
+        const record = await durableRecovery.load(projectId, direction);
+        if (record) {
+          await options.assertRecoveryOwner(record.ownerInstallationKey, projectId);
+        }
+        return record;
+      },
+      remove: (projectId, direction) => durableRecovery.remove(projectId, direction),
+      save: record => durableRecovery.save(record),
+    };
     const target = this.createTargetTransport();
+    const catalogRecovery: Pick<HostTransferRecoveryStorePort, 'load'> = {
+      load: async (projectId, direction) => {
+        try {
+          return await this.recovery.load(projectId, direction);
+        } catch (error) {
+          const record = await durableRecovery.load(projectId, direction);
+          if (record?.ownerInstallationKey !== undefined && isRecoveryOwnerMismatch(error)) {
+            return null;
+          }
+          throw error;
+        }
+      },
+    };
     this.clientService = new CollabHostTransferService({
       createControlClient: membership => this.createControlClient(membership),
       createIncomingCoordinator: membership => this.createIncomingCoordinator(membership),
       projects: this.options.projects,
       projectRecoveryAdmission: this.options.projectRecoveryAdmission,
-      recovery: this.recovery,
+      recovery: catalogRecovery,
       resumeCompletedOutgoing: async record => {
         await this.options.finalizeOldAuthority(record.projectId);
         await this.options.lanHost.completeProjectHostTransfer(record.projectId);
@@ -192,6 +232,10 @@ export class HostTransferModule {
           new LanHostTransferSourceIdentity(this.options.lanHost, this.options.projects),
           this.createProjection(input.git),
           this.recovery,
+          {
+            installationKey: this.options.installationKey,
+            syncProjection: this.options.syncProjection,
+          },
         );
       },
       this.recovery,
@@ -221,7 +265,7 @@ export class HostTransferModule {
       preparation,
       new IncomingHostTransferPackage({
         ensureAuthorityDirectory: projectId => (
-          this.options.projects.ensureAuthorityDirectory(projectId)
+          this.options.bindTransferTarget(projectId)
         ),
         projectsFolder: folder,
         readPinnedSourceCa: projectId => (
@@ -235,6 +279,10 @@ export class HostTransferModule {
       { activate: input => this.options.activateTransferredAuthority(input) },
       this.createProjection(git),
       this.recovery,
+      {
+        installationKey: this.options.installationKey,
+        syncProjection: this.options.syncProjection,
+      },
     );
     preparation.bindCoordinator(coordinator);
     return coordinator;
@@ -260,6 +308,7 @@ export class HostTransferModule {
     git: HostTransferModuleGitFoundation,
   ): LocalHostTransferProjection {
     return new LocalHostTransferProjection({
+      authorityProjectionTransitions: this.options.authorityProjectionTransitions,
       loadMembership: projectId => this.options.projects.loadMembership(projectId),
       resolveWorkspace: workspacePath => (
         this.options.workspace.resolveManagedProjectPath(workspacePath)

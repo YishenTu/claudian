@@ -44,7 +44,7 @@ export interface LocalDevelopmentBootstrapSourceOptions {
   readonly createAttemptId?: () => string;
   readonly foundation: Pick<
     ClaudianCollabService,
-    'local' | 'openAuthority' | 'requireGitFoundation'
+    'hostInstallations' | 'local' | 'openAuthority' | 'requireGitFoundation'
   >;
   readonly now?: () => Date;
   readonly vaultRoot: string;
@@ -447,6 +447,9 @@ export class LocalDevelopmentBootstrapSource {
       || !membership.authority.hostCaFingerprint
     ) {
       throw sourceError('cloud-bootstrap-source-membership-ineligible');
+    }
+    if (await this.#foundation.hostInstallations.inspect(projectId) !== 'hosted-here') {
+      throw sourceError('cloud-bootstrap-source-host-installation-not-owned');
     }
     const authority = await this.#foundation.openAuthority(projectId);
     throwIfCancelled(signal);

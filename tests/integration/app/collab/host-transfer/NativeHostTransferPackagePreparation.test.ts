@@ -18,6 +18,7 @@ import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanColla
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
 const NOW = '2026-08-13T00:00:00.000Z';
+const LATER = '2026-08-13T00:01:00.000Z';
 const proof: CollabHostTrustTransitionProof = {
   issuedAt: NOW,
   nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----\n',
@@ -133,6 +134,16 @@ describe('NativeHostTransferPackagePreparation', () => {
     const restored = await service.restore({
       manifestDigest: prepared.manifestDigest,
       projectId: 'project-alpha', transferId: 'transfer-alpha',
+    });
+    await expect(service.prepare({
+      projectId: 'project-alpha',
+      proof: { ...proof, issuedAt: LATER, signature: 'd'.repeat(64) },
+      targetCaFingerprint: proof.nextCaFingerprint,
+      targetHostMemberId: 'member-target',
+      transferId: 'transfer-alpha',
+    })).resolves.toMatchObject({
+      manifest: prepared.manifest,
+      proof,
     });
     const [gitBytes, databaseBytes] = await Promise.all([
       collect(restored.gitBundle), collect(restored.authoritySnapshot),

@@ -163,7 +163,9 @@ describe('OutgoingHostTransferCoordinator', () => {
       projections as never,
       recovery,
       {
+        installationKey: 'device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         now: () => new Date(NOW),
+        syncProjection: projectId => events.push(`projection-${projectId}`),
         trust: {
           signActivation: jest.fn(async () => activation),
           signTransition: jest.fn(async () => proof),
@@ -181,6 +183,9 @@ describe('OutgoingHostTransferCoordinator', () => {
     expect(events.indexOf('authority-relinquished')).toBeLessThan(events.indexOf('old-route-closed'));
     expect(events.indexOf('old-route-closed')).toBeLessThan(events.indexOf('target-activated'));
     expect(events.indexOf('target-verified')).toBeLessThan(events.indexOf('source-demoted'));
+    expect(events.indexOf('source-demoted')).toBeLessThan(
+      events.indexOf('projection-project-alpha'),
+    );
     expect(events.indexOf('authority-completed')).toBeLessThan(
       events.indexOf('old-authority-finalized'),
     );

@@ -144,7 +144,6 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
       if (
         restored.manifest.targetHostMemberId !== input.targetHostMemberId
         || restored.manifest.targetCaFingerprint !== input.targetCaFingerprint
-        || JSON.stringify(restored.proof) !== JSON.stringify(input.proof)
       ) throw preparationError('host-transfer-package-prepare-replay-mismatch');
       return restored;
     }

@@ -7,7 +7,6 @@ import type { NativeGitAcceptedStateIntegrator } from '@/app/collab/reconciliati
 import { ReconciliationRepository } from '@/app/collab/reconciliation/ReconciliationRepository';
 
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

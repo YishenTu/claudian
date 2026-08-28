@@ -28,19 +28,26 @@ import type {
 import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
+import {
+  bindLegacyCloudBootstrapSourceOwner,
+} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBootstrapTransitionStore';
 import {
   type CollabFilesystemDiagnosticSink,
 } from '@/app/collab/CollabFilesystemBoundary';
 import {
+  type CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
   isCollabLocalLanMembership,
+  type OwnedAuthorityDirectoryCapability,
+  type ProvisionalAuthorityDirectoryCapability,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import {
   CollabLanDiscoveryService,
 } from '@/app/collab/discovery/CollabLanDiscoveryService';
+import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {
@@ -49,11 +56,15 @@ import {
   type GitRuntimeResolveInput,
   GitRuntimeResolver,
 } from '@/app/collab/git/GitRuntimeResolver';
+import { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import type { CollabHostTransferService } from '@/app/collab/host-transfer/CollabHostTransferService';
 import {
   HostTransferModule,
   type HostTransferModuleOptions,
 } from '@/app/collab/host-transfer/HostTransferModule';
+import {
+  bindLegacyHostTransferRecoveryOwner,
+} from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import { JoinProjectCoordinator } from '@/app/collab/join/JoinProjectCoordinator';
@@ -79,6 +90,7 @@ import {
   type LanHostCoordinatorOptions,
   type LanHostProjectRuntime,
 } from '@/app/collab/lan/LanHostCoordinator';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
   ProjectEventHub,
   SqlJsProjectEventSource,
@@ -86,10 +98,17 @@ import {
 import type {
   CollabTerminalProjectService,
 } from '@/app/collab/lan/routes/RouteTypes';
+import {
+  LanAuthorityProjectionTransitionCoordinator,
+} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import type {
   CollabProjectLifecycleAdmission,
   CollabProjectLifecycleAuthorityAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
+import {
+  bindLegacyCollabProjectSetupOwner,
+  decodeCollabProjectSetupRecord,
+} from '@/app/collab/project/CollabProjectSetupRecord';
 import { LanHostTransitionProofClient } from '@/app/collab/reconnect/LanHostTransitionProofClient';
 import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { ProjectRetirementCoordinator } from '@/app/collab/retirement/ProjectRetirementCoordinator';
@@ -106,6 +125,7 @@ import { RetirementTombstoneRepository } from '@/app/collab/retirement/Retiremen
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabRetirementResult, CollabRetireProjectRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface CollabLocalFoundation {
   readonly pathPolicy: CollabPathPolicy;
@@ -141,6 +161,7 @@ export interface ClaudianCollabServiceOptions {
   readonly getEnvironment?: () => NodeJS.ProcessEnv;
   readonly gitRuntimeResolver?: CollabGitRuntimeResolver;
   readonly invitationCodec?: InvitationCodec;
+  readonly installationKey: InstallationKey;
   readonly lanHost?: Pick<
     LanHostCoordinatorOptions,
     | 'createAddressMonitor'
@@ -197,34 +218,37 @@ export class ClaudianCollabService {
   readonly cloudBootstrapTransitions: CloudBootstrapTransitionStore;
   readonly discovery: CollabLanDiscoveryService;
   readonly hostTransitionCandidates: HostTransitionCandidateResolver;
+  readonly hostInstallations: HostInstallationBindingService;
+  readonly installationKey: ClaudianCollabServiceOptions['installationKey'];
   readonly join: JoinProjectCoordinator;
   readonly lanHost: LanHostCoordinator;
   readonly local: CollabLocalFoundation;
   readonly reconnect: ReconnectProjectCoordinator;
+  readonly #authorityProjectionTransitions = new LanAuthorityProjectionTransitionCoordinator();
   private readonly authorityFoundations = new Map<
     CollabProjectId,
     Promise<CollabAuthorityFoundation>
   >();
-  private authorityTransferModule: AuthorityTransferModule | null = null;
+   #authorityTransferModule: AuthorityTransferModule | null = null;
   private closed = false;
-  private readonly createAuthorityDatabase: (
+   readonly #createAuthorityDatabase: (
     authorityDirectory: string,
   ) => SqlJsProjectDatabase;
-  private readonly getEnvironment: () => NodeJS.ProcessEnv;
-  private readonly gitRuntimeResolver: CollabGitRuntimeResolver;
-  private hostTransferModule: HostTransferModule | null = null;
-  private closePromise: Promise<void> | null = null;
-  private readonly retirementResponders = new Map<
+   readonly #getEnvironment: () => NodeJS.ProcessEnv;
+   readonly #gitRuntimeResolver: CollabGitRuntimeResolver;
+   #hostTransferModule: HostTransferModule | null = null;
+   #closePromise: Promise<void> | null = null;
+   readonly #retirementResponders = new Map<
     CollabProjectId,
     CollabTerminalProjectService
   >();
-  private readonly retirementResponderExpiry = new RetirementResponderExpiryScheduler(
-    projectId => this.cleanupRetirementResponder(projectId),
+   readonly #retirementResponderExpiry = new RetirementResponderExpiryScheduler(
+    projectId => this.#cleanupRetirementResponder(projectId),
   );
-  private readonly retirementResponderCleanupPending = new Set<CollabProjectId>();
+   readonly #retirementResponderCleanupPending = new Set<CollabProjectId>();
   private readonly retiredAuthorityCleanupComplete = new Set<CollabProjectId>();
   private readonly retirementTombstones: RetirementTombstoneRepository;
-  private readonly retirementTerminalClient: RetirementTerminalClient;
+   readonly #retirementTerminalClient: RetirementTerminalClient;
   private retirementHandler: {
     handle(
       result: CollabRetirementResult,
@@ -233,13 +257,14 @@ export class ClaudianCollabService {
   } | null = null;
 
   constructor(private readonly options: ClaudianCollabServiceOptions) {
+    this.installationKey = options.installationKey;
     const pathPolicy = new CollabPathPolicy({
       obsidianConfigDirectory: options.obsidianConfigDirectory,
     });
     const projects = new CollabLocalProjectRepository(options.vaultRoot, {
+      installationKey: options.installationKey,
       onDiagnostic: options.onDiagnostic,
     });
-    this.authorityTransfers = new AuthorityTransferPersistence(projects);
     this.local = Object.freeze({
       pathPolicy,
       projects,
@@ -249,15 +274,41 @@ export class ClaudianCollabService {
         pathPolicy,
       }),
     });
-    this.getEnvironment = options.getEnvironment ?? (() => process.env);
-    this.gitRuntimeResolver = options.gitRuntimeResolver ?? new GitRuntimeResolver({
-      environment: this.getEnvironment(),
+    this.#getEnvironment = options.getEnvironment ?? (() => process.env);
+    this.#gitRuntimeResolver = options.gitRuntimeResolver ?? new GitRuntimeResolver({
+      environment: this.#getEnvironment(),
     });
-    this.createAuthorityDatabase = options.createAuthorityDatabase
+    this.#createAuthorityDatabase = options.createAuthorityDatabase
       ?? (authorityDirectory => new SqlJsProjectDatabase(authorityDirectory));
-    this.retirementTombstones = new RetirementTombstoneRepository(projects);
     this.discovery = new CollabLanDiscoveryService({
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
+    });
+    const tlsIdentity = options.lanHost?.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot, {
+      installationKey: options.installationKey,
+    });
+    this.hostInstallations = new HostInstallationBindingService({
+      bindEligibleLegacyRecovery: (projectId, installationKey) => (
+        this.#bindEligibleLegacyRecovery(projectId, installationKey)
+      ),
+      installationKey: options.installationKey,
+      prepareLegacyRuntime: async projectId => {
+        const membership = await projects.loadMembership(projectId);
+        const expectedFingerprint = membership && isCollabLocalLanMembership(membership)
+          ? membership.authority.hostCaFingerprint
+          : null;
+        await tlsIdentity.adoptLegacyGlobalIdentity(expectedFingerprint);
+      },
+      projects,
+    });
+    this.authorityTransfers = new AuthorityTransferPersistence(projects, {
+      isRecoveryOwner: ownerInstallationKey => (
+        this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
+      ),
+    });
+    this.retirementTombstones = new RetirementTombstoneRepository(projects, {
+      isRecoveryOwner: ownerInstallationKey => (
+        this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
+      ),
     });
     const hostTransitionProofClient = new LanHostTransitionProofClient();
     const hostTrustTransitions = new HostTrustTransitionService();
@@ -272,24 +323,48 @@ export class ClaudianCollabService {
       vaultRoot: options.vaultRoot,
     });
     this.reconnect = new ReconnectProjectCoordinator(this, {
+      authorityProjectionTransitions: this.#authorityProjectionTransitions,
       hostTransitionProofClient,
+      hostInstallation: this.hostInstallations,
       hostTrustTransitionVerifier: hostTrustTransitions,
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
       vaultRoot: options.vaultRoot,
     });
-    this.retirementTerminalClient = new RetirementTerminalClient({
+    this.#retirementTerminalClient = new RetirementTerminalClient({
       hostTransitionCandidates: this.hostTransitionCandidates,
-      request: (trust, input) => this.sendRetirementAcknowledgement(trust, input),
+      request: (trust, input) => this.#sendRetirementAcknowledgement(trust, input),
     });
-    this.cloudBootstrapTransitions = new CloudBootstrapTransitionStore(options.vaultRoot);
+    this.cloudBootstrapTransitions = new CloudBootstrapTransitionStore(options.vaultRoot, {
+      isRecoveryOwner: ownerInstallationKey => (
+        this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
+      ),
+    });
     this.lanHost = new LanHostCoordinator({
       ...options.lanHost,
+      assertHostInstallationOwned: async projectId => {
+        await this.hostInstallations.assertOwned(projectId, 'start');
+      },
+      commitHostedRoute: (expected, next) => this.#commitHostedRoute(expected, next),
       discovery: this.discovery,
+      installationKey: options.installationKey,
       localProjects: projects,
-      openProject: projectId => this.openLanHostProject(projectId),
+      openProject: projectId => this.#openLanHostProject(projectId),
       runWithProjectStartGuard: async (projectId, operation) => {
         const tombstone = await projects.loadRetirementTombstone(projectId);
-        if (tombstone) {
+        if (tombstone && tombstone.ownerInstallationKey === undefined) {
+          throw new CollabError({
+            code: 'durable-progress-recovery-required',
+            recoveryActions: ['resume', 'open-diagnostics'],
+            safeContext: {
+              projectId,
+              reason: 'retirement-tombstone-legacy-owner-missing',
+            },
+          });
+        }
+        if (
+          tombstone
+          && this.hostInstallations.isRecoveryOwner(tombstone.ownerInstallationKey)
+        ) {
           throw new CollabError({
             code: 'project-retired',
             safeContext: {
@@ -304,35 +379,36 @@ export class ClaudianCollabService {
           () => this.authorityTransfers.runWithAuthorityStartGuard(projectId, operation),
         );
       },
+      tlsIdentity,
       vaultRoot: options.vaultRoot,
     });
   }
 
   resolveGitRuntime(rescan = false): Promise<GitRuntimeResolution> {
-    this.assertOpen();
-    const environment = this.getEnvironment();
+    this.#assertOpen();
+    const environment = this.#getEnvironment();
     const input = {
       configuredPath: this.options.getConfiguredGitPath(),
       pathEnvironment: environmentPath(environment),
     };
     return rescan
-      ? this.gitRuntimeResolver.rescan(input)
-      : this.gitRuntimeResolver.resolve(input);
+      ? this.#gitRuntimeResolver.rescan(input)
+      : this.#gitRuntimeResolver.resolve(input);
   }
 
   bindAuthorityTransferModule(module: AuthorityTransferModule): void {
-    this.assertOpen();
-    if (this.authorityTransferModule && this.authorityTransferModule !== module) {
+    this.#assertOpen();
+    if (this.#authorityTransferModule && this.#authorityTransferModule !== module) {
       throw new Error('Authority transfer module is already bound');
     }
-    this.authorityTransferModule = module;
+    this.#authorityTransferModule = module;
   }
 
   async activateAuthorityTransferSourceRoute(
     projectId: CollabProjectId,
     expectedEndpoint?: string,
   ): Promise<() => Promise<void>> {
-    this.assertOpen();
+    this.#assertOpen();
     const authority = await this.inspectAuthority(projectId);
     if (!authority) {
       throw collabServiceError(
@@ -348,7 +424,7 @@ export class ClaudianCollabService {
       );
     }
     const authenticator = new AuthorityMemberCredentialAuthenticator(authority.database);
-    const service = this.authorityTransferModule?.sourceActiveService({
+    const service = this.#authorityTransferModule?.sourceActiveService({
       authenticateMemberCredential: async credential => ({
         memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
       }),
@@ -396,7 +472,7 @@ export class ClaudianCollabService {
 
     const emptyConfigPath = await this.local.projects.ensureGitEmptyConfig();
     const runner = new GitCommandRunner({
-      baseEnvironment: this.getEnvironment(),
+      baseEnvironment: this.#getEnvironment(),
       emptyConfigPath,
       executablePath: resolution.runtime.executablePath,
     });
@@ -411,9 +487,9 @@ export class ClaudianCollabService {
     request: CollabRetireProjectRequest,
     signal?: AbortSignal,
   ): Promise<CollabRetirementResult> {
-    this.assertOpen();
+    this.#assertOpen();
     const { idempotencyKey } = createRetirementIntent(request);
-    const membership = await this.requireTrustedMembership(request.projectId);
+    const membership = await this.#requireTrustedMembership(request.projectId);
     const protocolRequest = {
       expectedHostMemberId: request.expectedHostMemberId,
       idempotencyKey,
@@ -446,11 +522,11 @@ export class ClaudianCollabService {
     readonly retiredAt: string;
     readonly signal?: AbortSignal;
   }): Promise<AcknowledgeRetirementResponse> {
-    this.assertOpen();
-    return this.retirementTerminalClient.acknowledge(input);
+    this.#assertOpen();
+    return this.#retirementTerminalClient.acknowledge(input);
   }
 
-  private sendRetirementAcknowledgement(
+   #sendRetirementAcknowledgement(
     trust: CollabTrustedHost,
     input: RetirementAcknowledgementInput,
   ): Promise<AcknowledgeRetirementResponse> {
@@ -470,20 +546,20 @@ export class ClaudianCollabService {
   }
 
   setRetirementHandler(handler: NonNullable<ClaudianCollabService['retirementHandler']>): void {
-    this.assertOpen();
+    this.#assertOpen();
     this.retirementHandler = handler;
   }
 
   async restoreRetirementResponders(
     projectRecoveryAdmission: CollabProjectLifecycleAdmission,
   ): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const restored = await this.retirementTombstones.restore();
     let firstError: unknown;
     for (const projectId of restored.expiredProjectIds) {
       await projectRecoveryAdmission(
         projectId,
-        () => this.restoreExpiredRetirementResponder(projectId),
+        () => this.#restoreExpiredRetirementResponder(projectId),
       ).catch(error => {
         firstError ??= error;
       });
@@ -491,7 +567,7 @@ export class ClaudianCollabService {
     for (const tombstone of restored.tombstones) {
       await projectRecoveryAdmission(
         tombstone.projectId,
-        () => this.restoreRetirementResponder(tombstone),
+        () => this.#restoreRetirementResponder(tombstone),
       ).catch(error => {
         firstError ??= error;
       });
@@ -502,7 +578,7 @@ export class ClaudianCollabService {
     }
   }
 
-  private async restoreExpiredRetirementResponder(projectId: CollabProjectId): Promise<void> {
+   async #restoreExpiredRetirementResponder(projectId: CollabProjectId): Promise<void> {
     const tombstone = await this.local.projects.loadRetirementTombstone(projectId);
     if (!tombstone) {
       throw new CollabError({
@@ -511,6 +587,11 @@ export class ClaudianCollabService {
         safeContext: { projectId, reason: 'retirement-tombstone-missing' },
       });
     }
+    this.hostInstallations.assertRecoveryOwner(
+      tombstone.ownerInstallationKey,
+      projectId,
+      'retirement',
+    );
     const [index, retirement] = await Promise.all([
       this.local.projects.loadIndex(),
       this.local.projects.loadRetirementRecord(projectId),
@@ -523,14 +604,20 @@ export class ClaudianCollabService {
     }
     await this.lanHost.stopTerminalProject(projectId).catch(() => undefined);
     await this.closeAuthority(projectId).catch(() => undefined);
-    await this.local.projects.removeAuthorityDirectory(projectId);
+    await this.removeOwnedAuthorityDirectory(projectId);
     await this.retirementTombstones.remove(projectId);
   }
 
-  private async restoreRetirementResponder(tombstone: {
+   async #restoreRetirementResponder(tombstone: {
+    readonly ownerInstallationKey?: string;
     readonly projectId: CollabProjectId;
     readonly result: CollabRetirementResult;
   }): Promise<void> {
+    this.hostInstallations.assertRecoveryOwner(
+      tombstone.ownerInstallationKey,
+      tombstone.projectId,
+      'retirement',
+    );
     await this.startRetirementResponder(tombstone.projectId);
     const [index, retirement] = await Promise.all([
       this.local.projects.loadIndex(),
@@ -544,18 +631,83 @@ export class ClaudianCollabService {
         .catch(() => undefined);
     }
     await this.closeAuthority(tombstone.projectId).catch(() => undefined);
-    await this.local.projects.removeAuthorityDirectory(tombstone.projectId);
+    await this.removeOwnedAuthorityDirectory(tombstone.projectId);
     this.retiredAuthorityCleanupComplete.add(tombstone.projectId);
-    if (this.retirementResponderCleanupPending.delete(tombstone.projectId)) {
-      await this.cleanupRetirementResponder(tombstone.projectId);
+    if (this.#retirementResponderCleanupPending.delete(tombstone.projectId)) {
+      await this.#cleanupRetirementResponder(tombstone.projectId);
     }
   }
 
-  openAuthority(projectId: CollabProjectId): Promise<CollabAuthorityFoundation> {
-    this.assertOpen();
+  async createAuthority(projectId: CollabProjectId): Promise<CollabAuthorityFoundation> {
+    this.#assertOpen();
+    const capability = await this.hostInstallations.createOwned(projectId);
+    return this.#openOwnedAuthority(capability);
+  }
+
+  async openAuthority(projectId: CollabProjectId): Promise<CollabAuthorityFoundation> {
+    this.#assertOpen();
+    const capability = await this.hostInstallations.assertOwned(projectId, 'open');
+    return this.#openOwnedAuthority(capability);
+  }
+
+  async #commitHostedRoute(
+    expected: CollabLocalLanMembershipRecord,
+    next: CollabLocalLanMembershipRecord,
+  ): Promise<void> {
+    await this.#authorityProjectionTransitions.run(expected.project.id, async () => {
+      const current = await this.local.projects.loadMembership(expected.project.id);
+      if (JSON.stringify(current) !== JSON.stringify(expected)) {
+        throw new CollabError({
+          code: 'stale-project-selection',
+          recoveryActions: ['retry'],
+          safeContext: { reason: 'lan-host-route-projection-changed' },
+        });
+      }
+      const remoteUrl = next.authority.gitRemoteUrl;
+      if (!remoteUrl) {
+        throw new CollabError({
+          code: 'repository-invalid',
+          recoveryActions: ['open-diagnostics'],
+          safeContext: { reason: 'lan-host-route-origin-missing' },
+        });
+      }
+      const git = await this.requireGitFoundation();
+      const repositoryPath = await this.local.workspace.resolveManagedProjectPath(
+        expected.project.workspacePath,
+      );
+      await git.repositories.assertLocalRepositoryIdentity(repositoryPath, {
+        memberId: expected.member.id,
+        personalRef: expected.member.personalRef,
+        projectId: expected.project.id,
+      });
+      const previousOrigins = await git.repositories.listRemoteUrls(repositoryPath, 'origin');
+      await rotateTrustedCollabOrigin(git.repositories, {
+        newRemoteUrl: remoteUrl,
+        oldRemoteUrl: expected.authority.gitRemoteUrl ?? remoteUrl,
+        projectId: expected.project.id,
+        repositoryPath,
+      });
+      try {
+        await this.local.projects.saveMembership(next);
+      } catch (error) {
+        if (previousOrigins.length === 0) {
+          await git.repositories.removeRemote(repositoryPath, 'origin').catch(() => undefined);
+        } else if (previousOrigins.length === 1) {
+          await git.repositories.addRemote(repositoryPath, 'origin', previousOrigins[0])
+            .catch(() => undefined);
+        }
+        throw error;
+      }
+    });
+  }
+
+   #openOwnedAuthority(
+    capability: OwnedAuthorityDirectoryCapability,
+  ): Promise<CollabAuthorityFoundation> {
+    const projectId = capability.projectId;
     const existing = this.authorityFoundations.get(projectId);
     if (existing) return existing;
-    const pending = this.createAndOpenAuthority(projectId);
+    const pending = this.#createAndOpenAuthority(capability);
     this.authorityFoundations.set(projectId, pending);
     void pending.catch(() => {
       if (this.authorityFoundations.get(projectId) === pending) {
@@ -576,26 +728,61 @@ export class ClaudianCollabService {
   async inspectAuthority(
     projectId: CollabProjectId,
   ): Promise<CollabAuthorityFoundation | null> {
-    this.assertOpen();
+    this.#assertOpen();
     const existing = this.authorityFoundations.get(projectId);
     if (existing) return existing;
-    if (await this.local.projects.findAuthorityDirectory(projectId) === null) {
-      return null;
-    }
+    if (await this.hostInstallations.inspect(projectId) === 'absent') return null;
     return this.openAuthority(projectId);
   }
 
   async discardProvisionalAuthority(projectId: CollabProjectId): Promise<void> {
     await this.closeAuthority(projectId);
-    await this.local.projects.removeAuthorityDirectory(projectId);
+    if (await this.hostInstallations.inspect(projectId) === 'absent') return;
+    const capability = await this.hostInstallations.assertOwned(projectId, 'cleanup');
+    await this.local.projects.removeOwnedAuthorityDirectory(capability);
+  }
+
+  async openAuthorityTransferTarget(
+    projectId: CollabProjectId,
+    ownerInstallationKey: unknown,
+  ): Promise<CollabAuthorityFoundation> {
+    this.#assertOpen();
+    const capability = await this.hostInstallations.prepareAuthorityTransferTarget(
+      projectId,
+      ownerInstallationKey,
+    );
+    return this.#createAndOpenAuthority(capability);
+  }
+
+  async activateAuthorityTransferTarget(
+    projectId: CollabProjectId,
+    ownerInstallationKey: unknown,
+  ): Promise<CollabAuthorityFoundation> {
+    this.#assertOpen();
+    const capability = await this.hostInstallations.activateAuthorityTransferTarget(
+      projectId,
+      ownerInstallationKey,
+    );
+    return this.#openOwnedAuthority(capability);
+  }
+
+  discardAuthorityTransferTarget(
+    projectId: CollabProjectId,
+    ownerInstallationKey: unknown,
+  ): Promise<void> {
+    return this.hostInstallations.discardAuthorityTransferTarget(
+      projectId,
+      ownerInstallationKey,
+    );
   }
 
   createHostTransferService(
     snapshots: HostTransferModuleOptions['snapshots'],
     projectRecoveryAdmission: CollabProjectLifecycleAdmission,
+    syncProjection: (projectId: CollabProjectId) => void,
   ): CollabHostTransferService {
-    this.assertOpen();
-    if (this.hostTransferModule) {
+    this.#assertOpen();
+    if (this.#hostTransferModule) {
       throw collabServiceError('not-initialized', 'host-transfer-module-already-created');
     }
     const module = new HostTransferModule({
@@ -613,32 +800,46 @@ export class ClaudianCollabService {
         const session = await this.lanHost.startProject(input.projectId);
         return { endpoint: session.endpoint };
       },
+      assertRecoveryOwner: (ownerInstallationKey, projectId) => {
+        this.hostInstallations.assertRecoveryOwner(
+          ownerInstallationKey,
+          projectId,
+          'host-transfer',
+        );
+        return Promise.resolve();
+      },
+      bindTransferTarget: async projectId => (
+        await this.hostInstallations.bindTransferTarget(projectId)
+      ).authorityDirectory,
       finalizeOldAuthority: async projectId => {
         await this.closeAuthority(projectId);
-        await this.local.projects.removeAuthorityDirectory(projectId);
+        await this.removeOwnedAuthorityDirectory(projectId);
       },
+      installationKey: this.options.installationKey,
       lanHost: this.lanHost,
+      syncProjection,
+      authorityProjectionTransitions: this.#authorityProjectionTransitions,
       projects: this.local.projects,
       projectRecoveryAdmission,
       requireGitFoundation: () => this.requireGitFoundation(),
       snapshots,
       workspace: this.local.workspace,
     });
-    this.hostTransferModule = module;
+    this.#hostTransferModule = module;
     return module.clientService;
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
+    if (this.#closePromise) return this.#closePromise;
     this.closed = true;
     this.retirementHandler = null;
-    this.closePromise = (async () => {
+    this.#closePromise = (async () => {
       let firstError: unknown;
-      await this.retirementResponderExpiry.close().catch(error => {
+      await this.#retirementResponderExpiry.close().catch(error => {
         firstError = error;
       });
-      this.retirementResponders.clear();
-      this.retirementResponderCleanupPending.clear();
+      this.#retirementResponders.clear();
+      this.#retirementResponderCleanupPending.clear();
       this.retiredAuthorityCleanupComplete.clear();
       await this.authorityTransfers.close().catch(error => {
         firstError ??= error;
@@ -663,20 +864,14 @@ export class ClaudianCollabService {
       if (firstError instanceof Error) throw firstError;
       if (firstError) throw collabServiceError('not-initialized', 'collab-close-failed');
     })();
-    return this.closePromise;
+    return this.#closePromise;
   }
 
-  private async createAndOpenAuthority(
-    projectId: CollabProjectId,
+   async #createAndOpenAuthority(
+    capability: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability,
   ): Promise<CollabAuthorityFoundation> {
-    const membership = await this.local.projects.loadMembership(projectId);
-    const authorityDirectory = await this.local.projects.ensureAuthorityDirectory(projectId, {
-      claimLegacyOwnedDirectory: membership !== null
-        && isCollabLocalLanMembership(membership)
-        && membership.project.id === projectId
-        && membership.hostOwnership.ownsAuthority,
-    });
-    const database = this.createAuthorityDatabase(authorityDirectory);
+    const { authorityDirectory } = capability;
+    const database = this.#createAuthorityDatabase(authorityDirectory);
     try {
       await database.open();
     } catch (error) {
@@ -696,11 +891,15 @@ export class ClaudianCollabService {
     });
   }
 
-  private async openLanHostProject(
+  async #openLanHostProject(
     projectId: CollabProjectId,
   ): Promise<LanHostProjectRuntime> {
+    const capability = await this.hostInstallations.assertOwnedAfterLegacyRecoveryBinding(
+      projectId,
+      'open',
+    );
     const [authority, git] = await Promise.all([
-      this.openAuthority(projectId),
+      this.#openOwnedAuthority(capability),
       this.requireGitFoundation(),
     ]);
     const gitHttpBackendPath = git.runtime.httpBackendPath;
@@ -789,7 +988,7 @@ export class ClaudianCollabService {
       presence: events,
     });
     const hostTransfers = new HostTransferAuthorityService(authority);
-    const outgoingHostTransfer = this.hostTransferModule?.createOutgoingRuntime({
+    const outgoingHostTransfer = this.#hostTransferModule?.createOutgoingRuntime({
       accept,
       authority,
       git,
@@ -810,7 +1009,7 @@ export class ClaudianCollabService {
     const authorityTransferAuthenticator = new AuthorityMemberCredentialAuthenticator(
       authority.database,
     );
-    const authorityTransfer = this.authorityTransferModule?.sourceActiveService({
+    const authorityTransfer = this.#authorityTransferModule?.sourceActiveService({
       authenticateMemberCredential: async credential => ({
         memberId: (await authorityTransferAuthenticator.authenticate(
           credential,
@@ -824,6 +1023,7 @@ export class ClaudianCollabService {
     const retirementAuthority = new ProjectRetirementAuthorityService(
       authority.database,
       tombstones,
+      { installationKey: this.installationKey },
     );
     const lifecycle: NonNullable<LanHostProjectRuntime['lifecycle']> = {
       acceptHostTransfer: (actorMemberId, request) => (
@@ -852,8 +1052,8 @@ export class ClaudianCollabService {
           retirementAuthority,
           {
             activate: async () => {
-              await input.activateTerminal(this.createRetirementTerminalService(projectId));
-              await this.scheduleRetirementResponderExpiry(projectId);
+              await input.activateTerminal(this.#createRetirementTerminalService(projectId));
+              await this.#scheduleRetirementResponderExpiry(projectId);
             },
           },
           {
@@ -902,7 +1102,7 @@ export class ClaudianCollabService {
       authorityDirectory: authority.authorityDirectory,
       events,
       git: {
-        baseEnvironment: this.getEnvironment(),
+        baseEnvironment: this.#getEnvironment(),
         emptyConfigPath: await this.local.projects.ensureGitEmptyConfig(),
         gitExecutablePath: git.runtime.executablePath,
         gitHttpBackendPath,
@@ -951,10 +1151,10 @@ export class ClaudianCollabService {
       readMainOid,
       retireAuthority: async () => {
         await this.closeAuthority(projectId);
-        await this.local.projects.removeAuthorityDirectory(projectId);
+        await this.removeOwnedAuthorityDirectory(projectId);
         this.retiredAuthorityCleanupComplete.add(projectId);
-        if (this.retirementResponderCleanupPending.delete(projectId)) {
-          await this.cleanupRetirementResponder(projectId);
+        if (this.#retirementResponderCleanupPending.delete(projectId)) {
+          await this.#cleanupRetirementResponder(projectId);
         }
       },
       requests,
@@ -963,14 +1163,18 @@ export class ClaudianCollabService {
     };
   }
 
-  private assertOpen(): void {
+   #assertOpen(): void {
     if (this.closed) throw collabServiceError('not-initialized', 'collab-service-closed');
   }
 
-  private createRetirementTerminalService(
+  private async removeOwnedAuthorityDirectory(projectId: CollabProjectId): Promise<void> {
+    await this.hostInstallations.removeOwned(projectId);
+  }
+
+   #createRetirementTerminalService(
     projectId: CollabProjectId,
   ): CollabTerminalProjectService {
-    const existing = this.retirementResponders.get(projectId);
+    const existing = this.#retirementResponders.get(projectId);
     if (existing) return existing;
     const terminal = new RetirementTerminalService(this.retirementTombstones);
     const service: CollabTerminalProjectService = {
@@ -988,7 +1192,7 @@ export class ClaudianCollabService {
       }),
       getRetirement: memberCredential => terminal.getResult(projectId, memberCredential),
     };
-    this.retirementResponders.set(projectId, service);
+    this.#retirementResponders.set(projectId, service);
     return service;
   }
 
@@ -996,14 +1200,6 @@ export class ClaudianCollabService {
     projectId: CollabProjectId,
     scheduleExpiry = true,
   ): Promise<void> {
-    await this.lanHost.startTerminalProject({
-      projectId,
-      service: this.createRetirementTerminalService(projectId),
-    });
-    if (scheduleExpiry) await this.scheduleRetirementResponderExpiry(projectId);
-  }
-
-  private async scheduleRetirementResponderExpiry(projectId: CollabProjectId): Promise<void> {
     const tombstone = await this.retirementTombstones.load(projectId);
     if (!tombstone) {
       throw new CollabError({
@@ -1012,12 +1208,33 @@ export class ClaudianCollabService {
         safeContext: { reason: 'retirement-tombstone-missing' },
       });
     }
-    this.retirementResponderExpiry.schedule(projectId, tombstone.expiresAt);
+    this.hostInstallations.assertRecoveryOwner(
+      tombstone.ownerInstallationKey,
+      projectId,
+      'retirement',
+    );
+    await this.lanHost.startTerminalProject({
+      projectId,
+      service: this.#createRetirementTerminalService(projectId),
+    });
+    if (scheduleExpiry) await this.#scheduleRetirementResponderExpiry(projectId);
   }
 
-  private async cleanupRetirementResponder(projectId: CollabProjectId): Promise<void> {
+   async #scheduleRetirementResponderExpiry(projectId: CollabProjectId): Promise<void> {
+    const tombstone = await this.retirementTombstones.load(projectId);
+    if (!tombstone) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['resume', 'open-diagnostics'],
+        safeContext: { reason: 'retirement-tombstone-missing' },
+      });
+    }
+    this.#retirementResponderExpiry.schedule(projectId, tombstone.expiresAt);
+  }
+
+   async #cleanupRetirementResponder(projectId: CollabProjectId): Promise<void> {
     if (!this.retiredAuthorityCleanupComplete.has(projectId)) {
-      this.retirementResponderCleanupPending.add(projectId);
+      this.#retirementResponderCleanupPending.add(projectId);
       return;
     }
     await this.lanHost.stopTerminalProject(projectId);
@@ -1027,13 +1244,54 @@ export class ClaudianCollabService {
       await this.startRetirementResponder(projectId, false).catch(() => undefined);
       throw error;
     }
-    this.retirementResponders.delete(projectId);
-    this.retirementResponderExpiry.cancel(projectId);
-    this.retirementResponderCleanupPending.delete(projectId);
+    this.#retirementResponders.delete(projectId);
+    this.#retirementResponderExpiry.cancel(projectId);
+    this.#retirementResponderCleanupPending.delete(projectId);
     this.retiredAuthorityCleanupComplete.delete(projectId);
   }
 
-  private async requireTrustedMembership(projectId: CollabProjectId): Promise<{
+   async #bindEligibleLegacyRecovery(
+    projectId: CollabProjectId,
+    installationKey: InstallationKey,
+  ): Promise<void> {
+    const setup = await this.local.projects.loadProjectDocument(
+      projectId,
+      'pending-operation',
+      decodeCollabProjectSetupRecord,
+    );
+    if (setup?.schemaVersion === 2) {
+      await this.local.projects.saveProjectDocument(
+        projectId,
+        'pending-operation',
+        bindLegacyCollabProjectSetupOwner(setup, installationKey),
+      );
+    }
+
+    const outgoingHostTransfer = await this.local.projects.hostTransferRecovery.load(
+      projectId,
+      'outgoing',
+    );
+    if (outgoingHostTransfer?.schemaVersion === 1) {
+      await this.local.projects.hostTransferRecovery.save(
+        bindLegacyHostTransferRecoveryOwner(outgoingHostTransfer, installationKey),
+      );
+    }
+
+    await this.authorityTransfers.bindLegacySourceOwner(projectId, installationKey);
+
+    const cloudBootstrap = await this.cloudBootstrapTransitions.load(projectId);
+    if (
+      cloudBootstrap?.schemaVersion === 1
+      && cloudBootstrap.memberId === cloudBootstrap.oldAuthority.sourceHostMemberId
+      && cloudBootstrap.fence.state !== 'not-applicable'
+    ) {
+      await this.cloudBootstrapTransitions.save(
+        bindLegacyCloudBootstrapSourceOwner(cloudBootstrap, installationKey),
+      );
+    }
+  }
+
+   async #requireTrustedMembership(projectId: CollabProjectId): Promise<{
     readonly credential: string;
     readonly trust: {
       readonly caCertificatePem: string;

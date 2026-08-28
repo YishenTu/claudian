@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "LAN Host",
+      "hostedHere": "このデバイスでホスト中",
+      "hostedElsewhere": "別のデバイスでホスト中",
+      "legacyClaimConfirmation": "このデバイスを Host の所有デバイスとして使用しますか？",
+      "legacyClaimAction": "このデバイスを使用",
       "status": {
         "stopped": "停止中",
         "starting": "起動中",

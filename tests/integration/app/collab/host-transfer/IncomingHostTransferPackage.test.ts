@@ -304,6 +304,7 @@ async function* chunks(bytes: Uint8Array) {
 
 function acceptedRecord() {
   return createHostTransferRecoveryRecord({
+    ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     createdAt: NOW, direction: 'incoming', projectId: 'project-alpha',
     receiverCredential: Buffer.alloc(32, 1).toString('base64url'),
     sourceHostMemberId: 'member-source',

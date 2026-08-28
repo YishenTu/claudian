@@ -245,6 +245,10 @@
     },
     "host": {
       "summary": "LAN Host",
+      "hostedHere": "Hosted on this device",
+      "hostedElsewhere": "Hosted on another device",
+      "legacyClaimConfirmation": "Use this device as the Host owner?",
+      "legacyClaimAction": "Use this device",
       "status": {
         "stopped": "Stopped",
         "starting": "Starting",

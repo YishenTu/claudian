@@ -53,6 +53,7 @@ import type {
   CloudAuthorityLifecycleSession,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface AuthorityTransferSourceRouteInput {
   readonly authenticateMemberCredential: (
@@ -63,6 +64,10 @@ export interface AuthorityTransferSourceRouteInput {
 }
 
 export interface AuthorityTransferModuleOptions {
+  readonly assertRecoveryOwner: (
+    ownerInstallationKey: string | undefined,
+    projectId: CollabProjectId,
+  ) => Promise<void> | void;
   readonly claimantStore: AuthorityTransferClaimantCoordinatorOptions['store'];
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly createCloudToLanTarget?: (
@@ -82,6 +87,7 @@ export interface AuthorityTransferModuleOptions {
     expectedEndpoint?: string,
   ) => Promise<() => Promise<void>>;
   readonly lifecycle: CollabProjectLifecycleSubsystem;
+  readonly installationKey: InstallationKey;
   readonly persistence: AuthorityTransferPersistence;
   readonly recoverCloudSession?: (
     record: AuthorityTransferRecord,
@@ -211,6 +217,7 @@ export class AuthorityTransferModule {
     this.transferRecovery = new AuthorityTransferRecovery(
       options.persistence,
       this.runtimes,
+      options.assertRecoveryOwner,
     );
     this.claimantRecovery = new AuthorityTransferClaimantRecovery(
       options.claimantStore,
@@ -229,6 +236,7 @@ export class AuthorityTransferModule {
     }
     const coordinator = new LanToCloudSourceCoordinator({
       cloud: input.cloudSession.lifecycle,
+      installationKey: this.options.installationKey,
       persistence: this.options.persistence,
       source: this.options.createLanToCloudSource(input.projectId, input.cloudSession),
     });
@@ -274,8 +282,12 @@ export class AuthorityTransferModule {
     if (!target.prepareTarget) {
       throw moduleError('authority-transfer-target-preparation-unavailable');
     }
+    if (!input.expectedTargetUrl) {
+      throw moduleError('authority-transfer-target-url-required');
+    }
     const coordinator = new CloudToLanTargetCoordinator({
       cloud: input.cloudSession.lifecycle,
+      installationKey: this.options.installationKey,
       persistence: this.options.persistence,
       target,
     });
@@ -283,10 +295,6 @@ export class AuthorityTransferModule {
     const binding = Object.freeze({ coordinator, unregister });
     this.targetBindings.set(input.projectId, binding);
     try {
-      const prepared = await target.prepareTarget(input.expectedTargetUrl);
-      if (input.expectedTargetUrl && prepared.targetUrl !== input.expectedTargetUrl) {
-        throw moduleError('authority-transfer-target-recovery-endpoint-mismatch');
-      }
       return Object.freeze({
         coordinator,
         dispose: () => {
@@ -295,7 +303,7 @@ export class AuthorityTransferModule {
           unregister();
           target.dispose?.();
         },
-        targetUrl: prepared.targetUrl,
+        targetUrl: input.expectedTargetUrl,
       });
     } catch (error) {
       this.targetBindings.delete(input.projectId);
@@ -671,6 +679,10 @@ export class AuthorityTransferModule {
   private async resolveRuntime(
     record: AuthorityTransferRecord,
   ): Promise<AuthorityTransferDirectionRuntime | null> {
+    await this.options.assertRecoveryOwner(
+      record.ownerInstallationKey,
+      record.projectId,
+    );
     const bound = record.localRole === 'source'
       ? this.sourceBindings.get(record.projectId)?.coordinator
       : this.targetBindings.get(record.projectId)?.coordinator;

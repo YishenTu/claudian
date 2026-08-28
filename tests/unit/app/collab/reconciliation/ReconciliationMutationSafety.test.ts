@@ -5,7 +5,6 @@ import {
 } from '@/app/collab/reconciliation/ReconciliationMutationSafety';
 
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

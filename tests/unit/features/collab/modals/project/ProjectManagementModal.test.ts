@@ -48,6 +48,7 @@ function project(
     authorityKind: 'lan',
     connectionStatus: 'offline',
     health: 'healthy',
+    hostInstallationStatus: 'not-host',
     hostStatus: 'not-host',
     id: 'project-alpha',
     name: 'Alpha',
@@ -79,6 +80,10 @@ function createPort(
     acceptHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     cancelHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue(success({} as never)),
+    claimLegacyHostInstallation: jest.fn().mockResolvedValue(success(project({
+      hostInstallationStatus: 'hosted-here',
+      hostStatus: 'stopped',
+    }))),
     createHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(success({} as never)),
     declineHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
@@ -713,7 +718,11 @@ describe('ProjectManagementModal', () => {
       member('member-host', 'Host operator'),
     ], {}, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
     const modal = new ProjectManagementModal({} as never, port, {
-      project: project({ hostStatus: 'stopped', role: 'member' }),
+      project: project({
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'stopped',
+        role: 'member',
+      }),
     });
 
     modal.onOpen();
@@ -737,6 +746,27 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.textContent).toContain('Running');
     expect(modal.contentEl.querySelectorAll('[data-action="start-host"]')).toHaveLength(0);
     expect(modal.contentEl.querySelectorAll('[data-action="stop-host"]')).toHaveLength(1);
+  });
+
+  it('shows a synchronized foreign Host as status-only in Project management', async () => {
+    const port = createPort([
+      member('member-host', 'Host operator'),
+    ], {}, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({
+        hostInstallationStatus: 'hosted-elsewhere',
+        hostStatus: 'not-host',
+        role: 'member',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const host = modal.contentEl.querySelector('.claudian-collab-project-host-action');
+    expect(host?.textContent).toContain('Hosted on another device');
+    expect(host?.querySelectorAll('button')).toHaveLength(0);
+    expect(port.startHost).not.toHaveBeenCalled();
   });
 
   it('lets the sole Manager Host retire after starting Host in the open modal', async () => {
@@ -769,6 +799,7 @@ describe('ProjectManagementModal', () => {
     const modal = new ProjectManagementModal({} as never, port, {
       project: project({
         connectionStatus: 'host-stopped',
+        hostInstallationStatus: 'hosted-here',
         hostStatus: 'stopped',
         role: 'manager',
       }),
@@ -811,7 +842,10 @@ describe('ProjectManagementModal', () => {
     const copyText = jest.fn().mockResolvedValue(undefined);
     const modal = new ProjectManagementModal({} as never, port, {
       copyText,
-      project: project({ hostStatus: 'stopped' }),
+      project: project({
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'stopped',
+      }),
     });
     modal.onOpen();
     await flush();

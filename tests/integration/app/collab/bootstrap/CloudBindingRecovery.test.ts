@@ -10,6 +10,7 @@ import {
   collabMemberRef,
   type DevelopmentBootstrapManifest,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   type CloudBootstrapBindingEffects,
@@ -184,7 +185,9 @@ function lanMembership(): CollabLocalLanMembershipRecord {
 async function createFixture(root: string): Promise<RecoveryFixture> {
   const vaultRoot = path.join(root, 'vault');
   await mkdir(vaultRoot);
-  const projects = new CollabLocalProjectRepository(vaultRoot);
+  const projects = new CollabLocalProjectRepository(vaultRoot, {
+    installationKey: TEST_INSTALLATION_A,
+  });
   const workspace = new CollabWorkspaceService(vaultRoot);
   await workspace.claimProjectsFolder('workspace');
   const repositoryPath = path.join(vaultRoot, 'workspace', PROJECT_ID);
@@ -210,12 +213,15 @@ async function createFixture(root: string): Promise<RecoveryFixture> {
     workspacePath: `workspace/${PROJECT_ID}`,
   });
   await projects.saveMembership(lanMembership());
-  const authorityDirectory = await projects.ensureAuthorityDirectory(PROJECT_ID);
+  const authorityDirectory = (
+    await projects.createOwnedAuthorityDirectory(PROJECT_ID)
+  ).authorityDirectory;
   await writeFile(path.join(authorityDirectory, 'collab.db'), 'retired authority evidence');
 
   const capturedManifest = manifest(mainOid);
-  const store = new CloudBootstrapTransitionStore(vaultRoot);
+  const store = new CloudBootstrapTransitionStore(vaultRoot, { isRecoveryOwner: () => true });
   let record = await store.create(createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
     developmentActorId: MEMBER_ID,
     fenceId: 'bootstrap-cloud-recovery-fence',
     manifest: capturedManifest,
@@ -254,7 +260,9 @@ async function createFixture(root: string): Promise<RecoveryFixture> {
 }
 
 async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBindingEffects> {
-  const projects = new CollabLocalProjectRepository(fixture.vaultRoot);
+  const projects = new CollabLocalProjectRepository(fixture.vaultRoot, {
+    installationKey: TEST_INSTALLATION_A,
+  });
   const workspace = new CollabWorkspaceService(fixture.vaultRoot);
   const repositories = new GitRepositoryService(new GitCommandRunner({
     emptyConfigPath: await projects.ensureGitEmptyConfig(),
@@ -338,7 +346,6 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
     authorityLifecycle: { closeAuthority: async () => undefined },
     git: {
       assertOrigin: (record, repositoryPath) => ensureTrustedCollabOrigin(repositories, {
-        allowHostRemoteRepair: false,
         projectId: record.projectId,
         remoteUrl: record.newAuthority.gitRemoteUrl,
         repositoryPath,
@@ -376,6 +383,12 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
         observedPersonalRefOid: fixture.mainOid,
       }),
     },
+    retireLanAuthorityDirectory: async (projectId, attemptId) => (
+      projects.retireOwnedAuthorityDirectory(
+        await projects.assertOwnedAuthorityRetirement(projectId, attemptId),
+        attemptId,
+      )
+    ),
     workspace,
   });
 }
@@ -385,6 +398,7 @@ function createFinalizer(
   effects: CloudBootstrapBindingEffects,
   transitions: CloudBootstrapTransitionStorePort = new CloudBootstrapTransitionStore(
     fixture.vaultRoot,
+    { isRecoveryOwner: () => true },
   ),
 ): CloudBootstrapBindingFinalizer {
   return new CloudBootstrapBindingFinalizer({
@@ -422,7 +436,7 @@ function failAfterEffect(
 }
 
 async function expectTerminalRecovery(fixture: RecoveryFixture): Promise<void> {
-  const restartedStore = new CloudBootstrapTransitionStore(fixture.vaultRoot);
+  const restartedStore = new CloudBootstrapTransitionStore(fixture.vaultRoot, { isRecoveryOwner: () => true });
   const pending = await restartedStore.load(PROJECT_ID);
   expect(pending).not.toBeNull();
   const restartedEffects = await createEffects(fixture);
@@ -437,7 +451,9 @@ async function expectTerminalRecovery(fixture: RecoveryFixture): Promise<void> {
     phase: 'fence-terminal',
   });
 
-  const restartedProjects = new CollabLocalProjectRepository(fixture.vaultRoot);
+  const restartedProjects = new CollabLocalProjectRepository(fixture.vaultRoot, {
+    installationKey: TEST_INSTALLATION_A,
+  });
   const storedMembership = await restartedProjects.loadMembership(PROJECT_ID);
   expect(storedMembership && isCollabLocalCloudMembership(storedMembership)).toBe(true);
   expect(JSON.stringify(storedMembership)).not.toContain('credential');
@@ -469,7 +485,7 @@ async function crashAfterCheckpoint(
   fixture: RecoveryFixture,
   phase: CloudBootstrapTransitionPhase,
 ): Promise<CloudBootstrapTransitionStore> {
-  const persistedStore = new CloudBootstrapTransitionStore(fixture.vaultRoot);
+  const persistedStore = new CloudBootstrapTransitionStore(fixture.vaultRoot, { isRecoveryOwner: () => true });
   let failed = false;
   const crashStore: CloudBootstrapTransitionStorePort = {
     create: record => persistedStore.create(record),
@@ -496,7 +512,7 @@ describe('Cloud binding durable recovery', () => {
     try {
       const fixture = await createFixture(root);
       await expectTerminalRecovery(fixture);
-      await expect(new CloudBootstrapTransitionStore(fixture.vaultRoot).load(PROJECT_ID))
+      await expect(new CloudBootstrapTransitionStore(fixture.vaultRoot, { isRecoveryOwner: () => true }).load(PROJECT_ID))
         .resolves.toMatchObject({ phase: 'fence-terminal' });
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -610,7 +626,9 @@ describe('Cloud binding durable recovery', () => {
           fixture.repositoryPath,
           ['rev-parse', `refs/remotes/origin/members/${MEMBER_ID}`],
         )).toBe(fixture.mainOid);
-        await expect(new CollabLocalProjectRepository(fixture.vaultRoot).loadIndex())
+        await expect(new CollabLocalProjectRepository(fixture.vaultRoot, {
+          installationKey: TEST_INSTALLATION_A,
+        }).loadIndex())
           .resolves.toMatchObject({
             projects: [{ authorityKind: 'cloud', id: PROJECT_ID }],
           });

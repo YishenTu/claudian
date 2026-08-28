@@ -33,6 +33,7 @@ describe('CollabFeaturePort', () => {
       readConflictFile: true,
       createInvitation: true,
       revokeInvitation: true,
+      claimLegacyHostInstallation: true,
       startHost: true,
       stopHost: true,
       readRequest: true,

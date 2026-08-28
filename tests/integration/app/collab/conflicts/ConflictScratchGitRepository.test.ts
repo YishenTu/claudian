@@ -551,7 +551,6 @@ describe('ConflictScratchGitRepository', () => {
     });
     await git.createRef(repositoryPath, 'refs/remotes/origin/main', mainOid);
     const context: PublishProjectContext = {
-      allowHostRemoteRepair: false,
       memberId: 'member-a',
       personalRef,
       projectId: 'project-a',

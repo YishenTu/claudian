@@ -2,9 +2,11 @@ import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   advanceCloudBootstrapTransitionPhase,
+  bindLegacyCloudBootstrapSourceOwner,
   createCloudBootstrapTransitionRecord,
   decodeCloudBootstrapTransitionRecord,
   markCloudBootstrapTerminalCleanupCompleted,
@@ -24,6 +26,7 @@ import {
 describe('CloudBootstrapTransitionRecord', () => {
   it('stores only exact safe transition identity while binding remains pending', () => {
     const record = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-one',
       manifest: bootstrapManifest(),
@@ -62,6 +65,7 @@ describe('CloudBootstrapTransitionRecord', () => {
         gitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
         sourceHostMemberId: HOST_MEMBER_ID,
       },
+      ownerInstallationKey: TEST_INSTALLATION_A,
       phase: 'intent',
       projectId: PROJECT_ID,
       repositoryIdentity: {
@@ -70,13 +74,75 @@ describe('CloudBootstrapTransitionRecord', () => {
         personalRef: 'refs/heads/members/member-alice',
         personalRefOid: HOST_OID,
       },
-      schemaVersion: 1,
+      schemaVersion: 2,
       terminalCleanupCompleted: false,
       updatedAt: '2026-08-21T00:00:01.000Z',
     });
     expect(JSON.stringify(record)).not.toContain('credential');
     expect(JSON.stringify(record)).not.toContain('CERTIFICATE');
     expect(decodeCloudBootstrapTransitionRecord(record)).toEqual(record);
+  });
+
+  it('accepts ownerless legacy records without assigning the current installation', () => {
+    const current = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      developmentActorId: HOST_MEMBER_ID,
+      fenceId: 'bootstrap-fence-one',
+      manifest: bootstrapManifest(),
+      manifestSha256: MANIFEST_SHA256,
+      memberId: HOST_MEMBER_ID,
+      oldEndpoint: 'https://192.168.1.20:54545',
+      oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
+      serverUrl: 'https://cloud.example.test',
+      timestamp: '2026-08-21T00:00:01.000Z',
+    });
+    const { ownerInstallationKey: _, ...withoutOwner } = current;
+
+    expect(decodeCloudBootstrapTransitionRecord({
+      ...withoutOwner,
+      schemaVersion: 1,
+    })).toMatchObject({ schemaVersion: 1 });
+    expect(() => decodeCloudBootstrapTransitionRecord(withoutOwner)).toThrow(TypeError);
+    expect(() => decodeCloudBootstrapTransitionRecord({
+      ...current,
+      ownerInstallationKey: 'device-invalid',
+    })).toThrow(TypeError);
+    expect(() => decodeCloudBootstrapTransitionRecord({
+      ...current,
+      schemaVersion: 1,
+    })).toThrow(TypeError);
+  });
+
+  it('binds only a former-Host legacy checkpoint after explicit installation claim', () => {
+    const current = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      developmentActorId: HOST_MEMBER_ID,
+      fenceId: 'bootstrap-fence-one',
+      manifest: bootstrapManifest(),
+      manifestSha256: MANIFEST_SHA256,
+      memberId: HOST_MEMBER_ID,
+      oldEndpoint: 'https://192.168.1.20:54545',
+      oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
+      serverUrl: 'https://cloud.example.test',
+      timestamp: '2026-08-21T00:00:01.000Z',
+    });
+    const { ownerInstallationKey: _, ...withoutOwner } = current;
+    const source = decodeCloudBootstrapTransitionRecord({
+      ...withoutOwner,
+      schemaVersion: 1,
+    });
+    const participant = decodeCloudBootstrapTransitionRecord({
+      ...withoutOwner,
+      fence: { fenceId: null, state: 'not-applicable', stoppedAt: null },
+      schemaVersion: 1,
+    });
+
+    expect(bindLegacyCloudBootstrapSourceOwner(source, TEST_INSTALLATION_A)).toMatchObject({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      schemaVersion: 2,
+    });
+    expect(() => bindLegacyCloudBootstrapSourceOwner(participant, TEST_INSTALLATION_A))
+      .toThrow('Cloud bootstrap participant owner is ambiguous');
   });
 
   it('rejects a persisted development actor that differs from the Member', () => {
@@ -88,6 +154,7 @@ describe('CloudBootstrapTransitionRecord', () => {
       memberId: HOST_MEMBER_ID,
       oldEndpoint: 'https://192.168.1.20:54545',
       oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
       serverUrl: 'https://cloud.example.test',
       timestamp: '2026-08-21T00:00:01.000Z' as const,
     };
@@ -105,6 +172,7 @@ describe('CloudBootstrapTransitionRecord', () => {
 
   it('permits only loopback HTTP for the local development Cloud composition', () => {
     const record = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-loopback',
       manifest: bootstrapManifest(),
@@ -121,6 +189,7 @@ describe('CloudBootstrapTransitionRecord', () => {
       serverUrl: 'http://127.0.0.1:8787/',
     });
     expect(() => createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-public-http',
       manifest: bootstrapManifest(),
@@ -142,6 +211,7 @@ describe('CloudBootstrapTransitionRecord', () => {
     { fence: { fenceId: 'bootstrap-fence-one', state: 'released-before-activation', stoppedAt: null } },
   ])('rejects impossible, noncanonical, or secret-bearing pending state', override => {
     const record = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-one',
       manifest: bootstrapManifest(),
@@ -160,6 +230,7 @@ describe('CloudBootstrapTransitionRecord', () => {
 
   it('releases a durable pre-stop fence only after Cloud confirms cancellation', () => {
     const record = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-one',
       manifest: bootstrapManifest(),
@@ -203,6 +274,7 @@ describe('CloudBootstrapTransitionRecord', () => {
 
   it('advances activated binding phases exactly and terminalizes the former Host fence', () => {
     const pending = createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-one',
       manifest: bootstrapManifest(),

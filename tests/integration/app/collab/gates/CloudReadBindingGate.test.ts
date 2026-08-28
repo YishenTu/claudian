@@ -17,6 +17,7 @@ import {
   type DevelopmentBootstrapManifest,
   matchCollabCloudRoute,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
 import {
@@ -460,7 +461,9 @@ async function createClient(
 ): Promise<ClientFixture> {
   const vaultRoot = path.join(root, memberId);
   await mkdir(vaultRoot);
-  const projects = new CollabLocalProjectRepository(vaultRoot);
+  const projects = new CollabLocalProjectRepository(vaultRoot, {
+    installationKey: TEST_INSTALLATION_A,
+  });
   const workspace = new CollabWorkspaceService(vaultRoot);
   await workspace.claimProjectsFolder('workspace');
   const repositoryPath = path.join(vaultRoot, 'workspace', PROJECT_ID);
@@ -478,12 +481,15 @@ async function createClient(
   });
   await projects.saveMembership(membership(memberId, ownsAuthority));
   if (ownsAuthority) {
-    const authorityDirectory = await projects.ensureAuthorityDirectory(PROJECT_ID);
+    const authorityDirectory = (
+      await projects.createOwnedAuthorityDirectory(PROJECT_ID)
+    ).authorityDirectory;
     await writeFile(path.join(authorityDirectory, 'collab.db'), 'inert after binding');
   }
   const manifest = bootstrapManifest(repository);
-  const store = new CloudBootstrapTransitionStore(vaultRoot);
+  const store = new CloudBootstrapTransitionStore(vaultRoot, { isRecoveryOwner: () => true });
   let transition = await store.create(createCloudBootstrapTransitionRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
     developmentActorId: memberId,
     ...(ownsAuthority ? { fenceId: 'bootstrap-cloud-gate-fence' } : {}),
     manifest,
@@ -546,7 +552,6 @@ async function createClient(
       authorityLifecycle: { closeAuthority: async () => undefined },
       git: {
         assertOrigin: (record, localPath) => ensureTrustedCollabOrigin(repositories, {
-          allowHostRemoteRepair: false,
           projectId: record.projectId,
           remoteUrl: record.newAuthority.gitRemoteUrl,
           repositoryPath: localPath,
@@ -565,6 +570,12 @@ async function createClient(
       readiness: new CloudBootstrapReadinessCollector({
         inspect: async () => readiness(manifest, memberId),
       }),
+      retireLanAuthorityDirectory: async (retiredProjectId, attemptId) => (
+        projects.retireOwnedAuthorityDirectory(
+          await projects.assertOwnedAuthorityRetirement(retiredProjectId, attemptId),
+          attemptId,
+        )
+      ),
       workspace,
     }),
     now: () => new Date('2026-08-22T00:01:00.000Z'),
@@ -626,6 +637,8 @@ describe('Cloud read and binding gate', () => {
         const fenceUncertainProject = jest.fn(async () => undefined);
         const recoverProject = jest.fn(async () => restarted);
         const restartService = new CloudBootstrapService({
+          assertHostInstallationOwned: async () => undefined,
+          assertRecoveryOwner: () => undefined,
           createCoordinator: () => ({ recoverProject } as unknown as CloudBootstrapCoordinator),
           fenceUncertainProject,
           projectRecoveryAdmission: async (_projectId, operation) => operation(),
@@ -634,7 +647,7 @@ describe('Cloud read and binding gate', () => {
         });
         await restartService.recoverPending();
         expect(fenceUncertainProject).not.toHaveBeenCalled();
-        expect(recoverProject).toHaveBeenCalledWith(PROJECT_ID, expect.any(AbortSignal));
+        expect(recoverProject).not.toHaveBeenCalled();
         await restartService.close();
       }
       expect(snapshots[0]?.project).toEqual(snapshots[1]?.project);

@@ -2,22 +2,18 @@ import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import type {
-  CollabLocalProjectRepository} from '@/app/collab/CollabLocalProjectRepository';
-import {
-  type CollabLocalMembershipRecord,
-  isCollabLocalLanMembership,
+  CollabLocalMembershipRecord,
+  CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
-import {
-  collabStoppedHostRemoteUrl,
-  type GitRepositoryService,
-} from '@/app/collab/git/GitRepositoryService';
+import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import type { PublishGitNetworkPort } from '@/app/collab/publish/NativeGitPublishRepository';
 import {
   type PublishProjectContext,
   type PublishProjectPort,
 } from '@/app/collab/publish/PublishCoordinator';
+import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -41,25 +37,19 @@ function assertMembershipMatches(
   if (!membership) throw projectError('project-not-found', 'publish-membership-missing');
   if (
     membership.project.id !== context.projectId
-    || allowsHostRemoteRepair(membership) !== context.allowHostRemoteRepair
     || membership.member.id !== context.memberId
     || membership.member.personalRef !== context.personalRef
-    || membershipRemoteUrl(membership) !== context.remoteUrl
+    || membership.authority.gitRemoteUrl !== context.remoteUrl
   ) {
     throw projectError('stale-project-selection', 'publish-membership-changed');
   }
   return membership;
 }
 
-function membershipRemoteUrl(membership: CollabLocalMembershipRecord): string | null {
-  return membership.authority.gitRemoteUrl
-    ?? (isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority
-      ? collabStoppedHostRemoteUrl(membership.project.id)
-      : null);
-}
-
-function allowsHostRemoteRepair(membership: CollabLocalMembershipRecord): boolean {
-  return isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority;
+function isProjectConnectionReset(error: unknown): boolean {
+  return error instanceof CollabError
+    && error.code === 'cancelled'
+    && error.safeContext.reason === 'projection-project-connection-reset';
 }
 
 export class LocalPublishProjectPort implements PublishProjectPort {
@@ -84,10 +74,6 @@ export class LocalPublishProjectPort implements PublishProjectPort {
     ) {
       throw projectError('project-not-found', 'publish-local-project-incomplete');
     }
-    const remoteUrl = membershipRemoteUrl(membership);
-    if (!remoteUrl) {
-      throw projectError('host-stopped', 'publish-host-endpoint-unavailable');
-    }
     const repositoryPath = await this.workspace.resolveManagedProjectPath(project.workspacePath);
     await this.repositories.assertLocalRepositoryIdentity(repositoryPath, {
       memberId: membership.member.id,
@@ -95,11 +81,10 @@ export class LocalPublishProjectPort implements PublishProjectPort {
       projectId,
     });
     return {
-      allowHostRemoteRepair: allowsHostRemoteRepair(membership),
       memberId: membership.member.id,
       personalRef: membership.member.personalRef,
       projectId,
-      remoteUrl,
+      remoteUrl: membership.authority.gitRemoteUrl,
       repositoryPath,
     };
   }
@@ -111,10 +96,8 @@ export class LocalPublishProjectPort implements PublishProjectPort {
     }
     const project = index.projects.find(candidate => candidate.id === expected.projectId);
     if (!project) throw projectError('project-not-found', 'publish-index-entry-missing');
-    const membership = assertMembershipMatches(
-      expected,
-      await this.projects.loadMembership(expected.projectId),
-    );
+    const loadedMembership = await this.projects.loadMembership(expected.projectId);
+    const membership = assertMembershipMatches(expected, loadedMembership);
     if (project.workspacePath !== membership.project.workspacePath) {
       throw projectError('stale-project-selection', 'publish-workspace-record-changed');
     }
@@ -138,9 +121,10 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
     private readonly projects: CollabLocalProjectRepository,
     private readonly sessions: CollabProjectWorkSessionRegistry,
     private readonly authoritySessions: CollabAuthoritySessionFactory,
-    private readonly isLocalHostRunning: (projectId: CollabProjectId) => boolean = () => false,
     private readonly assertControlReachable: (
+      control: CollabAuthorityControlPort,
       projectId: CollabProjectId,
+      signal?: AbortSignal,
     ) => Promise<void> = () => Promise.resolve(),
   ) {
     this.networkEnvironment = new CollabAuthorityGitNetworkEnvironment(vaultRoot);
@@ -148,30 +132,75 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
 
   async withNetwork<T>(
     context: PublishProjectContext,
-    operation: (network?: GitNetworkEnvironment) => Promise<T>,
+    operation: (network: GitNetworkEnvironment | undefined, remoteUrl: string) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
-    const membership = assertMembershipMatches(
-      context,
-      await this.projects.loadMembership(context.projectId),
-    );
-    const authority = await this.sessions.acquire(context.projectId)
-      .ensureAuthoritySession<CollabAuthoritySession>(
-        () => this.authoritySessions.create(membership),
+    try {
+      return await this.withNetworkGeneration(context, operation, signal);
+    } catch (error) {
+      if (!isProjectConnectionReset(error)) throw error;
+      return this.withNetworkGeneration(
+        await this.refreshAuthorityGeneration(context),
+        operation,
+        signal,
       );
-    if (authority.git.remoteUrl !== context.remoteUrl) {
-      throw projectError('stale-project-selection', 'publish-authority-session-changed');
     }
+  }
+
+  private async refreshAuthorityGeneration(
+    context: PublishProjectContext,
+  ): Promise<PublishProjectContext> {
+    const membership = await this.projects.loadMembership(context.projectId);
     if (
-      isCollabLocalLanMembership(membership)
-      && membership.hostOwnership.ownsAuthority
-      && !this.isLocalHostRunning(context.projectId)
+      !membership
+      || membership.project.id !== context.projectId
+      || membership.member.id !== context.memberId
+      || membership.member.personalRef !== context.personalRef
     ) {
-      throw projectError('host-stopped', 'publish-local-host-not-running');
+      throw projectError('stale-project-selection', 'publish-membership-changed');
     }
+    return { ...context, remoteUrl: membership.authority.gitRemoteUrl };
+  }
+
+  private async withNetworkGeneration<T>(
+    context: PublishProjectContext,
+    operation: (network: GitNetworkEnvironment | undefined, remoteUrl: string) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const loadedMembership = await this.projects.loadMembership(context.projectId);
+    const membership = assertMembershipMatches(context, loadedMembership);
+    const work = this.sessions.acquire(context.projectId);
+    const generation = work.generation;
+    const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
+      () => this.authoritySessions.create(membership),
+    );
+    work.assertGeneration(generation);
     if (authority.git.headers.length === 0) {
       throw projectError('host-stopped', 'publish-host-endpoint-unavailable');
     }
-    await this.assertControlReachable(context.projectId);
-    return operation(await this.networkEnvironment.resolve(context.projectId, authority.git));
+    try {
+      await this.assertControlReachable(authority.control, context.projectId, signal);
+    } catch (error) {
+      work.assertGeneration(generation);
+      throw error;
+    }
+    work.assertGeneration(generation);
+    const network = await this.networkEnvironment.resolve(context.projectId, authority.git);
+    work.assertGeneration(generation);
+    let result: T;
+    try {
+      result = await operation(network, authority.git.remoteUrl);
+    } catch (error) {
+      try {
+        await this.assertControlReachable(authority.control, context.projectId, signal);
+      } catch (controlError) {
+        work.assertGeneration(generation);
+        throw controlError;
+      }
+      work.assertGeneration(generation);
+      throw error;
+    }
+    work.assertGeneration(generation);
+    return result;
   }
 }

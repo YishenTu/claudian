@@ -4,6 +4,7 @@ import {
   type CollabTransferredMembershipRedemptionReceipt,
   encodeCollabTransferredMembershipRedemptionReceiptSigningInput,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   verifyAuthorityTransferRedemptionReceipt,
@@ -16,6 +17,7 @@ const CHECKPOINT_SHA256 = 'a'.repeat(64);
 
 function terminalRecord(receiptKeyId: string, receiptPublicKey: string) {
   return createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
     lifecycleOwnership: 'owned',
     localRole: 'source',
     operationIntentId: 'intent-receipt-verifier',

@@ -11,6 +11,7 @@ import path from 'node:path';
 import {
   completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -63,6 +64,7 @@ describe('M4 resumable publication gate', () => {
     });
     const hostPort = await availablePort();
     host = new ClaudianCollabService({
+      installationKey: TEST_INSTALLATION_A,
       createAuthorityDatabase: authorityDirectory => new SqlJsProjectDatabase(
         authorityDirectory,
         { loadSqlJs: async () => SQL },
@@ -77,13 +79,14 @@ describe('M4 resumable publication gate', () => {
       vaultRoot: hostRoot,
     });
     member = new ClaudianCollabService({
+      installationKey: TEST_INSTALLATION_B,
       getConfiguredGitPath: () => '',
       invitationCodec,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: memberRoot,
     });
 
-    const setup = new CollabProjectSetupService(host, { vaultRoot: hostRoot });
+    const setup = new CollabProjectSetupService(host, { installationKey: TEST_INSTALLATION_A, vaultRoot: hostRoot });
     const created = await setup.createProject({
       memberDisplayName: 'Host',
       name: 'Alpha',
@@ -111,7 +114,6 @@ describe('M4 resumable publication gate', () => {
     await writeFile(path.join(workingCopy, 'offline-note.md'), 'offline change\n');
     const publicationOptions = completeCollabPublicationOptions({
       discovery: member.discovery,
-      isLocalHostRunning: projectId => member.lanHost.isProjectRunning(projectId),
       reconnect: member.reconnect,
       vaultRoot: memberRoot,
     });

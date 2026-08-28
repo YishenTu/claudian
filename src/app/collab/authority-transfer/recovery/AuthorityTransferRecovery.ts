@@ -32,6 +32,10 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
   constructor(
     private readonly persistence: AuthorityTransferPersistence,
     private readonly handler: AuthorityTransferRecoveryHandler,
+    private readonly assertRecoveryOwner: (
+      ownerInstallationKey: string | undefined,
+      projectId: CollabProjectId,
+    ) => Promise<void> | void,
   ) {
     this.durableOwner = Object.freeze({
       name: 'authority-transfer',
@@ -58,11 +62,28 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       : undefined;
     for (const projectId of catalog.projectIds) {
       throwIfCancelled(options.signal);
+      let catalogRecord: AuthorityTransferRecord | null = null;
+      try {
+        catalogRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
+      } catch {
+        // Let lifecycle inspection normalize corrupt owned state consistently below.
+      }
+      if (catalogRecord) {
+        try {
+          if (!await this.isCurrentRecoveryOwner(catalogRecord)) continue;
+        } catch (error) {
+          firstError ??= error;
+          continue;
+        }
+      }
       await this.lifecycle.runExclusive(
         projectId,
         this.durableOwner.name,
         'recovery',
         async () => {
+          const ownerRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
+          if (!ownerRecord) return;
+          await this.assertRecoveryOwner(ownerRecord.ownerInstallationKey, projectId);
           await this.persistence.recoverInterruptedClaimCommitment(projectId);
           const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') {
@@ -94,5 +115,20 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
     projectId: CollabProjectId,
   ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
     return this.persistence.inspectLifecycleOwner(projectId);
+  }
+
+  private async isCurrentRecoveryOwner(record: AuthorityTransferRecord): Promise<boolean> {
+    try {
+      await this.assertRecoveryOwner(record.ownerInstallationKey, record.projectId);
+      return true;
+    } catch (error) {
+      if (
+        record.ownerInstallationKey !== undefined
+        &&
+        error instanceof CollabError
+        && error.safeContext.reason === 'host-installation-recovery-owner-mismatch'
+      ) return false;
+      throw error;
+    }
   }
 }

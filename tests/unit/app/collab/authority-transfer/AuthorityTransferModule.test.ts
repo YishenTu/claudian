@@ -4,6 +4,7 @@ import type {
   CollabAuthorityTransferStatus,
   CollabCloudCapability,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   AuthorityTransferModule,
@@ -242,6 +243,8 @@ describe('AuthorityTransferModule', () => {
       load: async () => record,
     } as unknown as AuthorityTransferPersistence;
     const module = new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: () => Promise.resolve([]),
         load: () => Promise.resolve(null),
@@ -336,6 +339,8 @@ describe('AuthorityTransferModule', () => {
       registerRecoveryStage: jest.fn(),
     } as unknown as CollabProjectLifecycleSubsystem;
     const module = new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: () => Promise.resolve([]),
         load: () => Promise.resolve(null),
@@ -362,10 +367,14 @@ describe('AuthorityTransferModule', () => {
       ),
     } as unknown as CloudAuthorityLifecycleSession;
 
-    const binding = await module.bindCloudToLanTarget({ cloudSession, projectId: PROJECT_ID });
+    const binding = await module.bindCloudToLanTarget({
+      cloudSession,
+      expectedTargetUrl: 'https://192.168.1.20:54545',
+      projectId: PROJECT_ID,
+    });
 
     expect(binding.targetUrl).toBe('https://192.168.1.20:54545');
-    expect(prepareTarget).toHaveBeenCalledTimes(1);
+    expect(prepareTarget).not.toHaveBeenCalled();
     binding.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
   });
@@ -387,6 +396,8 @@ describe('AuthorityTransferModule', () => {
       ),
     } as unknown as CloudAuthorityLifecycleSession;
     const module = new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: () => Promise.resolve([]),
         load: () => Promise.resolve(null),
@@ -410,6 +421,7 @@ describe('AuthorityTransferModule', () => {
       recoverCloudSession: jest.fn(async () => cloudSession),
     });
     const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: 'intent-authority-transfer-module',
@@ -425,7 +437,7 @@ describe('AuthorityTransferModule', () => {
 
     await module.runtimes.prepare(record);
 
-    expect(prepareTarget).toHaveBeenCalledWith(targetUrl);
+    expect(prepareTarget).not.toHaveBeenCalled();
   });
 
   it('reconstructs an accepted source route on its durable endpoint', async () => {
@@ -443,6 +455,8 @@ describe('AuthorityTransferModule', () => {
     } as unknown as CloudAuthorityLifecycleSession;
     const recoverCloudSession = jest.fn(async () => cloudSession);
     const module = new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       activateLanToCloudSourceRoute: activateRoute,
       claimantStore: {
         listProjectIds: () => Promise.resolve([]),
@@ -468,6 +482,7 @@ describe('AuthorityTransferModule', () => {
       recoverCloudSession,
     });
     const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: 'intent-authority-transfer-module',
@@ -510,6 +525,8 @@ describe('AuthorityTransferModule', () => {
       mode: 'full' as const,
     }));
     new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: async () => record ? [PROJECT_ID] : [],
         load: async () => record,
@@ -563,6 +580,8 @@ describe('AuthorityTransferModule', () => {
         mode: 'local-only' as const,
       }));
       new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
         claimantStore: {
           listProjectIds: async () => record ? [PROJECT_ID] : [],
           load: async () => record,
@@ -618,6 +637,8 @@ describe('AuthorityTransferModule', () => {
       targetHost,
     }));
     new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: async () => record ? [PROJECT_ID] : [],
         load: async () => record,
@@ -671,6 +692,8 @@ describe('AuthorityTransferModule', () => {
         throw new Error('transport must remain unavailable');
       });
       new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
         claimantStore: {
           listProjectIds: async () => record ? [PROJECT_ID] : [],
           load: async () => record,
@@ -716,6 +739,8 @@ describe('AuthorityTransferModule', () => {
       throw new Error('transport must remain unavailable');
     });
     new AuthorityTransferModule({
+      assertRecoveryOwner: () => undefined,
+      installationKey: TEST_INSTALLATION_A,
       claimantStore: {
         listProjectIds: async () => record ? [PROJECT_ID] : [],
         load: async () => record,

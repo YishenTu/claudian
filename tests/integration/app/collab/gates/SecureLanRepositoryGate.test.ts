@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { collabMemberRef } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -47,6 +48,7 @@ describe('M3 secure LAN repository gate', () => {
       isAddressAllowed: address => address === '127.0.0.1',
     });
     host = new ClaudianCollabService({
+      installationKey: TEST_INSTALLATION_A,
       createAuthorityDatabase: authorityDirectory => new SqlJsProjectDatabase(
         authorityDirectory,
         { loadSqlJs: async () => SQL },
@@ -61,13 +63,14 @@ describe('M3 secure LAN repository gate', () => {
       vaultRoot: hostRoot,
     });
     member = new ClaudianCollabService({
+      installationKey: TEST_INSTALLATION_B,
       getConfiguredGitPath: () => '',
       invitationCodec,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: memberRoot,
     });
 
-    const setup = new CollabProjectSetupService(host, { vaultRoot: hostRoot });
+    const setup = new CollabProjectSetupService(host, { installationKey: TEST_INSTALLATION_A, vaultRoot: hostRoot });
     const created = await setup.createProject({
       memberDisplayName: 'Host',
       name: 'Alpha',

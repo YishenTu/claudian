@@ -9,10 +9,44 @@ import {
 import type {
   HostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTrustTransitionService';
+import type { InstallationKey } from '@/core/device/InstallationKey';
+
+export function createIncomingHostTransferIntentRecord(input: {
+  readonly createdAt: string;
+  readonly ownerInstallationKey: InstallationKey | string;
+  readonly projectId: CollabProjectId;
+  readonly sourceHostMemberId: CollabMemberId;
+  readonly targetHostMemberId: CollabMemberId;
+  readonly transferId: CollabOperationId;
+}): HostTransferRecoveryRecord {
+  return decodeHostTransferRecoveryRecord({
+    activationCertificate: null,
+    createdAt: input.createdAt,
+    direction: 'incoming',
+    kind: 'host-transfer-recovery',
+    manifestDigest: null,
+    ownerInstallationKey: input.ownerInstallationKey,
+    phase: 'offered',
+    projectId: input.projectId,
+    receiverCredential: null,
+    receiverCredentialHash: null,
+    schemaVersion: 2,
+    sourceHostMemberId: input.sourceHostMemberId,
+    stagingDirectoryName: null,
+    targetCaCertificatePem: null,
+    targetCaFingerprint: null,
+    targetEndpoint: null,
+    targetHostMemberId: input.targetHostMemberId,
+    targetTerminalResponseReceived: false,
+    transferId: input.transferId,
+    updatedAt: input.createdAt,
+  });
+}
 
 export function createHostTransferRecoveryRecord(input: {
   readonly createdAt: string;
   readonly direction: HostTransferRecoveryDirection;
+  readonly ownerInstallationKey: InstallationKey | string;
   readonly projectId: CollabProjectId;
   readonly receiverCredential?: string | null;
   readonly sourceHostMemberId: CollabMemberId;
@@ -29,11 +63,12 @@ export function createHostTransferRecoveryRecord(input: {
     direction: input.direction,
     kind: 'host-transfer-recovery',
     manifestDigest: null,
+    ownerInstallationKey: input.ownerInstallationKey,
     phase: 'accepted',
     projectId: input.projectId,
     receiverCredential: input.receiverCredential ?? null,
     receiverCredentialHash: null,
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceHostMemberId: input.sourceHostMemberId,
     stagingDirectoryName: input.stagingDirectoryName ?? null,
     targetCaCertificatePem: input.targetCaCertificatePem ?? null,

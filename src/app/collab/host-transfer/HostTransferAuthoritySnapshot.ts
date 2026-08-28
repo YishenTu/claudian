@@ -471,7 +471,7 @@ export class HostTransferAuthoritySnapshot {
       expectedCurrentCaFingerprint: input.manifest.targetCaFingerprint,
       pinnedCaCertificatePem: input.pinnedSourceCaCertificatePem,
       projectId: input.manifest.projectId,
-      proofs: proofChain,
+      proofs: proofChain.slice(-1),
     });
     const memberRefs = query(database, `
       SELECT personal_ref FROM members

@@ -333,6 +333,7 @@ function project(
     authorityKind: 'lan',
     connectionStatus: 'connected',
     health: 'healthy',
+    hostInstallationStatus: 'not-host',
     hostStatus: 'not-host',
     id: 'project-a',
     name: 'Project A',

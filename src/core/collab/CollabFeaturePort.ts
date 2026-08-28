@@ -408,6 +408,7 @@ export interface CollabFeaturePort {
   readConflictFile(request: CollabConflictFileRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabConflictFileContent>>;
   createInvitation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabInvitationView>>;
   revokeInvitation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<void>>;
+  claimLegacyHostInstallation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabLocalProjectSummary>>;
   startHost(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabHostSession>>;
   stopHost(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabHostSession>>;
   readRequest(projectId: CollabProjectId, requestId: CollabRequestId, options?: CollabOperationOptions): Promise<CollabResult<CollabRequestDetail>>;

@@ -589,6 +589,7 @@ function project(role: 'manager' | 'member' = 'member'): CollabLocalProjectSumma
     authorityKind: 'lan',
     connectionStatus: 'connected',
     health: 'healthy',
+    hostInstallationStatus: 'not-host',
     hostStatus: 'not-host',
     id: 'project-a',
     name: 'Alpha',

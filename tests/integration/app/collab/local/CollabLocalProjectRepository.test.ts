@@ -13,6 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
 import {
   type CollabLocalCloudMembershipRecord,
   type CollabLocalLanMembershipRecord,
@@ -500,12 +502,13 @@ describe('CollabLocalProjectRepository', () => {
   it('persists lifecycle records and discovers tombstones without an active Project', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const tombstone: RetirementTombstoneRecord = {
-      schemaVersion: 1,
       kind: 'retirement-tombstone',
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
       retiredAt: '2026-08-13T00:00:00.000Z',
       expiresAt: '2026-09-12T00:00:00.000Z',
       result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
+      schemaVersion: 2,
       replay: {
         actorMemberId: 'member-alice',
         idempotencyKey: 'retire-one',
@@ -552,6 +555,7 @@ describe('CollabLocalProjectRepository', () => {
       }],
       hostTransitionProofs: [],
       kind: 'retirement-tombstone',
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
       replay: {
         actorMemberId: 'member-alice',
@@ -560,7 +564,7 @@ describe('CollabLocalProjectRepository', () => {
       },
       result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
       retiredAt: '2026-08-13T00:00:00.000Z',
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
     await repository.saveRetirementTombstone(tombstone);
     await writeFile(path.join(
@@ -589,6 +593,7 @@ describe('CollabLocalProjectRepository', () => {
       }],
       hostTransitionProofs: [],
       kind: 'retirement-tombstone',
+      ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
       replay: {
         actorMemberId: 'member-alice',
@@ -597,7 +602,7 @@ describe('CollabLocalProjectRepository', () => {
       },
       result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
       retiredAt: '2026-08-13T00:00:00.000Z',
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
     await repository.saveRetirementTombstone(tombstone);
     // The physical tombstone file is the sole recovery authority: no index is
@@ -643,6 +648,7 @@ describe('CollabLocalProjectRepository', () => {
   it('owns the Project-private Host-transfer recovery journal directly', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = createHostTransferRecoveryRecord({
+      ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       createdAt: '2026-08-13T00:00:00.000Z',
       direction: 'incoming',
       projectId: PROJECT_ID,
@@ -1385,9 +1391,12 @@ describe('CollabLocalProjectRepository', () => {
   });
 
   it('creates a private authority directory through the local path owner', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const repository = new CollabLocalProjectRepository(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
 
-    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
+    const capability = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    const authorityDirectory = capability.authorityDirectory;
 
     expect(authorityDirectory).toBe(path.join(
       vaultRoot,
@@ -1403,21 +1412,30 @@ describe('CollabLocalProjectRepository', () => {
     expect(JSON.parse(await readFile(
       path.join(authorityDirectory, '.claudian-authority.json'),
       'utf8',
-    ))).toEqual({ projectId: PROJECT_ID, schemaVersion: 1 });
+    ))).toEqual({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      schemaVersion: 2,
+    });
 
     await writeFile(path.join(authorityDirectory, 'authority.db'), 'private');
-    await expect(repository.removeAuthorityDirectory(PROJECT_ID)).resolves.toBe(true);
+    await expect(repository.removeOwnedAuthorityDirectory(capability)).resolves.toBe(true);
     await expect(stat(authorityDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(repository.removeAuthorityDirectory(PROJECT_ID)).resolves.toBe(false);
+    await expect(repository.removeOwnedAuthorityDirectory(capability)).rejects.toMatchObject({
+      code: 'operation-failed',
+    });
   });
 
   it('refuses authority cleanup without its exact ownership marker', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
+    const repository = new CollabLocalProjectRepository(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
+    const capability = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    const authorityDirectory = capability.authorityDirectory;
     await rm(path.join(authorityDirectory, '.claudian-authority.json'));
     await writeFile(path.join(authorityDirectory, 'keep.db'), 'unowned');
 
-    await expect(repository.removeAuthorityDirectory(PROJECT_ID)).rejects.toMatchObject({
+    await expect(repository.removeOwnedAuthorityDirectory(capability)).rejects.toMatchObject({
       code: 'operation-failed',
     });
     await expect(readFile(path.join(authorityDirectory, 'keep.db'), 'utf8'))
@@ -1425,16 +1443,19 @@ describe('CollabLocalProjectRepository', () => {
   });
 
   it('atomically retires a former Host authority into attempt-scoped inert storage', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
+    const repository = new CollabLocalProjectRepository(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
+    const capability = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    const authorityDirectory = capability.authorityDirectory;
     await writeFile(path.join(authorityDirectory, 'collab.db'), 'former-host');
 
-    const retiredDirectory = await repository.retireAuthorityDirectory(
-      PROJECT_ID,
+    const retiredDirectory = await repository.retireOwnedAuthorityDirectory(
+      capability,
       'bootstrap-attempt-one',
     );
-    const replayedDirectory = await repository.retireAuthorityDirectory(
-      PROJECT_ID,
+    const replayedDirectory = await repository.retireOwnedAuthorityDirectory(
+      capability,
       'bootstrap-attempt-one',
     );
     if (retiredDirectory === null) throw new Error('Expected retired authority directory');
@@ -1454,32 +1475,55 @@ describe('CollabLocalProjectRepository', () => {
   });
 
   it('claims only a known legacy authority layout when Host ownership is proven', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
-    await rm(path.join(authorityDirectory, '.claudian-authority.json'));
+    const repository = new CollabLocalProjectRepository(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
+    const authorityDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    );
+    await mkdir(authorityDirectory, { recursive: true });
+    await writeFile(path.join(authorityDirectory, '.claudian-authority.json'), JSON.stringify({
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    }));
     await writeFile(path.join(authorityDirectory, 'collab.db'), 'legacy');
 
-    await expect(repository.ensureAuthorityDirectory(PROJECT_ID)).rejects.toMatchObject({
-      code: 'operation-failed',
-    });
-    await expect(repository.ensureAuthorityDirectory(PROJECT_ID, {
-      claimLegacyOwnedDirectory: true,
-    })).resolves.toBe(authorityDirectory);
+    await expect(repository.claimLegacyAuthorityDirectory(PROJECT_ID))
+      .resolves.toMatchObject({ authorityDirectory });
     expect(JSON.parse(await readFile(
       path.join(authorityDirectory, '.claudian-authority.json'),
       'utf8',
-    ))).toEqual({ projectId: PROJECT_ID, schemaVersion: 1 });
+    ))).toEqual({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      schemaVersion: 2,
+    });
   });
 
   it('refuses to claim a legacy authority directory containing an unknown entry', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-    const authorityDirectory = await repository.ensureAuthorityDirectory(PROJECT_ID);
-    await rm(path.join(authorityDirectory, '.claudian-authority.json'));
+    const repository = new CollabLocalProjectRepository(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
+    const authorityDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+    );
+    await mkdir(authorityDirectory, { recursive: true });
+    await writeFile(path.join(authorityDirectory, '.claudian-authority.json'), JSON.stringify({
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    }));
     await writeFile(path.join(authorityDirectory, 'unknown.bin'), 'unowned');
 
-    await expect(repository.ensureAuthorityDirectory(PROJECT_ID, {
-      claimLegacyOwnedDirectory: true,
-    })).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(repository.claimLegacyAuthorityDirectory(PROJECT_ID))
+      .rejects.toMatchObject({ code: 'operation-failed' });
     await expect(readFile(path.join(authorityDirectory, 'unknown.bin'), 'utf8'))
       .resolves.toBe('unowned');
   });

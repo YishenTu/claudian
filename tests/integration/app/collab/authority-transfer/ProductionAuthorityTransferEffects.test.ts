@@ -13,6 +13,7 @@ import {
   decodeCollabProjectCheckpointManifest,
   encodeCollabProjectCheckpointManifestCanonicalJson,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -120,6 +121,7 @@ describe('production authority-transfer effects', () => {
       projectId: PROJECT_ID,
     });
     const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'proposal',
       localRole: 'source',
       operationIntentId: OPERATION_ID,
@@ -138,6 +140,7 @@ describe('production authority-transfer effects', () => {
   it('captures LAN data, stages Cloud-to-LAN inertly, and activates exactly once', async () => {
     const sourceFoundation = foundation(sourceRoot);
     const sourceSetup = new CollabProjectSetupService(sourceFoundation, {
+      installationKey: TEST_INSTALLATION_A,
       createCredential: () => HOST_CREDENTIAL,
       createId: kind => {
         if (kind === 'member') return MEMBER_ID;
@@ -179,6 +182,7 @@ describe('production authority-transfer effects', () => {
       throw new Error('Missing source LAN membership');
     }
     const sourceRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_ID,
@@ -235,6 +239,7 @@ describe('production authority-transfer effects', () => {
     }
     await sourceFoundation.lanHost.relinquishProjectForAuthorityTransfer(PROJECT_ID);
     const recoveredCapture = await sourceEffects.capture(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_ID,
@@ -261,6 +266,7 @@ describe('production authority-transfer effects', () => {
       batchSha256: 'b'.repeat(64),
     };
     await sourceEffects.commitRelinquishmentFence(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_ID,
@@ -375,6 +381,15 @@ describe('production authority-transfer effects', () => {
       readSnapshot: jest.fn(async () => snapshot),
     } as unknown as CloudAuthorityLifecycleSession;
     const gitFoundation = await targetFoundation.requireGitFoundation();
+    await gitFoundation.repositories.configureLocalRepository(
+      path.join(targetRoot, 'workspace', 'portable'),
+      {
+        memberId: MEMBER_ID,
+        personalRef: sourceMembership.member.personalRef,
+        projectId: PROJECT_ID,
+        userDisplayName: sourceMembership.member.displayName,
+      },
+    );
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: (_projectId, operation) => operation() },
       git: {
@@ -392,6 +407,7 @@ describe('production authority-transfer effects', () => {
     });
     const prepared = await targetEffects.prepareTarget();
     const proposed = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: OPERATION_ID,
@@ -401,6 +417,7 @@ describe('production authority-transfer effects', () => {
     const acceptance = await targetEffects.acceptanceRequest(proposed);
     expect(acceptance.targetHostMemberId).toBe(MEMBER_ID);
     const stagedRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: OPERATION_ID,
@@ -427,14 +444,16 @@ describe('production authority-transfer effects', () => {
     expect(staged.claimBatch.claims).toEqual([
       expect.objectContaining({ memberId: 'member-production-peer' }),
     ]);
-    const targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
-    expect(await targetAuthority?.database.read(connection => connection.get(
-      'SELECT project_id, state, host_member_id FROM project WHERE singleton = 1',
-    ))).toEqual({
-      host_member_id: MEMBER_ID,
-      project_id: PROJECT_ID,
-      state: 'disabled',
-    });
+    let targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
+    expect(targetAuthority).toBeNull();
+    await expect(access(path.join(
+      targetRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+      '.claudian-authority.json',
+    ))).rejects.toMatchObject({ code: 'ENOENT' });
     const relinquishmentProof = {
       batchRevision: staged.claimBatch.batchRevision,
       batchSha256: staged.claimBatch.batchSha256,
@@ -464,6 +483,7 @@ describe('production authority-transfer effects', () => {
       updatedAt: '2026-08-28T00:03:00.000Z',
     };
     const completedRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: OPERATION_ID,
@@ -472,6 +492,19 @@ describe('production authority-transfer effects', () => {
     });
     await targetFoundation.local.projects.authorityTransferRecords.save(completedRecord);
     await targetEffects.activate(completedRecord, relinquishmentProof);
+    targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
+    expect(JSON.parse(await readFile(path.join(
+      targetRoot,
+      '.claudian',
+      'collab',
+      'authorities',
+      PROJECT_ID,
+      '.claudian-authority.json',
+    ), 'utf8'))).toEqual({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      schemaVersion: 2,
+    });
     const recoveringEffects = () => new ProductionCloudToLanTargetEffects({
       cloudSession: null,
       convergence,
@@ -589,6 +622,7 @@ describe('production authority-transfer effects', () => {
         new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });

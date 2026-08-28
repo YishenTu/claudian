@@ -1,6 +1,7 @@
 import {
   type DevelopmentBootstrapAttemptStatus,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   CloudBootstrapCoordinator,
@@ -198,6 +199,7 @@ function coordinatorFixture(options: {
         projectId: PROJECT_ID,
       })),
     },
+    installationKey: TEST_INSTALLATION_A,
     now: (() => {
       let second = 1;
       return () => new Date(Date.parse('2026-08-21T00:00:00.000Z') + second++ * 1_000);

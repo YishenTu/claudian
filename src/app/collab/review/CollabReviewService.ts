@@ -4,11 +4,10 @@ import type { CollabOperationOptions, CollabRequestReview, CollabReviewFileConte
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabReviewProjectContext {
-  readonly allowHostRemoteRepair: boolean;
   readonly memberId: string;
   readonly personalRef: string;
   readonly projectId: string;
-  readonly remoteUrl: string;
+  readonly remoteUrl: string | null;
   readonly repositoryPath: string;
   readonly role: CollabRole;
 }

@@ -110,6 +110,7 @@ import { setLocale, t } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { deleteLegacyMcpConfig } from './providers/claude/storage/LegacyMcpConfigCleanup';
 import { buildCursorContext } from './utils/editor';
+import { getInstallationKey } from './utils/env';
 import { revealWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
 
@@ -716,14 +717,17 @@ export default class ClaudianPlugin extends Plugin {
     if (vaultRoot === null) return null;
     const collab = await import('./app/collab');
     if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) return null;
+    const installationKey = getInstallationKey();
     const foundation = new collab.ClaudianCollabService({
       getConfiguredGitPath: () => this.settings.collabGitPath ?? '',
       getProjectsFolder: () => this.settings.collabProjectsFolder,
+      installationKey,
       obsidianConfigDirectory: this.app.vault.configDir,
       vaultRoot,
     });
     const projectSetup = new collab.CollabProjectSetupService(foundation, {
       getProjectsFolder: () => this.settings.collabProjectsFolder,
+      installationKey,
       vaultRoot,
     });
     const { feature } = collab.createCollabFeatureSubcomposition({

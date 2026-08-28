@@ -10,10 +10,12 @@ import {
   type CollabTransferredMembershipClaimBatch,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   assertAuthorityTransferTransition,
   createAuthorityTransferRecord,
+  decodeAuthorityTransferRecord,
   expireAuthorityTransferTerminalResponder,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
@@ -187,8 +189,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('recovers every exact LAN source phase and permanently fences the old authority', async () => {
     let repository = new CollabLocalProjectRepository(vaultRoot);
-    let persistence = new AuthorityTransferPersistence(repository);
+    let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     let record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -196,6 +199,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.create(record);
     record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -205,6 +209,7 @@ describe('AuthorityTransferPersistence', () => {
     await persistence.advance(record, 'collecting-readiness');
     persistence = new AuthorityTransferPersistence(
       new CollabLocalProjectRepository(vaultRoot),
+      { isRecoveryOwner: () => true },
     );
     await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID))
       .rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
@@ -232,6 +237,7 @@ describe('AuthorityTransferPersistence', () => {
         });
       }
       record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
         localRole: 'source',
         operationIntentId: OPERATION_INTENT_ID,
         stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -242,7 +248,7 @@ describe('AuthorityTransferPersistence', () => {
       ]);
 
       repository = new CollabLocalProjectRepository(vaultRoot);
-      persistence = new AuthorityTransferPersistence(repository);
+      persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
       await expect(persistence.load(PROJECT_ID)).resolves.toEqual(record);
     }
 
@@ -255,7 +261,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it('serializes LAN Host start against authority-transfer fence creation', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     let markStarted!: () => void;
     const started = new Promise<void>(resolve => {
       markStarted = resolve;
@@ -271,6 +277,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await started;
     const collecting = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -288,6 +295,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(start).resolves.toBe('running');
     await create;
     await persistence.advance(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -300,6 +308,34 @@ describe('AuthorityTransferPersistence', () => {
     )).rejects.toMatchObject({
       code: 'durable-progress-recovery-required',
       safeContext: { reason: 'authority-transfer-authority-quiesced' },
+    });
+  });
+
+  it('keeps an ownerless legacy authority fence visible and blocks Host restart', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const current = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: cloudToLanStatus('cloud-quiesced'),
+    });
+    const { ownerInstallationKey: _ownerInstallationKey, ...withoutOwner } = current;
+    await repository.authorityTransferRecords.save(decodeAuthorityTransferRecord({
+      ...withoutOwner,
+      schemaVersion: 1,
+    }));
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
+    });
+
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.runWithAuthorityStartGuard(
+      PROJECT_ID,
+      async () => 'unexpected',
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-legacy-owner-missing' },
     });
   });
 
@@ -320,7 +356,7 @@ describe('AuthorityTransferPersistence', () => {
           projectIds: [],
         }),
       },
-    });
+    }, { isRecoveryOwner: () => true });
     let releaseAlpha!: () => void;
     let markAlphaStarted!: () => void;
     const alphaStarted = new Promise<void>(resolve => { markAlphaStarted = resolve; });
@@ -374,10 +410,11 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rotates only an unacknowledged exact batch and scrubs one verified claim at a time', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    let persistence = new AuthorityTransferPersistence(repository);
+    let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const first = claimBatch();
     const rotated = claimBatch(2, 'C');
     await persistence.create(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -440,7 +477,7 @@ describe('AuthorityTransferPersistence', () => {
     })).rejects.toMatchObject({ code: 'authority-transfer-stale' });
     await expect(persistence.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
 
-    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot));
+    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), { isRecoveryOwner: () => true });
     await expect(persistence.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
     await expect(persistence.rotateClaimBatch({
       batch: claimBatch(3, 'D'),
@@ -456,6 +493,7 @@ describe('AuthorityTransferPersistence', () => {
       });
     const relinquishedStatus = transferStatus('source-relinquished');
     await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -528,9 +566,11 @@ describe('AuthorityTransferPersistence', () => {
   it('requires rotation to replace the exact retained member set and transfer lifetime', async () => {
     const persistence = new AuthorityTransferPersistence(
       new CollabLocalProjectRepository(vaultRoot),
+      { isRecoveryOwner: () => true },
     );
     const first = claimBatch();
     await persistence.create(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -576,9 +616,10 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rejects coherently tampered raw custody against its durable batch commitment', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    let persistence = new AuthorityTransferPersistence(repository);
+    let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const batch = claimBatch();
     await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -618,7 +659,7 @@ describe('AuthorityTransferPersistence', () => {
     custody.claims[0].claimSha256 = sha256(tamperedClaim);
     await writeFile(claimPath, JSON.stringify(custody), { mode: 0o600 });
 
-    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot));
+    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), { isRecoveryOwner: () => true });
     await expect(persistence.loadClaim(PROJECT_ID, TRANSFER_ID, MEMBER_ALICE))
       .rejects.toMatchObject({
         code: 'durable-progress-recovery-required',
@@ -628,8 +669,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('recovers every exact LAN target phase without creating a terminal responder', async () => {
     let repository = new CollabLocalProjectRepository(vaultRoot);
-    let persistence = new AuthorityTransferPersistence(repository);
+    let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     let record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -637,6 +679,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.create(record);
     record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
@@ -668,6 +711,7 @@ describe('AuthorityTransferPersistence', () => {
         });
       }
       record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
         localRole: 'target',
         operationIntentId: OPERATION_INTENT_ID,
         stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -678,7 +722,7 @@ describe('AuthorityTransferPersistence', () => {
       ]);
 
       repository = new CollabLocalProjectRepository(vaultRoot);
-      persistence = new AuthorityTransferPersistence(repository);
+      persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
       await expect(persistence.load(PROJECT_ID)).resolves.toEqual(record);
       expect(record.terminalResponder).toBeNull();
     }
@@ -686,7 +730,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).resolves.toBeUndefined();
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
     await repository.authorityTransferClaims.remove(PROJECT_ID);
-    persistence = new AuthorityTransferPersistence(repository);
+    persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
     const completeTerminalCleanup = () => (
       persistence as unknown as {
@@ -716,8 +760,10 @@ describe('AuthorityTransferPersistence', () => {
   it('reopens a cancelled source only after durable target cleanup and source recovery', async () => {
     const persistence = new AuthorityTransferPersistence(
       new CollabLocalProjectRepository(vaultRoot),
+      { isRecoveryOwner: () => true },
     );
     let record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -725,6 +771,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.create(record);
     record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -743,6 +790,7 @@ describe('AuthorityTransferPersistence', () => {
     const restartOutcomes: string[] = [];
     for (const [index, phase] of cancellationPhases.entries()) {
       record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
         localRole: 'source',
         operationIntentId: OPERATION_INTENT_ID,
         stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -770,8 +818,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('replaces only a fully cleaned safe cancellation with a new transfer attempt', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const cancelled = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -790,6 +839,7 @@ describe('AuthorityTransferPersistence', () => {
       transferId: TRANSFER_ID,
     });
     const replacement = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: 'replacement-intent',
       stagingDirectoryName: '.claudian-authority-transfer-replacement-transfer',
@@ -805,8 +855,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('refuses terminal cleanup when claim custody belongs to a different durable owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const cancelled = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -850,9 +901,11 @@ describe('AuthorityTransferPersistence', () => {
   it('refuses claim expiry when custody belongs to a different durable owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date(EXPIRES_AT),
     });
     const completed = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -889,9 +942,11 @@ describe('AuthorityTransferPersistence', () => {
   it('expires the terminal responder only after scrubbing every retained raw claim', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date('2026-08-26T00:00:00.000Z'),
     });
     const completed = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -935,6 +990,7 @@ describe('AuthorityTransferPersistence', () => {
       .resolves.toMatchObject({ memberId: MEMBER_ALICE });
 
     persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date(EXPIRES_AT),
     });
     await persistence.expireTerminalResponder(PROJECT_ID, TRANSFER_ID);
@@ -959,6 +1015,7 @@ describe('AuthorityTransferPersistence', () => {
   it('expires and cleans a single-member transfer with an exact empty claim batch', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date('2026-08-26T00:00:00.000Z'),
     });
     const batchSha256 = '001a79c6e03aa40c576542ab21f7a692e5e8ec0d930f705101a29dd2809a66b3';
@@ -981,6 +1038,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     };
     const completed = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1007,6 +1065,7 @@ describe('AuthorityTransferPersistence', () => {
     });
 
     persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date(EXPIRES_AT),
     });
     await persistence.expireTerminalResponder(PROJECT_ID, TRANSFER_ID);
@@ -1032,6 +1091,7 @@ describe('AuthorityTransferPersistence', () => {
   it('recovers terminal completion after claim files were removed before the record fence', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const completed = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1041,6 +1101,7 @@ describe('AuthorityTransferPersistence', () => {
       expireAuthorityTransferTerminalResponder(completed),
     );
     const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
       now: () => new Date(EXPIRES_AT),
     });
 
@@ -1057,8 +1118,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('repairs only an unacknowledged interrupted claim commitment write', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    let persistence = new AuthorityTransferPersistence(repository);
+    let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     await persistence.create(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1071,7 +1133,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await repository.authorityTransferClaimCommitments.remove(PROJECT_ID);
 
-    persistence = new AuthorityTransferPersistence(repository);
+    persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const recoverInterruptedCommitment = () => (
       persistence as unknown as {
         recoverInterruptedClaimCommitment(projectId: string): Promise<void>;
@@ -1099,7 +1161,7 @@ describe('AuthorityTransferPersistence', () => {
       createAuthorityTransferClaimBatchCommitmentRecord(first),
     );
 
-    persistence = new AuthorityTransferPersistence(repository);
+    persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     await expect(inspectLifecycleOwner()).resolves.toBe('nonterminal');
     await expect(recoverInterruptedCommitment()).resolves.toBeUndefined();
     await expect(repository.authorityTransferClaimCommitments.load(PROJECT_ID))
@@ -1108,8 +1170,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('refuses interrupted cleanup of a commitment owned by another operation', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const cancelled = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -1143,8 +1206,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rejects phase regression and cancellation after source relinquishment', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     const relinquished = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1153,6 +1217,7 @@ describe('AuthorityTransferPersistence', () => {
     await repository.authorityTransferRecords.save(relinquished);
 
     await expect(persistence.advance(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1164,6 +1229,7 @@ describe('AuthorityTransferPersistence', () => {
       code: 'authority-transfer-cancellation-forbidden',
     });
     await expect(persistence.advance(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1175,8 +1241,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rejects terminal-cleanup completion forged through normal phase advancement', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -1187,6 +1254,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     }));
     const cancelled = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
@@ -1210,8 +1278,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rejects terminal-responder expiry forged through normal phase advancement', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
     await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1238,6 +1307,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const forgedExpiry = expireAuthorityTransferTerminalResponder(
       createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
         localRole: 'source',
         operationIntentId: OPERATION_INTENT_ID,
         stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1257,12 +1327,14 @@ describe('AuthorityTransferPersistence', () => {
 
   it('freezes checkpoint and relinquishment proof identity across phase advancement', () => {
     const checkpointReceived = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: transferStatus('checkpoint-received'),
     });
     const replacedCheckpoint = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1275,6 +1347,7 @@ describe('AuthorityTransferPersistence', () => {
       .toThrow('Authority transfer checkpoint changed');
 
     const relinquished = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1282,6 +1355,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const activatedStatus = transferStatus('cloud-activated');
     const replacedProof = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1300,6 +1374,7 @@ describe('AuthorityTransferPersistence', () => {
   it('rejects a relinquishment proof outside the exact operation intent and lifetime', () => {
     const status = transferStatus('source-relinquished');
     expect(() => createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1312,6 +1387,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     })).toThrow('Invalid authority transfer relinquishment proof');
     expect(() => createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'source',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
@@ -1333,7 +1409,7 @@ describe('AuthorityTransferPersistence', () => {
       operationIntentId: OPERATION_INTENT_ID,
       purpose: 'source-terminal',
     }));
-    const persistence = new AuthorityTransferPersistence(repository);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
 
     await expect(persistence.listProjectIds()).resolves.toEqual([PROJECT_ID]);
     await expect(persistence.load(PROJECT_ID)).rejects.toMatchObject({

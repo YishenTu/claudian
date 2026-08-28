@@ -32,6 +32,7 @@ import type {
 } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface CloudToLanDownloadedArtifact {
   readonly artifact: CollabCloudAuthorityTransferArtifact;
@@ -77,6 +78,7 @@ export interface CloudToLanTargetEffects {
 
 export interface CloudToLanTargetCoordinatorOptions {
   readonly cloud: CollabAuthorityLifecyclePort;
+  readonly installationKey: InstallationKey;
   readonly persistence: AuthorityTransferPersistence;
   readonly target: CloudToLanTargetEffects;
 }
@@ -110,6 +112,12 @@ function cancellablePhase(
 export class CloudToLanTargetCoordinator {
   constructor(private readonly options: CloudToLanTargetCoordinatorOptions) {}
 
+  private assertOwnedRecord(record: AuthorityTransferRecord): void {
+    if (record.ownerInstallationKey !== this.options.installationKey) {
+      throw targetError('host-installation-recovery-owner-mismatch');
+    }
+  }
+
   async acceptAndTransfer(
     request: AcceptCloudToLanTransferTargetRequest,
     operationIntentId: string,
@@ -128,14 +136,15 @@ export class CloudToLanTargetCoordinator {
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId,
+      ownerInstallationKey: this.options.installationKey,
       stagingDirectoryName: `.claudian-authority-transfer-${proposed.transferId}`,
       status: proposed,
     });
+    await this.options.persistence.create(record);
     const recoverableRequest = await this.options.target.acceptanceRequest(record, options);
     if (JSON.stringify(recoverableRequest) !== JSON.stringify(request)) {
       throw targetError('cloud-to-lan-target-acceptance-mismatch');
     }
-    await this.options.persistence.create(record);
     return this.resumeRecord(record, options);
   }
 
@@ -147,6 +156,7 @@ export class CloudToLanTargetCoordinator {
     if (!record || record.localRole !== 'target') {
       throw targetError('cloud-to-lan-record-missing');
     }
+    this.assertOwnedRecord(record);
     return this.resumeRecord(record, options);
   }
 
@@ -158,6 +168,7 @@ export class CloudToLanTargetCoordinator {
     if (!record || record.localRole !== 'target') {
       throw targetError('cloud-to-lan-record-missing');
     }
+    this.assertOwnedRecord(record);
     if (record.status.relinquishmentProof !== null) {
       throw new CollabError({ code: 'authority-transfer-cancellation-forbidden' });
     }

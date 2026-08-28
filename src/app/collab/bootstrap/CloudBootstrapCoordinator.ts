@@ -28,6 +28,7 @@ import {
   observeCloudBootstrapAttemptStatus,
 } from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface DevelopmentBootstrapCloudPort {
   activate(
@@ -87,6 +88,7 @@ export interface CloudBootstrapCoordinatorOptions {
   readonly localIdentity: {
     load(projectId: CollabProjectId): Promise<CloudBootstrapLocalIdentity>;
   };
+  readonly installationKey: InstallationKey;
   readonly now?: () => Date;
   readonly readiness: Pick<CloudBootstrapReadinessCollector, 'collect'>;
   readonly source: {
@@ -160,6 +162,12 @@ export class CloudBootstrapCoordinator {
     this.now = options.now ?? (() => new Date());
   }
 
+  private assertOwnedRecord(record: CloudBootstrapTransitionRecord): void {
+    if (record.ownerInstallationKey !== this.options.installationKey) {
+      throw coordinatorError('host-installation-recovery-owner-mismatch');
+    }
+  }
+
   async startFormerHost(
     input: StartCloudBootstrapInput,
     signal?: AbortSignal,
@@ -219,6 +227,7 @@ export class CloudBootstrapCoordinator {
     let record = await this.options.transitions.load(projectId);
     throwIfCancelled(signal);
     if (!record) return null;
+    this.assertOwnedRecord(record);
     if (record.terminalCleanupCompleted) return record;
     if (record.attemptState === 'cancelled') {
       return this.settleLocalTerminal(record, signal);
@@ -259,6 +268,7 @@ export class CloudBootstrapCoordinator {
   ): Promise<CloudBootstrapTransitionRecord> {
     const record = await this.options.transitions.load(projectId);
     if (!record) throw coordinatorError('cloud-bootstrap-transition-not-found');
+    this.assertOwnedRecord(record);
     if (record.attemptState === 'activated') {
       throw coordinatorError('cloud-bootstrap-already-activated');
     }
@@ -308,6 +318,7 @@ export class CloudBootstrapCoordinator {
       memberId: input.memberId,
       oldEndpoint: identity.endpoint,
       oldGitRemoteUrl: identity.gitRemoteUrl,
+      ownerInstallationKey: this.options.installationKey,
       serverUrl: input.serverUrl,
       timestamp: this.timestamp(),
     }));

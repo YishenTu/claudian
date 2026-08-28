@@ -30,6 +30,7 @@ import type {
 } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface LanToCloudCheckpointArtifact {
   readonly artifact: CollabCloudAuthorityTransferArtifact;
@@ -79,6 +80,7 @@ export interface LanToCloudSourceEffects {
 
 export interface LanToCloudSourceCoordinatorOptions {
   readonly cloud: CollabAuthorityLifecyclePort;
+  readonly installationKey: InstallationKey;
   readonly persistence: AuthorityTransferPersistence;
   readonly source: LanToCloudSourceEffects;
 }
@@ -117,6 +119,12 @@ function assertStatus(
 export class LanToCloudSourceCoordinator {
   constructor(private readonly options: LanToCloudSourceCoordinatorOptions) {}
 
+  private assertOwnedRecord(record: AuthorityTransferRecord): void {
+    if (record.ownerInstallationKey !== this.options.installationKey) {
+      throw transferError('host-installation-recovery-owner-mismatch');
+    }
+  }
+
   async propose(
     request: RequestLanToCloudTransferRequest,
     options: CollabOperationOptions = {},
@@ -127,6 +135,7 @@ export class LanToCloudSourceCoordinator {
       lifecycleOwnership: 'proposal',
       localRole: 'source',
       operationIntentId: request.idempotencyKey,
+      ownerInstallationKey: this.options.installationKey,
       stagingDirectoryName: stagingDirectory(status.transferId),
       status,
     }));
@@ -141,6 +150,7 @@ export class LanToCloudSourceCoordinator {
     if (!existing || existing.transferId !== request.transferId) {
       throw transferError('lan-to-cloud-proposal-missing');
     }
+    this.assertOwnedRecord(existing);
     const sourceLanEndpoint = await this.options.source.sourceEndpoint?.(existing);
     if (!sourceLanEndpoint) {
       throw transferError('lan-to-cloud-source-endpoint-missing');
@@ -149,6 +159,7 @@ export class LanToCloudSourceCoordinator {
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: existing.operationIntentId,
+      ownerInstallationKey: this.options.installationKey,
       sourceLanEndpoint,
       stagingDirectoryName: existing.stagingDirectoryName,
       status: existing.status,
@@ -164,6 +175,7 @@ export class LanToCloudSourceCoordinator {
       let durableReadSucceeded = false;
       try {
         durable = await this.options.persistence.load(existing.projectId);
+        if (durable) this.assertOwnedRecord(durable);
         durableReadSucceeded = true;
       } catch {
         // An ambiguous durable write must retain the runtime endpoint pin.
@@ -189,6 +201,7 @@ export class LanToCloudSourceCoordinator {
     if (!record || record.localRole !== 'source') {
       throw transferError('lan-to-cloud-record-missing');
     }
+    this.assertOwnedRecord(record);
     return this.resumeRecord(record, options);
   }
 
@@ -200,6 +213,7 @@ export class LanToCloudSourceCoordinator {
     if (!record || record.localRole !== 'source') {
       throw transferError('lan-to-cloud-record-missing');
     }
+    this.assertOwnedRecord(record);
     if (record.status.relinquishmentProof !== null) {
       throw new CollabError({ code: 'authority-transfer-cancellation-forbidden' });
     }

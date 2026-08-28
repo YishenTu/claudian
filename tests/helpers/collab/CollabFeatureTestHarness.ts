@@ -44,6 +44,7 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'readConflictFile',
   'createInvitation',
   'revokeInvitation',
+  'claimLegacyHostInstallation',
   'startHost',
   'stopHost',
   'readRequest',
@@ -90,6 +91,7 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 type FeatureOptionsOverrides = {
   readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
+  readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
   readonly join?: Partial<CollabJoinProjectPort>;
   readonly lanHost?: Partial<CollabLanHostPort>;
   readonly lifecycleRecovery?: Partial<CollabLifecycleRecoveryPort>;
@@ -113,7 +115,8 @@ function defaultCloudBootstrap(): CollabCloudBootstrapPort {
 
 type PublicationOptionsOverrides = {
   readonly discovery?: Partial<CollabPublicationServiceOptions['discovery']>;
-  readonly isLocalHostRunning?: CollabPublicationServiceOptions['isLocalHostRunning'];
+  readonly inspectHostInstallation?: CollabPublicationServiceOptions['inspectHostInstallation'];
+  readonly readActiveLocalRoute?: CollabPublicationServiceOptions['readActiveLocalRoute'];
   readonly managerResponsibility?: Partial<
     CollabPublicationServiceOptions['managerResponsibility']
   >;
@@ -164,6 +167,13 @@ function defaultHostTransfer(): CollabHostTransferPort {
     close: () => Promise.resolve(),
     createHostTransfer: () => Promise.resolve(),
     declineHostTransfer: () => Promise.resolve(),
+  };
+}
+
+function defaultHostInstallation(): CollabFeatureServiceOptions['hostInstallation'] {
+  return {
+    claimLegacy: () => unexpected('claimLegacyHostInstallation'),
+    inspect: () => Promise.resolve('hosted-here'),
   };
 }
 
@@ -306,6 +316,10 @@ export function completeCollabFeatureOptions(
   return {
     cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
     hostTransfer: { ...defaultHostTransfer(), ...overrides.hostTransfer },
+    hostInstallation: {
+      ...defaultHostInstallation(),
+      ...overrides.hostInstallation,
+    },
     join: { ...defaultJoin(), ...overrides.join },
     lanHost: { ...defaultLanHost(), ...overrides.lanHost },
     lifecycleRecovery: { ...defaultLifecycleRecovery(), ...overrides.lifecycleRecovery },
@@ -336,7 +350,9 @@ export function completeCollabPublicationOptions(
       discoverProjectCandidates: () => Promise.resolve([]),
       ...overrides.discovery,
     },
-    isLocalHostRunning: overrides.isLocalHostRunning ?? (() => false),
+    inspectHostInstallation: overrides.inspectHostInstallation
+      ?? (() => Promise.resolve('absent')),
+    readActiveLocalRoute: overrides.readActiveLocalRoute ?? (() => null),
     managerResponsibility: {
       reconcileSnapshot: () => Promise.resolve(null),
       ...overrides.managerResponsibility,

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 import type {
   CollabHostTrustStore,
   CollabHttpOperationOptions,
@@ -17,6 +18,7 @@ import {
   type LanCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import {
   ReconnectProjectCoordinator,
   type ReconnectProjectFoundationPort,
@@ -180,7 +182,11 @@ describe('ReconnectProjectCoordinator', () => {
 
   function coordinator(overrides: Readonly<Record<string, unknown>> = {}): ReconnectProjectCoordinator {
     return new ReconnectProjectCoordinator(foundation, {
+      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
       createHttpClient,
+      hostInstallation: {
+        inspect: jest.fn().mockResolvedValue('hosted-here'),
+      },
       invitationCodec: codec,
       now: () => now,
       vaultRoot,
@@ -442,7 +448,7 @@ describe('ReconnectProjectCoordinator', () => {
     expect(foundation.local.projects.loadMembership).not.toHaveBeenCalled();
   });
 
-  it('does not reconnect a Host-owned Project', async () => {
+  it('reconnects the hosted-here Host Member through the ordinary trusted LAN path', async () => {
     currentMembership = {
       ...currentMembership,
       hostOwnership: { ownsAuthority: true },
@@ -451,11 +457,43 @@ describe('ReconnectProjectCoordinator', () => {
     await expect(coordinator().reconnectProject({
       encodedInvitation: codec.encode(invitation(codec)),
       projectId: 'project-a',
-    })).resolves.toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'authorization-denied' }),
-      status: 'failure',
+    })).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'not-host',
+        role: currentMembership.member.role,
+      },
+    });
+    expect(createHttpClient).toHaveBeenCalled();
+  });
+
+  it('reconnects a foreign-bound Host Member as an ordinary trusted LAN client', async () => {
+    currentMembership = {
+      ...currentMembership,
+      hostOwnership: { ownsAuthority: true },
+    };
+
+    await expect(coordinator({
+      hostInstallation: {
+        inspect: jest.fn().mockResolvedValue('hosted-elsewhere'),
+      },
+    }).reconnectProject({
+      encodedInvitation: codec.encode(invitation(codec)),
+      projectId: 'project-a',
+    })).resolves.toMatchObject({
+      status: 'success',
+      value: {
+        hostInstallationStatus: 'hosted-elsewhere',
+        hostStatus: 'not-host',
+        role: currentMembership.member.role,
+      },
+    });
+    expect(requestWithMember).toHaveBeenCalled();
+    expect(saveMembership).toHaveBeenCalledWith(expect.objectContaining({
+      hostOwnership: { ownsAuthority: true },
+      member: currentMembership.member,
     }));
-    expect(createHttpClient).not.toHaveBeenCalled();
   });
 
   it('preserves origin and membership when pinned bootstrap fails', async () => {
@@ -490,5 +528,65 @@ describe('ReconnectProjectCoordinator', () => {
     );
     expect(addRemote).toHaveBeenCalledTimes(1);
     expect(saveMembership).toHaveBeenCalledTimes(2);
+  });
+
+  it('cannot resurrect a stale Host route after Host Transfer promotes a new authority', async () => {
+    const transitions = new LanAuthorityProjectionTransitionCoordinator();
+    let releaseRefresh!: () => void;
+    const refreshStarted = new Promise<void>(resolve => {
+      requestWithMember.mockImplementation(async request => {
+        resolve();
+        await new Promise<void>(release => { releaseRefresh = release; });
+        return request.decode({
+          data: { caFingerprint: fingerprint, endpoint: newEndpoint },
+          protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+          requestId: 'refresh-racing-transfer',
+        });
+      });
+    });
+    const reconnect = coordinator({ authorityProjectionTransitions: transitions });
+    const pendingReconnect = reconnect.reconnectProject({
+      encodedInvitation: codec.encode(invitation(codec)),
+      projectId: 'project-a',
+    });
+    await refreshStarted;
+
+    const transferredEndpoint = 'https://192.168.1.30:54545';
+    const transferredFingerprint = 'cd'.repeat(32);
+    const projection = new LocalHostTransferProjection({
+      authorityProjectionTransitions: transitions,
+      loadMembership: jest.fn(async () => currentMembership),
+      now: () => new Date('2026-08-08T00:02:00.000Z'),
+      resolveWorkspace: jest.fn(async () => path.join(vaultRoot, 'workspace/project-a')),
+      rotateOrigin: async transition => {
+        originUrls = [transition.newRemoteUrl];
+      },
+      saveMembership,
+    });
+    await projection.promoteTargetHost({
+      autoStart: true,
+      endpoint: transferredEndpoint,
+      eventSequence: 8,
+      ownsAuthority: true,
+      projectId: 'project-a',
+      targetCaCertificatePem: 'transferred-ca',
+      targetCaFingerprint: transferredFingerprint,
+      targetHostMemberId: 'member-a',
+      transferId: 'transfer-a',
+    });
+    releaseRefresh();
+
+    await expect(pendingReconnect).resolves.toMatchObject({ status: 'failure' });
+    expect(currentMembership).toMatchObject({
+      authority: {
+        endpoint: transferredEndpoint,
+        gitRemoteUrl: `${transferredEndpoint}/v1/git/project-a/repository.git`,
+        hostCaFingerprint: transferredFingerprint,
+      },
+      hostOwnership: { autoStart: true, ownsAuthority: true },
+    });
+    expect(originUrls).toEqual([
+      `${transferredEndpoint}/v1/git/project-a/repository.git`,
+    ]);
   });
 });

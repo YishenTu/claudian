@@ -17,6 +17,7 @@ import type { HostTransferPackageManifest } from '@/app/collab/host-transfer/Hos
 import {
   advanceHostTransferRecoveryRecord,
   createHostTransferRecoveryRecord,
+  createIncomingHostTransferIntentRecord,
   parseHostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
 import type {
@@ -28,9 +29,15 @@ import {
 } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import {
+  type InstallationKey,
+  parseInstallationKey,
+} from '@/core/device/InstallationKey';
 
 export interface IncomingHostTransferCoordinatorOptions {
+  readonly installationKey: InstallationKey | string;
   readonly now?: () => Date;
+  readonly syncProjection?: (projectId: CollabProjectId) => void;
   readonly scheduleTerminalReceiptExpiry?: (
     delayMs: number,
     expire: () => Promise<void>,
@@ -96,15 +103,16 @@ const DEFAULT_TERMINAL_RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export class IncomingHostTransferCoordinator {
   private closed = false;
-  private closePromise: Promise<void> | null = null;
+   #closePromise: Promise<void> | null = null;
+   readonly #installationKey: InstallationKey;
   private readonly now: () => Date;
-  private readonly receiptExpiry = new Map<CollabProjectId, () => void>();
-  private readonly scheduleTerminalReceiptExpiry: NonNullable<
+   readonly #receiptExpiry = new Map<CollabProjectId, () => void>();
+   readonly #scheduleTerminalReceiptExpiry: NonNullable<
     IncomingHostTransferCoordinatorOptions['scheduleTerminalReceiptExpiry']
   >;
-  private readonly terminalReceiptTtlMs: number;
+   readonly #terminalReceiptTtlMs: number;
   private readonly trust: Pick<HostTrustTransitionService, 'verifyActivation'>;
-  private readonly operationQueue = new SerialTaskQueue();
+   readonly #operationQueue = new SerialTaskQueue();
 
   constructor(
     private readonly authority: IncomingHostTransferAuthorityClientPort,
@@ -113,28 +121,29 @@ export class IncomingHostTransferCoordinator {
     private readonly activation: IncomingHostTransferActivationPort,
     private readonly projections: HostTransferProjectionPort,
     private readonly recovery: HostTransferRecoveryStorePort,
-    options: IncomingHostTransferCoordinatorOptions = {},
+    private readonly options: IncomingHostTransferCoordinatorOptions,
   ) {
+    this.#installationKey = parseInstallationKey(options.installationKey);
     this.now = options.now ?? (() => new Date());
-    this.scheduleTerminalReceiptExpiry = options.scheduleTerminalReceiptExpiry
+    this.#scheduleTerminalReceiptExpiry = options.scheduleTerminalReceiptExpiry
       ?? ((delayMs, expire) => {
         const timer = window.setTimeout(() => void expire().catch(() => undefined), delayMs);
         return () => window.clearTimeout(timer);
       });
-    this.terminalReceiptTtlMs = options.terminalReceiptTtlMs
+    this.#terminalReceiptTtlMs = options.terminalReceiptTtlMs
       ?? DEFAULT_TERMINAL_RECEIPT_TTL_MS;
-    if (!Number.isSafeInteger(this.terminalReceiptTtlMs) || this.terminalReceiptTtlMs < 1) {
+    if (!Number.isSafeInteger(this.#terminalReceiptTtlMs) || this.#terminalReceiptTtlMs < 1) {
       throw new TypeError('Invalid Host transfer terminal receipt TTL');
     }
     this.trust = options.trust ?? new HostTrustTransitionService();
   }
 
   accept(input: AcceptIncomingHostTransferInput): Promise<void> {
-    return this.enqueue(() => this.acceptUnlocked(input));
+    return this.enqueue(() => this.#acceptUnlocked(input));
   }
 
   stage(input: StageIncomingHostTransferInput): Promise<{ readonly manifestDigest: string }> {
-    return this.enqueue(() => this.stageUnlocked(input));
+    return this.enqueue(() => this.#stageUnlocked(input));
   }
 
   activate(
@@ -143,7 +152,7 @@ export class IncomingHostTransferCoordinator {
     certificate: HostTransferActivationCertificate,
     signal?: AbortSignal,
   ): Promise<void> {
-    return this.enqueue(() => this.activateUnlocked(projectId, transferId, certificate, signal));
+    return this.enqueue(() => this.#activateUnlocked(projectId, transferId, certificate, signal));
   }
 
   cancel(
@@ -151,7 +160,7 @@ export class IncomingHostTransferCoordinator {
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
-    return this.enqueue(() => this.cancelUnlocked(projectId, transferId, signal));
+    return this.enqueue(() => this.#cancelUnlocked(projectId, transferId, signal));
   }
 
   complete(
@@ -159,7 +168,7 @@ export class IncomingHostTransferCoordinator {
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
-    return this.enqueue(() => this.completeUnlocked(projectId, transferId, signal));
+    return this.enqueue(() => this.#completeUnlocked(projectId, transferId, signal));
   }
 
   confirm(
@@ -167,24 +176,27 @@ export class IncomingHostTransferCoordinator {
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
-    return this.enqueue(() => this.confirmUnlocked(projectId, transferId, signal));
+    return this.enqueue(() => this.#confirmUnlocked(projectId, transferId, signal));
   }
 
   resume(projectId: CollabProjectId, signal?: AbortSignal): Promise<void> {
     return this.enqueue(async () => {
       const record = await this.recovery.load(projectId, 'incoming');
       if (!record) return;
+      if (record.ownerInstallationKey !== this.#installationKey) {
+        throw incomingError('host-installation-recovery-owner-mismatch');
+      }
       if (record.receiverCredentialHash) {
         if (record.stagingDirectoryName) {
-          await this.finishTerminalCleanup(record, this.terminalKind(record));
+          await this.#finishTerminalCleanup(record, this.#terminalKind(record));
           return;
         }
-        if (this.isTerminalReceiptExpired(record)) {
-          await this.removeTerminalReceipt(record);
+        if (this.#isTerminalReceiptExpired(record)) {
+          await this.#removeTerminalReceipt(record);
           return;
         }
         await this.preparation.restoreTerminalReceipt(record);
-        this.scheduleTerminalReceipt(record);
+        this.#scheduleTerminalReceipt(record);
         return;
       }
       if (record.phase === 'completed') {
@@ -192,9 +204,24 @@ export class IncomingHostTransferCoordinator {
         return;
       }
       throwIfCancelled(signal);
+      if (record.phase === 'offered') {
+        await this.#acceptUnlocked({
+          idempotencyKey: hostTransferAcceptanceIdempotencyKey(
+            record.projectId,
+            record.transferId,
+            record.targetHostMemberId,
+          ),
+          projectId: record.projectId,
+          sourceHostMemberId: record.sourceHostMemberId,
+          targetHostMemberId: record.targetHostMemberId,
+          transferId: record.transferId,
+          ...(signal ? { signal } : {}),
+        });
+        return;
+      }
       if (record.phase === 'accepted') {
         await this.preparation.restoreProvisional(record);
-        await this.acceptAuthority(record, {
+        await this.#acceptAuthority(record, {
           idempotencyKey: hostTransferAcceptanceIdempotencyKey(
             record.projectId,
             record.transferId,
@@ -214,7 +241,7 @@ export class IncomingHostTransferCoordinator {
         return;
       }
       if (record.phase === 'authority-relinquished' || record.phase === 'target-active') {
-        await this.activateRecord(record, signal);
+        await this.#activateRecord(record, signal);
         return;
       }
       if (
@@ -229,21 +256,24 @@ export class IncomingHostTransferCoordinator {
   }
 
   close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
+    if (this.#closePromise) return this.#closePromise;
     this.closed = true;
-    for (const cancel of this.receiptExpiry.values()) cancel();
-    this.receiptExpiry.clear();
-    this.closePromise = this.operationQueue.drain().then(() => {
-      for (const cancel of this.receiptExpiry.values()) cancel();
-      this.receiptExpiry.clear();
+    for (const cancel of this.#receiptExpiry.values()) cancel();
+    this.#receiptExpiry.clear();
+    this.#closePromise = this.#operationQueue.drain().then(() => {
+      for (const cancel of this.#receiptExpiry.values()) cancel();
+      this.#receiptExpiry.clear();
     });
-    return this.closePromise;
+    return this.#closePromise;
   }
 
-  private async acceptUnlocked(input: AcceptIncomingHostTransferInput): Promise<void> {
+   async #acceptUnlocked(input: AcceptIncomingHostTransferInput): Promise<void> {
     throwIfCancelled(input.signal);
     const existing = await this.recovery.load(input.projectId, 'incoming');
     if (existing) {
+      if (existing.ownerInstallationKey !== this.#installationKey) {
+        throw incomingError('host-installation-recovery-owner-mismatch');
+      }
       if (
         existing.transferId !== input.transferId
         || existing.targetHostMemberId !== input.targetHostMemberId
@@ -261,7 +291,7 @@ export class IncomingHostTransferCoordinator {
         }
         await this.preparation.restoreProvisional(existing);
         if (existing.phase === 'accepted') {
-          await this.acceptAuthority(existing, {
+          await this.#acceptAuthority(existing, {
             idempotencyKey: input.idempotencyKey,
             projectId: input.projectId,
             receiverCredential: existing.receiverCredential!,
@@ -282,11 +312,20 @@ export class IncomingHostTransferCoordinator {
       ...(input.signal ? { signal: input.signal } : {}),
     });
     throwIfCancelled(input.signal);
+    const intent = existing ?? createIncomingHostTransferIntentRecord({
+      createdAt: this.now().toISOString(),
+      ownerInstallationKey: this.#installationKey,
+      projectId: input.projectId,
+      sourceHostMemberId: input.sourceHostMemberId,
+      targetHostMemberId: input.targetHostMemberId,
+      transferId: input.transferId,
+    });
+    if (!existing) await this.recovery.save(intent);
     const provisional = await this.preparation.startProvisional(input);
-    const now = this.now().toISOString();
     const record = createHostTransferRecoveryRecord({
-      createdAt: now,
+      createdAt: intent.createdAt,
       direction: 'incoming',
+      ownerInstallationKey: this.#installationKey,
       projectId: input.projectId,
       receiverCredential: provisional.receiverCredential,
       sourceHostMemberId: input.sourceHostMemberId,
@@ -298,7 +337,7 @@ export class IncomingHostTransferCoordinator {
       transferId: input.transferId,
     });
     await this.recovery.save(record);
-    await this.acceptAuthority(record, {
+    await this.#acceptAuthority(record, {
       idempotencyKey: input.idempotencyKey,
       projectId: input.projectId,
       receiverCredential: provisional.receiverCredential,
@@ -309,11 +348,11 @@ export class IncomingHostTransferCoordinator {
     });
   }
 
-  private async stageUnlocked(
+   async #stageUnlocked(
     input: StageIncomingHostTransferInput,
   ): Promise<{ readonly manifestDigest: string }> {
     throwIfCancelled(input.signal);
-    const record = await this.requireRecord(input.projectId, input.transferId);
+    const record = await this.#requireRecord(input.projectId, input.transferId);
     if (record.phase === 'staged' || record.phase === 'authority-relinquished'
       || record.phase === 'target-active' || record.phase === 'completed') {
       if (!record.manifestDigest) throw incomingError('host-transfer-manifest-missing');
@@ -346,14 +385,14 @@ export class IncomingHostTransferCoordinator {
     return staged;
   }
 
-  private async activateUnlocked(
+   async #activateUnlocked(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
     certificate: HostTransferActivationCertificate,
     signal?: AbortSignal,
   ): Promise<void> {
     throwIfCancelled(signal);
-    const record = await this.requireRecord(projectId, transferId);
+    const record = await this.#requireRecord(projectId, transferId);
     if (record.phase === 'completed') {
       const persisted = parseHostTransferActivationCertificate(record);
       if (!sameActivationCertificate(persisted, certificate)) {
@@ -378,7 +417,7 @@ export class IncomingHostTransferCoordinator {
         { activationCertificate: certificate },
       );
       await this.recovery.save(relinquished);
-      await this.activateRecord(relinquished, signal);
+      await this.#activateRecord(relinquished, signal);
       return;
     }
     if (record.phase === 'authority-relinquished' || record.phase === 'target-active') {
@@ -386,21 +425,21 @@ export class IncomingHostTransferCoordinator {
       if (!sameActivationCertificate(persisted, certificate)) {
         throw incomingError('host-transfer-activation-replay-mismatch');
       }
-      await this.activateRecord(record, signal);
+      await this.#activateRecord(record, signal);
       return;
     }
     throw incomingError('host-transfer-incoming-not-activatable');
   }
 
-  private async cancelUnlocked(
+   async #cancelUnlocked(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
     throwIfCancelled(signal);
-    const record = await this.requireRecord(projectId, transferId);
+    const record = await this.#requireRecord(projectId, transferId);
     if (record.phase === 'cancelled') {
-      return this.deferredTerminalCleanup(record, 'cancel');
+      return this.#deferredTerminalCleanup(record, 'cancel');
     }
     if (record.phase !== 'accepted' && record.phase !== 'quiescing' && record.phase !== 'staged') {
       throw incomingError('host-transfer-incoming-cancel-unavailable');
@@ -412,44 +451,44 @@ export class IncomingHostTransferCoordinator {
     );
     await this.recovery.save(cancelled);
     throwIfCancelled(signal);
-    return this.deferredTerminalCleanup(cancelled, 'cancel');
+    return this.#deferredTerminalCleanup(cancelled, 'cancel');
   }
 
-  private async completeUnlocked(
+   async #completeUnlocked(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
     throwIfCancelled(signal);
-    const record = await this.requireRecord(projectId, transferId);
+    const record = await this.#requireRecord(projectId, transferId);
     if (record.phase !== 'completed') {
       throw incomingError('host-transfer-incoming-completion-unavailable');
     }
-    return this.deferredTerminalCleanup(record, 'complete');
+    return this.#deferredTerminalCleanup(record, 'complete');
   }
 
-  private async confirmUnlocked(
+   async #confirmUnlocked(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<IncomingHostTransferTerminalResult> {
     throwIfCancelled(signal);
-    const record = await this.requireRecord(projectId, transferId);
+    const record = await this.#requireRecord(projectId, transferId);
     if (!record.receiverCredentialHash) {
       throw incomingError('host-transfer-terminal-receipt-missing');
     }
     return {
       afterResponseFlushed: () => this.enqueue(async () => {
-        const current = await this.requireRecord(projectId, transferId);
+        const current = await this.#requireRecord(projectId, transferId);
         if (current.receiverCredentialHash !== record.receiverCredentialHash) {
           throw incomingError('host-transfer-terminal-receipt-changed');
         }
-        await this.removeTerminalReceipt(current);
+        await this.#removeTerminalReceipt(current);
       }),
     };
   }
 
-  private async acceptAuthority(
+   async #acceptAuthority(
     record: HostTransferRecoveryRecord,
     request: Parameters<IncomingHostTransferAuthorityClientPort['accept']>[0],
   ): Promise<void> {
@@ -471,13 +510,13 @@ export class IncomingHostTransferCoordinator {
     throw incomingError(`host-transfer-acceptance-${result.phase}`, 'operation-failed');
   }
 
-  private deferredTerminalCleanup(
+   #deferredTerminalCleanup(
     record: HostTransferRecoveryRecord,
     kind: 'cancel' | 'complete',
   ): IncomingHostTransferTerminalResult {
     return {
       afterResponseFlushed: () => this.enqueue(async () => {
-        let current = await this.requireRecord(record.projectId, record.transferId);
+        let current = await this.#requireRecord(record.projectId, record.transferId);
         if (current.receiverCredentialHash && current.stagingDirectoryName === null) return;
         if (current.phase !== record.phase) {
           throw incomingError('host-transfer-terminal-cleanup-phase-mismatch');
@@ -495,12 +534,12 @@ export class IncomingHostTransferCoordinator {
           );
           await this.recovery.save(current);
         }
-        await this.finishTerminalCleanup(current, kind);
+        await this.#finishTerminalCleanup(current, kind);
       }),
     };
   }
 
-  private async finishTerminalCleanup(
+   async #finishTerminalCleanup(
     record: HostTransferRecoveryRecord,
     kind: 'cancel' | 'complete',
   ): Promise<HostTransferRecoveryRecord> {
@@ -521,51 +560,51 @@ export class IncomingHostTransferCoordinator {
       );
     if (receipt !== record) await this.recovery.save(receipt);
     await this.preparation.restoreTerminalReceipt(receipt);
-    this.scheduleTerminalReceipt(receipt);
+    this.#scheduleTerminalReceipt(receipt);
     return receipt;
   }
 
-  private terminalKind(record: HostTransferRecoveryRecord): 'cancel' | 'complete' {
+   #terminalKind(record: HostTransferRecoveryRecord): 'cancel' | 'complete' {
     return record.phase === 'completed' ? 'complete' : 'cancel';
   }
 
-  private scheduleTerminalReceipt(record: HostTransferRecoveryRecord): void {
+   #scheduleTerminalReceipt(record: HostTransferRecoveryRecord): void {
     if (this.closed) return;
-    this.clearTerminalReceiptExpiry(record.projectId);
-    const expiresAt = Date.parse(record.updatedAt) + this.terminalReceiptTtlMs;
+    this.#clearTerminalReceiptExpiry(record.projectId);
+    const expiresAt = Date.parse(record.updatedAt) + this.#terminalReceiptTtlMs;
     const delayMs = Math.max(0, expiresAt - this.now().getTime());
-    const cancel = this.scheduleTerminalReceiptExpiry(delayMs, () => this.enqueue(async () => {
+    const cancel = this.#scheduleTerminalReceiptExpiry(delayMs, () => this.enqueue(async () => {
       const current = await this.recovery.load(record.projectId, 'incoming');
       if (
         !current
         || current.transferId !== record.transferId
         || current.receiverCredentialHash !== record.receiverCredentialHash
       ) return;
-      if (!this.isTerminalReceiptExpired(current)) {
-        this.scheduleTerminalReceipt(current);
+      if (!this.#isTerminalReceiptExpired(current)) {
+        this.#scheduleTerminalReceipt(current);
         return;
       }
-      await this.removeTerminalReceipt(current);
+      await this.#removeTerminalReceipt(current);
     }));
-    this.receiptExpiry.set(record.projectId, cancel);
+    this.#receiptExpiry.set(record.projectId, cancel);
   }
 
-  private isTerminalReceiptExpired(record: HostTransferRecoveryRecord): boolean {
-    return this.now().getTime() >= Date.parse(record.updatedAt) + this.terminalReceiptTtlMs;
+   #isTerminalReceiptExpired(record: HostTransferRecoveryRecord): boolean {
+    return this.now().getTime() >= Date.parse(record.updatedAt) + this.#terminalReceiptTtlMs;
   }
 
-  private async removeTerminalReceipt(record: HostTransferRecoveryRecord): Promise<void> {
-    this.clearTerminalReceiptExpiry(record.projectId);
+   async #removeTerminalReceipt(record: HostTransferRecoveryRecord): Promise<void> {
+    this.#clearTerminalReceiptExpiry(record.projectId);
     await this.preparation.confirmTerminalReceipt(record);
     await this.recovery.remove(record.projectId, 'incoming');
   }
 
-  private clearTerminalReceiptExpiry(projectId: CollabProjectId): void {
-    this.receiptExpiry.get(projectId)?.();
-    this.receiptExpiry.delete(projectId);
+   #clearTerminalReceiptExpiry(projectId: CollabProjectId): void {
+    this.#receiptExpiry.get(projectId)?.();
+    this.#receiptExpiry.delete(projectId);
   }
 
-  private async activateRecord(
+   async #activateRecord(
     record: Awaited<ReturnType<HostTransferRecoveryStorePort['load']>> & {},
     signal?: AbortSignal,
   ): Promise<void> {
@@ -618,6 +657,7 @@ export class IncomingHostTransferCoordinator {
         this.now().toISOString(),
       );
       await this.recovery.save(completed);
+      this.options.syncProjection?.(record.projectId);
       return;
     }
     const completed = advanceHostTransferRecoveryRecord(
@@ -626,9 +666,10 @@ export class IncomingHostTransferCoordinator {
       this.now().toISOString(),
     );
     await this.recovery.save(completed);
+    this.options.syncProjection?.(record.projectId);
   }
 
-  private async requireRecord(projectId: string, transferId: string) {
+   async #requireRecord(projectId: string, transferId: string) {
     const record = await this.recovery.load(projectId, 'incoming');
     if (!record || record.transferId !== transferId) {
       throw incomingError('host-transfer-incoming-record-missing');
@@ -640,6 +681,6 @@ export class IncomingHostTransferCoordinator {
     if (this.closed) {
       return Promise.reject(incomingError('host-transfer-incoming-closed', 'cancelled'));
     }
-    return this.operationQueue.run(operation);
+    return this.#operationQueue.run(operation);
   }
 }

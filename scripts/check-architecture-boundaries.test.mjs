@@ -302,6 +302,59 @@ test('features are independent from the composition root and app adapters', () =
   assert.deepEqual(findMatches([path.join(sourceRoot, 'features')], pattern), []);
 });
 
+test('Collab Host installation authority stays outside membership and presentation', () => {
+  const collabAppRoot = path.join(appRoot, 'collab');
+  const repositorySource = fs.readFileSync(
+    path.join(collabAppRoot, 'CollabLocalProjectRepository.ts'),
+    'utf8',
+  );
+  const membershipStart = repositorySource.indexOf('interface CollabLocalMembershipRecordBase');
+  const membershipEnd = repositorySource.indexOf('export interface CollabLocalProjectPaths');
+  assert.notEqual(membershipStart, -1);
+  assert.notEqual(membershipEnd, -1);
+  const membershipSource = repositorySource.slice(membershipStart, membershipEnd);
+
+  assert.doesNotMatch(membershipSource, /ownerInstallationKey|installationKey|deviceId|deviceRole/);
+  assert.equal(
+    fs.existsSync(path.join(collabAppRoot, 'host-installation', 'HostInstallationBindingService.ts')),
+    true,
+  );
+  assert.deepEqual(findMatches(
+    [path.join(featuresRoot, 'collab')],
+    /HostInstallationBindingService|CollabLocalProjectRepository|getInstallationKey/,
+  ), []);
+  assert.deepEqual(findMatches(
+    [collabAppRoot],
+    /isRecoveryOwner\?|bindEligibleLegacyRecovery\?|prepareLegacyRuntime\?|commitHostedRoute\?/,
+  ), []);
+});
+
+test('Collab LAN data lanes retain one adapter and no Host-only authority bypass', () => {
+  const collabAppRoot = path.join(appRoot, 'collab');
+  const dataPlaneRoots = [
+    path.join(collabAppRoot, 'accept'),
+    path.join(collabAppRoot, 'conflicts'),
+    path.join(collabAppRoot, 'membership'),
+    path.join(collabAppRoot, 'publish'),
+    path.join(collabAppRoot, 'reconnect'),
+    path.join(collabAppRoot, 'remote-authority'),
+    path.join(collabAppRoot, 'review'),
+  ];
+
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /new LanAuthorityAdapter\b/,
+    new Map([['src/app/collab/publish/CollabPublicationService.ts', 1]]),
+  ), []);
+  assert.deepEqual(findMatches(
+    dataPlaneRoots,
+    /allowHostRemoteRepair|collabStoppedHostRemoteUrl|\.openAuthority\(|\.createAuthority\(|\.inspectAuthority\(/,
+  ), []);
+  assert.deepEqual(findMatches(
+    [path.join(collabAppRoot, 'publish'), path.join(collabAppRoot, 'remote-authority')],
+    /hostOwnership\.ownsAuthority/,
+  ), []);
+});
+
 test('Collab modal and shared code do not depend on detail or sidebar surfaces', () => {
   const collabRoot = path.join(featuresRoot, 'collab');
   const detailRoot = path.join(collabRoot, 'detail');

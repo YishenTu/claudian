@@ -20,9 +20,12 @@ import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/Host
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface OutgoingHostTransferCoordinatorOptions {
+  readonly installationKey: InstallationKey | string;
   readonly now?: () => Date;
+  readonly syncProjection?: (projectId: CollabProjectId) => void;
   readonly trust?: HostTrustTransitionService;
 }
 
@@ -78,7 +81,7 @@ export class OutgoingHostTransferCoordinator {
     private readonly identity: HostTransferSourceIdentityPort,
     private readonly projections: HostTransferProjectionPort,
     private readonly recovery: HostTransferRecoveryStorePort,
-    options: OutgoingHostTransferCoordinatorOptions = {},
+    private readonly options: OutgoingHostTransferCoordinatorOptions,
   ) {
     this.now = options.now ?? (() => new Date());
     this.trust = options.trust ?? new HostTrustTransitionService();
@@ -388,6 +391,7 @@ export class OutgoingHostTransferCoordinator {
             targetHostMemberId: record.targetHostMemberId,
             transferId,
           });
+          this.options.syncProjection?.(projectId);
           await this.authority.advance({
             expectedPhase: 'target-active',
             nextPhase: 'completed',
@@ -465,6 +469,7 @@ export class OutgoingHostTransferCoordinator {
     const record = createHostTransferRecoveryRecord({
       createdAt: authorityRecord.updatedAt,
       direction: 'outgoing',
+      ownerInstallationKey: this.options.installationKey,
       projectId,
       receiverCredential: authorityRecord.receiverCredential,
       sourceHostMemberId: authorityRecord.sourceHostMemberId,

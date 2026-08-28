@@ -42,6 +42,7 @@ describe('LanAuthorityAdapter', () => {
     const adapter = new LanAuthorityAdapter({
       createControl: () => control,
       createEvent,
+      createMembershipControl: () => ({ membership: jest.fn() }),
     });
 
     const session = await adapter.create(membership());
@@ -67,6 +68,80 @@ describe('LanAuthorityAdapter', () => {
       projectId: PROJECT_ID,
     }, onInvalidation);
     expect(event).toBe(eventResource);
+  });
+
+  it.each([
+    {
+      lane: 'ordinary Member',
+      localEndpoint: null,
+      ownsAuthority: false,
+      expectedEndpoint: 'https://192.168.1.20:41730',
+    },
+    {
+      lane: 'Host Member hosted elsewhere',
+      localEndpoint: null,
+      ownsAuthority: true,
+      expectedEndpoint: 'https://192.168.1.20:41730',
+    },
+    {
+      lane: 'Host Member hosted here',
+      localEndpoint: 'https://192.168.1.44:41731',
+      ownsAuthority: true,
+      expectedEndpoint: 'https://192.168.1.44:41731',
+    },
+  ])('uses one Member-authenticated session for the $lane lane', async ({
+    expectedEndpoint,
+    localEndpoint,
+    ownsAuthority,
+  }) => {
+    const controlMemberships: CollabLocalLanMembershipRecord[] = [];
+    const membershipControlMemberships: CollabLocalLanMembershipRecord[] = [];
+    const createEvent = jest.fn(() => ({ dispose: jest.fn() }));
+    const adapter = new LanAuthorityAdapter({
+      createControl: record => {
+        controlMemberships.push(record);
+        return { readSnapshot: jest.fn() } as never;
+      },
+      createEvent,
+      createMembershipControl: record => {
+        membershipControlMemberships.push(record);
+        return { membership: jest.fn() };
+      },
+      resolveLocalTarget: jest.fn().mockResolvedValue(
+        localEndpoint === null ? null : { endpoint: localEndpoint },
+      ),
+    });
+    const record = {
+      ...membership(),
+      hostOwnership: { ownsAuthority },
+    };
+
+    const session = await adapter.create(record);
+    session.events.connect({ afterSequence: 12, onInvalidation: async () => 12 });
+
+    expect(session.constructor).toBe(Object);
+    expect(controlMemberships).toEqual([expect.objectContaining({
+      authority: expect.objectContaining({ endpoint: expectedEndpoint }),
+      hostOwnership: { ownsAuthority },
+      member: record.member,
+    })]);
+    expect(membershipControlMemberships).toEqual([expect.objectContaining({
+      authority: expect.objectContaining({ endpoint: expectedEndpoint }),
+      hostOwnership: { ownsAuthority },
+      member: record.member,
+    })]);
+    expect(session.git.remoteUrl).toBe(
+      `${expectedEndpoint}/v1/git/${PROJECT_ID}/repository.git`,
+    );
+    expect(session.git.headers).toEqual([{
+      name: 'Authorization',
+      value: `Basic ${Buffer.from(`member-alice:${'c'.repeat(43)}`).toString('base64')}`,
+    }]);
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: expectedEndpoint,
+      memberCredential: record.member.credential,
+      projectId: PROJECT_ID,
+    }), expect.any(Function));
   });
 
   it('rejects incomplete LAN authority state without fabricating Cloud fields', async () => {

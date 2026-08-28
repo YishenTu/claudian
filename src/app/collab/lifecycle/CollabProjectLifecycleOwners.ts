@@ -46,6 +46,7 @@ export interface CollabProjectLifecycleOwnerStores {
 
 export function createCollabProjectLifecycleDurableOwners(
   stores: CollabProjectLifecycleOwnerStores,
+  isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean,
 ): readonly CollabProjectLifecycleDurableOwner[] {
   return Object.freeze([
     Object.freeze({
@@ -63,7 +64,17 @@ export function createCollabProjectLifecycleDurableOwners(
         if (incoming && outgoing) {
           throw new Error('Conflicting Host transfer recovery records');
         }
-        return incoming || outgoing ? 'nonterminal' as const : 'absent' as const;
+        const record = incoming ?? outgoing;
+        return record && (
+          record.ownerInstallationKey === undefined
+          || isRecoveryOwner(record.ownerInstallationKey)
+        )
+          ? record.direction === 'incoming'
+            && record.receiverCredentialHash !== null
+            && record.stagingDirectoryName === null
+              ? 'terminal' as const
+              : 'nonterminal' as const
+          : 'absent' as const;
       },
       name: 'host-transfer',
     }),
@@ -112,7 +123,15 @@ export function createCollabProjectLifecycleDurableOwners(
         if (cleanup && cleanup.purpose !== 'retire') {
           throw new Error('Invalid retirement cleanup owner');
         }
-        return retirement || cleanup || tombstone ? 'nonterminal' as const : 'absent' as const;
+        const ownedTombstone = tombstone && (
+          tombstone.ownerInstallationKey === undefined
+          || isRecoveryOwner(tombstone.ownerInstallationKey)
+        )
+          ? tombstone
+          : null;
+        return retirement || cleanup || ownedTombstone
+          ? 'nonterminal' as const
+          : 'absent' as const;
       },
       name: 'retirement',
     }),

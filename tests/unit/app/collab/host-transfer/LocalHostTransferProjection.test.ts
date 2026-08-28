@@ -1,4 +1,9 @@
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
+import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
+
+function transitions(): LanAuthorityProjectionTransitionCoordinator {
+  return new LanAuthorityProjectionTransitionCoordinator();
+}
 
 const membership = {
   authority: {
@@ -25,6 +30,7 @@ describe('LocalHostTransferProjection', () => {
     const saveMembership = jest.fn().mockResolvedValue(undefined);
     const rotateOrigin = jest.fn().mockResolvedValue(undefined);
     const projection = new LocalHostTransferProjection({
+      authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(membership),
       now: () => new Date('2026-08-13T00:01:00.000Z'),
       resolveWorkspace: jest.fn().mockResolvedValue('/vault/Projects/alpha'),
@@ -58,6 +64,7 @@ describe('LocalHostTransferProjection', () => {
     const saveMembership = jest.fn().mockResolvedValue(undefined);
     const rotateOrigin = jest.fn().mockResolvedValue(undefined);
     const projection = new LocalHostTransferProjection({
+      authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(sourceMembership),
       now: () => new Date('2026-08-13T00:01:00.000Z'),
       resolveWorkspace: jest.fn().mockResolvedValue('/vault/Projects/alpha'),
@@ -79,11 +86,13 @@ describe('LocalHostTransferProjection', () => {
 
   it('returns only the currently pinned source CA and rejects a missing binding', async () => {
     const projection = new LocalHostTransferProjection({
+      authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(membership),
       resolveWorkspace: jest.fn(), rotateOrigin: jest.fn(), saveMembership: jest.fn(),
     });
     await expect(projection.readPinnedSourceCa('project-alpha')).resolves.toBe('source-ca');
     await expect(new LocalHostTransferProjection({
+      authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(null),
       resolveWorkspace: jest.fn(), rotateOrigin: jest.fn(), saveMembership: jest.fn(),
     }).readPinnedSourceCa('project-alpha')).rejects.toMatchObject({ code: 'project-not-found' });

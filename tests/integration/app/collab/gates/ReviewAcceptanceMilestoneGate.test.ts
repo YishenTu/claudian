@@ -9,6 +9,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_MAIN_REF } from '@claudian-collab/protocol';
+import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -412,6 +416,7 @@ describe('M5 review and Accept gate', () => {
         }
         : {}),
       getConfiguredGitPath: () => '',
+      installationKey: ownsAuthority ? TEST_INSTALLATION_A : TEST_INSTALLATION_B,
       invitationCodec,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
@@ -426,7 +431,7 @@ describe('M5 review and Accept gate', () => {
   ): CollabFeatureService {
     const feature = createCollabFeatureSubcomposition({
       foundation,
-      projectSetup: new CollabProjectSetupService(foundation, { vaultRoot }),
+      projectSetup: new CollabProjectSetupService(foundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
       vaultRoot,
     }).feature;
     features.push(feature);

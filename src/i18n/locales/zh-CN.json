@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "局域网 Host",
+      "hostedHere": "托管于此设备",
+      "hostedElsewhere": "托管于另一台设备",
+      "legacyClaimConfirmation": "使用此设备作为 Host 所有者？",
+      "legacyClaimAction": "使用此设备",
       "status": {
         "stopped": "已停止",
         "starting": "正在启动",

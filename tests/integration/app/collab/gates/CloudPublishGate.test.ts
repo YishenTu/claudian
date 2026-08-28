@@ -340,7 +340,7 @@ class SessionNetwork implements PublishGitNetworkPort {
     operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
     return this.environment.resolve(context.projectId, this.session.git)
-      .then(network => operation(network) as Promise<T>);
+      .then(network => operation(network, this.session.git.remoteUrl) as Promise<T>);
   }
 }
 
@@ -443,7 +443,6 @@ describe('Cloud Publish gate', () => {
         );
         sessions.push(session);
         const context: PublishProjectContext = {
-          allowHostRemoteRepair: false,
           memberId: actor,
           personalRef: collabMemberRef(actor),
           projectId: PROJECT_ID,

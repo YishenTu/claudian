@@ -26,7 +26,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 export interface LocalCloudBootstrapReadinessInspectorOptions {
   readonly foundation: Pick<
     ClaudianCollabService,
-    'inspectAuthority' | 'local' | 'requireGitFoundation'
+    'hostInstallations' | 'inspectAuthority' | 'local' | 'requireGitFoundation'
   >;
   readonly isProjectQuiesced: (projectId: CollabProjectId) => boolean;
   readonly managerResponsibilityReceipts: {
@@ -159,6 +159,9 @@ implements CloudBootstrapReadinessInspector {
     let mainRef: string;
     let personalRef: string;
     if (membership.hostOwnership.ownsAuthority) {
+      if (await this.#foundation.hostInstallations.inspect(projectId) !== 'hosted-here') {
+        throw inspectorError('cloud-bootstrap-readiness-host-installation-not-owned');
+      }
       const authority = await this.#foundation.inspectAuthority(projectId);
       throwIfCancelled(signal);
       if (!authority) throw inspectorError('cloud-bootstrap-readiness-authority-missing');

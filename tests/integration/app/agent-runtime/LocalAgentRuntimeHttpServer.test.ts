@@ -231,6 +231,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       authorityKind: 'lan' as const,
       connectionStatus: 'connected' as const,
       health: 'healthy' as const,
+      hostInstallationStatus: 'not-host' as const,
       hostStatus: 'stopped' as const,
       id: 'project-unicode',
       name: '界'.repeat(32),

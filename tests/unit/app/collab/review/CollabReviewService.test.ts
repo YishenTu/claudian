@@ -98,7 +98,6 @@ describe('CollabReviewService', () => {
 
 function projectContext() {
   return {
-    allowHostRemoteRepair: false,
     memberId: 'member-reviewer',
     personalRef: 'refs/heads/members/member-reviewer',
     projectId: 'project-a',

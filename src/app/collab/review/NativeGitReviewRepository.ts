@@ -22,7 +22,8 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 export interface ReviewGitNetworkPort {
   withNetwork<T>(
     context: CollabReviewProjectContext,
-    operation: (network?: GitNetworkEnvironment) => Promise<T>,
+    operation: (network: GitNetworkEnvironment | undefined, remoteUrl: string) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T>;
 }
 
@@ -72,8 +73,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     if (detail.request.latestHeadOid !== detail.reviewedHeadOid) {
       throw reviewError('authority-integrity-error', 'review-request-head-mismatch');
     }
-    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-url-mismatch');
-
+    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-mismatch');
     const memberRef = collabMemberRef(detail.request.memberId);
     const memberRemoteRef = remoteMemberRef(detail.request.memberId);
     const localReview = await this.git.withReadSession(
@@ -91,16 +91,16 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     );
     if (localReview) return localReview;
 
-    await this.network.withNetwork(context, network => this.git.fetch(
+    await this.network.withNetwork(context, (network, remoteUrl) => this.git.fetchFromUrl(
       context.repositoryPath,
-      'origin',
+      remoteUrl,
       [
         COLLAB_MAIN_FETCH_REFSPEC,
         `+${memberRef}:${memberRemoteRef}`,
       ],
       network,
       signal,
-    ));
+    ), signal);
     throwIfCancelled(signal);
 
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {

@@ -14,6 +14,7 @@ const {
   getEnhancedPath,
   getMissingNodeError,
   getHostnameKey,
+  getInstallationKey,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
@@ -894,6 +895,10 @@ describe('getHostnameKey', () => {
     const first = getHostnameKey();
     const second = getHostnameKey();
     expect(first).toBe(second);
+  });
+
+  it('is the backward-compatible alias of the installation key', () => {
+    expect(getHostnameKey()).toBe(getInstallationKey());
   });
 
   it('fails closed instead of caching a volatile key when localStorage rejects the seed', () => {

@@ -4,6 +4,8 @@ import { createServer, type Server } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
 import {
   type CollabHostTrustStore,
   CollabHttpClient,
@@ -85,7 +87,9 @@ describe('CollabHttpClient pinned transport', () => {
 
   beforeAll(async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-http-client-'));
-    hostIdentity = new LanTlsIdentity(vaultRoot);
+    hostIdentity = new LanTlsIdentity(vaultRoot, {
+      installationKey: TEST_INSTALLATION_A,
+    });
     const hostCa = await hostIdentity.loadOrCreate();
     hostCaFingerprint = hostCa.caFingerprint;
     serverIdentity = await hostIdentity.issueServerIdentity('127.0.0.1');

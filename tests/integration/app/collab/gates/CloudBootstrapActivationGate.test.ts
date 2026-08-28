@@ -7,6 +7,7 @@ import type {
   DevelopmentBootstrapManifest,
   SubmitDevelopmentBootstrapReportRequest,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
   CloudBootstrapCoordinator,
@@ -229,6 +230,7 @@ describe('Cloud bootstrap activation gate', () => {
     const timeline: string[] = [];
     const cloud = new SharedBootstrapCloud(timeline);
     const host = new CloudBootstrapCoordinator({
+      installationKey: TEST_INSTALLATION_A,
       binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'bootstrap-fence-gate',
@@ -257,7 +259,7 @@ describe('Cloud bootstrap activation gate', () => {
         discardBundle: async () => undefined,
         openBundle: async function* () { yield new Uint8Array([1, 2, 3]); },
       },
-      transitions: new CloudBootstrapTransitionStore(hostRoot),
+      transitions: new CloudBootstrapTransitionStore(hostRoot, { isRecoveryOwner: () => true }),
       workSessions: {
         closeAndDrain: async () => {
           timeline.push('session-closed');
@@ -267,6 +269,7 @@ describe('Cloud bootstrap activation gate', () => {
       },
     });
     const participant = new CloudBootstrapCoordinator({
+      installationKey: TEST_INSTALLATION_A,
       binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'unused',
@@ -285,7 +288,7 @@ describe('Cloud bootstrap activation gate', () => {
           throw new Error('not-former-host');
         },
       },
-      transitions: new CloudBootstrapTransitionStore(participantRoot),
+      transitions: new CloudBootstrapTransitionStore(participantRoot, { isRecoveryOwner: () => true }),
       workSessions: {
         closeAndDrain: async () => undefined,
         completeAfterActivation: async () => undefined,
@@ -334,6 +337,7 @@ describe('Cloud bootstrap activation gate', () => {
     ]);
 
     const restarted = new CloudBootstrapCoordinator({
+      installationKey: TEST_INSTALLATION_A,
       binding: { finalize: async record => finalizeActivatedBindingForTest(record) },
       cloud,
       createFenceId: () => 'unused',
@@ -351,7 +355,7 @@ describe('Cloud bootstrap activation gate', () => {
           throw new Error('bootstrap-restarted');
         },
       },
-      transitions: new CloudBootstrapTransitionStore(hostRoot),
+      transitions: new CloudBootstrapTransitionStore(hostRoot, { isRecoveryOwner: () => true }),
       workSessions: {
         closeAndDrain: async () => { throw new Error('session-restarted'); },
         completeAfterActivation: async () => undefined,

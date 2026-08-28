@@ -234,6 +234,10 @@
     },
     "host": {
       "summary": "LAN Host",
+      "hostedHere": "Размещён на этом устройстве",
+      "hostedElsewhere": "Размещён на другом устройстве",
+      "legacyClaimConfirmation": "Использовать это устройство как владельца Host?",
+      "legacyClaimAction": "Использовать это устройство",
       "status": {
         "stopped": "Остановлен",
         "starting": "Запускается",

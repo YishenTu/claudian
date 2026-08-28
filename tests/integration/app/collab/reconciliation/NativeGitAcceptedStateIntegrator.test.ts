@@ -301,7 +301,6 @@ describe('NativeGitAcceptedStateIntegrator', () => {
       workingTreeClean: true,
     };
     const context = {
-      allowHostRemoteRepair: false,
       memberId: MEMBER_ID,
       personalRef: PERSONAL_REF,
       projectId: 'project-a',

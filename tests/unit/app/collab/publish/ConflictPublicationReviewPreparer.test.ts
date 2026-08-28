@@ -15,7 +15,6 @@ const CANDIDATE = '3'.repeat(40);
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 const UPDATED_AT = '2026-08-08T00:01:00.000Z';
 const CONTEXT: PublishProjectContext = {
-  allowHostRemoteRepair: false,
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',
   projectId: 'project-a',

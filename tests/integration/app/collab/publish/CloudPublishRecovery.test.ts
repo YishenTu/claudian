@@ -109,7 +109,6 @@ describe('Cloud Publish recovery integration', () => {
       request: input => transport.request(input),
     }).create(membership(authorityPath));
     const context: PublishProjectContext = {
-      allowHostRemoteRepair: false,
       memberId: ACTOR_ID,
       personalRef: PERSONAL_REF,
       projectId: PROJECT_ID,
@@ -218,10 +217,10 @@ class LostResponseCloudTransport {
 
 class DirectNetwork implements PublishGitNetworkPort {
   withNetwork<T>(
-    _context: PublishProjectContext,
-    operation: () => Promise<T>,
+    context: PublishProjectContext,
+    operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
-    return operation();
+    return operation(undefined, context.remoteUrl!) as Promise<T>;
   }
 }
 

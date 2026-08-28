@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
 
-import type { RetirementTombstoneRecord } from '@/app/collab/retirement/RetirementTombstoneRecord';
+import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
+
+import {
+  decodeRetirementTombstoneRecord,
+  type RetirementTombstoneRecord,
+} from '@/app/collab/retirement/RetirementTombstoneRecord';
 import {
   RetirementTombstoneRepository,
   type RetirementTombstoneStore,
@@ -11,7 +19,7 @@ const NOW = new Date('2026-08-13T08:00:00.000Z');
 describe('RetirementTombstoneRepository', () => {
   it('authenticates former Members and serializes idempotent acknowledgements', async () => {
     const store = new MemoryTombstoneStore(record());
-    const repository = new RetirementTombstoneRepository(store, { now: () => NOW });
+    const repository = new RetirementTombstoneRepository(store, { isRecoveryOwner: () => true, now: () => NOW });
 
     await expect(repository.authenticate('project-alpha', 'a'.repeat(43)))
       .resolves.toEqual(expect.objectContaining({ memberId: 'member-a' }));
@@ -38,7 +46,7 @@ describe('RetirementTombstoneRepository', () => {
       result: { projectId: 'project-alpha', retiredAt: '2026-07-14T07:59:59.999Z' },
     });
     const store = new MemoryTombstoneStore(expired);
-    const repository = new RetirementTombstoneRepository(store, { now: () => NOW });
+    const repository = new RetirementTombstoneRepository(store, { isRecoveryOwner: () => true, now: () => NOW });
 
     await expect(repository.restore()).resolves.toEqual({
       expiredProjectIds: ['project-alpha'],
@@ -53,9 +61,53 @@ describe('RetirementTombstoneRepository', () => {
     expect(store.records.has('project-alpha')).toBe(true);
   });
 
+  it('does not restore a foreign synchronized retirement responder', async () => {
+    const store = new MemoryTombstoneStore(record({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    }));
+    const repository = new RetirementTombstoneRepository(store, {
+      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_B,
+      now: () => NOW,
+    });
+
+    await expect(repository.restore()).resolves.toEqual({
+      expiredProjectIds: [],
+      tombstones: [],
+    });
+    expect(store.records.has('project-alpha')).toBe(true);
+  });
+
+  it('keeps an ownerless legacy Project isolated while restoring later owned Projects', async () => {
+    const current = record({
+      projectId: 'project-legacy',
+      result: { projectId: 'project-legacy', retiredAt: NOW.toISOString() },
+    });
+    const { ownerInstallationKey: _ownerInstallationKey, ...withoutOwner } = current;
+    const legacy = decodeRetirementTombstoneRecord({
+      ...withoutOwner,
+      schemaVersion: 1,
+    });
+    const owned = record({
+      projectId: 'project-owned',
+      result: { projectId: 'project-owned', retiredAt: NOW.toISOString() },
+    });
+    const store = new MemoryTombstoneStore();
+    store.records.set(legacy.projectId, legacy);
+    store.records.set(owned.projectId, owned);
+    const repository = new RetirementTombstoneRepository(store, {
+      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
+      now: () => NOW,
+    });
+
+    await expect(repository.restore()).resolves.toEqual({
+      expiredProjectIds: [],
+      tombstones: [legacy, owned],
+    });
+  });
+
   it('rejects conflicting replacement state while accepting exact recovery replay', async () => {
     const store = new MemoryTombstoneStore(record());
-    const repository = new RetirementTombstoneRepository(store, { now: () => NOW });
+    const repository = new RetirementTombstoneRepository(store, { isRecoveryOwner: () => true, now: () => NOW });
 
     await expect(repository.savePrepared(record())).resolves.toBeUndefined();
     await expect(repository.savePrepared(record({
@@ -65,7 +117,7 @@ describe('RetirementTombstoneRepository', () => {
 
   it('does not persist an acknowledgement for a stale retirement timestamp', async () => {
     const store = new MemoryTombstoneStore(record());
-    const repository = new RetirementTombstoneRepository(store, { now: () => NOW });
+    const repository = new RetirementTombstoneRepository(store, { isRecoveryOwner: () => true, now: () => NOW });
 
     await expect(repository.acknowledge(
       'project-alpha',
@@ -121,6 +173,7 @@ function record(overrides: Partial<RetirementTombstoneRecord> = {}): RetirementT
     ],
     hostTransitionProofs: [],
     kind: 'retirement-tombstone',
+    ownerInstallationKey: TEST_INSTALLATION_A,
     projectId: 'project-alpha',
     replay: {
       actorMemberId: 'member-a',
@@ -129,7 +182,7 @@ function record(overrides: Partial<RetirementTombstoneRecord> = {}): RetirementT
     },
     result: { projectId: 'project-alpha', retiredAt },
     retiredAt,
-    schemaVersion: 1,
+    schemaVersion: 2,
     ...overrides,
   };
 }

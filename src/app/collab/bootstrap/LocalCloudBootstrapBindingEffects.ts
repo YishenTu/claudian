@@ -31,7 +31,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 interface LocalCloudBootstrapBindingProjects {
   loadMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null>;
   repairIndexFromMemberships(): Promise<CollabLocalProjectIndex>;
-  retireAuthorityDirectory(projectId: CollabProjectId, attemptId: string): Promise<string | null>;
   saveMembership(record: CollabLocalMembershipRecord): Promise<void>;
 }
 
@@ -68,6 +67,10 @@ export interface LocalCloudBootstrapBindingEffectsOptions {
   readonly now?: () => Date;
   readonly projects: LocalCloudBootstrapBindingProjects;
   readonly readiness: Pick<CloudBootstrapReadinessCollector, 'collect'>;
+  readonly retireLanAuthorityDirectory: (
+    projectId: CollabProjectId,
+    attemptId: string,
+  ) => Promise<string | null>;
   readonly workspace: {
     resolveManagedProjectPath(workspacePath: string): Promise<string>;
   };
@@ -231,7 +234,7 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
     await this.requireCloudMembership(record);
     if (record.memberId !== record.oldAuthority.sourceHostMemberId) return;
     await this.options.authorityLifecycle.closeAuthority(record.projectId);
-    const retired = await this.options.projects.retireAuthorityDirectory(
+    const retired = await this.options.retireLanAuthorityDirectory(
       record.projectId,
       record.attemptId,
     );

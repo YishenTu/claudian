@@ -14,6 +14,7 @@ import type {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { parseInstallationKey } from '@/core/device/InstallationKey';
 
 function statusError(reason: string): CollabError {
   return new CollabError({
@@ -129,6 +130,7 @@ export async function advanceThroughObservedAuthorityStatus(
       lifecycleOwnership: 'owned',
       localRole: current.localRole,
       operationIntentId: current.operationIntentId,
+      ownerInstallationKey: parseInstallationKey(current.ownerInstallationKey),
       receiptVerifier: current.receiptVerifier,
       sourceLanEndpoint: current.sourceLanEndpoint,
       stagingDirectoryName: current.stagingDirectoryName,

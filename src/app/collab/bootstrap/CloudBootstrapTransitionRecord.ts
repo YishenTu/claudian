@@ -23,8 +23,12 @@ import {
   canonicalCloudUrl,
   cloudProjectGitRemoteUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import {
+  type InstallationKey,
+  parseInstallationKey,
+} from '@/core/device/InstallationKey';
 
-export const CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION = 1 as const;
+export const CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION = 2 as const;
 
 export const CLOUD_BOOTSTRAP_TRANSITION_PHASES = Object.freeze([
   'intent',
@@ -86,6 +90,7 @@ export interface CloudBootstrapTransitionRecord {
     readonly gitRemoteUrl: string;
     readonly sourceHostMemberId: CollabMemberId;
   };
+  readonly ownerInstallationKey?: InstallationKey;
   readonly phase: CloudBootstrapTransitionPhase;
   readonly projectId: CollabProjectId;
   readonly repositoryIdentity: {
@@ -94,7 +99,7 @@ export interface CloudBootstrapTransitionRecord {
     readonly personalRef: string;
     readonly personalRefOid: CollabGitOid;
   };
-  readonly schemaVersion: typeof CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION;
+  readonly schemaVersion: 1 | typeof CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION;
   readonly terminalCleanupCompleted: boolean;
   readonly updatedAt: CollabIsoTimestamp;
 }
@@ -107,6 +112,7 @@ export interface CreateCloudBootstrapTransitionRecordInput {
   readonly memberId: CollabMemberId;
   readonly oldEndpoint: string;
   readonly oldGitRemoteUrl: string;
+  readonly ownerInstallationKey: InstallationKey | string;
   readonly serverUrl: string;
   readonly timestamp: CollabIsoTimestamp;
 }
@@ -120,7 +126,7 @@ export interface CloudBootstrapTransitionStorePort {
 type Value = Readonly<Record<string, unknown>>;
 
 const DIGEST = /^[0-9a-f]{64}$/u;
-const RECORD_KEYS = new Set([
+const LEGACY_RECORD_KEYS = new Set([
   'activationResult',
   'attemptId',
   'attemptState',
@@ -140,6 +146,7 @@ const RECORD_KEYS = new Set([
   'terminalCleanupCompleted',
   'updatedAt',
 ]);
+const RECORD_KEYS = new Set([...LEGACY_RECORD_KEYS, 'ownerInstallationKey']);
 
 function valueRecord(value: unknown, name: string): Value {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -285,14 +292,22 @@ export function decodeCloudBootstrapTransitionRecord(
   value: unknown,
 ): CloudBootstrapTransitionRecord {
   const source = valueRecord(value, 'Cloud bootstrap transition');
+  const schemaVersion = source.schemaVersion;
   if (
-    Object.keys(source).length !== RECORD_KEYS.size
-    || Object.keys(source).some(key => !RECORD_KEYS.has(key))
-    || source.schemaVersion !== CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION
+    (schemaVersion !== 1 && schemaVersion !== CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION)
+    || Object.keys(source).length !== (
+      schemaVersion === 1 ? LEGACY_RECORD_KEYS.size : RECORD_KEYS.size
+    )
+    || Object.keys(source).some(key => !(
+      schemaVersion === 1 ? LEGACY_RECORD_KEYS : RECORD_KEYS
+    ).has(key))
     || source.kind !== 'cloud-bootstrap-transition'
   ) {
     throw new TypeError('Invalid Cloud bootstrap transition');
   }
+  const ownerInstallationKey = schemaVersion === CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION
+    ? parseInstallationKey(source.ownerInstallationKey)
+    : undefined;
   const projectId = text(source, 'projectId', 64);
   const memberId = text(source, 'memberId', 64);
   const attemptId = text(source, 'attemptId', 128);
@@ -452,6 +467,7 @@ export function decodeCloudBootstrapTransitionRecord(
       gitRemoteUrl: oldGitRemoteUrl,
       sourceHostMemberId,
     },
+    ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
     phase: phase as CloudBootstrapTransitionPhase,
     projectId,
     repositoryIdentity: {
@@ -460,7 +476,7 @@ export function decodeCloudBootstrapTransitionRecord(
       personalRef: text(repositoryIdentity, 'personalRef', 256),
       personalRefOid,
     },
-    schemaVersion: CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION,
+    schemaVersion,
     terminalCleanupCompleted,
     updatedAt,
   };
@@ -506,6 +522,7 @@ export function createCloudBootstrapTransitionRecord(
       gitRemoteUrl: canonicalHttpsUrl(input.oldGitRemoteUrl, 'oldGitRemoteUrl'),
       sourceHostMemberId: manifest.comparison.sourceHostMemberId,
     },
+    ownerInstallationKey: input.ownerInstallationKey,
     phase: 'intent',
     projectId: manifest.comparison.projectId,
     repositoryIdentity: {
@@ -517,6 +534,29 @@ export function createCloudBootstrapTransitionRecord(
     schemaVersion: CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION,
     terminalCleanupCompleted: false,
     updatedAt: input.timestamp,
+  });
+}
+
+export function bindLegacyCloudBootstrapSourceOwner(
+  record: CloudBootstrapTransitionRecord,
+  ownerInstallationKey: InstallationKey,
+): CloudBootstrapTransitionRecord {
+  if (
+    record.memberId !== record.oldAuthority.sourceHostMemberId
+    || record.fence.state === 'not-applicable'
+  ) {
+    throw new TypeError('Cloud bootstrap participant owner is ambiguous');
+  }
+  if (record.schemaVersion === CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION) {
+    if (record.ownerInstallationKey !== ownerInstallationKey) {
+      throw new TypeError('Cloud bootstrap owner changed');
+    }
+    return record;
+  }
+  return decodeCloudBootstrapTransitionRecord({
+    ...record,
+    ownerInstallationKey,
+    schemaVersion: CLOUD_BOOTSTRAP_TRANSITION_SCHEMA_VERSION,
   });
 }
 

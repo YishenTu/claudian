@@ -7,6 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -47,6 +48,7 @@ describe('G2 local foundation gate', () => {
     const service = new ClaudianCollabService({
       createAuthorityDatabase,
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       getEnvironment: () => ({ Path: '/custom/native/bin' }),
       gitRuntimeResolver,
       obsidianConfigDirectory: '.obsidian-custom',
@@ -78,6 +80,7 @@ describe('G2 local foundation gate', () => {
     const service = new ClaudianCollabService({
       createAuthorityDatabase,
       getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
@@ -101,7 +104,7 @@ describe('G2 local foundation gate', () => {
       ref: 'refs/heads/main',
     })).resolves.toMatch(/^[0-9a-f]{40,64}$/);
 
-    const authority: CollabAuthorityFoundation = await service.openAuthority('project-alpha');
+    const authority: CollabAuthorityFoundation = await service.createAuthority('project-alpha');
     const bareRepositoryPath = path.join(authority.authorityDirectory, 'repository.git');
     await mkdir(bareRepositoryPath);
     await git.repositories.initializeBareRepository(bareRepositoryPath);
@@ -155,6 +158,7 @@ describe('G2 local foundation gate', () => {
     const reopenedService = new ClaudianCollabService({
       createAuthorityDatabase,
       getConfiguredGitPath: () => git.runtime.executablePath,
+      installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
@@ -209,6 +213,7 @@ describe('G2 local foundation gate', () => {
     for (const testCase of cases) {
       const service = new ClaudianCollabService({
         getConfiguredGitPath: () => '',
+        installationKey: TEST_INSTALLATION_A,
         gitRuntimeResolver: {
           resolve: async () => testCase.resolution,
           rescan: async () => testCase.resolution,
