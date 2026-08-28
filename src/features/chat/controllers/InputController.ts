@@ -492,6 +492,7 @@ export class InputController {
     let shouldReportReviewableSettlement = false;
     let currentReviewableSettlementReporter: (() => void) | null = null;
     let didCancelThisTurn = false;
+    let hadExecutionError = false;
     let planApprovalInvalidated = false;
     let scheduledContinuation = false;
     let continuationStaysInCurrentController = false;
@@ -579,6 +580,7 @@ export class InputController {
         new Notice(notice);
         wasInvalidated = true;
       } else if (result.status === 'error' && result.error) {
+        hadExecutionError = true;
         await streamController.appendText(`\n\n**Error:** ${result.error.message}`);
       }
     } catch (error) {
@@ -592,6 +594,7 @@ export class InputController {
         new Notice('Message was not sent. Please try again.');
         this.reportDeferredReviewableSettlement();
       } else {
+        hadExecutionError = true;
         shouldReportReviewableSettlement = true;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
@@ -622,9 +625,9 @@ export class InputController {
           state.isStreaming = false;
           state.cancelRequested = false;
 
-          // Capture response duration before resetting state (skip for interrupted responses and compaction)
+          // Capture response duration before resetting state (skip for interrupted responses, errors, and compaction)
           const hasCompactBoundary = finalAssistantMsg.contentBlocks?.some(b => b.type === 'context_compacted');
-          if (!didCancelThisTurn && !hasCompactBoundary) {
+          if (!didCancelThisTurn && !hadExecutionError && !hasCompactBoundary) {
             const durationSeconds = state.responseStartTime
               ? Math.floor((performance.now() - state.responseStartTime) / 1000)
               : 0;
