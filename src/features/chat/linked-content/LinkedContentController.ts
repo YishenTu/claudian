@@ -1,11 +1,12 @@
-import type { App } from 'obsidian';
-import { Notice, TFile, TFolder } from 'obsidian';
+import type { App, WorkspaceLeaf } from 'obsidian';
+import { FileView, Notice, TFile, TFolder } from 'obsidian';
 
 import {
   assertLinkedContentPath,
   normalizeLinkedContentPath,
 } from '@/core/path/LinkedContentPath';
 import type { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
+import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 import { LinkedContentChip } from './LinkedContentChip';
 import { LinkedContentPickerSource } from './LinkedContentPickerSource';
@@ -272,7 +273,7 @@ export class LinkedContentController {
     }
     if (content.target instanceof TFile) {
       try {
-        await this.app.workspace.getLeaf().openFile(content.target);
+        await this.revealFile(content.target);
       } catch (error) {
         new Notice(
           `Failed to open Linked content: ${error instanceof Error ? error.message : String(error)}`,
@@ -384,6 +385,28 @@ export class LinkedContentController {
 
   private derivePresentation(path: string | null): LinkedContentPresentation | null {
     return path ? deriveLinkedContentPresentation(this.app, path) : null;
+  }
+
+  private async revealFile(file: TFile): Promise<void> {
+    const workspace = this.app.workspace;
+    let existingLeaf: WorkspaceLeaf | null = null;
+    workspace.iterateRootLeaves(leaf => {
+      if (
+        existingLeaf === null
+        && (
+          leaf.view instanceof FileView
+            ? leaf.view.file?.path === file.path
+            : leaf.isDeferred && leaf.getViewState().state?.file === file.path
+        )
+      ) {
+        existingLeaf = leaf;
+      }
+    });
+    if (existingLeaf) {
+      await revealWorkspaceLeaf(workspace, existingLeaf);
+      return;
+    }
+    await workspace.getLeaf('tab').openFile(file);
   }
 
   private async revealFolder(folder: TFolder): Promise<void> {

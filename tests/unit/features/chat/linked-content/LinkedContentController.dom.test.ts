@@ -1,5 +1,5 @@
 import { createMockEl, type MockElement } from '@test/helpers/MockElement';
-import { Notice, TFile, TFolder } from 'obsidian';
+import { FileView, Notice, TFile, TFolder } from 'obsidian';
 
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { createWelcomeElement, renderWelcomeContent } from '@/features/chat/rendering/WelcomeRenderer';
@@ -27,6 +27,12 @@ function createFolder(path: string): TFolder {
   return folder;
 }
 
+function createFileView(file: TFile): FileView {
+  const view = Object.create(FileView.prototype) as FileView;
+  Object.assign(view, { file });
+  return view;
+}
+
 async function flushPromises(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -34,6 +40,7 @@ async function flushPromises(): Promise<void> {
 
 function createHarness(options: {
   entries?: Array<TFile | TFolder>;
+  rootLeaves?: Array<{ view?: unknown }>;
 } = {}) {
   const root = createFolder('');
   const entries = new Map((options.entries ?? []).map(entry => [entry.path, entry]));
@@ -50,6 +57,9 @@ function createHarness(options: {
       getLeaf: jest.fn(() => ({ openFile })),
       getLeavesOfType: jest.fn(() => [explorerLeaf]),
       getLeftLeaf: jest.fn(() => null),
+      iterateRootLeaves: jest.fn((callback: (leaf: { view?: unknown }) => void) => {
+        for (const leaf of options.rootLeaves ?? []) callback(leaf);
+      }),
       revealLeaf: jest.fn().mockResolvedValue(undefined),
     },
     metadataCache: { getFileCache: jest.fn(() => null) },
@@ -331,6 +341,7 @@ describe('LinkedContentController DOM', () => {
     expect(noteChipMain?.getAttribute('title')).toBeNull();
     noteChipMain?.click();
     await flushPromises();
+    expect(harness.app.workspace.getLeaf).toHaveBeenCalledWith('tab');
     expect(harness.openFile).toHaveBeenCalledWith(note);
 
     harness.controller.selectExplicit(folder.path);
@@ -347,6 +358,39 @@ describe('LinkedContentController DOM', () => {
       .toContain('Missing content');
     chip.querySelector('.claudian-context-chip-main')?.click();
     expect(Notice).toHaveBeenCalledWith('Linked content is missing: Missing/Plan.md');
+  });
+
+  it('reveals the existing main editor tab showing the linked file', async () => {
+    const image = createFile('Images/Diagram.png');
+    const existingLeaf = { view: createFileView(image) };
+    const harness = createHarness({ entries: [image], rootLeaves: [existingLeaf] });
+    harness.controller.selectExplicit(image.path);
+
+    await harness.controller.activateCurrentContent();
+
+    expect(harness.app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(harness.app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(harness.openFile).not.toHaveBeenCalled();
+  });
+
+  it('reveals a deferred editor tab whose view state identifies the linked file', async () => {
+    const note = createFile('Notes/Restored.md');
+    const deferredLeaf = {
+      getViewState: jest.fn(() => ({
+        state: { file: note.path },
+        type: 'markdown',
+      })),
+      isDeferred: true,
+      view: {},
+    };
+    const harness = createHarness({ entries: [note], rootLeaves: [deferredLeaf] });
+    harness.controller.selectExplicit(note.path);
+
+    await harness.controller.activateCurrentContent();
+
+    expect(harness.app.workspace.revealLeaf).toHaveBeenCalledWith(deferredLeaf);
+    expect(harness.app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(harness.openFile).not.toHaveBeenCalled();
   });
 
   it('removes editable Linked content from the chip but keeps locked content immutable', () => {

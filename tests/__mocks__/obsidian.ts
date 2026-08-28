@@ -69,6 +69,12 @@ export class ItemView {
   }
 }
 
+export class FileView extends ItemView {
+  allowNoFile = false;
+  file: any = null;
+  navigation = true;
+}
+
 export class WorkspaceLeaf {}
 
 export class Scope {
