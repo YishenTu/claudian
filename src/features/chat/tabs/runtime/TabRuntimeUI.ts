@@ -274,6 +274,10 @@ function buildInputToolbar(
     getCapabilities: () => getTabCapabilities(shell, plugin),
     getSettings: () => getTabSettingsSnapshot(shell, plugin),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    getRuntimeModel: () => {
+      const tab = runtimeRef.current();
+      return tab?.state?.usage?.runtimeModel ?? null;
+    },
     onModelChange: async (model: string) => {
       const tab = runtimeRef.requirePublished();
       if (!options.isRuntimeLive(tab)) return;
