@@ -291,6 +291,8 @@ export type StreamChunk =
  */
 export interface UsageInfo {
   model?: string;
+  /** Actual model served by the provider runtime, when it differs from `model`. */
+  runtimeModel?: string;
   inputTokens: number;
   /** Prompt caching: tokens used to create cache entries. Claude-specific; 0 if omitted. */
   cacheCreationInputTokens?: number;
