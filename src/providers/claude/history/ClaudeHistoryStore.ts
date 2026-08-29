@@ -2,12 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
-import {
-  type ChatMessage,
-  isCanonicalUserMessage,
-  type SubagentInfo,
-  type ToolCallInfo,
-} from '../../../core/types';
+import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
@@ -193,7 +188,7 @@ export async function loadSDKSessionMessages(
         pendingAssistant = chatMsg;
       }
     } else {
-      flushPendingAssistant(isCanonicalUserMessage(chatMsg));
+      flushPendingAssistant(!chatMsg.isInterrupt);
       chatMessages.push(chatMsg);
     }
   }
