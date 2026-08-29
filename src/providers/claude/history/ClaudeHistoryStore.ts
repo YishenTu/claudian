@@ -151,7 +151,7 @@ export async function loadSDKSessionMessages(
   const toolResults = collectToolResults(filteredEntries);
   const toolUseResults = collectStructuredPatchResults(filteredEntries);
   const asyncSubagentResults = collectAsyncSubagentResults(filteredEntries);
-  const nativeTurnDurations = collectNativeTurnDurations(filteredEntries);
+  const nativeTurnDurations = collectNativeTurnDurations(result.messages);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
@@ -265,6 +265,13 @@ function collectNativeTurnDurations(
   entries: SDKNativeMessage[],
 ): Map<string, number> {
   const durations = new Map<string, number>();
+  const entriesByUuid = new Map<string, SDKNativeMessage>();
+  for (const entry of entries) {
+    if (entry.uuid && !entriesByUuid.has(entry.uuid)) {
+      entriesByUuid.set(entry.uuid, entry);
+    }
+  }
+
   for (const entry of entries) {
     if (
       entry.type !== 'system'
@@ -276,10 +283,37 @@ function collectNativeTurnDurations(
     ) {
       continue;
     }
+    const assistantUuid = resolveTurnDurationAssistantUuid(
+      entry.parentUuid,
+      entriesByUuid,
+    );
+    if (!assistantUuid) continue;
+
     const durationSeconds = Math.floor(entry.durationMs / 1_000);
-    durations.set(entry.parentUuid, durationSeconds);
+    durations.set(assistantUuid, durationSeconds);
   }
   return durations;
+}
+
+function resolveTurnDurationAssistantUuid(
+  parentUuid: string,
+  entriesByUuid: ReadonlyMap<string, SDKNativeMessage>,
+): string | null {
+  const seen = new Set<string>();
+  let currentUuid: string | null = parentUuid;
+
+  while (currentUuid && !seen.has(currentUuid)) {
+    seen.add(currentUuid);
+    const entry = entriesByUuid.get(currentUuid);
+    if (!entry) return null;
+    if (entry.type === 'assistant') return currentUuid;
+    if (entry.type !== 'system') return null;
+    currentUuid = typeof entry.parentUuid === 'string'
+      ? entry.parentUuid
+      : null;
+  }
+
+  return null;
 }
 
 export function getLastSDKSessionModel(

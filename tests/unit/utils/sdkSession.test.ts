@@ -1145,6 +1145,48 @@ describe('sdkSession', () => {
       });
     });
 
+    it('resolves response duration through an intermediary stop hook record', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Inspect the project"}}',
+        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:00:04Z","message":{"content":[{"type":"text","text":"Inspection complete."}]}}',
+        '{"type":"system","subtype":"stop_hook_summary","uuid":"stop-1","parentUuid":"a1","timestamp":"2024-01-15T10:00:04.050Z"}',
+        '{"type":"system","subtype":"turn_duration","uuid":"duration-1","parentUuid":"stop-1","timestamp":"2024-01-15T10:00:04.100Z","durationMs":4500}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-stop-hook-duration');
+
+      expect(result.messages[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Inspection complete.',
+        durationSeconds: 4,
+      });
+    });
+
+    it('restores checkpoint duration from metadata beyond resume truncation', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"First turn"}}',
+        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:00:04Z","message":{"content":[{"type":"text","text":"First response"}]}}',
+        '{"type":"system","subtype":"turn_duration","uuid":"duration-1","parentUuid":"a1","timestamp":"2024-01-15T10:00:04.100Z","durationMs":4500}',
+        '{"type":"user","uuid":"u2","parentUuid":"duration-1","timestamp":"2024-01-15T10:00:05Z","message":{"content":"Later turn"}}',
+        '{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2024-01-15T10:00:08Z","message":{"content":[{"type":"text","text":"Later response"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages(
+        '/Users/test/vault',
+        'session-checkpoint-duration',
+        'a1',
+      );
+
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[1]).toMatchObject({
+        role: 'assistant',
+        content: 'First response',
+        durationSeconds: 4,
+      });
+    });
+
     it('treats a sub-second native turn duration as authoritative', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([
