@@ -306,15 +306,15 @@ describe('Collab dependency envelope', () => {
     expect(unusedForgeInputs).toEqual([]);
   });
 
-  it('forces Node WebSocket and bundles the installed registry protocol', () => {
+  it('forces Node WebSocket and bundles the installed registry protocol ESM entry', () => {
     const config = readFileSync(esbuildConfigPath, 'utf8');
     const aliases = {
       ...createDesktopRuntimeAliases(),
     };
     const normalizedInputs = bundleInputs.map(input => input.replaceAll('\\\\', '/'));
     const protocolInputs = normalizedInputs.filter(input => (
-      input.endsWith('/node_modules/@claudian-collab/protocol/dist/index.js')
-      || input === 'node_modules/@claudian-collab/protocol/dist/index.js'
+      input.endsWith('/node_modules/@claudian-collab/protocol/dist/esm/index.mjs')
+      || input === 'node_modules/@claudian-collab/protocol/dist/esm/index.mjs'
     ));
     const bundle = readFileSync(bundlePath, 'utf8');
 
