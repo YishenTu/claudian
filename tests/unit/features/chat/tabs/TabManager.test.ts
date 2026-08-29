@@ -1752,6 +1752,17 @@ describe('TabManager provider execution orchestration', () => {
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
   });
 
+  it('requests provider built-ins for Main Chat command discovery', async () => {
+    const { manager } = createManager();
+    await manager.createTab();
+
+    await manager.getProviderCommandDiscovery();
+
+    expect(commandCatalog.listDropdownEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ includeBuiltIns: true }),
+    );
+  });
+
   it('lets provider-owned command discovery outlive the shared deadline', async () => {
     jest.useFakeTimers();
     const commandResult = deferred<any>();

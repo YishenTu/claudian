@@ -317,6 +317,7 @@ describe('InlineEditModal - openAndWait', () => {
         }),
       } as any;
       plugin.providerHost = plugin;
+      const listDropdownEntries = jest.fn().mockResolvedValue([]);
       jest.spyOn(ProviderWorkspaceRegistry, 'getCommandCatalog').mockReturnValue({
         getDropdownConfig: jest.fn().mockReturnValue({
           providerId: 'codex',
@@ -325,7 +326,7 @@ describe('InlineEditModal - openAndWait', () => {
           skillPrefix: '$',
           commandPrefix: '/',
         }),
-        listDropdownEntries: jest.fn().mockResolvedValue([]),
+        listDropdownEntries,
       } as any);
       const editor = {} as any;
       const view = { editor } as any;
@@ -385,6 +386,15 @@ describe('InlineEditModal - openAndWait', () => {
       expect(Array.from(widgetRef?.slashSource?.hiddenCommands ?? [])).toEqual(['analyze']);
       expect(widgetRef?.slashSource?.includeBuiltIns).toBe(false);
       expect(widgetRef?.slashSource?.discovery).toBeDefined();
+      widgetRef?.slashSource?.load(
+        { atInputStart: true, end: 1, query: '', start: 0, trigger: '/' },
+        new AbortController().signal,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(listDropdownEntries).toHaveBeenCalledWith(expect.objectContaining({
+        includeBuiltIns: false,
+      }));
 
       widgetRef?.reject();
       await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
