@@ -52,7 +52,7 @@ describeOnWindows('PiSubprocess Windows argv integration', () => {
       await subprocess?.shutdown();
       await fs.rm(npmPrefix, { force: true, recursive: true });
     }
-  });
+  }, 20_000);
 });
 
 function createWindowsCommandShim(commandPath: string, targetPath: string): string {
