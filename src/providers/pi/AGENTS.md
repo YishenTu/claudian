@@ -20,6 +20,7 @@
 ## Protocol Rules
 
 - Launch arguments are built in `PiLaunchSpec.ts`. Keep command-line shape there instead of scattering flags across runtime code.
+- On Windows, treat an npm-family `pi.cmd` as an installation locator only: resolve the package-owned `bin.pi` target recorded by npm, pnpm, or Yarn shims and launch that entry through Node with structured arguments. Never serialize Pi prompts or session targets through `cmd.exe`; fail closed when the entrypoint cannot be established.
 - Live events are normalized through `normalizePiRpcEvent()` and `PiEventNormalizationState`.
 - Extension UI requests are routed through `PiExtensionUiBridge` and rendered by `ObsidianPiExtensionUiRenderer`; execution code must not manipulate Obsidian DOM directly.
 - Compact turns call the `compact` RPC request and emit a `context_compacted` stream chunk.
@@ -28,6 +29,7 @@
 
 - `PiProviderState` may store `sessionId`, `sessionFile`, `leafEntryId`, `parentSession`, `previousSessions`, and fork metadata. Do not infer these fields in feature code.
 - Pi can resume by session ID or absolute session file. Absolute session files can be switched in a live process; other target changes require process restart.
+- A relaunched kernel must prove that its initial `get_state` identity matches the requested resume file or ID before any prompt, steer request, or extension dialog response can carry user input. A mismatch fails the turn without replacing persisted session state.
 - History hydration reads Pi JSONL sessions from vault-local (`.pi/agent/sessions/`) and user-level (`~/.pi/agent/sessions/`) roots.
 - Forking creates a new Pi session file by copying the source branch up to `resumeAt` without altering or truncating the source. Keep fork materialization provider-owned.
 - Historical selected-model recovery walks the active JSONL branch to `leafEntryId` and preserves the last native provider/model pair. A missing persisted leaf must fail closed instead of using another branch; never promote `previousSessions` or a recovery-only locator into the live binding.

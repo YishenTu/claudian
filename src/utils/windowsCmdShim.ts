@@ -48,6 +48,12 @@ export function resolveWindowsCmdShimSpawnSpec(
     };
   }
 
+  if (spec.args.some(value => /[\r\n]/u.test(value))) {
+    throw new Error(
+      'Windows command shims cannot safely receive multiline arguments. Use a native executable or launch the underlying script directly.',
+    );
+  }
+
   const shellCommand = [command, ...spec.args]
     .map(value => quoteWindowsShellArgument(value))
     .join(' ');

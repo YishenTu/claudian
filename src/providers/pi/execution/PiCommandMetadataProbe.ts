@@ -66,7 +66,7 @@ export class PiCommandMetadataProbe {
             onClose: () => undefined,
             onEvent: () => undefined,
             onExtensionChunk: () => undefined,
-            onExtensionRequest: () => undefined,
+            onExtensionRequest: () => false,
           },
           null,
         );

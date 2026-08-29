@@ -17,6 +17,7 @@ export interface ManagedStdioProcessOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   finalShutdownTimeoutMs?: number;
+  killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
   stderrBufferLimit?: number;
   stdio?: 'pipe' | ['pipe', 'pipe', 'pipe'];

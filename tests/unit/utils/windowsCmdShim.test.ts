@@ -26,6 +26,15 @@ describe('windowsCmdShim', () => {
     });
   });
 
+  it('rejects multiline arguments instead of corrupting them through cmd.exe', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    expect(() => resolveWindowsCmdShimSpawnSpec({
+      args: ['--system-prompt', 'first line\nsecond line', '--session', 'session.jsonl'],
+      command: 'C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd',
+    })).toThrow('Windows command shims cannot safely receive multiline arguments');
+  });
+
   it('waits for taskkill to finish terminating the Windows process tree', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const proc = { kill: jest.fn().mockReturnValue(true), pid: 4312 };
