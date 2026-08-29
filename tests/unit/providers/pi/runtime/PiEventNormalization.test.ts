@@ -1,5 +1,6 @@
 import {
   createPiEventNormalizationState,
+  getPiTerminalErrorMessage,
   normalizePiRpcEvent,
 } from '@/providers/pi/normalizations/piEventNormalization';
 
@@ -171,5 +172,17 @@ describe('Pi event normalization', () => {
       },
       type: 'turn_end',
     }, state)).toEqual([{ type: 'error', content: 'Authentication failed' }]);
+  });
+
+  it('reads terminal errors from the native Pi message payload', () => {
+    expect(getPiTerminalErrorMessage({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter quota exceeded',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    })).toBe('OpenRouter quota exceeded');
   });
 });

@@ -670,6 +670,36 @@ describe('PiExecutionBackend', () => {
     }));
   });
 
+  it('preserves a pending native Pi error when the process exits before agent end', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter quota exceeded',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.close(new Error('Pi process exited'));
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      category: 'process-exited',
+      message: 'OpenRouter quota exceeded',
+      type: 'execution_error',
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_completed',
+    }));
+  });
+
   it('can cancel while native Pi is waiting to retry and fences later events', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());

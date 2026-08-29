@@ -847,12 +847,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
     const active = this.activeRun;
     if (active && !active.terminal) {
-      active.terminalSignal.reject(
-        error ?? new Error('Pi subprocess exited.'),
-      );
+      const runError = active.pendingTerminalError
+        ?? error
+        ?? new Error('Pi subprocess exited.');
+      active.pendingTerminalError = null;
+      active.terminalSignal.reject(runError);
       this.finishError(
         active,
-        error ?? new Error('Pi subprocess exited.'),
+        runError,
         missingProviderSessionId
           ? 'provider-session-missing'
           : 'process-exited',
