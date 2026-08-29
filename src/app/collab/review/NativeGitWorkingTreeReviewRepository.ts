@@ -200,7 +200,11 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
         !before.isFile()
         || !pathStat.isFile()
         || pathStat.isSymbolicLink()
-        || before.dev !== pathStat.dev
+      ) {
+        throw reviewError('unsupported-file-type', 'working-tree-review-file-not-regular');
+      }
+      if (
+        before.dev !== pathStat.dev
         || before.ino !== pathStat.ino
         || before.mode !== pathStat.mode
       ) {
