@@ -1,4 +1,5 @@
-import { lstat, readdir, readFile, rename, rm } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open, readdir, readFile, rename, rm } from 'node:fs/promises';
 
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
@@ -2335,20 +2336,28 @@ export class CollabLocalProjectRepository {
     relativePath: string,
   ): Promise<AnyAuthorityOwnershipMarker | null> {
     const absolutePath = await resolveCollabVaultPath(this.vaultRoot, relativePath);
-    const fileStat = await lstat(absolutePath).catch(error => {
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw localRecordError('authority-ownership-marker-inspection-failed', 'index');
     });
-    if (fileStat === null) return null;
-    if (
-      !fileStat.isFile()
-      || fileStat.isSymbolicLink()
-      || fileStat.size > AUTHORITY_OWNERSHIP_MARKER_MAX_BYTES
-    ) {
-      throw localRecordError('authority-ownership-marker-invalid', 'index');
-    }
+    if (handle === null) return null;
     try {
-      const value: unknown = JSON.parse(await readFile(absolutePath, 'utf8'));
+      const [handleStat, pathStat] = await Promise.all([
+        handle.stat(),
+        lstat(absolutePath),
+      ]).catch(() => {
+        throw localRecordError('authority-ownership-marker-inspection-failed', 'index');
+      });
+      if (
+        !handleStat.isFile()
+        || !pathStat.isFile()
+        || pathStat.isSymbolicLink()
+        || handleStat.dev !== pathStat.dev
+        || handleStat.ino !== pathStat.ino
+        || handleStat.size > AUTHORITY_OWNERSHIP_MARKER_MAX_BYTES
+      ) throw localRecordError('authority-ownership-marker-invalid', 'index');
+      const value: unknown = JSON.parse(await handle.readFile('utf8'));
       if (!isRecord(value) || !isCollabProjectId(value.projectId)) {
         throw new TypeError('invalid');
       }
@@ -2371,8 +2380,11 @@ export class CollabLocalProjectRepository {
         };
       }
       throw new TypeError('invalid');
-    } catch {
+    } catch (error) {
+      if (error instanceof CollabError) throw error;
       throw localRecordError('authority-ownership-marker-invalid', 'index');
+    } finally {
+      await handle.close().catch(() => undefined);
     }
   }
 

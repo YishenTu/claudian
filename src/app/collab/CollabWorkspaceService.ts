@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
 import {
   lstat,
+  open,
   readdir,
-  readFile,
   rename,
   rm,
   unlink,
@@ -32,6 +33,31 @@ const PROJECTS_ROOT_MARKER = {
   schemaVersion: 1,
 } as const;
 const PROJECTS_ROOT_MARKER_CONTENTS = `${JSON.stringify(PROJECTS_ROOT_MARKER, null, 2)}\n`;
+
+async function readRegularFileWithoutFollowingLinks(filePath: string): Promise<string | null> {
+  const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await open(filePath, fsConstants.O_RDONLY | noFollow).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  });
+  if (handle === null) return null;
+  try {
+    const [handleStat, pathStat] = await Promise.all([
+      handle.stat(),
+      lstat(filePath),
+    ]);
+    if (
+      !handleStat.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino
+    ) throw new Error('File boundary changed');
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
 
 export type CollabProjectsFolderChildPurpose =
   | 'authority-transfer-staging'
@@ -255,13 +281,11 @@ export class CollabWorkspaceService {
     expected: DetachedProjectMarker,
   ): Promise<void> {
     const markerPath = await this.#resolveCleanupMarkerPath(workspacePath, operationId);
-    const markerStat = await lstat(markerPath).catch(() => null);
-    if (!markerStat?.isFile() || markerStat.isSymbolicLink()) {
-      throw workspaceBoundaryError('detached-marker-invalid');
-    }
     let actual: DetachedProjectMarker;
     try {
-      actual = decodeDetachedProjectMarker(JSON.parse(await readFile(markerPath, 'utf8')));
+      const serialized = await readRegularFileWithoutFollowingLinks(markerPath);
+      if (serialized === null) throw new Error('Missing detached marker');
+      actual = decodeDetachedProjectMarker(JSON.parse(serialized));
     } catch {
       throw workspaceBoundaryError('detached-marker-invalid');
     }
@@ -539,19 +563,16 @@ export class CollabWorkspaceService {
     markerAbsolutePath: string,
     expected: CollabProjectsFolderChildMarker,
   ): Promise<boolean> {
-    let markerStat: Awaited<ReturnType<typeof lstat>>;
+    let serialized: string | null;
     try {
-      markerStat = await lstat(markerAbsolutePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      serialized = await readRegularFileWithoutFollowingLinks(markerAbsolutePath);
+    } catch {
       throw workspaceBoundaryError('projects-child-owner-inspection-failed');
     }
-    if (!markerStat.isFile() || markerStat.isSymbolicLink()) {
-      throw workspaceBoundaryError('projects-child-owner-invalid');
-    }
+    if (serialized === null) return false;
     let marker: unknown;
     try {
-      marker = JSON.parse(await readFile(markerAbsolutePath, 'utf8')) as unknown;
+      marker = JSON.parse(serialized) as unknown;
     } catch {
       throw workspaceBoundaryError('projects-child-owner-invalid');
     }
@@ -562,19 +583,16 @@ export class CollabWorkspaceService {
   }
 
    async #validateExistingProjectsMarker(markerAbsolutePath: string): Promise<boolean> {
-    let markerStat: Awaited<ReturnType<typeof lstat>>;
+    let serialized: string | null;
     try {
-      markerStat = await lstat(markerAbsolutePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      serialized = await readRegularFileWithoutFollowingLinks(markerAbsolutePath);
+    } catch {
       throw workspaceBoundaryError('projects-root-marker-inspection-failed');
     }
-    if (!markerStat.isFile() || markerStat.isSymbolicLink()) {
-      throw workspaceBoundaryError('projects-root-marker-invalid');
-    }
+    if (serialized === null) return false;
     let marker: unknown;
     try {
-      marker = JSON.parse(await readFile(markerAbsolutePath, 'utf8')) as unknown;
+      marker = JSON.parse(serialized) as unknown;
     } catch {
       throw workspaceBoundaryError('projects-root-marker-invalid');
     }
@@ -612,19 +630,13 @@ export class CollabWorkspaceService {
 
    async #hasStandaloneGuard(rootAbsolutePath: string): Promise<boolean> {
     const guardAbsolutePath = path.join(rootAbsolutePath, '.gitignore');
-    let guardStat: Awaited<ReturnType<typeof lstat>>;
+    let contents: string | null;
     try {
-      guardStat = await lstat(guardAbsolutePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      contents = await readRegularFileWithoutFollowingLinks(guardAbsolutePath);
+    } catch {
       throw workspaceBoundaryError('guard-read-failed');
     }
-    if (!guardStat.isFile() || guardStat.isSymbolicLink()) {
-      throw workspaceBoundaryError('guard-file-boundary-invalid');
-    }
-    const contents = await readFile(guardAbsolutePath, 'utf8').catch(() => {
-      throw workspaceBoundaryError('guard-read-failed');
-    });
+    if (contents === null) return false;
     return contents.split(/\r?\n/).includes('/*');
   }
 

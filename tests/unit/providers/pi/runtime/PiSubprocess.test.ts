@@ -4,11 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 
-jest.mock('node:child_process', () => ({
-  spawn: jest.fn(),
-}));
+jest.mock('cross-spawn', () => jest.fn());
 
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
 

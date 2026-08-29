@@ -1,12 +1,13 @@
-import {
-  type ChildProcessWithoutNullStreams,
-  spawn,
+import type {
+  ChildProcessWithoutNullStreams,
+  spawn as nodeSpawn,
 } from 'node:child_process';
 import { lstat, realpath, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 
 import { collabMemberRef, isCollabProjectId } from '@claudian-collab/protocol';
+import crossSpawn from 'cross-spawn';
 
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {
@@ -36,6 +37,7 @@ const DEFAULT_GLOBAL_CHILD_LIMIT = 8;
 const DEFAULT_MEMBER_CHILD_LIMIT = 2;
 const DEFAULT_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
+const spawn = crossSpawn as typeof nodeSpawn;
 
 type RepositoryBoundary = Pick<
   GitRepositoryService,
@@ -603,9 +605,6 @@ export class GitHttpBackendProxy {
       ),
       stdio: 'pipe',
       windowsHide: true,
-      ...(spawnSpec.windowsVerbatimArguments
-        ? { windowsVerbatimArguments: true }
-        : {}),
     });
 
     let resolveClosed!: () => void;

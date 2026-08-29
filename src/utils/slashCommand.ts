@@ -93,7 +93,7 @@ export function yamlString(value: string): string {
   if (value.includes(':') || value.includes('#') || value.includes('\n') ||
       value.startsWith(' ') || value.endsWith(' ') ||
       value.startsWith('[') || value.startsWith('{')) {
-    return `"${value.replace(/"/g, '\\"')}"`;
+    return JSON.stringify(value);
   }
   return value;
 }

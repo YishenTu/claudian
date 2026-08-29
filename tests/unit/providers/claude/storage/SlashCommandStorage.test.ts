@@ -270,7 +270,7 @@ Do the thing`;
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
         expect.anything(),
-        expect.stringContaining('description: "Line1\nLine2\nLine3"')
+        expect.stringContaining('description: "Line1\\nLine2\\nLine3"')
       );
     });
 

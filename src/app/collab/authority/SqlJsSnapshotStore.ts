@@ -3,7 +3,6 @@ import {
   chmod,
   lstat,
   open,
-  readFile,
   rename,
   rm,
 } from 'node:fs/promises';
@@ -42,18 +41,33 @@ export class NodeSqlJsSnapshotStore implements SqlJsSnapshotStore {
 
   async readCandidate(kind: SqlJsSnapshotKind): Promise<Uint8Array | null> {
     const candidatePath = this.pathFor(kind);
-    const candidateStat = await lstat(candidatePath).catch(error => {
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    const handle = await open(candidatePath, fsConstants.O_RDONLY | noFollow).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw snapshotError('authority-snapshot-inspection-failed');
     });
-    if (candidateStat === null) return null;
-    if (!candidateStat.isFile() || candidateStat.isSymbolicLink()) {
-      throw snapshotError('authority-snapshot-boundary-invalid');
-    }
+    if (handle === null) return null;
     try {
-      return await readFile(candidatePath);
-    } catch {
-      throw snapshotError('authority-snapshot-read-failed');
+      const [handleStat, pathStat] = await Promise.all([
+        handle.stat(),
+        lstat(candidatePath),
+      ]).catch(() => {
+        throw snapshotError('authority-snapshot-inspection-failed');
+      });
+      if (
+        !handleStat.isFile()
+        || !pathStat.isFile()
+        || pathStat.isSymbolicLink()
+        || handleStat.dev !== pathStat.dev
+        || handleStat.ino !== pathStat.ino
+      ) throw snapshotError('authority-snapshot-boundary-invalid');
+      try {
+        return await handle.readFile();
+      } catch {
+        throw snapshotError('authority-snapshot-read-failed');
+      }
+    } finally {
+      await handle.close().catch(() => undefined);
     }
   }
 

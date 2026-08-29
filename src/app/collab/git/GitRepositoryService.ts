@@ -633,8 +633,8 @@ function assertRefspec(refspec: string): void {
   if (sourceWildcards !== targetWildcards || sourceWildcards > 1) {
     throw repositoryError('repository-invalid', 'git-refspec-invalid');
   }
-  assertRef(source.replace('*', 'wildcard'));
-  assertRef(target.replace('*', 'wildcard'));
+  assertRef(source.replaceAll('*', 'wildcard'));
+  assertRef(target.replaceAll('*', 'wildcard'));
 }
 
 export class GitRepositoryService {

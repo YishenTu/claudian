@@ -1,11 +1,9 @@
 import type { ChildProcess } from 'child_process';
 import { EventEmitter, Readable, Writable } from 'stream';
 
-jest.mock('child_process', () => ({
-  spawn: jest.fn(),
-}));
+jest.mock('cross-spawn', () => jest.fn());
 
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
@@ -81,7 +79,7 @@ describe('CodexAppServerProcess', () => {
       );
     });
 
-    it('wraps Windows .cmd shims through cmd.exe and quotes shell metacharacters', () => {
+    it('passes Windows .cmd shims and shell metacharacters to cross-spawn', () => {
       Object.defineProperty(process, 'platform', { value: 'win32' });
 
       const server = new CodexAppServerProcess(createLaunchSpec({
@@ -90,11 +88,10 @@ describe('CodexAppServerProcess', () => {
       server.start();
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        process.env.ComSpec || process.env.comspec || 'cmd.exe',
-        ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\codex.cmd" app-server --listen stdio://"'],
+        'C:\\Users\\R&D\\AppData\\Roaming\\npm\\codex.cmd',
+        ['app-server', '--listen', 'stdio://'],
         expect.objectContaining({
           windowsHide: true,
-          windowsVerbatimArguments: true,
         }),
       );
     });

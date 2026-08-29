@@ -5,7 +5,6 @@ import {
   lstat,
   mkdir,
   open,
-  readFile,
   realpath,
   rename,
   rm,
@@ -136,6 +135,47 @@ async function syncDirectoryDurably(
     throw filesystemError('operation-failed', 'directory-sync-required', relativePath);
   } finally {
     await handle?.close().catch(() => undefined);
+  }
+}
+
+async function readRegularFileWithoutFollowingLinks(
+  absolutePath: string,
+  relativePath: string,
+  mode: number,
+  onDiagnostic?: CollabFilesystemDiagnosticSink,
+): Promise<string | null> {
+  const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  });
+  if (handle === null) return null;
+  try {
+    const [handleStat, pathStat] = await Promise.all([
+      handle.stat(),
+      lstat(absolutePath),
+    ]);
+    if (
+      !handleStat.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino
+    ) {
+      throw filesystemError(
+        'workspace-boundary-invalid',
+        'guard-file-boundary-invalid',
+        relativePath,
+      );
+    }
+    if (process.platform !== 'win32') {
+      await handle.chmod(mode).catch(() => {
+        onDiagnostic?.({ code: 'permissions-not-applied', path: relativePath });
+      });
+    }
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -456,16 +496,7 @@ export async function ensureCollabContainerGuard(
   const guardAbsolutePath = path.join(containerAbsolutePath, '.gitignore');
   let existing: string | null = null;
   try {
-    const stat = await lstat(guardAbsolutePath);
-    if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw filesystemError(
-        'workspace-boundary-invalid',
-        'guard-file-boundary-invalid',
-        guardRelativePath,
-      );
-    }
-    existing = await readFile(guardAbsolutePath, 'utf8');
-    await applyModeBestEffort(
+    existing = await readRegularFileWithoutFollowingLinks(
       guardAbsolutePath,
       guardRelativePath,
       fileMode,
@@ -486,12 +517,6 @@ export async function ensureCollabContainerGuard(
       await handle.sync();
       await handle.close();
       handle = null;
-      await applyModeBestEffort(
-        guardAbsolutePath,
-        guardRelativePath,
-        fileMode,
-        options.onDiagnostic,
-      );
       await syncDirectoryBestEffort(
         containerAbsolutePath,
         containerRelativePath,
@@ -506,19 +531,6 @@ export async function ensureCollabContainerGuard(
 
   const guardedContents = withOneStandaloneGuard(existing);
   if (guardedContents !== existing) {
-    if (!existing.split(/\r?\n/).includes('/*')) {
-      let handle: Awaited<ReturnType<typeof open>> | null = null;
-      try {
-        handle = await open(guardAbsolutePath, 'a', fileMode);
-        const prefix = existing.length === 0 || /\r?\n$/.test(existing) ? '' : '\n';
-        await handle.writeFile(`${prefix}/*\n`);
-        await handle.sync();
-      } catch {
-        throw filesystemError('operation-failed', 'guard-update-failed', guardRelativePath);
-      } finally {
-        await handle?.close().catch(() => undefined);
-      }
-    }
     await writeCollabFileAtomically(
       vaultRoot,
       guardRelativePath,

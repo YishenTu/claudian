@@ -21,6 +21,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
           languages: javascript-typescript
           queries: security-extended
 

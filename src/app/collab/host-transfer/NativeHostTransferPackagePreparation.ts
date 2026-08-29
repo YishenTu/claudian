@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { constants as fsConstants, createReadStream } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -87,6 +87,33 @@ async function writePrivateFile(filePath: string, bytes: Uint8Array | string): P
   }
 }
 
+async function readRegularUtf8FileIfPresent(filePath: string): Promise<string | null> {
+  const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await open(filePath, fsConstants.O_RDONLY | noFollow).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw preparationError('host-transfer-package-metadata-invalid');
+  });
+  if (handle === null) return null;
+  try {
+    const [handleStat, pathStat] = await Promise.all([
+      handle.stat(),
+      lstat(filePath),
+    ]).catch(() => {
+      throw preparationError('host-transfer-package-metadata-invalid');
+    });
+    if (
+      !handleStat.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino
+    ) throw preparationError('host-transfer-package-metadata-invalid');
+    return await handle.readFile('utf8');
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
 async function* streamFile(filePath: string, signal?: AbortSignal): AsyncIterable<Uint8Array> {
   try {
     for await (const chunk of createReadStream(filePath)) {
@@ -132,10 +159,11 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     this.assertIdentity(input.projectId, input.transferId);
     const directory = await this.ensureOperationDirectory(input.projectId, input.transferId);
     const manifestPath = path.join(directory, HOST_TRANSFER_MANIFEST_FILE);
-    if (await lstat(manifestPath).catch(() => null)) {
+    const serializedManifest = await readRegularUtf8FileIfPresent(manifestPath);
+    if (serializedManifest !== null) {
       const restored = await this.restoreUnlocked({
         manifestDigest: digestHostTransferPackageManifest(
-          parseHostTransferRecoveryPackageManifest(await readFile(manifestPath, 'utf8')),
+          parseHostTransferRecoveryPackageManifest(serializedManifest),
         ),
         projectId: input.projectId,
         transferId: input.transferId,

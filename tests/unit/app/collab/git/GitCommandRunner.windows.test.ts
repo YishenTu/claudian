@@ -2,11 +2,9 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-jest.mock('node:child_process', () => ({
-  spawn: jest.fn(),
-}));
+jest.mock('cross-spawn', () => jest.fn());
 
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 

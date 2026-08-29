@@ -309,6 +309,22 @@ describe('CollabControlRouter', () => {
     expect(projectService.readSnapshot).not.toHaveBeenCalled();
   });
 
+  it('does not let reserved object-property names bypass query rejection', async () => {
+    const response = await fetch(
+      `${endpoint}/v9/projects/${PROJECT_ID}/snapshot?__proto__=ignored`,
+      { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'protocol-payload-invalid',
+        safeContext: { reason: 'control-url-query-forbidden' },
+      },
+    });
+    expect(projectService.readSnapshot).not.toHaveBeenCalled();
+  });
+
   it.each([1, 6])(
     'rejects v%s Project control before body read, authentication, admission, or dispatch',
     async protocolVersion => {

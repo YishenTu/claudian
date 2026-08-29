@@ -1,4 +1,5 @@
-import { lstat, readFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open } from 'node:fs/promises';
 import path from 'node:path';
 
 import { collabMemberRef, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
@@ -36,21 +37,47 @@ export class FilesystemLocalRepositoryIdentity implements LocalCleanupGitIdentit
     }
     const gitPath = path.join(repositoryPath, '.git');
     const configPath = path.join(gitPath, 'config');
-    const [gitStat, configStat] = await Promise.all([
-      lstat(gitPath).catch(() => null),
-      lstat(configPath).catch(() => null),
-    ]);
+    const gitStat = await lstat(gitPath).catch(() => null);
     if (!gitStat?.isDirectory() || gitStat.isSymbolicLink()) {
       throw identityError('collab-local-git-directory-invalid');
     }
-    if (
-      !configStat?.isFile()
-      || configStat.isSymbolicLink()
-      || configStat.size > MAX_CONFIG_BYTES
-    ) {
-      throw identityError('collab-local-config-invalid');
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    const handle = await open(configPath, fsConstants.O_RDONLY | noFollow).catch(() => null);
+    if (handle === null) throw identityError('collab-local-config-invalid');
+    let serialized: string;
+    try {
+      const [before, pathStat, currentGitStat] = await Promise.all([
+        handle.stat(),
+        lstat(configPath),
+        lstat(gitPath),
+      ]).catch(() => {
+        throw identityError('collab-local-config-invalid');
+      });
+      if (
+        !before.isFile()
+        || !pathStat.isFile()
+        || pathStat.isSymbolicLink()
+        || before.dev !== pathStat.dev
+        || before.ino !== pathStat.ino
+        || !currentGitStat.isDirectory()
+        || currentGitStat.isSymbolicLink()
+        || currentGitStat.dev !== gitStat.dev
+        || currentGitStat.ino !== gitStat.ino
+        || before.size > MAX_CONFIG_BYTES
+      ) throw identityError('collab-local-config-invalid');
+      const contents = await handle.readFile();
+      const after = await handle.stat();
+      if (
+        contents.byteLength !== before.size
+        || after.size !== before.size
+        || after.mtimeMs !== before.mtimeMs
+        || after.ctimeMs !== before.ctimeMs
+      ) throw identityError('collab-local-config-invalid');
+      serialized = contents.toString('utf8');
+    } finally {
+      await handle.close().catch(() => undefined);
     }
-    const values = parseClaudianConfig(await readFile(configPath, 'utf8'));
+    const values = parseClaudianConfig(serialized);
     const required: ReadonlyArray<readonly [string, string]> = [
       ['projectid', expected.projectId],
       ['memberid', expected.memberId],

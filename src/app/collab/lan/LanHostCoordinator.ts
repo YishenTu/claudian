@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, unlink } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
@@ -418,6 +419,31 @@ function parseHostLock(contents: string): HostLockRecord {
     nonce: (value as Record<string, string>).nonce,
     pid: (value as Record<string, number>).pid,
   };
+}
+
+async function readHostLock(filePath: string): Promise<HostLockRecord> {
+  const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await open(filePath, fsConstants.O_RDONLY | noFollow).catch(() => null);
+  if (handle === null) throw hostError('authorization-denied', 'vault-host-lock-invalid');
+  try {
+    const [handleStat, pathStat] = await Promise.all([
+      handle.stat(),
+      lstat(filePath),
+    ]).catch(() => {
+      throw hostError('authorization-denied', 'vault-host-lock-invalid');
+    });
+    if (
+      !handleStat.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino
+      || handleStat.size > HOST_LOCK_MAX_BYTES
+    ) throw hostError('authorization-denied', 'vault-host-lock-invalid');
+    return parseHostLock(await handle.readFile('utf8'));
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 export class LanHostCoordinator {
@@ -1741,16 +1767,7 @@ export class LanHostCoordinator {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
           throw hostError('operation-failed', 'vault-host-lock-create-failed');
         }
-        const stat = await lstat(lockPath).catch(() => null);
-        if (
-          !stat
-          || !stat.isFile()
-          || stat.isSymbolicLink()
-          || stat.size > HOST_LOCK_MAX_BYTES
-        ) {
-          throw hostError('authorization-denied', 'vault-host-lock-invalid');
-        }
-        const existing = parseHostLock(await readFile(lockPath, 'utf8'));
+        const existing = await readHostLock(lockPath);
         if (
           processIsAlive(existing.pid)
           && (

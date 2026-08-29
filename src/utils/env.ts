@@ -230,18 +230,10 @@ export function cliPathRequiresNode(cliPath: string): boolean {
   }
 
   try {
-    if (!fs.existsSync(cliPath)) {
-      return false;
-    }
-
-    const stat = fs.statSync(cliPath);
-    if (!stat.isFile()) {
-      return false;
-    }
-
     let fd: number | null = null;
     try {
       fd = fs.openSync(cliPath, 'r');
+      if (!fs.fstatSync(fd).isFile()) return false;
       const buffer = Buffer.alloc(200);
       const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
       const header = buffer.subarray(0, bytesRead).toString('utf8');

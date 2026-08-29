@@ -183,20 +183,23 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
     if (!isContainedPath(repositoryPath, absolutePath)) {
       throw reviewError('path-outside-project', 'working-tree-review-path-outside-project');
     }
-    const pathStat = await lstat(absolutePath).catch(() => null);
-    if (!pathStat?.isFile() || pathStat.isSymbolicLink()) {
-      throw reviewError('unsupported-file-type', 'working-tree-review-file-not-regular');
-    }
     if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
     const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
-    const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow).catch(error => {
+    const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow).catch(() => {
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
-      throw error;
+      throw reviewError('unsupported-file-type', 'working-tree-review-file-not-regular');
     });
     try {
-      const before = await handle.stat();
+      const [before, pathStat] = await Promise.all([
+        handle.stat(),
+        lstat(absolutePath),
+      ]).catch(() => {
+        throw reviewError('working-tree-busy', 'working-tree-review-file-changed');
+      });
       if (
         !before.isFile()
+        || !pathStat.isFile()
+        || pathStat.isSymbolicLink()
         || before.dev !== pathStat.dev
         || before.ino !== pathStat.ino
         || before.mode !== pathStat.mode

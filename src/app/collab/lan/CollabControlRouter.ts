@@ -128,17 +128,17 @@ function parseProjectUrl(rawUrl: string | undefined): {
   if (!Number.isSafeInteger(protocolVersion)) {
     throw routerError('project-not-found', 'control-route-not-found');
   }
-  const query: Record<string, string> = {};
+  const queryEntries = new Map<string, string>();
   for (const [key, value] of url.searchParams) {
-    if (Object.hasOwn(query, key)) {
+    if (queryEntries.has(key)) {
       throw routerError('protocol-payload-invalid', 'control-url-query-duplicate');
     }
-    query[key] = value;
+    queryEntries.set(key, value);
   }
   return {
     projectId: match[2],
     protocolVersion,
-    query,
+    query: Object.fromEntries(queryEntries),
     segments: match[3].split('/'),
   };
 }

@@ -1,9 +1,11 @@
-import {
-  type ChildProcessWithoutNullStreams,
-  spawn,
+import type {
+  ChildProcessWithoutNullStreams,
+  spawn as nodeSpawn,
 } from 'node:child_process';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
+
+import crossSpawn from 'cross-spawn';
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
@@ -15,6 +17,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_STDOUT_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_STDERR_LIMIT_BYTES = 64 * 1024;
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
+const spawn = crossSpawn as typeof nodeSpawn;
 
 export interface GitNetworkEnvironment {
   readonly headers: readonly {
@@ -373,9 +376,6 @@ export class GitCommandRunner {
         env: environment,
         stdio: 'pipe',
         windowsHide: true,
-        ...(spawnSpec.windowsVerbatimArguments
-          ? { windowsVerbatimArguments: true }
-          : {}),
       });
     } catch {
       return Promise.reject(commandFailure('operation-failed', 'git-spawn-failed'));

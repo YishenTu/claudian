@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
 import {
   lstat,
   open,
@@ -95,34 +96,64 @@ function validReceiverCredential(value: string): boolean {
   return decoded.byteLength === 32 && decoded.toString('base64url') === value;
 }
 
-async function writeExclusive(filePath: string, contents: Uint8Array | string): Promise<void> {
-  const handle = await open(filePath, 'wx', 0o600).catch(() => null);
-  if (!handle) throw packageError('host-transfer-target-file-collision');
+async function tryWriteExclusive(
+  filePath: string,
+  contents: Uint8Array | string,
+): Promise<boolean> {
+  const handle = await open(filePath, 'wx', 0o600).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return null;
+    throw packageError('host-transfer-target-file-collision');
+  });
+  if (handle === null) return false;
   try {
     await handle.writeFile(contents);
     await handle.sync();
+    return true;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+async function readRegularUtf8File(filePath: string): Promise<string | null> {
+  const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await open(filePath, fsConstants.O_RDONLY | noFollow).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw packageError('host-transfer-target-metadata-read-failed');
+  });
+  if (handle === null) return null;
+  try {
+    const [handleStat, pathStat] = await Promise.all([
+      handle.stat(),
+      lstat(filePath),
+    ]).catch(() => {
+      throw packageError('host-transfer-target-metadata-read-failed');
+    });
+    if (
+      !handleStat.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino
+    ) throw packageError('host-transfer-target-metadata-boundary-invalid');
+    return await handle.readFile('utf8').catch(() => {
+      throw packageError('host-transfer-target-metadata-read-failed');
+    });
   } finally {
     await handle.close().catch(() => undefined);
   }
 }
 
 async function writeOrValidate(filePath: string, contents: string): Promise<void> {
-  const info = await lstat(filePath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw packageError('host-transfer-target-metadata-read-failed');
-  });
-  if (info && (!info.isFile() || info.isSymbolicLink())) {
-    throw packageError('host-transfer-target-metadata-boundary-invalid');
-  }
-  const existing = await readFile(filePath, 'utf8').catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw packageError('host-transfer-target-metadata-read-failed');
-  });
-  if (existing === null) {
-    await writeExclusive(filePath, contents);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (await tryWriteExclusive(filePath, contents)) return;
+    const existing = await readRegularUtf8File(filePath);
+    if (existing === null) continue;
+    if (existing !== contents) {
+      throw packageError('host-transfer-target-metadata-replay-mismatch');
+    }
     return;
   }
-  if (existing !== contents) throw packageError('host-transfer-target-metadata-replay-mismatch');
+  throw packageError('host-transfer-target-file-collision');
 }
 
 function decodeInstallOwner(serialized: string): InstallOwner {
@@ -154,18 +185,7 @@ function decodeInstallOwner(serialized: string): InstallOwner {
 }
 
 async function readInstallOwner(filePath: string): Promise<InstallOwner | null> {
-  const info = await lstat(filePath).catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw packageError('host-transfer-target-metadata-read-failed');
-  });
-  if (info === null) return null;
-  if (!info.isFile() || info.isSymbolicLink()) {
-    throw packageError('host-transfer-target-metadata-boundary-invalid');
-  }
-  const serialized = await readFile(filePath, 'utf8').catch(error => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw packageError('host-transfer-target-metadata-read-failed');
-  });
+  const serialized = await readRegularUtf8File(filePath);
   return serialized === null ? null : decodeInstallOwner(serialized);
 }
 
