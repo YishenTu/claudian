@@ -1,5 +1,4 @@
 import { createThemeCollection, type ThemeDescriptor, type ThemeLike } from '@pierre/theming';
-import { normalizeTheme } from '@shikijs/core';
 
 interface ThemeModule<TTheme extends ThemeLike> {
   readonly default: TTheme;
@@ -13,7 +12,7 @@ interface CreateThemeOptions<TTheme extends ThemeLike> {
   readonly name: string;
 }
 
-const darkTheme = normalizeTheme({
+const darkTheme: ThemeLike & { readonly name: string } = {
   bg: '#0a0a0a',
   colors: {
     'editor.background': '#0a0a0a',
@@ -24,11 +23,10 @@ const darkTheme = normalizeTheme({
   },
   fg: '#fafafa',
   name: 'pierre-dark',
-  settings: [],
   type: 'dark',
-});
+};
 
-const lightTheme = normalizeTheme({
+const lightTheme: ThemeLike & { readonly name: string } = {
   bg: '#ffffff',
   colors: {
     'editor.background': '#ffffff',
@@ -39,9 +37,8 @@ const lightTheme = normalizeTheme({
   },
   fg: '#0a0a0a',
   name: 'pierre-light',
-  settings: [],
   type: 'light',
-});
+};
 
 function unwrapDefault<TTheme extends ThemeLike>(
   theme: TTheme | ThemeModule<TTheme>,
@@ -56,14 +53,12 @@ export function createTheme<TTheme extends ThemeLike = ThemeLike>(
     collection: options.collection,
     colorScheme: options.colorScheme,
     displayName: options.displayName,
-    load: async () => normalizeTheme(
-      unwrapDefault(await options.load()),
-    ) as unknown as TTheme,
+    load: async () => unwrapDefault(await options.load()),
     name: options.name,
   };
 }
 
-export const pierreThemes = createThemeCollection({
+export const pierreThemes = createThemeCollection<ThemeLike>({
   themes: [
     {
       collection: 'pierre',

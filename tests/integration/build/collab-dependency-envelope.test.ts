@@ -126,8 +126,8 @@ describe('Collab dependency envelope', () => {
             });
             await renderer.render({
               container,
-              newText: '# Collab heading\\n',
-              oldText: null,
+              newText: '# Collab heading after\\n\\n',
+              oldText: '# Collab heading before\\n\\n',
               path: 'note.md',
             });
             return renderer;
@@ -176,6 +176,7 @@ describe('Collab dependency envelope', () => {
         'getTokenStyleObject',
         'stringifyTokenStyle',
       ],
+      transformerImports: ['transformerStyleToClass'],
       version: '1.3.5',
     });
     expect(inspectPierreThemeContract({ root })).toEqual([
@@ -203,6 +204,24 @@ describe('Collab dependency envelope', () => {
     expect(languageInputs).toEqual([]);
     expect(themeCatalogInputs).toEqual([]);
     expect(inlinedOnigurumaInputs).toEqual([]);
+  });
+
+  it('uses Pierre without bundling a syntax-highlighting runtime', () => {
+    const normalizedContributors = bundleContributors.map(input => input.replaceAll('\\\\', '/'));
+    const syntaxRuntimeInputs = normalizedContributors.filter(input => (
+      input.includes('/@shikijs/')
+      || input.includes('/oniguruma-parser/')
+      || input.includes('/oniguruma-to-es/')
+    ));
+
+    expect(syntaxRuntimeInputs).toEqual([]);
+  });
+
+  it('does not bundle Pierre filename language detection for text-only diffs', () => {
+    const bundle = readFileSync(bundlePath, 'utf8');
+
+    expect(bundle).not.toContain('actionscript-3');
+    expect(bundle).not.toContain('fortran-fixed-form');
   });
 
   it('does not declare or bundle the unsupported Oniguruma engine', () => {
@@ -316,7 +335,7 @@ describe('Collab dependency envelope', () => {
 
     expect(script).toContain('preCollabReferenceMainBytes = 3_739_584');
     expect(script).toContain('preStep11BundleHealthBaselineBytes = 4_896_000');
-    expect(script).toContain('mainBudgetBytes = 5_170_000');
+    expect(script).toContain('mainBudgetBytes = 5_000_000');
     expect(script).toContain('evaluationReviewThresholdMs = 150');
     expect(script).toContain('pre-Collab reference delta');
     expect(script).toContain('pre-Step-11 health baseline delta');
@@ -395,6 +414,13 @@ describe('Collab dependency envelope', () => {
     ]);
   });
 
+  it('Brotli-compresses Pierre static CSS and SVG payloads', () => {
+    const bundle = readFileSync(bundlePath, 'utf8');
+
+    expect(bundle).not.toContain('--diffs-font-fallback');
+    expect(bundle).not.toContain('diffs-icon-brand-github');
+  });
+
   it('shares one compressed catalog across non-English locales', () => {
     const compressedCatalogContributors = bundleContributors.filter(input => (
       input.includes('compressed-locale-catalog')
@@ -465,11 +491,16 @@ describe('Collab dependency envelope', () => {
           const root = container && container.shadowRoot;
           const coreSheet = root && root.adoptedStyleSheets[0];
           const heading = root && Array.from(root.querySelectorAll('[data-line]'))
-            .find(line => line.textContent.includes('Collab heading'));
+            .find(line => line.textContent.includes('Collab heading after'));
           const output = {
+            blankLine: Boolean(root && Array.from(root.querySelectorAll('[data-line]'))
+              .find(line => line.textContent.trim() === '')),
             coreCss: Boolean(coreSheet && coreSheet.text.includes('[data-line]')),
             customElement: container && container.tagName,
+            diffSpan: Boolean(root && root.querySelector('[data-diff-span]')),
             lineText: heading && heading.textContent.trim(),
+            sprite: Boolean(root && root.querySelector('#diffs-icon-file-code')),
+            unified: Boolean(root && root.querySelector('[data-unified]')),
           };
           renderer.destroy();
           process.stdout.write(JSON.stringify(output));
@@ -481,9 +512,13 @@ describe('Collab dependency envelope', () => {
     `));
 
     expect(result).toEqual({
+      blankLine: true,
       coreCss: true,
       customElement: 'DIFFS-CONTAINER',
-      lineText: '# Collab heading',
+      diffSpan: true,
+      lineText: '# Collab heading after',
+      sprite: true,
+      unified: true,
     });
   });
 

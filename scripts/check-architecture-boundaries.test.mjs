@@ -894,7 +894,7 @@ test('TypeScript resolves the Collab protocol through the installed registry pac
 
 test('performance policy enforces the main bundle budget and reports health deltas', () => {
   assert.equal(preStep11BundleHealthBaselineBytes, 4_896_000);
-  assert.equal(mainBudgetBytes, 5_170_000);
+  assert.equal(mainBudgetBytes, 5_000_000);
   assert.deepEqual(inspectArtifactSize(mainBudgetBytes), {
     budgetExceeded: false,
     healthBaselineDeltaBytes: mainBudgetBytes - preStep11BundleHealthBaselineBytes,
