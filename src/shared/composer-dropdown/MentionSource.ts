@@ -37,6 +37,7 @@ export interface MentionSourceOptions {
 
 export class MentionSource implements ComposerDropdownSource {
   readonly id = 'mentions';
+  readonly inputLoadPolicy = 'debounced';
 
   private agentLoadPromise: Promise<void> | null = null;
   private agentService: AgentMentionProvider | null = null;

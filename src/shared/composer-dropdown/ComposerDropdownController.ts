@@ -11,6 +11,8 @@ interface ActiveFolder {
   readonly item: ComposerDropdownFolderItem;
 }
 
+const INPUT_LOAD_DEBOUNCE_MS = 200;
+
 export interface ComposerDropdownControllerOptions {
   readonly fixed?: boolean;
 }
@@ -25,6 +27,7 @@ export class ComposerDropdownController {
   private destroyed = false;
   private enabled = true;
   private generation = 0;
+  private inputLoadTimer: number | null = null;
   private items: readonly ComposerDropdownItem[] = [];
   private selectedIndex = -1;
 
@@ -55,14 +58,16 @@ export class ComposerDropdownController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.generation++;
-    this.activeController?.abort();
-    this.activeController = null;
+    this.invalidateActiveLoad();
     for (const unsubscribe of this.sourceUnsubscribers.splice(0)) unsubscribe();
     this.view.destroy();
   }
 
   handleInputChange(): void {
+    this.rematchAndLoad(true);
+  }
+
+  private rematchAndLoad(inputDriven: boolean): void {
     if (!this.enabled || this.destroyed) {
       this.hide();
       return;
@@ -88,7 +93,7 @@ export class ComposerDropdownController {
     if (this.activeSource?.id !== sourceMatch.source.id) this.activeFolder = null;
     this.activeSource = sourceMatch.source;
     this.activeMatch = sourceMatch.match;
-    void this.loadActive();
+    this.requestActiveLoad(inputDriven);
   }
 
   handleKeydown(event: KeyboardEvent): boolean {
@@ -122,9 +127,7 @@ export class ComposerDropdownController {
   }
 
   hide(): void {
-    this.generation++;
-    this.activeController?.abort();
-    this.activeController = null;
+    this.invalidateActiveLoad();
     this.activeFolder = null;
     this.activeMatch = null;
     this.activeSource = null;
@@ -165,26 +168,48 @@ export class ComposerDropdownController {
 
   private rematchInput(): void {
     if (!this.activeSource || !this.activeMatch || this.destroyed) return;
-    this.handleInputChange();
+    this.rematchAndLoad(false);
   }
 
-  private async loadActive(): Promise<void> {
+  private requestActiveLoad(inputDriven: boolean): void {
     const source = this.activeSource;
     const match = this.activeMatch;
-    if (!source || !match || this.destroyed) return;
+    if (!source || !match || this.destroyed || !this.enabled) return;
 
     const folderQuery = this.currentFolderQuery(match);
     if (this.activeFolder && folderQuery === null) {
       this.activeFolder = null;
     }
 
-    const generation = ++this.generation;
-    this.activeController?.abort();
-    const controller = new AbortController();
-    this.activeController = controller;
+    const generation = this.invalidateActiveLoad();
     this.items = [{ id: 'loading', kind: 'status', label: 'Loading…', state: 'loading' }];
     this.selectedIndex = -1;
     this.view.render(this.items, this.selectedIndex);
+
+    if (inputDriven && source.inputLoadPolicy === 'debounced') {
+      this.inputLoadTimer = window.setTimeout(() => {
+        this.inputLoadTimer = null;
+        void this.loadActive(generation);
+      }, INPUT_LOAD_DEBOUNCE_MS);
+      return;
+    }
+
+    void this.loadActive(generation);
+  }
+
+  private async loadActive(generation: number): Promise<void> {
+    const source = this.activeSource;
+    const match = this.activeMatch;
+    if (
+      !source
+      || !match
+      || this.destroyed
+      || !this.enabled
+      || generation !== this.generation
+    ) return;
+
+    const controller = new AbortController();
+    this.activeController = controller;
 
     try {
       const items = await (this.activeFolder
@@ -208,6 +233,17 @@ export class ComposerDropdownController {
       this.selectedIndex = -1;
       this.view.render(this.items, this.selectedIndex);
     }
+  }
+
+  private invalidateActiveLoad(): number {
+    this.generation++;
+    if (this.inputLoadTimer !== null) {
+      window.clearTimeout(this.inputLoadTimer);
+      this.inputLoadTimer = null;
+    }
+    this.activeController?.abort();
+    this.activeController = null;
+    return this.generation;
   }
 
   private moveSelection(delta: number): void {
@@ -242,7 +278,7 @@ export class ComposerDropdownController {
         query: '',
       };
     }
-    void this.loadActive();
+    this.requestActiveLoad(false);
   }
 
   private selectIndex(index: number): void {
@@ -261,7 +297,7 @@ export class ComposerDropdownController {
           query: item.inputPrefix,
         };
       }
-      void this.loadActive();
+      this.requestActiveLoad(false);
       return;
     }
 

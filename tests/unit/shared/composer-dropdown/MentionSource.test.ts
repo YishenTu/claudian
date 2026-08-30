@@ -29,6 +29,14 @@ function source(overrides: Record<string, unknown> = {}) {
 }
 
 describe('MentionSource', () => {
+  it('opts input-driven loads into debounce while keeping the source API otherwise unchanged', () => {
+    const { source: value } = source();
+
+    expect(value.inputLoadPolicy).toBe('debounced');
+
+    value.destroy();
+  });
+
   it('matches @ at a token boundary and preserves file names containing spaces', () => {
     const { source: value } = source();
     expect(value.match('Ask @Al', 7)).toEqual(expect.objectContaining({ query: 'Al' }));

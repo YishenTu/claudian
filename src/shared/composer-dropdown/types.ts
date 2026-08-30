@@ -63,6 +63,7 @@ export type ComposerSelectionAction =
 
 export interface ComposerDropdownSource {
   readonly id: string;
+  readonly inputLoadPolicy?: 'debounced' | 'immediate';
   load(
     match: ComposerTriggerMatch,
     signal: AbortSignal,
