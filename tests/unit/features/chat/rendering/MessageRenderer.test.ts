@@ -388,10 +388,11 @@ describe('MessageRenderer', () => {
     expect(renderImagesSpy).toHaveBeenCalledWith(messagesEl, images);
   });
 
-  it('adds a rewind button for eligible stored user messages', () => {
+  it('adds native action buttons for eligible stored user messages', async () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
+    const forkCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, forkCallback, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const allMessages: ChatMessage[] = [
@@ -402,7 +403,27 @@ describe('MessageRenderer', () => {
 
     renderer.renderStoredMessage(allMessages[1], allMessages, 1);
 
-    expect(messagesEl.querySelector('.claudian-message-rewind-btn')).not.toBeNull();
+    const copyButton = messagesEl.querySelector('.claudian-user-msg-copy-btn')!;
+    const rewindButton = messagesEl.querySelector('.claudian-message-rewind-btn')!;
+    const forkButton = messagesEl.querySelector('.claudian-message-fork-btn')!;
+    const buttons = [copyButton, rewindButton, forkButton];
+
+    expect(buttons.map(button => button.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
+    expect(buttons.map(button => button.getAttribute('type'))).toEqual([
+      'button',
+      'button',
+      'button',
+    ]);
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
+      'Copy message',
+      'Rewind to here',
+      'Fork conversation',
+    ]);
+
+    forkButton.click();
+    await Promise.resolve();
+
+    expect(forkCallback).toHaveBeenCalledWith('u1');
   });
 
   it('adds rewind but not fork for a completed first user message', () => {
@@ -450,7 +471,7 @@ describe('MessageRenderer', () => {
     expect(messagesEl.querySelector('.claudian-message-rewind-btn')).toBeNull();
   });
 
-  it('shows rewind mode menu for eligible streamed user messages', async () => {
+  it('positions the rewind menu for pointer and keyboard activation', async () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
     const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
@@ -476,8 +497,14 @@ describe('MessageRenderer', () => {
     const btn = messagesEl.querySelector('.claudian-message-rewind-btn');
     expect(btn).not.toBeNull();
 
-    btn!.click();
+    const pointerEvent = {
+      detail: 1,
+      stopPropagation: jest.fn(),
+      type: 'click',
+    };
+    btn!.dispatchEvent(pointerEvent);
     const menu = (Menu as typeof Menu & { instances: any[] }).instances[0];
+    expect(menu.showAtMouseEvent).toHaveBeenCalledWith(pointerEvent);
     expect(menu.items.map((item: any) => item.title)).toEqual([
       'Rewind conversation only',
       'Rewind code + conversation',
@@ -487,6 +514,20 @@ describe('MessageRenderer', () => {
     await Promise.resolve();
 
     expect(rewindCallback).toHaveBeenCalledWith('u1', 'conversation');
+
+    btn!.getBoundingClientRect = jest.fn().mockReturnValue({ bottom: 48, left: 24 });
+    btn!.dispatchEvent({
+      detail: 0,
+      stopPropagation: jest.fn(),
+      type: 'click',
+    });
+
+    const keyboardMenu = (Menu as typeof Menu & { instances: any[] }).instances[1];
+    expect(keyboardMenu.showAtPosition).toHaveBeenCalledWith(
+      { x: 24, y: 48 },
+      btn!.ownerDocument,
+    );
+    expect(keyboardMenu.showAtMouseEvent).not.toHaveBeenCalled();
   });
 
   it('refreshes rewind but not fork for a streamed first user message', () => {
@@ -1319,6 +1360,9 @@ describe('MessageRenderer', () => {
     expect(textEl.children.length).toBe(1);
     const copyBtn = textEl.children[0];
     expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
+    expect(copyBtn.tagName).toBe('BUTTON');
+    expect(copyBtn.getAttribute('type')).toBe('button');
+    expect(copyBtn.getAttribute('aria-label')).toBe('Copy message');
   });
 
   // ============================================

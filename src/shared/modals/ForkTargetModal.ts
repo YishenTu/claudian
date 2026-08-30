@@ -30,7 +30,11 @@ class ForkTargetModal extends Modal {
   }
 
   private createOption(container: HTMLElement, target: ForkTarget, label: string): void {
-    const item = container.createDiv({ cls: 'claudian-fork-target-option', text: label });
+    const item = container.createEl('button', {
+      cls: 'claudian-fork-target-option',
+      text: label,
+      attr: { type: 'button' },
+    });
     item.addEventListener('click', () => {
       this.resolved = true;
       this.resolve(target);

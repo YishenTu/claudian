@@ -779,7 +779,13 @@ export class MessageRenderer {
    * @param markdown The original markdown content to copy
    */
   addTextCopyButton(textEl: HTMLElement, markdown: string): void {
-    const copyBtn = textEl.createSpan({ cls: 'claudian-text-copy-btn' });
+    const copyBtn = textEl.createEl('button', {
+      cls: 'claudian-text-copy-btn',
+      attr: {
+        'aria-label': 'Copy message',
+        type: 'button',
+      },
+    });
     setIcon(copyBtn, 'copy');
 
     let feedbackTimeout: number | null = null;
@@ -856,7 +862,10 @@ export class MessageRenderer {
 
   private addUserCopyButton(msgEl: HTMLElement, content: string): void {
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
-    const copyBtn = toolbar.createSpan({ cls: 'claudian-user-msg-copy-btn' });
+    const copyBtn = toolbar.createEl('button', {
+      cls: 'claudian-user-msg-copy-btn',
+      attr: { type: 'button' },
+    });
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy message');
 
@@ -887,21 +896,33 @@ export class MessageRenderer {
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
     if (!this.getCapabilities().supportsRewind) return;
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
-    const btn = toolbar.createSpan({ cls: 'claudian-message-rewind-btn' });
+    const btn = toolbar.createEl('button', {
+      cls: 'claudian-message-rewind-btn',
+      attr: { type: 'button' },
+    });
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     setIcon(btn, 'rotate-ccw');
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.showRewindMenu(e, messageId);
+      this.showRewindMenu(e, messageId, btn);
     });
   }
 
-  private showRewindMenu(event: MouseEvent, messageId: string): void {
+  private showRewindMenu(
+    event: MouseEvent,
+    messageId: string,
+    anchor: HTMLButtonElement,
+  ): void {
     const menu = new Menu();
     this.addRewindMenuItem(menu, messageId, 'conversation');
     this.addRewindMenuItem(menu, messageId, 'code-and-conversation');
-    menu.showAtMouseEvent(event);
+    if (event.detail > 0) {
+      menu.showAtMouseEvent(event);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
 
   private addRewindMenuItem(menu: Menu, messageId: string, mode: ChatRewindMode): void {
@@ -928,7 +949,10 @@ export class MessageRenderer {
   private addForkButton(msgEl: HTMLElement, messageId: string): void {
     if (!this.getCapabilities().supportsFork) return;
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
-    const btn = toolbar.createSpan({ cls: 'claudian-message-fork-btn' });
+    const btn = toolbar.createEl('button', {
+      cls: 'claudian-message-fork-btn',
+      attr: { type: 'button' },
+    });
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     setIcon(btn, 'git-fork');
     btn.setAttribute('aria-label', t('chat.fork.ariaLabel'));

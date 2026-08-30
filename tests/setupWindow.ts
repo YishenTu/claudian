@@ -1,5 +1,9 @@
 import { TextDecoder, TextEncoder } from 'node:util';
 
+import { toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
+
 type TestWindow = typeof globalThis & {
   cancelAnimationFrame?: (handle: number) => void;
   localStorage?: Storage;

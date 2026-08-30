@@ -130,6 +130,11 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Accepted Collab protocol fixtures and captured provider-native examples are independent sources of expected behavior.
 - Mock only environment, Obsidian, and provider boundaries. Keep Claudian-owned modules real. For shared provider contracts, prove provider-neutral behavior first, then cover each adapter's distinct native behavior.
 
+## UI Semantics and Tests
+
+- New or materially changed atomic UI actions must use native controls with explicit non-submit button types. Use a non-native interactive element only when native semantics cannot express the interaction, and then cover its accessible name, role, and complete keyboard behavior.
+- At real-DOM UI seams, query actions by role and accessible name with Testing Library, retain assertions for their callback or state outcome, and use targeted jest-axe checks for deterministic component subtrees. MockElement tag or class assertions do not replace that semantic coverage.
+
 ## Provider Rules
 
 - Prefer provider-native behavior over local reimplementation. Adapt provider output at the boundary instead of shadowing provider features.

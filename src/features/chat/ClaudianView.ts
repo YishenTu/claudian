@@ -687,13 +687,17 @@ export class ClaudianView extends ItemView {
 
     const navActionsEl = wrapper.createDiv({ cls: 'claudian-input-nav-actions' });
 
-    this.newTabButtonEl = navActionsEl.createDiv({ cls: 'claudian-input-nav-btn claudian-new-tab-btn' });
+    this.newTabButtonEl = navActionsEl.createEl('button', {
+      cls: 'claudian-input-nav-btn claudian-new-tab-btn',
+      attr: { type: 'button' },
+    });
     setIcon(this.newTabButtonEl, 'square-plus');
     this.newTabButtonEl.setAttribute('aria-label', 'New tab');
     this.newTabButtonEl.addEventListener('click', () => this.requestNewTab());
 
-    const newBtn = navActionsEl.createDiv({
+    const newBtn = navActionsEl.createEl('button', {
       cls: 'claudian-input-nav-btn claudian-new-conversation-btn',
+      attr: { type: 'button' },
     });
     setIcon(newBtn, 'square-pen');
     newBtn.setAttribute('aria-label', 'New conversation');
@@ -703,7 +707,10 @@ export class ClaudianView extends ItemView {
     const historyContainer = navActionsEl.createDiv({
       cls: 'claudian-history-container claudian-nav-dropup-container',
     });
-    const historyBtn = historyContainer.createDiv({ cls: 'claudian-input-nav-btn' });
+    const historyBtn = historyContainer.createEl('button', {
+      cls: 'claudian-input-nav-btn',
+      attr: { type: 'button' },
+    });
     setIcon(historyBtn, 'history');
     historyBtn.setAttribute('aria-label', 'Chat history');
 

@@ -16,6 +16,45 @@
   font-size: 14px;
 }
 
+button.claudian-fork-target-option {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: start;
+  white-space: normal;
+}
+
+button.claudian-fork-target-option:hover,
+button.claudian-fork-target-option:focus-visible,
+button.claudian-fork-target-option:active {
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
 .claudian-fork-target-option:hover {
   background: var(--background-modifier-hover);
+}
+
+button.claudian-fork-target-option:focus-visible {
+  background: transparent;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+button.claudian-fork-target-option:disabled {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
 }
