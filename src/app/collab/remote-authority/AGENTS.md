@@ -13,6 +13,7 @@
 
 - Publication, projection, review, reconciliation, feature, UI, and Agent-facing services depend on the neutral ports and never construct LAN or Cloud transports directly.
 - Cloud Projects expose only negotiated complete capabilities. Physical Host transfer, membership administration, Manager responsibility, ordinary Leave, and LAN diagnostics remain LAN-only until their own accepted Cloud capability exists; authority transfer and Retire use only the exact negotiated Cloud package binding and must not fall back to a stale LAN session.
+- Capability negotiation intersects the server document with the adapter's explicit implemented-capability inventory. A protocol package addition alone never makes `supports` expose an application capability whose Cloud port is absent.
 - The Obsidian desktop Cloud path must not depend on renderer `fetch` or server-side browser CORS permission. Plain HTTP remains restricted to canonical loopback origins by `CloudAuthorityUrls`; non-loopback Cloud origins require HTTPS.
 - Canonicalize self-host URLs once and compare exact normalized values. Git environments may carry multiple headers and an optional CA path. Credential-bearing headers are sensitive by default and their values plus private paths never enter process arguments, logs, errors, or persisted diagnostics. A non-credential routing header must be explicitly marked non-sensitive so its domain identifier may independently appear in a Git ref argument; the header itself still enters Git only through the isolated environment.
 

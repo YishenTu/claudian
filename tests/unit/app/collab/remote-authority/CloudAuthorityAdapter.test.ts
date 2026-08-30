@@ -6,6 +6,7 @@ import {
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_LIMITS,
   type CollabAuthorityTransferStatus,
+  type CollabCloudCapability,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
@@ -27,6 +28,15 @@ const CREATED_AT = '2026-08-22T00:00:00.000Z';
 const MAIN_OID = 'a'.repeat(40);
 const HEAD_OID = 'b'.repeat(40);
 const MERGED_OID = 'c'.repeat(40);
+const STEP_12_CLOUD_MANAGEMENT_CAPABILITIES = Object.freeze([
+  'cloud-imported-membership-claims',
+  'cloud-project-create',
+  'cloud-project-invitations',
+  'cloud-project-join',
+  'cloud-project-leave',
+  'cloud-project-manager-responsibility',
+  'cloud-project-membership',
+] satisfies readonly CollabCloudCapability[]);
 
 function changeRequest(overrides: Readonly<Record<string, unknown>> = {}) {
   return {
@@ -150,6 +160,32 @@ function cloudSnapshot() {
 }
 
 describe('CloudAuthorityAdapter', () => {
+  it('does not expose unimplemented Step 12 management capabilities', async () => {
+    const request = jest.fn(async () => ({
+      body: collabCloudCapabilityDocument(
+        STEP_12_CLOUD_MANAGEMENT_CAPABILITIES,
+        limits,
+      ),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const adapter = new CloudAuthorityAdapter({ request });
+    const [session, lifecycle] = await Promise.all([
+      adapter.create(membership()),
+      adapter.createLifecycle({
+        developmentActorId: ACTOR_ID,
+        projectId: PROJECT_ID,
+        serverUrl: 'https://cloud.example.test',
+      }),
+    ]);
+
+    for (const capability of STEP_12_CLOUD_MANAGEMENT_CAPABILITIES) {
+      expect(session.supports(capability)).toBe(false);
+      expect(lifecycle.supports(capability)).toBe(false);
+    }
+    expect(session.membership).toBeUndefined();
+  });
+
   it('binds a lifecycle-only snapshot to the canonical Member ref', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'

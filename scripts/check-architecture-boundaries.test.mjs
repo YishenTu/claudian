@@ -44,6 +44,41 @@ function findMatches(roots, pattern) {
   return matches;
 }
 
+const step12ProjectMembershipOperations = Object.freeze([
+  'createCloudProject',
+  'createProjectInvitation',
+  'listProjectInvitations',
+  'revokeProjectInvitation',
+  'joinCloudProject',
+  'listProjectMembers',
+  'reissueTransferredMembershipClaim',
+  'revokeTransferredMembershipClaim',
+  'createManagerResponsibilityOffer',
+  'listCurrentManagerResponsibilityOffers',
+  'getManagerResponsibilityOffer',
+  'acknowledgeManagerResponsibility',
+  'declineManagerResponsibility',
+  'cancelManagerResponsibilityOffer',
+  'promoteManager',
+  'demoteManager',
+  'removeMember',
+  'leaveProject',
+]);
+
+const step12CloudCapabilityTokens = Object.freeze([
+  'cloud-imported-membership-claims',
+  'cloud-project-create',
+  'cloud-project-invitations',
+  'cloud-project-join',
+  'cloud-project-leave',
+  'cloud-project-manager-responsibility',
+  'cloud-project-membership',
+]);
+
+function symbolPattern(symbols) {
+  return new RegExp(`\\b(?:${symbols.join('|')})\\b`, 'u');
+}
+
 function inspectForbiddenSymbolInventory(entries, pattern, allowedOccurrences) {
   const counts = new Map();
   const matcherFlags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
@@ -612,7 +647,7 @@ test('only TabRuntimeFactory can register runtime resource ownership', () => {
   ].sort());
 });
 
-test('Claudian consumes the standalone Collab protocol only from the exact registry package', () => {
+test('Claudian consumes the standalone Collab protocol only from the exact registry package', async () => {
   const root = process.cwd();
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lockfile = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
@@ -623,21 +658,34 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
     'utf8',
   ));
 
-  assert.equal(manifest.dependencies?.[protocolPackageName], '3.2.1');
+  const protocol = await import(protocolPackageName);
+
+  assert.equal(manifest.dependencies?.[protocolPackageName], '3.3.0');
   assert.equal(manifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(protocolManifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(manifest.dependencies?.['@claudian/collab-protocol'], undefined);
   assert.equal(manifest.workspaces, undefined);
-  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '3.2.1');
-  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '3.2.1');
+  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '3.3.0');
+  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '3.3.0');
   assert.equal(
     lockfile.packages?.[protocolInstallPath]?.integrity,
-    'sha512-FqUca4/S9Jgu5QsMR4Gs3KgAfYytIdVn8V7w7Fn2hQjJ0nA9D9ULgJlvqOojqwaNh+ci+DblLcD5Z2oC7WJCcw==',
+    'sha512-7Wc275dddo7ajn+jJQ6P0njXG8g17zmHHfglZ7ZZK/+7GHzcDR/tCiO9yqv4axiEcv4pBnZ3XwDBSqeC85BHaw==',
   );
   assert.equal(lockfile.packages?.['node_modules/@lezer/markdown']?.version, '1.7.2');
   assert.match(
     lockfile.packages?.[protocolInstallPath]?.resolved ?? '',
-    /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-3\.2\.1\.tgz$/u,
+    /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-3\.3\.0\.tgz$/u,
+  );
+  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 6);
+  assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 2);
+  assert.equal(protocol.COLLAB_PROJECT_BACKUP_COORDINATION_FORMAT_VERSION, 3);
+  assert.deepEqual(
+    protocol.COLLAB_PROJECT_MEMBERSHIP_OPERATIONS,
+    step12ProjectMembershipOperations,
+  );
+  assert.deepEqual(
+    Object.keys(protocol.COLLAB_PROJECT_MEMBERSHIP_OPERATION_CODECS),
+    protocol.COLLAB_PROJECT_MEMBERSHIP_OPERATIONS,
   );
 
   for (const retiredPath of [
@@ -672,6 +720,43 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
 test('standalone Collab protocol registry and contract constants are not redefined', () => {
   const pattern = /export\s+(?:const|interface|type|class|function)\s+(?:COLLAB_CONTROL_OPERATION_CODECS|CollabControlOperationMap|COLLAB_EVENT_KINDS|COLLAB_ERROR_CODES|COLLAB_LIMITS|COLLAB_PROTOCOL_VERSION|COLLAB_MAIN_REF|COLLAB_MEMBER_REF_PREFIX)\b/;
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
+});
+
+test('the protocol pin does not expose Step 12 Cloud management behavior', () => {
+  const cloudAuthorityAdapterSource = fs.readFileSync(path.join(
+    appRoot,
+    'collab',
+    'remote-authority',
+    'CloudAuthorityAdapter.ts',
+  ), 'utf8');
+  const packageManagementSurface = [
+    'COLLAB_PROJECT_MEMBERSHIP_LIMITS',
+    'COLLAB_PROJECT_MEMBERSHIP_OPERATIONS',
+    'COLLAB_PROJECT_MEMBERSHIP_OPERATION_CODECS',
+    'decodeCollabProjectMembershipOperationRequest',
+    'decodeCollabProjectMembershipOperationResponse',
+  ];
+  const cloudAdapterSurface = symbolPattern([
+    ...step12CloudCapabilityTokens,
+    ...step12ProjectMembershipOperations,
+    ...packageManagementSurface,
+  ]);
+  const cloudPresentationSurface = symbolPattern([
+    ...step12CloudCapabilityTokens,
+    'createCloudProject',
+    'createProjectInvitation',
+    'joinCloudProject',
+    'listCurrentManagerResponsibilityOffers',
+    'listProjectInvitations',
+    'listProjectMembers',
+    'reissueTransferredMembershipClaim',
+    'revokeProjectInvitation',
+    'revokeTransferredMembershipClaim',
+    ...packageManagementSurface,
+  ]);
+
+  assert.doesNotMatch(cloudAuthorityAdapterSource, cloudAdapterSurface);
+  assert.deepEqual(findMatches([featuresRoot], cloudPresentationSurface), []);
 });
 
 test('active Collab consumers use protocol-owned semantic identity predicates', () => {

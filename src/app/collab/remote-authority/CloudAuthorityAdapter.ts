@@ -64,6 +64,27 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const MIN_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const IMPLEMENTED_CLOUD_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new Set([
+  'accept',
+  'authority-transfer',
+  'development-bootstrap',
+  'git-receive-pack-personal-ref',
+  'git-upload-pack',
+  'project-checkpoint-export',
+  'project-events',
+  'project-retirement',
+  'project-snapshot',
+  'requests',
+  'tickets',
+]);
+
+function cloudCapabilityImplemented(
+  document: CollabCloudCapabilityDocument,
+  capability: CollabCloudCapability,
+): boolean {
+  return IMPLEMENTED_CLOUD_CAPABILITIES.has(capability)
+    && collabCloudCapabilitySupported(document, capability);
+}
 
 export interface CloudProjectEventSocket {
   close(code: number, reason: string): void;
@@ -980,7 +1001,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
         remoteUrl: membership.authority.gitRemoteUrl,
       },
       lifecycle: control,
-      supports: capability => collabCloudCapabilitySupported(document, capability),
+      supports: capability => cloudCapabilityImplemented(document, capability),
     };
   }
 
@@ -1011,7 +1032,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       projectId: binding.projectId,
       readSnapshot: (projectId, options) => lifecycle.readSnapshot(projectId, options),
       serverUrl: origin,
-      supports: capability => collabCloudCapabilitySupported(document, capability),
+      supports: capability => cloudCapabilityImplemented(document, capability),
     };
   }
 
