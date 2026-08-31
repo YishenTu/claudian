@@ -819,8 +819,6 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.retireProject).toHaveBeenCalledWith({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-host',
       projectId: 'project-alpha',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
@@ -1437,8 +1435,6 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.retireProject).toHaveBeenCalledWith({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-alpha',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(modal.close).toHaveBeenCalledTimes(1);

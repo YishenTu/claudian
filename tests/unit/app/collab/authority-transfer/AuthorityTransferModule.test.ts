@@ -32,7 +32,7 @@ import type {
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 
 const PROJECT_ID = 'project-authority-transfer-module';
@@ -171,7 +171,7 @@ function proposal(): CollabAuthorityTransferStatus {
 
 describe('AuthorityTransferModule', () => {
   it('resolves an expired Cloud-to-LAN redemption without the relinquished Cloud source', async () => {
-    const createCloudLifecycle = jest.fn(async () => {
+    const createCloudConnection = jest.fn(async () => {
       throw new Error('Cloud source must remain unavailable');
     });
     const record = recoverableClaimantRecord({
@@ -180,7 +180,7 @@ describe('AuthorityTransferModule', () => {
       phase: 'target-claimed',
     });
     const resolver = new AuthorityTransferClaimantBindingResolver({
-      createCloudLifecycle,
+      createCloudConnection,
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
@@ -215,7 +215,7 @@ describe('AuthorityTransferModule', () => {
       mode: 'target-only',
       targetHost: record.lanTarget,
     });
-    expect(createCloudLifecycle).not.toHaveBeenCalled();
+    expect(createCloudConnection).not.toHaveBeenCalled();
   });
 
   it('registers both durable recovery owners and installs a bound LAN source service', async () => {
@@ -280,7 +280,7 @@ describe('AuthorityTransferModule', () => {
         supports: (capability: CollabCloudCapability) => (
           capability === 'authority-transfer' || capability === 'project-snapshot'
         ),
-      } as unknown as CloudAuthorityLifecycleSession,
+      } as unknown as CloudAuthorityConnection,
       projectId: PROJECT_ID,
     });
     const service = module.sourceActiveService({
@@ -365,7 +365,7 @@ describe('AuthorityTransferModule', () => {
       supports: (capability: CollabCloudCapability) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
 
     const binding = await module.bindCloudToLanTarget({
       cloudSession,
@@ -394,7 +394,7 @@ describe('AuthorityTransferModule', () => {
       supports: (capability: CollabCloudCapability) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     const module = new AuthorityTransferModule({
       assertRecoveryOwner: () => undefined,
       installationKey: TEST_INSTALLATION_A,
@@ -452,7 +452,7 @@ describe('AuthorityTransferModule', () => {
       supports: (capability: CollabCloudCapability) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     const recoverCloudSession = jest.fn(async () => cloudSession);
     const module = new AuthorityTransferModule({
       assertRecoveryOwner: () => undefined,
@@ -516,7 +516,7 @@ describe('AuthorityTransferModule', () => {
       supports: (capability: CollabCloudCapability) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     const recoverClaimant = jest.fn(async () => ({
       cloudSession,
       direction: 'lan-to-cloud' as const,

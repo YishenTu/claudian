@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  lstat,
-  readdir,
-  rename,
-} from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { collabMemberRef, type CollabOperationId, isCollabOpaqueId } from '@claudian-collab/protocol';
@@ -26,11 +22,7 @@ import type {
   CollabProjectsFolderChildOwnership,
   CollabWorkspaceService,
 } from '@/app/collab/CollabWorkspaceService';
-import { COLLAB_MAIN_FETCH_REFSPEC } from '@/app/collab/git/collabGitRefs';
-import {
-  type GitNetworkEnvironment,
-  parseGitNulFields,
-} from '@/app/collab/git/GitCommandRunner';
+import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
 import {
   JoinControlClient,
 } from '@/app/collab/join/JoinControlClient';
@@ -47,12 +39,10 @@ import {
 } from '@/app/collab/lan/CollabHttpClient';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
-import {
-  COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-} from '@/app/collab/publish/CollabPublicationStateRecord';
+import { type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
+import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import { type CollabJoinProjectRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
+import { type CollabInvitationJoinRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 type LocalProjectsPort = Pick<
@@ -104,8 +94,6 @@ interface ActiveJoinIntent {
   readonly controller: AbortController;
 }
 
-const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const INDEX_MODE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) 0\t(.+)$/;
 
 function joinError(
   code:
@@ -206,6 +194,7 @@ class JoinTrustStore implements CollabHostTrustStore {
 
 export class JoinProjectCoordinator {
    #activeIntent: ActiveJoinIntent | null = null;
+   readonly #workingCopy: CollabWorkingCopySetup;
    readonly #createHttpClient: (
     trustStore: CollabHostTrustStore,
   ) => JoinHttpClientPort;
@@ -220,6 +209,7 @@ export class JoinProjectCoordinator {
     private readonly foundation: JoinProjectFoundationPort,
     private readonly options: JoinProjectCoordinatorOptions,
   ) {
+    this.#workingCopy = new CollabWorkingCopySetup(foundation, options.vaultRoot);
     this.#invitationCodec = options.invitationCodec ?? new InvitationCodec();
     this.#createHttpClient = options.createHttpClient
       ?? (trustStore => new CollabHttpClient(trustStore, {
@@ -232,7 +222,7 @@ export class JoinProjectCoordinator {
   }
 
   joinProject(
-    request: CollabJoinProjectRequest,
+    request: CollabInvitationJoinRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     return this.#startIntent(
@@ -272,7 +262,7 @@ export class JoinProjectCoordinator {
   }
 
    async #joinProjectUnlocked(
-    request: CollabJoinProjectRequest,
+    request: CollabInvitationJoinRequest,
     intent: ActiveJoinIntent,
     _externalSignal?: AbortSignal,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -471,48 +461,17 @@ export class JoinProjectCoordinator {
           throw joinError('workspace-boundary-invalid', 'join-staging-boundary-invalid');
         }
         const git = await this.foundation.requireGitFoundation();
-        await this.#validateWorkingCopy(stagingPath, record, git);
+        await this.#workingCopy.validate(stagingPath, this.#workingCopyInput(record), git);
         return this.#updateRecord(record, { phase: 'clone-completed' });
       }
     }
-    await this.#removeOwnedStaging(record);
-    const stagingOwnership = this.#stagingOwnership(record);
-    await this.foundation.local.workspace.reserveProjectsFolderChild(
-      record.projectsFolder,
-      stagingOwnership,
-    );
-    const git = await this.foundation.requireGitFoundation();
     const caPath = await this.#writeTemporaryCa(record);
     try {
-      const clonePath = await git.repositories.cloneRepository({
-        branch: `members/${record.memberId!}`,
-        directoryName: record.stagingDirectoryName,
-        network: this.#gitNetwork(record, caPath),
-        parentDirectory: await resolveCollabVaultPath(
-          this.options.vaultRoot,
-          record.projectsFolder,
-          { mustExist: true },
-        ),
+      await this.#workingCopy.clone({
+        ...this.#workingCopyInput(record),
+        displayName: record.memberDisplayName,
         remoteUrl: gitRemoteUrl(record),
-        signal,
-      });
-      await git.repositories.fetch(
-        clonePath,
-        'origin',
-        [COLLAB_MAIN_FETCH_REFSPEC],
-        this.#gitNetwork(record, caPath),
-        signal,
-      );
-      await git.repositories.configureLocalRepository(clonePath, {
-        memberId: record.memberId!,
-        personalRef: collabMemberRef(record.memberId!),
-        projectId: record.projectId,
-        userDisplayName: record.memberDisplayName,
-      });
-      await this.#validateWorkingCopy(clonePath, record, git);
-    } catch (error) {
-      await this.#removeOwnedStaging(record).catch(() => undefined);
-      throw error;
+      }, this.#gitNetwork(record, caPath), signal);
     } finally {
       await this.#removeTemporaryCa(record).catch(() => undefined);
     }
@@ -523,34 +482,7 @@ export class JoinProjectCoordinator {
     record: JoinProjectRecord,
     signal: AbortSignal,
   ): Promise<JoinProjectRecord> {
-    const git = await this.foundation.requireGitFoundation();
-    const stagingPath = this.#workspaceChildPath(record, record.stagingDirectoryName);
-    const finalPath = this.#workspaceChildPath(record, record.slug);
-    const [stagingStat, finalStat] = await Promise.all([
-      lstat(stagingPath).catch(() => null),
-      lstat(finalPath).catch(() => null),
-    ]);
-    if (finalStat) {
-      if (stagingStat || !finalStat.isDirectory() || finalStat.isSymbolicLink()) {
-        throw joinError('workspace-boundary-invalid', 'join-final-boundary-invalid');
-      }
-      await this.#validateWorkingCopy(finalPath, record, git);
-      await this.foundation.local.workspace.releaseReservedProjectsFolderChild(
-        record.projectsFolder,
-        this.#stagingOwnership(record),
-      );
-      return this.#updateRecord(record, { phase: 'placed' });
-    }
-    if (!stagingStat?.isDirectory() || stagingStat.isSymbolicLink()) {
-      throw joinError('workspace-boundary-invalid', 'join-staging-missing');
-    }
-    await this.#validateWorkingCopy(stagingPath, record, git);
-    throwIfCancelled(signal);
-    await rename(stagingPath, finalPath);
-    await this.foundation.local.workspace.releaseReservedProjectsFolderChild(
-      record.projectsFolder,
-      this.#stagingOwnership(record),
-    );
+    await this.#workingCopy.place(this.#workingCopyInput(record), signal);
     return this.#updateRecord(record, { phase: 'placed' });
   }
 
@@ -559,16 +491,6 @@ export class JoinProjectCoordinator {
     signal: AbortSignal,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     throwIfCancelled(signal);
-    const git = await this.foundation.requireGitFoundation();
-    const workingCopy = this.#workspaceChildPath(record, record.slug);
-    await this.#validateWorkingCopy(workingCopy, record, git);
-    const baseMainOid = await git.repositories.resolveRef(
-      workingCopy,
-      collabMemberRef(record.memberId!),
-    );
-    if (!baseMainOid) {
-      throw joinError('repository-invalid', 'joined-personal-ref-missing');
-    }
     const timestamp = this.now().toISOString();
     const membership: CollabLocalMembershipRecord = {
       authority: {
@@ -596,20 +518,7 @@ export class JoinProjectCoordinator {
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       updatedAt: timestamp,
     };
-    await this.foundation.local.projects.saveMembership(membership);
-    await this.foundation.local.projects.saveProjectDocument(
-      record.projectId,
-      'publication-state',
-      {
-        baseMainOid,
-        operation: null,
-        projectId: record.projectId,
-        schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-        updatedAt: timestamp,
-      },
-    );
-    await this.foundation.local.projects.upsertProject(this.#indexEntry(record));
-    await this.foundation.local.projects.selectProject(record.projectId);
+    await this.#workingCopy.finalize(membership, signal);
     await this.foundation.local.projects.removeProjectDocument(
       record.projectId,
       'pending-operation',
@@ -632,99 +541,16 @@ export class JoinProjectCoordinator {
     };
   }
 
-   async #validateWorkingCopy(
-    repositoryPath: string,
-    record: JoinProjectRecord,
-    git: CollabGitFoundation,
-  ): Promise<void> {
-    const personalRef = collabMemberRef(record.memberId!);
-    const [headOid, personalOid, status, symbolicRef] = await Promise.all([
-      git.repositories.resolveRef(repositoryPath, 'HEAD'),
-      git.repositories.resolveRef(repositoryPath, personalRef),
-      git.repositories.getWorkingTreeStatus(repositoryPath),
-      git.runner.run({
-        args: ['symbolic-ref', '--quiet', 'HEAD'],
-        cwd: repositoryPath,
-        maxStdoutBytes: 512,
-      }),
-    ]);
-    if (
-      !headOid
-      || headOid !== personalOid
-      || symbolicRef.stdout.toString('utf8').trim() !== personalRef
-      || status.length > 0
-    ) {
-      throw joinError('repository-invalid', 'joined-personal-ref-invalid');
-    }
-    const index = await git.runner.run({
-      args: ['ls-files', '--stage', '-z'],
-      cwd: repositoryPath,
-      maxStdoutBytes: 16 * 1024 * 1024,
-    });
-    const tracked = new Set<string>();
-    for (const entry of parseGitNulFields(index.stdout)) {
-      const match = INDEX_MODE_PATTERN.exec(entry);
-      if (!match) throw joinError('repository-invalid', 'joined-index-entry-invalid');
-      const pathResult = this.foundation.local.pathPolicy.validateRepositoryPath(match[3]);
-      if (!pathResult.ok || tracked.has(match[3])) {
-        throw pathResult.ok
-          ? joinError('repository-invalid', 'joined-index-path-duplicate')
-          : pathResult.error;
-      }
-      tracked.add(match[3]);
-    }
-    const checkout = await this.#listCheckoutFiles(repositoryPath);
-    if (
-      checkout.files.length !== tracked.size
-      || checkout.files.some(file => !tracked.has(file))
-    ) {
-      throw joinError('repository-invalid', 'joined-checkout-mismatch');
-    }
-    await git.repositories.assertHealthy(repositoryPath);
-  }
-
-   async #listCheckoutFiles(
-    repositoryPath: string,
-  ): Promise<{ readonly files: readonly string[]; readonly totalBytes: number }> {
-    const files: string[] = [];
-    let totalBytes = 0;
-    const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
-      const entries = await readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (relativeDirectory.length === 0 && entry.name === '.git') continue;
-        const relativePath = relativeDirectory
-          ? `${relativeDirectory}/${entry.name}`
-          : entry.name;
-        const pathResult = this.foundation.local.pathPolicy.validateRepositoryPath(relativePath);
-        if (!pathResult.ok) throw pathResult.error;
-        const absolutePath = path.join(directory, entry.name);
-        const fileStat = await lstat(absolutePath);
-        if (fileStat.isSymbolicLink()) {
-          throw joinError('repository-invalid', 'joined-symbolic-link');
-        }
-        if (fileStat.isDirectory()) {
-          await visit(absolutePath, relativePath);
-          continue;
-        }
-        if (!fileStat.isFile()) {
-          throw joinError('repository-invalid', 'joined-file-type-invalid');
-        }
-        if (fileStat.size > CLAUDIAN_COLLAB_LIMITS.maxBlobBytes) {
-          throw joinError('quota-exceeded', 'joined-blob-limit');
-        }
-        files.push(relativePath);
-        totalBytes += fileStat.size;
-        if (
-          files.length > CLAUDIAN_COLLAB_LIMITS.maxChangedPaths
-          || totalBytes > CLAUDIAN_COLLAB_LIMITS.maxCheckoutBytes
-        ) {
-          throw joinError('quota-exceeded', 'joined-checkout-limit');
-        }
-      }
+   #workingCopyInput(record: JoinProjectRecord): CollabWorkingCopyPlacement {
+    return {
+      memberId: record.memberId!,
+      personalRef: collabMemberRef(record.memberId!),
+      projectId: record.projectId,
+      projectsFolder: record.projectsFolder,
+      slug: record.slug,
+      staging: this.#stagingOwnership(record),
+      stagingProvenance: record.legacyJoinRecord ? 'legacy-lan-join-v1' : 'reserved',
     };
-    await visit(repositoryPath, '');
-    files.sort();
-    return { files, totalBytes };
   }
 
    async #handleFailure(
@@ -877,7 +703,7 @@ export class JoinProjectCoordinator {
     }
     if (requestedSlug !== undefined) {
       const slug = requestedSlug.trim();
-      if (!SAFE_SLUG_PATTERN.test(slug)) {
+      if (!isCollabWorkingCopySlug(slug)) {
         throw joinError('workspace-boundary-invalid', 'project-slug-invalid');
       }
       if (
@@ -889,7 +715,7 @@ export class JoinProjectCoordinator {
       }
       return slug;
     }
-    const base = SAFE_SLUG_PATTERN.test(projectId) ? projectId : 'project';
+    const base = isCollabWorkingCopySlug(projectId) ? projectId : 'project';
     for (let suffix = 1; suffix <= 9_999; suffix += 1) {
       const slug = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
       if (reserved.has(`${projectsFolder}/${slug}`)) continue;
@@ -912,8 +738,14 @@ export class JoinProjectCoordinator {
     };
   }
 
-   #saveRecord(record: JoinProjectRecord): Promise<void> {
+  #saveRecord(record: JoinProjectRecord): Promise<void> {
     const normalized = decodeJoinProjectRecord(record);
+    if (record.legacyJoinRecord && record.phase !== 'placed' && record.phase !== 'activated') {
+      const { projectsFolder: _projectsFolder, ...legacy } = normalized;
+      return this.foundation.local.projects.saveProjectDocument(
+        normalized.projectId, 'pending-operation', { ...legacy, schemaVersion: 1 },
+      );
+    }
     return this.foundation.local.projects.saveProjectDocument(
       normalized.projectId,
       'pending-operation',

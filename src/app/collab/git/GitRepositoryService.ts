@@ -604,13 +604,8 @@ function assertRemoteUrl(remoteUrl: string): void {
   } catch {
     throw repositoryError('repository-invalid', 'git-remote-url-invalid');
   }
-  const loopbackHttp = parsed.protocol === 'http:' && (
-    parsed.hostname === '127.0.0.1'
-    || parsed.hostname === '[::1]'
-    || parsed.hostname === 'localhost'
-  );
   if (
-    (parsed.protocol !== 'https:' && !loopbackHttp)
+    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')
     || parsed.username.length > 0
     || parsed.password.length > 0
     || parsed.search.length > 0

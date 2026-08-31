@@ -177,7 +177,6 @@ export class RetirementClientHandler {
       acknowledgementStatus: 'pending',
       cleanupOperationId: this.createOperationId(),
       cleanupStatus: pendingLeaveCleanupComplete ? 'complete' : 'pending',
-      cloudDevelopmentActorId: cloudMembership?.authority.developmentActorId ?? null,
       cloudRetirementId: cloudMembership ? result.retirementId : null,
       cloudServerUrl: cloudMembership?.authority.serverUrl ?? null,
       createdAt,

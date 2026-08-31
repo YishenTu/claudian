@@ -401,8 +401,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       transferId: 'transfer-one',
     })).resolves.toBeUndefined();
     await expect(subsystem.retirement.retireProject({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-alpha',
     })).resolves.toBeUndefined();
     expect(hostTransfer.createHostTransfer).not.toHaveBeenCalled();

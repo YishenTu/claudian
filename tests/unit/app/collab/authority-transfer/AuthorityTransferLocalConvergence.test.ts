@@ -138,7 +138,6 @@ describe('AuthorityTransferLocalConvergence', () => {
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
     });
     const input = {
-      developmentActorId: 'member-host',
       snapshot: snapshot('cloud'),
       status: completed('lan-to-cloud'),
     };
@@ -155,8 +154,8 @@ describe('AuthorityTransferLocalConvergence', () => {
 
     expect(membership).toMatchObject({
       authority: {
+        authorityGeneration: 2,
         bindingVersion: 3,
-        developmentActorId: 'member-host',
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
         wireVersion: 7,
@@ -173,8 +172,8 @@ describe('AuthorityTransferLocalConvergence', () => {
     let membership = {
       ...lanMembership(),
       authority: {
+        authorityGeneration: 2,
         bindingVersion: 3 as const,
-        developmentActorId: 'member-host',
         gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
@@ -251,7 +250,6 @@ describe('AuthorityTransferLocalConvergence', () => {
     });
 
     await convergence.lanToCloudMember({
-      developmentActorId: 'member-host',
       snapshot: snapshot('cloud'),
       status: completed('lan-to-cloud'),
     });
@@ -268,7 +266,6 @@ describe('AuthorityTransferLocalConvergence', () => {
       authority: {
         authorityGeneration: 1,
         bindingVersion: 3 as const,
-        developmentActorId: 'member-host',
         gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',

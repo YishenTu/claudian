@@ -15,7 +15,7 @@ import {
 import type {
   DevelopmentBootstrapCloudPort,
 } from '@/app/collab/bootstrap/CloudBootstrapCoordinator';
-import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { resolveCloudRoute, validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const JSON_TIMEOUT_MS = 30_000;
@@ -119,7 +119,7 @@ export class DevelopmentBootstrapCloudClient implements DevelopmentBootstrapClou
   readonly #origin: string;
 
   constructor(options: DevelopmentBootstrapCloudClientOptions) {
-    this.#origin = canonicalCloudOrigin(options.serverUrl, 'serverUrl');
+    this.#origin = validateCloudServerUrl(options.serverUrl, 'serverUrl');
     this.#actorId = options.developmentActorId;
     this.#newRequestId = options.requestIdFactory ?? requestId;
   }
@@ -213,7 +213,7 @@ export class DevelopmentBootstrapCloudClient implements DevelopmentBootstrapClou
     if (signal?.aborted) {
       throw clientError('cancelled', 'cloud-bootstrap-request-cancelled');
     }
-    const url = new URL(target, this.#origin);
+    const url = new URL(resolveCloudRoute(this.#origin, target));
     const requestFn = url.protocol === 'https:' ? requestHttps : requestHttp;
     return new Promise<CloudResponse>((resolve, reject) => {
       let settled = false;

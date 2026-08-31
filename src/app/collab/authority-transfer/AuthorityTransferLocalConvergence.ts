@@ -18,8 +18,8 @@ import {
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
-  canonicalCloudOrigin,
   cloudProjectGitRemoteUrl,
+  validateCloudServerUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -54,7 +54,6 @@ export interface AuthorityTransferLocalConvergenceOptions {
 }
 
 export interface LanToCloudHostConvergenceInput {
-  readonly developmentActorId: string;
   readonly snapshot: CollabProjectSnapshot;
   readonly status: CollabAuthorityTransferStatus;
 }
@@ -174,14 +173,13 @@ export class AuthorityTransferLocalConvergence {
         throw convergenceError('authority-transfer-claimant-member-conflict');
       }
       if (record.status.direction === 'lan-to-cloud') {
-        const serverUrl = canonicalCloudOrigin(
+        const serverUrl = validateCloudServerUrl(
           record.status.targetUrl,
           'authorityTransferTargetUrl',
         );
         if (
           !isCollabLocalCloudMembership(membership)
-          || membership.authority.developmentActorId !== record.memberId
-          || (membership.authority.authorityGeneration ?? 1)
+          || membership.authority.authorityGeneration
             !== record.status.targetAuthority.generation
           || membership.authority.serverUrl !== serverUrl
           || membership.authority.gitRemoteUrl
@@ -215,8 +213,12 @@ export class AuthorityTransferLocalConvergence {
   ): Promise<void> {
     const membership = await this.requireMembership(input.status.projectId);
     assertSnapshot(membership, input.snapshot);
+    if (
+      input.snapshot.project.authorityKind !== 'cloud'
+      || input.snapshot.project.authorityGeneration !== input.status.targetAuthority.generation
+    ) throw convergenceError('authority-transfer-convergence-generation-mismatch');
     const newRemoteUrl = cloudRemoteUrl(input.status.targetUrl, input.status.projectId);
-    const serverUrl = canonicalCloudOrigin(
+    const serverUrl = validateCloudServerUrl(
       input.status.targetUrl,
       'authorityTransferTargetUrl',
     );
@@ -233,7 +235,6 @@ export class AuthorityTransferLocalConvergence {
         authority: {
           authorityGeneration: input.status.targetAuthority.generation,
           bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-          developmentActorId: input.developmentActorId,
           gitRemoteUrl: newRemoteUrl,
           kind: 'cloud',
           serverUrl,
@@ -254,8 +255,7 @@ export class AuthorityTransferLocalConvergence {
       });
     } else {
       if (
-        membership.authority.developmentActorId !== input.developmentActorId
-        || (membership.authority.authorityGeneration ?? 1)
+        membership.authority.authorityGeneration
           !== input.status.targetAuthority.generation
         || membership.authority.gitRemoteUrl !== newRemoteUrl
         || membership.authority.serverUrl !== serverUrl

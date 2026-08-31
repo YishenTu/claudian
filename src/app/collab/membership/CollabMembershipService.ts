@@ -104,10 +104,8 @@ export class CollabMembershipService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    const coordination = await this.snapshots.readCoordinationSnapshot(projectId, options);
     await this.control.membership('revokeInvitation', {
       idempotencyKey: this.createIdempotencyKey('revoke-invitation'),
-      memberId: coordination.snapshot.currentMember.id,
       projectId,
     }, options);
   }
@@ -209,7 +207,6 @@ export class CollabMembershipService {
       });
     }
     const acknowledged = await this.control.membership('acknowledgeManagerResponsibility', {
-      expectedTargetMemberId: request.memberId,
       idempotencyKey: `manager-ack-${request.offerId}`,
       offerId: request.offerId,
       projectId: request.projectId,
@@ -276,7 +273,6 @@ export class CollabMembershipService {
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary> {
     const summary = await this.control.membership('declineManagerResponsibility', {
-      expectedTargetMemberId: request.memberId,
       idempotencyKey: `manager-decline-${request.offerId}`,
       offerId: request.offerId,
       projectId: request.projectId,

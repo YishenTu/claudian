@@ -92,11 +92,11 @@ function membershipRecord(
 function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 7,
       bindingVersion: 3,
-      developmentActorId: 'member-alice',
-      gitRemoteUrl: `http://127.0.0.1:8787/v3/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
-      serverUrl: 'http://127.0.0.1:8787/',
+      serverUrl: 'HTTP://198.51.100.20:8787/operator/cloud',
       wireVersion: 7,
     },
     createdAt: '2026-08-08T00:00:00.000Z',
@@ -330,9 +330,10 @@ describe('CollabLocalProjectRepository', () => {
     expect(persisted).not.toHaveProperty('hostOwnership');
     expect(persisted.member).not.toHaveProperty('credential');
     expect(persisted.authority).not.toHaveProperty('hostCaCertificatePem');
+    expect(persisted.authority).not.toHaveProperty('developmentActorId');
   });
 
-  it('rejects a Cloud development actor that differs from the current Member', async () => {
+  it('rejects any persisted Cloud development actor, including the current Member', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = cloudMembershipRecord();
 
@@ -340,8 +341,20 @@ describe('CollabLocalProjectRepository', () => {
       ...record,
       authority: {
         ...record.authority,
-        developmentActorId: 'member-bob',
-      },
+        developmentActorId: 'member-alice',
+      } as CollabLocalCloudMembershipRecord['authority'],
+    })).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+  });
+
+  it.each([undefined, 0, -1, 1.5])('rejects Cloud authority generation %s without a fallback', async authorityGeneration => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = cloudMembershipRecord();
+    await expect(repository.saveMembership({
+      ...record,
+      authority: { ...record.authority, authorityGeneration } as CollabLocalCloudMembershipRecord['authority'],
     })).rejects.toMatchObject({
       code: 'operation-failed',
       safeContext: { reason: 'local-record-corrupt' },

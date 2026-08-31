@@ -134,7 +134,6 @@ describe('RetirementClientHandler', () => {
     expect(store.retirement).toMatchObject({
       acknowledgedAt: null,
       acknowledgementStatus: 'pending',
-      cloudDevelopmentActorId: 'principal-manager-device',
       cloudRetirementId: 'retirement-cloud-one',
       cloudServerUrl: 'https://cloud.example.test/',
       hostCaCertificatePem: null,
@@ -532,7 +531,6 @@ function pendingRecord(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'retire-local-one',
     cleanupStatus: 'pending',
-    cloudDevelopmentActorId: null,
     cloudRetirementId: null,
     cloudServerUrl: null,
     createdAt: RETIRED_AT,
@@ -674,8 +672,8 @@ function cloudMembership(): CollabLocalMembershipRecord {
   return {
     ...local,
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: 'principal-manager-device',
       gitRemoteUrl: 'https://cloud.example.test/v3/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',

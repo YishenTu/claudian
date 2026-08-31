@@ -78,6 +78,8 @@ import { CollabMembershipService } from '@/app/collab/membership/CollabMembershi
 import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
+import { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -92,8 +94,9 @@ import { type CollabFinalizeRetiredProjectRequest, type CollabLeaveProjectReques
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabFeatureSubcompositionOptions {
-  readonly cloudAuthority?: Pick<CloudAuthorityAdapter, 'create' | 'createLifecycle'>;
+  readonly cloudAuthority?: Pick<CloudAuthorityAdapter, 'authorityKind' | 'create' | 'connect'>;
   readonly foundation: ClaudianCollabService;
+  readonly getProjectsFolder?: () => string;
   readonly projectSetup: CollabProjectSetupService;
   readonly vaultRoot: string;
 }
@@ -194,7 +197,7 @@ export function createCollabFeatureSubcomposition(
   };
   const cloudAuthority = options.cloudAuthority ?? new CloudAuthorityAdapter();
   const cloudRetirement = new CloudRetirementClient({
-    createLifecycle: binding => cloudAuthority.createLifecycle(binding),
+    connect: binding => cloudAuthority.connect(binding),
     createSession: membership => cloudAuthority.create(membership),
   });
   const acknowledgementWorker = new RetirementAcknowledgementWorker(
@@ -239,6 +242,7 @@ export function createCollabFeatureSubcomposition(
   );
   foundation.setRetirementHandler(retirementHandler);
   publication = new CollabPublicationService(foundation, {
+    cloudAuthority,
     discovery: foundation.discovery,
     inspectHostInstallation: projectId => foundation.hostInstallations.inspect(projectId),
     readActiveLocalRoute: projectId => foundation.lanHost.getActiveProjectRoute(projectId),
@@ -504,7 +508,7 @@ export function createCollabFeatureSubcomposition(
           serverUrl: record.newAuthority.serverUrl,
         }).get({ attemptId: record.attemptId }, signal),
       },
-      authorityAdapter: new CloudAuthorityAdapter(),
+      authorityAdapter: cloudAuthority,
       authorityLifecycle: {
         closeAuthority: projectId => foundation.closeAuthority(projectId),
       },
@@ -646,7 +650,31 @@ export function createCollabFeatureSubcomposition(
   const lifecycleCloudBootstrap = lifecycle.bindCloudBootstrap(cloudBootstrap);
   const lifecycleMembership = lifecycle.bindMembership(membership);
 
+  const cloudEntry = new CloudProjectEntryCoordinator(foundation, {
+    activateProject: async (membership, operationOptions) => { await requirePublication().readSnapshot(membership.project.id, operationOptions); },
+    cloudAuthority,
+    getProjectsFolder: options.getProjectsFolder ?? (() => 'workspace'),
+    vaultRoot,
+  });
+  lifecycle.registerDurableOwner({
+    name: 'cloud-project-entry',
+    inspect: async projectId => {
+      const pending = await foundation.local.projects.loadProjectDocument(projectId, 'pending-operation', decodeCollabPendingProjectOperation);
+      return pending?.kind === 'cloud-entry' ? 'nonterminal' : 'absent';
+    },
+  });
   const feature: CollabFeatureService = new CollabFeatureService(foundation, projectSetup, {
+    cloudEntry: {
+      close: () => cloudEntry.close(),
+      createProject: (request, operationOptions) => cloudEntry.createProject(request, operationOptions),
+      joinProject: (request, operationOptions) => requireLifecycle().runExclusive(
+        'projectId' in request ? request.projectId : request.invitation.invitation.projectId,
+        'cloud-project-entry', 'operation', () => cloudEntry.joinProject(request, operationOptions),
+      ),
+      resumeSetup: (request, operationOptions) => requireLifecycle().runExclusive(
+        request.projectId, 'cloud-project-entry', 'recovery', () => cloudEntry.resumeSetup(request, operationOptions),
+      ),
+    },
     cloudBootstrap: lifecycleCloudBootstrap,
     hostTransfer: lifecycle.hostTransfer,
     hostInstallation: foundation.hostInstallations,
@@ -691,7 +719,7 @@ export function createCollabFeatureSubcomposition(
     workspace: foundation.local.workspace,
   });
   const claimantBindingResolver = new AuthorityTransferClaimantBindingResolver({
-    createCloudLifecycle: binding => cloudAuthority.createLifecycle(binding),
+    createCloudConnection: binding => cloudAuthority.connect(binding),
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
   });
   const authorityTransfer = new AuthorityTransferModule({
@@ -737,8 +765,7 @@ export function createCollabFeatureSubcomposition(
         if (!isCollabLocalLanMembership(membership)) {
           throw bootstrapCompositionError('authority-transfer-source-membership-invalid');
         }
-        return cloudAuthority.createLifecycle({
-          developmentActorId: membership.member.id,
+        return cloudAuthority.connect({
           projectId: record.projectId,
           serverUrl: record.status.targetUrl,
         });
@@ -746,8 +773,7 @@ export function createCollabFeatureSubcomposition(
       if (!isCollabLocalCloudMembership(membership)) {
         throw bootstrapCompositionError('authority-transfer-target-membership-invalid');
       }
-      return cloudAuthority.createLifecycle({
-        developmentActorId: membership.authority.developmentActorId,
+      return cloudAuthority.connect({
         projectId: record.projectId,
         serverUrl: membership.authority.serverUrl,
       });
@@ -793,10 +819,7 @@ export function createCollabFeatureSubcomposition(
               new Date(),
             )
               ? null
-              : await cloudAuthority.createLifecycle({
-                  developmentActorId: isCollabLocalCloudMembership(membership)
-                    ? membership.authority.developmentActorId
-                    : membership.member.id,
+              : await cloudAuthority.connect({
                   projectId: record.projectId,
                   serverUrl: isCollabLocalCloudMembership(membership)
                     ? membership.authority.serverUrl

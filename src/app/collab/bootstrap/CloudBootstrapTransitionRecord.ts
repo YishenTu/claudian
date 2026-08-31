@@ -19,9 +19,9 @@ import {
 } from '@claudian-collab/protocol';
 
 import {
-  canonicalCloudOrigin,
   canonicalCloudUrl,
   cloudProjectGitRemoteUrl,
+  validateCloudServerUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import {
   type InstallationKey,
@@ -194,8 +194,8 @@ function timestamp(source: Value, key: string): CollabIsoTimestamp {
 }
 
 function canonicalHttpsOrigin(candidate: string, key: string): string {
-  const normalized = canonicalCloudOrigin(candidate, key);
-  if (new URL(normalized).protocol !== 'https:') throw new TypeError(`Invalid ${key}`);
+  const normalized = canonicalHttpsUrl(candidate, key);
+  if (new URL(normalized).pathname !== '/') throw new TypeError(`Invalid ${key}`);
   return normalized;
 }
 
@@ -362,7 +362,7 @@ export function decodeCloudBootstrapTransitionRecord(
     'serverUrl',
     'wireVersion',
   ]);
-  const serverUrl = canonicalCloudOrigin(
+  const serverUrl = validateCloudServerUrl(
     text(newAuthority, 'serverUrl', 2_048),
     'serverUrl',
   );
@@ -513,7 +513,7 @@ export function createCloudBootstrapTransitionRecord(
         input.serverUrl,
         manifest.comparison.projectId,
       ),
-      serverUrl: canonicalCloudOrigin(input.serverUrl, 'serverUrl'),
+      serverUrl: validateCloudServerUrl(input.serverUrl, 'serverUrl'),
       wireVersion: COLLAB_PROTOCOL_VERSION,
     },
     oldAuthority: {

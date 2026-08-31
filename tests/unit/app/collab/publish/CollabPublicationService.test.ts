@@ -27,6 +27,8 @@ import {
   CollabPublicationService,
 } from '@/app/collab/publish/CollabPublicationService';
 import type { CollabRequestDraftRecord } from '@/app/collab/publish/CollabRequestDraftRecord';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { type CollabUpdateRequestMetadataRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -63,8 +65,8 @@ const LAN_ACTIVE_ENDPOINT = 'https://192.168.1.44:41731';
 function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: CLOUD_MEMBER_ID,
       gitRemoteUrl: `${serverUrl}/v3/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
@@ -393,11 +395,16 @@ describe('CollabPublicationService reconnect', () => {
     }
   });
 
-  it('uses the production Cloud adapter composition without renderer fetch', async () => {
+  it('shares the configured Cloud transport across lifecycle and publication without renderer fetch', async () => {
     const routes: string[] = [];
     const server = createServer((request, response) => {
       routes.push(request.url ?? '');
       response.setHeader('content-type', 'application/json; charset=utf-8');
+      if (request.headers['x-test-ingress'] !== 'private-fixture') {
+        response.writeHead(401);
+        response.end('{}');
+        return;
+      }
       if (request.method === 'GET') {
         response.end(JSON.stringify(collabCloudCapabilityDocument([
           'project-snapshot',
@@ -413,6 +420,13 @@ describe('CollabPublicationService reconnect', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('server address missing');
     const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
+    const transport = new NodeCloudAuthorityHttpTransport();
+    const cloudAuthority = new CloudAuthorityAdapter({
+      request: input => transport.request({
+        ...input,
+        headers: { ...input.headers, 'x-test-ingress': 'private-fixture' },
+      }),
+    });
     const projects = {
       loadMembership: jest.fn().mockResolvedValue(membership),
       loadProjectDocument: jest.fn().mockResolvedValue(null),
@@ -423,17 +437,30 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: { pathPolicy: {}, projects, workspace: {} },
       requireGitFoundation: jest.fn(),
-    } as unknown as CollabPublicationFoundationPort, publicationOptions());
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({ cloudAuthority }));
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(
       new Error('renderer fetch is disabled'),
     );
 
     try {
+      const connection = await cloudAuthority.connect({
+        projectId: CLOUD_PROJECT_ID,
+        serverUrl: membership.authority.serverUrl,
+      });
+      try {
+        await expect(connection.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+          currentMember: { id: CLOUD_MEMBER_ID },
+        });
+      } finally {
+        connection.dispose();
+      }
       await expect(service.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
         currentMember: { id: CLOUD_MEMBER_ID },
         project: { authorityKind: 'cloud', id: CLOUD_PROJECT_ID },
       });
       expect(routes).toEqual([
+        '/collab/capabilities',
+        `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         '/collab/capabilities',
         `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);

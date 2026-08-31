@@ -65,7 +65,7 @@ import {
   AuthorityMemberCredentialAuthenticator,
 } from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -102,7 +102,7 @@ interface SourceProofEnvelope {
 }
 
 export interface ProductionLanToCloudSourceEffectsOptions {
-  readonly cloudSession: CloudAuthorityLifecycleSession | null;
+  readonly cloudSession: CloudAuthorityConnection | null;
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly foundation: ClaudianCollabService;
   readonly persistence: AuthorityTransferPersistence;
@@ -352,7 +352,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     const cloudSession = this.requireCloudSession();
     const snapshot = await cloudSession.readSnapshot(record.projectId, options);
     await this.options.convergence.lanToCloudHost({
-      developmentActorId: cloudSession.developmentActorId,
       snapshot,
       status: record.status,
     });
@@ -556,7 +555,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     );
   }
 
-  private requireCloudSession(): CloudAuthorityLifecycleSession {
+  private requireCloudSession(): CloudAuthorityConnection {
     if (!this.options.cloudSession) {
       throw effectsError('authority-transfer-cloud-session-unavailable');
     }

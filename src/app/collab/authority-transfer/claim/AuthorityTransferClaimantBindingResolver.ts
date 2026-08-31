@@ -18,16 +18,15 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantBindingResolverOptions {
-  readonly createCloudLifecycle: (input: Readonly<{
-    readonly developmentActorId: string;
-    readonly projectId: CollabProjectId;
+  readonly createCloudConnection: (input: Readonly<{
+        readonly projectId: CollabProjectId;
     readonly serverUrl: string;
-  }>) => Promise<CloudAuthorityLifecycleSession>;
+  }>) => Promise<CloudAuthorityConnection>;
   readonly createLanClient?: (
     input: ConstructorParameters<typeof LanAuthorityTransferClient>[0],
   ) => LanAuthorityTransferClient;
@@ -76,8 +75,7 @@ export class AuthorityTransferClaimantBindingResolver {
       if (!isCollabLocalLanMembership(membership)) {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
-      const cloudSession = await this.options.createCloudLifecycle({
-        developmentActorId: membership.member.id,
+      const cloudSession = await this.options.createCloudConnection({
         projectId: record.projectId,
         serverUrl: record.status.targetUrl,
       });
@@ -123,8 +121,7 @@ export class AuthorityTransferClaimantBindingResolver {
         targetHost: record.lanTarget,
       };
     }
-    const cloudSession = await this.options.createCloudLifecycle({
-      developmentActorId: membership.authority.developmentActorId,
+    const cloudSession = await this.options.createCloudConnection({
       projectId: record.projectId,
       serverUrl: membership.authority.serverUrl,
     });
