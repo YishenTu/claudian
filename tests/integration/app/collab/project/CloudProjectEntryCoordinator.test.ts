@@ -50,6 +50,43 @@ jest.setTimeout(30_000);
 
 
 describe('CloudProjectEntryCoordinator', () => {
+  it.each(['directory', 'symlink', 'pending'] as const)('rejects an explicit Join slug already occupied by a %s before remote admission', async collision => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    const projects = fixture.foundation.local.projects;
+    await fixture.foundation.local.workspace.claimProjectsFolder('Shared/Projects');
+    const destination = path.join(fixture.vaultRoot, 'Shared/Projects/cloud-notes');
+    const preserved = path.join(fixture.vaultRoot, 'preserved');
+    await mkdir(preserved);
+    await writeFile(path.join(preserved, 'keep.md'), 'Keep existing work\n');
+    if (collision === 'pending') {
+      await projects.saveProjectDocument('project-other-entry', 'pending-operation', decodeCloudProjectEntryRecord({
+        admission: null, createdAt: CREATED_AT, operationId: 'entry-other', operationKind: 'cloud-create-project', phase: 'intent',
+        projectId: 'project-other-entry', projectsFolder: 'Shared/Projects',
+        request: { idempotencyKey: 'entry-other', managerDisplayName: 'Other', projectId: 'project-other-entry', projectName: 'Other' },
+        schemaVersion: 1, serverUrl: fixture.serverUrl, slug: 'cloud-notes', stagingDirectoryName: '.claudian-clone-project-other-entry', updatedAt: CREATED_AT,
+      }));
+    } else if (collision === 'symlink') {
+      await symlink(preserved, destination, process.platform === 'win32' ? 'junction' : 'dir');
+    } else {
+      await mkdir(destination);
+      await writeFile(path.join(destination, 'keep.md'), 'Keep existing work\n');
+    }
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob', projectSlug: 'cloud-notes' }))
+        .resolves.toMatchObject({ status: 'failure', error: { code: 'workspace-boundary-invalid' } });
+      expect(fixture.joinRequests).toEqual([]);
+      expect(await projects.loadMembership(PROJECT_ID)).toBeNull();
+      expect(await projects.listPendingOperationProjectIds()).toEqual(collision === 'pending' ? ['project-other-entry'] : []);
+      expect(await readFile(path.join(preserved, 'keep.md'), 'utf8')).toBe('Keep existing work\n');
+      const retained = collision === 'pending' ? await projects.loadProjectDocument('project-other-entry', 'pending-operation', decodeCloudProjectEntryRecord)
+        : await readFile(path.join(destination, 'keep.md'), 'utf8');
+      const pendingExpectation = expect.objectContaining({ operationId: 'entry-other', slug: 'cloud-notes' });
+      const expected = collision === 'pending' ? pendingExpectation : 'Keep existing work\n';
+      expect(retained).toEqual(expected);
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
   it.each(['create', 'join', 'existing'] as const)('does not claim durable %s progress when its initial intent write never commits', async entry => {
     const fixture = await createFixture({ join: entry !== 'create', alreadyBound: entry === 'existing' });
     const projects = fixture.foundation.local.projects;

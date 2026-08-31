@@ -132,7 +132,7 @@ export class CloudProjectEntryCoordinator {
         if (!parsedFolder.ok) throw new CollabError({ code: 'workspace-boundary-invalid' });
         await this.foundation.local.workspace.claimProjectsFolder(parsedFolder.value);
         const slug = existing ? path.posix.basename(existing.project.workspacePath)
-          : invitationInput?.projectSlug ?? await this.#claimSlug(parsedFolder.value, projectId, projectId);
+          : await this.#claimSlug(parsedFolder.value, projectId, projectId, invitationInput?.projectSlug);
         if (!isCollabWorkingCopySlug(slug)) throw new CollabError({ code: 'path-invalid' });
         if (existing && await this.#isOccupied(parsedFolder.value, slug)) {
           await this.#setup.assertFinalized(existing);
@@ -297,12 +297,20 @@ export class CloudProjectEntryCoordinator {
     };
   }
 
-  async #claimSlug(projectsFolder: string, name: string, projectId: string): Promise<string> {
+  async #claimSlug(projectsFolder: string, name: string, projectId: string, requestedSlug?: string): Promise<string> {
     const index = await this.foundation.local.projects.loadIndex();
     const reserved = new Set(index.projects.map(project => project.workspacePath));
     for (const pendingId of await this.foundation.local.projects.listPendingOperationProjectIds()) {
       const pending = await this.foundation.local.projects.loadProjectDocument(pendingId, 'pending-operation', decodeCollabPendingProjectOperation);
       if (pending) reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+    }
+    if (requestedSlug !== undefined) {
+      if (!isCollabWorkingCopySlug(requestedSlug)
+        || reserved.has(`${projectsFolder}/${requestedSlug}`)
+        || await this.#isOccupied(projectsFolder, requestedSlug)) {
+        throw new CollabError({ code: 'workspace-boundary-invalid', safeContext: { reason: 'cloud-entry-slug-unavailable' } });
+      }
+      return requestedSlug;
     }
     const base = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|-+$/g, '').slice(0, 58) || projectId.slice(0, 58);
     for (let suffix = 1; suffix < 10_000; suffix++) {
