@@ -200,7 +200,6 @@ describe('M5 review and Accept gate', () => {
       projectId,
       targetMemberId: managerMembership.member.id,
     }), 'Manager promotion');
-    unwrap(await managerFeature.listMembers(projectId), 'Manager role synchronization');
     expect(unwrap(
       await managerFeature.readSnapshot(projectId),
       'Manager snapshot',
@@ -328,9 +327,9 @@ describe('M5 review and Accept gate', () => {
     );
     expect(afterAccept.snapshot.openRequests).toEqual([]);
     expect(unwrap(
-      await managerFeature.readRequest(projectId, requestId),
+      await managerFeature.prepareReview(projectId, requestId),
       'Merged request',
-    )).toMatchObject({
+    ).detail).toMatchObject({
       comments: { comments: [{ id: comment.id }] },
       request: {
         commentCount: 1,

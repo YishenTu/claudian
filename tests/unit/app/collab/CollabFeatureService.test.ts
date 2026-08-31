@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import type { CollabChangeRequest } from '@claudian-collab/protocol';
 import {
   completeCollabFeatureOptions,
   TEST_COLLAB_FEATURE_PORT_METHODS,
@@ -28,6 +29,22 @@ import { type CollabPublishOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
+
+function publishedRequest(): CollabChangeRequest {
+  return {
+    commentCount: 0,
+    createdAt: CREATED_AT,
+    description: 'Published change',
+    firstBaseOid: 'a'.repeat(40),
+    id: 'request-a',
+    latestHeadOid: 'b'.repeat(40),
+    memberId: 'member-host',
+    revision: 1,
+    status: 'open',
+    ticketRelations: [],
+    updatedAt: CREATED_AT,
+  };
+}
 
 function projectIndex(): CollabLocalProjectIndex {
   return {
@@ -174,7 +191,6 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
       expiresAt: '2026-08-08T01:00:00.000Z',
     }),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(offer),
-    listMembers: jest.fn().mockResolvedValue(authoritySnapshot().members),
     removeMember: jest.fn().mockResolvedValue(undefined),
     revokeInvitation: jest.fn().mockResolvedValue(undefined),
     promoteManager: jest.fn().mockResolvedValue(undefined),
@@ -284,19 +300,7 @@ function publication(): jest.Mocked<CollabPublicationPort> {
         changedFiles: [],
         comments: [],
         currentMainOid: 'a'.repeat(40),
-        request: {
-          commentCount: 0,
-          createdAt: CREATED_AT,
-          description: 'Published change',
-          firstBaseOid: 'a'.repeat(40),
-          id: 'request-a',
-          latestHeadOid: 'b'.repeat(40),
-          memberId: 'member-host',
-          revision: 1,
-          status: 'open',
-          ticketRelations: [],
-          updatedAt: CREATED_AT,
-        },
+        request: publishedRequest(),
         reviewCondition: 'clean',
         reviewedHeadOid: 'b'.repeat(40),
       },
@@ -343,26 +347,6 @@ function publication(): jest.Mocked<CollabPublicationPort> {
         path: 'note.md',
         personal: { path: 'note.md', text: 'personal' },
       },
-    }),
-    readRequest: jest.fn().mockResolvedValue({
-      changedFiles: [],
-      comments: [],
-      currentMainOid: 'a'.repeat(40),
-      request: {
-        commentCount: 0,
-        createdAt: CREATED_AT,
-        description: 'Published change',
-        firstBaseOid: 'a'.repeat(40),
-        id: 'request-a',
-        latestHeadOid: 'b'.repeat(40),
-        memberId: 'member-host',
-        revision: 1,
-        status: 'open',
-        ticketRelations: [],
-        updatedAt: CREATED_AT,
-      },
-      reviewCondition: 'clean',
-      reviewedHeadOid: 'b'.repeat(40),
     }),
     readTicket: jest.fn(),
     readReviewFile: jest.fn().mockResolvedValue({
@@ -1337,10 +1321,6 @@ describe('CollabFeatureService', () => {
       membership: access,
     });
 
-    await expect(service.listMembers('project-alpha')).resolves.toMatchObject({
-      status: 'success',
-      value: [expect.objectContaining({ id: 'member-host' })],
-    });
     await expect(service.promoteManager({
       intentId: 'promote-a',
       managerResponsibilityOfferId: 'offer-a',
@@ -1518,7 +1498,7 @@ describe('CollabFeatureService', () => {
 
     service.closeProjectAdmission('project-alpha');
 
-    await expect(service.listMembers('project-alpha')).rejects.toMatchObject({
+    await expect(service.removeMember({ projectId: 'project-alpha', memberId: 'member-a' })).rejects.toMatchObject({
       code: 'project-retired',
     });
     await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
@@ -1528,7 +1508,7 @@ describe('CollabFeatureService', () => {
       cleanupChoice: 'keep-files',
       projectId: 'project-alpha',
     })).resolves.toMatchObject({ status: 'success' });
-    expect(access.listMembers).not.toHaveBeenCalled();
+    expect(access.removeMember).not.toHaveBeenCalled();
   });
 
   it('keeps every public async operation behind the global admission boundary', async () => {
@@ -1553,7 +1533,6 @@ describe('CollabFeatureService', () => {
     const projectRequest = { projectId: 'project-alpha' };
     const blockedOperations = [
       ['reconnectProject', [projectRequest]],
-      ['readGitStatus', ['project-alpha']],
       ['readSnapshot', ['project-alpha']],
       ['readPublishDescription', ['project-alpha']],
       ['publish', [projectRequest]],
@@ -1566,7 +1545,6 @@ describe('CollabFeatureService', () => {
       ['revokeInvitation', ['project-alpha']],
       ['startHost', ['project-alpha']],
       ['stopHost', ['project-alpha']],
-      ['readRequest', ['project-alpha']],
       ['prepareReview', ['project-alpha']],
       ['readReviewFile', [projectRequest]],
       ['addComment', [projectRequest]],
@@ -1579,7 +1557,6 @@ describe('CollabFeatureService', () => {
       ['reopenTicket', [projectRequest]],
       ['updateRequestMetadata', [projectRequest]],
       ['acceptRequest', [projectRequest]],
-      ['listMembers', ['project-alpha']],
       ['removeMember', [projectRequest]],
       ['leaveProject', [projectRequest]],
       ['createManagerResponsibilityOffer', [projectRequest]],
@@ -2243,10 +2220,7 @@ describe('CollabFeatureService', () => {
 
   it('never dispatches Accept while a distinct Manager is offline from the Host', async () => {
     const publish = publication();
-    const currentRequest = (await publish.readRequest(
-      'project-alpha',
-      'request-a',
-    )).request;
+    const currentRequest = publishedRequest();
     publish.readCoordinationSnapshot.mockResolvedValue({
       snapshot: {
         ...authoritySnapshot(),
@@ -2326,16 +2300,12 @@ describe('CollabFeatureService', () => {
     );
   });
 
-  it('reads request detail, adds comments, and disposes the client projection', async () => {
+  it('prepares a Request review, adds comments, and disposes the client projection', async () => {
     const publish = publication();
     const service = createService({
       publication: publish,
     });
 
-    await expect(service.readRequest('project-alpha', 'request-a')).resolves.toMatchObject({
-      status: 'success',
-      value: { request: { id: 'request-a' } },
-    });
     await expect(service.prepareReview('project-alpha', 'request-a')).resolves.toMatchObject({
       status: 'success',
       value: { comparisonKind: 'candidate' },
@@ -2379,7 +2349,7 @@ describe('CollabFeatureService', () => {
     publish.readCoordinationSnapshot.mockResolvedValue({
       snapshot: {
         ...authoritySnapshot(),
-        openRequests: [(await publish.readRequest('project-alpha', 'request-a')).request],
+        openRequests: [publishedRequest()],
       },
       source: 'online',
       stale: false,

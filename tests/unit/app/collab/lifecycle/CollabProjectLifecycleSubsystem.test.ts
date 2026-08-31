@@ -314,7 +314,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       createInvitation: jest.fn().mockResolvedValue({}),
       createManagerResponsibilityOffer: jest.fn().mockResolvedValue({}),
       demoteManager: jest.fn().mockResolvedValue(undefined),
-      listMembers: jest.fn().mockResolvedValue([]),
       promoteManager: jest.fn().mockResolvedValue(undefined),
       removeMember: jest.fn().mockResolvedValue(undefined),
       revokeInvitation: jest.fn().mockResolvedValue(undefined),

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabMember, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
 import type {
@@ -90,10 +90,6 @@ export interface CollabMembershipPort {
     request: CollabCreateManagerResponsibilityOfferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary>;
-  listMembers(
-    projectId: CollabProjectId,
-    options?: CollabOperationOptions,
-  ): Promise<readonly CollabMember[]>;
   removeMember(
     request: CollabRemoveMemberRequest,
     options?: CollabOperationOptions,
@@ -226,11 +222,6 @@ export interface CollabPublicationPort {
     options?: CollabOperationOptions,
   ): Promise<CollabCoordinationSnapshot>;
   readPublishDescription(projectId: CollabProjectId): Promise<string | null>;
-  readRequest(
-    projectId: CollabProjectId,
-    requestId: CollabRequestId,
-    options?: CollabOperationOptions,
-  ): Promise<CollabRequestDetail>;
   listRequestComments(
     projectId: CollabProjectId,
     requestId: CollabRequestId,
@@ -830,20 +821,6 @@ class CollabFeatureServiceCore {
     }
   }
 
-  async readGitStatus(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<CollabGitStatus>> {
-    try {
-      throwIfCancelled(options.signal);
-      const status = await this.options.publication.readGitStatus(projectId, options);
-      throwIfCancelled(options.signal);
-      return { status: 'success', value: status };
-    } catch (error) {
-      return this.#failureResult(error);
-    }
-  }
-
   async readSnapshot(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
@@ -1094,25 +1071,6 @@ class CollabFeatureServiceCore {
     await this.#refreshProjects();
     if (firstError instanceof Error) throw firstError;
     if (firstError) throw operationError('collab-host-restore-failed');
-  }
-
-  async readRequest(
-    projectId: CollabProjectId,
-    requestId: CollabRequestId,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<CollabRequestDetail>> {
-    try {
-      throwIfCancelled(options.signal);
-      const detail = await this.options.publication.readRequest(
-        projectId,
-        requestId,
-        options,
-      );
-      throwIfCancelled(options.signal);
-      return { status: 'success', value: detail };
-    } catch (error) {
-      return this.#failureResult(error);
-    }
   }
 
   async listRequestComments(
@@ -1511,20 +1469,6 @@ class CollabFeatureServiceCore {
       this.#throwIfDisposed();
       this.scheduleAcceptedMainSynchronization(request.projectId);
       return { status: 'success', value: outcome };
-    } catch (error) {
-      return this.#failureResult(error);
-    }
-  }
-
-  async listMembers(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabResult<readonly CollabMember[]>> {
-    try {
-      throwIfCancelled(options.signal);
-      const members = await this.options.membership.listMembers(projectId, options);
-      throwIfCancelled(options.signal);
-      return { status: 'success', value: members };
     } catch (error) {
       return this.#failureResult(error);
     }
@@ -2146,9 +2090,6 @@ export class CollabFeatureService implements CollabFeaturePort {
   resumeSetup: CollabFeaturePort['resumeSetup'] = (...args) => (
     this.runGlobal(() => this.core.resumeSetup(...args))
   );
-  readGitStatus: CollabFeaturePort['readGitStatus'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.readGitStatus(...args))
-  );
   readSnapshot: CollabFeaturePort['readSnapshot'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.readSnapshot(...args))
   );
@@ -2198,9 +2139,6 @@ export class CollabFeatureService implements CollabFeaturePort {
   stopHost: CollabFeaturePort['stopHost'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.stopHost(...args))
   );
-  readRequest: CollabFeaturePort['readRequest'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.readRequest(...args))
-  );
   prepareReview: CollabFeaturePort['prepareReview'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.prepareReview(...args))
   );
@@ -2246,9 +2184,6 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   acceptRequest: CollabFeaturePort['acceptRequest'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.acceptRequest(...args))
-  );
-  listMembers: CollabFeaturePort['listMembers'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.listMembers(...args))
   );
   removeMember: CollabFeaturePort['removeMember'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.removeMember(...args))

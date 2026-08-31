@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
+import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import {
   type CollabProjectInspectionLease,
@@ -255,14 +255,6 @@ export class CollabPublicationService {
         status: 'synchronized',
       },
     };
-  }
-
-  readRequest(
-    projectId: CollabProjectId,
-    requestId: string,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabRequestDetail> {
-    return this.projection.readRequest(projectId, requestId, options);
   }
 
   listRequestComments(

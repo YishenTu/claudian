@@ -1,13 +1,20 @@
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+
+import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import {
   type LocalProjectControlClientPort,
   LocalProjectControlPort,
 } from '@/app/collab/publish/LocalProjectControlPort';
+import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 const HEAD = 'a'.repeat(40);
 const MERGE = 'b'.repeat(40);
+function response(data: unknown) {
+  return { data, protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION, requestId: 'response-one' };
+}
 function mergedRequest() {
   return {
     commentCount: 0,
@@ -25,7 +32,7 @@ function mergedRequest() {
   };
 }
 
-function membership(): CollabLocalMembershipRecord {
+function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
       endpoint: 'https://192.168.1.20:54545',
@@ -101,6 +108,107 @@ function ticketClientMethods() {
 }
 
 describe('LocalProjectControlPort', () => {
+  it('keeps complete Request continuations on the captured membership and cancellation signal', async () => {
+    let currentMembership = membership();
+    const signal = new AbortController().signal;
+    const firstComment = {
+      authorMemberId: 'member-a',
+      body: 'First',
+      createdAt: CREATED_AT,
+      id: 'comment-a',
+      requestId: 'request-a',
+    };
+    const secondComment = { ...firstComment, id: 'comment-b', body: 'Second' };
+    const requests: Array<{
+      credential: string;
+      endpoint: string;
+      path: string;
+      signal?: AbortSignal;
+    }> = [];
+    const port = new LocalProjectControlPort({ loadMembership: async () => currentMembership }, {
+      createClient: trust => new ProjectControlClient({
+        requestWithMember: async (input, credential, options) => {
+          requests.push({ credential, endpoint: trust.endpoint, path: input.path, signal: options?.signal });
+          if (requests.length === 1) {
+            currentMembership = {
+              ...membership(),
+              member: { ...membership().member, credential: 'B'.repeat(43) },
+            };
+            return input.decode(response({
+              comments: { comments: [firstComment], nextCursor: 'request-next' },
+              currentMainOid: HEAD,
+              request: { ...mergedRequest(), commentCount: 2 },
+              reviewedHeadOid: HEAD,
+              reviewCondition: 'clean',
+            }));
+          }
+          return input.decode(response({ comments: [secondComment] }));
+        },
+      }),
+    });
+
+    const detail = await port.readRequest('project-a', 'request-a', { signal });
+
+    expect(detail.comments).toEqual({ comments: [firstComment, secondComment] });
+    for (const request of requests) expect(request.signal).toBe(signal);
+    expect(requests.map(({ credential, endpoint, path }) => ({ credential, endpoint, path }))).toEqual([
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v9/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
+    ]);
+  });
+
+  it('propagates cancellation from a complete Request continuation without returning a partial detail', async () => {
+    const controller = new AbortController();
+    const cancelled = new Error('cancelled continuation');
+    let firstPage = true;
+    const port = new LocalProjectControlPort({ loadMembership: async () => membership() }, {
+      createClient: () => new ProjectControlClient({
+        requestWithMember: async (input, _credential, options) => {
+          options?.signal?.throwIfAborted();
+          if (!firstPage) throw new Error('Unexpected uncancelled continuation');
+          firstPage = false;
+          const detail = input.decode(response({
+            comments: { comments: [], nextCursor: 'request-next' },
+            currentMainOid: HEAD,
+            request: { ...mergedRequest(), commentCount: 1 },
+            reviewedHeadOid: HEAD,
+            reviewCondition: 'clean',
+          }));
+          controller.abort(cancelled);
+          return detail;
+        },
+      }),
+    });
+
+    await expect(port.readRequest('project-a', 'request-a', { signal: controller.signal }))
+      .rejects.toBe(cancelled);
+  });
+
+  it('rejects a repeated continuation cursor with the LAN integrity diagnostic', async () => {
+    let firstPage = true;
+    const port = new LocalProjectControlPort({ loadMembership: async () => membership() }, {
+      createClient: () => new ProjectControlClient({
+        requestWithMember: async input => {
+          if (!firstPage) return input.decode(response({ comments: [], nextCursor: 'request-next' }));
+          firstPage = false;
+          return input.decode(response({
+            comments: { comments: [], nextCursor: 'request-next' },
+            currentMainOid: HEAD,
+            request: { ...mergedRequest(), commentCount: 1 },
+            reviewedHeadOid: HEAD,
+            reviewCondition: 'clean',
+          }));
+        },
+      }),
+    });
+
+    await expect(port.readRequest('project-a', 'request-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      recoveryActions: ['open-diagnostics'],
+      safeContext: { reason: 'control-comment-cursor-cycled' },
+    });
+  });
+
   it('keeps bounded first-page reads separate from complete UI assembly', async () => {
     const request = {
       commentCount: 2,

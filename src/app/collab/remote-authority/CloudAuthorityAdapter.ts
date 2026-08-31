@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
-  COLLAB_LIMITS,
   COLLAB_PROTOCOL_VERSION,
   type CollabAuthorityTransferOperation,
   type CollabAuthorityTransferOperationMap,
@@ -21,8 +20,6 @@ import {
   collabMemberRef,
   type CollabProjectRetirementOperation,
   type CollabProjectRetirementOperationMap,
-  type CollabRequestDetail,
-  type CollabTicketDetail,
   decodeCollabCloudCapabilityDocument,
   decodeCollabCloudErrorEnvelope,
   decodeCollabCloudProjectEventMessage,
@@ -50,6 +47,7 @@ import type {
   CollabAuthorityEventInvalidation,
   CollabAuthoritySession,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import { completeRequestDetail, completeTicketDetail } from '@/app/collab/remote-authority/completeCollabDetails';
 import {
   type CloudAuthorityArtifactTransport,
   NodeCloudAuthorityArtifactTransport,
@@ -169,39 +167,6 @@ function controlIntegrityError(reason: string): CollabError {
     recoveryActions: ['open-diagnostics'],
     safeContext: { reason },
   });
-}
-
-function assertCompleteRequestComments(detail: CollabRequestDetail): void {
-  if (detail.comments.comments.length > COLLAB_LIMITS.maxRequestComments) {
-    throw controlIntegrityError('cloud-control-request-comment-limit-exceeded');
-  }
-  if (detail.comments.comments.length !== detail.request.commentCount) {
-    throw controlIntegrityError('cloud-control-request-comment-count-mismatch');
-  }
-  if (detail.comments.comments.some(comment => comment.requestId !== detail.request.id)) {
-    throw controlIntegrityError('cloud-control-request-comment-owner-mismatch');
-  }
-}
-
-function assertCompleteTicketCollections(detail: CollabTicketDetail): void {
-  if (detail.comments.comments.length !== detail.ticket.commentCount) {
-    throw controlIntegrityError('cloud-control-ticket-comment-count-mismatch');
-  }
-  if (detail.comments.comments.length > COLLAB_LIMITS.maxTicketComments) {
-    throw controlIntegrityError('cloud-control-ticket-comment-limit-exceeded');
-  }
-  if (
-    detail.acceptedRelations.acceptedRelations.length
-    > COLLAB_LIMITS.maxTicketAcceptedRelations
-  ) {
-    throw controlIntegrityError('cloud-control-ticket-relation-limit-exceeded');
-  }
-  if (
-    detail.acceptedRelations.acceptedRelations.length
-    !== detail.ticket.acceptedRelationCount
-  ) {
-    throw controlIntegrityError('cloud-control-ticket-relation-count-mismatch');
-  }
 }
 
 function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
@@ -524,31 +489,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     options: Parameters<CollabAuthorityControlPort['readRequest']>[2] = {},
   ) {
     const detail = await this.#readRequestDetail(projectId, requestId, options);
-    if (!detail.comments.nextCursor) {
-      assertCompleteRequestComments(detail);
-      return detail;
-    }
-    const comments = [...detail.comments.comments];
-    const visited = new Set<string>();
-    let cursor: string | undefined = detail.comments.nextCursor;
-    while (cursor) {
-      if (visited.has(cursor)) {
-        throw controlIntegrityError('cloud-control-comment-cursor-cycled');
-      }
-      visited.add(cursor);
-      const page = await this.listRequestComments(projectId, requestId, {
-        cursor,
-        limit: COLLAB_LIMITS.maxCommentPageSize,
-      }, options);
-      comments.push(...page.comments);
-      if (comments.length > COLLAB_LIMITS.maxRequestComments) {
-        throw controlIntegrityError('cloud-control-request-comment-limit-exceeded');
-      }
-      cursor = page.nextCursor;
-    }
-    const complete = { ...detail, comments: { comments } };
-    assertCompleteRequestComments(complete);
-    return complete;
+    return completeRequestDetail(
+      detail,
+      (cursor, limit) => this.listRequestComments(projectId, requestId, { cursor, limit }, options),
+      reason => controlIntegrityError(`cloud-control-${reason}`),
+    );
   }
   readRequestPage(
     projectId: string,
@@ -561,52 +506,12 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     options: Parameters<CollabAuthorityControlPort['readTicket']>[2] = {},
   ) {
     const detail = await this.#readTicketDetail(projectId, ticketId, options);
-    if (!detail.comments.nextCursor && !detail.acceptedRelations.nextCursor) {
-      assertCompleteTicketCollections(detail);
-      return detail;
-    }
-    const comments = [...detail.comments.comments];
-    const acceptedRelations = [...detail.acceptedRelations.acceptedRelations];
-    const visited = new Set<string>();
-    let commentCursor: string | undefined = detail.comments.nextCursor;
-    while (commentCursor) {
-      if (visited.has(commentCursor)) {
-        throw controlIntegrityError('cloud-control-comment-cursor-cycled');
-      }
-      visited.add(commentCursor);
-      const page = await this.listTicketComments(projectId, ticketId, {
-        cursor: commentCursor,
-        limit: COLLAB_LIMITS.maxCommentPageSize,
-      }, options);
-      comments.push(...page.comments);
-      if (comments.length > COLLAB_LIMITS.maxTicketComments) {
-        throw controlIntegrityError('cloud-control-ticket-comment-limit-exceeded');
-      }
-      commentCursor = page.nextCursor;
-    }
-    let relationCursor: string | undefined = detail.acceptedRelations.nextCursor;
-    while (relationCursor) {
-      if (visited.has(relationCursor)) {
-        throw controlIntegrityError('cloud-control-relation-cursor-cycled');
-      }
-      visited.add(relationCursor);
-      const page = await this.listTicketAcceptedRelations(projectId, ticketId, {
-        cursor: relationCursor,
-        limit: COLLAB_LIMITS.maxRelationsPerPage,
-      }, options);
-      acceptedRelations.push(...page.acceptedRelations);
-      if (acceptedRelations.length > COLLAB_LIMITS.maxTicketAcceptedRelations) {
-        throw controlIntegrityError('cloud-control-ticket-relation-limit-exceeded');
-      }
-      relationCursor = page.nextCursor;
-    }
-    const complete = {
-      ...detail,
-      acceptedRelations: { acceptedRelations },
-      comments: { comments },
-    };
-    assertCompleteTicketCollections(complete);
-    return complete;
+    return completeTicketDetail(
+      detail,
+      (cursor, limit) => this.listTicketComments(projectId, ticketId, { cursor, limit }, options),
+      (cursor, limit) => this.listTicketAcceptedRelations(projectId, ticketId, { cursor, limit }, options),
+      reason => controlIntegrityError(`cloud-control-${reason}`),
+    );
   }
   readTicketPage(
     projectId: string,

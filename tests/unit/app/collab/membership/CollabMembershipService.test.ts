@@ -124,7 +124,7 @@ function safetyContext(
 }
 
 describe('CollabMembershipService', () => {
-  it('lists projected Members and routes invitations through shared authority control', async () => {
+  it('routes invitations through shared authority control', async () => {
     const snapshot: jest.Mocked<CollabMembershipSnapshotPort> = {
       readCoordinationSnapshot: jest.fn().mockResolvedValue(coordination()),
     };
@@ -133,7 +133,6 @@ describe('CollabMembershipService', () => {
       createIdempotencyKey: kind => `${kind}-key`,
     }, safetyContext());
 
-    await expect(service.listMembers('project-alpha')).resolves.toHaveLength(2);
     await expect(service.createInvitation('project-alpha')).resolves.toMatchObject({
       encodedInvitation: 'claudian-collab:v2:invite-alpha',
     });

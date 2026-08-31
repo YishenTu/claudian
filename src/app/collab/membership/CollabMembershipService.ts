@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type CollabMember, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
+import { type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   CollabProjectLifecycleAdmission,
@@ -88,21 +88,6 @@ export class CollabMembershipService {
     this.createIdempotencyKey = options.createIdempotencyKey ?? (kind => (
       `${kind}-${randomUUID().replaceAll('-', '')}`
     ));
-  }
-
-  async listMembers(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions = {},
-  ): Promise<readonly CollabMember[]> {
-    const result = await this.snapshots.readCoordinationSnapshot(projectId, options);
-    if (result.snapshot.project.id !== projectId) {
-      throw new CollabError({
-        code: 'project-not-found',
-        recoveryActions: ['retry'],
-        safeContext: { reason: 'membership-snapshot-project-mismatch' },
-      });
-    }
-    return result.snapshot.members;
   }
 
   async createInvitation(

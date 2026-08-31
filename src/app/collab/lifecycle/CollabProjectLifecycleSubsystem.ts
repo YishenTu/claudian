@@ -308,9 +308,6 @@ export class CollabProjectLifecycleSubsystem {
       demoteManager: (request, operationOptions) => (
         membership.demoteManager(request, operationOptions)
       ),
-      listMembers: (projectId, operationOptions) => (
-        membership.listMembers(projectId, operationOptions)
-      ),
       promoteManager: (request, operationOptions) => (
         membership.promoteManager(request, operationOptions)
       ),

@@ -1,4 +1,4 @@
-import { type AcceptResponse, COLLAB_LIMITS, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentResponse } from '@claudian-collab/protocol';
+import { type AcceptResponse, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentResponse } from '@claudian-collab/protocol';
 
 import type {
   CollabLocalProjectRepository,
@@ -12,6 +12,7 @@ import type {
   PublishRequestEnsureInput,
   PublishRequestEnsurePort,
 } from '@/app/collab/publish/PublishCoordinator';
+import { completeRequestDetail, completeTicketDetail } from '@/app/collab/remote-authority/completeCollabDetails';
 import { type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabCreateTicketRequest, type CollabListTicketsRequest, type CollabProjectSnapshot, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -103,39 +104,6 @@ function controlError(
   });
 }
 
-function assertCompleteTicketCollections(detail: CollabTicketDetail): void {
-  if (detail.comments.comments.length !== detail.ticket.commentCount) {
-    throw controlError('authority-integrity-error', 'control-ticket-comment-count-mismatch');
-  }
-  if (detail.comments.comments.length > COLLAB_LIMITS.maxTicketComments) {
-    throw controlError('authority-integrity-error', 'control-ticket-comment-limit-exceeded');
-  }
-  if (
-    detail.acceptedRelations.acceptedRelations.length
-    > COLLAB_LIMITS.maxTicketAcceptedRelations
-  ) {
-    throw controlError('authority-integrity-error', 'control-ticket-relation-limit-exceeded');
-  }
-  if (
-    detail.acceptedRelations.acceptedRelations.length
-    !== detail.ticket.acceptedRelationCount
-  ) {
-    throw controlError('authority-integrity-error', 'control-ticket-relation-count-mismatch');
-  }
-}
-
-function assertCompleteRequestComments(detail: CollabRequestDetail): void {
-  if (detail.comments.comments.length > COLLAB_LIMITS.maxRequestComments) {
-    throw controlError('authority-integrity-error', 'control-request-comment-limit-exceeded');
-  }
-  if (detail.comments.comments.length !== detail.request.commentCount) {
-    throw controlError('authority-integrity-error', 'control-request-comment-count-mismatch');
-  }
-  if (detail.comments.comments.some(comment => comment.requestId !== detail.request.id)) {
-    throw controlError('authority-integrity-error', 'control-request-comment-owner-mismatch');
-  }
-}
-
 export class LocalProjectControlPort implements PublishRequestEnsurePort {
   private readonly createClient: NonNullable<LocalProjectControlPortOptions['createClient']>;
 
@@ -196,7 +164,14 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabRequestDetail> {
     const { detail, session } = await this.readRequestFirstPage(projectId, requestId, options);
-    return this.withCompleteRequestComments(session, projectId, detail, options);
+    return completeRequestDetail(detail, (cursor, limit) => session.client.listRequestComments({
+      cursor,
+      limit,
+      memberCredential: session.memberCredential,
+      projectId,
+      requestId: detail.request.id,
+      ...(options.signal ? { signal: options.signal } : {}),
+    }), reason => controlError('authority-integrity-error', `control-${reason}`));
   }
 
   async readRequestPage(
@@ -223,50 +198,6 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       throw controlError('authority-integrity-error', 'control-request-detail-mismatch');
     }
     return { detail, session };
-  }
-
-  private async withCompleteRequestComments(
-    session: {
-      readonly client: LocalProjectControlClientPort;
-      readonly memberCredential: string;
-    },
-    projectId: string,
-    detail: CollabRequestDetail,
-    options: { readonly signal?: AbortSignal },
-  ): Promise<CollabRequestDetail> {
-    // The wire carries bounded pages; only the assembled detail is returned.
-    if (!detail.comments.nextCursor) {
-      assertCompleteRequestComments(detail);
-      return detail;
-    }
-    const comments = [...detail.comments.comments];
-    const visited = new Set<string>();
-    let cursor: string | undefined = detail.comments.nextCursor;
-    while (cursor) {
-      if (visited.has(cursor)) {
-        throw controlError('authority-integrity-error', 'control-comment-cursor-cycled');
-      }
-      visited.add(cursor);
-      const page = await session.client.listRequestComments({
-        cursor,
-        limit: COLLAB_LIMITS.maxCommentPageSize,
-        memberCredential: session.memberCredential,
-        projectId,
-        requestId: detail.request.id,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      comments.push(...page.comments);
-      if (comments.length > COLLAB_LIMITS.maxRequestComments) {
-        throw controlError('authority-integrity-error', 'control-request-comment-limit-exceeded');
-      }
-      cursor = page.nextCursor;
-    }
-    const complete = {
-      ...detail,
-      comments: { comments },
-    };
-    assertCompleteRequestComments(complete);
-    return complete;
   }
 
   async createComment(input: {
@@ -309,7 +240,26 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketDetail> {
     const { detail, session } = await this.readTicketFirstPage(projectId, ticketId, options);
-    return this.withCompleteTicketCollections(session, projectId, detail, options);
+    return completeTicketDetail(
+      detail,
+      (cursor, limit) => session.client.listTicketComments({
+        cursor,
+        limit,
+        memberCredential: session.memberCredential,
+        projectId,
+        ticketId: detail.ticket.id,
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
+      (cursor, limit) => session.client.listTicketAcceptedRelations({
+        cursor,
+        limit,
+        memberCredential: session.memberCredential,
+        projectId,
+        ticketId: detail.ticket.id,
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
+      reason => controlError('authority-integrity-error', `control-${reason}`),
+    );
   }
 
   async readTicketPage(
@@ -336,75 +286,6 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       throw controlError('authority-integrity-error', 'control-ticket-detail-mismatch');
     }
     return { detail, session };
-  }
-
-  private async withCompleteTicketCollections(
-    session: {
-      readonly client: LocalProjectControlClientPort;
-      readonly memberCredential: string;
-    },
-    projectId: string,
-    detail: CollabTicketDetail,
-    options: { readonly signal?: AbortSignal },
-  ): Promise<CollabTicketDetail> {
-    // The wire carries bounded pages; only the assembled detail is returned.
-    if (!detail.comments.nextCursor && !detail.acceptedRelations.nextCursor) {
-      assertCompleteTicketCollections(detail);
-      return detail;
-    }
-    const comments = [...detail.comments.comments];
-    const acceptedRelations = [...detail.acceptedRelations.acceptedRelations];
-    const visited = new Set<string>();
-    let commentCursor: string | undefined = detail.comments.nextCursor;
-    while (commentCursor) {
-      if (visited.has(commentCursor)) {
-        throw controlError('authority-integrity-error', 'control-comment-cursor-cycled');
-      }
-      visited.add(commentCursor);
-      const page = await session.client.listTicketComments({
-        cursor: commentCursor,
-        limit: COLLAB_LIMITS.maxCommentPageSize,
-        memberCredential: session.memberCredential,
-        projectId,
-        ticketId: detail.ticket.id,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      comments.push(...page.comments);
-      if (comments.length > COLLAB_LIMITS.maxTicketComments) {
-        throw controlError('authority-integrity-error', 'control-ticket-comment-limit-exceeded');
-      }
-      commentCursor = page.nextCursor;
-    }
-    let relationCursor: string | undefined = detail.acceptedRelations.nextCursor;
-    while (relationCursor) {
-      if (visited.has(relationCursor)) {
-        throw controlError('authority-integrity-error', 'control-relation-cursor-cycled');
-      }
-      visited.add(relationCursor);
-      const page = await session.client.listTicketAcceptedRelations({
-        cursor: relationCursor,
-        limit: COLLAB_LIMITS.maxRelationsPerPage,
-        memberCredential: session.memberCredential,
-        projectId,
-        ticketId: detail.ticket.id,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      acceptedRelations.push(...page.acceptedRelations);
-      if (
-        acceptedRelations.length
-        > COLLAB_LIMITS.maxTicketAcceptedRelations
-      ) {
-        throw controlError('authority-integrity-error', 'control-ticket-relation-limit-exceeded');
-      }
-      relationCursor = page.nextCursor;
-    }
-    const complete = {
-      ...detail,
-      acceptedRelations: { acceptedRelations },
-      comments: { comments },
-    };
-    assertCompleteTicketCollections(complete);
-    return complete;
   }
 
   async listRequestComments(

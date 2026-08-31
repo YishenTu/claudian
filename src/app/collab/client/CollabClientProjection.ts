@@ -1,26 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
-import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, isCollabOpaqueId } from '@claudian-collab/protocol';
+import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, isCollabOpaqueId } from '@claudian-collab/protocol';
 
-import {
-  type CollabProjectResource,
+import type {
+  CollabProjectResource,
   CollabProjectWorkSessionRegistry,
 } from '@/app/collab/activity/CollabProjectWorkSession';
-import {
-  ProjectEventClient,
-  type ProjectEventClientInput,
-  type ProjectEventInvalidation,
-} from '@/app/collab/client/ProjectEventClient';
 import type {
   CollabLocalMembershipRecord,
   CollabLocalProjectDocumentBase,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
-import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { CollabAuthorityEventInvalidation, CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import type {
@@ -92,22 +86,11 @@ export interface CollabClientCommentInput {
   readonly requestId: string;
 }
 
-export interface CollabClientProjectionEventPort {
-  dispose(): void;
-  start(): void;
-}
-
-export type CollabClientProjectionEventFactory = (
-  input: ProjectEventClientInput,
-  onInvalidation: (invalidation: ProjectEventInvalidation) => Promise<number>,
-) => CollabClientProjectionEventPort;
-
 interface CollabClientProjectionBaseOptions {
-  readonly authoritySessions?: CollabAuthoritySessionFactory;
-  readonly createEventClient?: CollabClientProjectionEventFactory;
+  readonly authoritySessions: CollabAuthoritySessionFactory;
   readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   readonly now?: () => Date;
-  readonly sessions?: CollabProjectWorkSessionRegistry;
+  readonly sessions: CollabProjectWorkSessionRegistry;
 }
 
 export type CollabClientProjectionOptions = CollabClientProjectionBaseOptions & (
@@ -374,12 +357,10 @@ function retirementResultFromError(
 }
 
 export class CollabClientProjection {
-   readonly #createEventClient: CollabClientProjectionEventFactory;
-   readonly #authoritySessions?: CollabAuthoritySessionFactory;
+   readonly #authoritySessions: CollabAuthoritySessionFactory;
   private disposed = false;
   private readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   private readonly now: () => Date;
-   readonly #ownsSessions: boolean;
   private readonly retirement?: Pick<RetirementClientHandler, 'handle'>;
   private readonly retirementAdmission?: CollabClientRetirementAdmission;
   private readonly sessions: CollabProjectWorkSessionRegistry;
@@ -387,17 +368,14 @@ export class CollabClientProjection {
   constructor(
     private readonly store: CollabClientProjectionStore,
     private readonly control: CollabClientProjectionControlPort,
-    options: CollabClientProjectionOptions = {},
+    options: CollabClientProjectionOptions,
   ) {
     this.#authoritySessions = options.authoritySessions;
-    this.#createEventClient = options.createEventClient
-      ?? ((input, onInvalidation) => new ProjectEventClient(input, onInvalidation));
     this.managerResponsibility = options.managerResponsibility;
     this.now = options.now ?? (() => new Date());
-    this.#ownsSessions = options.sessions === undefined;
     this.retirement = options.retirement;
     this.retirementAdmission = options.retirementAdmission;
-    this.sessions = options.sessions ?? new CollabProjectWorkSessionRegistry();
+    this.sessions = options.sessions;
   }
 
   async readSnapshot(
@@ -545,18 +523,6 @@ export class CollabClientProjection {
     return { detail, source: 'online', stale: false };
   }
 
-  async readRequest(
-    projectId: string,
-    requestId: string,
-    options: CollabOperationOptions = {},
-  ): Promise<CollabRequestDetail> {
-    this.#assertOpen();
-    return this.#runWithRetirementFallback(
-      projectId,
-      () => this.control.readRequest(projectId, requestId, options),
-    );
-  }
-
   async listRequestComments(
     projectId: string,
     requestId: string,
@@ -657,36 +623,15 @@ export class CollabClientProjection {
         throw projectionError('project-not-found', 'projection-membership-missing');
       }
       const listeners = new Set<(snapshot: CollabProjectSnapshot) => void>();
-      let client: CollabProjectResource;
-      if (this.#authoritySessions) {
-        const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
-          () => this.#authoritySessions!.create(membership),
-        );
-        this.#assertOpen();
-        work.assertGeneration(generation);
-        client = authority.events.connect({
-          afterSequence: membership.lastEventSequence,
-          onInvalidation: invalidation => this.#refreshFromEvent(projectId, invalidation),
-        });
-      } else {
-        if (!isCollabLocalLanMembership(membership)) {
-          throw projectionError('host-stopped', 'projection-authority-session-unavailable');
-        }
-        const endpoint = membership.authority.endpoint;
-        const caCertificatePem = membership.authority.hostCaCertificatePem;
-        if (!endpoint || !caCertificatePem) {
-          throw projectionError('host-stopped', 'projection-host-endpoint-unavailable');
-        }
-        const lanClient = this.#createEventClient({
-          caCertificatePem,
-          endpoint,
-          lastSequence: membership.lastEventSequence,
-          memberCredential: membership.member.credential,
-          projectId,
-        }, invalidation => this.#refreshFromEvent(projectId, invalidation));
-        lanClient.start();
-        client = lanClient;
-      }
+      const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
+        () => this.#authoritySessions.create(membership),
+      );
+      this.#assertOpen();
+      work.assertGeneration(generation);
+      const client = authority.events.connect({
+        afterSequence: membership.lastEventSequence,
+        onInvalidation: invalidation => this.#refreshFromEvent(projectId, invalidation),
+      });
       session = { client, dispose: () => client.dispose(), listeners };
       work.adoptEventConnection(session, generation);
     }
@@ -708,7 +653,6 @@ export class CollabClientProjection {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.#ownsSessions) void this.sessions.close();
   }
 
   async closeProject(projectId: string): Promise<void> {
@@ -826,7 +770,7 @@ export class CollabClientProjection {
 
    #refreshFromEvent(
     projectId: string,
-    invalidation: ProjectEventInvalidation,
+    invalidation: CollabAuthorityEventInvalidation,
   ): Promise<number> {
     if (invalidation.kind === 'retired') {
       return this.#handleRetirementEvent(projectId, invalidation);
@@ -852,7 +796,7 @@ export class CollabClientProjection {
 
    #handleRetirementEvent(
     projectId: string,
-    invalidation: Extract<ProjectEventInvalidation, { readonly kind: 'retired' }>,
+    invalidation: Extract<CollabAuthorityEventInvalidation, { readonly kind: 'retired' }>,
   ): Promise<number> {
     // The event callback is owned by this Project session. Detach it before
     // convergence closes and drains that session, then let the lifecycle-owned

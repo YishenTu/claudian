@@ -19,6 +19,7 @@ import {
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 
+import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { ManagerResponsibilityService } from '@/app/collab/authority/ManagerResponsibilityService';
@@ -26,7 +27,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
-import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
+import { CollabClientProjection, type CollabClientProjectionOptions } from '@/app/collab/client/CollabClientProjection';
 import {
   CollabLocalProjectRepository,
   isCollabLocalLanMembership,
@@ -69,6 +70,8 @@ import {
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import { LocalProjectControlPort } from '@/app/collab/publish/LocalProjectControlPort';
 import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
+import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
+import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { parseInstallationKey } from '@/core/device/InstallationKey';
 
@@ -77,6 +80,16 @@ const PROJECT_ID = 'project-alpha';
 const MAIN_OID = 'a'.repeat(40);
 const INSTALLATION_A = parseInstallationKey(`device-${'a'.repeat(64)}`);
 const INSTALLATION_B = parseInstallationKey(`device-${'b'.repeat(64)}`);
+const projectionRegistries = new Set<CollabProjectWorkSessionRegistry>();
+
+function projectionOptions(): Pick<CollabClientProjectionOptions, 'authoritySessions' | 'sessions'> {
+  const sessions = new CollabProjectWorkSessionRegistry();
+  projectionRegistries.add(sessions);
+  return {
+    authoritySessions: new CollabAuthoritySessionFactory([new LanAuthorityAdapter()]),
+    sessions,
+  };
+}
 
 function hostLockPath(root: string): string {
   return path.join(
@@ -175,6 +188,7 @@ async function membershipAccess(
     projects,
     new LocalProjectControlPort(projects),
     {
+      ...projectionOptions(),
       managerResponsibility: {
         reconcileSnapshot: snapshot => {
           if (!membership.service) throw new Error('Membership service unavailable');
@@ -532,6 +546,8 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   afterEach(async () => {
+    await Promise.all([...projectionRegistries].map(registry => registry.close()));
+    projectionRegistries.clear();
     await coordinator.close();
     await authorityDatabase.close();
     await new Promise<void>(resolve => {
@@ -712,7 +728,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
       targetMemberId: join.joinAttempt.member.id,
     });
-    await memberAccess.service.listMembers(PROJECT_ID);
+    await memberAccess.projection.readSnapshot(PROJECT_ID);
     expect(await localProjects.loadMembership(PROJECT_ID)).toMatchObject({
       member: { role: 'manager' },
     });
@@ -731,7 +747,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
       targetMemberId: join.joinAttempt.member.id,
     });
-    await memberAccess.service.listMembers(PROJECT_ID);
+    await memberAccess.projection.readSnapshot(PROJECT_ID);
     expect(await memberProjects.loadMembership(PROJECT_ID)).toMatchObject({
       member: { role: 'member' },
     });
@@ -1985,7 +2001,7 @@ describe('LanHostCoordinator production transport', () => {
   it('reads a maximal-body Ticket detail through the real Host and client', async () => {
     await coordinator.startProject(PROJECT_ID);
     const control = new LocalProjectControlPort(localProjects);
-    const projection = new CollabClientProjection(localProjects, control);
+    const projection = new CollabClientProjection(localProjects, control, projectionOptions());
     await projection.readSnapshot(PROJECT_ID);
 
     // Quotes maximize escaping for this body while remaining valid Markdown;
@@ -2017,6 +2033,7 @@ describe('LanHostCoordinator production transport', () => {
     await coordinator.startProject(PROJECT_ID);
     const control = new LocalProjectControlPort(localProjects);
     const projection = new CollabClientProjection(localProjects, control, {
+      ...projectionOptions(),
       now: () => new Date('2026-08-08T00:10:00.000Z'),
     });
     await projection.readSnapshot(PROJECT_ID);

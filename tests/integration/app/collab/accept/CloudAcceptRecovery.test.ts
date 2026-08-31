@@ -9,6 +9,7 @@ import {
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
 
+import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
 import {
   type CollabLocalCloudMembershipRecord,
@@ -38,6 +39,8 @@ import { ReconciliationRepository } from '@/app/collab/reconciliation/Reconcilia
 import {
   CloudAuthorityAdapter,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
+import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type {
   CloudAuthorityHttpRequest,
   CloudAuthorityHttpResponse,
@@ -56,8 +59,11 @@ const ACCEPTED_AT = '2026-08-23T00:01:00.000Z';
 
 describe('Cloud Accept recovery integration', () => {
   let root: string;
+  const registries = new Set<CollabProjectWorkSessionRegistry>();
 
   afterEach(async () => {
+    await Promise.all([...registries].map(registry => registry.close()));
+    registries.clear();
     if (root) await rm(root, { force: true, recursive: true });
   });
 
@@ -156,10 +162,16 @@ describe('Cloud Accept recovery integration', () => {
       baseOid,
       acceptedOid,
     );
-    const firstAuthority = await new CloudAuthorityAdapter({
+    const firstSessions = new CollabProjectWorkSessionRegistry();
+    registries.add(firstSessions);
+    const firstAuthoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
       request: input => transport.request(input),
-    }).create(membership());
-    const firstProjection = new CollabClientProjection(projects, firstAuthority.control);
+    })]);
+    const firstProjection = new CollabClientProjection(
+      projects,
+      new CollabAuthorityControlRouter(projects, firstSessions, firstAuthoritySessions),
+      { authoritySessions: firstAuthoritySessions, sessions: firstSessions },
+    );
 
     await expect(firstProjection.acceptRequest(
       PROJECT_ID,
@@ -173,15 +185,19 @@ describe('Cloud Accept recovery integration', () => {
     )).rejects.toMatchObject({ code: 'endpoint-unreachable' });
     expect(await git.resolveRef(authorityPath, 'refs/heads/main')).toBe(acceptedOid);
     firstProjection.dispose();
-    firstAuthority.dispose();
+    await firstSessions.close();
 
-    const restartedAuthority = await new CloudAuthorityAdapter({
+    const sessions = new CollabProjectWorkSessionRegistry();
+    registries.add(sessions);
+    const authoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
       request: input => transport.request(input),
-    }).create(await projects.loadMembership(PROJECT_ID) as CollabLocalCloudMembershipRecord);
+    })]);
+    const restartedProjects = new CollabLocalProjectRepository(vaultRoot);
+    const control = new CollabAuthorityControlRouter(restartedProjects, sessions, authoritySessions);
     const projection = new CollabClientProjection(
-      new CollabLocalProjectRepository(vaultRoot),
-      restartedAuthority.control,
-      { now: () => new Date(ACCEPTED_AT) },
+      restartedProjects,
+      control,
+      { authoritySessions, now: () => new Date(ACCEPTED_AT), sessions },
     );
 
     await expect(projection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
@@ -193,7 +209,7 @@ describe('Cloud Accept recovery integration', () => {
       source: 'online',
       stale: false,
     });
-    await expect(projection.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+    await expect(control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       currentMainOid: acceptedOid,
       request: {
         id: 'request-one',
@@ -219,7 +235,7 @@ describe('Cloud Accept recovery integration', () => {
     const reconciliation = new ReconciliationCoordinator(
       fixedProject(context),
       new ReconciliationRepository(repository, acceptedState),
-      restartedAuthority.control,
+      control,
       new ReconciliationMutationSafety(acceptedState),
       publicationState,
       { createOperationId: () => 'cloud-accept-recovery' },
@@ -244,7 +260,7 @@ describe('Cloud Accept recovery integration', () => {
     expect(transport.acceptIntents).toEqual(['accept-lost-response']);
 
     projection.dispose();
-    restartedAuthority.dispose();
+    await sessions.close();
   });
 });
 

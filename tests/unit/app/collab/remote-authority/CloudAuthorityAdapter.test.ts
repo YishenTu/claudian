@@ -829,14 +829,53 @@ describe('CloudAuthorityAdapter', () => {
     });
     const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
 
+    await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+      comments: { comments: [{ id: 'request-comment-one' }], nextCursor: 'request-next' },
+    });
+    expect(request.mock.calls.map(([input]) => input.url.split('/').at(-1))).toEqual([
+      'capabilities', 'getRequest',
+    ]);
     await expect(control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       comments: { comments: [{ id: 'request-comment-one' }, { id: 'request-comment-two' }] },
+    });
+    await expect(control.readTicketPage(PROJECT_ID, 'ticket-one')).resolves.toMatchObject({
+      acceptedRelations: { acceptedRelations: [], nextCursor: 'relation-next' },
+      comments: { comments: [{ id: 'ticket-comment-one' }], nextCursor: 'comment-next' },
     });
     await expect(control.readTicket(PROJECT_ID, 'ticket-one')).resolves.toMatchObject({
       acceptedRelations: { acceptedRelations: [{ id: 'relation-one' }] },
       comments: {
         comments: [{ id: 'ticket-comment-one' }, { id: 'ticket-comment-next' }],
       },
+    });
+  });
+
+  it('rejects a Ticket cursor reused across complete comment and relation collections', async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce({
+        body: collabCloudCapabilityDocument(['tickets'], limits),
+        contentType: 'application/json',
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        body: collabCloudSuccessEnvelope('response-detail', ticketDetail({
+          acceptedRelations: { acceptedRelations: [], nextCursor: 'same-cursor' },
+          comments: { comments: [], nextCursor: 'same-cursor' },
+        })),
+        contentType: 'application/json',
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        body: collabCloudSuccessEnvelope('response-comments', { comments: [] }),
+        contentType: 'application/json',
+        status: 200,
+      });
+    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+
+    await expect(control.readTicket(PROJECT_ID, 'ticket-one')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      recoveryActions: ['open-diagnostics'],
+      safeContext: { reason: 'cloud-control-relation-cursor-cycled' },
     });
   });
 

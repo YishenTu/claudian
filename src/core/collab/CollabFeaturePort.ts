@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMember, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestDetail, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
+import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -395,7 +395,6 @@ export interface CollabFeaturePort {
   joinProject(request: CollabJoinProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabLocalProjectSummary>>;
   reconnectProject(request: CollabReconnectProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabLocalProjectSummary>>;
   resumeSetup(request: CollabResumeSetupRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabLocalProjectSummary>>;
-  readGitStatus(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabGitStatus>>;
   readSnapshot(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabCoordinationSnapshot>>;
   readPublishDescription(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<string | null>>;
   publish(request: CollabPublishRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabPublishOutcome>>;
@@ -411,7 +410,6 @@ export interface CollabFeaturePort {
   claimLegacyHostInstallation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabLocalProjectSummary>>;
   startHost(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabHostSession>>;
   stopHost(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabHostSession>>;
-  readRequest(projectId: CollabProjectId, requestId: CollabRequestId, options?: CollabOperationOptions): Promise<CollabResult<CollabRequestDetail>>;
   prepareReview(projectId: CollabProjectId, requestId: CollabRequestId, options?: CollabOperationOptions): Promise<CollabResult<CollabRequestReview>>;
   readReviewFile(request: CollabReviewFileRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabReviewFileContent>>;
   addComment(request: CollabAddCommentRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabComment>>;
@@ -424,7 +422,6 @@ export interface CollabFeaturePort {
   reopenTicket(request: CollabChangeTicketStatusRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabTicketSummary>>;
   updateRequestMetadata(request: CollabUpdateRequestMetadataRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabChangeRequest>>;
   acceptRequest(request: CollabAcceptRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAcceptOutcome>>;
-  listMembers(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<readonly CollabMember[]>>;
   removeMember(request: CollabRemoveMemberRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   leaveProject(request: CollabLeaveProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   createManagerResponsibilityOffer(request: CollabCreateManagerResponsibilityOfferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabManagerResponsibilityOfferSummary>>;
