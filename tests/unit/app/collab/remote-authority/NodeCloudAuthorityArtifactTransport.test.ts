@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 import { PassThrough, Readable } from 'node:stream';
 
 import { collabCloudErrorEnvelope,CollabError } from '@claudian-collab/protocol';
@@ -17,6 +17,7 @@ async function listen(server: Server): Promise<string> {
 }
 
 afterEach(async () => {
+  jest.useRealTimers();
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => {
     server.closeAllConnections();
     server.close(() => resolve());
@@ -99,21 +100,15 @@ describe('NodeCloudAuthorityArtifactTransport', () => {
   });
 
   it('resets the idle timeout while a download continues making progress', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    let serverResponse!: ServerResponse;
     const origin = await listen(createServer((_request, response) => {
+      serverResponse = response;
       response.writeHead(200, {
         'content-length': '5',
         'content-type': 'application/octet-stream',
       });
-      let remaining = 5;
-      const interval = setInterval(() => {
-        response.write('x');
-        remaining -= 1;
-        if (remaining === 0) {
-          clearInterval(interval);
-          response.end();
-        }
-      }, 10);
-      response.once('close', () => clearInterval(interval));
+      response.write('x');
     }));
     const response = await new NodeCloudAuthorityArtifactTransport(20, 200).download({
       headers: {},
@@ -122,10 +117,16 @@ describe('NodeCloudAuthorityArtifactTransport', () => {
     });
     if (!('byteCount' in response)) throw new Error('expected artifact response');
 
-    const chunks: Buffer[] = [];
-    for await (const chunk of response.body) chunks.push(Buffer.from(chunk));
+    const chunks = response.body[Symbol.asyncIterator]();
+    await expect(chunks.next()).resolves.toEqual({ done: false, value: Buffer.from('x') });
+    for (let index = 1; index < 5; index += 1) {
+      await jest.advanceTimersByTimeAsync(10);
+      serverResponse.write('x');
+      await expect(chunks.next()).resolves.toEqual({ done: false, value: Buffer.from('x') });
+    }
+    serverResponse.end();
 
-    expect(Buffer.concat(chunks).toString('utf8')).toBe('xxxxx');
+    await expect(chunks.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it('closes the HTTP response when the artifact consumer destroys its body', async () => {
@@ -155,6 +156,7 @@ describe('NodeCloudAuthorityArtifactTransport', () => {
   });
 
   it('times out an idle stream even when its absolute deadline remains open', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const origin = await listen(createServer((_request, response) => {
       response.writeHead(200, {
         'content-length': '2',
@@ -169,19 +171,24 @@ describe('NodeCloudAuthorityArtifactTransport', () => {
     });
     if (!('byteCount' in response)) throw new Error('expected artifact response');
 
-    await expect((async () => {
-      for await (const chunk of response.body) void chunk;
-    })()).rejects.toMatchObject({ code: 'operation-timeout' });
+    const chunks = response.body[Symbol.asyncIterator]();
+    await expect(chunks.next()).resolves.toEqual({ done: false, value: Buffer.from('x') });
+    await Promise.all([
+      expect(chunks.next()).rejects.toMatchObject({ code: 'operation-timeout' }),
+      jest.advanceTimersByTimeAsync(20),
+    ]);
   });
 
   it('enforces the absolute deadline despite continuous stream progress', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    let serverResponse!: ServerResponse;
     const origin = await listen(createServer((_request, response) => {
+      serverResponse = response;
       response.writeHead(200, {
         'content-length': '10',
         'content-type': 'application/octet-stream',
       });
-      const interval = setInterval(() => response.write('x'), 10);
-      response.once('close', () => clearInterval(interval));
+      response.write('x');
     }));
     const response = await new NodeCloudAuthorityArtifactTransport(20, 45).download({
       headers: {},
@@ -190,9 +197,17 @@ describe('NodeCloudAuthorityArtifactTransport', () => {
     });
     if (!('byteCount' in response)) throw new Error('expected artifact response');
 
-    await expect((async () => {
-      for await (const chunk of response.body) void chunk;
-    })()).rejects.toMatchObject({ code: 'operation-timeout' });
+    const chunks = response.body[Symbol.asyncIterator]();
+    await expect(chunks.next()).resolves.toEqual({ done: false, value: Buffer.from('x') });
+    for (let elapsed = 10; elapsed <= 40; elapsed += 10) {
+      await jest.advanceTimersByTimeAsync(10);
+      serverResponse.write('x');
+      await expect(chunks.next()).resolves.toEqual({ done: false, value: Buffer.from('x') });
+    }
+    await Promise.all([
+      expect(chunks.next()).rejects.toMatchObject({ code: 'operation-timeout' }),
+      jest.advanceTimersByTimeAsync(5),
+    ]);
   });
 
   it('rejects invalid lengths and destroys a mismatched response stream', async () => {

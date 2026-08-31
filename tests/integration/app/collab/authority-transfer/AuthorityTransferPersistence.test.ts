@@ -257,7 +257,7 @@ describe('AuthorityTransferPersistence', () => {
       safeContext: { reason: 'authority-transfer-source-relinquished' },
     });
     await expect(repository.listAuthorityTransferProjectIds()).resolves.toEqual([PROJECT_ID]);
-  });
+  }, 30_000); // The complete phase walk includes real file and directory synchronization.
 
   it('serializes LAN Host start against authority-transfer fence creation', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
