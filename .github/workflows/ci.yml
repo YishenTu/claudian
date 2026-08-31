@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/cloud-integration]
   pull_request:
-    branches: [main]
+    branches: [main, codex/cloud-integration]
   workflow_call:
 
 permissions:
