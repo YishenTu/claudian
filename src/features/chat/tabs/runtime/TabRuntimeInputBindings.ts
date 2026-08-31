@@ -1,4 +1,3 @@
-import { autoResizeTextarea } from '../../ui/textareaResize';
 import {
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
@@ -89,7 +88,6 @@ export function buildTabRuntimeInputBindings(
     }
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
-    autoResizeTextarea(dom.inputEl);
   };
   dom.inputEl.addEventListener('input', inputHandler);
   options.registerCleanup(

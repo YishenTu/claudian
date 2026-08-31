@@ -138,8 +138,9 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
 
 .claudian-input-wrapper textarea.claudian-input {
   width: 100%;
-  flex: 1 1 0;
-  min-height: var(--claudian-textarea-min-height, 60px);
+  flex: 1 1 auto;
+  field-sizing: content;
+  min-height: 60px;
   max-height: var(--claudian-textarea-max-height, none);
   resize: none;
   padding: 8px 10px 10px 10px;

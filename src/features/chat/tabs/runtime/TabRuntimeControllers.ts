@@ -14,7 +14,6 @@ import { NavigationController } from '../../controllers/NavigationController';
 import { SelectionController } from '../../controllers/SelectionController';
 import { StreamController } from '../../controllers/StreamController';
 import { MessageRenderer } from '../../rendering/MessageRenderer';
-import { autoResizeTextarea } from '../../ui/textareaResize';
 import { getTabProviderId } from '../providerResolution';
 import {
   handleForkAll,
@@ -343,9 +342,6 @@ export function buildTabRuntimeControllers(
     getTitleGenerationService: () => services.titleGenerationService,
     getStatusPanel: () => ui.statusPanel,
     generateId: createTabMessageId,
-    resetInputHeight: () => {
-      autoResizeTextarea(dom.inputEl);
-    },
     getAuxiliaryModel: () => getTabSelectedModel(runtimeRef.requirePublished(), plugin),
     getExecutionCoordinator: () => shell.executionCoordinator,
     getSubagentManager: () => services.subagentManager,

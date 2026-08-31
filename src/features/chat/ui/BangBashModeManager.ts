@@ -5,7 +5,6 @@ import { t } from '../../../i18n/i18n';
 export interface BangBashModeCallbacks {
   onSubmit: (command: string) => Promise<void>;
   getInputWrapper: () => HTMLElement | null;
-  resetInputHeight?: () => void;
 }
 
 export interface BangBashModeState {
@@ -112,7 +111,6 @@ export class BangBashModeManager {
   clear(): void {
     this.inputEl.value = '';
     this.exitMode();
-    this.callbacks.resetInputHeight?.();
   }
 
   destroy(): void {

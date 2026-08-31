@@ -1495,6 +1495,26 @@ describe('Tab provider execution ownership', () => {
     expect(tab.session.userOwnershipRevision).toBe(1);
   });
 
+  it('does not read textarea geometry when the user types', async () => {
+    const tab = await createTestTab({
+      plugin: createPlugin(),
+      containerEl: createMockEl() as any,
+    });
+    const readOffsetHeight = jest.fn(() => 102);
+    const readScrollHeight = jest.fn(() => 102);
+    Object.defineProperties(tab.dom.inputEl, {
+      offsetHeight: { configurable: true, get: readOffsetHeight },
+      scrollHeight: { configurable: true, get: readScrollHeight },
+    });
+
+    tab.dom.inputEl.value = 'A responsive draft';
+    (tab.dom.inputEl as any).dispatchEvent('input');
+
+    expect(tab.session.userOwnershipRevision).toBe(1);
+    expect(readOffsetHeight).not.toHaveBeenCalled();
+    expect(readScrollHeight).not.toHaveBeenCalled();
+  });
+
   it('records user ownership when a retained cold tab is edited', async () => {
     const tab = await createTestTab({
       plugin: createPlugin(),

@@ -26,7 +26,7 @@ import { createInputToolbar } from '../../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../../ui/InstructionModeManager';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
 import { StatusPanel } from '../../ui/StatusPanel';
-import { autoResizeTextarea } from '../../ui/textareaResize';
+import { installTextareaSizing } from '../../ui/textareaSizing';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
 import { commitProvisionalTab } from '../TabLifecycle';
@@ -463,9 +463,12 @@ export function buildTabRuntimeUI(
   const onUserModified = (): void => {
     commitProvisionalTab(runtimeRef.requirePublished());
   };
+  options.registerCleanup(
+    'tab textarea sizing',
+    installTextareaSizing(dom.inputEl),
+  );
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
-      autoResizeTextarea(dom.inputEl);
       runtimeRef.current()?.renderer.scrollToBottomIfNeeded();
     },
   });

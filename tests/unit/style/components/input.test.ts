@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-describe('Input navigation button styles', () => {
+describe('Input styles', () => {
   const css = readFileSync(path.resolve('src/style/components/input.css'), 'utf8');
   const historyCss = readFileSync(path.resolve('src/style/components/history.css'), 'utf8');
 
@@ -56,5 +56,19 @@ describe('Input navigation button styles', () => {
     expect(activeRule).toContain('background: transparent;');
     expect(activeRule).toContain('box-shadow: none;');
     expect(activeRule).toContain('color: var(--text-muted);');
+  });
+
+  it('lets the browser size the composer textarea from its content', () => {
+    const textareaRule = css.match(
+      /\.claudian-input-wrapper textarea\.claudian-input\s*{[^}]*}/,
+    )?.[0];
+
+    expect(textareaRule).toContain('field-sizing: content;');
+    expect(textareaRule).toContain('flex: 1 1 auto;');
+    expect(textareaRule).toContain('min-height: 60px;');
+    expect(textareaRule).toContain(
+      'max-height: var(--claudian-textarea-max-height, none);',
+    );
+    expect(textareaRule).toContain('overflow-y: auto;');
   });
 });

@@ -14,7 +14,6 @@ function createHarness() {
     getInputWrapper: () => wrapper,
     onActiveChange: jest.fn(),
     onSubmit: jest.fn().mockResolvedValue(undefined),
-    resetInputHeight: jest.fn(),
   };
   return {
     callbacks,

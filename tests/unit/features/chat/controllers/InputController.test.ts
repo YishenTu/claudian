@@ -195,7 +195,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     getTitleGenerationService: () => null,
     getStatusPanel: () => null,
     generateId: () => `id-${++id}`,
-    resetInputHeight: jest.fn(),
     getAuxiliaryModel: () => 'claude-model',
     getExecutionCoordinator: () => coordinator,
     getSubagentManager: () => ({
