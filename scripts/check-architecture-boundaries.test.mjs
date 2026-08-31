@@ -911,8 +911,8 @@ test('Collab Git process owners await Windows process-tree termination', () => {
 
 test('CI gates releases, cross-platform behavior, and security', () => {
   const workflowsRoot = path.join(process.cwd(), '.github', 'workflows');
-  const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8');
-  const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8');
+  const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8').replace(/\r\n/g, '\n');
   const nightly = fs.readFileSync(path.join(workflowsRoot, 'nightly.yml'), 'utf8');
   const codeql = fs.readFileSync(path.join(workflowsRoot, 'codeql.yml'), 'utf8');
 
