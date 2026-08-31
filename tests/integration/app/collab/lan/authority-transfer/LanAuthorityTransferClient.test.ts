@@ -168,7 +168,10 @@ describe('LanAuthorityTransferClient', () => {
     }));
   }, 20_000);
 
-  it('rejects a response with the wrong LAN binding version', async () => {
+  it.each([
+    { bindingVersion: 1, protocolVersion: 6, receivedVersion: 1, supportedVersion: 2 },
+    { bindingVersion: 2, protocolVersion: 6, receivedVersion: 6, supportedVersion: 7 },
+  ])('rejects response binding $bindingVersion / wire $protocolVersion', async versions => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-version-'));
     const identity = await new LanTlsIdentity(directory, {
       installationKey: TEST_INSTALLATION_A,
@@ -176,13 +179,13 @@ describe('LanAuthorityTransferClient', () => {
     server = createServer({
       cert: identity.certificateChainPem,
       key: identity.privateKeyPem,
-    }, (_request, response) => {
+    }, (request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
-        bindingVersion: 2,
+        bindingVersion: versions.bindingVersion,
         data: status(),
-        protocolVersion: 6,
-        requestId: 'wrong-request',
+        protocolVersion: versions.protocolVersion,
+        requestId: request.headers['x-request-id'],
       }));
     });
     await new Promise<void>((resolve, reject) => {
@@ -204,7 +207,7 @@ describe('LanAuthorityTransferClient', () => {
       MEMBER_CREDENTIAL,
     )).rejects.toMatchObject({
       code: 'protocol-version-unsupported',
-      safeContext: { receivedVersion: 2, supportedVersion: 1 },
+      safeContext: { receivedVersion: versions.receivedVersion, supportedVersion: versions.supportedVersion },
     });
   });
 });

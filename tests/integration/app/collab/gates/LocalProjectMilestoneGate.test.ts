@@ -356,6 +356,7 @@ describe('G3 local Project milestone gate', () => {
       openRequests: [],
       openTicketCount: 0,
       project: {
+        authorityGeneration: 2,
         authorityKind: 'cloud',
         createdAt: '2026-08-08T00:00:00.000Z',
         id: PROJECT_ID,
@@ -584,7 +585,7 @@ describe('G3 local Project milestone gate', () => {
             authorityGeneration: 2,
             bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
             developmentActorId: MEMBER_ID,
-            gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+            gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
             kind: 'cloud',
             serverUrl: 'https://cloud.example.test/',
             wireVersion: COLLAB_PROTOCOL_VERSION,

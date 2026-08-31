@@ -215,7 +215,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         || match.kind === 'git-receive-pack'
         || match.kind === 'git-upload-pack'
       ) {
-        const prefix = `/v2/projects/${PROJECT_ID}/repository.git`;
+        const prefix = `/v3/projects/${PROJECT_ID}/repository.git`;
         const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
         await runGitHttpBackend(
           request,
@@ -299,12 +299,12 @@ function membership(
 ): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: actor,
-      gitRemoteUrl: `${origin}/v2/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `${origin}/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: origin,
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -434,7 +434,7 @@ describe('Cloud Publish gate', () => {
           'remote',
           'set-url',
           'origin',
-          `${server.origin}/v2/projects/${PROJECT_ID}/repository.git`,
+          `${server.origin}/v3/projects/${PROJECT_ID}/repository.git`,
         ]);
         await writeFile(path.join(repositoryPath, `${actor}.md`), `${actor}\n`);
 
