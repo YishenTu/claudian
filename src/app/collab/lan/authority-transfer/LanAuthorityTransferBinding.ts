@@ -5,7 +5,7 @@ import {
   isCollabProjectId,
 } from '@claudian-collab/protocol';
 
-export const COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION = 1 as const;
+export const COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION = 2 as const;
 
 const ROUTE_PREFIX = '/authority-transfer';
 const ROUTE_PATTERN = /^\/authority-transfer\/v(\d+)\/projects\/([^/]+)\/operations\/([^/]+)$/;

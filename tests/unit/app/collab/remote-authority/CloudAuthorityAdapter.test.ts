@@ -84,12 +84,12 @@ function ticketDetail(overrides: Readonly<Record<string, unknown>> = {}) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: ACTOR_ID,
-      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 3,
@@ -149,6 +149,7 @@ function cloudSnapshot() {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       createdAt: '2026-08-22T00:00:00.000Z',
       expectedMainOid: 'a'.repeat(40),
       id: PROJECT_ID,
@@ -283,11 +284,50 @@ describe('CloudAuthorityAdapter', () => {
     for await (const chunk of download.body) downloaded.push(Buffer.from(chunk));
 
     expect(jsonRequests[1]?.url).toBe(
-      `https://cloud.example.test/v2/projects/${PROJECT_ID}`
+      `https://cloud.example.test/v3/projects/${PROJECT_ID}`
         + '/operations/getProjectAuthorityTransfer',
     );
     expect(Buffer.concat(uploaded).toString('utf8')).toBe('checkpoint');
     expect(Buffer.concat(downloaded).toString('utf8')).toBe('checkpoint');
+  });
+
+  it.each(['upload', 'download'] as const)('rejects binding 2 before binary %s transport', async direction => {
+    const paths: string[] = [];
+    const server = createServer((request, response) => {
+      paths.push(request.url ?? '');
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({
+        ...collabCloudCapabilityDocument(['authority-transfer'], limits),
+        bindingVersions: [2],
+      }));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing server address');
+      const operation = async () => {
+        const connection = await new CloudAuthorityAdapter().createLifecycle({
+          developmentActorId: ACTOR_ID,
+          projectId: PROJECT_ID,
+          serverUrl: `http://127.0.0.1:${address.port}`,
+        });
+        const artifact = { artifact: 'checkpoint.json' as const, projectId: PROJECT_ID, transferId: 'transfer-current' };
+        if (direction === 'upload') {
+          await connection.lifecycle.uploadAuthorityTransferArtifact({
+            ...artifact, body: Readable.from(['checkpoint']), byteCount: 10,
+          });
+        } else {
+          await connection.lifecycle.downloadAuthorityTransferArtifact(artifact);
+        }
+      };
+      await expect(operation()).rejects.toMatchObject({ code: 'protocol-version-unsupported' });
+      expect(paths).toEqual(['/collab/capabilities']);
+    } finally {
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    }
   });
 
   it('keeps lifecycle calls capability-gated and rejects legacy binding documents', async () => {
@@ -308,8 +348,8 @@ describe('CloudAuthorityAdapter', () => {
     request.mockResolvedValueOnce({
       body: {
         ...collabCloudCapabilityDocument([], limits),
-        bindingVersions: [1],
-        protocolVersions: [4],
+        bindingVersions: [2],
+        protocolVersions: [6],
       },
       contentType: 'application/json',
       status: 200,
@@ -363,7 +403,7 @@ describe('CloudAuthorityAdapter', () => {
         { actor: ACTOR_ID, url: '/collab/capabilities' },
         {
           actor: ACTOR_ID,
-          url: `/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+          url: `/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
         },
       ]);
     } finally {
@@ -423,7 +463,7 @@ describe('CloudAuthorityAdapter', () => {
         sensitive: false,
         value: ACTOR_ID,
       }],
-      remoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      remoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
       expect.objectContaining({
@@ -435,7 +475,7 @@ describe('CloudAuthorityAdapter', () => {
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
         headers: { 'x-claudian-development-actor': ACTOR_ID },
         method: 'POST',
-        url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+        url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
     ]);
   });
@@ -483,13 +523,13 @@ describe('CloudAuthorityAdapter', () => {
           idempotencyKey: 'publish-head',
           projectId: PROJECT_ID,
         },
-        protocolVersion: 6,
+        protocolVersion: 7,
         requestId: 'request-ensure',
       },
       headers: { 'x-claudian-development-actor': ACTOR_ID },
       method: 'POST',
       signal: controller.signal,
-      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/ensureMyRequest`,
+      url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/ensureMyRequest`,
     });
   });
 
@@ -541,13 +581,13 @@ describe('CloudAuthorityAdapter', () => {
           projectId: PROJECT_ID,
           requestId: 'request-one',
         },
-        protocolVersion: 6,
+        protocolVersion: 7,
         requestId: expect.any(String),
       },
       headers: { 'x-claudian-development-actor': ACTOR_ID },
       method: 'POST',
       signal: controller.signal,
-      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/acceptRequest`,
+      url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/acceptRequest`,
     });
   });
 
@@ -916,7 +956,7 @@ describe('CloudAuthorityAdapter', () => {
     const document = collabCloudCapabilityDocument(['project-snapshot'], limits);
     const adapter = new CloudAuthorityAdapter({
       request: async () => ({
-        body: { ...document, bindingVersions: [1] },
+        body: { ...document, bindingVersions: [2] },
         contentType: 'application/json',
         status: 200,
       }),
@@ -972,7 +1012,7 @@ describe('CloudProjectEventClient', () => {
         retirementId: 'retirement-cloud-one',
       },
       projectId: PROJECT_ID,
-      protocolVersion: 6,
+      protocolVersion: 7,
       sequence: 4,
     }));
     await flush();
@@ -1001,7 +1041,7 @@ describe('CloudProjectEventClient', () => {
         sockets.push(socket);
         expect(input).toEqual({
           headers: { 'x-claudian-development-actor': ACTOR_ID },
-          url: `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
+          url: `wss://cloud.example.test/v3/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 5
           }`,
         });
@@ -1049,7 +1089,7 @@ describe('CloudProjectEventClient', () => {
         const socket = new FakeSocket();
         sockets.push(socket);
         expect(input.url).toBe(
-          `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
+          `wss://cloud.example.test/v3/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 4
           }`,
         );
@@ -1069,7 +1109,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-one' },
       projectId: PROJECT_ID,
-      protocolVersion: 6,
+      protocolVersion: 7,
       sequence: 4,
     }));
     sockets[0]!.closed(1006);
@@ -1107,7 +1147,7 @@ describe('CloudProjectEventClient', () => {
         occurredAt: '2026-08-22T00:00:00.000Z',
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
-        protocolVersion: 6,
+        protocolVersion: 7,
         sequence,
       }));
     }
@@ -1143,7 +1183,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
-      protocolVersion: 6,
+      protocolVersion: 7,
       sequence: 4,
     }));
     await flush();

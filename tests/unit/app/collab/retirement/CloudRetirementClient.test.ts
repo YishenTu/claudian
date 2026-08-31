@@ -13,12 +13,12 @@ function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 3,
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: 'member-manager',
-      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: '2026-08-27T00:00:00.000Z',
     lastEventSequence: 4,

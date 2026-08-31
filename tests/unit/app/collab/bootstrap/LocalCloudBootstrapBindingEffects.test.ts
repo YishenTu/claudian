@@ -211,12 +211,12 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       undefined,
     );
     expect(membership.authority).toEqual({
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: HOST_MEMBER_ID,
       gitRemoteUrl: record.newAuthority.gitRemoteUrl,
       kind: 'cloud',
       serverUrl: record.newAuthority.serverUrl,
-      wireVersion: 6,
+      wireVersion: 7,
     });
     expect(JSON.stringify(membership)).not.toContain('credential');
     expect(JSON.stringify(membership)).not.toContain('PRIVATE CA');

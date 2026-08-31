@@ -350,12 +350,12 @@ function fixedProject(context: PublishProjectContext) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: MANAGER_ID,
-      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -400,6 +400,7 @@ function cloudSnapshot(mainOid: string) {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       createdAt: CREATED_AT,
       expectedMainOid: mainOid,
       id: PROJECT_ID,
