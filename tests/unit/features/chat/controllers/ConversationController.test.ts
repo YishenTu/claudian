@@ -1249,7 +1249,7 @@ describe('ConversationController', () => {
         expect(container.querySelector('.claudian-history-section--sessions')).not.toBeNull();
       });
 
-      it('marks attention rows for title animation without session action buttons', () => {
+      it('pulses completed reviews and hides actions for every attention state', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
@@ -1285,12 +1285,19 @@ describe('ConversationController', () => {
         expect(container.querySelector('.claudian-history-section--attention')).toBeNull();
         expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(4);
         const attentionItems = container.querySelectorAll('.claudian-history-item--attention');
-        expect(attentionItems).toHaveLength(3);
+        expect(attentionItems).toHaveLength(2);
         expect(container.querySelector('.claudian-session-attention-indicator')).toBeNull();
-        for (const item of attentionItems) {
+        const attendedItems = container.querySelectorAll('.claudian-history-item').filter(
+          (item: HTMLElement) => item.getAttribute('data-conversation-id') !== 'normal',
+        );
+        for (const item of attendedItems) {
           expect(item.querySelector('.claudian-pin-btn')).toBeNull();
           expect(item.querySelector('.claudian-archive-btn')).toBeNull();
         }
+        const actionItem = attendedItems.find(
+          (item: HTMLElement) => item.getAttribute('data-conversation-id') === 'action',
+        )!;
+        expect(actionItem.hasClass('claudian-history-item--attention')).toBe(false);
         const normalItem = container.querySelectorAll('.claudian-history-item').find(
           (item: HTMLElement) => item.getAttribute('data-conversation-id') === 'normal',
         )!;
@@ -2095,6 +2102,74 @@ describe('ConversationController', () => {
         expect(setIcon).toHaveBeenCalledWith(runningIndicators[0], 'loader-2');
       });
 
+      it('replaces the dual-pane spinner with matched action and error badges', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'waiting', title: 'Waiting', createdAt: 5000 },
+          { id: 'working', title: 'Working', createdAt: 4000 },
+          { id: 'error', title: 'Error', createdAt: 3000 },
+          { id: 'review', title: 'Review', createdAt: 2000 },
+          { id: 'idle', title: 'Idle', createdAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showAttentionState: true,
+          showOpenStateLabels: false,
+          getConversationStatus: (id) => ({
+            openState: 'open',
+            isRunning: id === 'waiting' || id === 'working',
+            attention: id === 'waiting'
+              ? { kind: 'action-required', since: 1 }
+              : id === 'error'
+                ? { kind: 'review', outcome: 'error', since: 2 }
+                : id === 'review'
+                  ? { kind: 'review', outcome: 'completed', since: 3 }
+                  : null,
+          }),
+        });
+
+        const items = container.querySelectorAll('.claudian-history-item');
+        const findItem = (id: string) => items.find(
+          (item: HTMLElement) => item.getAttribute('data-conversation-id') === id,
+        )!;
+        const waitingItem = findItem('waiting');
+        const waitingBadge = waitingItem.querySelector(
+          '.claudian-session-status-indicator--action-required',
+        )!;
+        const workingItem = findItem('working');
+        const errorItem = findItem('error');
+        const errorBadge = errorItem.querySelector(
+          '.claudian-session-status-indicator--error',
+        )!;
+
+        expect(waitingBadge).not.toBeNull();
+        expect(waitingBadge.hasClass('claudian-session-status-indicator')).toBe(true);
+        expect(waitingBadge.getAttribute('aria-label')).toBe('Needs your input');
+        expect(waitingItem.querySelector('.claudian-session-running-indicator')).toBeNull();
+        expect(waitingItem.hasClass('running')).toBe(false);
+        expect(waitingItem.getAttribute('data-running')).toBe('true');
+        expect(setIcon).toHaveBeenCalledWith(
+          waitingItem.querySelector('.claudian-history-item-icon'),
+          'message-square',
+        );
+        expect(waitingItem.hasClass('claudian-history-item--attention')).toBe(false);
+        expect(setIcon).toHaveBeenCalledWith(waitingBadge, 'alert-circle');
+
+        expect(workingItem.querySelector('.claudian-session-running-indicator')).not.toBeNull();
+        expect(workingItem.querySelector('.claudian-session-status-indicator')).toBeNull();
+
+        expect(errorBadge).not.toBeNull();
+        expect(errorBadge.hasClass('claudian-session-status-indicator')).toBe(true);
+        expect(errorBadge.getAttribute('aria-label')).toBe('Stopped with an error');
+        expect(errorItem.hasClass('claudian-history-item--attention')).toBe(false);
+        expect(setIcon).toHaveBeenCalledWith(errorBadge, 'x-circle');
+
+        expect(findItem('review').hasClass('claudian-history-item--attention')).toBe(true);
+        expect(findItem('review').querySelector('.claudian-session-status-indicator')).toBeNull();
+        expect(findItem('idle').querySelector('.claudian-session-status-indicator')).toBeNull();
+      });
+
       it('displays the timestamp selected by the session sort mode', () => {
         const container = createMockEl();
         jest.spyOn(controller, 'formatDate').mockImplementation(
@@ -2172,6 +2247,92 @@ describe('ConversationController', () => {
           'claudian-session-group-running-indicator--visible',
         )).toBe(true);
         expect(setIcon).toHaveBeenCalledWith(headerIndicator, 'loader-2');
+      });
+
+      it('prioritizes a waiting badge on a collapsed linked-content group', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'waiting',
+            title: 'Waiting session',
+            createdAt: 1000,
+            linkedContentPath: 'Projects/Plan.md',
+          },
+          {
+            id: 'working',
+            title: 'Working session',
+            createdAt: 900,
+            linkedContentPath: 'Projects/Plan.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-content',
+          sort: 'last-updated',
+          language: 'en',
+          showAttentionState: true,
+          showOpenStateLabels: false,
+          getConversationStatus: (id) => ({
+            openState: 'open',
+            isRunning: true,
+            attention: id === 'waiting'
+              ? { kind: 'action-required', since: 1 }
+              : null,
+          }),
+        });
+
+        const header = container.querySelector('.claudian-session-group-header')!;
+        const badge = header.querySelector(
+          '.claudian-session-group-status-indicator',
+        )!;
+        expect(badge).not.toBeNull();
+        expect(badge.hasClass('claudian-session-status-indicator--action-required')).toBe(true);
+        expect(badge.hasClass('claudian-session-group-status-indicator--visible')).toBe(false);
+        expect(header.querySelector('.claudian-session-group-running-indicator')).toBeNull();
+
+        header.click();
+
+        expect(badge.hasClass('claudian-session-group-status-indicator--visible')).toBe(true);
+        expect(badge.getAttribute('aria-label')).toBe('Needs your input');
+        expect(setIcon).toHaveBeenCalledWith(badge, 'alert-circle');
+      });
+
+      it('shows an error badge on a collapsed linked-content group without active work', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'error',
+            title: 'Failed session',
+            createdAt: 1000,
+            linkedContentPath: 'Projects/Plan.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-content',
+          sort: 'last-updated',
+          language: 'en',
+          showAttentionState: true,
+          showOpenStateLabels: false,
+          getConversationStatus: () => ({
+            openState: 'open',
+            isRunning: false,
+            attention: { kind: 'review', outcome: 'error', since: 1 },
+          }),
+        });
+
+        const header = container.querySelector('.claudian-session-group-header')!;
+        const badge = header.querySelector(
+          '.claudian-session-group-status-indicator',
+        )!;
+        header.click();
+
+        expect(badge.hasClass('claudian-session-status-indicator--error')).toBe(true);
+        expect(badge.hasClass('claudian-session-group-status-indicator--visible')).toBe(true);
+        expect(badge.getAttribute('aria-label')).toBe('Stopped with an error');
+        expect(setIcon).toHaveBeenCalledWith(badge, 'x-circle');
       });
 
       it('marks a collapsed linked-content header when it contains attention', () => {

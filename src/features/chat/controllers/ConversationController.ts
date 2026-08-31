@@ -110,6 +110,8 @@ export type HistoryConversationStatus = {
   tabIndex?: number;
 };
 
+type SessionStatusIndicatorKind = 'action-required' | 'error' | 'running';
+
 type HistoryRenderOptions = {
   onSelectConversation: (id: string) => Promise<void>;
   onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
@@ -1064,17 +1066,21 @@ export class ConversationController {
     const conversationStatuses = section.conversations.map(conversation => (
       this.getHistoryConversationStatusForMetadata(conversation, options)
     ));
-    const hasRunningConversation = conversationStatuses.some(({ isRunning }) => isRunning);
-    const hasAttentionConversation = options.showAttentionState === true
+    const groupStatusKind = this.getGroupSessionStatusIndicatorKind(
+      conversationStatuses,
+      options,
+    );
+    const hasReviewConversation = options.showAttentionState === true
       && options.sessionScope !== 'archived'
       && conversationStatuses.some(({ attention }) => (
-        attention !== null && attention !== undefined
+        attention?.kind === 'review' && attention.outcome === 'completed'
       ));
+    const showGroupReviewState = groupStatusKind === null && hasReviewConversation;
     const groupHeader = list.createDiv({
       cls: [
         'claudian-session-group-header',
         `claudian-session-group-header--${section.kind}`,
-        hasAttentionConversation && isCollapsed
+        showGroupReviewState && isCollapsed
           ? 'claudian-session-group-header--attention'
           : '',
       ].filter(Boolean).join(' '),
@@ -1106,20 +1112,14 @@ export class ConversationController {
         text: 'Missing',
       });
     }
-    const groupRunningIndicator = hasRunningConversation
-      ? groupHeader.createSpan({
-          cls: [
-            'claudian-session-group-running-indicator',
-            isCollapsed
-              ? 'claudian-session-group-running-indicator--visible'
-              : '',
-          ].filter(Boolean).join(' '),
-        })
-      : null;
-    if (groupRunningIndicator) {
-      setIcon(groupRunningIndicator, 'loader-2');
-      groupRunningIndicator.setAttribute('aria-label', 'Running');
-    }
+    const groupStatusIndicator = groupStatusKind === null
+      ? null
+      : this.createSessionStatusIndicator(
+          groupHeader,
+          groupStatusKind,
+          true,
+          isCollapsed,
+        );
     if (
       section.kind === 'content'
       && section.contentPath
@@ -1171,11 +1171,15 @@ export class ConversationController {
       const collapsed = groupHeader.getAttribute('aria-expanded') === 'true';
       groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       groupBody.toggleClass('claudian-session-group-body--collapsed', collapsed);
-      groupRunningIndicator?.toggleClass(
-        'claudian-session-group-running-indicator--visible',
-        collapsed,
-      );
-      if (hasAttentionConversation) {
+      if (groupStatusIndicator) {
+        groupStatusIndicator.toggleClass(
+          groupStatusKind === 'running'
+            ? 'claudian-session-group-running-indicator--visible'
+            : 'claudian-session-group-status-indicator--visible',
+          collapsed,
+        );
+      }
+      if (showGroupReviewState) {
         groupHeader.toggleClass('claudian-session-group-header--attention', collapsed);
       }
       options.onGroupCollapseChange?.(section.key, collapsed);
@@ -1313,10 +1317,19 @@ export class ConversationController {
       options,
     );
     const { openState, isRunning } = conversationStatus;
-    const showAttentionState = options.showAttentionState === true
+    const hasAttentionState = options.showAttentionState === true
       && options.sessionScope !== 'archived'
       && conversationStatus.attention !== null
       && conversationStatus.attention !== undefined;
+    const showReviewState = hasAttentionState
+      && conversationStatus.attention?.kind === 'review'
+      && conversationStatus.attention.outcome === 'completed';
+    const sessionStatusKind = this.getSessionStatusIndicatorKind(
+      conversationStatus,
+      options,
+    );
+    const showRunningPresentation = isRunning
+      && sessionStatusKind !== 'action-required';
     const isCurrent = openState === 'current';
     const isOpen = openState === 'open';
     const isSelectable = !isCurrent && options.allowConversationSelection !== false;
@@ -1325,8 +1338,8 @@ export class ConversationController {
         'claudian-history-item',
         isCurrent ? 'active' : '',
         isOpen ? 'open' : '',
-        isRunning ? 'running' : '',
-        showAttentionState ? 'claudian-history-item--attention' : '',
+        showRunningPresentation ? 'running' : '',
+        showReviewState ? 'claudian-history-item--attention' : '',
         options.allowConversationSelection === false
           ? 'claudian-history-item--noninteractive'
           : '',
@@ -1341,7 +1354,7 @@ export class ConversationController {
     }
 
     const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-    setIcon(iconEl, this.getHistoryItemIcon(openState, isRunning));
+    setIcon(iconEl, this.getHistoryItemIcon(openState, showRunningPresentation));
 
     const content = item.createDiv({ cls: 'claudian-history-item-content' });
     const titleEl = content.createDiv({
@@ -1508,7 +1521,7 @@ export class ConversationController {
     }
 
     if (options.sessionActionMode === 'active') {
-      if (!showAttentionState) {
+      if (!hasAttentionState) {
         const isPinned = conversation.isPinned === true;
         if (options.showInlinePinAction !== false) {
           const pinBtn = actions.createEl('button', {
@@ -1579,13 +1592,85 @@ export class ConversationController {
       createDeleteButton();
     }
 
-    if (isRunning && options.showOpenStateLabels === false) {
-      const runningIndicator = item.createSpan({
-        cls: 'claudian-session-running-indicator',
-      });
-      setIcon(runningIndicator, 'loader-2');
-      runningIndicator.setAttribute('aria-label', 'Running');
+    if (sessionStatusKind) {
+      this.createSessionStatusIndicator(item, sessionStatusKind);
     }
+  }
+
+  private getSessionStatusIndicatorKind(
+    status: HistoryConversationStatus,
+    options: HistoryRenderOptions,
+  ): SessionStatusIndicatorKind | null {
+    if (options.showOpenStateLabels !== false) return null;
+
+    const canShowAttention = options.showAttentionState === true
+      && options.sessionScope !== 'archived';
+    if (canShowAttention && status.attention?.kind === 'action-required') {
+      return 'action-required';
+    }
+    if (status.isRunning) return 'running';
+    if (
+      canShowAttention
+      && status.attention?.kind === 'review'
+      && status.attention.outcome === 'error'
+    ) {
+      return 'error';
+    }
+    return null;
+  }
+
+  private getGroupSessionStatusIndicatorKind(
+    statuses: readonly HistoryConversationStatus[],
+    options: HistoryRenderOptions,
+  ): SessionStatusIndicatorKind | null {
+    const kinds = statuses.map(status => (
+      this.getSessionStatusIndicatorKind(status, options)
+    ));
+    if (kinds.includes('action-required')) return 'action-required';
+    if (kinds.includes('running')) return 'running';
+    if (kinds.includes('error')) return 'error';
+    return null;
+  }
+
+  private createSessionStatusIndicator(
+    parent: HTMLElement,
+    kind: SessionStatusIndicatorKind,
+    isGroup = false,
+    isVisible = true,
+  ): HTMLElement {
+    const isRunning = kind === 'running';
+    const indicator = parent.createSpan({
+      cls: isRunning
+        ? [
+            isGroup
+              ? 'claudian-session-group-running-indicator'
+              : 'claudian-session-running-indicator',
+            isGroup && isVisible
+              ? 'claudian-session-group-running-indicator--visible'
+              : '',
+          ].filter(Boolean).join(' ')
+        : [
+            'claudian-session-status-indicator',
+            `claudian-session-status-indicator--${kind}`,
+            isGroup ? 'claudian-session-group-status-indicator' : '',
+            isGroup && isVisible
+              ? 'claudian-session-group-status-indicator--visible'
+              : '',
+          ].filter(Boolean).join(' '),
+    });
+    const icon = kind === 'action-required'
+      ? 'alert-circle'
+      : kind === 'error'
+        ? 'x-circle'
+        : 'loader-2';
+    const label = kind === 'action-required'
+      ? 'Needs your input'
+      : kind === 'error'
+        ? 'Stopped with an error'
+        : 'Running';
+    setIcon(indicator, icon);
+    indicator.setAttribute('aria-label', label);
+    return indicator;
   }
 
   private getHistoryConversationStatusForMetadata(

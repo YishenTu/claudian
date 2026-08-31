@@ -67,27 +67,15 @@
 }
 
 .claudian-tab-badge-streaming {
-  border-color: var(--claudian-brand, #da7756);
+  border-color: var(--text-normal);
 }
 
-.claudian-tab-badge-streaming[data-provider="claude"] {
-  border-color: var(--claudian-brand-claude, #D97757);
+body.theme-light .claudian-tab-badge-streaming {
+  border-color: #000000;
 }
 
-.claudian-tab-badge-streaming[data-provider="codex"] {
-  border-color: var(--claudian-brand-codex, #d0d0d0);
-}
-
-.claudian-tab-badge-streaming[data-provider="opencode"] {
-  border-color: var(--claudian-brand-opencode, #C8C8C8);
-}
-
-.claudian-tab-badge-streaming[data-provider="pi"] {
-  border-color: var(--claudian-brand-pi, #ffffff);
-}
-
-.claudian-tab-badge-streaming[data-provider="grok"] {
-  border-color: var(--claudian-brand-grok, #ffffff);
+body.theme-dark .claudian-tab-badge-streaming {
+  border-color: #ffffff;
 }
 
 .claudian-tab-badge-review {
@@ -95,11 +83,11 @@
 }
 
 .claudian-tab-badge-review-error {
-  border-color: var(--color-orange);
+  border-color: var(--text-error);
 }
 
 .claudian-tab-badge-action-required {
-  border-color: var(--text-error);
+  border-color: var(--color-orange);
 }
 
 .claudian-tab-badge-idle {

@@ -18,7 +18,6 @@ function createTabBarItem(overrides: Partial<TabBarItem> = {}): TabBarItem {
     id: 'tab-1',
     index: 1,
     title: 'Test Tab',
-    providerId: 'claude',
     isActive: false,
     isWorking: false,
     attention: null,
@@ -101,14 +100,14 @@ describe('TabBar', () => {
       expect(containerEl._children[0].getAttribute('title')).toBeNull();
     });
 
-    it('should set a provider attribute for per-tab streaming colors', () => {
+    it('does not expose a provider-specific tab styling hook', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
-      tabBar.update([createTabBarItem({ providerId: 'opencode' })]);
+      tabBar.update([createTabBarItem()]);
 
-      expect(containerEl._children[0].getAttribute('data-provider')).toBe('opencode');
+      expect(containerEl._children[0].getAttribute('data-provider')).toBeNull();
     });
 
     it('should toggle between index and title labels on double click', () => {

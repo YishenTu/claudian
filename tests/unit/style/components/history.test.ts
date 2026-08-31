@@ -26,6 +26,20 @@ describe('Persistent sidebar surface pager styles', () => {
       /\.claudian-session-sidebar:has\([^}]*clip-path:/,
     );
   });
+
+  it('uses one geometry for waiting and error status badges', () => {
+    const css = readFileSync(path.resolve('src/style/components/history.css'), 'utf8');
+
+    expect(css).toMatch(
+      /\.claudian-session-status-indicator\s*\{[^}]*display:\s*flex;[^}]*flex:\s*0 0 14px;[^}]*width:\s*14px;[^}]*height:\s*14px;/,
+    );
+    expect(css).toMatch(
+      /\.claudian-session-status-indicator--action-required\s*\{[^}]*color:\s*var\(--color-orange\);/,
+    );
+    expect(css).toMatch(
+      /\.claudian-session-status-indicator--error\s*\{[^}]*color:\s*var\(--text-error\);/,
+    );
+  });
 });
 
 describe('Single-pane history action styles', () => {

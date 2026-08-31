@@ -439,6 +439,37 @@
   stroke-width: 2.5;
 }
 
+.claudian-session-status-indicator {
+  display: flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.claudian-session-group-status-indicator {
+  display: none;
+}
+
+.claudian-session-group-status-indicator--visible {
+  display: flex;
+}
+
+.claudian-session-status-indicator svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.5;
+}
+
+.claudian-session-status-indicator--action-required {
+  color: var(--color-orange);
+}
+
+.claudian-session-status-indicator--error {
+  color: var(--text-error);
+}
+
 .claudian-session-group-new-action {
   display: none;
   flex: 0 0 18px;

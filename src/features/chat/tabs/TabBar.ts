@@ -98,7 +98,6 @@ export class TabBar {
 
     // Obsidian uses aria-label for hover tooltips here; adding title causes duplicate tooltip text.
     badgeEl.setAttribute('aria-label', `${item.title}, ${this.getBadgeStatusLabel(item)}`);
-    badgeEl.setAttribute('data-provider', item.providerId);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
 
     // Click handler to switch tab
