@@ -167,7 +167,6 @@ describe('RetirementAcknowledgementWorker', () => {
 
     await expect(resumed.run('project-a')).resolves.toBe('acknowledged');
     expect(secondClient.acknowledgeCloud).toHaveBeenCalledWith({
-      developmentActorId: 'principal-manager-device',
       projectId: 'project-a',
       retirementId: 'retirement-cloud-one',
       serverUrl: 'https://cloud.example.test/',
@@ -188,7 +187,6 @@ function record(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'retire-local-one',
     cleanupStatus: 'pending',
-    cloudDevelopmentActorId: null,
     cloudRetirementId: null,
     cloudServerUrl: null,
     createdAt: RETIRED_AT,
@@ -208,7 +206,6 @@ function record(): RetirementRecord {
 function cloudRecord(): RetirementRecord {
   return {
     ...record(),
-    cloudDevelopmentActorId: 'principal-manager-device',
     cloudRetirementId: 'retirement-cloud-one',
     cloudServerUrl: 'https://cloud.example.test/',
     hostCaCertificatePem: null,

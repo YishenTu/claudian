@@ -44,7 +44,7 @@ describe('DevelopmentBootstrapCloudClient', () => {
     await new Promise<void>(resolve => server?.close(() => resolve()));
   });
 
-  it('uses package routes and actor-bound envelopes for JSON and streamed upload', async () => {
+  it('preserves a deployment prefix for private actor-bound JSON and streamed upload', async () => {
     const observations: Array<{
       readonly actor: string | undefined;
       readonly body: Buffer;
@@ -54,7 +54,12 @@ describe('DevelopmentBootstrapCloudClient', () => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const body = Buffer.concat(chunks);
-      const match = matchCollabCloudRoute(request.method ?? '', request.url ?? '');
+      const target = request.url ?? '';
+      if (!target.startsWith('/operator/cloud/')) {
+        response.writeHead(404).end();
+        return;
+      }
+      const match = matchCollabCloudRoute(request.method ?? '', target.slice('/operator/cloud'.length));
       if (match?.kind !== 'development-bootstrap') throw new Error('unexpected route');
       observations.push({
         actor: Array.isArray(request.headers['x-claudian-development-actor'])
@@ -88,7 +93,7 @@ describe('DevelopmentBootstrapCloudClient', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('server address missing');
-    serverUrl = `http://127.0.0.1:${address.port}`;
+    serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
     const client = new DevelopmentBootstrapCloudClient({
       developmentActorId: HOST_MEMBER_ID,
       serverUrl,

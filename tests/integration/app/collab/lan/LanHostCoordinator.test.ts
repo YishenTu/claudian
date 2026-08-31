@@ -1001,8 +1001,8 @@ describe('LanHostCoordinator production transport', () => {
     if (!existing) throw new Error('Missing membership fixture');
     await localProjects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         bindingVersion: 3,
-        developmentActorId: existing.member.id,
         gitRemoteUrl: `http://127.0.0.1:8787/v3/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud',
         serverUrl: 'http://127.0.0.1:8787/',

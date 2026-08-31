@@ -50,7 +50,7 @@ import type {
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
@@ -72,11 +72,11 @@ export interface AuthorityTransferModuleOptions {
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly createCloudToLanTarget?: (
     projectId: CollabProjectId,
-    session: CloudAuthorityLifecycleSession,
+    session: CloudAuthorityConnection,
   ) => CloudToLanTargetCoordinatorOptions['target'];
   readonly createLanToCloudSource: (
     projectId: CollabProjectId,
-    session: CloudAuthorityLifecycleSession,
+    session: CloudAuthorityConnection,
   ) => LanToCloudSourceCoordinatorOptions['source'];
   readonly createLanTargetSnapshotReader?: (
     projectId: CollabProjectId,
@@ -91,7 +91,7 @@ export interface AuthorityTransferModuleOptions {
   readonly persistence: AuthorityTransferPersistence;
   readonly recoverCloudSession?: (
     record: AuthorityTransferRecord,
-  ) => Promise<CloudAuthorityLifecycleSession>;
+  ) => Promise<CloudAuthorityConnection>;
   readonly recoverClaimant?: (
     record: AuthorityTransferClaimantRecord,
   ) => Promise<RecoveredAuthorityTransferClaimantBinding>;
@@ -99,13 +99,13 @@ export interface AuthorityTransferModuleOptions {
 }
 
 export interface BindLanToCloudSourceInput {
-  readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly cloudSession: CloudAuthorityConnection;
   readonly expectedSourceEndpoint?: string;
   readonly projectId: CollabProjectId;
 }
 
 export interface BindCloudToLanTargetInput {
-  readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly cloudSession: CloudAuthorityConnection;
   readonly expectedTargetUrl?: string;
   readonly projectId: CollabProjectId;
 }
@@ -116,14 +116,14 @@ export type BindAuthorityTransferClaimantInput = Omit<
 > & Readonly<{ readonly projectId: CollabProjectId }>;
 
 export interface BindLanToCloudClaimantInput {
-  readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly cloudSession: CloudAuthorityConnection;
   readonly lanClient: LanAuthorityTransferClient;
   readonly memberCredential: string;
   readonly projectId: CollabProjectId;
 }
 
 export interface BindCloudToLanClaimantInput {
-  readonly cloudSession: CloudAuthorityLifecycleSession;
+  readonly cloudSession: CloudAuthorityConnection;
   readonly lanClient: LanAuthorityTransferClient;
   readonly projectId: CollabProjectId;
   readonly targetHost: Readonly<{
@@ -135,21 +135,21 @@ export interface BindCloudToLanClaimantInput {
 
 export type RecoveredAuthorityTransferClaimantBinding =
   | Readonly<{
-      readonly cloudSession: CloudAuthorityLifecycleSession;
+      readonly cloudSession: CloudAuthorityConnection;
       readonly direction: 'lan-to-cloud';
       readonly lanClient: LanAuthorityTransferClient;
       readonly memberCredential: string;
       readonly mode: 'full';
     }>
   | Readonly<{
-      readonly cloudSession: CloudAuthorityLifecycleSession;
+      readonly cloudSession: CloudAuthorityConnection;
       readonly direction: 'cloud-to-lan';
       readonly lanClient: LanAuthorityTransferClient;
       readonly mode: 'full';
       readonly targetHost: BindCloudToLanClaimantInput['targetHost'];
     }>
   | Readonly<{
-      readonly cloudSession: CloudAuthorityLifecycleSession;
+      readonly cloudSession: CloudAuthorityConnection;
       readonly direction: 'lan-to-cloud';
       readonly mode: 'target-only';
     }>
@@ -322,7 +322,6 @@ export class AuthorityTransferModule {
         converge: async (record, options) => {
           const snapshot = await input.cloudSession.readSnapshot(record.projectId, options);
           await this.convergence.lanToCloudMember({
-            developmentActorId: input.cloudSession.developmentActorId,
             snapshot,
             status: record.status,
           });
@@ -429,7 +428,7 @@ export class AuthorityTransferModule {
   }
 
   private bindLanToCloudTargetOnlyClaimant(input: Readonly<{
-    readonly cloudSession: CloudAuthorityLifecycleSession;
+    readonly cloudSession: CloudAuthorityConnection;
     readonly projectId: CollabProjectId;
   }>): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
     this.assertCloudSession(input.projectId, input.cloudSession);
@@ -438,7 +437,6 @@ export class AuthorityTransferModule {
         converge: async (record, options) => {
           const snapshot = await input.cloudSession.readSnapshot(record.projectId, options);
           await this.convergence.lanToCloudMember({
-            developmentActorId: input.cloudSession.developmentActorId,
             snapshot,
             status: record.status,
           });
@@ -667,7 +665,7 @@ export class AuthorityTransferModule {
 
   private assertCloudSession(
     projectId: CollabProjectId,
-    session: CloudAuthorityLifecycleSession,
+    session: CloudAuthorityConnection,
   ): void {
     if (
       session.projectId !== projectId

@@ -26,6 +26,8 @@ import {
   type CollabPendingProjectOperation,
   decodeCollabPendingProjectOperation,
 } from '@/app/collab/PendingProjectOperation';
+import type { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
+import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import {
   ProjectOperationAdmission,
@@ -58,7 +60,7 @@ export interface CollabProjectSetupPort {
 
 export interface CollabJoinProjectPort {
   joinProject(
-    request: CollabJoinProjectRequest,
+    request: Extract<CollabJoinProjectRequest, { encodedInvitation: string }>,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>>;
   resumeJoin(
@@ -322,7 +324,18 @@ export interface CollabPublicationPort {
   ): Promise<CollabTicketSummary>;
 }
 
+export interface CollabCloudProjectEntryPort {
+  close: CloudProjectEntryCoordinator['close'];
+  createProject: CloudProjectEntryCoordinator['createProject'];
+  joinProject: CloudProjectEntryCoordinator['joinProject'];
+  resumeSetup(
+    request: CollabResumeSetupRequest & { readonly projectId: CollabProjectId },
+    options?: CollabOperationOptions,
+  ): Promise<CollabResult<CollabLocalProjectSummary>>;
+}
+
 export interface CollabFeatureServiceOptions {
+  readonly cloudEntry: CollabCloudProjectEntryPort;
   readonly cloudBootstrap: CollabCloudBootstrapPort;
   readonly hostTransfer: CollabHostTransferPort;
   readonly hostInstallation: Pick<HostInstallationBindingService, 'claimLegacy' | 'inspect'>;
@@ -678,6 +691,11 @@ class CollabFeatureServiceCore {
     request: CollabCreateProjectRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    if (request.authority?.kind === 'cloud') {
+      const result = await this.options.cloudEntry.createProject(request, options);
+      await this.#refreshAfterMutation(result);
+      return result;
+    }
     const result = await this.projectSetup.createProject(request, options);
     if (result.status !== 'success') {
       await this.#refreshAfterMutation(result);
@@ -720,6 +738,8 @@ class CollabFeatureServiceCore {
       }
       const result = pending.kind === 'join-project'
         ? await this.options.join.resumeJoin(request, options)
+        : pending.kind === 'cloud-entry'
+        ? await this.options.cloudEntry.resumeSetup({ ...request, projectId: pending.projectId }, options)
         : await this.projectSetup.resumeSetup(request, options);
       await this.#refreshAfterMutation(result);
       return result;
@@ -765,9 +785,18 @@ class CollabFeatureServiceCore {
     request: CollabJoinProjectRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    const result = await this.options.join.joinProject(request, options);
-    await this.#refreshAfterMutation(result);
-    return result;
+    try {
+      const result = 'existingCloudProjectId' in request
+        ? await this.options.cloudEntry.joinProject({ projectId: request.existingCloudProjectId }, options)
+        : request.encodedInvitation.startsWith('claudian-cloud:')
+        ? await this.options.cloudEntry.joinProject({
+          invitation: decodeCloudProjectInvitation(request.encodedInvitation),
+          memberDisplayName: request.memberDisplayName, projectSlug: request.projectSlug,
+        }, options)
+        : await this.options.join.joinProject(request, options);
+      await this.#refreshAfterMutation(result);
+      return result;
+    } catch (error) { return this.#failureResult(error); }
   }
 
   async reconnectProject(
@@ -1676,6 +1705,7 @@ class CollabFeatureServiceCore {
       lifecycleRecoveryClose = Promise.resolve();
     }
     const close = (async () => {
+      await this.options.cloudEntry.close();
       await this.operationAdmission.drain();
       await lifecycleRecoveryDrain;
       await this.options.cloudBootstrap.close();
@@ -1996,7 +2026,7 @@ export class CollabFeatureService implements CollabFeaturePort {
   private readonly core: CollabFeatureServiceCore;
 
   constructor(
-    foundation: CollabFeatureFoundationPort,
+    private readonly foundation: CollabFeatureFoundationPort,
     projectSetup: CollabProjectSetupPort,
     options: CollabFeatureServiceOptions,
   ) {
@@ -2323,6 +2353,22 @@ export class CollabFeatureService implements CollabFeaturePort {
     policy: ProjectOperationPolicy,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.#operationAdmission.runProject(resolveProjectId, policy, operation);
+    let projectId!: CollabProjectId;
+    return this.#operationAdmission.runProject(() => {
+      projectId = resolveProjectId();
+      return projectId;
+    }, policy, async () => {
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        projectId, 'pending-operation', decodeCollabPendingProjectOperation,
+      );
+      if (pending?.kind === 'cloud-entry') {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          recoveryActions: ['resume'],
+          safeContext: { reason: 'cloud-project-entry-pending' },
+        });
+      }
+      return operation();
+    });
   }
 }

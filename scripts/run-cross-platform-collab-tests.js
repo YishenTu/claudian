@@ -16,6 +16,8 @@ const tests = [
   'tests/unit/app/collab/git/GitRuntimeResolver.test.ts',
   'tests/unit/app/collab/git/collabGitRefs.test.ts',
   'tests/unit/app/collab/lan/LanTlsIdentity.test.ts',
+  'tests/unit/app/collab/remote-authority/CloudAuthorityAdapter.test.ts',
+  'tests/unit/app/collab/remote-authority/CloudAuthorityUrls.test.ts',
   'tests/unit/app/collab/publish/NativeGitPublicationCandidateRepository.test.ts',
   'tests/unit/app/collab/publish/NativeGitPublishRepository.test.ts',
   'tests/unit/app/collab/review/NativeGitReviewRepository.test.ts',
@@ -26,6 +28,9 @@ const tests = [
   'tests/integration/app/collab/git-http/GitReceiveHookPolicy.test.ts',
   'tests/integration/app/collab/git/GitRepositoryService.test.ts',
   'tests/integration/app/collab/git/GitRuntimeResolver.test.ts',
+  'tests/integration/app/collab/join/JoinProjectCoordinator.test.ts',
+  'tests/integration/app/collab/join/JoinProjectLanIntegration.test.ts',
+  'tests/integration/app/collab/project/CloudProjectEntryCoordinator.test.ts',
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
   'tests/integration/app/collab/review/NativeGitReviewRepository.test.ts',
 ];
