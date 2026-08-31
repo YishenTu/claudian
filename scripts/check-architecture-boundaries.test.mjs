@@ -901,6 +901,8 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   const nightly = fs.readFileSync(path.join(workflowsRoot, 'nightly.yml'), 'utf8');
   const codeql = fs.readFileSync(path.join(workflowsRoot, 'codeql.yml'), 'utf8');
 
+  assert.match(ci, /^  push:\n    branches: \[main, codex\/cloud-integration\]$/m);
+  assert.match(ci, /^  pull_request:\n    branches: \[main, codex\/cloud-integration\]$/m);
   assert.match(ci, /workflow_call:/);
   assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
   assert.match(ci, /diff-hygiene:/);
@@ -919,6 +921,7 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   assert.match(ci, /needs:\s*cross-platform-collab-scope/);
   assert.match(ci, /needs\.cross-platform-collab-scope\.outputs\.run == 'true'/);
 
+  assert.match(release, /^on:\n  push:\n    tags:\n      - '\*'\n\njobs:/m);
   assert.match(release, /uses:\s*\.\/\.github\/workflows\/ci\.yml/);
   assert.match(release, /needs:\s*verify/);
 
