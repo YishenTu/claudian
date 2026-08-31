@@ -122,6 +122,7 @@ function getExtraBinaryPaths(): string[] {
 
     // User bin (if exists)
     if (home) {
+      paths.push(path.join(home, 'bin'));
       paths.push(path.join(home, '.local', 'bin'));
       paths.push(path.join(home, '.bun', 'bin'));
       paths.push(path.join(home, '.opencode', 'bin'));
@@ -161,6 +162,7 @@ function getExtraBinaryPaths(): string[] {
     }
 
     if (home) {
+      paths.push(path.join(home, 'bin'));
       paths.push(path.join(home, '.local', 'bin'));
       paths.push(path.join(home, '.bun', 'bin'));
       paths.push(path.join(home, '.opencode', 'bin'));

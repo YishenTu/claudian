@@ -253,6 +253,14 @@ describe('getEnhancedPath', () => {
 
       expect(segments).toContain(path.join('/mock/home', '.opencode', 'bin'));
     });
+
+    it('includes the user bin path from HOME', () => {
+      process.env.HOME = '/mock/home';
+      const result = getEnhancedPath();
+      const segments = result.split(SEP);
+
+      expect(segments).toContain(path.join('/mock/home', 'bin'));
+    });
   });
 
   describe('Unix environment variable paths', () => {
