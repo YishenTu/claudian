@@ -86,6 +86,7 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 ] as const satisfies readonly CollabResult<unknown>['status'][];
 
 type FeatureOptionsOverrides = {
+  readonly cloudEntry?: Partial<CollabFeatureServiceOptions['cloudEntry']>;
   readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
@@ -111,6 +112,7 @@ function defaultCloudBootstrap(): CollabCloudBootstrapPort {
 }
 
 type PublicationOptionsOverrides = {
+  readonly cloudAuthority?: CollabPublicationServiceOptions['cloudAuthority'];
   readonly discovery?: Partial<CollabPublicationServiceOptions['discovery']>;
   readonly inspectHostInstallation?: CollabPublicationServiceOptions['inspectHostInstallation'];
   readonly readActiveLocalRoute?: CollabPublicationServiceOptions['readActiveLocalRoute'];
@@ -310,6 +312,13 @@ export function completeCollabFeatureOptions(
 ): CollabFeatureServiceOptions {
   return {
     cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
+    cloudEntry: {
+      joinProject: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) }),
+      close: () => Promise.resolve(),
+      createProject: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-project-create-unavailable' } }) }),
+      resumeSetup: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) }),
+      ...overrides.cloudEntry,
+    },
     hostTransfer: { ...defaultHostTransfer(), ...overrides.hostTransfer },
     hostInstallation: {
       ...defaultHostInstallation(),
@@ -341,6 +350,7 @@ export function completeCollabPublicationOptions(
   overrides: PublicationOptionsOverrides,
 ): CollabPublicationServiceOptions {
   return {
+    cloudAuthority: overrides.cloudAuthority ?? new CloudAuthorityAdapter(),
     discovery: {
       discoverProjectCandidates: () => Promise.resolve([]),
       ...overrides.discovery,
@@ -362,3 +372,4 @@ export function completeCollabPublicationOptions(
     vaultRoot: overrides.vaultRoot,
   };
 }
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';

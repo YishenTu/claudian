@@ -995,8 +995,8 @@ function membership(): CollabLocalLanMembershipRecord {
 function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: 'member-a',
       gitRemoteUrl: 'https://cloud.example.test/v3/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',

@@ -8,13 +8,12 @@ import type {
   CollabLocalCloudMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type {
-  CloudAuthorityLifecycleBinding,
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
+  CloudAuthorityConnectionInput,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type {
   CollabAuthoritySession,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
-import { createRetirementIntent } from '@/app/collab/retirement/RetirementIntent';
 import type {
   CollabOperationOptions,
   CollabRetirementResult,
@@ -26,12 +25,12 @@ export interface CloudRetirementClientOptions {
   readonly createSession: (
     membership: CollabLocalCloudMembershipRecord,
   ) => Promise<CollabAuthoritySession>;
-  readonly createLifecycle: (
-    binding: CloudAuthorityLifecycleBinding,
-  ) => Promise<CloudAuthorityLifecycleSession>;
+  readonly connect: (
+    binding: CloudAuthorityConnectionInput,
+  ) => Promise<CloudAuthorityConnection>;
 }
 
-export interface CloudRetirementAcknowledgementTarget extends CloudAuthorityLifecycleBinding {
+export interface CloudRetirementAcknowledgementTarget extends CloudAuthorityConnectionInput {
   readonly retirementId: string;
 }
 
@@ -54,7 +53,6 @@ export class CloudRetirementClient {
   ): Promise<CollabRetirementResult> {
     if (
       membership.project.id !== request.projectId
-      || membership.member.id !== request.managerActorMemberId
       || membership.member.role !== 'manager'
     ) throw retirementError('cloud-retirement-manager-membership-mismatch');
     const session = await this.options.createSession(membership);
@@ -68,13 +66,17 @@ export class CloudRetirementClient {
         || snapshot.currentMember.id !== membership.member.id
         || snapshot.currentMember.role !== 'manager'
       ) throw retirementError('cloud-retirement-snapshot-mismatch');
-      const intent = createRetirementIntent(request);
+      const idempotencyKey = `retire-${createHash('sha256').update(JSON.stringify({
+        authorityGeneration: membership.authority.authorityGeneration,
+        memberId: membership.member.id,
+        projectId: request.projectId,
+      })).digest('hex').slice(0, 32)}`;
       const result: CollabProjectRetirementResult = await session.lifecycle.retirement(
         'retireProject',
         {
-          expectedAuthorityGeneration: membership.authority.authorityGeneration ?? 1,
+          expectedAuthorityGeneration: membership.authority.authorityGeneration,
           expectedMainOid: snapshot.project.mainOid,
-          idempotencyKey: intent.idempotencyKey,
+          idempotencyKey,
           projectId: request.projectId,
         },
         options,
@@ -93,7 +95,7 @@ export class CloudRetirementClient {
     target: CloudRetirementAcknowledgementTarget,
     options: CollabOperationOptions = {},
   ) {
-    const session = await this.options.createLifecycle(target);
+    const session = await this.options.connect(target);
     try {
       if (!session.supports('project-retirement')) {
         throw retirementError('cloud-retirement-capability-unavailable');

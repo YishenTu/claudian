@@ -1,66 +1,64 @@
-import type {
-  DemoteManagerResponse,
-  MembershipTerminationResponse,
-  PromoteManagerResponse,
-} from '@/app/collab/lan/LanCollabControlOperations';
-import type {
-  CancelManagerResponsibilityOfferInput,
-  CreateInvitationInput,
-  CreateManagerResponsibilityOfferInput,
-  DemoteManagerInput,
-  GetManagerResponsibilityOfferInput,
-  ManagerResponsibilityOfferInput,
-  PromoteManagerInput,
-  RemoveMemberInput,
-  RevokeInvitationInput,
-} from '@/app/collab/membership/MembershipControlClient';
+import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian-collab/protocol';
+
 import type {
   CollabInvitationView,
   CollabManagerResponsibilityOfferSummary,
+  CollabManagerResponsibilityPurpose,
   CollabOperationOptions,
 } from '@/core/collab';
 
-type AuthorityInput<Input> = Omit<Input, 'memberCredential' | 'signal'>;
+interface MembershipMutationInput {
+  readonly idempotencyKey: string;
+  readonly projectId: CollabProjectId;
+}
+
+interface ManagerResponsibilityOfferInput extends MembershipMutationInput {
+  readonly offerId: CollabOperationId;
+}
+
+interface MemberRoleInput extends MembershipMutationInput {
+  readonly targetMemberId: CollabMemberId;
+}
 
 export interface CollabAuthorityMembershipOperationMap {
   readonly acknowledgeManagerResponsibility: {
-    readonly input: AuthorityInput<ManagerResponsibilityOfferInput>;
+    readonly input: ManagerResponsibilityOfferInput;
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly cancelManagerResponsibilityOffer: {
-    readonly input: AuthorityInput<CancelManagerResponsibilityOfferInput>;
+    readonly input: ManagerResponsibilityOfferInput;
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly createInvitation: {
-    readonly input: AuthorityInput<CreateInvitationInput>;
+    readonly input: MembershipMutationInput;
     readonly result: CollabInvitationView;
   };
   readonly createManagerResponsibilityOffer: {
-    readonly input: AuthorityInput<CreateManagerResponsibilityOfferInput>;
+    readonly input: MemberRoleInput & { readonly purpose: CollabManagerResponsibilityPurpose };
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly declineManagerResponsibility: {
-    readonly input: AuthorityInput<ManagerResponsibilityOfferInput>;
+    readonly input: ManagerResponsibilityOfferInput;
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly demoteManager: {
-    readonly input: AuthorityInput<DemoteManagerInput>;
-    readonly result: DemoteManagerResponse;
+    readonly input: MemberRoleInput;
+    readonly result: void;
   };
   readonly getManagerResponsibilityOffer: {
-    readonly input: AuthorityInput<GetManagerResponsibilityOfferInput>;
+    readonly input: { readonly offerId: CollabOperationId; readonly projectId: CollabProjectId };
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly promoteManager: {
-    readonly input: AuthorityInput<PromoteManagerInput>;
-    readonly result: PromoteManagerResponse;
+    readonly input: MemberRoleInput & { readonly managerResponsibilityOfferId: CollabOperationId };
+    readonly result: void;
   };
   readonly removeMember: {
-    readonly input: AuthorityInput<RemoveMemberInput>;
-    readonly result: MembershipTerminationResponse;
+    readonly input: MembershipMutationInput & { readonly memberId: CollabMemberId };
+    readonly result: void;
   };
   readonly revokeInvitation: {
-    readonly input: AuthorityInput<RevokeInvitationInput>;
+    readonly input: MembershipMutationInput;
     readonly result: void;
   };
 }

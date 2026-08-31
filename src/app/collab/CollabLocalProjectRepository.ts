@@ -45,9 +45,9 @@ import {
   decodeHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import {
-  canonicalCloudOrigin,
   canonicalCloudUrl,
   cloudProjectGitRemoteUrl,
+  validateCloudServerUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import {
   decodeRetirementRecord,
@@ -150,9 +150,8 @@ export interface CollabLocalLanMembershipRecord
 export interface CollabLocalCloudMembershipRecord
   extends CollabLocalMembershipRecordBase {
   readonly authority: {
-    readonly authorityGeneration?: number;
+    readonly authorityGeneration: number;
     readonly bindingVersion: typeof COLLAB_CLOUD_BINDING_VERSION;
-    readonly developmentActorId: CollabMemberId;
     readonly gitRemoteUrl: string;
     readonly kind: 'cloud';
     readonly serverUrl: string;
@@ -573,9 +572,9 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
 
   if (authorityKind === 'cloud') {
     requireExactKeys(value.authority, [
-      'bindingVersion', 'developmentActorId', 'gitRemoteUrl', 'kind',
+      'authorityGeneration', 'bindingVersion', 'gitRemoteUrl', 'kind',
       'serverUrl', 'wireVersion',
-    ], ['authorityGeneration']);
+    ]);
     requireExactKeys(value.member, [
       'displayName', 'id', 'personalRef', 'role',
     ]);
@@ -585,21 +584,13 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     ) {
       throw schemaVersionError('membership');
     }
-    const developmentActorId = requireString(
-      value.authority,
-      'developmentActorId',
-      { maxLength: 64 },
-    );
-    if (!isCollabMemberId(developmentActorId) || developmentActorId !== memberId) {
-      throw new TypeError('Invalid development actor id');
-    }
     const authorityGeneration = value.authority.authorityGeneration;
-    if (authorityGeneration !== undefined && (
+    if (
       !Number.isSafeInteger(authorityGeneration) || (authorityGeneration as number) < 1
-    )) {
+    ) {
       throw new TypeError('Invalid authority generation');
     }
-    const serverUrl = canonicalCloudOrigin(
+    const serverUrl = validateCloudServerUrl(
       requireString(value.authority, 'serverUrl', { maxLength: 2_048 }),
       'serverUrl',
     );
@@ -613,11 +604,8 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     const membership: CollabLocalCloudMembershipRecord = {
       ...common,
       authority: {
-        ...(authorityGeneration === undefined
-          ? {}
-          : { authorityGeneration: authorityGeneration as number }),
+        authorityGeneration: authorityGeneration as number,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        developmentActorId,
         gitRemoteUrl,
         kind: 'cloud',
         serverUrl,

@@ -69,16 +69,6 @@ const step12ProjectMembershipOperations = Object.freeze([
   'leaveProject',
 ]);
 
-const step12CloudCapabilityTokens = Object.freeze([
-  'cloud-imported-membership-claims',
-  'cloud-project-create',
-  'cloud-project-invitations',
-  'cloud-project-join',
-  'cloud-project-leave',
-  'cloud-project-manager-responsibility',
-  'cloud-project-membership',
-]);
-
 function symbolPattern(symbols) {
   return new RegExp(`\\b(?:${symbols.join('|')})\\b`, 'u');
 }
@@ -733,13 +723,7 @@ test('standalone Collab protocol registry and contract constants are not redefin
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
-test('the protocol pin does not expose Step 12 Cloud management behavior', () => {
-  const cloudAuthorityAdapterSource = fs.readFileSync(path.join(
-    appRoot,
-    'collab',
-    'remote-authority',
-    'CloudAuthorityAdapter.ts',
-  ), 'utf8');
+test('Cloud wire management adaptation stays outside presentation', () => {
   const packageManagementSurface = [
     'COLLAB_PROJECT_MEMBERSHIP_LIMITS',
     'COLLAB_PROJECT_MEMBERSHIP_OPERATIONS',
@@ -747,13 +731,7 @@ test('the protocol pin does not expose Step 12 Cloud management behavior', () =>
     'decodeCollabProjectMembershipOperationRequest',
     'decodeCollabProjectMembershipOperationResponse',
   ];
-  const cloudAdapterSurface = symbolPattern([
-    ...step12CloudCapabilityTokens,
-    ...step12ProjectMembershipOperations,
-    ...packageManagementSurface,
-  ]);
   const cloudPresentationSurface = symbolPattern([
-    ...step12CloudCapabilityTokens,
     'createCloudProject',
     'createProjectInvitation',
     'joinCloudProject',
@@ -766,7 +744,6 @@ test('the protocol pin does not expose Step 12 Cloud management behavior', () =>
     ...packageManagementSurface,
   ]);
 
-  assert.doesNotMatch(cloudAuthorityAdapterSource, cloudAdapterSurface);
   assert.deepEqual(findMatches([featuresRoot], cloudPresentationSurface), []);
 });
 
@@ -786,10 +763,8 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     new Map([
       ['src/app/collab/CollabLocalProjectRepository.ts', 1],
       ['src/app/collab/exit/PendingLeaveRecord.ts', 1],
-      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
-      ['src/app/collab/join/JoinProjectRecord.ts', 1],
       ['src/app/collab/lan/LanHostCoordinator.ts', 1],
-      ['src/app/collab/project/CollabProjectSetupRecord.ts', 1],
+      ['src/app/collab/project/CollabWorkingCopySlug.ts', 1],
     ]),
   ), []);
 
@@ -810,7 +785,7 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     new Map([
       ['src/app/collab/conflicts/ConflictScratchGitRepository.ts', 1],
       ['src/app/collab/git/GitRepositoryService.ts', 10],
-      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
+      ['src/app/collab/project/CollabWorkingCopySetup.ts', 1],
     ]),
   ), []);
 

@@ -732,6 +732,7 @@ export default class ClaudianPlugin extends Plugin {
     });
     const { feature } = collab.createCollabFeatureSubcomposition({
       foundation,
+      getProjectsFolder: () => this.settings.collabProjectsFolder,
       projectSetup,
       vaultRoot,
     });

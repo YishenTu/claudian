@@ -21,11 +21,9 @@ import {
   collabOriginTrackingRef,
 } from '@/app/collab/git/collabGitRefs';
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
-import type {
-  CollabAuthorityAdapter,
-  CollabAuthorityGitNetwork,
-} from '@/app/collab/remote-authority/CollabAuthoritySession';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import type { CollabAuthorityGitNetwork } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { CollabCloudProjectSnapshot, CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 interface LocalCloudBootstrapBindingProjects {
@@ -59,7 +57,7 @@ export interface LocalCloudBootstrapBindingEffectsOptions {
       signal?: AbortSignal,
     ): Promise<DevelopmentBootstrapAttemptStatus | null>;
   };
-  readonly authorityAdapter: Pick<CollabAuthorityAdapter, 'create'>;
+  readonly authorityAdapter: Pick<CloudAuthorityAdapter, 'connect'>;
   readonly authorityLifecycle: {
     closeAuthority(projectId: CollabProjectId): Promise<void>;
   };
@@ -160,8 +158,10 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
       membership.project.workspacePath,
     );
     await this.options.git.assertOrigin(record, repositoryPath);
-    const cloudMembership = this.cloudMembership(record, membership, membership.lastEventSequence);
-    const session = await this.options.authorityAdapter.create(cloudMembership);
+    const session = await this.options.authorityAdapter.connect({
+      projectId: record.projectId,
+      serverUrl: record.newAuthority.serverUrl,
+    });
     try {
       if (
         !session.supports('project-snapshot')
@@ -171,8 +171,8 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
       ) {
         throw bindingError('cloud-bootstrap-binding-capability-mismatch');
       }
-      const snapshot = await session.control.readSnapshot(record.projectId, { signal });
-      this.assertSnapshot(record, snapshot);
+      const snapshot = await session.readSnapshot(record.projectId, { signal });
+      this.assertSnapshot(record, membership, snapshot);
       await this.options.git.assertOrigin(record, repositoryPath);
       const network = await this.options.git.network(record.projectId, session.git);
       await this.options.git.assertOrigin(record, repositoryPath);
@@ -205,16 +205,17 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
     signal?: AbortSignal,
   ): Promise<void> {
     const membership = await this.loadExactMembership(record);
-    const candidate = this.cloudMembership(record, membership, membership.lastEventSequence);
-    const session = await this.options.authorityAdapter.create(candidate);
+    const session = await this.options.authorityAdapter.connect({
+      projectId: record.projectId,
+      serverUrl: record.newAuthority.serverUrl,
+    });
     try {
-      const snapshot = await session.control.readSnapshot(record.projectId, { signal });
-      this.assertSnapshot(record, snapshot);
+      const snapshot = await session.readSnapshot(record.projectId, { signal });
+      this.assertSnapshot(record, membership, snapshot);
       await this.options.projects.saveMembership(this.cloudMembership(
         record,
         membership,
-        snapshot.eventSequence,
-        snapshot.currentMember,
+        snapshot,
       ));
     } finally {
       session.dispose();
@@ -295,7 +296,6 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
   ): void {
     if (
       membership.authority.bindingVersion !== record.newAuthority.bindingVersion
-      || membership.authority.developmentActorId !== record.developmentActorId
       || membership.authority.gitRemoteUrl !== record.newAuthority.gitRemoteUrl
       || membership.authority.serverUrl !== record.newAuthority.serverUrl
       || membership.authority.wireVersion !== record.newAuthority.wireVersion
@@ -307,23 +307,20 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
   private cloudMembership(
     record: CloudBootstrapTransitionRecord,
     membership: CollabLocalMembershipRecord,
-    lastEventSequence: number,
-    currentMember: Pick<
-      CollabProjectSnapshot['currentMember'],
-      'displayName' | 'id' | 'personalRef' | 'role'
-    > = membership.member,
+    snapshot: CollabCloudProjectSnapshot,
   ): CollabLocalCloudMembershipRecord {
+    const { currentMember } = snapshot;
     return {
       authority: {
+        authorityGeneration: snapshot.project.authorityGeneration,
         bindingVersion: record.newAuthority.bindingVersion,
-        developmentActorId: record.developmentActorId,
         gitRemoteUrl: record.newAuthority.gitRemoteUrl,
         kind: 'cloud',
         serverUrl: record.newAuthority.serverUrl,
         wireVersion: record.newAuthority.wireVersion,
       },
       createdAt: membership.createdAt,
-      lastEventSequence,
+      lastEventSequence: snapshot.eventSequence,
       ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }),
       member: {
         displayName: currentMember.displayName,
@@ -339,13 +336,16 @@ export class LocalCloudBootstrapBindingEffects implements CloudBootstrapBindingE
 
   private assertSnapshot(
     record: CloudBootstrapTransitionRecord,
+    membership: CollabLocalMembershipRecord,
     snapshot: CollabProjectSnapshot,
-  ): void {
+  ): asserts snapshot is CollabCloudProjectSnapshot {
     const manifestMember = record.manifest.comparison.members.find(candidate => (
       candidate.memberId === record.memberId
     ));
     if (
       snapshot.project.authorityKind !== 'cloud'
+      || (isCollabLocalCloudMembership(membership)
+        && membership.authority.authorityGeneration !== snapshot.project.authorityGeneration)
       || snapshot.project.id !== record.projectId
       || snapshot.project.name !== record.manifest.comparison.projectName
       || snapshot.project.mainRef !== COLLAB_MAIN_REF
