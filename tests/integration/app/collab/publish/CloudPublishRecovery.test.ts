@@ -107,12 +107,12 @@ describe('Cloud Publish recovery integration', () => {
     const transport = new LostResponseCloudTransport(mainOid);
     const authority = await new CloudAuthorityAdapter({
       request: input => transport.request(input),
-    }).create(membership(authorityPath));
+    }).create(membership());
     const context: PublishProjectContext = {
       memberId: ACTOR_ID,
       personalRef: PERSONAL_REF,
       projectId: PROJECT_ID,
-      remoteUrl: authority.git.remoteUrl,
+      remoteUrl: authorityPath,
       repositoryPath,
     };
     const repository = new NativeGitPublishRepository(git, {
@@ -241,12 +241,12 @@ class MemoryPublicationState {
   async save(record: CollabPublicationStateRecord): Promise<void> { this.current = record; }
 }
 
-function membership(gitRemoteUrl: string): CollabLocalCloudMembershipRecord {
+function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: ACTOR_ID,
-      gitRemoteUrl,
+      gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
       wireVersion: 7,

@@ -36,7 +36,6 @@ export interface CollabProjectSetupRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -114,6 +113,8 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
     throw new TypeError('Invalid setup commit');
   }
   const projectId = stringField(value, 'projectId', 64);
+  const slug = stringField(value, 'slug', 64);
+  if (!isCollabWorkingCopySlug(slug)) throw new TypeError('Invalid setup slug');
   if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   const cloneDirectoryName = stringField(
     value,
@@ -156,7 +157,7 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       ? COLLAB_PROJECT_SETUP_SCHEMA_VERSION
       : 2,
     seedDirectoryName,
-    slug: stringField(value, 'slug', 64, SAFE_SLUG_PATTERN),
+    slug,
     updatedAt: timestampField(value, 'updatedAt'),
     ...(legacy || value.legacySetupRecord === true
       ? { legacySetupRecord: true as const }
@@ -181,3 +182,4 @@ export function bindLegacyCollabProjectSetupOwner(
     schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   });
 }
+import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';

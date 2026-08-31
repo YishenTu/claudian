@@ -908,8 +908,6 @@ export class ProjectManagementModal extends Modal {
               }),
             )
             : this.port.retireProject({
-              expectedHostMemberId: this.requireHostMemberId(),
-              managerActorMemberId: this.requireCurrentMemberId(),
               projectId: this.options.project.id,
             }, { signal: this.abortController.signal });
     const result = await operation;
@@ -1021,13 +1019,6 @@ export class ProjectManagementModal extends Modal {
       throw new Error('Current Collab Member identity is unavailable');
     }
     return this.currentMemberId;
-  }
-
-  private requireHostMemberId(): CollabMemberId {
-    if (!this.hostMemberId) {
-      throw new Error('Current Collab Host identity is unavailable');
-    }
-    return this.hostMemberId;
   }
 
   private requireAccessContent(): HTMLDivElement {

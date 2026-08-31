@@ -43,7 +43,7 @@ import {
 } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
-import type { CollabAuthorityAdapter } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 
 const execFileAsync = promisify(execFile);
 const GIT_EXECUTABLE = '/usr/bin/git';
@@ -299,6 +299,7 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       authorityKind: 'cloud' as const,
       createdAt: '2026-08-20T00:00:00.000Z',
       id: PROJECT_ID,
@@ -310,13 +311,13 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
   };
   const adapter = {
     authorityKind: 'cloud' as const,
-    create: async () => ({
+    connect: async () => ({
       authorityKind: 'cloud' as const,
-      control: { readSnapshot: async () => snapshot },
+      readSnapshot: async () => snapshot,
       dispose: () => undefined,
       events: { connect: () => ({ dispose: () => undefined }) },
       git: {
-        headers: [{ name: 'X-Claudian-Development-Actor', value: MEMBER_ID }],
+        headers: [],
         remoteUrl: CLOUD_REMOTE,
       },
       supports: (capability: string) => [
@@ -325,7 +326,7 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
         'project-snapshot',
       ].includes(capability),
     }),
-  } as unknown as CollabAuthorityAdapter;
+  } as unknown as Pick<CloudAuthorityAdapter, 'connect'>;
 
   return new LocalCloudBootstrapBindingEffects({
     activation: {
@@ -352,9 +353,7 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
       }, 'cloud-bootstrap-binding-origin-mismatch'),
       fetchFromUrl: async (repositoryPath, remote, _refspecs, network) => {
         expect(remote).toBe(CLOUD_REMOTE);
-        expect(network?.headers).toEqual([
-          { name: 'X-Claudian-Development-Actor', value: MEMBER_ID },
-        ]);
+        expect(network?.headers).toEqual([]);
         await git(repositoryPath, [
           'update-ref',
           'refs/remotes/origin/main',

@@ -21,8 +21,10 @@ import {
   CollabProjectSetupService,
   createCollabFeatureSubcomposition,
 } from '@/app/collab';
+import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
+import { AuthorityTransferLocalFence } from '@/app/collab/authority-transfer/AuthorityTransferLocalFence';
 import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
@@ -30,7 +32,8 @@ import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transf
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
-import type { CloudAuthorityLifecycleSession } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
+import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
 
@@ -190,9 +193,8 @@ describe('production authority-transfer effects', () => {
       status: status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
     });
     const noopSession = {
-      developmentActorId: MEMBER_ID,
       projectId: PROJECT_ID,
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     const sourceEffects = new ProductionLanToCloudSourceEffects({
       cloudSession: noopSession,
       convergence: {} as AuthorityTransferLocalConvergence,
@@ -260,6 +262,92 @@ describe('production authority-transfer effects', () => {
       sourceStaging,
     };
   }
+
+  it('preserves the real LAN binding and origin when the target snapshot generation mismatches its proof', async () => {
+    const { sourceFeature, sourceFoundation, sourceMembership } = await captureSource();
+    const sessions = new CollabProjectWorkSessionRegistry();
+    const admission = new ProjectOperationAdmission();
+    const fence = new AuthorityTransferLocalFence({
+      admission: {
+        drainAdmittedOperations: () => admission.drain(),
+        resumeProjectAdmission: token => admission.resumeProject(token),
+        suspendProjectAdmission: projectId => admission.suspendProject(projectId),
+      },
+      workSessions: {
+        resumeProject: async token => {
+          if (!await sessions.resumeProject(token)) throw new Error('Session did not resume');
+        },
+        suspendProject: projectId => sessions.suspendProject(projectId),
+      },
+    });
+    try {
+      const repositories = (await sourceFoundation.requireGitFoundation()).repositories;
+      const convergence = new AuthorityTransferLocalConvergence({
+        activity: { transitionProject: (projectId, operation) => fence.run(projectId, operation) },
+        git: { rotate: input => rotateAuthorityTransferOrigin(repositories, input) },
+        projects: sourceFoundation.local.projects,
+        workspace: sourceFoundation.local.workspace,
+      });
+      const repositoryPath = path.join(sourceRoot, 'workspace', 'portable');
+      const oldOrigin = git(repositoryPath, ['remote', 'get-url', 'origin']);
+      const target = status('lan-to-cloud', 'completed', 'https://cloud.example.test/');
+      const currentMember = {
+        activatedAt: sourceMembership.createdAt,
+        createdAt: sourceMembership.createdAt,
+        displayName: 'Alice',
+        id: MEMBER_ID,
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        role: 'manager' as const,
+        status: 'active' as const,
+      };
+      await expect(convergence.lanToCloudHost({
+        snapshot: {
+          currentMember,
+          eventSequence: 3,
+          members: [currentMember],
+          openRequests: [],
+          openTicketCount: 0,
+          project: {
+            authorityGeneration: 7,
+            authorityKind: 'cloud',
+            createdAt: sourceMembership.createdAt,
+            id: PROJECT_ID,
+            mainOid: git(repositoryPath, ['rev-parse', 'HEAD']),
+            mainRef: 'refs/heads/main',
+            name: 'Portable',
+          },
+          ticketHighlights: [],
+        },
+        status: {
+          ...target,
+          relinquishmentProof: {
+            batchRevision: 1,
+            batchSha256: 'b'.repeat(64),
+            certificate: Buffer.alloc(64, 2).toString('base64url'),
+            certificateAlgorithm: 'ed25519',
+            checkpointSha256: 'a'.repeat(64),
+            committedAt: target.updatedAt,
+            operationIntentId: OPERATION_ID,
+            projectId: PROJECT_ID,
+            sourceAuthority: { generation: 1, kind: 'lan' },
+            sourceHostMemberId: MEMBER_ID,
+            targetAuthority: { generation: 2, kind: 'cloud' },
+            transferId: TRANSFER_ID,
+          },
+          state: 'completed',
+        },
+      })).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-convergence-generation-mismatch' },
+      });
+      expect(await sourceFoundation.local.projects.loadMembership(PROJECT_ID)).toEqual(sourceMembership);
+      expect(git(repositoryPath, ['remote', 'get-url', 'origin'])).toBe(oldOrigin);
+    } finally {
+      await sessions.close();
+      await sourceFeature.close();
+      await sourceFoundation.close();
+    }
+  });
 
   it('rejects previous-wire staged checkpoints without changing the manifest or restart fence', async () => {
     const {
@@ -394,7 +482,6 @@ describe('production authority-transfer effects', () => {
       authority: {
         authorityGeneration: 2,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        developmentActorId: MEMBER_ID,
         gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
         kind: 'cloud',
         serverUrl: cloudServerUrl,
@@ -438,11 +525,11 @@ describe('production authority-transfer effects', () => {
       ticketHighlights: [],
     };
     const cloudSession = {
-      developmentActorId: MEMBER_ID,
       dispose: jest.fn(),
       projectId: PROJECT_ID,
       readSnapshot: jest.fn(async () => snapshot),
-    } as unknown as CloudAuthorityLifecycleSession;
+      serverUrl: cloudServerUrl,
+    } as unknown as CloudAuthorityConnection;
     const gitFoundation = await targetFoundation.requireGitFoundation();
     await gitFoundation.repositories.configureLocalRepository(
       path.join(targetRoot, 'workspace', 'portable'),

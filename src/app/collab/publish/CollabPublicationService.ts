@@ -61,11 +61,11 @@ import { ReconciliationRepository } from '@/app/collab/reconciliation/Reconcilia
 import type {
   ReconnectDiscoveredProjectRequest,
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
-import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
 import type {
   CollabAuthorityMembershipControlPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
+import type { CollabAuthorityAdapter } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 import {
@@ -96,6 +96,7 @@ export interface CollabPublicationFoundationPort {
 }
 
 export interface CollabPublicationServiceOptions {
+  readonly cloudAuthority: CollabAuthorityAdapter;
   readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidates'>;
   readonly inspectHostInstallation: (
     projectId: CollabProjectId,
@@ -191,7 +192,7 @@ export class CollabPublicationService {
       new LanAuthorityAdapter({
         resolveLocalTarget: membership => lanTargets.resolve(membership),
       }),
-      new CloudAuthorityAdapter(),
+      options.cloudAuthority,
     ]);
     this.control = new CollabAuthorityControlRouter(
       foundation.local.projects,

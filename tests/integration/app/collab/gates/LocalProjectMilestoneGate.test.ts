@@ -43,7 +43,7 @@ import {
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
 
@@ -88,6 +88,27 @@ describe('G3 local Project milestone gate', () => {
       vaultRoot,
     });
   }
+
+  it('derives LAN Retire authority from the authenticated Project rather than caller identities', async () => {
+    const foundation = createFoundation();
+    const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => CREDENTIAL,
+      createId: kind => kind === 'member' ? MEMBER_ID : kind === 'operation' ? OPERATION_ID : PROJECT_ID,
+      vaultRoot,
+    });
+    const feature = createCollabFeatureSubcomposition({ foundation, projectSetup: setup, vaultRoot }).feature;
+    try {
+      await expect(feature.initialize()).resolves.toMatchObject({ status: 'success' });
+      await expect(feature.createProject({ memberDisplayName: 'Alice', name: 'Retire intent' }))
+        .resolves.toMatchObject({ status: 'success' });
+      await expect(foundation.retireProject({ projectId: PROJECT_ID }))
+        .resolves.toMatchObject({ projectId: PROJECT_ID, retiredAt: expect.any(String) });
+    } finally {
+      await feature.close();
+      await foundation.close();
+    }
+  });
 
   it('creates and reloads one independent empty Project', async () => {
     const foundation = createFoundation();
@@ -369,7 +390,6 @@ describe('G3 local Project milestone gate', () => {
     });
     const readSnapshot = jest.fn(async () => snapshot());
     const cloudSession = {
-      developmentActorId: MEMBER_ID,
       dispose: jest.fn(),
       lifecycle: {
         authorityTransfer: jest.fn(async (operation: string) => {
@@ -392,7 +412,7 @@ describe('G3 local Project milestone gate', () => {
       supports: (capability: string) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     await subcomposition.feature.initialize();
     await subcomposition.feature.createProject({
       memberDisplayName: 'Alice',
@@ -429,8 +449,9 @@ describe('G3 local Project milestone gate', () => {
     const reopenedFoundation = createFoundation();
     const reopened = createCollabFeatureSubcomposition({
       cloudAuthority: {
+        authorityKind: 'cloud',
         create: jest.fn() as never,
-        createLifecycle: jest.fn(async () => cloudSession),
+        connect: jest.fn(async () => cloudSession),
       },
       foundation: reopenedFoundation,
       projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
@@ -585,7 +606,6 @@ describe('G3 local Project milestone gate', () => {
           authority: {
             authorityGeneration: 2,
             bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-            developmentActorId: MEMBER_ID,
             gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
             kind: 'cloud',
             serverUrl: 'https://cloud.example.test/',
@@ -623,11 +643,11 @@ describe('G3 local Project milestone gate', () => {
       await foundation.close();
 
       const reopenedFoundation = createFoundation();
-      const createLifecycle = jest.fn(async () => {
+      const connect = jest.fn(async () => {
         throw new Error('Cloud source must remain unavailable');
       });
       const reopened = createCollabFeatureSubcomposition({
-        cloudAuthority: { create: jest.fn() as never, createLifecycle },
+        cloudAuthority: { authorityKind: 'cloud', create: jest.fn() as never, connect },
         foundation: reopenedFoundation,
         projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
         vaultRoot,
@@ -637,7 +657,7 @@ describe('G3 local Project milestone gate', () => {
       await expect(
         reopenedFoundation.local.projects.authorityTransferClaimants.load(PROJECT_ID),
       ).resolves.toBeNull();
-      expect(createLifecycle).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
       await reopened.feature.close();
       await reopenedFoundation.close();
     },

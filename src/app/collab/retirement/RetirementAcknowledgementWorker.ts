@@ -31,7 +31,6 @@ export interface RetirementAcknowledgementClientPort {
     readonly signal?: AbortSignal;
   }): Promise<AcknowledgeRetirementResponse>;
   acknowledgeCloud(input: {
-    readonly developmentActorId: string;
     readonly projectId: CollabProjectId;
     readonly retirementId: string;
     readonly serverUrl: string;
@@ -148,7 +147,6 @@ implements RetirementAcknowledgementScheduler {
         await this.store.updateRetirementRecord(projectId, current => ({
           ...current,
           acknowledgementStatus: 'expired',
-          cloudDevelopmentActorId: null,
           cloudRetirementId: null,
           cloudServerUrl: null,
           hostCaCertificatePem: null,
@@ -163,7 +161,6 @@ implements RetirementAcknowledgementScheduler {
       return 'expired';
     }
     const {
-      cloudDevelopmentActorId,
       cloudRetirementId,
       cloudServerUrl,
       hostCaCertificatePem,
@@ -171,8 +168,7 @@ implements RetirementAcknowledgementScheduler {
       hostEndpoint,
       memberCredential,
     } = record;
-    const cloudAcknowledgement = cloudDevelopmentActorId
-      && cloudRetirementId
+    const cloudAcknowledgement = cloudRetirementId
       && cloudServerUrl;
     const lanAcknowledgement = hostCaCertificatePem
       && hostCaFingerprint
@@ -188,7 +184,6 @@ implements RetirementAcknowledgementScheduler {
     try {
       response = cloudAcknowledgement
         ? await this.client.acknowledgeCloud({
-            developmentActorId: cloudDevelopmentActorId,
             projectId,
             retirementId: cloudRetirementId,
             serverUrl: cloudServerUrl,
@@ -226,7 +221,6 @@ implements RetirementAcknowledgementScheduler {
       ...current,
       acknowledgedAt: response.acknowledgedAt,
       acknowledgementStatus: 'acknowledged',
-      cloudDevelopmentActorId: null,
       cloudRetirementId: null,
       cloudServerUrl: null,
       hostCaCertificatePem: null,

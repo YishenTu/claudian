@@ -5,8 +5,8 @@ import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/Col
 function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: 'member-alice',
       gitRemoteUrl: 'https://cloud.example.test/v3/projects/project-cloud/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',

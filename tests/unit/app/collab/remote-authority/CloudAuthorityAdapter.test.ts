@@ -1,5 +1,10 @@
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
+import { getCACertificates, setDefaultCACertificates } from 'node:tls';
 
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
@@ -10,16 +15,21 @@ import {
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { WebSocketServer } from 'ws';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
   CloudAuthorityAdapter,
   CloudProjectEventClient,
   type CloudProjectEventSocket,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import type {
-  CloudAuthorityHttpRequest,
+import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
+import {
+  type CloudAuthorityHttpRequest,
+  NodeCloudAuthorityHttpTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 
 const PROJECT_ID = 'project-cloud';
@@ -36,6 +46,8 @@ const STEP_12_CLOUD_MANAGEMENT_CAPABILITIES = Object.freeze([
   'cloud-project-leave',
   'cloud-project-manager-responsibility',
   'cloud-project-membership',
+  'development-bootstrap',
+  'project-checkpoint-export',
 ] satisfies readonly CollabCloudCapability[]);
 
 function changeRequest(overrides: Readonly<Record<string, unknown>> = {}) {
@@ -84,8 +96,8 @@ function ticketDetail(overrides: Readonly<Record<string, unknown>> = {}) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       bindingVersion: 3,
-      developmentActorId: ACTOR_ID,
       gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
@@ -161,6 +173,387 @@ function cloudSnapshot() {
 }
 
 describe('CloudAuthorityAdapter', () => {
+  it('preserves the HTTPS prefix with native certificate verification for JSON, artifacts, and WebSockets', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-tls-'));
+    const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A })
+      .issueServerIdentity('127.0.0.1');
+    const observed: Array<{ actor: unknown; path: string }> = [];
+    const server = createHttpsServer({ cert: identity.certificateChainPem, key: identity.privateKeyPem }, (request, response) => {
+      observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
+      if (request.url?.endsWith('/checkpoint/checkpoint.json')) {
+        response.setHeader('content-type', 'application/octet-stream');
+        response.setHeader('content-length', '2');
+        response.end('{}');
+        return;
+      }
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['authority-transfer', 'project-snapshot', 'project-events'], limits)
+        : collabCloudSuccessEnvelope('tls-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ noServer: true });
+    let connected!: () => void;
+    const opened = new Promise<void>(resolve => { connected = resolve; });
+    server.on('upgrade', (request, socket, head) => {
+      observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
+      sockets.handleUpgrade(request, socket, head, connected);
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `HTTPS://127.0.0.1:${address.port}/operator/cloud/`;
+    const trustedCa = getCACertificates('default');
+    let eventDeadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await expect(new CloudAuthorityAdapter().connect({ projectId: PROJECT_ID, serverUrl }))
+        .rejects.toMatchObject({ code: 'endpoint-unreachable' });
+      // Install only this fixture CA in the test process; production TLS options remain untouched.
+      setDefaultCACertificates([...trustedCa, identity.caCertificatePem]);
+      const bound = membership();
+      const session = await new CloudAuthorityAdapter().create({
+        ...bound,
+        authority: {
+          ...bound.authority,
+          gitRemoteUrl: `https://127.0.0.1:${address.port}/operator/cloud/v3/projects/project-cloud/repository.git`,
+          serverUrl,
+        },
+      });
+      try {
+        await expect(session.control.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+          currentMember: { id: 'member-alice' }, project: { authorityGeneration: 1 },
+        });
+        const artifact = await session.lifecycle!.downloadAuthorityTransferArtifact({
+          artifact: 'checkpoint.json', projectId: PROJECT_ID, transferId: 'transfer-one',
+        });
+        const chunks: Buffer[] = [];
+        for await (const chunk of artifact.body) chunks.push(Buffer.from(chunk));
+        expect(Buffer.concat(chunks).toString('utf8')).toBe('{}');
+        session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 });
+        await Promise.race([
+          opened,
+          new Promise<never>((_resolve, reject) => {
+            eventDeadline = setTimeout(() => reject(new Error('TLS event connection did not open')), 500);
+          }),
+        ]);
+        expect(observed).toEqual([
+          { actor: undefined, path: '/operator/cloud/collab/capabilities' },
+          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/operations/getProjectSnapshot' },
+          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json' },
+          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/events?afterSequence=3' },
+        ]);
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      clearTimeout(eventDeadline);
+      setDefaultCACertificates(trustedCa);
+      for (const peer of sockets.clients) peer.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('captures an unbound connection target before asynchronous negotiation', async () => {
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const adapter = new CloudAuthorityAdapter({
+      request: async input => {
+        await ready;
+        return {
+          body: input.method === 'GET'
+            ? collabCloudCapabilityDocument(['project-snapshot'], limits)
+            : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot()),
+          contentType: 'application/json',
+          status: 200,
+        };
+      },
+    });
+    const binding = { projectId: PROJECT_ID, serverUrl: 'HTTP://198.51.100.20/operator/cloud' };
+    const pending = adapter.connect(binding);
+    binding.projectId = 'project-foreign';
+    binding.serverUrl = 'https://foreign.example.test';
+    release();
+    const connection = await pending;
+    try {
+      expect(connection.projectId).toBe('project-cloud');
+      expect(connection.serverUrl).toBe('HTTP://198.51.100.20/operator/cloud');
+      await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ project: { id: PROJECT_ID } });
+    } finally {
+      connection.dispose();
+    }
+  });
+
+  it.each(['bound', 'unbound'] as const)('cancels %s capability negotiation through the native transport', async kind => {
+    let requested!: () => void;
+    const started = new Promise<void>(resolve => { requested = resolve; });
+    const server = createServer(() => requested());
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+    const adapter = new CloudAuthorityAdapter({ request: new NodeCloudAuthorityHttpTransport(200).request });
+    const controller = new AbortController();
+    const bound = membership();
+    try {
+      const pending = kind === 'bound'
+        ? adapter.create({
+          ...bound,
+          authority: {
+            ...bound.authority,
+            gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+            serverUrl,
+          },
+        }, { signal: controller.signal })
+        : adapter.connect({ projectId: PROJECT_ID, serverUrl }, { signal: controller.signal });
+      await started;
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['dispose', 'caller'] as const)('fences a late snapshot completion after %s cancellation', async cancellation => {
+    let release!: (response: Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>) => void;
+    const response = new Promise<Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>>(resolve => { release = resolve; });
+    const session = await new CloudAuthorityAdapter({
+      request: async input => input.method === 'GET'
+        ? { body: collabCloudCapabilityDocument(['project-snapshot'], limits), contentType: 'application/json', status: 200 }
+        : response,
+    }).create(membership());
+    const controller = new AbortController();
+    try {
+      const pending = session.control.readSnapshot(PROJECT_ID, { signal: controller.signal });
+      if (cancellation === 'dispose') session.dispose();
+      else controller.abort();
+      release({ body: collabCloudSuccessEnvelope('late-response', cloudSnapshot()), contentType: 'application/json', status: 200 });
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('owns and closes its prefixed WebSocket without a development assertion', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(collabCloudCapabilityDocument(['project-events'], limits)));
+    });
+    const sockets = new WebSocketServer({ noServer: true });
+    let connected!: () => void;
+    let closed!: () => void;
+    const opened = new Promise<void>(resolve => { connected = resolve; });
+    const disconnected = new Promise<boolean>(resolve => { closed = () => resolve(true); });
+    let observed: unknown;
+    server.on('upgrade', (request, socket, head) => {
+      observed = { actor: request.headers['x-claudian-development-actor'], path: request.url };
+      sockets.handleUpgrade(request, socket, head, peer => {
+        peer.once('close', closed);
+        connected();
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
+    const bound = membership();
+    const session = await new CloudAuthorityAdapter().create({
+      ...bound,
+      authority: {
+        ...bound.authority,
+        gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+        serverUrl,
+      },
+    });
+    const connection = session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await opened;
+      // The HTTP upgrade has reached the server; let the client finish opening before disposal.
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(observed).toEqual({
+        actor: undefined,
+        path: '/operator/cloud/v3/projects/project-cloud/events?afterSequence=3',
+      });
+      session.dispose();
+      expect(await Promise.race([
+        disconnected,
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 200); }),
+      ])).toBe(true);
+      expect(() => session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 }))
+        .toThrow(expect.objectContaining({ code: 'cancelled' }));
+    } finally {
+      clearTimeout(timer);
+      connection.dispose();
+      session.dispose();
+      for (const peer of sockets.clients) peer.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['upload', 'download'] as const)('aborts a prefixed artifact %s when the unbound connection is disposed', async direction => {
+    let requested!: () => void;
+    const started = new Promise<void>(resolve => { requested = resolve; });
+    let observed: unknown;
+    const server = createServer((request, response) => {
+      if (request.url?.endsWith('/collab/capabilities')) {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['authority-transfer'], limits)));
+      } else {
+        observed = { actor: request.headers['x-claudian-development-actor'], path: request.url };
+        request.resume();
+        requested();
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const connection = await new CloudAuthorityAdapter({
+      artifacts: new NodeCloudAuthorityArtifactTransport(200, 400),
+    }).connect({
+      projectId: PROJECT_ID,
+      serverUrl: `http://127.0.0.1:${address.port}/operator/cloud`,
+    });
+    const artifact = { artifact: 'checkpoint.json' as const, projectId: PROJECT_ID, transferId: 'transfer-one' };
+    try {
+      const pending = direction === 'upload'
+        ? connection.lifecycle.uploadAuthorityTransferArtifact({ ...artifact, body: Readable.from('x'), byteCount: 1 })
+        : connection.lifecycle.downloadAuthorityTransferArtifact(artifact);
+      await started;
+      connection.dispose();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+      expect(observed).toEqual({
+        actor: undefined,
+        path: '/operator/cloud/v3/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json',
+      });
+    } finally {
+      connection.dispose();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['bound', 'unbound'] as const)('disposes %s connections by aborting in-flight reads and closing further admission', async kind => {
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    const server = createServer((request, response) => {
+      if (request.method === 'GET') {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot'], limits)));
+      } else {
+        reading();
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+    const adapter = new CloudAuthorityAdapter({ request: new NodeCloudAuthorityHttpTransport(200).request });
+    const bound = membership();
+    const connection = kind === 'bound'
+      ? await adapter.create({
+        ...bound,
+        authority: {
+          ...bound.authority,
+          gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+          serverUrl,
+        },
+      })
+      : await adapter.connect({ projectId: PROJECT_ID, serverUrl });
+    const read = () => 'control' in connection
+      ? connection.control.readSnapshot(PROJECT_ID)
+      : connection.readSnapshot(PROJECT_ID);
+    try {
+      const pending = read();
+      await started;
+      connection.dispose();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+      await expect(read()).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      connection.dispose();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each([
+    { authorityGeneration: undefined },
+    { authorityGeneration: 0 },
+    { authorityGeneration: Number.MAX_SAFE_INTEGER + 1 },
+    { bindingVersion: 2 },
+    { wireVersion: 6 },
+    { gitRemoteUrl: 'https://other.example.test/v3/projects/project-cloud/repository.git' },
+  ])('rejects invalid bound authority facts before connecting: %j', async authority => {
+    const bound = membership();
+    const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
+    await expect(new CloudAuthorityAdapter({ request }).create({
+      ...bound,
+      authority: { ...bound.authority, ...authority } as CollabLocalCloudMembershipRecord['authority'],
+    })).rejects.toThrow('Invalid Cloud authority binding');
+  });
+
+  it('rejects a bound personal ref for another Member before connecting', async () => {
+    const bound = membership();
+    const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
+    await expect(new CloudAuthorityAdapter({ request }).create({
+      ...bound,
+      member: { ...bound.member, personalRef: 'refs/heads/members/member-bob' },
+    })).rejects.toThrow('Invalid Cloud authority binding');
+  });
+
+  it('uses the configured HTTP prefix without asserting a development identity', async () => {
+    const observed: Array<{ actor: string | string[] | undefined; path: string }> = [];
+    const server = createServer((request, response) => {
+      observed.push({
+        actor: request.headers['x-claudian-development-actor'],
+        path: request.url ?? '',
+      });
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot'], limits)));
+        return;
+      }
+      const snapshot = cloudSnapshot();
+      response.end(JSON.stringify(collabCloudSuccessEnvelope('prefixed-snapshot', {
+        ...snapshot,
+        project: { ...snapshot.project, authorityGeneration: 7 },
+      })));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `HTTP://127.0.0.1:${address.port}/operator/cloud`;
+    const gitRemoteUrl = `http://127.0.0.1:${address.port}/operator/cloud/v3/projects/project-cloud/repository.git`;
+    const bound = membership();
+    const adapter = new CloudAuthorityAdapter();
+    try {
+      const session = await adapter.create({
+        ...bound,
+        authority: { ...bound.authority, authorityGeneration: 7, gitRemoteUrl, serverUrl },
+      });
+      try {
+        await expect(session.control.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+          currentMember: { id: 'member-alice', personalRef: 'refs/heads/members/member-alice' },
+          project: { authorityGeneration: 7, id: 'project-cloud' },
+        });
+        expect(session.git).toEqual({ headers: [], remoteUrl: gitRemoteUrl });
+        expect(observed).toEqual([
+          { actor: undefined, path: '/operator/cloud/collab/capabilities' },
+          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/operations/getProjectSnapshot' },
+        ]);
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
   it('does not expose unimplemented Step 12 management capabilities', async () => {
     const request = jest.fn(async () => ({
       body: collabCloudCapabilityDocument(
@@ -173,8 +566,7 @@ describe('CloudAuthorityAdapter', () => {
     const adapter = new CloudAuthorityAdapter({ request });
     const [session, lifecycle] = await Promise.all([
       adapter.create(membership()),
-      adapter.createLifecycle({
-        developmentActorId: ACTOR_ID,
+      adapter.connect({
         projectId: PROJECT_ID,
         serverUrl: 'https://cloud.example.test',
       }),
@@ -187,7 +579,7 @@ describe('CloudAuthorityAdapter', () => {
     expect(session.membership).toBeUndefined();
   });
 
-  it('binds a lifecycle-only snapshot to the canonical Member ref', async () => {
+  it('reads an unbound lifecycle snapshot using only the server-established Member identity', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'
         ? collabCloudCapabilityDocument(['project-snapshot'], limits)
@@ -195,8 +587,7 @@ describe('CloudAuthorityAdapter', () => {
       contentType: 'application/json',
       status: 200,
     }));
-    const lifecycle = await new CloudAuthorityAdapter({ request }).createLifecycle({
-      developmentActorId: ACTOR_ID,
+    const lifecycle = await new CloudAuthorityAdapter({ request }).connect({
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     });
@@ -208,6 +599,107 @@ describe('CloudAuthorityAdapter', () => {
       },
       project: { id: PROJECT_ID },
     });
+    lifecycle.dispose();
+  });
+
+  it('rejects a snapshot from a different authority generation', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+      body: input.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot'], limits)
+        : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot()),
+      contentType: 'application/json',
+      status: 200,
+    }));
+    const bound = membership();
+    const session = await new CloudAuthorityAdapter({ request }).create({
+      ...bound,
+      authority: { ...bound.authority, authorityGeneration: 7 },
+    });
+    try {
+      await expect(session.control.readSnapshot(PROJECT_ID)).rejects.toMatchObject({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'cloud-control-snapshot-response-mismatch' },
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('admits a Project through a short-lived connection without a fabricated membership', async () => {
+    const received: unknown[] = [];
+    let returnedProjectId = PROJECT_ID;
+    const server = createServer(async (request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['cloud-project-create'], limits)));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      received.push({
+        actor: request.headers['x-claudian-development-actor'],
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        path: request.url,
+      });
+      response.end(JSON.stringify(collabCloudSuccessEnvelope('created-project', {
+        createdAt: CREATED_AT,
+        mainOid: MAIN_OID,
+        managerSetGeneration: 1,
+        memberId: 'member-server-selected',
+        membershipRevision: 2,
+        personalRef: 'refs/heads/members/member-server-selected',
+        projectId: returnedProjectId,
+        role: 'manager',
+      })));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    try {
+      const connection = await new CloudAuthorityAdapter({
+        requestIdFactory: () => 'request-entry',
+      }).connect({
+        projectId: PROJECT_ID,
+        serverUrl: `http://127.0.0.1:${address.port}/operator/cloud/`,
+      });
+      try {
+        await expect(connection.createProject({
+          idempotencyKey: 'create-exact-intent',
+          managerDisplayName: 'Alice',
+          projectId: PROJECT_ID,
+          projectName: 'Cloud Project',
+        })).resolves.toMatchObject({
+          memberId: 'member-server-selected',
+          personalRef: 'refs/heads/members/member-server-selected',
+          projectId: PROJECT_ID,
+        });
+        expect(received).toEqual([{
+          actor: undefined,
+          body: {
+            data: {
+              idempotencyKey: 'create-exact-intent',
+              managerDisplayName: 'Alice',
+              projectId: 'project-cloud',
+              projectName: 'Cloud Project',
+            },
+            protocolVersion: 7,
+            requestId: 'request-entry',
+          },
+          path: '/operator/cloud/v3/projects/project-cloud/operations/createCloudProject',
+        }]);
+        returnedProjectId = 'project-other';
+        await expect(connection.createProject({
+          idempotencyKey: 'create-exact-intent',
+          managerDisplayName: 'Alice',
+          projectId: PROJECT_ID,
+          projectName: 'Cloud Project',
+        })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+      } finally {
+        connection.dispose();
+      }
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 
   it('binds negotiated lifecycle control and artifact routes without a local registry', async () => {
@@ -306,8 +798,7 @@ describe('CloudAuthorityAdapter', () => {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing server address');
       const operation = async () => {
-        const connection = await new CloudAuthorityAdapter().createLifecycle({
-          developmentActorId: ACTOR_ID,
+        const connection = await new CloudAuthorityAdapter().connect({
           projectId: PROJECT_ID,
           serverUrl: `http://127.0.0.1:${address.port}`,
         });
@@ -389,6 +880,7 @@ describe('CloudAuthorityAdapter', () => {
       ...membership(),
       authority: {
         ...membership().authority,
+        gitRemoteUrl: `http://127.0.0.1:${address.port}/v3/projects/project-cloud/repository.git`,
         serverUrl: `http://127.0.0.1:${address.port}`,
       },
     } satisfies CollabLocalCloudMembershipRecord;
@@ -400,9 +892,9 @@ describe('CloudAuthorityAdapter', () => {
         project: { authorityKind: 'cloud', id: PROJECT_ID },
       });
       expect(requests).toEqual([
-        { actor: ACTOR_ID, url: '/collab/capabilities' },
+        { actor: undefined, url: '/collab/capabilities' },
         {
-          actor: ACTOR_ID,
+          actor: undefined,
           url: `/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
         },
       ]);
@@ -458,22 +950,18 @@ describe('CloudAuthorityAdapter', () => {
     expect(session.supports('project-snapshot')).toBe(true);
     expect(session.supports('requests')).toBe(false);
     expect(session.git).toEqual({
-      headers: [{
-        name: 'X-Claudian-Development-Actor',
-        sensitive: false,
-        value: ACTOR_ID,
-      }],
+      headers: [],
       remoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
       expect.objectContaining({
-        headers: { 'x-claudian-development-actor': ACTOR_ID },
+        headers: {},
         method: 'GET',
         url: 'https://cloud.example.test/collab/capabilities',
       }),
       expect.objectContaining({
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
-        headers: { 'x-claudian-development-actor': ACTOR_ID },
+        headers: {},
         method: 'POST',
         url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
@@ -526,9 +1014,9 @@ describe('CloudAuthorityAdapter', () => {
         protocolVersion: 7,
         requestId: 'request-ensure',
       },
-      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      headers: {},
       method: 'POST',
-      signal: controller.signal,
+      signal: expect.any(AbortSignal),
       url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/ensureMyRequest`,
     });
   });
@@ -584,9 +1072,9 @@ describe('CloudAuthorityAdapter', () => {
         protocolVersion: 7,
         requestId: expect.any(String),
       },
-      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      headers: {},
       method: 'POST',
-      signal: controller.signal,
+      signal: expect.any(AbortSignal),
       url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/acceptRequest`,
     });
   });
@@ -994,7 +1482,6 @@ describe('CloudProjectEventClient', () => {
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1032,7 +1519,6 @@ describe('CloudProjectEventClient', () => {
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1040,7 +1526,7 @@ describe('CloudProjectEventClient', () => {
         const socket = new FakeSocket();
         sockets.push(socket);
         expect(input).toEqual({
-          headers: { 'x-claudian-development-actor': ACTOR_ID },
+          headers: {},
           url: `wss://cloud.example.test/v3/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 5
           }`,
@@ -1081,7 +1567,6 @@ describe('CloudProjectEventClient', () => {
       .mockImplementation(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1132,7 +1617,6 @@ describe('CloudProjectEventClient', () => {
       .mockImplementation(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1169,7 +1653,6 @@ describe('CloudProjectEventClient', () => {
     const onInvalidation = jest.fn(() => firstApplication.promise);
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1205,7 +1688,6 @@ describe('CloudProjectEventClient', () => {
     const clearTimeout = jest.fn();
     const client = new CloudProjectEventClient({
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, async invalidation => invalidation.sequence, {

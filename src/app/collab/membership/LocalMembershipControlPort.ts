@@ -29,6 +29,7 @@ export class LocalMembershipControlPort implements CollabAuthorityMembershipCont
     CollabAuthorityMembershipOperation
   > | null = null;
   private readonly credential: string;
+  private readonly memberId: string;
   private readonly createClient: NonNullable<LocalMembershipControlPortOptions['createClient']>;
   private readonly trust: {
     readonly caCertificatePem: string;
@@ -55,9 +56,10 @@ export class LocalMembershipControlPort implements CollabAuthorityMembershipCont
       projectId: membership.project.id,
     };
     this.credential = membership.member.credential;
+    this.memberId = membership.member.id;
   }
 
-  membership<Operation extends CollabAuthorityMembershipOperation>(
+  async membership<Operation extends CollabAuthorityMembershipOperation>(
     operation: Operation,
     input: CollabAuthorityMembershipOperationMap[Operation]['input'],
     options: CollabOperationOptions = {},
@@ -65,14 +67,23 @@ export class LocalMembershipControlPort implements CollabAuthorityMembershipCont
     const client = this.client ??= this.createClient(this.trust);
     const method = client[operation] as (
       authenticated: typeof input & {
+        readonly expectedTargetMemberId?: string;
+        readonly memberId?: string;
         readonly memberCredential: string;
         readonly signal?: AbortSignal;
       },
-    ) => Promise<CollabAuthorityMembershipOperationMap[Operation]['result']>;
-    return method.call(client, {
+    ) => Promise<unknown>;
+    const response = await method.call(client, {
       ...input,
+      ...(operation === 'revokeInvitation' ? { memberId: this.memberId } : {}),
+      ...(operation === 'acknowledgeManagerResponsibility' || operation === 'declineManagerResponsibility'
+        ? { expectedTargetMemberId: this.memberId } : {}),
       memberCredential: this.credential,
       ...(options.signal ? { signal: options.signal } : {}),
     });
+    return (
+      operation === 'promoteManager' || operation === 'demoteManager' || operation === 'removeMember'
+        ? undefined : response
+    ) as CollabAuthorityMembershipOperationMap[Operation]['result'];
   }
 }

@@ -56,7 +56,7 @@ describe('CloudBootstrapTransitionRecord', () => {
       newAuthority: {
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
         gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
-        serverUrl: 'https://cloud.example.test/',
+        serverUrl: 'https://cloud.example.test',
         wireVersion: COLLAB_PROTOCOL_VERSION,
       },
       oldAuthority: {
@@ -170,8 +170,11 @@ describe('CloudBootstrapTransitionRecord', () => {
     })).toThrow(TypeError);
   });
 
-  it('permits only loopback HTTP for the local development Cloud composition', () => {
-    const record = createCloudBootstrapTransitionRecord({
+  it.each([
+    ['http://127.0.0.1:8787', 'http://127.0.0.1:8787/v3/projects/project-alpha/repository.git'],
+    ['HTTP://198.51.100.20:8787/cloud', 'http://198.51.100.20:8787/cloud/v3/projects/project-alpha/repository.git'],
+  ])('retains raw Cloud URL %s without changing LAN endpoint constraints', (serverUrl, gitRemoteUrl) => {
+    const input = {
       ownerInstallationKey: TEST_INSTALLATION_A,
       developmentActorId: HOST_MEMBER_ID,
       fenceId: 'bootstrap-fence-loopback',
@@ -180,25 +183,18 @@ describe('CloudBootstrapTransitionRecord', () => {
       memberId: HOST_MEMBER_ID,
       oldEndpoint: 'https://192.168.1.20:54545',
       oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
-      serverUrl: 'http://127.0.0.1:8787',
-      timestamp: '2026-08-21T00:00:01.000Z',
-    });
+      serverUrl,
+      timestamp: '2026-08-21T00:00:01.000Z' as const,
+    };
+    const record = createCloudBootstrapTransitionRecord(input);
 
     expect(record.newAuthority).toMatchObject({
-      gitRemoteUrl: `http://127.0.0.1:8787/v3/projects/${PROJECT_ID}/repository.git`,
-      serverUrl: 'http://127.0.0.1:8787/',
+      gitRemoteUrl,
+      serverUrl,
     });
     expect(() => createCloudBootstrapTransitionRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      developmentActorId: HOST_MEMBER_ID,
-      fenceId: 'bootstrap-fence-public-http',
-      manifest: bootstrapManifest(),
-      manifestSha256: MANIFEST_SHA256,
-      memberId: HOST_MEMBER_ID,
-      oldEndpoint: 'https://192.168.1.20:54545',
-      oldGitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
-      serverUrl: 'http://cloud.example.test',
-      timestamp: '2026-08-21T00:00:01.000Z',
+      ...input,
+      oldEndpoint: 'https://192.168.1.20:54545/prefix',
     })).toThrow(TypeError);
   });
 

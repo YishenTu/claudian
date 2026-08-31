@@ -106,15 +106,20 @@ export interface CollabPersonalChangesInspection {
 }
 
 export interface CollabCreateProjectRequest {
+  authority?: { readonly kind: 'lan' } | { readonly kind: 'cloud'; readonly serverUrl: string };
   name: string;
   memberDisplayName: string;
 }
 
-export interface CollabJoinProjectRequest {
+export interface CollabInvitationJoinRequest {
   encodedInvitation: string;
   memberDisplayName: string;
   projectSlug?: string;
 }
+
+export type CollabJoinProjectRequest = CollabInvitationJoinRequest | {
+  readonly existingCloudProjectId: CollabProjectId;
+};
 
 export interface CollabReconnectProjectRequest {
   encodedInvitation: string;
@@ -370,8 +375,6 @@ export type CollabCancelHostTransferRequest = CollabHostTransferIntentRequest;
 
 export interface CollabRetireProjectRequest {
   projectId: CollabProjectId;
-  managerActorMemberId: CollabMemberId;
-  expectedHostMemberId: CollabMemberId;
 }
 
 export interface CollabFinalizeRetiredProjectRequest {

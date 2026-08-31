@@ -109,6 +109,7 @@ import {
   bindLegacyCollabProjectSetupOwner,
   decodeCollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
+import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 import { LanHostTransitionProofClient } from '@/app/collab/reconnect/LanHostTransitionProofClient';
 import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { ProjectRetirementCoordinator } from '@/app/collab/retirement/ProjectRetirementCoordinator';
@@ -488,18 +489,31 @@ export class ClaudianCollabService {
     signal?: AbortSignal,
   ): Promise<CollabRetirementResult> {
     this.#assertOpen();
-    const { idempotencyKey } = createRetirementIntent(request);
     const membership = await this.#requireTrustedMembership(request.projectId);
-    const protocolRequest = {
-      expectedHostMemberId: request.expectedHostMemberId,
-      idempotencyKey,
-      managerActorMemberId: request.managerActorMemberId,
-      projectId: request.projectId,
-    };
+    const transport = new PinnedCollabHttpClient(membership.trust, 10_000);
     try {
+      const snapshot = await new ProjectControlClient(transport).readSnapshot(
+        request.projectId,
+        membership.credential,
+        signal ? { signal } : {},
+      );
+      if (
+        snapshot.project.id !== request.projectId
+        || snapshot.currentMember.id !== membership.memberId
+        || snapshot.currentMember.role !== 'manager'
+      ) throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'retirement-manager-membership-mismatch' },
+      });
+      const intent = {
+        expectedHostMemberId: snapshot.project.hostMemberId,
+        managerActorMemberId: snapshot.currentMember.id,
+        projectId: request.projectId,
+      };
+      const { idempotencyKey } = createRetirementIntent(intent);
       const operation = 'retireProject' as const;
-      return await new PinnedCollabHttpClient(membership.trust, 10_000).requestWithMember({
-        body: protocolRequest,
+      return await transport.requestWithMember({
+        body: { ...intent, idempotencyKey },
         decode: lanCollabControlOperationCodec(operation).decodeResponse,
         idempotencyKey,
         method: COLLAB_CONTROL_OPERATION_BINDINGS[operation].method,
@@ -1293,6 +1307,7 @@ export class ClaudianCollabService {
 
    async #requireTrustedMembership(projectId: CollabProjectId): Promise<{
     readonly credential: string;
+    readonly memberId: string;
     readonly trust: {
       readonly caCertificatePem: string;
       readonly caFingerprint: string;
@@ -1318,6 +1333,7 @@ export class ClaudianCollabService {
     }
     return {
       credential: membership.member.credential,
+      memberId: membership.member.id,
       trust: { caCertificatePem, caFingerprint, endpoint, projectId },
     };
   }

@@ -792,6 +792,22 @@ describe('CollabFeatureService', () => {
     });
   });
 
+  it('does not turn an unsupported Cloud Create intent into a LAN Project', async () => {
+    const service = createService();
+    setup.createProject.mockRejectedValue(new Error('LAN setup must not receive Cloud intent'));
+    await expect(service.createProject({
+      authority: { kind: 'cloud', serverUrl: 'http://198.51.100.20:8787/operator/cloud' },
+      memberDisplayName: 'Alice',
+      name: 'Alpha',
+    })).resolves.toMatchObject({
+      status: 'failure',
+      error: {
+        code: 'operation-failed',
+        safeContext: { reason: 'cloud-project-create-unavailable' },
+      },
+    });
+  });
+
   it('refreshes state after successful creation and durable partial setup', async () => {
     const service = createService();
     setup.createProject.mockResolvedValue({
@@ -1407,8 +1423,6 @@ describe('CollabFeatureService', () => {
       projectId: 'project-alpha', transferId: 'transfer-a',
     })).resolves.toMatchObject({ status: 'success' });
     await expect(service.retireProject({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-host',
       projectId: 'project-alpha',
     })).resolves.toMatchObject({ status: 'success' });
     await expect(service.finalizeRetiredProject({
@@ -2472,11 +2486,16 @@ describe('CollabFeatureService', () => {
       publication: publish,
     });
     await service.initialize();
+    const operationVisible = deferred<void>();
+    const subscription = service.subscribe(state => {
+      if (state.activeOperation?.kind === 'publish') operationVisible.resolve();
+    });
     const result = service.publish({
       description: 'Published change',
       projectId: 'project-alpha',
     });
-    await Promise.resolve();
+    await operationVisible.promise;
+    subscription.dispose();
 
     expect(service.state.activeOperation).toMatchObject({
       kind: 'publish',

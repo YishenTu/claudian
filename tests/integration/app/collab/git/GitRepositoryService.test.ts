@@ -7,6 +7,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -48,6 +49,45 @@ describe('GitRepositoryService integration', () => {
 
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
+  });
+
+  it('rejects an initial Git HTTP redirect without contacting its destination', async () => {
+    let destinationRequests = 0;
+    let sourceRequests = 0;
+    const destination = createServer((_request, response) => {
+      destinationRequests++;
+      response.writeHead(404).end();
+    });
+    await new Promise<void>(resolve => destination.listen(0, '127.0.0.1', resolve));
+    const destinationAddress = destination.address();
+    if (!destinationAddress || typeof destinationAddress === 'string') throw new Error('Missing destination address');
+    const source = createServer((request, response) => {
+      sourceRequests++;
+      response.writeHead(302, { location: `http://127.0.0.1:${destinationAddress.port}${request.url}` }).end();
+    });
+    await new Promise<void>(resolve => source.listen(0, '127.0.0.1', resolve));
+    const sourceAddress = source.address();
+    if (!sourceAddress || typeof sourceAddress === 'string') throw new Error('Missing source address');
+    try {
+      await expect(service.cloneRepository({
+        branch: 'main', directoryName: 'redirect-copy', parentDirectory: root,
+        network: { headers: [] }, remoteUrl: `http://127.0.0.1:${sourceAddress.port}/repository.git`,
+      })).rejects.toBeDefined();
+      expect(sourceRequests).toBeGreaterThan(0);
+      expect(destinationRequests).toBe(0);
+    } finally {
+      source.closeAllConnections(); destination.closeAllConnections();
+      await Promise.all([new Promise<void>(resolve => source.close(() => resolve())), new Promise<void>(resolve => destination.close(() => resolve()))]);
+    }
+  });
+
+  it('retains a non-loopback HTTP Cloud remote and deployment prefix without upgrading the scheme', async () => {
+    const repositoryPath = path.join(root, 'working');
+    await mkdir(repositoryPath);
+    await service.initializeWorkingRepository(repositoryPath);
+    const remoteUrl = 'http://192.0.2.25:8080/operator/cloud/v3/projects/project-alpha/repository.git';
+    await service.addRemote(repositoryPath, 'origin', remoteUrl);
+    expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([remoteUrl]);
   });
 
   it('creates commits, parses status, reads objects and diffs, and preserves refs', async () => {

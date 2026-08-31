@@ -14,7 +14,6 @@ function membership(): CollabLocalCloudMembershipRecord {
     authority: {
       authorityGeneration: 3,
       bindingVersion: 3,
-      developmentActorId: 'member-manager',
       gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',
@@ -60,7 +59,7 @@ describe('CloudRetirementClient', () => {
     });
     const dispose = jest.fn();
     const client = new CloudRetirementClient({
-      createLifecycle: async () => { throw new Error('not expected'); },
+      connect: async () => { throw new Error('not expected'); },
       createSession: async () => ({
         authorityKind: 'cloud',
         control: {
@@ -95,8 +94,6 @@ describe('CloudRetirementClient', () => {
     });
 
     await expect(client.retire(membership(), {
-      expectedHostMemberId: 'member-manager',
-      managerActorMemberId: 'member-manager',
       projectId: PROJECT_ID,
     })).resolves.toEqual({
       projectId: PROJECT_ID,
@@ -125,25 +122,23 @@ describe('CloudRetirementClient', () => {
       retirementId: 'retirement-cloud',
     });
     const dispose = jest.fn();
-    const createLifecycle = jest.fn(async () => ({
+    const connect = jest.fn(async () => ({
       dispose,
       lifecycle: { retirement },
       supports: () => true,
     } as never));
     const client = new CloudRetirementClient({
-      createLifecycle,
+      connect,
       createSession: async () => { throw new Error('not expected'); },
     });
 
     await client.acknowledge({
-      developmentActorId: 'member-manager',
       projectId: PROJECT_ID,
       retirementId: 'retirement-cloud',
       serverUrl: 'https://cloud.example.test/',
     });
 
-    expect(createLifecycle).toHaveBeenCalledWith({
-      developmentActorId: 'member-manager',
+    expect(connect).toHaveBeenCalledWith({
       projectId: PROJECT_ID,
       retirementId: 'retirement-cloud',
       serverUrl: 'https://cloud.example.test/',

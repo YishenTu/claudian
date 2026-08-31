@@ -91,8 +91,7 @@ function invalidNetworkEnvironment(
   network: GitNetworkEnvironment,
 ): CollabError | null {
   if (
-    network.headers.length < 1
-    || network.headers.length > 4
+    network.headers.length > 4
     || network.headers.some(header => (
       !/^[A-Za-z][A-Za-z0-9-]{0,63}$/u.test(header.name)
       || header.value.length < 1
@@ -152,6 +151,7 @@ export function buildIsolatedGitEnvironment(
   const runtimeConfig: Array<{ key: string; value: string }> = [
     { key: 'credential.helper', value: '' },
     { key: 'credential.useHttpPath', value: 'true' },
+    { key: 'http.followRedirects', value: 'false' },
     { key: 'core.askPass', value: '' },
     { key: 'fetch.fsckObjects', value: 'true' },
     { key: 'transfer.fsckObjects', value: 'true' },

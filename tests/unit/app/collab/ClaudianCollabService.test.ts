@@ -93,8 +93,6 @@ describe('ClaudianCollabService retirement recovery', () => {
     PinnedCollabHttpClient.mockImplementationOnce(() => ({ requestWithMember }));
 
     await expect(service.retireProject({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-a',
     })).resolves.toEqual({
       projectId: 'project-a',
@@ -102,14 +100,8 @@ describe('ClaudianCollabService retirement recovery', () => {
     });
     expect(requestWithMember).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: {
-          expectedHostMemberId: 'member-host',
-          idempotencyKey: expect.any(String),
-          managerActorMemberId: 'member-manager',
-          projectId: 'project-a',
-        },
-        method: 'POST',
-        path: '/v9/projects/project-a/retire',
+        method: 'GET',
+        path: '/v9/projects/project-a/snapshot',
       }),
       Buffer.alloc(32, 1).toString('base64url'),
       {},

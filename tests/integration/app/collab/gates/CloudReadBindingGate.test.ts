@@ -17,6 +17,7 @@ import {
   type DevelopmentBootstrapManifest,
   matchCollabCloudRoute,
 } from '@claudian-collab/protocol';
+import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
@@ -54,7 +55,6 @@ import {
 } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
-import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import {
   CollabAuthorityGitNetworkEnvironment,
 } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
@@ -549,7 +549,7 @@ async function createClient(
           state: 'activated',
         } as never),
       },
-      authorityAdapter: new CloudAuthorityAdapter(),
+      authorityAdapter: createDevelopmentCloudAuthorityAdapter(memberId),
       authorityLifecycle: { closeAuthority: async () => undefined },
       git: {
         assertOrigin: (record, localPath) => ensureTrustedCollabOrigin(repositories, {
@@ -558,7 +558,7 @@ async function createClient(
           repositoryPath: localPath,
         }, 'cloud-bootstrap-binding-origin-mismatch'),
         fetchFromUrl: (...input) => repositories.fetchFromUrl(...input),
-        network: (projectId, facts) => network.resolve(projectId, facts),
+        network: (projectId, facts) => network.resolve(projectId, developmentCloudGitNetwork(facts, memberId)),
         resolveRefs: (...input) => repositories.resolveRefs(...input),
         rotateOrigin: (record, localPath) => rotateCloudBootstrapOrigin(repositories, {
           newRemoteUrl: record.newAuthority.gitRemoteUrl,
@@ -612,7 +612,7 @@ describe('Cloud read and binding gate', () => {
         expect(await readFile(path.join(client.repositoryPath, 'unpublished.md'), 'utf8'))
           .toBe(`${storedMembership?.member.id} local work\n`);
 
-        const session = await new CloudAuthorityAdapter().create(storedMembership!);
+        const session = await createDevelopmentCloudAuthorityAdapter(storedMembership!.member.id).create(storedMembership!);
         snapshots.push(await session.control.readSnapshot(PROJECT_ID));
         let eventConnection: { dispose(): void } | undefined;
         const invalidation = new Promise(resolve => {
