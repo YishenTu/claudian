@@ -21,7 +21,7 @@ import type { CollabFeatureService } from '@/app/collab/CollabFeatureService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
-import { type CollabResult } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabResult, isCollabLanProjectSnapshot } from '@/core/collab';
 
 jest.setTimeout(120_000);
 
@@ -192,7 +192,11 @@ describe('M5 review and Accept gate', () => {
       targetMemberId: managerMembership.member.id,
     }), 'Manager responsibility offer');
     unwrap(
-      await managerFeature.readSnapshot(projectId),
+      await readEventuallySnapshot(managerFeature, projectId, ({ snapshot }) => (
+        isCollabLanProjectSnapshot(snapshot)
+        && snapshot.managerResponsibilityOffer?.offerId === responsibility.offerId
+        && snapshot.managerResponsibilityOffer.status === 'acknowledged'
+      )),
       'Automatic Manager responsibility reconciliation',
     );
     unwrap(await hostFeature.promoteManager({
@@ -201,11 +205,16 @@ describe('M5 review and Accept gate', () => {
       targetMemberId: managerMembership.member.id,
     }), 'Manager promotion');
     expect(unwrap(
-      await managerFeature.readSnapshot(projectId),
+      await readEventuallySnapshot(managerFeature, projectId, value => (
+        value.source === 'online' && value.snapshot.currentMember.role === 'manager'
+      )),
       'Manager snapshot',
-    ).snapshot.currentMember).toMatchObject({
-      id: managerMembership.member.id,
-      role: 'manager',
+    )).toMatchObject({
+      source: 'online',
+      stale: false,
+      snapshot: {
+        currentMember: { id: managerMembership.member.id, role: 'manager' },
+      },
     });
     const firstManagerReview = unwrap(
       await managerFeature.prepareReview(projectId, requestId),
@@ -233,7 +242,11 @@ describe('M5 review and Accept gate', () => {
     });
 
     unwrap(await hostFeature.stopHost(projectId), 'Host stop');
-    await expect(readEventuallyCached(managerFeature, projectId)).resolves.toMatchObject({
+    await expect(readEventuallySnapshot(
+      managerFeature,
+      projectId,
+      value => value.source === 'cache',
+    )).resolves.toMatchObject({
       status: 'success',
       value: { source: 'cache', stale: true },
     });
@@ -437,13 +450,15 @@ describe('M5 review and Accept gate', () => {
     return feature;
   }
 
-  async function readEventuallyCached(
+  async function readEventuallySnapshot(
     feature: CollabFeatureService,
     projectId: string,
+    isReady: (value: CollabCoordinationSnapshot) => boolean,
   ) {
+    // Event refreshes can share a snapshot request started before the remote transition.
     let latest = await feature.readSnapshot(projectId);
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (latest.status === 'success' && latest.value.source === 'cache') return latest;
+      if (latest.status !== 'success' || isReady(latest.value)) return latest;
       await new Promise(resolve => setTimeout(resolve, 25));
       latest = await feature.readSnapshot(projectId);
     }
