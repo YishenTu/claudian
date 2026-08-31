@@ -244,12 +244,12 @@ class MemoryPublicationState {
 function membership(gitRemoteUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: ACTOR_ID,
       gitRemoteUrl,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

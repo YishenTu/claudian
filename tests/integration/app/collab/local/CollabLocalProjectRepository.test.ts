@@ -92,12 +92,12 @@ function membershipRecord(
 function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: 'member-alice',
-      gitRemoteUrl: `http://127.0.0.1:8787/v2/projects/${PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `http://127.0.0.1:8787/v3/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'http://127.0.0.1:8787/',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: '2026-08-08T00:00:00.000Z',
     lastEventSequence: 7,

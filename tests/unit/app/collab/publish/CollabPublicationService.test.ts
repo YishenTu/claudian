@@ -63,12 +63,12 @@ const LAN_ACTIVE_ENDPOINT = 'https://192.168.1.44:41731';
 function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: CLOUD_MEMBER_ID,
-      gitRemoteUrl: `${serverUrl}/v2/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      gitRemoteUrl: `${serverUrl}/v3/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 6,
+      wireVersion: 7,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -106,6 +106,7 @@ function cloudSnapshot() {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       createdAt: CLOUD_CREATED_AT,
       expectedMainOid: 'a'.repeat(40),
       id: CLOUD_PROJECT_ID,
@@ -434,7 +435,7 @@ describe('CollabPublicationService reconnect', () => {
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v2/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
       fetchMock.mockRestore();

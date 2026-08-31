@@ -28,10 +28,11 @@ describe('Collab authority projection', () => {
       hostMemberId: 'member-a',
       managerSetGeneration: 3,
     };
-    const cloud: CollabProject = commonProject('cloud');
+    const cloud: CollabProject = { ...commonProject('cloud'), authorityGeneration: 7 };
 
     expect(lan.authorityKind).toBe('lan');
     expect(cloud).toEqual({
+      authorityGeneration: 7,
       authorityKind: 'cloud',
       createdAt: CREATED_AT,
       id: 'project-a',
@@ -65,7 +66,7 @@ describe('Collab authority projection', () => {
       members: [],
       openRequests: [],
       openTicketCount: 0,
-      project: commonProject('cloud'),
+      project: { ...commonProject('cloud'), authorityGeneration: 7 },
       ticketHighlights: [],
     };
 
