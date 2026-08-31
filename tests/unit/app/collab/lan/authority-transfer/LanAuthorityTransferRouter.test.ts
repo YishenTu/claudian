@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 
 import type {
   AcceptCloudToLanTransferTargetRequest,
@@ -127,10 +127,10 @@ describe('LanAuthorityTransferRouter', () => {
     operation: Parameters<typeof collabLanAuthorityTransferOperationPath>[1],
     body: unknown,
     authorization?: string,
-    version = 1,
+    version = 2,
   ): Promise<Response> {
     const path = collabLanAuthorityTransferOperationPath(PROJECT_ID, operation)
-      .replace('/v1/', `/v${version}/`);
+      .replace('/v2/', `/v${version}/`);
     return fetch(`${endpoint}${path}`, {
       body: JSON.stringify(body),
       headers: {
@@ -164,9 +164,9 @@ describe('LanAuthorityTransferRouter', () => {
     );
     expect(proposed.status).toBe(200);
     expect(await responseJson(proposed)).toMatchObject({
-      bindingVersion: 1,
+      bindingVersion: 2,
       data: { projectId: PROJECT_ID, transferId: 'transfer-alpha' },
-      protocolVersion: 6,
+      protocolVersion: 7,
       requestId: 'request-alpha',
     });
     expect(service.requestLanToCloudTransfer).toHaveBeenCalledWith(
@@ -213,19 +213,64 @@ describe('LanAuthorityTransferRouter', () => {
       'requestLanToCloudTransfer',
       { malformed: true },
       `Bearer ${HOST_CREDENTIAL}`,
-      2,
+      1,
     );
 
     expect(response.status).toBe(426);
     expect(await responseJson(response)).toMatchObject({
-      bindingVersion: 1,
+      bindingVersion: 2,
       error: {
         code: 'protocol-version-unsupported',
-        safeContext: { receivedVersion: 2, supportedVersion: 1 },
+        safeContext: { receivedVersion: 1, supportedVersion: 2 },
       },
-      protocolVersion: 6,
+      protocolVersion: 7,
     });
     expect(service.authenticateMemberCredential).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'source-active', 'terminal-source', 'target-only-staged', 'target-active',
+  ] as const)('rejects the prior binding before an incomplete body or %s lookup', async state => {
+    registration = {
+      credentialHash: createHash('sha256').update(TRANSFER_CREDENTIAL).digest('hex'),
+      hostMemberId: HOST_MEMBER_ID,
+      projectId: PROJECT_ID,
+      get service(): never { throw new Error('Unexpected transfer service access'); },
+      state,
+      transferId: 'transfer-alpha',
+    };
+    router = new LanAuthorityTransferRouter({
+      resolve: () => { throw new Error(`Unexpected ${registration?.state} lookup`); },
+      runIfCurrent: () => { throw new Error('Unexpected transfer admission'); },
+    });
+    const result = await new Promise<{ status: number | undefined; body: unknown }>((resolve, reject) => {
+      const request = httpRequest(
+        `${endpoint}/authority-transfer/v1/projects/${PROJECT_ID}/operations/getProjectAuthorityTransfer`,
+        { headers: { 'content-length': '200', 'content-type': 'application/json' }, method: 'POST' },
+        response => {
+          const chunks: Buffer[] = [];
+          response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+          response.once('end', () => {
+            request.destroy();
+            resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+          });
+        },
+      );
+      request.once('error', reject);
+      request.setTimeout(1_000, () => request.destroy(new Error('Version response waited for body')));
+      request.flushHeaders();
+    });
+    expect(result).toMatchObject({
+      status: 426,
+      body: {
+        bindingVersion: 2,
+        error: {
+          code: 'protocol-version-unsupported',
+          safeContext: { receivedVersion: 1, supportedVersion: 2 },
+        },
+        protocolVersion: 7,
+      },
+    });
   });
 
   it('rejects a resolver registration belonging to another Project', async () => {

@@ -169,7 +169,7 @@ describe('CollabGitOriginPolicy', () => {
   });
 
   it('rotates an exact LAN origin to the canonical Cloud Project route idempotently', async () => {
-    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const cloudUrl = 'https://cloud.example.test/v3/projects/project-a/repository.git';
     const repository = git([oldUrl]);
 
     await rotateCloudBootstrapOrigin(repository, {
@@ -189,7 +189,7 @@ describe('CollabGitOriginPolicy', () => {
   });
 
   it('rotates a stale generated same-Project LAN origin after Host readdressing', async () => {
-    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const cloudUrl = 'https://cloud.example.test/v3/projects/project-a/repository.git';
     const staleLanUrl = 'https://192.168.1.5:54545/v1/git/project-a/repository.git';
     const repository = git([staleLanUrl]);
 
@@ -211,7 +211,7 @@ describe('CollabGitOriginPolicy', () => {
     const repository = git([oldUrl]);
 
     await expect(rotateCloudBootstrapOrigin(repository, {
-      newRemoteUrl: 'https://cloud.example.test/v2/projects/project-b/repository.git',
+      newRemoteUrl: 'https://cloud.example.test/v3/projects/project-b/repository.git',
       oldRemoteUrl: oldUrl,
       projectId,
       repositoryPath: '/vault/workspace/project-a',
@@ -223,7 +223,7 @@ describe('CollabGitOriginPolicy', () => {
     const repository = git([oldUrl]);
 
     await rotateCloudBootstrapOrigin(repository, {
-      newRemoteUrl: 'http://127.0.0.1:8787/v2/projects/project-a/repository.git',
+      newRemoteUrl: 'http://127.0.0.1:8787/v3/projects/project-a/repository.git',
       oldRemoteUrl: oldUrl,
       projectId,
       repositoryPath: '/vault/workspace/project-a',
@@ -233,7 +233,7 @@ describe('CollabGitOriginPolicy', () => {
   });
 
   it('rotates exact authority-transfer origins in both directions', async () => {
-    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const cloudUrl = 'https://cloud.example.test/v3/projects/project-a/repository.git';
     const toCloud = git([oldUrl]);
     await rotateAuthorityTransferOrigin(toCloud, {
       newRemoteUrl: cloudUrl,
@@ -254,7 +254,7 @@ describe('CollabGitOriginPolicy', () => {
   });
 
   it('rotates a fenced stopped-Host origin to Cloud after LAN relinquishment', async () => {
-    const cloudUrl = 'https://cloud.example.test/v2/projects/project-a/repository.git';
+    const cloudUrl = 'https://cloud.example.test/v3/projects/project-a/repository.git';
     const repository = git([
       'https://127.0.0.1:1/claudian-collab/host-stopped/project-a',
     ]);
@@ -283,7 +283,7 @@ describe('CollabGitOriginPolicy', () => {
       repositoryPath: '/vault/workspace/project-a',
     })).rejects.toMatchObject({ code: 'repository-invalid' });
     await expect(rotateAuthorityTransferOrigin(repository, {
-      newRemoteUrl: 'https://cloud.example.test/v2/projects/project-b/repository.git',
+      newRemoteUrl: 'https://cloud.example.test/v3/projects/project-b/repository.git',
       oldRemoteUrl: oldUrl,
       projectId,
       repositoryPath: '/vault/workspace/project-a',
