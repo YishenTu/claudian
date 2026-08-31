@@ -33,6 +33,15 @@ async function run(input: CrashInput): Promise<void> {
   });
   const sessions = new CollabProjectWorkSessionRegistry();
   const adapter = new CloudAuthorityAdapter();
+  const release = foundation.local.workspace.releaseReservedProjectsFolderChild.bind(foundation.local.workspace);
+  foundation.local.workspace.releaseReservedProjectsFolderChild = async (...args) => {
+    const released = await release(...args);
+    if (input.phase === 'rename-before-checkpoint') {
+      process.send?.({ phase: input.phase, type: 'durable-cut' });
+      await new Promise<void>(() => {});
+    }
+    return released;
+  };
   const save = foundation.local.projects.saveProjectDocument.bind(foundation.local.projects);
   foundation.local.projects.saveProjectDocument = async (...args) => {
     await save(...args);

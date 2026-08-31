@@ -29,6 +29,7 @@ const tests = [
   'tests/integration/app/collab/git/GitRepositoryService.test.ts',
   'tests/integration/app/collab/git/GitRuntimeResolver.test.ts',
   'tests/integration/app/collab/join/JoinProjectCoordinator.test.ts',
+  'tests/integration/app/collab/join/JoinProjectLanIntegration.test.ts',
   'tests/integration/app/collab/project/CloudProjectEntryCoordinator.test.ts',
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
   'tests/integration/app/collab/review/NativeGitReviewRepository.test.ts',

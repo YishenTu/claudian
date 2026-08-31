@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
-import { resolveCollabVaultPath, syncCollabVaultDirectoryDurably } from '@/app/collab/CollabFilesystemBoundary';
+import { resolveCollabVaultPath } from '@/app/collab/CollabFilesystemBoundary';
 import type { CollabLocalMembershipRecord, CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import type { CollabProjectsFolderChildOwnership, CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
@@ -34,6 +34,7 @@ export interface CollabWorkingCopyPlacement extends CollabWorkingCopyIdentity {
   readonly projectsFolder: string;
   readonly slug: string;
   readonly staging: CollabProjectsFolderChildOwnership;
+  readonly stagingProvenance: 'reserved' | 'legacy-lan-join-v1';
 }
 
 const INDEX_MODE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) 0\t(.+)$/;
@@ -105,11 +106,12 @@ export class CollabWorkingCopySetup {
       if (!stagingStat?.isDirectory() || stagingStat.isSymbolicLink()) {
         throw setupError('workspace-boundary-invalid', 'setup-staging-missing');
       }
-      await this.foundation.local.workspace.reserveProjectsFolderChild(input.projectsFolder, input.staging);
+      if (input.stagingProvenance !== 'legacy-lan-join-v1') {
+        await this.foundation.local.workspace.reserveProjectsFolderChild(input.projectsFolder, input.staging);
+      }
       await this.validate(stagingPath, input, git);
       signal?.throwIfAborted();
       await rename(stagingPath, finalPath);
-      await syncCollabVaultDirectoryDurably(this.vaultRoot, input.projectsFolder);
     }
     await this.foundation.local.workspace.releaseReservedProjectsFolderChild(input.projectsFolder, input.staging);
   }

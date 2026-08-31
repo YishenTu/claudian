@@ -50,6 +50,73 @@ jest.setTimeout(30_000);
 
 
 describe('CloudProjectEntryCoordinator', () => {
+  it.each(['create', 'join', 'existing'] as const)('does not claim durable %s progress when its initial intent write never commits', async entry => {
+    const fixture = await createFixture({ join: entry !== 'create', alreadyBound: entry === 'existing' });
+    const projects = fixture.foundation.local.projects;
+    const cut = jest.spyOn(projects, 'saveProjectDocument').mockRejectedValueOnce(Object.assign(new Error('Injected initial disk failure'), { code: 'ENOSPC' }));
+    const start = () => entry === 'create' ? fixture.coordinator.createProject({
+      authority: { kind: 'cloud', serverUrl: fixture.serverUrl }, memberDisplayName: 'Alice', name: 'Cloud Notes',
+    }) : fixture.coordinator.joinProject({ invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob', projectSlug: 'cloud-notes' });
+    try {
+      await expect(start()).resolves.toMatchObject({ status: 'failure', error: { code: 'operation-failed', recoveryActions: ['retry', 'open-diagnostics'] } });
+      expect(await projects.listPendingOperationProjectIds()).toEqual([]);
+      expect(fixture.admittedRequests).toEqual([]);
+      expect(fixture.joinRequests).toEqual([]);
+      cut.mockRestore();
+      await expect(start()).resolves.toMatchObject({ status: 'success' });
+      expect(await projects.listPendingOperationProjectIds()).toEqual([]);
+    } finally { cut.mockRestore(); await fixture.close(); }
+  });
+
+  it.each(['unreadable', 'different'] as const)('does not claim a known durable intent when the failed initial write leaves %s state', async state => {
+    const fixture = await createFixture();
+    const projects = fixture.foundation.local.projects;
+    const save = projects.saveProjectDocument.bind(projects);
+    const load = projects.loadProjectDocument.bind(projects);
+    let writeFailed = false;
+    const cut = jest.spyOn(projects, 'saveProjectDocument').mockImplementationOnce(async (...args) => {
+      const value = state === 'different' ? { ...args[2], serverUrl: 'http://127.0.0.1:1/different' } : args[2];
+      await save(args[0], args[1], value);
+      writeFailed = true;
+      throw new Error('Injected post-promotion failure');
+    });
+    const readCut = jest.spyOn(projects, 'loadProjectDocument').mockImplementation((...args) => {
+      if (writeFailed && state === 'unreadable') return Promise.reject(new Error('Injected read failure'));
+      return load(...args);
+    });
+    try {
+      await expect(fixture.coordinator.createProject({ authority: { kind: 'cloud', serverUrl: fixture.serverUrl }, memberDisplayName: 'Alice', name: 'Cloud Notes' }))
+        .resolves.toMatchObject({ status: 'failure', error: { code: 'operation-failed', recoveryActions: ['open-diagnostics'] } });
+      cut.mockRestore();
+      readCut.mockRestore();
+      expect(await projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord)).toMatchObject({ operationId: OPERATION_ID, phase: 'intent', serverUrl: state === 'different' ? 'http://127.0.0.1:1/different' : fixture.serverUrl });
+      expect(fixture.admittedRequests).toEqual([]);
+      expect(await projects.listPendingOperationProjectIds()).toEqual([PROJECT_ID]);
+    } finally { cut.mockRestore(); readCut.mockRestore(); await fixture.close(); }
+  });
+
+  it('does not adopt a markerless current Cloud staging clone even when its Git identity matches', async () => {
+    const fixture = await createFixture();
+    const projects = fixture.foundation.local.projects;
+    const save = projects.saveProjectDocument.bind(projects);
+    const cut = jest.spyOn(projects, 'saveProjectDocument').mockImplementation(async (...args) => {
+      await save(...args);
+      if (args[1] === 'pending-operation' && (args[2] as { phase?: string }).phase === 'clone-validated') throw new Error('Injected clone checkpoint cut');
+    });
+    try {
+      await expect(fixture.coordinator.createProject({ authority: { kind: 'cloud', serverUrl: fixture.serverUrl }, memberDisplayName: 'Alice', name: 'Cloud Notes' }))
+        .resolves.toMatchObject({ status: 'recovery-required' });
+      cut.mockRestore();
+      await fixture.foundation.local.workspace.releaseReservedProjectsFolderChild('Shared/Projects', {
+        childName: `.claudian-clone-${PROJECT_ID}`, operationId: OPERATION_ID, projectId: PROJECT_ID, purpose: 'create-clone',
+      });
+      await expect(fixture.createCoordinator().resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({ status: 'recovery-required' });
+      expect(await projects.loadMembership(PROJECT_ID)).toBeNull();
+      expect((await lstat(path.join(fixture.vaultRoot, `Shared/Projects/.claudian-clone-${PROJECT_ID}`))).isDirectory()).toBe(true);
+      await expect(lstat(path.join(fixture.vaultRoot, 'Shared/Projects/cloud-notes'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { cut.mockRestore(); await fixture.close(); }
+  });
+
   it('derives a portable directory from an underscore-prefixed valid Project name', async () => {
     const fixture = await createFixture({ projectName: '_Cloud Notes' });
     try {
@@ -325,7 +392,7 @@ describe('CloudProjectEntryCoordinator', () => {
     } finally { await feature.close(); await fixture.close(); }
   });
 
-  it.each(['create', 'join'].flatMap(entry => ['intent', 'admitted', 'clone-validated', 'placed', 'locally-finalized'].map(phase => ({ entry, phase }))))(
+  it.each(['create', 'join'].flatMap(entry => ['intent', 'admitted', 'clone-validated', 'rename-before-checkpoint', 'placed', 'locally-finalized'].map(phase => ({ entry, phase }))))(
     'recovers $entry after actual process death at the durable $phase boundary', async ({ entry, phase }) => {
       const fixture = await createFixture({ join: entry === 'join' });
       const bundle = path.join(fixture.vaultRoot, 'crash-fixture.cjs');
@@ -356,7 +423,7 @@ describe('CloudProjectEntryCoordinator', () => {
         expect(child.kill('SIGKILL')).toBe(true);
         await exited;
         expect(child.signalCode).toBe('SIGKILL');
-        expect(await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord)).toMatchObject({ phase });
+        expect(await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord)).toMatchObject({ phase: phase === 'rename-before-checkpoint' ? 'clone-validated' : phase });
         await expect(fixture.createCoordinator().resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({ status: 'success' });
         expect(entry === 'join' ? fixture.joinRequests : fixture.admittedRequests).toHaveLength(1);
         expect(await fixture.foundation.local.projects.listPendingOperationProjectIds()).toEqual([]);

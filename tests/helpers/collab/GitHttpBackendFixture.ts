@@ -59,4 +59,3 @@ export async function runGitHttpBackendFixture(
   response.writeHead(status, headers);
   response.end(output.subarray(headerEnd + 4));
 }
-

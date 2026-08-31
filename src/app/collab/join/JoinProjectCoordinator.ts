@@ -549,6 +549,7 @@ export class JoinProjectCoordinator {
       projectsFolder: record.projectsFolder,
       slug: record.slug,
       staging: this.#stagingOwnership(record),
+      stagingProvenance: record.legacyJoinRecord ? 'legacy-lan-join-v1' : 'reserved',
     };
   }
 
@@ -737,8 +738,14 @@ export class JoinProjectCoordinator {
     };
   }
 
-   #saveRecord(record: JoinProjectRecord): Promise<void> {
+  #saveRecord(record: JoinProjectRecord): Promise<void> {
     const normalized = decodeJoinProjectRecord(record);
+    if (record.legacyJoinRecord && record.phase !== 'placed' && record.phase !== 'activated') {
+      const { projectsFolder: _projectsFolder, ...legacy } = normalized;
+      return this.foundation.local.projects.saveProjectDocument(
+        normalized.projectId, 'pending-operation', { ...legacy, schemaVersion: 1 },
+      );
+    }
     return this.foundation.local.projects.saveProjectDocument(
       normalized.projectId,
       'pending-operation',

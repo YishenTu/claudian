@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION } from '@claudian-collab/protocol';
 
@@ -67,7 +68,6 @@ export class CloudProjectEntryCoordinator {
     const captured = { ...request, authority: request.authority && { ...request.authority } };
     const projectsFolder = this.options.getProjectsFolder();
     return this.#queue.run(async () => {
-      let record: CloudProjectEntryRecord | null = null;
       try {
         signal.throwIfAborted();
         if (captured.authority?.kind !== 'cloud') throw new TypeError('Cloud entry requires a Cloud endpoint');
@@ -83,19 +83,16 @@ export class CloudProjectEntryCoordinator {
         }
         const slug = await this.#claimSlug(parsedFolder.value, captured.name, projectId);
         const timestamp = this.#now().toISOString();
-        record = decodeCloudProjectEntryRecord({
+        const record = decodeCloudProjectEntryRecord({
           admission: null, createdAt: timestamp, operationId, operationKind: 'cloud-create-project',
           phase: 'intent', projectId, projectsFolder: parsedFolder.value,
           request: { idempotencyKey: operationId, managerDisplayName: captured.memberDisplayName.trim(), projectId, projectName: captured.name.trim() },
           schemaVersion: 1, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
         });
-        await this.#save(record);
-        return await this.#continue(record, signal, false);
+        return await this.#begin(record, signal);
       } catch (error) {
-        if (!record && signal.aborted) return { durableProgress: false, status: 'cancelled' };
-        return record
-          ? this.#recovery(record)
-          : { error: error instanceof CollabError ? error : new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-entry-invalid' } }), status: 'failure' };
+        if (signal.aborted) return { durableProgress: false, status: 'cancelled' };
+        return { error: error instanceof CollabError ? error : new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-entry-invalid' } }), status: 'failure' };
       }
     });
   }
@@ -106,7 +103,6 @@ export class CloudProjectEntryCoordinator {
     const projectId = 'projectId' in request ? request.projectId : request.invitation.invitation.projectId;
     const projectsFolder = this.options.getProjectsFolder();
     return this.#queue.run(async () => {
-      let record: CloudProjectEntryRecord | null = null;
       try {
         signal.throwIfAborted();
         const pending = await this.foundation.local.projects.loadProjectDocument(projectId, 'pending-operation', decodeCollabPendingProjectOperation);
@@ -147,7 +143,7 @@ export class CloudProjectEntryCoordinator {
         }
         const operationId = this.#createId('operation');
         const timestamp = this.#now().toISOString();
-        record = decodeCloudProjectEntryRecord({
+        const record = decodeCloudProjectEntryRecord({
           admission: existingSnapshot ? { response: null, snapshot: existingSnapshot } : null,
           createdAt: timestamp, operationId, operationKind: existingSnapshot ? 'cloud-existing-project' : 'cloud-join-project',
           phase: existingSnapshot ? 'admitted' : 'intent', projectId, projectsFolder: parsedFolder.value,
@@ -157,12 +153,10 @@ export class CloudProjectEntryCoordinator {
           },
           schemaVersion: 1, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
         });
-        await this.#save(record);
-        return await this.#continue(record, signal, false);
+        return await this.#begin(record, signal);
       } catch (error) {
-        if (!record && signal.aborted) return { durableProgress: false, status: 'cancelled' };
-        return record ? this.#recovery(record, error)
-          : { error: error instanceof CollabError ? error : entryError('cloud-entry-invalid'), status: 'failure' };
+        if (signal.aborted) return { durableProgress: false, status: 'cancelled' };
+        return { error: error instanceof CollabError ? error : entryError('cloud-entry-invalid'), status: 'failure' };
       }
     });
   }
@@ -192,6 +186,25 @@ export class CloudProjectEntryCoordinator {
     return this.#queue.drain();
   }
 
+  async #begin(record: CloudProjectEntryRecord, signal: AbortSignal): Promise<CollabResult<CollabLocalProjectSummary>> {
+    try {
+      await this.#save(record);
+    } catch (error) {
+      const persisted = await this.foundation.local.projects.loadProjectDocument(record.projectId, 'pending-operation', decodeCloudProjectEntryRecord)
+        .catch(() => undefined);
+      if (persisted && isDeepStrictEqual(persisted, record)) return this.#recovery(persisted, error);
+      return {
+        error: new CollabError({
+          code: 'operation-failed',
+          recoveryActions: persisted === null ? ['retry', 'open-diagnostics'] : ['open-diagnostics'],
+          safeContext: { reason: persisted === null ? 'cloud-entry-intent-not-saved' : 'cloud-entry-intent-state-unavailable' },
+        }),
+        status: 'failure',
+      };
+    }
+    return this.#continue(record, signal, false);
+  }
+
   async #continue(initial: CloudProjectEntryRecord, signal?: AbortSignal, preserveRecovery = true): Promise<CollabResult<CollabLocalProjectSummary>> {
     let record = initial;
     preserveRecovery ||= initial.phase !== 'intent';
@@ -219,6 +232,7 @@ export class CloudProjectEntryCoordinator {
         memberId: admission.snapshot.currentMember.id, personalRef: admission.snapshot.currentMember.personalRef, projectId: record.projectId,
         projectsFolder: record.projectsFolder, slug: record.slug,
         staging: { childName: record.stagingDirectoryName, operationId: record.operationId, projectId: record.projectId, purpose: 'create-clone' },
+        stagingProvenance: 'reserved',
       };
       if (record.phase === 'admitted') {
         await this.#setup.clone({ ...placement, displayName: admission.snapshot.currentMember.displayName, remoteUrl: connection.git.remoteUrl }, await this.#network.resolve(record.projectId, connection.git), signal);

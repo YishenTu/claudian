@@ -28,6 +28,7 @@ import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { type GitRuntime,GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import { JoinProjectCoordinator } from '@/app/collab/join/JoinProjectCoordinator';
+import { decodeJoinProjectRecord } from '@/app/collab/join/JoinProjectRecord';
 import {
   type CollabControlProjectService,
   CollabControlRouter,
@@ -69,7 +70,7 @@ describe('Join Project same-device LAN integration', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('joins through pinned control and production Smart HTTP before activation', async () => {
+  it.each([null, 'membership-created', 'clone-completed'] as const)('joins through pinned control and production Smart HTTP (legacy phase: %s)', async legacyPhase => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-join-lan-'));
     hostRoot = path.join(root, 'host-vault');
     memberRoot = path.join(root, 'member-vault');
@@ -208,7 +209,7 @@ describe('Join Project same-device LAN integration', () => {
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: memberRoot,
     });
-    const coordinator = new JoinProjectCoordinator(memberFoundation, {
+    const createCoordinator = () => new JoinProjectCoordinator(memberFoundation, {
       createHttpClient: trustStore => new CollabHttpClient(trustStore, {
         invitationCodec,
       }),
@@ -217,10 +218,37 @@ describe('Join Project same-device LAN integration', () => {
       vaultRoot: memberRoot,
     });
 
-    const result = await coordinator.joinProject({
+    let interruptClone = legacyPhase !== null;
+    const localProjects = memberFoundation.local.projects;
+    const save = localProjects.saveProjectDocument.bind(localProjects);
+    const cut = jest.spyOn(localProjects, 'saveProjectDocument').mockImplementation(async (...args) => {
+      await save(...args);
+      if (interruptClone && args[1] === 'pending-operation' && (args[2] as { phase?: string }).phase === 'clone-completed') {
+        interruptClone = false;
+        throw new Error('Injected durable clone interruption');
+      }
+    });
+    let result = await createCoordinator().joinProject({
       encodedInvitation: invitationCodec.encode(invitation),
       memberDisplayName: 'Alice',
     });
+    if (legacyPhase) {
+      if (result.status !== 'recovery-required') throw new Error('Expected interrupted staged Join');
+      const pending = await localProjects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeJoinProjectRecord);
+      if (!pending) throw new Error('Missing staged Join');
+      await memberFoundation.local.workspace.releaseReservedProjectsFolderChild('workspace', {
+        childName: pending.stagingDirectoryName, operationId: pending.operationId, projectId: PROJECT_ID, purpose: 'join-staging',
+      });
+      const { projectsFolder: _projectsFolder, ...legacy } = pending;
+      await save(PROJECT_ID, 'pending-operation', { ...legacy, schemaVersion: 1, phase: legacyPhase });
+      if (legacyPhase === 'membership-created') {
+        interruptClone = true;
+        const interrupted = await createCoordinator().resumeJoin({ operationId: pending.operationId });
+        if (interrupted.status !== 'recovery-required') throw new Error('Expected interrupted legacy clone checkpoint');
+      }
+      result = await createCoordinator().resumeJoin({ operationId: pending.operationId });
+    }
+    cut.mockRestore();
     expect(result).toMatchObject({
       status: 'success',
       value: {
