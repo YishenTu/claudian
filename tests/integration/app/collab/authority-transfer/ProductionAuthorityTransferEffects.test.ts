@@ -137,7 +137,7 @@ describe('production authority-transfer effects', () => {
     expect(unpinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID, endpoint);
   });
 
-  it('captures LAN data, stages Cloud-to-LAN inertly, and activates exactly once', async () => {
+  async function captureSource() {
     const sourceFoundation = foundation(sourceRoot);
     const sourceSetup = new CollabProjectSetupService(sourceFoundation, {
       installationKey: TEST_INSTALLATION_A,
@@ -238,14 +238,76 @@ describe('production authority-transfer effects', () => {
       throw new Error('Incomplete source checkpoint');
     }
     await sourceFoundation.lanHost.relinquishProjectForAuthorityTransfer(PROJECT_ID);
-    const recoveredCapture = await sourceEffects.capture(createAuthorityTransferRecord({
+    const recoveryRecord = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
       operationIntentId: OPERATION_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: status('lan-to-cloud', 'source-quiesced', 'https://cloud.example.test/'),
-    }));
+    });
+    return {
+      artifactBytes,
+      recoveryRecord,
+      repositoryBytes,
+      sourceCoordinationBytes,
+      sourceEffects,
+      sourceFeature,
+      sourceFoundation,
+      sourceManifestBytes,
+      sourceMembership,
+      sourceRecord,
+      sourceStaging,
+    };
+  }
+
+  it('rejects previous-wire staged checkpoints without changing the manifest or restart fence', async () => {
+    const {
+      recoveryRecord,
+      sourceEffects,
+      sourceFeature,
+      sourceFoundation,
+      sourceManifestBytes,
+      sourceRecord,
+      sourceStaging,
+    } = await captureSource();
+    try {
+      await sourceFoundation.authorityTransfers.create(sourceRecord);
+      await sourceFoundation.authorityTransfers.advance(recoveryRecord, 'collecting-readiness');
+      const manifestPath = path.join(sourceStaging.absolutePath, 'checkpoint.json');
+      const previousBytes = Buffer.from(JSON.stringify({
+        ...JSON.parse(sourceManifestBytes.toString('utf8')),
+        protocolVersion: 6,
+      }));
+      await writeFile(manifestPath, previousBytes, { mode: 0o600 });
+      await expect(sourceEffects.capture(recoveryRecord)).rejects.toMatchObject({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'checkpoint-manifest-invalid' },
+      });
+      expect(await readFile(manifestPath)).toEqual(previousBytes);
+      expect(await sourceFoundation.authorityTransfers.load(PROJECT_ID)).toEqual(recoveryRecord);
+      expect(sourceFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    } finally {
+      await sourceFeature.close();
+      await sourceFoundation.close();
+    }
+  });
+
+  it('captures LAN data, stages Cloud-to-LAN inertly, and activates exactly once', async () => {
+    const {
+      artifactBytes,
+      recoveryRecord,
+      repositoryBytes,
+      sourceCoordinationBytes,
+      sourceEffects,
+      sourceFeature,
+      sourceFoundation,
+      sourceManifestBytes,
+      sourceMembership,
+      sourceRecord,
+      sourceStaging,
+    } = await captureSource();
+    const recoveredCapture = await sourceEffects.capture(recoveryRecord);
     const recoveredManifestChunks: Buffer[] = [];
     for await (const chunk of recoveredCapture.artifacts[0].body) {
       recoveredManifestChunks.push(Buffer.from(chunk as Uint8Array));
@@ -365,6 +427,7 @@ describe('production authority-transfer effects', () => {
       openRequests: [],
       openTicketCount: 0,
       project: {
+        authorityGeneration: 2,
         authorityKind: 'cloud',
         createdAt: sourceMembership.createdAt,
         id: PROJECT_ID,

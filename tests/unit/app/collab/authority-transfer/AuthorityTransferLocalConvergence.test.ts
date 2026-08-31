@@ -69,6 +69,7 @@ function snapshot(authorityKind: 'cloud' | 'lan'): CollabProjectSnapshot {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      ...(authorityKind === 'cloud' ? { authorityGeneration: 2 } : {}),
       authorityKind,
       createdAt: CREATED_AT,
       id: PROJECT_ID,
@@ -154,11 +155,11 @@ describe('AuthorityTransferLocalConvergence', () => {
 
     expect(membership).toMatchObject({
       authority: {
-        bindingVersion: 2,
+        bindingVersion: 3,
         developmentActorId: 'member-host',
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6,
+        wireVersion: 7,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -172,12 +173,12 @@ describe('AuthorityTransferLocalConvergence', () => {
     let membership = {
       ...lanMembership(),
       authority: {
-        bindingVersion: 2 as const,
+        bindingVersion: 3 as const,
         developmentActorId: 'member-host',
-        gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+        gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6 as const,
+        wireVersion: 7 as const,
       },
       member: {
         displayName: 'Host',
@@ -266,12 +267,12 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 2 as const,
+        bindingVersion: 3 as const,
         developmentActorId: 'member-host',
-        gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+        gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6 as const,
+        wireVersion: 7 as const,
       },
       member: {
         displayName: 'Host',

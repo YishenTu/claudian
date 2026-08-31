@@ -476,6 +476,7 @@ describe('Agent Runtime Collab read methods', () => {
       snapshot: {
         ...COORDINATION.snapshot,
         project: {
+          authorityGeneration: 7,
           authorityKind: 'cloud',
           createdAt: COORDINATION.snapshot.project.createdAt,
           id: PROJECT.id,

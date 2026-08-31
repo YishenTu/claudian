@@ -674,12 +674,12 @@ function cloudMembership(): CollabLocalMembershipRecord {
   return {
     ...local,
     authority: {
-      bindingVersion: 2,
+      bindingVersion: 3,
       developmentActorId: 'principal-manager-device',
-      gitRemoteUrl: 'https://cloud.example.test/v2/projects/project-a/repository.git',
+      gitRemoteUrl: 'https://cloud.example.test/v3/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',
-      wireVersion: 6,
+      wireVersion: 7,
     },
     member: {
       displayName: local.member.displayName,

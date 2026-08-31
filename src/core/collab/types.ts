@@ -34,6 +34,7 @@ export interface CollabLanProject extends CollabProjectBase {
 }
 
 export interface CollabCloudProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'cloud';
 }
 

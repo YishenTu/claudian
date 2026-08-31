@@ -4,6 +4,7 @@ import type { CollabCloudProjectSnapshot } from '@/core/collab';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 const LOCAL_CLOUD_PROJECT_KEYS = new Set([
+  'authorityGeneration',
   'authorityKind',
   'createdAt',
   'id',
@@ -24,6 +25,7 @@ export function decodeCloudAuthorityProjectSnapshot(value: unknown): CollabCloud
   return {
     ...snapshot,
     project: {
+      authorityGeneration: snapshot.project.authorityGeneration,
       authorityKind: 'cloud',
       createdAt: snapshot.project.createdAt,
       id: snapshot.project.id,

@@ -327,6 +327,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
           openRequests: [],
           openTicketCount: 0,
           project: {
+            authorityGeneration: 1,
             createdAt: manifest.comparison.projectCreatedAt,
             expectedMainOid: manifest.comparison.mainOid,
             id: PROJECT_ID,
@@ -341,7 +342,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         match.kind === 'git-info-refs'
         || match.kind === 'git-upload-pack'
       ) {
-        const prefix = `/v2/projects/${PROJECT_ID}/repository.git`;
+        const prefix = `/v3/projects/${PROJECT_ID}/repository.git`;
         const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
         await runGitHttpBackend(request, response, repository, pathname.slice(prefix.length));
         return;
@@ -607,7 +608,7 @@ describe('Cloud read and binding gate', () => {
         expect(JSON.stringify(storedMembership)).not.toContain('CERTIFICATE');
         expect((await client.projects.loadIndex()).projects[0]?.authorityKind).toBe('cloud');
         expect(await git(client.repositoryPath, ['remote', 'get-url', 'origin']))
-          .toBe(`${server.origin}/v2/projects/${PROJECT_ID}/repository.git`);
+          .toBe(`${server.origin}/v3/projects/${PROJECT_ID}/repository.git`);
         expect(await readFile(path.join(client.repositoryPath, 'unpublished.md'), 'utf8'))
           .toBe(`${storedMembership?.member.id} local work\n`);
 
