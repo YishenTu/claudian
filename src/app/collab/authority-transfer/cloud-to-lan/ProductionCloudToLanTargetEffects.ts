@@ -66,7 +66,7 @@ import type {
 import { PersistentLanAuthorityTransferTargetActiveService } from '@/app/collab/lan/authority-transfer/PersistentLanAuthorityTransferServices';
 import type { LanHostAuthorityTransferPreparation } from '@/app/collab/lan/LanHostCoordinator';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
-import type { CloudAuthorityLifecycleSession } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabCloudProjectSnapshot, CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -199,7 +199,7 @@ function decodeTargetProof(value: string): TargetProofEnvelope {
 }
 
 export interface ProductionCloudToLanTargetEffectsOptions {
-  readonly cloudSession: CloudAuthorityLifecycleSession | null;
+  readonly cloudSession: CloudAuthorityConnection | null;
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly foundation: ClaudianCollabService;
   readonly now?: () => Date;
@@ -434,8 +434,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     record: AuthorityTransferRecord,
   ): Promise<AcceptCloudToLanTransferTargetRequest> {
     return this.queue.run(async () => {
-      const { stagingPath, state: initial } = await this.#prepareState(record);
-      const cloudSession = this.#requireCloudSession();
+      const { memberId, stagingPath, state: initial } = await this.#prepareState(record);
       const prepared = await this.prepareTarget(record.status.targetUrl);
       const preparation = this.#preparation;
       if (!preparation) throw targetError('authority-transfer-target-preparation-missing');
@@ -449,7 +448,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
           receiptKeyId: state.receiptKey.receiptKeyId,
           receiptPublicKey: state.receiptKey.publicKey,
           targetAuthorityGeneration: record.status.targetAuthority.generation,
-          targetHostMemberId: cloudSession.developmentActorId,
+          targetHostMemberId: memberId,
           targetUrl: prepared.targetUrl,
           transferCredential: state.transferCredential,
           transferId: record.transferId,
@@ -478,7 +477,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       return {
         idempotencyKey: `${record.operationIntentId}-accept`,
         projectId: record.projectId,
-        targetHostMemberId: cloudSession.developmentActorId,
+        targetHostMemberId: memberId,
         targetProof: state.targetProof,
         transferId: record.transferId,
       };
@@ -491,7 +490,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     options: CollabOperationOptions = {},
   ): Promise<CloudToLanTargetStageResult> {
     return this.queue.run(async () => {
-      const { stagingPath } = await this.#prepareState(record);
+      const { memberId, stagingPath } = await this.#prepareState(record);
       for (const artifact of artifacts) {
         await receiveArtifact(stagingPath, artifact, options.signal);
       }
@@ -514,7 +513,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (state.claimBatch === null) {
         const cloudSession = this.#requireCloudSession();
         const snapshot = await cloudSession.readSnapshot(record.projectId, options);
-        if (snapshot.currentMember.id !== cloudSession.developmentActorId) {
+        if (snapshot.currentMember.id !== memberId) {
           throw targetError('authority-transfer-target-host-snapshot-mismatch');
         }
         await this.options.foundation.discardAuthorityTransferTarget(
@@ -534,7 +533,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
             targetHostCredentialHash: createHash('sha256')
               .update(Buffer.from(state.hostCredential, 'base64url'))
               .digest(),
-            targetHostMemberId: cloudSession.developmentActorId,
+            targetHostMemberId: memberId,
           }));
           await new AuthorityTransferCheckpointGit(git.runner).importIntoEmptyBareRepository({
             bundlePath: path.join(stagingPath, BUNDLE_FILE),
@@ -551,7 +550,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
             record,
             manifest,
             coordinationBytes.toString('utf8'),
-            cloudSession.developmentActorId,
+            memberId,
           ),
           snapshot,
         };
@@ -948,6 +947,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   }
 
    async #prepareState(record: AuthorityTransferRecord): Promise<{
+    readonly memberId: string;
     readonly stagingPath: string;
     readonly state: TargetPrivateState;
   }> {
@@ -959,7 +959,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (
       !membership
       || !isCollabLocalCloudMembership(membership)
-      || membership.member.id !== cloudSession.developmentActorId
+      || membership.authority.serverUrl !== cloudSession.serverUrl
     ) throw targetError('authority-transfer-target-membership-invalid');
     const staging = await this.options.foundation.local.workspace.reserveProjectsFolderChild(
       projectsFolder(membership.project.workspacePath),
@@ -979,7 +979,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       state = initialState();
       await writeState(statePath, state);
     }
-    return { stagingPath: staging.absolutePath, state };
+    return { memberId: membership.member.id, stagingPath: staging.absolutePath, state };
   }
 
    async #loadTargetState(
@@ -1067,7 +1067,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     );
   }
 
-   #requireCloudSession(): CloudAuthorityLifecycleSession {
+   #requireCloudSession(): CloudAuthorityConnection {
     if (!this.options.cloudSession) {
       throw targetError('authority-transfer-cloud-session-missing');
     }

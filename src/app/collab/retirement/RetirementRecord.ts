@@ -1,6 +1,6 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabLocalCleanupStatus } from '@/core/collab';
 
 export const COLLAB_RETIREMENT_RECORD_SCHEMA_VERSION = 1 as const;
@@ -15,7 +15,6 @@ export interface RetirementRecord {
   readonly cleanupStatus: CollabLocalCleanupStatus;
   readonly acknowledgementStatus: RetirementAcknowledgementStatus;
   readonly acknowledgedAt: CollabIsoTimestamp | null;
-  readonly cloudDevelopmentActorId: string | null;
   readonly cloudRetirementId: CollabOperationId | null;
   readonly cloudServerUrl: string | null;
   readonly memberCredential: string | null;
@@ -28,14 +27,13 @@ export interface RetirementRecord {
 type Value = Readonly<Record<string, unknown>>;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
-const DEVELOPMENT_ACTOR = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const LEGACY_KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'memberId', 'retiredAt', 'cleanupOperationId', 'cleanupStatus', 'acknowledgementStatus', 'acknowledgedAt', 'memberCredential', 'hostEndpoint', 'hostCaCertificatePem', 'hostCaFingerprint', 'createdAt', 'updatedAt']);
 const KEYS = new Set([
   ...LEGACY_KEYS,
-  'cloudDevelopmentActorId',
   'cloudRetirementId',
   'cloudServerUrl',
 ]);
+const LAN_RESERVED_CLOUD_KEYS = new Set([...KEYS, 'cloudDevelopmentActorId']);
 function field(value: Value, key: string, max: number, pattern?: RegExp): string {
   const result = value[key];
   if (typeof result !== 'string' || !result || result.length > max || (pattern && !pattern.test(result))) throw new TypeError(`Invalid ${key}`);
@@ -58,14 +56,16 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     && recordKeys.every(key => KEYS.has(key));
   const legacyShape = recordKeys.length === LEGACY_KEYS.size
     && recordKeys.every(key => LEGACY_KEYS.has(key));
-  if ((!currentShape && !legacyShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
+  const reservedLanShape = recordKeys.length === LAN_RESERVED_CLOUD_KEYS.size
+    && recordKeys.every(key => LAN_RESERVED_CLOUD_KEYS.has(key))
+    && record.cloudDevelopmentActorId === null
+    && record.cloudRetirementId === null
+    && record.cloudServerUrl === null;
+  if ((!currentShape && !legacyShape && !reservedLanShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
   const cleanupStatus = record.cleanupStatus;
   const acknowledgementStatus = record.acknowledgementStatus;
   if ((cleanupStatus !== 'pending' && cleanupStatus !== 'running' && cleanupStatus !== 'failed' && cleanupStatus !== 'complete') || (acknowledgementStatus !== 'pending' && acknowledgementStatus !== 'acknowledged' && acknowledgementStatus !== 'expired')) throw new TypeError('Invalid retirement state');
   const acknowledgedAt = timestamp(record, 'acknowledgedAt', true);
-  const cloudDevelopmentActorId = legacyShape
-    ? null
-    : nullable(record, 'cloudDevelopmentActorId', 128, DEVELOPMENT_ACTOR);
   const cloudRetirementId = legacyShape
     ? null
     : nullable(record, 'cloudRetirementId', 128);
@@ -82,7 +82,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
   }
   if (cloudServerUrl !== null) {
     try {
-      canonicalCloudOrigin(cloudServerUrl, 'cloudServerUrl');
+      validateCloudServerUrl(cloudServerUrl, 'cloudServerUrl');
     } catch { throw new TypeError('Invalid cloudServerUrl'); }
   }
   const pending = acknowledgementStatus === 'pending';
@@ -90,8 +90,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     && hostEndpoint !== null
     && hostCaCertificatePem !== null
     && hostCaFingerprint !== null;
-  const cloudAcknowledgement = cloudDevelopmentActorId !== null
-    && cloudRetirementId !== null
+  const cloudAcknowledgement = cloudRetirementId !== null
     && cloudServerUrl !== null;
   if (
     (acknowledgementStatus === 'acknowledged') !== (acknowledgedAt !== null)
@@ -104,8 +103,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
       || hostCaFingerprint !== null
     ))
     || (!cloudAcknowledgement && (
-      cloudDevelopmentActorId !== null
-      || cloudRetirementId !== null
+      cloudRetirementId !== null
       || cloudServerUrl !== null
     ))
   ) throw new TypeError('Impossible retirement acknowledgement state');
@@ -128,7 +126,6 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     acknowledgementStatus,
     cleanupOperationId,
     cleanupStatus,
-    cloudDevelopmentActorId,
     cloudRetirementId,
     cloudServerUrl,
     createdAt,

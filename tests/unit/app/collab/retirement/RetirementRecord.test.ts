@@ -14,7 +14,6 @@ const record: RetirementRecord = {
   cleanupStatus: 'pending',
   acknowledgementStatus: 'pending',
   acknowledgedAt: null,
-  cloudDevelopmentActorId: null,
   cloudRetirementId: null,
   cloudServerUrl: null,
   memberCredential: 'A'.repeat(43),
@@ -32,7 +31,6 @@ describe('RetirementRecord', () => {
 
   it('decodes the legacy LAN shape and materializes null Cloud acknowledgement fields', () => {
     const {
-      cloudDevelopmentActorId: _actorId,
       cloudRetirementId: _retirementId,
       cloudServerUrl: _serverUrl,
       ...legacy
@@ -41,20 +39,22 @@ describe('RetirementRecord', () => {
     expect(decodeRetirementRecord(legacy)).toEqual(record);
   });
 
-  it('accepts exactly one durable Cloud acknowledgement target', () => {
+  it('preserves LAN records written with null reserved Cloud fields', () => {
+    expect(decodeRetirementRecord({ ...record, cloudDevelopmentActorId: null })).toEqual(record);
+  });
+
+  it.each(['https://cloud.example.test/', 'HTTP://198.51.100.20:8080/operator/cloud'])('accepts exactly one durable Cloud target without an asserted principal at %s', cloudServerUrl => {
     expect(decodeRetirementRecord({
       ...record,
-      cloudDevelopmentActorId: 'principal-manager-device',
       cloudRetirementId: 'retirement-cloud-one',
-      cloudServerUrl: 'https://cloud.example.test/',
+      cloudServerUrl,
       hostCaCertificatePem: null,
       hostCaFingerprint: null,
       hostEndpoint: null,
       memberCredential: null,
     })).toMatchObject({
       cloudRetirementId: 'retirement-cloud-one',
-      cloudDevelopmentActorId: 'principal-manager-device',
-      cloudServerUrl: 'https://cloud.example.test/',
+      cloudServerUrl,
     });
   });
 
@@ -65,7 +65,7 @@ describe('RetirementRecord', () => {
     { ...record, hostEndpoint: '/tmp/socket' },
     { ...record, cloudDevelopmentActorId: 'principal-manager-device', cloudRetirementId: 'retirement-cloud-one', cloudServerUrl: 'https://cloud.example.test/' },
     { ...record, cloudRetirementId: 'retirement-cloud-one', memberCredential: null },
-    { ...record, cloudDevelopmentActorId: 'principal-manager-device', cloudRetirementId: 'retirement-cloud-one', cloudServerUrl: 'http://cloud.example.test/', hostCaCertificatePem: null, hostCaFingerprint: null, hostEndpoint: null, memberCredential: null },
+    { ...record, cloudDevelopmentActorId: 'principal-manager-device', cloudRetirementId: 'retirement-cloud-one', cloudServerUrl: 'https://cloud.example.test/', hostCaCertificatePem: null, hostCaFingerprint: null, hostEndpoint: null, memberCredential: null },
   ])('rejects excess or impossible retired state', value => {
     if (value.acknowledgementStatus === 'acknowledged' && value.acknowledgedAt) {
       value.memberCredential = 'A'.repeat(43);

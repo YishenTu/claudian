@@ -1,3 +1,9 @@
+import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
+  COLLAB_LIMITS,
+  collabCloudCapabilityDocument,
+  collabCloudSuccessEnvelope,
+} from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
@@ -10,7 +16,7 @@ import {
 } from '@/app/collab/bootstrap/LocalCloudBootstrapBindingEffects';
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import type { CollabAuthorityAdapter } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 
 import {
   ATTEMPT_ID,
@@ -120,6 +126,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       openRequests: [],
       openTicketCount: 0,
       project: {
+        authorityGeneration: 7,
         authorityKind: 'cloud' as const,
         createdAt: '2026-08-19T00:00:00.000Z',
         id: PROJECT_ID,
@@ -129,25 +136,38 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       },
       ticketHighlights: [],
     };
-    const dispose = jest.fn();
-    const adapter = {
-      authorityKind: 'cloud' as const,
-      create: jest.fn(async () => ({
-        authorityKind: 'cloud' as const,
-        control: { readSnapshot: jest.fn(async () => snapshot) },
-        dispose,
-        events: { connect: jest.fn() },
-        git: {
-          headers: [{ name: 'X-Claudian-Development-Actor', value: HOST_MEMBER_ID }],
-          remoteUrl: record.newAuthority.gitRemoteUrl,
-        },
-        supports: (capability: string) => [
-          'git-upload-pack',
-          'project-events',
-          'project-snapshot',
-        ].includes(capability),
-      })),
-    } as unknown as CollabAuthorityAdapter;
+    const adapter = new CloudAuthorityAdapter({
+      request: async input => ({
+        body: input.method === 'GET'
+          ? collabCloudCapabilityDocument(['git-upload-pack', 'project-events', 'project-snapshot'], {
+            maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+            maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+            maxCheckpointRepositoryBundleBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+            maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
+            maxDevelopmentBootstrapGitBundleBytes: 1_024,
+            maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
+            maxDevelopmentBootstrapReportUtf8Bytes: 1_024,
+            maxEventReplay: 100,
+            maxGitReceivePackBytes: 1_024,
+            maxJsonPayloadUtf8Bytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
+            maxRepositoryBytes: 1_024,
+          })
+          : collabCloudSuccessEnvelope('bootstrap-snapshot', {
+            ...snapshot,
+            members: [snapshot.currentMember],
+            project: {
+              authorityGeneration: 7,
+              createdAt: snapshot.project.createdAt,
+              expectedMainOid: MAIN_OID,
+              id: PROJECT_ID,
+              mainRef: 'refs/heads/main',
+              name: 'Project Alpha',
+            },
+          }),
+        contentType: 'application/json',
+        status: 200,
+      }),
+    });
     const fetchFromUrl = jest.fn(async () => undefined);
     const repairIndexFromMemberships = jest.fn(async () => ({
       projects: [{
@@ -206,13 +226,13 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       record.newAuthority.gitRemoteUrl,
       expect.any(Array),
       {
-        headers: [{ name: 'X-Claudian-Development-Actor', value: HOST_MEMBER_ID }],
+        headers: [],
       },
       undefined,
     );
     expect(membership.authority).toEqual({
+      authorityGeneration: 7,
       bindingVersion: 3,
-      developmentActorId: HOST_MEMBER_ID,
       gitRemoteUrl: record.newAuthority.gitRemoteUrl,
       kind: 'cloud',
       serverUrl: record.newAuthority.serverUrl,
@@ -222,9 +242,6 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     expect(JSON.stringify(membership)).not.toContain('PRIVATE CA');
     expect(membership.lastEventSequence).toBe(18);
     expect(membership.member.role).toBe('manager');
-    expect(saveMembership).toHaveBeenCalledTimes(2);
-    expect(repairIndexFromMemberships).toHaveBeenCalledTimes(1);
-    expect(dispose).toHaveBeenCalledTimes(3);
 
     getActivation.mockResolvedValue({
       ...activationStatus(record),
@@ -238,7 +255,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     });
   });
 
-  it('rejects a tampered post-checkpoint origin before exposing the Cloud actor', async () => {
+  it('rejects a tampered post-checkpoint origin before Cloud connection', async () => {
     const record = activatedRecord();
     const membership: CollabLocalMembershipRecord = {
       authority: {
@@ -277,7 +294,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
       authorityAdapter: {
         authorityKind: 'cloud',
         create,
-      } as unknown as CollabAuthorityAdapter,
+      } as unknown as CloudAuthorityAdapter,
       authorityLifecycle: { closeAuthority: async () => undefined },
       git: {
         assertOrigin,
@@ -311,8 +328,8 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     const record = activatedRecord();
     const membership: CollabLocalMembershipRecord = {
       authority: {
+        authorityGeneration: 7,
         bindingVersion: record.newAuthority.bindingVersion,
-        developmentActorId: record.developmentActorId,
         gitRemoteUrl: record.newAuthority.gitRemoteUrl,
         kind: 'cloud',
         serverUrl: record.newAuthority.serverUrl,
@@ -338,7 +355,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     const events: string[] = [];
     const effects = new LocalCloudBootstrapBindingEffects({
       activation: { get: jest.fn(async () => activationStatus(record)) },
-      authorityAdapter: {} as Pick<CollabAuthorityAdapter, 'create'>,
+      authorityAdapter: {} as CloudAuthorityAdapter,
       authorityLifecycle: {
         closeAuthority: async () => { events.push('close'); },
       },

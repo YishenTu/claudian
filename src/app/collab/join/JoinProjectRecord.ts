@@ -43,7 +43,6 @@ export interface JoinProjectRecord {
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -163,7 +162,8 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   const projectId = requiredString(value, 'projectId', 64, undefined, isCollabProjectId);
   const operationId = requiredString(value, 'operationId', 128, undefined, isCollabOpaqueId);
   const joinAttemptId = requiredString(value, 'joinAttemptId', 128, undefined, isCollabOpaqueId);
-  const slug = requiredString(value, 'slug', 64, SAFE_SLUG_PATTERN);
+  const slug = requiredString(value, 'slug', 64);
+  if (!isCollabWorkingCopySlug(slug)) throw new TypeError('Invalid Join slug');
   const stagingDirectoryName = requiredString(
     value,
     'stagingDirectoryName',
@@ -264,3 +264,4 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
     ...(legacy ? { legacyJoinRecord: true as const } : {}),
   };
 }
+import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';

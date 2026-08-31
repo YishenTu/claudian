@@ -5,6 +5,7 @@
 - `CollabProjectLifecycleSubsystem` is the single app-owned assembly, recovery registration, and per-Project arbitration boundary for Leave, Retire, physical Host transfer, production authority transfer, private bootstrap transition, responsibility handoff, retirement acknowledgement, and local cleanup.
 - Each lifecycle module retains its own authorization, phases, persistence, physical effects, and recovery policy. The subsystem owns only mutually exclusive transition admission, stable owner dispatch, startup ordering, and common close/drain; it never interprets another owner's journal or becomes a generic phase engine.
 - Register Project-local recovery through `CollabLocalProjectRepository` and the existing subsystem enumeration. Vault-wide pending-Leave and applied-Retired-cleanup journals remain with `CollabLifecycleJournalStore`. Do not add a second Project catalog or infer pending work from the Project index.
+- A pending Cloud entry is a nonterminal durable owner, including after local finalization while activation or pending removal remains incomplete. Resume resolves the Project from the stored operation and reacquires this same arbiter before replay or working-copy effects; it cannot pass another nonterminal owner. New native Create allocates a fresh Project identity before admission, rather than taking over an existing Project lifecycle.
 
 ## Arbitration
 

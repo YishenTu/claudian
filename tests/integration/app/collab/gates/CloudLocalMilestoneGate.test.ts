@@ -15,6 +15,7 @@ import {
   type DevelopmentBootstrapAttemptStatus,
   type DevelopmentBootstrapManifest,
 } from '@claudian-collab/protocol';
+import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
@@ -71,7 +72,6 @@ import { NativeGitAcceptedStateIntegrator } from '@/app/collab/reconciliation/Na
 import { ReconciliationCoordinator } from '@/app/collab/reconciliation/ReconciliationCoordinator';
 import { ReconciliationMutationSafety } from '@/app/collab/reconciliation/ReconciliationMutationSafety';
 import { ReconciliationRepository } from '@/app/collab/reconciliation/ReconciliationRepository';
-import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import {
   CollabAuthorityGitNetworkEnvironment,
 } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
@@ -302,7 +302,7 @@ async function createClient(
   const finalizer = new CloudBootstrapBindingFinalizer({
     effects: new LocalCloudBootstrapBindingEffects({
       activation: { get: async () => descriptor.activationStatus },
-      authorityAdapter: new CloudAuthorityAdapter(),
+      authorityAdapter: createDevelopmentCloudAuthorityAdapter(source.member.id),
       authorityLifecycle: { closeAuthority: async () => undefined },
       git: {
         assertOrigin: (record, localPath) => ensureTrustedCollabOrigin(repositories, {
@@ -311,7 +311,7 @@ async function createClient(
           repositoryPath: localPath,
         }, 'cloud-local-milestone-origin-mismatch'),
         fetchFromUrl: (...input) => repositories.fetchFromUrl(...input),
-        network: (resolvedProjectId, facts) => network.resolve(resolvedProjectId, facts),
+        network: (resolvedProjectId, facts) => network.resolve(resolvedProjectId, developmentCloudGitNetwork(facts, source.member.id)),
         resolveRefs: (...input) => repositories.resolveRefs(...input),
         rotateOrigin: (record, localPath) => rotateCloudBootstrapOrigin(repositories, {
           newRemoteUrl: record.newAuthority.gitRemoteUrl,
@@ -370,7 +370,7 @@ class SessionNetwork implements PublishGitNetworkPort {
     context: PublishProjectContext,
     operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
-    return this.environment.resolve(context.projectId, this.session.git)
+    return this.environment.resolve(context.projectId, developmentCloudGitNetwork(this.session.git, context.memberId))
       .then(network => operation(network, this.session.git.remoteUrl) as Promise<T>);
   }
 }
@@ -443,7 +443,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         if (!membership || !isCollabLocalCloudMembership(membership)) {
           throw new Error('Cloud membership was not durably bound');
         }
-        return new CloudAuthorityAdapter().create(membership);
+        return createDevelopmentCloudAuthorityAdapter(membership.member.id).create(membership);
       }));
       sessions.push(...initialSessions);
       const events: CollabAuthorityEventInvalidation[][] = [[], []];
@@ -557,7 +557,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         if (!membership || !isCollabLocalCloudMembership(membership)) {
           throw new Error('Restart did not retain Cloud authority binding');
         }
-        return new CloudAuthorityAdapter().create(membership);
+        return createDevelopmentCloudAuthorityAdapter(membership.member.id).create(membership);
       }));
       sessions.push(...restartedSessions);
       await expect(Promise.all(restartedSessions.map(session => (
