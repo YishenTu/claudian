@@ -6,6 +6,7 @@ import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transf
 import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
@@ -112,6 +113,54 @@ function lanMembership(): CollabLocalMembershipRecord {
 }
 
 describe('AuthorityTransferLocalConvergence', () => {
+  it('holds the shared authority projection lane across origin and membership convergence', async () => {
+    let membership = lanMembership();
+    let releaseRotate!: () => void;
+    let signalRotateStarted!: () => void;
+    const observedRotate = new Promise<void>(resolve => { signalRotateStarted = resolve; });
+    const release = new Promise<void>(resolve => { releaseRotate = resolve; });
+    const authorityProjectionTransitions = new AuthorityProjectionTransitionCoordinator();
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions,
+      git: {
+        rotate: jest.fn(async () => {
+          signalRotateStarted();
+          await release;
+        }),
+      },
+      projects: {
+        loadMembership: jest.fn(async () => membership),
+        repairIndexFromMemberships: jest.fn(async () => ({
+          projects: [{ authorityKind: membership.authority.kind, id: PROJECT_ID }],
+          schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+          selectedProjectId: PROJECT_ID,
+        })),
+        saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => {
+          membership = next;
+        }),
+      } as never,
+      workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
+    });
+    const pendingConvergence = convergence.lanToCloudHost({
+      snapshot: snapshot('cloud'),
+      status: completed('lan-to-cloud'),
+    });
+    await observedRotate;
+    const competingProjection = jest.fn(async () => undefined);
+    const pendingCompetingProjection = authorityProjectionTransitions.run(
+      PROJECT_ID,
+      competingProjection,
+    );
+
+    await Promise.resolve();
+    expect(competingProjection).not.toHaveBeenCalled();
+    releaseRotate();
+    await pendingConvergence;
+    await pendingCompetingProjection;
+    expect(competingProjection).toHaveBeenCalledTimes(1);
+  });
+
   it('replaces LAN Host membership, origin, index, and work-session projection idempotently', async () => {
     let membership = lanMembership();
     const rotate = jest.fn(async () => undefined);
@@ -132,6 +181,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
       now: () => new Date('2026-08-27T00:01:00.000Z'),
       projects: projects as never,
@@ -200,6 +250,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
@@ -244,6 +295,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
@@ -289,6 +341,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },

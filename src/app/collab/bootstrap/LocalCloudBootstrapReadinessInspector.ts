@@ -18,6 +18,7 @@ import { ConflictScratchStore } from '@/app/collab/conflicts/ConflictScratchStor
 import type {
   ManagerResponsibilityReceiptRecord,
 } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
+import { managerResponsibilityReceiptState } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { CollabPublicationStateStore } from '@/app/collab/publish/CollabPublicationStateStore';
 import { CollabRequestDraftStore } from '@/app/collab/publish/CollabRequestDraftStore';
@@ -133,9 +134,12 @@ implements CloudBootstrapReadinessInspector {
     if (retiredCleanup || localCleanup) operations.cleanup = 'active';
     if (retirement) operations.retirement = 'active';
     if (incomingTransfer || outgoingTransfer) operations.hostTransfer = 'active';
+    const managerResponsibilityState = managerResponsibilityReceipt
+      ? managerResponsibilityReceiptState(managerResponsibilityReceipt)
+      : null;
     if (
-      managerResponsibilityReceipt?.status === 'offered'
-      || managerResponsibilityReceipt?.status === 'acknowledged'
+      managerResponsibilityState?.status === 'offered'
+      || managerResponsibilityState?.status === 'acknowledged'
     ) {
       operations.managerResponsibility = 'active';
     }

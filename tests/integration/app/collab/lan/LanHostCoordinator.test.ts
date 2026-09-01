@@ -27,6 +27,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { CollabClientProjection, type CollabClientProjectionOptions } from '@/app/collab/client/CollabClientProjection';
 import {
   CollabLocalProjectRepository,
@@ -59,7 +60,6 @@ import {
   ProjectEventHub,
   SqlJsProjectEventSource,
 } from '@/app/collab/lan/ProjectEventHub';
-import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import type {
   CollabProjectLifecycleAuthorityAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
@@ -201,16 +201,23 @@ async function membershipAccess(
   if (!record || !isCollabLocalLanMembership(record)) {
     throw new Error('LAN membership unavailable');
   }
-  const service = new CollabMembershipService(new LocalMembershipControlPort(record), {
+  const control = new LocalMembershipControlPort(record);
+  const service = new CollabMembershipService({
+    membership: (...args) => control.membership(...args),
+    cloudMembership: () => Promise.reject(new Error('Unexpected Cloud operation')),
+  }, {
+    readAuthoritySnapshot: () => Promise.reject(new Error('Unexpected Cloud authority read')),
     readCoordinationSnapshot: (projectId, options) => (
       projection.readSnapshot(projectId, options)
     ),
   }, {}, {
+    projects,
     managerResponsibilityAdmission: async (_projectId, operation) => operation(),
     managerReceipts: {
       load: async () => null,
       remove: async () => false,
       save: async () => undefined,
+      saveCloud: async () => undefined,
     },
     managerResponsibilityOperations: new ManagerResponsibilityOperationCoordinator(),
     pendingLeaves: { load: async () => null },
@@ -2453,7 +2460,7 @@ describe('LanHostCoordinator production transport', () => {
           },
         } as never),
       }, {
-        authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+        authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
         hostInstallation: {
           inspect: async () => 'absent',
         },

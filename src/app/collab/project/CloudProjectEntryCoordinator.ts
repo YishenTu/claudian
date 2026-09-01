@@ -302,7 +302,9 @@ export class CloudProjectEntryCoordinator {
     const reserved = new Set(index.projects.map(project => project.workspacePath));
     for (const pendingId of await this.foundation.local.projects.listPendingOperationProjectIds()) {
       const pending = await this.foundation.local.projects.loadProjectDocument(pendingId, 'pending-operation', decodeCollabPendingProjectOperation);
-      if (pending) reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+      if (pending && pending.kind !== 'cloud-relocation') {
+        reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+      }
     }
     if (requestedSlug !== undefined) {
       if (!isCollabWorkingCopySlug(requestedSlug)

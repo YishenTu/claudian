@@ -5,6 +5,7 @@ import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjec
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 import type {
+  CloudAuthorityMembershipControlPort,
   CollabAuthorityMembershipControlPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthorityKind } from '@/core/collab';
@@ -52,7 +53,7 @@ export interface CollabAuthoritySession extends CollabProjectResource {
   readonly events: CollabAuthorityEventPort;
   readonly git: CollabAuthorityGitNetwork;
   readonly lifecycle?: CollabAuthorityLifecyclePort;
-  readonly membership?: CollabAuthorityMembershipControlPort;
+  readonly membership?: CollabAuthorityMembershipControlPort | CloudAuthorityMembershipControlPort;
   supports(capability: CollabCloudCapability): boolean;
 }
 

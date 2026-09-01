@@ -4,6 +4,9 @@ import type { HostTransferAuthorityService } from '@/app/collab/authority/HostTr
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
+import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
   CollabLocalProjectRepository,
@@ -31,9 +34,6 @@ import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { HostTransferControlClient } from '@/app/collab/lan/HostTransferControlClient';
 import { HostTransferTargetTransport } from '@/app/collab/lan/HostTransferTargetTransport';
 import type { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
-import type {
-  LanAuthorityProjectionTransitionPort,
-} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
@@ -76,7 +76,7 @@ export interface HostTransferModuleOptions {
   readonly finalizeOldAuthority: (projectId: CollabProjectId) => Promise<void>;
   readonly installationKey: InstallationKey;
   readonly syncProjection: (projectId: CollabProjectId) => void;
-  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly lanHost: Pick<
     LanHostCoordinator,
     | 'closeProjectForHostTransfer'

@@ -9,6 +9,9 @@ import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
+import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
   CollabLocalProjectIndex,
@@ -37,7 +40,9 @@ interface AuthorityTransferConvergenceWorkspace {
 interface AuthorityTransferConvergenceGit {
   rotate(input: {
     readonly newRemoteUrl: string;
+    readonly newServerUrl: string | null;
     readonly oldRemoteUrl: string;
+    readonly oldServerUrl: string | null;
     readonly projectId: CollabProjectId;
     readonly repositoryPath: string;
   }): Promise<void>;
@@ -47,6 +52,7 @@ export interface AuthorityTransferLocalConvergenceOptions {
   readonly activity: {
     transitionProject(projectId: CollabProjectId, operation: () => Promise<void>): Promise<void>;
   };
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly git: AuthorityTransferConvergenceGit;
   readonly now?: () => Date;
   readonly projects: AuthorityTransferConvergenceProjects;
@@ -135,7 +141,7 @@ export class AuthorityTransferLocalConvergence {
 
   async lanToCloudHost(input: LanToCloudHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.options.activity.transitionProject(
+    return this.transitionProject(
       input.status.projectId,
       () => this.lanToCloud(input, true),
     );
@@ -143,7 +149,7 @@ export class AuthorityTransferLocalConvergence {
 
   async lanToCloudMember(input: LanToCloudHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.options.activity.transitionProject(
+    return this.transitionProject(
       input.status.projectId,
       () => this.lanToCloud(input, false),
     );
@@ -151,7 +157,7 @@ export class AuthorityTransferLocalConvergence {
 
   async cloudToLanHost(input: CloudToLanHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
-    return this.options.activity.transitionProject(
+    return this.transitionProject(
       input.status.projectId,
       () => this.cloudToLan(input, true),
     );
@@ -159,7 +165,7 @@ export class AuthorityTransferLocalConvergence {
 
   async cloudToLanMember(input: CloudToLanHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
-    return this.options.activity.transitionProject(
+    return this.transitionProject(
       input.status.projectId,
       () => this.cloudToLan(input, false),
     );
@@ -167,7 +173,7 @@ export class AuthorityTransferLocalConvergence {
 
   async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
     assertCompleted(record.status, record.status.direction);
-    return this.options.activity.transitionProject(record.projectId, async () => {
+    return this.transitionProject(record.projectId, async () => {
       const membership = await this.requireMembership(record.projectId);
       if (membership.member.id !== record.memberId) {
         throw convergenceError('authority-transfer-claimant-member-conflict');
@@ -207,6 +213,15 @@ export class AuthorityTransferLocalConvergence {
     });
   }
 
+  private transitionProject(
+    projectId: CollabProjectId,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    return this.options.activity.transitionProject(projectId, () => (
+      this.options.authorityProjectionTransitions.run(projectId, operation)
+    ));
+  }
+
   private async lanToCloud(
     input: LanToCloudHostConvergenceInput,
     sourceOwnsAuthority: boolean,
@@ -230,7 +245,7 @@ export class AuthorityTransferLocalConvergence {
       ) {
         throw convergenceError('authority-transfer-source-membership-invalid');
       }
-      await this.rotate(membership, oldRemoteUrl, newRemoteUrl);
+      await this.rotate(membership, oldRemoteUrl, newRemoteUrl, serverUrl);
       await this.options.projects.saveMembership({
         authority: {
           authorityGeneration: input.status.targetAuthority.generation,
@@ -272,7 +287,7 @@ export class AuthorityTransferLocalConvergence {
     assertSnapshot(membership, input.snapshot);
     const newRemoteUrl = lanRemoteUrl(input.endpoint, input.status.projectId);
     if (isCollabLocalCloudMembership(membership)) {
-      await this.rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl);
+      await this.rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
       const candidate: CollabLocalLanMembershipRecord = {
         authority: {
           endpoint: new URL(input.endpoint).origin,
@@ -333,12 +348,17 @@ export class AuthorityTransferLocalConvergence {
     membership: CollabLocalMembershipRecord,
     oldRemoteUrl: string,
     newRemoteUrl: string,
+    newServerUrl: string | null,
   ): Promise<void> {
     return this.options.workspace.resolveManagedProjectPath(
       membership.project.workspacePath,
     ).then(repositoryPath => this.options.git.rotate({
       newRemoteUrl,
+      newServerUrl,
       oldRemoteUrl,
+      oldServerUrl: isCollabLocalCloudMembership(membership)
+        ? membership.authority.serverUrl
+        : null,
       projectId: membership.project.id,
       repositoryPath,
     }));

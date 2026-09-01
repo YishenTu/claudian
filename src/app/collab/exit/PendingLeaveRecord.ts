@@ -1,9 +1,22 @@
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
+import {
+  type CollabIsoTimestamp,
+  type CollabMemberId,
+  collabMemberRef,
+  type CollabOperationId,
+  type CollabProjectId,
+  type CollabProjectMembershipOperationMap,
+  decodeCollabProjectMembershipOperationRequest,
+  isCollabMemberId,
+  isCollabOpaqueId,
+  isCollabProjectId,
+} from '@claudian-collab/protocol';
 
+import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabLocalCleanupChoice } from '@/core/collab';
 import { parseCollabProjectsFolder } from '@/core/collab';
 
 export const COLLAB_PENDING_LEAVE_SCHEMA_VERSION = 2 as const;
+export const COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION = 3 as const;
 
 export type PendingLeavePhase =
   | 'queued'
@@ -17,7 +30,7 @@ export interface PendingLeaveAuthorityReplay {
   readonly managerResponsibilityOfferId: CollabOperationId | null;
 }
 
-export interface PendingLeaveRecord {
+export interface LanPendingLeaveRecord {
   readonly schemaVersion: typeof COLLAB_PENDING_LEAVE_SCHEMA_VERSION;
   readonly kind: 'pending-leave';
   readonly projectId: CollabProjectId;
@@ -41,16 +54,76 @@ export interface PendingLeaveRecord {
   readonly updatedAt: CollabIsoTimestamp;
 }
 
+export type CloudPendingLeavePhase =
+  | 'queued'
+  | 'submitted'
+  | 'confirmed'
+  | 'recovery-required';
+
+interface CloudPendingLeaveRecordBase {
+  readonly schemaVersion: typeof COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION;
+  readonly kind: 'pending-leave';
+  readonly authorityKind: 'cloud';
+  readonly authorityGeneration: number;
+  readonly projectId: CollabProjectId;
+  readonly memberId: CollabMemberId;
+  readonly operationId: CollabOperationId;
+  readonly idempotencyKey: string;
+  readonly cleanupChoice: CollabLocalCleanupChoice;
+  readonly cleanupMarkerNonce: string;
+  readonly localCleanupComplete: boolean;
+  readonly localRole: 'manager' | 'member';
+  readonly personalRef: string;
+  readonly serverUrl: string;
+  readonly projectCreatedAt: CollabIsoTimestamp;
+  readonly projectName: string;
+  readonly workspacePath: string;
+  readonly createdAt: CollabIsoTimestamp;
+  readonly updatedAt: CollabIsoTimestamp;
+}
+
+export type CloudPendingLeaveRecord = CloudPendingLeaveRecordBase & (
+  | {
+    readonly phase: 'queued';
+    readonly request: null;
+  }
+  | {
+    readonly phase: Exclude<CloudPendingLeavePhase, 'queued'>;
+    readonly request: CollabProjectMembershipOperationMap['leaveProject']['request'];
+  }
+);
+
+export type PendingLeaveRecord = LanPendingLeaveRecord | CloudPendingLeaveRecord;
+
+export function isCloudPendingLeaveRecord(
+  record: PendingLeaveRecord,
+): record is CloudPendingLeaveRecord {
+  return 'authorityKind' in record && record.authorityKind === 'cloud';
+}
+
+export function isLanPendingLeaveRecord(
+  record: PendingLeaveRecord,
+): record is LanPendingLeaveRecord {
+  return !isCloudPendingLeaveRecord(record);
+}
+
 type RecordValue = Readonly<Record<string, unknown>>;
 const WORKSPACE_CHILD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
-const KEYS = new Set([
+const LAN_KEYS = new Set([
   'schemaVersion', 'kind', 'projectId', 'memberId', 'operationId',
   'idempotencyKey', 'authorityReplay', 'cleanupChoice', 'phase', 'memberCredential',
   'hostEndpoint', 'hostCaCertificatePem', 'hostCaFingerprint',
   'cleanupMarkerNonce', 'localCleanupComplete', 'localRole', 'projectCreatedAt', 'projectName', 'workspacePath',
   'createdAt', 'updatedAt',
+]);
+const CLOUD_KEYS = new Set([
+  'schemaVersion', 'kind', 'authorityKind', 'authorityGeneration', 'projectId',
+  'memberId', 'operationId', 'idempotencyKey', 'cleanupChoice', 'cleanupMarkerNonce',
+  'localCleanupComplete', 'localRole', 'personalRef', 'serverUrl', 'phase',
+  'request', 'projectCreatedAt', 'projectName', 'workspacePath', 'createdAt',
+  'updatedAt',
 ]);
 const REPLAY_KEYS = new Set([
   'expectedHostMemberId',
@@ -63,10 +136,10 @@ const LEGACY_REPLAY_KEYS = new Set([
   'managerResponsibilityOfferId',
 ]);
 
-function record(value: unknown): RecordValue {
+function exactRecord(value: unknown, keys: ReadonlySet<string>): RecordValue {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid pending Leave record');
   const result = value as RecordValue;
-  if (Object.keys(result).length !== KEYS.size || Object.keys(result).some(key => !KEYS.has(key))) {
+  if (Object.keys(result).length !== keys.size || Object.keys(result).some(key => !keys.has(key))) {
     throw new TypeError('Unexpected pending Leave field');
   }
   return result;
@@ -162,19 +235,25 @@ function projectId(value: RecordValue): CollabProjectId {
   return result;
 }
 
-export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
-  const input = record(value);
-  const schemaVersion = input.schemaVersion;
-  if (
-    (schemaVersion !== 1 && schemaVersion !== COLLAB_PENDING_LEAVE_SCHEMA_VERSION)
-    || input.kind !== 'pending-leave'
-  ) throw new TypeError('Invalid pending Leave record');
-  const phase = input.phase;
-  if (phase !== 'queued' && phase !== 'submitting' && phase !== 'confirmed' && phase !== 'recovery-required') throw new TypeError('Invalid phase');
+function commonFields(input: RecordValue): Pick<
+  CloudPendingLeaveRecordBase,
+  | 'cleanupChoice'
+  | 'cleanupMarkerNonce'
+  | 'createdAt'
+  | 'localCleanupComplete'
+  | 'localRole'
+  | 'memberId'
+  | 'operationId'
+  | 'projectCreatedAt'
+  | 'projectId'
+  | 'projectName'
+  | 'updatedAt'
+  | 'workspacePath'
+> {
   const cleanupChoice = input.cleanupChoice;
-  if (cleanupChoice !== 'keep-files' && cleanupChoice !== 'delete-files') throw new TypeError('Invalid cleanupChoice');
-  const certificate = text(input, 'hostCaCertificatePem', 64 * 1024);
-  if (!certificate.includes('-----BEGIN CERTIFICATE-----') || !certificate.includes('-----END CERTIFICATE-----') || certificate.includes('PRIVATE KEY')) throw new TypeError('Invalid Host CA certificate');
+  if (cleanupChoice !== 'keep-files' && cleanupChoice !== 'delete-files') {
+    throw new TypeError('Invalid cleanupChoice');
+  }
   const createdAt = timestamp(input, 'createdAt');
   const projectCreatedAt = timestamp(input, 'projectCreatedAt');
   const updatedAt = timestamp(input, 'updatedAt');
@@ -188,26 +267,107 @@ export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
     throw new TypeError('Invalid localRole');
   }
   return {
-    authorityReplay: authorityReplay(input.authorityReplay, schemaVersion),
     cleanupChoice,
     cleanupMarkerNonce: text(input, 'cleanupMarkerNonce', 43, CREDENTIAL),
     createdAt,
+    localCleanupComplete: input.localCleanupComplete,
+    localRole: input.localRole,
+    memberId: memberId(input, 'memberId'),
+    operationId: opaqueId(input, 'operationId'),
+    projectCreatedAt,
+    projectId: projectId(input),
+    projectName: text(input, 'projectName', 200),
+    updatedAt,
+    workspacePath: workspace(input),
+  };
+}
+
+function decodeCloudPendingLeaveRecord(value: unknown): CloudPendingLeaveRecord {
+  const input = exactRecord(value, CLOUD_KEYS);
+  if (
+    input.schemaVersion !== COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION
+    || input.kind !== 'pending-leave'
+    || input.authorityKind !== 'cloud'
+  ) throw new TypeError('Invalid Cloud pending Leave record');
+  if (
+    !Number.isSafeInteger(input.authorityGeneration)
+    || (input.authorityGeneration as number) < 1
+  ) throw new TypeError('Invalid authorityGeneration');
+  const common = commonFields(input);
+  const personalRef = text(input, 'personalRef', 256);
+  if (personalRef !== collabMemberRef(common.memberId)) {
+    throw new TypeError('Invalid personalRef');
+  }
+  const phase = input.phase;
+  if (
+    phase !== 'queued'
+    && phase !== 'submitted'
+    && phase !== 'confirmed'
+    && phase !== 'recovery-required'
+  ) throw new TypeError('Invalid phase');
+  if ((phase === 'queued') !== (input.request === null)) {
+    throw new TypeError('Invalid Cloud pending Leave request state');
+  }
+  const request = input.request === null
+    ? null
+    : decodeCollabProjectMembershipOperationRequest('leaveProject', input.request);
+  if (request !== null && request.status !== 'ok') throw request.error;
+  const decodedRequest = request?.value ?? null;
+  const idempotencyKey = opaqueId(input, 'idempotencyKey');
+  if (
+    decodedRequest
+    && (
+      decodedRequest.projectId !== common.projectId
+      || decodedRequest.idempotencyKey !== idempotencyKey
+    )
+  ) throw new TypeError('Cloud pending Leave request identity mismatch');
+  const base: CloudPendingLeaveRecordBase = {
+    ...common,
+    authorityGeneration: input.authorityGeneration as number,
+    authorityKind: 'cloud',
+    idempotencyKey,
+    kind: 'pending-leave',
+    personalRef,
+    schemaVersion: COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION,
+    serverUrl: validateCloudServerUrl(text(input, 'serverUrl', 2_048), 'serverUrl'),
+  };
+  if (phase === 'queued') return { ...base, phase, request: null };
+  if (!decodedRequest) throw new TypeError('Invalid Cloud pending Leave request state');
+  return { ...base, phase, request: decodedRequest };
+}
+
+function decodeLanPendingLeaveRecord(value: unknown): LanPendingLeaveRecord {
+  const input = exactRecord(value, LAN_KEYS);
+  const schemaVersion = input.schemaVersion;
+  if (
+    (schemaVersion !== 1 && schemaVersion !== COLLAB_PENDING_LEAVE_SCHEMA_VERSION)
+    || input.kind !== 'pending-leave'
+  ) throw new TypeError('Invalid pending Leave record');
+  const phase = input.phase;
+  if (phase !== 'queued' && phase !== 'submitting' && phase !== 'confirmed' && phase !== 'recovery-required') throw new TypeError('Invalid phase');
+  const common = commonFields(input);
+  const certificate = text(input, 'hostCaCertificatePem', 64 * 1024);
+  if (!certificate.includes('-----BEGIN CERTIFICATE-----') || !certificate.includes('-----END CERTIFICATE-----') || certificate.includes('PRIVATE KEY')) throw new TypeError('Invalid Host CA certificate');
+  return {
+    ...common,
+    authorityReplay: authorityReplay(input.authorityReplay, schemaVersion),
     hostCaCertificatePem: certificate,
     hostCaFingerprint: text(input, 'hostCaFingerprint', 64, FINGERPRINT),
     hostEndpoint: endpoint(input),
     idempotencyKey: opaqueId(input, 'idempotencyKey'),
     kind: 'pending-leave',
-    localCleanupComplete: input.localCleanupComplete,
-    localRole: input.localRole,
     memberCredential: text(input, 'memberCredential', 43, CREDENTIAL),
-    memberId: memberId(input, 'memberId'),
-    operationId: opaqueId(input, 'operationId'),
     phase,
-    projectCreatedAt,
-    projectName: text(input, 'projectName', 200),
-    projectId: projectId(input),
     schemaVersion: COLLAB_PENDING_LEAVE_SCHEMA_VERSION,
-    updatedAt,
-    workspacePath: workspace(input),
   };
+}
+
+export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
+  if (
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && (value as RecordValue).authorityKind === 'cloud'
+  ) return decodeCloudPendingLeaveRecord(value);
+  return decodeLanPendingLeaveRecord(value);
 }

@@ -23,7 +23,7 @@ describe('CollabAuthorityControlRouter', () => {
         dispose: jest.fn(),
         events: {},
         git: { headers: [], remoteUrl: 'https://host.test/repository.git' },
-        membership: { membership: first },
+        membership: { authorityKind: 'lan', membership: first },
         supports: () => true,
       })
       .mockResolvedValueOnce({
@@ -32,7 +32,7 @@ describe('CollabAuthorityControlRouter', () => {
         dispose: jest.fn(),
         events: {},
         git: { headers: [], remoteUrl: 'https://host.test/repository.git' },
-        membership: { membership: second },
+        membership: { authorityKind: 'lan', membership: second },
         supports: () => true,
       });
     const reconnect = jest.fn(async () => {

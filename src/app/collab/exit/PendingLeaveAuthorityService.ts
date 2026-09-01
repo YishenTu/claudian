@@ -1,6 +1,18 @@
 import type {
+  CollabManagerResponsibilityOfferResponse,
+  CollabProjectMembershipOperationMap,
+  LeaveProjectResponse,
+} from '@claudian-collab/protocol';
+
+import type {
+  CloudPendingLeaveRecord,
+  LanPendingLeaveRecord,
   PendingLeaveAuthorityReplay,
   PendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
+import {
+  isCloudPendingLeaveRecord,
+  isLanPendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import {
@@ -13,7 +25,7 @@ import {
   MembershipControlClient,
 } from '@/app/collab/membership/MembershipControlClient';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabCloudProjectSnapshot, CollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -27,10 +39,37 @@ export interface PendingLeaveAuthorityClientPort {
   ): Promise<CollabLanProjectSnapshot>;
 }
 
+export interface CloudPendingLeaveAuthorityClientPort {
+  getManagerResponsibilityOffer(
+    request: CollabProjectMembershipOperationMap['getManagerResponsibilityOffer']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabManagerResponsibilityOfferResponse>;
+  leaveProject(
+    request: CollabProjectMembershipOperationMap['leaveProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<LeaveProjectResponse>;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readPersonalRefOid(
+    personalRef: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<string>;
+  readSnapshot(
+    projectId: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabCloudProjectSnapshot>;
+}
+
 export interface PendingLeaveAuthorityServiceOptions {
   readonly createClient?: (
-    record: PendingLeaveRecord,
+    record: LanPendingLeaveRecord,
   ) => PendingLeaveAuthorityClientPort;
+  readonly createCloudClient?: (
+    record: CloudPendingLeaveRecord,
+    options?: { readonly signal?: AbortSignal },
+  ) => Promise<CloudPendingLeaveAuthorityClientPort & { dispose(): void }>;
   readonly hostTransitionCandidates?: Pick<HostTransitionCandidateResolver, 'resolve'>;
 }
 
@@ -40,10 +79,15 @@ export interface PreparePendingLeaveInput {
   readonly signal?: AbortSignal;
 }
 
-export interface PendingLeaveAuthorityPreparation {
-  readonly authorityReplay: PendingLeaveAuthorityReplay;
-  readonly memberRole: 'manager' | 'member';
-}
+export type PendingLeaveAuthorityPreparation =
+  | {
+    readonly authorityReplay: PendingLeaveAuthorityReplay;
+    readonly memberRole: 'manager' | 'member';
+  }
+  | {
+    readonly memberRole: 'manager' | 'member';
+    readonly request: CollabProjectMembershipOperationMap['leaveProject']['request'];
+  };
 
 export interface SettlePendingLeaveInput {
   readonly pending: PendingLeaveRecord;
@@ -72,11 +116,14 @@ export class PendingLeaveAuthorityService {
   }
 
   async prepare(input: PreparePendingLeaveInput): Promise<PendingLeaveAuthorityPreparation> {
+    if (isCloudPendingLeaveRecord(input.pending)) {
+      return this.prepareCloud({ ...input, pending: input.pending });
+    }
     const { pending } = input;
     if (pending.authorityReplay) {
       return { authorityReplay: pending.authorityReplay, memberRole: pending.localRole };
     }
-    return this.readCurrentPreparation(
+    return this.readCurrentLanPreparation(
       pending,
       null,
       input.managerResponsibilityOfferId ?? null,
@@ -85,7 +132,13 @@ export class PendingLeaveAuthorityService {
   }
 
   async refresh(input: SettlePendingLeaveInput): Promise<PendingLeaveAuthorityPreparation> {
-    return this.readCurrentPreparation(
+    if (isCloudPendingLeaveRecord(input.pending)) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'cloud-pending-leave-recovery-barrier-required' },
+      });
+    }
+    return this.readCurrentLanPreparation(
       input.pending,
       input.pending.authorityReplay?.idempotencyManagerMemberId ?? null,
       input.pending.authorityReplay?.managerResponsibilityOfferId ?? null,
@@ -93,8 +146,67 @@ export class PendingLeaveAuthorityService {
     );
   }
 
-  async settle(input: SettlePendingLeaveInput): Promise<MembershipTerminationResponse> {
+  async recoverRejected(
+    input: SettlePendingLeaveInput,
+  ): Promise<{ readonly memberRole: 'manager' | 'member' }> {
     const { pending } = input;
+    if (!isCloudPendingLeaveRecord(pending) || pending.request === null) {
+      throw new CollabError({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'cloud-pending-leave-rejected-request-missing' },
+      });
+    }
+    return this.withCloudClient(pending, input.signal, async client => {
+      const requestOptions = input.signal ? { signal: input.signal } : {};
+      const snapshot = await client.readSnapshot(pending.projectId, requestOptions);
+      if (
+        snapshot.project.id !== pending.projectId
+        || snapshot.project.authorityGeneration !== pending.authorityGeneration
+        || snapshot.currentMember.id !== pending.memberId
+        || snapshot.currentMember.personalRef !== pending.personalRef
+      ) throw integrityError('cloud-pending-leave-recovery-snapshot-mismatch');
+      const listed = await client.listProjectMembers(
+        { projectId: pending.projectId },
+        requestOptions,
+      );
+      const matching = listed.projectId === pending.projectId
+        ? listed.members.filter(member => member.memberId === pending.memberId)
+        : [];
+      if (
+        matching.length !== 1
+        || matching[0]?.bindingState !== 'bound'
+        || matching[0].role !== snapshot.currentMember.role
+      ) {
+        throw integrityError('cloud-pending-leave-recovery-member-mismatch');
+      }
+      return { memberRole: matching[0].role };
+    });
+  }
+
+  async settle(
+    input: SettlePendingLeaveInput,
+  ): Promise<MembershipTerminationResponse | LeaveProjectResponse> {
+    const { pending } = input;
+    if (isCloudPendingLeaveRecord(pending)) {
+      if (pending.request === null) {
+        throw new CollabError({
+          code: 'authority-integrity-error',
+          safeContext: { reason: 'cloud-pending-leave-request-missing' },
+        });
+      }
+      const result = await this.withCloudClient(pending, input.signal, client => (
+        client.leaveProject(
+          pending.request,
+          input.signal ? { signal: input.signal } : {},
+        )
+      ));
+      if (
+        result.projectId !== pending.projectId
+        || result.memberId !== pending.memberId
+        || result.status !== 'left'
+      ) throw integrityError('cloud-pending-leave-response-mismatch');
+      return result;
+    }
     const replay = pending.authorityReplay;
     if (!replay) {
       throw new CollabError({
@@ -117,6 +229,13 @@ export class PendingLeaveAuthorityService {
   }
 
   async resolveHost(input: ResolvePendingLeaveHostInput): Promise<CollabTrustedHost> {
+    if (!isLanPendingLeaveRecord(input.pending)) {
+      if (input.failure instanceof Error) throw input.failure;
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'cloud-pending-leave-endpoint-is-immutable' },
+      });
+    }
     if (!this.options.hostTransitionCandidates) {
       if (input.failure instanceof Error) throw input.failure;
       throw new CollabError({
@@ -132,12 +251,119 @@ export class PendingLeaveAuthorityService {
     });
   }
 
-  private async readCurrentPreparation(
-    pending: PendingLeaveRecord,
+  private async prepareCloud(
+    input: PreparePendingLeaveInput & { readonly pending: CloudPendingLeaveRecord },
+  ): Promise<Extract<PendingLeaveAuthorityPreparation, { readonly request: unknown }>> {
+    const { pending, signal } = input;
+    if (pending.request !== null) {
+      return { memberRole: pending.localRole, request: pending.request };
+    }
+    return this.withCloudClient(pending, signal, async client => {
+      const requestOptions = signal ? { signal } : {};
+      const snapshot = await client.readSnapshot(pending.projectId, requestOptions);
+      if (
+        snapshot.project.id !== pending.projectId
+        || snapshot.project.authorityGeneration !== pending.authorityGeneration
+        || snapshot.currentMember.id !== pending.memberId
+        || snapshot.currentMember.personalRef !== pending.personalRef
+      ) throw integrityError('cloud-pending-leave-snapshot-mismatch');
+
+      const listed = await client.listProjectMembers(
+        { projectId: pending.projectId },
+        requestOptions,
+      );
+      if (listed.projectId !== pending.projectId) {
+        throw integrityError('cloud-pending-leave-member-list-mismatch');
+      }
+      const matching = listed.members.filter(member => member.memberId === pending.memberId);
+      if (
+        matching.length !== 1
+        || matching[0]?.bindingState !== 'bound'
+        || matching[0].role !== snapshot.currentMember.role
+      ) {
+        throw integrityError('cloud-pending-leave-member-identity-mismatch');
+      }
+      const current = matching[0];
+      const managers = listed.members.filter(member => member.role === 'manager');
+      let expectedOfferRevision: number | null = null;
+      let managerResponsibilityOfferId: string | null = null;
+      if (current.role === 'manager' && managers.length === 1) {
+        const offerId = input.managerResponsibilityOfferId;
+        if (!offerId) {
+          throw new CollabError({
+            code: 'manager-responsibility-pending',
+            safeContext: { reason: 'cloud-pending-leave-successor-required' },
+          });
+        }
+        const { offer } = await client.getManagerResponsibilityOffer({
+          offerId,
+          projectId: pending.projectId,
+        }, requestOptions);
+        if (
+          offer.offerId !== offerId
+          || offer.purpose !== 'manager-leave'
+          || offer.sourceManagerMemberId !== pending.memberId
+          || offer.state !== 'acknowledged'
+          || offer.managerSetGenerationAtOffer !== listed.managerSetGeneration
+          || !listed.members.some(member => (
+            member.memberId === offer.targetMemberId
+            && member.role === 'member'
+            && member.membershipRevision === offer.targetMembershipRevisionAtOffer
+          ))
+        ) {
+          throw new CollabError({
+            code: 'manager-responsibility-pending',
+            safeContext: { reason: 'cloud-pending-leave-successor-invalid' },
+          });
+        }
+        expectedOfferRevision = offer.revision;
+        managerResponsibilityOfferId = offer.offerId;
+      }
+      const expectedPersonalRefOid = await client.readPersonalRefOid(
+        pending.personalRef,
+        requestOptions,
+      );
+      return {
+        memberRole: current.role,
+        request: {
+          expectedManagerSetGeneration: listed.managerSetGeneration,
+          expectedMembershipRevision: current.membershipRevision,
+          expectedOfferRevision,
+          expectedPersonalRefOid,
+          idempotencyKey: pending.idempotencyKey,
+          managerResponsibilityOfferId,
+          projectId: pending.projectId,
+        },
+      };
+    });
+  }
+
+  private async withCloudClient<T>(
+    pending: CloudPendingLeaveRecord,
+    signal: AbortSignal | undefined,
+    operation: (client: CloudPendingLeaveAuthorityClientPort) => Promise<T>,
+  ): Promise<T> {
+    const create = this.options.createCloudClient;
+    if (!create) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'cloud-pending-leave-client-unavailable' },
+      });
+    }
+    const client = await create(pending, signal ? { signal } : {});
+    try {
+      return await operation(client);
+    } finally {
+      client.dispose();
+    }
+  }
+
+  private async readCurrentLanPreparation(
+    pending: LanPendingLeaveRecord,
     idempotencyManagerMemberId: string | null,
     managerResponsibilityOfferId: string | null,
     signal?: AbortSignal,
-  ): Promise<PendingLeaveAuthorityPreparation> {
+  ): Promise<Extract<PendingLeaveAuthorityPreparation, { readonly authorityReplay: unknown }>> {
     const snapshot = await this.createClient(pending).readSnapshot(
       pending.projectId,
       pending.memberCredential,
@@ -147,10 +373,7 @@ export class PendingLeaveAuthorityService {
       snapshot.project.id !== pending.projectId
       || snapshot.currentMember.id !== pending.memberId
     ) {
-      throw new CollabError({
-        code: 'authority-integrity-error',
-        safeContext: { reason: 'pending-leave-snapshot-mismatch' },
-      });
+      throw integrityError('pending-leave-snapshot-mismatch');
     }
     if (snapshot.project.hostMemberId === pending.memberId) {
       throw new CollabError({
@@ -167,10 +390,16 @@ export class PendingLeaveAuthorityService {
       memberRole: snapshot.currentMember.role,
     };
   }
-
 }
 
-function storedTrust(record: PendingLeaveRecord): CollabTrustedHost {
+function integrityError(reason: string): CollabError {
+  return new CollabError({
+    code: 'authority-integrity-error',
+    safeContext: { reason },
+  });
+}
+
+function storedTrust(record: LanPendingLeaveRecord): CollabTrustedHost {
   return {
     caCertificatePem: record.hostCaCertificatePem,
     caFingerprint: record.hostCaFingerprint,

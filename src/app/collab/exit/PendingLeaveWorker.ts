@@ -15,7 +15,7 @@ export class PendingLeaveWorker {
   private inFlight: Promise<PendingLeaveWorkerResult> | null = null;
 
   constructor(
-    private readonly pendingLeaves: Pick<PendingLeaveJournalPort, 'list'>,
+    private readonly pendingLeaves: Pick<PendingLeaveJournalPort, 'listProjectIds'>,
     private readonly exits: Pick<LocalProjectExitCoordinator, 'resume'>,
     private readonly projectRecoveryAdmission: CollabProjectLifecycleAdmission,
   ) {}
@@ -34,21 +34,21 @@ export class PendingLeaveWorker {
   private async runPass(signal?: AbortSignal): Promise<PendingLeaveWorkerResult> {
     const attempted: CollabProjectId[] = [];
     const failed: CollabProjectId[] = [];
-    for (const pending of await this.pendingLeaves.list()) {
+    for (const projectId of await this.pendingLeaves.listProjectIds()) {
       if (signal?.aborted) break;
-      attempted.push(pending.projectId);
+      attempted.push(projectId);
       try {
         await this.projectRecoveryAdmission(
-          pending.projectId,
+          projectId,
           async () => {
             await this.exits.resume(
-              pending.projectId,
+              projectId,
               signal ? { signal } : {},
             );
           },
         );
       } catch {
-        failed.push(pending.projectId);
+        failed.push(projectId);
       }
     }
     return { attempted, failed };
