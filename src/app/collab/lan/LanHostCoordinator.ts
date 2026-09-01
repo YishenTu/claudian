@@ -1378,13 +1378,7 @@ export class LanHostCoordinator {
             'authority-transfer-route-host-mismatch',
           );
         }
-        if (existingAuthorityTransferRoute?.state !== 'source-active') {
-          if (existingAuthorityTransferRoute) {
-            throw hostError(
-              'operation-failed',
-              'authority-transfer-route-conflict',
-            );
-          }
+        if (!existingAuthorityTransferRoute) {
           await this.#authorityTransferRoutes.install({
             hostMemberId: hostedMembership.member.id,
             projectId,
@@ -1392,6 +1386,14 @@ export class LanHostCoordinator {
             state: 'source-active',
           });
           authorityTransferRouteRegistered = true;
+        } else if (
+          existingAuthorityTransferRoute.state !== 'source-active'
+          && existingAuthorityTransferRoute.state !== 'target-active'
+        ) {
+            throw hostError(
+              'operation-failed',
+              'authority-transfer-route-conflict',
+            );
         }
       }
       advertisement = await this.options.discovery?.advertiseProject({

@@ -1469,6 +1469,12 @@ describe('LanHostCoordinator production transport', () => {
       assertRecoveryOwner: () => undefined,
       claimantStore: localProjects.authorityTransferClaimants,
       convergence: {} as never,
+      createCloudToLanConnection: async () => {
+        throw new Error('Unexpected Cloud-to-LAN connection');
+      },
+      createCloudToLanTarget: () => {
+        throw new Error('Unexpected Cloud-to-LAN target');
+      },
       createLanToCloudSource,
       installationKey: INSTALLATION_A,
       lifecycle: {

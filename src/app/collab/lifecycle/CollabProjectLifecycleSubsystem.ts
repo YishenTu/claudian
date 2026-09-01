@@ -162,6 +162,19 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runAuthorityTransferRecovery<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'authority-transfer',
+      ['authority-transfer-claimant'],
+      'recovery',
+      operation,
+    );
+  }
+
   runRetirementAdoption<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
