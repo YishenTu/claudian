@@ -19,6 +19,11 @@ function closingError(): CollabError {
 
 export class ProjectOperationAdmission {
   private readonly active = new Set<Promise<unknown>>();
+  private readonly projectOperations = new Map<
+    CollabProjectId,
+    Set<Promise<unknown>>
+  >();
+  private readonly transitions = new Set<Promise<unknown>>();
   private readonly closedProjects = new Set<CollabProjectId>();
   private readonly suspensions = new Map<CollabProjectId, ProjectOperationSuspension>();
   private closing = false;
@@ -52,7 +57,13 @@ export class ProjectOperationAdmission {
   }
 
   drain(): Promise<void> {
-    return Promise.allSettled([...this.active]).then(() => undefined);
+    return Promise.allSettled([...this.active, ...this.transitions]).then(() => undefined);
+  }
+
+  drainAdmittedOperations(projectId: CollabProjectId): Promise<void> {
+    return Promise.allSettled([
+      ...(this.projectOperations.get(projectId) ?? []),
+    ]).then(() => undefined);
   }
 
   runGlobal<T>(operation: () => Promise<T>): Promise<T> {
@@ -92,19 +103,71 @@ export class ProjectOperationAdmission {
         safeContext: { projectId, reason: 'collab-feature-project-suspended' },
       }));
     }
-    return this.runAdmitted(operation);
+    return this.runAdmitted(operation, projectId);
   }
 
-  private runAdmitted<T>(operation: () => Promise<T>): Promise<T> {
+  runProjectTransition<T>(
+    resolveProjectId: () => CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     if (this.closing) return Promise.reject(closingError());
-    const admitted = Promise.resolve()
-      .then(operation)
-      .catch((error: unknown) => {
-        throw toError(error, 'Admitted Collab Project operation failed.');
-      });
-    this.active.add(admitted);
-    const remove = () => this.active.delete(admitted);
+    let projectId: CollabProjectId;
+    try {
+      projectId = resolveProjectId();
+    } catch (error) {
+      return Promise.reject(toError(error, 'Collab Project transition admission failed.'));
+    }
+    if (this.closedProjects.has(projectId)) {
+      return Promise.reject(new CollabError({
+        code: 'project-retired',
+        safeContext: { projectId, reason: 'collab-feature-project-closed' },
+      }));
+    }
+    return this.runTracked(
+      operation,
+      this.transitions,
+      'Collab Project transition failed.',
+    );
+  }
+
+  private runAdmitted<T>(
+    operation: () => Promise<T>,
+    projectId?: CollabProjectId,
+  ): Promise<T> {
+    if (this.closing) return Promise.reject(closingError());
+    const admitted = this.runTracked(
+      operation,
+      this.active,
+      'Admitted Collab Project operation failed.',
+    );
+    if (projectId === undefined) return admitted;
+    let projectOperations = this.projectOperations.get(projectId);
+    if (!projectOperations) {
+      projectOperations = new Set();
+      this.projectOperations.set(projectId, projectOperations);
+    }
+    projectOperations.add(admitted);
+    const remove = () => {
+      projectOperations.delete(admitted);
+      if (projectOperations.size === 0) this.projectOperations.delete(projectId);
+    };
     void admitted.then(remove, remove);
     return admitted;
+  }
+
+  private runTracked<T>(
+    operation: () => Promise<T>,
+    operations: Set<Promise<unknown>>,
+    failureMessage: string,
+  ): Promise<T> {
+    const tracked = Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => {
+        throw toError(error, failureMessage);
+      });
+    operations.add(tracked);
+    const remove = () => operations.delete(tracked);
+    void tracked.then(remove, remove);
+    return tracked;
   }
 }

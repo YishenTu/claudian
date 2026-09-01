@@ -42,6 +42,14 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'readConflict',
   'readConflictFile',
   'createInvitation',
+  'listInvitations',
+  'listMembers',
+  'reissueMemberClaim',
+  'revokeMemberClaim',
+  'listManagerResponsibilityOffers',
+  'readManagementOperation',
+  'resumeManagementOperation',
+  'completeManagementOperation',
   'revokeInvitation',
   'claimLegacyHostInstallation',
   'startHost',
@@ -88,6 +96,7 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 type FeatureOptionsOverrides = {
   readonly cloudEntry?: Partial<CollabFeatureServiceOptions['cloudEntry']>;
   readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
+  readonly cloudRetirementIntents?: CollabFeatureServiceOptions['cloudRetirementIntents'];
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
   readonly join?: Partial<CollabJoinProjectPort>;
@@ -95,6 +104,7 @@ type FeatureOptionsOverrides = {
   readonly lifecycleRecovery?: Partial<CollabLifecycleRecoveryPort>;
   readonly localExit?: Partial<CollabLocalExitPort>;
   readonly membership?: Partial<CollabMembershipPort>;
+  readonly pendingLeaves?: CollabFeatureServiceOptions['pendingLeaves'];
   readonly publication?: Partial<CollabPublicationPort>;
   readonly retirement?: Partial<CollabRetirementPort>;
   readonly vaultRoot: string;
@@ -208,6 +218,14 @@ function defaultLocalExit(): CollabLocalExitPort {
 
 function defaultMembership(): CollabMembershipPort {
   return {
+    listInvitations: () => unexpected('listInvitations'),
+    listMembers: () => unexpected('listMembers'),
+    reissueMemberClaim: () => unexpected('reissueMemberClaim'),
+    revokeMemberClaim: () => unexpected('revokeMemberClaim'),
+    listManagerResponsibilityOffers: () => unexpected('listManagerResponsibilityOffers'),
+    readManagementOperation: () => Promise.resolve(null),
+    resumeManagementOperation: () => unexpected('resumeManagementOperation'),
+    completeManagementOperation: () => unexpected('completeManagementOperation'),
     cancelManagerResponsibilityOffer: () => unexpected('cancelManagerResponsibilityOffer'),
     createInvitation: () => unexpected('createInvitation'),
     createManagerResponsibilityOffer: () => unexpected('createManagerResponsibilityOffer'),
@@ -312,6 +330,9 @@ export function completeCollabFeatureOptions(
 ): CollabFeatureServiceOptions {
   return {
     cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
+    cloudRetirementIntents: overrides.cloudRetirementIntents ?? {
+      listProjectIds: () => Promise.resolve([]),
+    },
     cloudEntry: {
       joinProject: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) }),
       close: () => Promise.resolve(),
@@ -329,6 +350,10 @@ export function completeCollabFeatureOptions(
     lifecycleRecovery: { ...defaultLifecycleRecovery(), ...overrides.lifecycleRecovery },
     localExit: { ...defaultLocalExit(), ...overrides.localExit },
     membership: { ...defaultMembership(), ...overrides.membership },
+    pendingLeaves: overrides.pendingLeaves ?? {
+      listProjectIds: () => Promise.resolve([]),
+      load: () => Promise.resolve(null),
+    },
     publication: { ...defaultPublication(), ...overrides.publication },
     retirement: { ...defaultRetirement(), ...overrides.retirement },
     vaultRoot: overrides.vaultRoot,

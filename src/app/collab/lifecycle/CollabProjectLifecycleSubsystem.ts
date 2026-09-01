@@ -98,7 +98,7 @@ export class CollabProjectLifecycleSubsystem {
       leaveProject: (request, operationOptions) => this.runExclusiveWithPredecessor(
         request.projectId,
         'local-exit',
-        'manager-responsibility',
+        ['manager-responsibility'],
         'continuation',
         () => options.localExit.leaveProject(request, operationOptions),
       ),
@@ -156,7 +156,7 @@ export class CollabProjectLifecycleSubsystem {
     return this.runExclusiveWithPredecessor(
       projectId,
       ownerName,
-      null,
+      [],
       mode,
       operation,
     );
@@ -169,7 +169,7 @@ export class CollabProjectLifecycleSubsystem {
     return this.runExclusiveWithPredecessor(
       projectId,
       'retirement',
-      'local-exit',
+      ['local-exit', 'manager-responsibility'],
       'continuation',
       operation,
     );
@@ -178,7 +178,7 @@ export class CollabProjectLifecycleSubsystem {
   private runExclusiveWithPredecessor<T>(
     projectId: CollabProjectId,
     ownerName: string,
-    predecessorOwnerName: string | null,
+    predecessorOwnerNames: readonly string[],
     mode: CollabProjectLifecycleAdmissionMode,
     operation: () => Promise<T>,
   ): Promise<T> {
@@ -227,7 +227,7 @@ export class CollabProjectLifecycleSubsystem {
       if (
         pendingOwner !== undefined
         && pendingOwner !== ownerName
-        && pendingOwner !== predecessorOwnerName
+        && !predecessorOwnerNames.includes(pendingOwner)
       ) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
@@ -290,6 +290,14 @@ export class CollabProjectLifecycleSubsystem {
     }
     this.membershipBound = true;
     return Object.freeze<CollabMembershipPort>({
+      listMembers: (...args) => membership.listMembers(...args),
+      reissueMemberClaim: (...args) => membership.reissueMemberClaim(...args),
+      revokeMemberClaim: (...args) => membership.revokeMemberClaim(...args),
+      listManagerResponsibilityOffers: (...args) => membership.listManagerResponsibilityOffers(...args),
+      listInvitations: (...args) => membership.listInvitations(...args),
+      readManagementOperation: (...args) => membership.readManagementOperation(...args),
+      resumeManagementOperation: (...args) => membership.resumeManagementOperation(...args),
+      completeManagementOperation: (...args) => membership.completeManagementOperation(...args),
       cancelManagerResponsibilityOffer: (request, operationOptions) => this.runExclusive(
         request.projectId,
         'manager-responsibility',

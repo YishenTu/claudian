@@ -269,7 +269,7 @@ describe('production authority-transfer effects', () => {
     const admission = new ProjectOperationAdmission();
     const fence = new AuthorityTransferLocalFence({
       admission: {
-        drainAdmittedOperations: () => admission.drain(),
+        drainAdmittedOperations: projectId => admission.drainAdmittedOperations(projectId),
         resumeProjectAdmission: token => admission.resumeProject(token),
         suspendProjectAdmission: projectId => admission.suspendProject(projectId),
       },
@@ -284,6 +284,12 @@ describe('production authority-transfer effects', () => {
       const repositories = (await sourceFoundation.requireGitFoundation()).repositories;
       const convergence = new AuthorityTransferLocalConvergence({
         activity: { transitionProject: (projectId, operation) => fence.run(projectId, operation) },
+        authorityProjectionTransitions: {
+          run: (projectId, operation) => sourceFoundation.runAuthorityProjectionTransition(
+            projectId,
+            operation,
+          ),
+        },
         git: { rotate: input => rotateAuthorityTransferOrigin(repositories, input) },
         projects: sourceFoundation.local.projects,
         workspace: sourceFoundation.local.workspace,
@@ -542,6 +548,12 @@ describe('production authority-transfer effects', () => {
     );
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: (_projectId, operation) => operation() },
+      authorityProjectionTransitions: {
+        run: (projectId, operation) => targetFoundation.runAuthorityProjectionTransition(
+          projectId,
+          operation,
+        ),
+      },
       git: {
         rotate: input => rotateAuthorityTransferOrigin(gitFoundation.repositories, input),
       },

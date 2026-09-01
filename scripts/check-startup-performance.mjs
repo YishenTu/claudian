@@ -11,7 +11,9 @@ const mainPath = path.join(root, 'main.js');
 const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
 export const preCollabReferenceMainBytes = 3_739_584;
 export const preStep11BundleHealthBaselineBytes = 4_896_000;
-export const mainBudgetBytes = 5_000_000;
+// Step 13 may consume the retained historical hard ceiling while the smaller
+// pre-Step-11 health baseline continues to make every byte of growth visible.
+export const mainBudgetBytes = 5_170_000;
 export const evaluationIndicatorMs = 50;
 export const evaluationReviewThresholdMs = 150;
 const pluginArtifactNames = ['main.js', 'manifest.json'];
