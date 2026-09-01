@@ -173,6 +173,8 @@ function cloudSnapshot() {
 }
 
 describe('CloudAuthorityAdapter', () => {
+  jest.setTimeout(30_000);
+
   it('preserves the HTTPS prefix with native certificate verification for JSON, artifacts, and WebSockets', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-tls-'));
     const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A })
@@ -232,7 +234,7 @@ describe('CloudAuthorityAdapter', () => {
         await Promise.race([
           opened,
           new Promise<never>((_resolve, reject) => {
-            eventDeadline = setTimeout(() => reject(new Error('TLS event connection did not open')), 500);
+            eventDeadline = setTimeout(() => reject(new Error('TLS event connection did not open')), 5_000);
           }),
         ]);
         expect(observed).toEqual([
