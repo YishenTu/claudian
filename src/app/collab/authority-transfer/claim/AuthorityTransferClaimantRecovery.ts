@@ -13,6 +13,10 @@ import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantRecoveryHandler {
+  beforeProject(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+  ): Promise<void>;
   resume(
     record: AuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
@@ -81,6 +85,7 @@ implements CollabProjectLifecycleRecoveryStage {
         this.durableOwner.name,
         'recovery',
         async () => {
+          await this.handler.beforeProject(projectId, options);
           const record = await this.store.load(projectId);
           if (!record) return;
           if (requiresNoRuntime(record, this.now())) {
