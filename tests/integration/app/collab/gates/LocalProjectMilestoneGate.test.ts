@@ -42,6 +42,9 @@ import {
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimCustodyRecord';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
+import {
+  encodeCloudMembershipClaimInvitation,
+} from '@/app/collab/project/CloudProjectInvitation';
 import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -661,6 +664,185 @@ describe('G3 local Project milestone gate', () => {
       await reopenedFoundation.close();
     },
   );
+
+  it('redeems a Manager-reissued claim after original source expiry through the real local transition lane', async () => {
+    const foundation = createFoundation();
+    const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => CREDENTIAL,
+      createId: kind => {
+        if (kind === 'member') return MEMBER_ID;
+        if (kind === 'operation') return OPERATION_ID;
+        return PROJECT_ID;
+      },
+      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      vaultRoot,
+    });
+    const transferId = 'transfer-manager-reissued-gate';
+    const checkpointSha256 = 'e'.repeat(64);
+    const claimValue = Buffer.alloc(32, 6).toString('base64url');
+    const status: CollabAuthorityTransferStatus = {
+      batchRevision: 1,
+      batchSha256: 'b'.repeat(64),
+      checkpointSha256,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      direction: 'lan-to-cloud',
+      expiresAt: '2026-08-31T00:00:00.000Z',
+      phase: 'completed',
+      projectId: PROJECT_ID,
+      relinquishmentProof: {
+        batchRevision: 1,
+        batchSha256: 'b'.repeat(64),
+        certificate: Buffer.alloc(64, 2).toString('base64url'),
+        certificateAlgorithm: 'ed25519',
+        checkpointSha256,
+        committedAt: '2026-08-01T00:00:08.000Z',
+        operationIntentId: 'intent-manager-reissued-source',
+        projectId: PROJECT_ID,
+        sourceAuthority: { generation: 1, kind: 'lan' },
+        sourceHostMemberId: MEMBER_ID,
+        targetAuthority: { generation: 2, kind: 'cloud' },
+        transferId,
+      },
+      sourceAuthority: { generation: 1, kind: 'lan' },
+      state: 'completed',
+      targetAuthority: { generation: 2, kind: 'cloud' },
+      targetUrl: 'https://cloud.example.test/',
+      transferId,
+      updatedAt: '2026-08-01T00:00:10.000Z',
+    };
+    const descriptor = {
+      claim: claimValue,
+      claimGeneration: 4,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      expiresAt: '2026-10-01T00:00:00.000Z',
+      memberId: MEMBER_ID,
+      projectId: PROJECT_ID,
+      secretReplayExpiresAt: '2026-10-01T00:00:00.000Z',
+      targetAuthorityGeneration: 2,
+      transferId,
+    };
+    let repositoryHead = '';
+    const readSnapshot = jest.fn(async (): Promise<CollabCloudProjectSnapshot> => ({
+      currentMember: {
+        activatedAt: '2026-08-01T00:00:00.000Z',
+        createdAt: '2026-08-01T00:00:00.000Z',
+        displayName: 'Alice',
+        id: MEMBER_ID,
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        role: 'manager',
+        status: 'active',
+      },
+      eventSequence: 11,
+      members: [],
+      openRequests: [],
+      openTicketCount: 0,
+      project: {
+        authorityGeneration: 2,
+        authorityKind: 'cloud',
+        createdAt: '2026-08-08T00:00:00.000Z',
+        id: PROJECT_ID,
+        mainOid: repositoryHead,
+        mainRef: 'refs/heads/main',
+        name: 'M2 Notes',
+      },
+      ticketHighlights: [],
+    }));
+    const authorityTransfer = jest.fn(async (
+      operation: string,
+      request: Readonly<{ readonly idempotencyKey?: string }>,
+    ) => operation === 'claimTransferredMembership'
+      ? {
+          checkpointSha256,
+          claimSha256: createHash('sha256').update(claimValue, 'utf8').digest('hex'),
+          memberId: MEMBER_ID,
+          operationIntentId: request.idempotencyKey!,
+          projectId: PROJECT_ID,
+          receiptId: 'receipt-manager-reissued-gate',
+          receiptKeyId: 'receipt-key-manager-reissued-gate',
+          redeemedAt: '2026-09-02T00:00:00.000Z',
+          signature: Buffer.alloc(64, 3).toString('base64url'),
+          signatureAlgorithm: 'ed25519',
+          targetAuthorityGeneration: 2,
+          transferId,
+        }
+      : status);
+    const cloudSession = {
+      dispose: jest.fn(),
+      lifecycle: { authorityTransfer },
+      projectId: PROJECT_ID,
+      readSnapshot,
+      serverUrl: 'https://cloud.example.test/',
+      supports: (capability: string) => (
+        capability === 'authority-transfer' || capability === 'project-snapshot'
+      ),
+    } as unknown as CloudAuthorityConnection;
+    const subcomposition = createCollabFeatureSubcomposition({
+      cloudAuthority: {
+        authorityKind: 'cloud',
+        create: jest.fn() as never,
+        connect: jest.fn(async () => cloudSession),
+      },
+      foundation,
+      projectSetup: setup,
+      vaultRoot,
+    });
+    try {
+      await expect(subcomposition.feature.initialize()).resolves.toMatchObject({
+        status: 'success',
+      });
+      await expect(subcomposition.feature.createProject({
+        memberDisplayName: 'Alice',
+        name: 'M2 Notes',
+      })).resolves.toMatchObject({ status: 'success' });
+      await foundation.lanHost.stopProject(PROJECT_ID);
+      const membership = await foundation.local.projects.loadMembership(PROJECT_ID);
+      if (!membership || membership.authority.kind !== 'lan') {
+        throw new Error('Expected initial LAN membership');
+      }
+      await foundation.local.projects.saveMembership({
+        ...membership,
+        hostOwnership: { ownsAuthority: false },
+      });
+      const repositoryPath = path.join(vaultRoot, 'workspace', 'm2-notes');
+      repositoryHead = git(repositoryPath, ['rev-parse', 'HEAD']);
+
+      await expect(subcomposition.feature.reconnectProject({
+        encodedInvitation: encodeCloudMembershipClaimInvitation({
+          claim: descriptor,
+          serverUrl: 'https://cloud.example.test/',
+        }),
+        projectId: PROJECT_ID,
+      })).resolves.toMatchObject({
+        status: 'success',
+        value: { authorityKind: 'cloud', id: PROJECT_ID },
+      });
+
+      await expect(foundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+        authority: {
+          authorityGeneration: 2,
+          kind: 'cloud',
+          serverUrl: 'https://cloud.example.test/',
+        },
+        member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}` },
+      });
+      expect(git(repositoryPath, ['remote', 'get-url', 'origin'])).toBe(
+        `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+      );
+      await expect(
+        foundation.local.projects.authorityTransferClaimants.load(PROJECT_ID),
+      ).resolves.toBeNull();
+      expect(authorityTransfer.mock.calls.map(([operation]) => operation)).toEqual([
+        'claimTransferredMembership',
+        'getProjectAuthorityTransfer',
+      ]);
+      expect(readSnapshot).toHaveBeenCalledTimes(2);
+      expect(cloudSession.dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      await subcomposition.feature.close();
+      await foundation.close();
+    }
+  });
 
   it('finishes expired terminal-source staging cleanup after restart', async () => {
     const foundation = createFoundation();

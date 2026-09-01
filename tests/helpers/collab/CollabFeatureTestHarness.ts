@@ -137,6 +137,7 @@ function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
     close: () => Promise.resolve(),
     observeCloudToLanTransfer: () => unexpected('observeCloudToLanTransfer'),
     prepareCloudToLanTarget: () => unexpected('prepareCloudToLanTarget'),
+    redeemManagerReissuedClaim: () => unexpected('redeemManagerReissuedClaim'),
     withdrawCloudToLanTarget: () => unexpected('withdrawCloudToLanTarget'),
   };
 }
