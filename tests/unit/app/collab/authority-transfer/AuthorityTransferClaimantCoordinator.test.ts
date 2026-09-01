@@ -5,6 +5,7 @@ import type {
   CollabAuthorityTransferStatus,
   CollabTransferredMembershipClaim,
   CollabTransferredMembershipRedemptionReceipt,
+  ReissueTransferredMembershipClaimResponse,
 } from '@claudian-collab/protocol';
 
 import {
@@ -17,8 +18,10 @@ import type {
 import {
   advanceAuthorityTransferClaimantRecord,
   createAuthorityTransferClaimantRecord,
+  createManagerReissuedAuthorityTransferClaimantRecord,
   decodeAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-claimant';
 const TRANSFER_ID = 'transfer-claimant';
@@ -82,6 +85,16 @@ function claim(): CollabTransferredMembershipClaim {
   };
 }
 
+function reissuedClaim(): ReissueTransferredMembershipClaimResponse {
+  return {
+    ...claim(),
+    claimGeneration: 4,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    expiresAt: '2026-10-31T00:00:00.000Z',
+    secretReplayExpiresAt: '2026-10-31T00:00:00.000Z',
+  };
+}
+
 function receipt(): CollabTransferredMembershipRedemptionReceipt {
   return {
     checkpointSha256: CHECKPOINT_SHA256,
@@ -127,6 +140,364 @@ class MemoryStore implements AuthorityTransferClaimantStore {
 }
 
 describe('AuthorityTransferClaimantCoordinator', () => {
+  it('persists a Manager-reissued descriptor and exact request before target redemption without resolving the source', async () => {
+    const store = new MemoryStore();
+    const source = {
+      acknowledgeRedemption: jest.fn(),
+      getClaim: jest.fn(),
+    };
+    const targetStatus = completed('lan-to-cloud');
+    const claimTarget = jest.fn(async (
+      record: AuthorityTransferClaimantRecord,
+      request: ClaimTransferredMembershipRequest,
+    ) => {
+      expect(store.record).toEqual(record);
+      expect(record).toMatchObject({
+        descriptor: reissuedClaim(),
+        phase: 'redemption-prepared',
+        redemptionRequest: request,
+        variant: 'manager-reissued',
+      });
+      return {
+        ...receipt(),
+        redeemedAt: '2026-10-01T00:01:00.000Z',
+      };
+    });
+    const confirmTargetBinding = jest.fn(async (
+      record: AuthorityTransferClaimantRecord,
+      proof: 'receipt' | 'existing-binding',
+    ) => {
+      expect(proof).toBe('receipt');
+      expect(store.record).toEqual(record);
+      expect(record).toMatchObject({
+        phase: 'target-claimed',
+        redemptionReceipt: { receiptId: 'receipt-claimant' },
+      });
+      return targetStatus;
+    });
+    const converge = jest.fn(async (record: AuthorityTransferClaimantRecord) => {
+      expect(store.record).toEqual(record);
+      expect(record).toMatchObject({
+        convergenceProof: 'receipt',
+        phase: 'target-confirmed',
+        targetStatus,
+      });
+    });
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge },
+      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      source,
+      store,
+      target: { claimTransferredMembership: claimTarget, confirmTargetBinding },
+    });
+
+    await coordinator.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    });
+
+    expect(store.phases).toEqual([
+      'redemption-prepared',
+      'target-claimed',
+      'target-confirmed',
+      'membership-converged',
+      'completed',
+    ]);
+    expect(store.record).toBeNull();
+    expect(source.getClaim).not.toHaveBeenCalled();
+    expect(source.acknowledgeRedemption).not.toHaveBeenCalled();
+    expect(claimTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: 'manager-reissued' }),
+      {
+        claim: CLAIM_VALUE,
+        idempotencyKey: INTENT_ID,
+        projectId: PROJECT_ID,
+        transferId: TRANSFER_ID,
+      },
+      expect.any(Object),
+    );
+  });
+
+  it('persists Manager-reissued progress when the client clock lags the Cloud descriptor', async () => {
+    const store = new MemoryStore();
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: jest.fn(async () => undefined) },
+      now: () => new Date('2026-09-30T23:59:00.000Z'),
+      store,
+      target: {
+        claimTransferredMembership: jest.fn(async () => ({
+          ...receipt(),
+          redeemedAt: '2026-10-01T00:01:00.000Z',
+        })),
+        confirmTargetBinding: jest.fn(async () => completed('lan-to-cloud')),
+      },
+    });
+
+    await coordinator.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    });
+
+    expect(store.phases).toEqual([
+      'redemption-prepared',
+      'target-claimed',
+      'target-confirmed',
+      'membership-converged',
+      'completed',
+    ]);
+    expect(store.record).toBeNull();
+  });
+
+  it('uses only authenticated existing-binding confirmation after a Manager reissue expires', async () => {
+    const store = new MemoryStore();
+    const claimTarget = jest.fn();
+    const confirmTargetBinding = jest.fn(async (
+      record: AuthorityTransferClaimantRecord,
+      proof: 'receipt' | 'existing-binding',
+    ) => {
+      expect(proof).toBe('existing-binding');
+      expect(record).toMatchObject({
+        phase: 'redemption-prepared',
+        redemptionReceipt: null,
+        variant: 'manager-reissued',
+      });
+      return completed('lan-to-cloud');
+    });
+    const converge = jest.fn(async (record: AuthorityTransferClaimantRecord) => {
+      expect(record).toMatchObject({
+        convergenceProof: 'existing-binding',
+        phase: 'target-confirmed',
+        redemptionReceipt: null,
+      });
+    });
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge },
+      now: () => new Date(reissuedClaim().expiresAt),
+      store,
+      target: { claimTransferredMembership: claimTarget, confirmTargetBinding },
+    });
+
+    await coordinator.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    });
+
+    expect(claimTarget).not.toHaveBeenCalled();
+    expect(confirmTargetBinding).toHaveBeenCalledTimes(1);
+    expect(converge).toHaveBeenCalledTimes(1);
+    expect(store.record).toBeNull();
+  });
+
+  it('finishes a target-confirmed Manager reissue locally without a target confirmation port', async () => {
+    const store = new MemoryStore();
+    const prepared = createManagerReissuedAuthorityTransferClaimantRecord({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    });
+    const claimed = advanceAuthorityTransferClaimantRecord(prepared, {
+      phase: 'target-claimed',
+      redemptionReceipt: {
+        ...receipt(),
+        redeemedAt: '2026-10-01T00:01:00.000Z',
+      },
+      updatedAt: '2026-10-01T00:01:00.000Z',
+    });
+    store.record = advanceAuthorityTransferClaimantRecord(claimed, {
+      convergenceProof: 'receipt',
+      phase: 'target-confirmed',
+      targetStatus: completed('lan-to-cloud'),
+      updatedAt: '2026-10-01T00:02:00.000Z',
+    });
+    const converge = jest.fn(async () => undefined);
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge },
+      now: () => new Date('2026-10-01T00:03:00.000Z'),
+      store,
+      target: { claimTransferredMembership: jest.fn() },
+    });
+
+    await coordinator.resume(PROJECT_ID);
+
+    expect(converge).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'target-confirmed', variant: 'manager-reissued' }),
+      {},
+    );
+    expect(store.record).toBeNull();
+  });
+
+  it('keeps an expired ambiguous Manager reissue visibly recoverable when exact binding cannot be proved', async () => {
+    const store = new MemoryStore();
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: jest.fn() },
+      now: () => new Date(reissuedClaim().expiresAt),
+      store,
+      target: {
+        claimTransferredMembership: jest.fn(),
+        confirmTargetBinding: async () => {
+          throw new CollabError({
+            code: 'durable-progress-recovery-required',
+            safeContext: { reason: 'target-binding-not-proved' },
+          });
+        },
+      },
+    });
+
+    await expect(coordinator.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    })).rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
+
+    expect(store.record).toMatchObject({
+      convergenceProof: null,
+      phase: 'redemption-prepared',
+      redemptionReceipt: null,
+      variant: 'manager-reissued',
+    });
+  });
+
+  it('recovers a persisted Manager-reissued receipt forward after its own expiry', async () => {
+    const store = new MemoryStore();
+    const beforeExpiry = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: jest.fn() },
+      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      store,
+      target: {
+        claimTransferredMembership: async () => ({
+          ...receipt(),
+          redeemedAt: '2026-10-01T00:01:00.000Z',
+        }),
+        confirmTargetBinding: async () => {
+          throw new Error('simulated local death after receipt persistence');
+        },
+      },
+    });
+    await expect(beforeExpiry.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      operationIntentId: INTENT_ID,
+      serverUrl: 'https://cloud.example.test/',
+    })).rejects.toThrow('simulated local death after receipt persistence');
+    expect(store.record).toMatchObject({ phase: 'target-claimed' });
+
+    const converge = jest.fn(async () => undefined);
+    const afterExpiry = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge },
+      now: () => new Date(reissuedClaim().expiresAt),
+      store,
+      target: {
+        claimTransferredMembership: jest.fn(),
+        confirmTargetBinding: async (_record, proof) => {
+          expect(proof).toBe('receipt');
+          return completed('lan-to-cloud');
+        },
+      },
+    });
+
+    await afterExpiry.resume(PROJECT_ID);
+
+    expect(converge).toHaveBeenCalledTimes(1);
+    expect(store.record).toBeNull();
+  });
+
+  it('replays the same private request after a lost Manager-reissued response', async () => {
+    const store = new MemoryStore();
+    const requests: ClaimTransferredMembershipRequest[] = [];
+    const descriptor = reissuedClaim();
+    const input = {
+      descriptor,
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      serverUrl: 'https://cloud.example.test/',
+    };
+    const first = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: jest.fn() },
+      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      store,
+      target: {
+        claimTransferredMembership: async (_record, request) => {
+          requests.push(request);
+          throw new Error('simulated lost response');
+        },
+        confirmTargetBinding: jest.fn(),
+      },
+    });
+    await expect(first.startManagerReissued(input)).rejects.toThrow('simulated lost response');
+    const frozenIntentId = store.record?.operationIntentId;
+    expect(frozenIntentId).toMatch(/^manager-reissued-[a-f0-9]{32}$/);
+
+    const second = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: async () => undefined },
+      now: () => new Date('2026-10-01T00:00:20.000Z'),
+      store,
+      target: {
+        claimTransferredMembership: async (_record, request) => {
+          requests.push(request);
+          return {
+            ...receipt(),
+            operationIntentId: request.idempotencyKey,
+            redeemedAt: '2026-10-01T00:01:00.000Z',
+          };
+        },
+        confirmTargetBinding: async () => completed('lan-to-cloud'),
+      },
+    });
+
+    await second.startManagerReissued(input);
+
+    expect(requests).toEqual([
+      {
+        claim: descriptor.claim,
+        idempotencyKey: frozenIntentId,
+        projectId: PROJECT_ID,
+        transferId: TRANSFER_ID,
+      },
+      {
+        claim: descriptor.claim,
+        idempotencyKey: frozenIntentId,
+        projectId: PROJECT_ID,
+        transferId: TRANSFER_ID,
+      },
+    ]);
+    expect(store.record).toBeNull();
+  });
+
+  it('retains a revoked Manager reissue without attempting existing-binding recovery before expiry', async () => {
+    const store = new MemoryStore();
+    const confirmTargetBinding = jest.fn();
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: jest.fn() },
+      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      store,
+      target: {
+        claimTransferredMembership: async () => {
+          throw new CollabError({ code: 'invitation-revoked' });
+        },
+        confirmTargetBinding,
+      },
+    });
+
+    await expect(coordinator.startManagerReissued({
+      descriptor: reissuedClaim(),
+      memberPersonalRef: 'refs/heads/members/member-offline',
+      serverUrl: 'https://cloud.example.test/',
+    })).rejects.toMatchObject({ code: 'invitation-revoked' });
+
+    expect(store.record).toMatchObject({
+      phase: 'redemption-prepared',
+      variant: 'manager-reissued',
+    });
+    expect(confirmTargetBinding).not.toHaveBeenCalled();
+  });
+
   it('rejects a claim or redemption outside the exact transfer lifetime', () => {
     const value = {
       claim: claim(),
@@ -143,6 +514,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       targetCredential: null,
       transferId: TRANSFER_ID,
       updatedAt: '2026-08-27T00:02:00.000Z',
+      variant: 'source-issued',
     };
 
     expect(() => decodeAuthorityTransferClaimantRecord({

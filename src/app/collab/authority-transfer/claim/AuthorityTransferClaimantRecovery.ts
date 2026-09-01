@@ -31,6 +31,7 @@ export function authorityTransferClaimantRequiresSource(
   record: AuthorityTransferClaimantRecord,
   now: Date,
 ): boolean {
+  if (record.variant === 'manager-reissued') return false;
   if (
     record.phase === 'prepared'
     || record.phase === 'claim-retained'
@@ -45,6 +46,7 @@ function requiresNoRuntime(
   now: Date,
 ): boolean {
   if (record.phase === 'completed' || record.phase === 'membership-converged') return true;
+  if (record.variant === 'manager-reissued') return false;
   if (now.getTime() < Date.parse(record.status.expiresAt)) return false;
   return record.phase === 'prepared'
     || record.phase === 'claim-retained'
