@@ -39,8 +39,9 @@ describe('RetirementRecord', () => {
     expect(decodeRetirementRecord(legacy)).toEqual(record);
   });
 
-  it('preserves LAN records written with null reserved Cloud fields', () => {
-    expect(decodeRetirementRecord({ ...record, cloudDevelopmentActorId: null })).toEqual(record);
+  it('rejects the obsolete prelaunch Cloud development actor field', () => {
+    expect(() => decodeRetirementRecord({ ...record, cloudDevelopmentActorId: null }))
+      .toThrow(TypeError);
   });
 
   it.each(['https://cloud.example.test/', 'HTTP://198.51.100.20:8080/operator/cloud'])('accepts exactly one durable Cloud target without an asserted principal at %s', cloudServerUrl => {

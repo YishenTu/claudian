@@ -1,11 +1,28 @@
+import { randomUUID } from 'node:crypto';
+
+import {
+  COLLAB_CLOUD_BINDING_VERSION,
+  COLLAB_PROTOCOL_VERSION,
+} from '@claudian-collab/protocol';
+
+import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
+  CollabLocalCloudMembershipRecord,
   CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import {
+  isCollabLocalCloudMembership,
+  isCollabLocalLanMembership,
+} from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
-import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
+import {
+  rotateCloudRelocationOrigin,
+  rotateTrustedCollabOrigin,
+} from '@/app/collab/git/CollabGitOriginPolicy';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type { HostTransitionProofClientPort } from '@/app/collab/HostTransitionCandidateResolver';
@@ -21,18 +38,33 @@ import {
   InvitationCodec,
   type LanCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
-import type {
-  LanAuthorityProjectionTransitionPort,
-} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
+import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import { MembershipControlClient } from '@/app/collab/membership/MembershipControlClient';
-import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
+import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
+import {
+  type CloudRelocationRecord,
+  decodeCloudRelocationRecord,
+} from '@/app/collab/reconnect/CloudRelocationRecord';
+import type {
+  CloudAuthorityConnection,
+} from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import {
+  cloudProjectGitRemoteUrl,
+  validateCloudServerUrl,
+} from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { type CollabLocalProjectSummary, type CollabOperationOptions, type CollabReconnectProjectRequest, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { toError } from '@/utils/error';
 
 type ReconnectProjectsPort = Pick<
   CollabLocalProjectRepository,
-  'loadMembership' | 'saveMembership'
+  | 'listPendingOperationProjectIds'
+  | 'loadMembership'
+  | 'loadProjectDocument'
+  | 'removeProjectDocument'
+  | 'saveMembership'
+  | 'saveProjectDocument'
 >;
 
 export interface ReconnectProjectFoundationPort {
@@ -79,7 +111,8 @@ const DISCOVERED_ENDPOINT_TIMEOUT_MS = 2_000;
 const MAX_DISCOVERED_CANDIDATES = 8;
 
 export interface ReconnectProjectCoordinatorOptions {
-  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
+  readonly cloudRelocation?: CloudRelocationOptions;
   readonly createHttpClient?: (trustStore: CollabHostTrustStore) => ReconnectHttpClientPort;
   readonly invitationCodec?: InvitationCodec;
   readonly hostTransitionProofClient?: HostTransitionProofClientPort;
@@ -87,6 +120,26 @@ export interface ReconnectProjectCoordinatorOptions {
   readonly hostInstallation: Pick<HostInstallationBindingService, 'inspect'>;
   readonly now?: () => Date;
   readonly vaultRoot: string;
+}
+
+export interface CloudRelocationActivityPort {
+  activate(projectId: string, options?: CollabOperationOptions): Promise<void>;
+  resume(projectId: string): Promise<void>;
+  suspend(projectId: string): Promise<void>;
+}
+
+export interface CloudRelocationOptions {
+  readonly activity: CloudRelocationActivityPort;
+  readonly admit?: <T>(
+    projectId: string,
+    mode: 'continuation' | 'operation' | 'recovery',
+    operation: () => Promise<T>,
+  ) => Promise<T>;
+  connect(
+    binding: { readonly projectId: string; readonly serverUrl: string },
+    options?: CollabOperationOptions,
+  ): Promise<CloudAuthorityConnection>;
+  readonly createOperationId?: () => string;
 }
 
 function reconnectError(
@@ -148,6 +201,20 @@ function summary(
   };
 }
 
+function cloudSummary(record: CollabLocalCloudMembershipRecord): CollabLocalProjectSummary {
+  return {
+    authorityKind: 'cloud',
+    connectionStatus: 'connected',
+    health: 'healthy',
+    hostInstallationStatus: 'not-host',
+    hostStatus: 'not-host',
+    id: record.project.id,
+    name: record.project.name,
+    role: record.member.role,
+    workspacePath: record.project.workspacePath,
+  };
+}
+
 class ReconnectTrustStore implements CollabHostTrustStore {
   constructor(
     private readonly membership: CollabLocalLanMembershipRecord,
@@ -185,6 +252,8 @@ class ReconnectTrustStore implements CollabHostTrustStore {
 }
 
 export class ReconnectProjectCoordinator {
+  private cloudRelocation: CloudRelocationOptions | null;
+  private createCloudRelocationOperationId: () => string;
   private readonly createHttpClient: (
     trustStore: CollabHostTrustStore,
   ) => ReconnectHttpClientPort;
@@ -192,7 +261,6 @@ export class ReconnectProjectCoordinator {
   private readonly hostTransitionProofClient: HostTransitionProofClientPort | null;
   private readonly hostTrustTransitionVerifier: HostTrustTransitionVerifierPort;
   private readonly now: () => Date;
-  private readonly operationQueue = new SerialTaskQueue();
 
   constructor(
     private readonly foundation: ReconnectProjectFoundationPort,
@@ -207,28 +275,86 @@ export class ReconnectProjectCoordinator {
         invitationCodec: this.invitationCodec,
       }));
     this.now = options.now ?? (() => new Date());
+    this.cloudRelocation = options.cloudRelocation ?? null;
+    this.createCloudRelocationOperationId = options.cloudRelocation?.createOperationId
+      ?? (() => `relocate-${randomUUID()}`);
+  }
+
+  bindCloudRelocation(options: CloudRelocationOptions): void {
+    if (this.cloudRelocation) throw new Error('Cloud relocation is already bound');
+    this.cloudRelocation = options;
+    this.createCloudRelocationOperationId = options.createOperationId
+      ?? (() => `relocate-${randomUUID()}`);
+  }
+
+  async resumeCloudRelocations(
+    options: CollabOperationOptions = {},
+  ): Promise<void> {
+    let firstFailure: unknown = null;
+    for (const projectId of await this.foundation.local.projects.listPendingOperationProjectIds()) {
+      throwIfCancelled(options.signal);
+      try {
+        const pending = await this.foundation.local.projects.loadProjectDocument(
+          projectId,
+          'pending-operation',
+          decodeCollabPendingProjectOperation,
+        );
+        if (pending?.kind !== 'cloud-relocation') continue;
+        const operation = () => this.continueCloudRelocation(pending.record, options);
+        const result = this.cloudRelocation?.admit
+          ? await this.cloudRelocation.admit(projectId, 'recovery', operation)
+          : await operation();
+        if (result.status !== 'success') {
+          throw result.status === 'failure' || result.status === 'recovery-required'
+            ? result.error
+            : reconnectError('cancelled', 'cloud-relocation-recovery-cancelled');
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        firstFailure ??= error;
+      }
+    }
+    if (firstFailure !== null) {
+      throw toError(firstFailure, 'Cloud relocation recovery failed.');
+    }
   }
 
   reconnectProject(
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.operationQueue.run(() => this.reconnectProjectUnlocked(request, options));
+    return this.reconnectProjectUnlocked(request, options);
   }
 
   reconnectDiscoveredProject(
     request: ReconnectDiscoveredProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.operationQueue.run(
-      () => this.reconnectDiscoveredProjectUnlocked(request, options),
-    );
+    return this.reconnectDiscoveredProjectUnlocked(request, options);
   }
 
   private async reconnectProjectUnlocked(
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    if ('authority' in request) {
+      try {
+        const pending = await this.foundation.local.projects.loadProjectDocument(
+          request.projectId,
+          'pending-operation',
+          decodeCollabPendingProjectOperation,
+        );
+        const mode = pending?.kind === 'cloud-relocation'
+          ? 'continuation' as const
+          : 'operation' as const;
+        const operation = () => this.reconnectCloudProjectUnlocked(request, options);
+        return this.cloudRelocation?.admit
+          ? await this.cloudRelocation.admit(request.projectId, mode, operation)
+          : await operation();
+      } catch (error) {
+        return this.failure(error);
+      }
+    }
     try {
       throwIfCancelled(options.signal);
       const invitation = this.invitationCodec.decode(request.encodedInvitation.trim());
@@ -316,6 +442,262 @@ export class ReconnectProjectCoordinator {
     } catch (error) {
       return this.failure(error);
     }
+  }
+
+  private async reconnectCloudProjectUnlocked(
+    request: Extract<CollabReconnectProjectRequest, { readonly authority: unknown }>,
+    options: CollabOperationOptions,
+  ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    try {
+      throwIfCancelled(options.signal);
+      const relocation = this.requireCloudRelocation();
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        request.projectId,
+        'pending-operation',
+        decodeCollabPendingProjectOperation,
+      );
+      if (pending) {
+        if (
+          pending.kind !== 'cloud-relocation'
+          || pending.record.newAuthority.serverUrl !== request.authority.serverUrl
+        ) throw reconnectError('operation-failed', 'cloud-relocation-pending-mismatch');
+        return this.continueCloudRelocation(pending.record, options);
+      }
+      const membership = await this.foundation.local.projects.loadMembership(request.projectId);
+      if (!membership || !isCollabLocalCloudMembership(membership)) {
+        throw reconnectError('project-not-found', 'cloud-relocation-membership-missing');
+      }
+      const serverUrl = validateCloudServerUrl(
+        request.authority.serverUrl,
+        'serverUrl',
+      );
+      if (serverUrl === membership.authority.serverUrl) {
+        throw reconnectError('operation-failed', 'cloud-relocation-endpoint-unchanged');
+      }
+      const connection = await relocation.connect({
+        projectId: request.projectId,
+        serverUrl,
+      }, options);
+      let record: CloudRelocationRecord;
+      try {
+        const snapshot = await connection.readSnapshot(
+          request.projectId,
+          options.signal ? { signal: options.signal } : {},
+        );
+        const expectedRemoteUrl = cloudProjectGitRemoteUrl(serverUrl, request.projectId);
+        if (
+          connection.projectId !== request.projectId
+          || connection.serverUrl !== serverUrl
+          || connection.git.remoteUrl !== expectedRemoteUrl
+          || snapshot.project.id !== request.projectId
+          || snapshot.project.authorityGeneration
+            !== membership.authority.authorityGeneration
+          || snapshot.currentMember.status !== 'active'
+          || snapshot.currentMember.id !== membership.member.id
+          || snapshot.currentMember.personalRef !== membership.member.personalRef
+        ) throw reconnectError(
+          'authority-integrity-error',
+          'cloud-relocation-candidate-mismatch',
+        );
+        const timestamp = this.now().toISOString();
+        record = decodeCloudRelocationRecord({
+          authorityGeneration: membership.authority.authorityGeneration,
+          createdAt: timestamp,
+          memberId: membership.member.id,
+          newAuthority: {
+            bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+            gitRemoteUrl: expectedRemoteUrl,
+            serverUrl,
+            wireVersion: COLLAB_PROTOCOL_VERSION,
+          },
+          oldAuthority: {
+            bindingVersion: membership.authority.bindingVersion,
+            gitRemoteUrl: membership.authority.gitRemoteUrl,
+            serverUrl: membership.authority.serverUrl,
+            wireVersion: membership.authority.wireVersion,
+          },
+          operationId: this.createCloudRelocationOperationId(),
+          operationKind: 'cloud-relocation',
+          personalRef: membership.member.personalRef,
+          phase: 'prepared',
+          projectId: request.projectId,
+          schemaVersion: 1,
+          updatedAt: timestamp,
+        });
+      } finally {
+        connection.dispose();
+      }
+      await relocation.activity.suspend(record.projectId);
+      try {
+        const managementIntent = await this.foundation.local.projects.loadProjectDocument(
+          record.projectId,
+          'cloud-management-intent',
+          decodeCloudManagementIntent,
+        );
+        if (managementIntent) {
+          throw reconnectError(
+            'operation-failed',
+            'cloud-relocation-management-pending',
+          );
+        }
+        await this.foundation.local.projects.saveProjectDocument(
+          record.projectId,
+          'pending-operation',
+          record,
+        );
+      } catch (error) {
+        await relocation.activity.resume(record.projectId);
+        throw error;
+      }
+      return this.continueCloudRelocation(record, options, true);
+    } catch (error) {
+      return this.failure(error);
+    }
+  }
+
+  private async continueCloudRelocation(
+    initial: CloudRelocationRecord,
+    options: CollabOperationOptions,
+    alreadySuspended = false,
+  ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    const relocation = this.requireCloudRelocation();
+    let record = initial;
+    try {
+      throwIfCancelled(options.signal);
+      if (!alreadySuspended) await relocation.activity.suspend(record.projectId);
+      return await this.options.authorityProjectionTransitions.run(
+        record.projectId,
+        async () => {
+          let membership = await this.requireCloudRelocationMembership(record);
+          const git = await this.foundation.requireGitFoundation();
+          const repositoryPath = await this.foundation.local.workspace.resolveManagedProjectPath(
+            membership.project.workspacePath,
+          );
+          await git.repositories.assertLocalRepositoryIdentity(repositoryPath, {
+            memberId: record.memberId,
+            personalRef: record.personalRef,
+            projectId: record.projectId,
+          });
+          if (record.phase === 'prepared') {
+            this.assertCloudRelocationBinding(membership, record.oldAuthority);
+            await rotateCloudRelocationOrigin(git.repositories, {
+              newRemoteUrl: record.newAuthority.gitRemoteUrl,
+              newServerUrl: record.newAuthority.serverUrl,
+              oldRemoteUrl: record.oldAuthority.gitRemoteUrl,
+              oldServerUrl: record.oldAuthority.serverUrl,
+              projectId: record.projectId,
+              repositoryPath,
+            });
+            record = await this.updateCloudRelocation(record, 'origin-updated');
+          }
+          membership = await this.requireCloudRelocationMembership(record);
+          if (record.phase === 'origin-updated') {
+            if (this.matchesCloudRelocationBinding(membership, record.oldAuthority)) {
+              membership = {
+                ...membership,
+                authority: {
+                  authorityGeneration: record.authorityGeneration,
+                  bindingVersion: record.newAuthority.bindingVersion,
+                  gitRemoteUrl: record.newAuthority.gitRemoteUrl,
+                  kind: 'cloud',
+                  serverUrl: record.newAuthority.serverUrl,
+                  wireVersion: record.newAuthority.wireVersion,
+                },
+                updatedAt: this.now().toISOString(),
+              };
+              await this.foundation.local.projects.saveMembership(membership);
+            } else {
+              this.assertCloudRelocationBinding(membership, record.newAuthority);
+            }
+            record = await this.updateCloudRelocation(record, 'membership-updated');
+          }
+          membership = await this.requireCloudRelocationMembership(record);
+          this.assertCloudRelocationBinding(membership, record.newAuthority);
+          await relocation.activity.activate(record.projectId, options);
+          await relocation.activity.resume(record.projectId);
+          await this.foundation.local.projects.removeProjectDocument(
+            record.projectId,
+            'pending-operation',
+          );
+          return { status: 'success' as const, value: cloudSummary(membership) };
+        },
+      );
+    } catch (error) {
+      return {
+        durablePhase: 'committed',
+        durableProgress: true,
+        error: error instanceof CollabError
+          ? error
+          : reconnectError('operation-failed', 'cloud-relocation-incomplete'),
+        operationId: record.operationId,
+        status: 'recovery-required',
+      };
+    }
+  }
+
+  private requireCloudRelocation(): CloudRelocationOptions {
+    if (!this.cloudRelocation) {
+      throw reconnectError('operation-failed', 'cloud-relocation-unavailable');
+    }
+    return this.cloudRelocation;
+  }
+
+  private async requireCloudRelocationMembership(
+    record: CloudRelocationRecord,
+  ): Promise<CollabLocalCloudMembershipRecord> {
+    const membership = await this.foundation.local.projects.loadMembership(record.projectId);
+    if (
+      !membership
+      || !isCollabLocalCloudMembership(membership)
+      || membership.project.id !== record.projectId
+      || membership.member.id !== record.memberId
+      || membership.member.personalRef !== record.personalRef
+      || membership.authority.authorityGeneration !== record.authorityGeneration
+    ) throw reconnectError(
+      'authority-integrity-error',
+      'cloud-relocation-local-identity-mismatch',
+    );
+    return membership;
+  }
+
+  private matchesCloudRelocationBinding(
+    membership: CollabLocalCloudMembershipRecord,
+    binding: CloudRelocationRecord['oldAuthority'],
+  ): boolean {
+    return membership.authority.kind === 'cloud'
+      && membership.authority.bindingVersion === binding.bindingVersion
+      && membership.authority.gitRemoteUrl === binding.gitRemoteUrl
+      && membership.authority.serverUrl === binding.serverUrl
+      && membership.authority.wireVersion === binding.wireVersion;
+  }
+
+  private assertCloudRelocationBinding(
+    membership: CollabLocalCloudMembershipRecord,
+    binding: CloudRelocationRecord['oldAuthority'],
+  ): void {
+    if (!this.matchesCloudRelocationBinding(membership, binding)) {
+      throw reconnectError(
+        'authority-integrity-error',
+        'cloud-relocation-local-binding-mismatch',
+      );
+    }
+  }
+
+  private async updateCloudRelocation(
+    record: CloudRelocationRecord,
+    phase: CloudRelocationRecord['phase'],
+  ): Promise<CloudRelocationRecord> {
+    const updated = decodeCloudRelocationRecord({
+      ...record,
+      phase,
+      updatedAt: this.now().toISOString(),
+    });
+    await this.foundation.local.projects.saveProjectDocument(
+      record.projectId,
+      'pending-operation',
+      updated,
+    );
+    return updated;
   }
 
   private isAuthorityError(error: CollabError): boolean {

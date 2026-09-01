@@ -17,10 +17,7 @@ import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/C
 import type { CollabAuthorityEventInvalidation, CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
-import type {
-  CollabManagerResponsibilityOfferSummary,
-  CollabProjectSnapshot,
-} from '@/core/collab';
+import type { CollabProjectSnapshot } from '@/core/collab';
 import { isCollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -112,7 +109,8 @@ export type CollabClientRetirementAdmission = (
 export interface CollabManagerResponsibilityProjectionPort {
   reconcileSnapshot(
     snapshot: CollabProjectSnapshot,
-  ): Promise<CollabManagerResponsibilityOfferSummary | null>;
+    assertCurrent: () => void,
+  ): void;
 }
 
 interface ProjectionEventSession {
@@ -742,28 +740,19 @@ export class CollabClientProjection {
       snapshot.eventSequence,
     );
     session.assertGeneration(generation);
-    const reconciledOffer = isCollabLanProjectSnapshot(snapshot)
-      ? await this.managerResponsibility?.reconcileSnapshot(snapshot) ?? null
-      : null;
-    session.assertGeneration(generation);
-    if (reconciledOffer) {
-      const originalOffer = isCollabLanProjectSnapshot(snapshot)
-        ? snapshot.managerResponsibilityOffer
-        : undefined;
-      if (
-        !originalOffer
-        || reconciledOffer.offerId !== originalOffer.offerId
-        || reconciledOffer.sourceManagerMemberId !== originalOffer.sourceManagerMemberId
-        || reconciledOffer.targetMemberId !== originalOffer.targetMemberId
-      ) {
-        throw new CollabError({
-          code: 'authority-integrity-error',
-          safeContext: { reason: 'projection-manager-responsibility-mismatch' },
-        });
-      }
-      snapshot = { ...snapshot, managerResponsibilityOffer: reconciledOffer };
-      await writeSnapshotCache(snapshot);
-      session.assertGeneration(generation);
+    const managerResponsibility = this.managerResponsibility;
+    let reconcileManagerResponsibility = managerResponsibility !== undefined;
+    if (reconcileManagerResponsibility && !isCollabLanProjectSnapshot(snapshot)) {
+      const authority = await session.ensureAuthoritySession<CollabAuthoritySession>(() => (
+        this.#authoritySessions.create(membership)
+      ));
+      reconcileManagerResponsibility = authority.supports('cloud-project-manager-responsibility');
+    }
+    if (reconcileManagerResponsibility && managerResponsibility) {
+      managerResponsibility.reconcileSnapshot(
+        snapshot,
+        () => session.assertGeneration(generation),
+      );
     }
     return snapshot;
   }

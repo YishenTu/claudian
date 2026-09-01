@@ -7,15 +7,20 @@ import {
   type LocalExitAuthorityPort,
   LocalProjectExitCoordinator,
 } from '@/app/collab/exit/LocalProjectExitCoordinator';
-import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
+import {
+  isLanPendingLeaveRecord,
+  type LanPendingLeaveRecord,
+  type PendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
 import { PendingLeaveWorker } from '@/app/collab/exit/PendingLeaveWorker';
 import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
 import type {
   CollabMembershipManagerReceiptPort,
-} from '@/app/collab/membership/CollabMembershipService';
+} from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import { type CollabLocalCleanupStatus } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -54,8 +59,43 @@ function membership(
   };
 }
 
+function cloudMembership(
+  role: 'manager' | 'member' = 'member',
+): CollabLocalMembershipRecord {
+  return {
+    authority: {
+      authorityGeneration: 4,
+      bindingVersion: 3,
+      gitRemoteUrl: 'http://127.0.0.1:8787/v3/projects/project-alpha/repository.git',
+      kind: 'cloud',
+      serverUrl: 'http://127.0.0.1:8787',
+      wireVersion: 7,
+    },
+    createdAt: NOW,
+    lastEventSequence: 1,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Alice',
+      id: 'member-alpha',
+      personalRef: 'refs/heads/members/member-alpha',
+      role,
+    },
+    project: {
+      id: 'project-alpha',
+      name: 'Alpha',
+      workspacePath: 'workspace/project-alpha',
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: NOW,
+  };
+}
+
 class MemoryPendingLeaveStore {
   readonly records = new Map<string, PendingLeaveRecord>();
+
+  async listProjectIds(): Promise<readonly string[]> {
+    return [...this.records.keys()];
+  }
 
   async list(): Promise<readonly PendingLeaveRecord[]> {
     return [...this.records.values()];
@@ -120,6 +160,9 @@ function setup(
       },
       memberRole: record.member.role,
     })),
+    recoverRejectedLeave: jest.fn(async (_input) => ({
+      memberRole: record.member.role,
+    })),
     resolveLeaveHost: jest.fn(async input => {
       throw input.failure;
     }),
@@ -153,6 +196,7 @@ function setup(
     resumeProject: jest.fn(async (_suspension) => undefined),
     suspendProject: jest.fn(async (_projectId) => suspension),
   };
+  let idempotencySequence = 0;
   return {
     activity,
     authority,
@@ -164,6 +208,7 @@ function setup(
       cleanup,
       activity,
       {
+        createIdempotencyKey: () => `leave-request-${++idempotencySequence}`,
         createOperationId: () => 'leave-stable',
         managerReceipts,
         managerResponsibilityOperations,
@@ -180,7 +225,7 @@ function setup(
 
 function legacyManagerLeave(
   managerResponsibilityOfferId: string | null = 'offer-legacy',
-): PendingLeaveRecord {
+): LanPendingLeaveRecord {
   return {
     authorityReplay: {
       expectedHostMemberId: 'member-host',
@@ -212,7 +257,7 @@ function legacyManagerLeave(
 
 function currentManagerLeave(
   managerResponsibilityOfferId: string | null,
-): PendingLeaveRecord {
+): LanPendingLeaveRecord {
   return {
     ...legacyManagerLeave(managerResponsibilityOfferId),
     authorityReplay: {
@@ -326,6 +371,214 @@ describe('LocalProjectExitCoordinator', () => {
     expect(projects.removeProject).toHaveBeenCalled();
     expect(projects.purgePrivateState).toHaveBeenCalledWith('project-alpha');
     expect(projects.loadMembership).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['keep-files', 'delete-files'] as const)(
+    'queues an offline Cloud Member with %s and replays after local state is gone',
+    async cleanupChoice => {
+      const { authority, cleanup, coordinator, pending, projects } = setup(
+        cloudMembership(),
+      );
+      authority.prepareLeave.mockRejectedValueOnce(new CollabError({
+        code: 'endpoint-unreachable',
+      }));
+
+      await expect(coordinator.leave({
+        cleanupChoice,
+        projectId: 'project-alpha',
+      })).resolves.toEqual({ status: 'queued' });
+
+      expect(pending.records.get('project-alpha')).toMatchObject({
+        authorityGeneration: 4,
+        authorityKind: 'cloud',
+        cleanupChoice,
+        localCleanupComplete: true,
+        phase: 'queued',
+        request: null,
+        serverUrl: 'http://127.0.0.1:8787',
+      });
+      expect(cleanup.cleanup).toHaveBeenCalledTimes(1);
+      expect(projects.removeProject).toHaveBeenCalledWith('project-alpha');
+      expect(projects.purgePrivateState).toHaveBeenCalledWith('project-alpha');
+      expect(authority.settleLeave).not.toHaveBeenCalled();
+
+      projects.loadMembership.mockResolvedValue(null);
+      cleanup.cleanup.mockClear();
+      authority.prepareLeave.mockResolvedValueOnce({
+        memberRole: 'member',
+        request: {
+          expectedManagerSetGeneration: 7,
+          expectedMembershipRevision: 9,
+          expectedOfferRevision: null,
+          expectedPersonalRefOid: 'a'.repeat(40),
+          idempotencyKey: 'leave-request-1',
+          managerResponsibilityOfferId: null,
+          projectId: 'project-alpha',
+        },
+      });
+
+      await expect(coordinator.resume('project-alpha')).resolves.toEqual({
+        status: 'complete',
+      });
+
+      expect(authority.settleLeave).toHaveBeenCalledWith(expect.objectContaining({
+        pending: expect.objectContaining({
+          authorityKind: 'cloud',
+          phase: 'submitted',
+          request: expect.objectContaining({
+            idempotencyKey: 'leave-request-1',
+          }),
+        }),
+      }));
+      expect(cleanup.cleanup).not.toHaveBeenCalled();
+      expect(pending.records.size).toBe(0);
+    },
+  );
+
+  it('releases a completed Cloud rejection only after the same-Member recovery barrier', async () => {
+    const { authority, cleanup, coordinator, pending } = setup(cloudMembership());
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'a'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    authority.settleLeave.mockRejectedValueOnce(new CloudAuthorityRejection({
+      code: 'authority-not-synchronized',
+    }));
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).resolves.toEqual({ status: 'queued' });
+
+    const retained = pending.records.get('project-alpha');
+    expect(retained).toMatchObject({
+      authorityKind: 'cloud',
+      localCleanupComplete: true,
+      operationId: 'leave-stable',
+      phase: 'queued',
+      request: null,
+    });
+    expect(retained && isLanPendingLeaveRecord(retained)
+      ? null
+      : retained?.idempotencyKey).toBe('leave-request-2');
+    expect(authority.recoverRejectedLeave).toHaveBeenCalledWith(expect.objectContaining({
+      pending: expect.objectContaining({
+        phase: 'submitted',
+        request: expect.objectContaining({ idempotencyKey: 'leave-request-1' }),
+      }),
+    }));
+    expect(cleanup.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the frozen Cloud request when a submitted response is ambiguous', async () => {
+    const { authority, cleanup, coordinator, pending } = setup(cloudMembership());
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'a'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    authority.settleLeave.mockRejectedValueOnce(new CollabError({
+      code: 'protocol-payload-invalid',
+    }));
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).rejects.toMatchObject({ code: 'protocol-payload-invalid' });
+
+    expect(pending.records.get('project-alpha')).toMatchObject({
+      idempotencyKey: 'leave-request-1',
+      localCleanupComplete: false,
+      phase: 'recovery-required',
+      request: expect.objectContaining({ idempotencyKey: 'leave-request-1' }),
+    });
+    expect(cleanup.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('keeps a rejected Cloud request frozen when the recovery barrier is unavailable', async () => {
+    const { authority, cleanup, coordinator, pending } = setup(cloudMembership());
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'a'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    authority.settleLeave.mockRejectedValueOnce(new CloudAuthorityRejection({
+      code: 'authority-not-synchronized',
+    }));
+    authority.recoverRejectedLeave.mockRejectedValueOnce(new CollabError({
+      code: 'authorization-denied',
+    }));
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).rejects.toMatchObject({ code: 'authorization-denied' });
+
+    expect(pending.records.get('project-alpha')).toMatchObject({
+      idempotencyKey: 'leave-request-1',
+      localCleanupComplete: false,
+      phase: 'submitted',
+      request: expect.objectContaining({ idempotencyKey: 'leave-request-1' }),
+    });
+    expect(cleanup.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('stops automatic Cloud replay when an offline Member became a Manager', async () => {
+    const { authority, coordinator, pending, projects } = setup(cloudMembership());
+    authority.prepareLeave.mockRejectedValueOnce(new CollabError({
+      code: 'endpoint-unreachable',
+    }));
+    await coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    });
+    projects.loadMembership.mockResolvedValue(null);
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'manager',
+      request: {
+        expectedManagerSetGeneration: 8,
+        expectedMembershipRevision: 10,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'b'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+
+    await expect(coordinator.resume('project-alpha')).rejects.toMatchObject({
+      code: 'manager-responsibility-pending',
+      safeContext: { reason: 'cloud-pending-leave-manager-review-required' },
+    });
+    expect(pending.records.get('project-alpha')).toMatchObject({
+      authorityKind: 'cloud',
+      localRole: 'manager',
+      phase: 'queued',
+      request: null,
+    });
+    expect(authority.settleLeave).not.toHaveBeenCalled();
   });
 
   it('does not clean up offline when authority reports a newly promoted Manager', async () => {
@@ -704,7 +957,10 @@ describe('LocalProjectExitCoordinator', () => {
       failed: [],
     });
     expect(authority.settleLeave).toHaveBeenCalledTimes(2);
-    expect(authority.settleLeave.mock.calls.map(call => call[0].pending.idempotencyKey))
+    expect(authority.settleLeave.mock.calls.map(call => {
+      const record = call[0].pending;
+      return isLanPendingLeaveRecord(record) ? record.idempotencyKey : null;
+    }))
       .toEqual(['leave-stable', 'leave-stable']);
     expect(authority.prepareLeave).toHaveBeenCalledTimes(1);
     expect(pending.records.size).toBe(0);
@@ -712,6 +968,24 @@ describe('LocalProjectExitCoordinator', () => {
       'project-alpha',
       expect.any(Function),
     );
+  });
+
+  it('continues recovering another Project when one pending Leave is corrupt', async () => {
+    const resume = jest.fn(async (projectId: string) => {
+      if (projectId === 'project-corrupt') throw new Error('corrupt');
+      return { status: 'complete' as const };
+    });
+    const worker = new PendingLeaveWorker(
+      { listProjectIds: async () => ['project-corrupt', 'project-valid'] },
+      { resume } as never,
+      async (_projectId, operation) => operation(),
+    );
+
+    await expect(worker.runOnce()).resolves.toEqual({
+      attempted: ['project-corrupt', 'project-valid'],
+      failed: ['project-corrupt'],
+    });
+    expect(resume).toHaveBeenCalledTimes(2);
   });
 
   it('retains a prepared Manager Leave after timeout and resumes its exact accepted offer', async () => {
@@ -745,7 +1019,10 @@ describe('LocalProjectExitCoordinator', () => {
 
     expect(authority.prepareLeave).toHaveBeenCalledTimes(1);
     expect(authority.settleLeave).toHaveBeenCalledTimes(2);
-    expect(authority.settleLeave.mock.calls[1]?.[0].pending.authorityReplay).toEqual({
+    const replayed = authority.settleLeave.mock.calls[1]?.[0].pending;
+    expect(replayed && isLanPendingLeaveRecord(replayed)
+      ? replayed.authorityReplay
+      : null).toEqual({
       expectedHostMemberId: 'member-host',
       idempotencyManagerMemberId: null,
       managerResponsibilityOfferId: 'offer-accepted',
@@ -803,6 +1080,78 @@ describe('LocalProjectExitCoordinator', () => {
     expect(cleanup.cleanup).not.toHaveBeenCalled();
     expect(projects.removeProject).not.toHaveBeenCalled();
     expect(pending.records.size).toBe(1);
+  });
+
+  it('preserves the exact Cloud retirement id when Leave observes terminal retirement', async () => {
+    const retirement = { handle: jest.fn(async () => undefined) };
+    const { authority, cleanup, coordinator, pending } = setup(
+      cloudMembership(),
+      [],
+      retirement,
+    );
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'a'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    authority.settleLeave.mockRejectedValueOnce(new CollabError({
+      code: 'project-retired',
+      safeContext: {
+        operationId: 'retirement-cloud-one',
+        projectId: 'project-alpha',
+        retiredAt: NOW,
+      },
+    }));
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).resolves.toEqual({ status: 'complete' });
+
+    expect(retirement.handle).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      retiredAt: NOW,
+      retirementId: 'retirement-cloud-one',
+    }, 'terminal-fallback');
+    expect(cleanup.cleanup).not.toHaveBeenCalled();
+    expect(pending.records.size).toBe(1);
+  });
+
+  it('fails closed when a Cloud terminal retirement omits its acknowledgement id', async () => {
+    const retirement = { handle: jest.fn(async () => undefined) };
+    const { authority, coordinator } = setup(cloudMembership(), [], retirement);
+    authority.prepareLeave.mockResolvedValueOnce({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'a'.repeat(40),
+        idempotencyKey: 'leave-request-1',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    authority.settleLeave.mockRejectedValueOnce(new CollabError({
+      code: 'project-retired',
+      safeContext: { projectId: 'project-alpha', retiredAt: NOW },
+    }));
+
+    await expect(coordinator.leave({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    })).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'pending-leave-retirement-result-invalid' },
+    });
+    expect(retirement.handle).not.toHaveBeenCalled();
   });
 
   it('retains a recovery-required record when authority reports a later responsibility conflict', async () => {

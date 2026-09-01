@@ -2,8 +2,17 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  COLLAB_CLOUD_BINDING_VERSION,
+  COLLAB_PROTOCOL_VERSION,
+} from '@claudian-collab/protocol';
+
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
-import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type {
+  CollabLocalCloudMembershipRecord,
+  CollabLocalMembershipRecord,
+} from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 import type {
@@ -18,7 +27,9 @@ import {
   type LanCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
+import {
+  decodeCloudRelocationRecord,
+} from '@/app/collab/reconnect/CloudRelocationRecord';
 import {
   ReconnectProjectCoordinator,
   type ReconnectProjectFoundationPort,
@@ -57,6 +68,66 @@ function membership(): CollabLocalMembershipRecord {
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
     updatedAt: '2026-08-07T00:00:00.000Z',
+  };
+}
+
+function cloudMembership(): CollabLocalCloudMembershipRecord {
+  return {
+    authority: {
+      authorityGeneration: 4,
+      bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+      gitRemoteUrl: 'https://old.example.test/operator/v3/projects/project-a/repository.git',
+      kind: 'cloud',
+      serverUrl: 'https://old.example.test/operator',
+      wireVersion: COLLAB_PROTOCOL_VERSION,
+    },
+    createdAt: '2026-08-07T00:00:00.000Z',
+    lastEventSequence: 4,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Alice',
+      id: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      role: 'member',
+    },
+    project: {
+      id: 'project-a',
+      name: 'Project A',
+      workspacePath: 'workspace/project-a',
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: '2026-08-07T00:00:00.000Z',
+  };
+}
+
+function cloudSnapshot(changes: {
+  readonly authorityGeneration?: number;
+  readonly memberId?: string;
+  readonly projectId?: string;
+} = {}) {
+  const local = cloudMembership();
+  return {
+    currentMember: {
+      activatedAt: local.createdAt,
+      createdAt: local.createdAt,
+      ...local.member,
+      id: changes.memberId ?? local.member.id,
+      status: 'active' as const,
+    },
+    eventSequence: 5,
+    members: [],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: changes.authorityGeneration ?? 4,
+      authorityKind: 'cloud' as const,
+      createdAt: local.createdAt,
+      id: changes.projectId ?? 'project-a',
+      mainOid: 'a'.repeat(40),
+      mainRef: 'refs/heads/main' as const,
+      name: 'Project A',
+    },
+    ticketHighlights: [],
   };
 }
 
@@ -161,8 +232,12 @@ describe('ReconnectProjectCoordinator', () => {
     foundation = {
       local: {
         projects: {
+          listPendingOperationProjectIds: jest.fn(async () => []),
           loadMembership: jest.fn(async () => currentMembership),
+          loadProjectDocument: jest.fn(async () => null),
+          removeProjectDocument: jest.fn(async () => false),
           saveMembership,
+          saveProjectDocument: jest.fn(async () => undefined),
         },
         workspace: {
           resolveManagedProjectPath: jest.fn(async workspacePath => (
@@ -182,7 +257,7 @@ describe('ReconnectProjectCoordinator', () => {
 
   function coordinator(overrides: Readonly<Record<string, unknown>> = {}): ReconnectProjectCoordinator {
     return new ReconnectProjectCoordinator(foundation, {
-      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       createHttpClient,
       hostInstallation: {
         inspect: jest.fn().mockResolvedValue('hosted-here'),
@@ -241,6 +316,424 @@ describe('ReconnectProjectCoordinator', () => {
       },
       updatedAt: now.toISOString(),
     });
+  });
+
+  it('validates and durably relocates one exact Cloud Project binding', async () => {
+    currentMembership = cloudMembership();
+    originUrls = [currentMembership.authority.gitRemoteUrl!];
+    const order: string[] = [];
+    let pending: unknown = null;
+    Object.assign(foundation.local.projects, {
+      listPendingOperationProjectIds: jest.fn(async () => pending ? ['project-a'] : []),
+      loadProjectDocument: jest.fn(async (_projectId, _kind, decode) => (
+        pending ? decode(pending) : null
+      )),
+      removeProjectDocument: jest.fn(async () => {
+        order.push('remove-intent');
+        pending = null;
+        return true;
+      }),
+      saveProjectDocument: jest.fn(async (_projectId, _kind, value) => {
+        order.push(`save-${(value as { phase: string }).phase}`);
+        pending = value;
+      }),
+    });
+    listRemoteUrls.mockImplementation(async () => originUrls);
+    addRemote.mockImplementation(async (_repositoryPath, _remote, url) => {
+      order.push('origin');
+      originUrls = [url];
+    });
+    saveMembership.mockImplementation(async value => {
+      order.push('membership');
+      currentMembership = value;
+    });
+    const dispose = jest.fn();
+    const readSnapshot = jest.fn(async () => {
+      order.push('validate');
+      return cloudSnapshot();
+    });
+    const activity = {
+      activate: jest.fn(async () => { order.push('activate'); }),
+      resume: jest.fn(async () => { order.push('resume'); }),
+      suspend: jest.fn(async () => { order.push('suspend'); }),
+    };
+    const cloudRelocation = {
+      activity,
+      connect: jest.fn(async () => ({
+        dispose,
+        git: {
+          headers: [],
+          remoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+        },
+        projectId: 'project-a',
+        readSnapshot,
+        serverUrl: 'http://new.example.test/proxy/cloud',
+        supports: () => true,
+      })),
+      createOperationId: () => 'relocate-cloud-one',
+    };
+
+    const relocationResult = await coordinator({ cloudRelocation }).reconnectProject({
+      authority: {
+        kind: 'cloud',
+        serverUrl: 'http://new.example.test/proxy/cloud',
+      },
+      projectId: 'project-a',
+    } as never);
+    expect(relocationResult).toEqual({
+      status: 'success',
+      value: expect.objectContaining({
+        authorityKind: 'cloud',
+        id: 'project-a',
+      }),
+    });
+
+    expect(order).toEqual([
+      'validate',
+      'suspend',
+      'save-prepared',
+      'origin',
+      'save-origin-updated',
+      'membership',
+      'save-membership-updated',
+      'activate',
+      'resume',
+      'remove-intent',
+    ]);
+    expect(currentMembership).toMatchObject({
+      authority: {
+        authorityGeneration: 4,
+        gitRemoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+        kind: 'cloud',
+        serverUrl: 'http://new.example.test/proxy/cloud',
+      },
+      member: cloudMembership().member,
+    });
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['Project', { projectId: 'project-b' }],
+    ['Member', { memberId: 'member-b' }],
+    ['authority generation', { authorityGeneration: 5 }],
+  ])('rejects a Cloud candidate with a different %s before local effects', async (
+    _identity,
+    snapshotChanges,
+  ) => {
+    currentMembership = cloudMembership();
+    originUrls = [currentMembership.authority.gitRemoteUrl!];
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+    const dispose = jest.fn();
+    const saveProjectDocument = jest.fn(async () => undefined);
+    Object.assign(foundation.local.projects, { saveProjectDocument });
+
+    await expect(coordinator({
+      cloudRelocation: {
+        activity,
+        connect: jest.fn(async () => ({
+          dispose,
+          git: {
+            headers: [],
+            remoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+          },
+          projectId: 'project-a',
+          readSnapshot: jest.fn(async () => cloudSnapshot(snapshotChanges)),
+          serverUrl: 'http://new.example.test/proxy/cloud',
+          supports: () => true,
+        })),
+      },
+    }).reconnectProject({
+      authority: { kind: 'cloud', serverUrl: 'http://new.example.test/proxy/cloud' },
+      projectId: 'project-a',
+    })).resolves.toMatchObject({
+      error: expect.objectContaining({ code: 'authority-integrity-error' }),
+      status: 'failure',
+    });
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(activity.suspend).not.toHaveBeenCalled();
+    expect(saveProjectDocument).not.toHaveBeenCalled();
+    expect(addRemote).not.toHaveBeenCalled();
+    expect(saveMembership).not.toHaveBeenCalled();
+  });
+
+  it('restores old activity when the initial Cloud relocation journal write fails', async () => {
+    currentMembership = cloudMembership();
+    originUrls = [currentMembership.authority.gitRemoteUrl!];
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+    Object.assign(foundation.local.projects, {
+      saveProjectDocument: jest.fn(async () => {
+        throw new Error('journal unavailable');
+      }),
+    });
+
+    await expect(coordinator({
+      cloudRelocation: {
+        activity,
+        connect: jest.fn(async () => ({
+          dispose: jest.fn(),
+          git: {
+            headers: [],
+            remoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+          },
+          projectId: 'project-a',
+          readSnapshot: jest.fn(async () => cloudSnapshot()),
+          serverUrl: 'http://new.example.test/proxy/cloud',
+          supports: () => true,
+        })),
+      },
+    }).reconnectProject({
+      authority: { kind: 'cloud', serverUrl: 'http://new.example.test/proxy/cloud' },
+      projectId: 'project-a',
+    })).resolves.toMatchObject({ status: 'failure' });
+
+    expect(activity.suspend).toHaveBeenCalledWith('project-a');
+    expect(activity.resume).toHaveBeenCalledWith('project-a');
+    expect(activity.activate).not.toHaveBeenCalled();
+    expect(addRemote).not.toHaveBeenCalled();
+    expect(saveMembership).not.toHaveBeenCalled();
+  });
+
+  it('blocks Cloud relocation while an endpoint-bound management intent is unresolved', async () => {
+    currentMembership = cloudMembership();
+    originUrls = [currentMembership.authority.gitRemoteUrl!];
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+    const saveProjectDocument = jest.fn(async () => undefined);
+    Object.assign(foundation.local.projects, {
+      loadProjectDocument: jest.fn(async (_projectId, kind) => (
+        kind === 'cloud-management-intent'
+          ? { kind: 'cloud-management-intent', projectId: 'project-a' }
+          : null
+      )),
+      saveProjectDocument,
+    });
+
+    await expect(coordinator({
+      cloudRelocation: {
+        activity,
+        connect: jest.fn(async () => ({
+          dispose: jest.fn(),
+          git: {
+            headers: [],
+            remoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+          },
+          projectId: 'project-a',
+          readSnapshot: jest.fn(async () => cloudSnapshot()),
+          serverUrl: 'http://new.example.test/proxy/cloud',
+          supports: () => true,
+        })),
+      },
+    }).reconnectProject({
+      authority: { kind: 'cloud', serverUrl: 'http://new.example.test/proxy/cloud' },
+      projectId: 'project-a',
+    })).resolves.toMatchObject({
+      error: expect.objectContaining({
+        code: 'operation-failed',
+        safeContext: { reason: 'cloud-relocation-management-pending' },
+      }),
+      status: 'failure',
+    });
+
+    expect(activity.suspend).toHaveBeenCalledWith('project-a');
+    expect(activity.resume).toHaveBeenCalledWith('project-a');
+    expect(activity.activate).not.toHaveBeenCalled();
+    expect(saveProjectDocument).not.toHaveBeenCalled();
+    expect(addRemote).not.toHaveBeenCalled();
+    expect(saveMembership).not.toHaveBeenCalled();
+  });
+
+  it('continues later Cloud relocation recovery after an earlier Project record fails', async () => {
+    const original = cloudMembership();
+    const newAuthority = {
+      bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+      serverUrl: 'http://new.example.test/proxy/cloud',
+      wireVersion: COLLAB_PROTOCOL_VERSION,
+    };
+    currentMembership = {
+      ...original,
+      authority: {
+        authorityGeneration: original.authority.authorityGeneration,
+        ...newAuthority,
+        kind: 'cloud',
+      },
+    };
+    originUrls = [newAuthority.gitRemoteUrl];
+    const pending = decodeCloudRelocationRecord({
+      authorityGeneration: original.authority.authorityGeneration,
+      createdAt: now.toISOString(),
+      memberId: original.member.id,
+      newAuthority,
+      oldAuthority: {
+        bindingVersion: original.authority.bindingVersion,
+        gitRemoteUrl: original.authority.gitRemoteUrl,
+        serverUrl: original.authority.serverUrl,
+        wireVersion: original.authority.wireVersion,
+      },
+      operationId: 'relocate-cloud-recovery',
+      operationKind: 'cloud-relocation',
+      personalRef: original.member.personalRef,
+      phase: 'membership-updated',
+      projectId: original.project.id,
+      schemaVersion: 1,
+      updatedAt: now.toISOString(),
+    });
+    const firstFailure = new Error('corrupt first relocation');
+    const removeProjectDocument = jest.fn(async () => true);
+    Object.assign(foundation.local.projects, {
+      listPendingOperationProjectIds: jest.fn(async () => ['project-corrupt', 'project-a']),
+      loadProjectDocument: jest.fn(async (projectId, _kind, decode) => {
+        if (projectId === 'project-corrupt') throw firstFailure;
+        return decode(pending);
+      }),
+      removeProjectDocument,
+    });
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+
+    await expect(coordinator({
+      cloudRelocation: {
+        activity,
+        connect: jest.fn(async () => { throw new Error('reconnect not expected'); }),
+      },
+    }).resumeCloudRelocations()).rejects.toBe(firstFailure);
+
+    expect(activity.activate).toHaveBeenCalledWith('project-a', {});
+    expect(activity.resume).toHaveBeenCalledWith('project-a');
+    expect(removeProjectDocument).toHaveBeenCalledWith('project-a', 'pending-operation');
+  });
+
+  it('retains a prepared relocation and fails closed on an unexpected existing origin', async () => {
+    currentMembership = cloudMembership();
+    originUrls = ['https://unexpected.example.test/v3/projects/project-a/repository.git'];
+    let pending: unknown = null;
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+    Object.assign(foundation.local.projects, {
+      loadProjectDocument: jest.fn(async (_projectId, _kind, decode) => (
+        pending ? decode(pending) : null
+      )),
+      saveProjectDocument: jest.fn(async (_projectId, _kind, value) => {
+        pending = value;
+      }),
+    });
+
+    await expect(coordinator({
+      cloudRelocation: {
+        activity,
+        connect: jest.fn(async () => ({
+          dispose: jest.fn(),
+          git: {
+            headers: [],
+            remoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+          },
+          projectId: 'project-a',
+          readSnapshot: jest.fn(async () => cloudSnapshot()),
+          serverUrl: 'http://new.example.test/proxy/cloud',
+          supports: () => true,
+        })),
+      },
+    }).reconnectProject({
+      authority: { kind: 'cloud', serverUrl: 'http://new.example.test/proxy/cloud' },
+      projectId: 'project-a',
+    })).resolves.toMatchObject({
+      durableProgress: true,
+      status: 'recovery-required',
+    });
+
+    expect(pending).toMatchObject({ phase: 'prepared' });
+    expect(activity.resume).not.toHaveBeenCalled();
+    expect(activity.activate).not.toHaveBeenCalled();
+    expect(addRemote).not.toHaveBeenCalled();
+    expect(saveMembership).not.toHaveBeenCalled();
+  });
+
+  it('resumes a membership-updated relocation without candidate reconnection', async () => {
+    const old = cloudMembership();
+    const newBinding = {
+      bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v3/projects/project-a/repository.git',
+      serverUrl: 'http://new.example.test/proxy/cloud',
+      wireVersion: COLLAB_PROTOCOL_VERSION,
+    };
+    currentMembership = {
+      ...old,
+      authority: {
+        authorityGeneration: 4,
+        ...newBinding,
+        kind: 'cloud',
+      },
+    };
+    originUrls = [newBinding.gitRemoteUrl];
+    let pending: unknown = decodeCloudRelocationRecord({
+      authorityGeneration: 4,
+      createdAt: now.toISOString(),
+      memberId: old.member.id,
+      newAuthority: newBinding,
+      oldAuthority: {
+        bindingVersion: old.authority.bindingVersion,
+        gitRemoteUrl: old.authority.gitRemoteUrl,
+        serverUrl: old.authority.serverUrl,
+        wireVersion: old.authority.wireVersion,
+      },
+      operationId: 'relocate-cloud-resume',
+      operationKind: 'cloud-relocation',
+      personalRef: old.member.personalRef,
+      phase: 'membership-updated',
+      projectId: old.project.id,
+      schemaVersion: 1,
+      updatedAt: now.toISOString(),
+    });
+    const activity = {
+      activate: jest.fn(async () => undefined),
+      resume: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
+    };
+    const connect = jest.fn(async () => {
+      throw new Error('durable recovery must not reconnect');
+    });
+    Object.assign(foundation.local.projects, {
+      loadProjectDocument: jest.fn(async (_projectId, _kind, decode) => (
+        pending ? decode(pending) : null
+      )),
+      removeProjectDocument: jest.fn(async () => {
+        pending = null;
+        return true;
+      }),
+    });
+
+    await expect(coordinator({
+      cloudRelocation: { activity, connect },
+    }).reconnectProject({
+      authority: { kind: 'cloud', serverUrl: 'http://new.example.test/proxy/cloud' },
+      projectId: 'project-a',
+    })).resolves.toMatchObject({ status: 'success' });
+
+    expect(connect).not.toHaveBeenCalled();
+    expect(addRemote).not.toHaveBeenCalled();
+    expect(saveMembership).not.toHaveBeenCalled();
+    expect(activity.suspend).toHaveBeenCalledWith('project-a');
+    expect(activity.activate).toHaveBeenCalledWith('project-a', {});
+    expect(activity.resume).toHaveBeenCalledWith('project-a');
+    expect(pending).toBeNull();
   });
 
   it('moves to an automatically discovered endpoint under stored CA trust', async () => {
@@ -531,7 +1024,7 @@ describe('ReconnectProjectCoordinator', () => {
   });
 
   it('cannot resurrect a stale Host route after Host Transfer promotes a new authority', async () => {
-    const transitions = new LanAuthorityProjectionTransitionCoordinator();
+    const transitions = new AuthorityProjectionTransitionCoordinator();
     let releaseRefresh!: () => void;
     const refreshStarted = new Promise<void>(resolve => {
       requestWithMember.mockImplementation(async request => {
