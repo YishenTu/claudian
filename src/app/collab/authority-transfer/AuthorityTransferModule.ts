@@ -299,10 +299,16 @@ interface SourceBinding {
 interface TargetBinding {
   readonly coordinator: CloudToLanTargetCoordinator;
   dispose(): Promise<void>;
+  readonly terminalCleanup?: {
+    readonly handle: CloudToLanTransferHandle;
+    readonly status: CollabAuthorityTransferStatus;
+    targetDisposed: boolean;
+  };
   readonly unregister: () => void;
 }
 
 interface TargetPreparationBinding {
+  readonly cleanupOperationIntentId?: string;
   readonly connection: CloudToLanEntryConnection;
   readonly target: CloudToLanTargetCoordinatorOptions['target'];
 }
@@ -614,8 +620,10 @@ export class AuthorityTransferModule {
         coordinator,
         dispose: async () => {
           if (this.targetBindings.get(input.projectId) !== binding) return;
-          this.targetBindings.delete(input.projectId);
           await binding.dispose();
+          if (this.targetBindings.get(input.projectId) === binding) {
+            this.targetBindings.delete(input.projectId);
+          }
         },
         targetUrl: input.expectedTargetUrl,
       });
@@ -643,6 +651,22 @@ export class AuthorityTransferModule {
     input: PrepareCloudToLanTargetInput,
     options: CollabOperationOptions,
   ): Promise<CloudToLanTargetPreparationDescriptor> {
+    const retainedBinding = this.targetBindings.get(input.projectId);
+    if (retainedBinding?.terminalCleanup) {
+      throw durableOutcome(
+        retainedBinding.terminalCleanup.handle.operationIntentId,
+        'authority-transfer-target-cancellation-cleanup-incomplete',
+      );
+    }
+    const retainedCleanup = this.targetPreparations.get(input.projectId);
+    if (retainedCleanup?.cleanupOperationIntentId) {
+      if (!(await this.disposeCloudToLanTargetRuntime(input.projectId))) {
+        throw durableOutcome(
+          retainedCleanup.cleanupOperationIntentId,
+          'authority-transfer-target-preparation-incomplete',
+        );
+      }
+    }
     const createConnection = this.options.createCloudToLanConnection;
     const createTarget = this.options.createCloudToLanTarget;
     let existing = await this.options.persistence.loadCloudToLanTargetEntry(
@@ -657,6 +681,15 @@ export class AuthorityTransferModule {
       && existing.operationIntentId !== input.operationIntentId
       && existing.phase === 'withdrawn'
     ) {
+      if (
+        this.targetBindings.has(input.projectId)
+        || this.targetPreparations.has(input.projectId)
+      ) {
+        throw durableOutcome(
+          existing.operationIntentId,
+          'authority-transfer-target-withdrawal-cleanup-incomplete',
+        );
+      }
       existing = null;
     }
     const retainedPreparation = this.targetPreparations.get(input.projectId);
@@ -742,9 +775,20 @@ export class AuthorityTransferModule {
       throw error;
     } finally {
       if (!keepConnection) {
-        await Promise.allSettled([
+        const [cleanup] = await Promise.allSettled([
           disposeCloudToLanTargetPreparation(connection, createdTarget),
         ]);
+        if (
+          cleanup?.status === 'rejected'
+          && createdTarget
+          && durableOperationId !== null
+        ) {
+          this.targetPreparations.set(input.projectId, {
+            cleanupOperationIntentId: durableOperationId,
+            connection,
+            target: createdTarget,
+          });
+        }
       }
     }
   }
@@ -884,6 +928,14 @@ export class AuthorityTransferModule {
       'authority-transfer',
       'continuation',
       async () => {
+        let binding = this.targetBindings.get(handle.projectId);
+        const retainedCleanup = binding?.terminalCleanup;
+        if (binding && retainedCleanup) {
+          if (!sameCloudToLanTransferHandle(retainedCleanup.handle, handle)) {
+            throw moduleError('authority-transfer-target-handle-mismatch');
+          }
+          return this.completeCancelledCloudToLanTarget(binding, retainedCleanup);
+        }
         const entry = await this.options.persistence.loadCloudToLanTargetEntry(
           handle.projectId,
         );
@@ -898,7 +950,6 @@ export class AuthorityTransferModule {
         } catch {
           throw moduleError('authority-transfer-target-handle-mismatch');
         }
-        let binding = this.targetBindings.get(handle.projectId);
         if (!binding) {
           const createConnection = this.options.createCloudToLanConnection;
           const createTarget = this.options.createCloudToLanTarget;
@@ -961,33 +1012,68 @@ export class AuthorityTransferModule {
           );
           throw error;
         }
-        let managerSettlementFailed = false;
+        if (status.state === 'cancelled') {
+          const terminalCleanup = {
+            handle,
+            status,
+            targetDisposed: false,
+          };
+          const terminalBinding: TargetBinding = {
+            ...binding,
+            terminalCleanup,
+          };
+          if (this.targetBindings.get(handle.projectId) === binding) {
+            this.targetBindings.set(handle.projectId, terminalBinding);
+          }
+          return this.completeCancelledCloudToLanTarget(
+            terminalBinding,
+            terminalCleanup,
+          );
+        }
         try {
           await this.settleMatchingCloudToLanManager(handle, status);
         } catch {
-          managerSettlementFailed = true;
-        }
-        let targetCleanupFailed = false;
-        if (status.state === 'cancelled') {
-          if (this.targetBindings.get(handle.projectId) === binding) {
-            this.targetBindings.delete(handle.projectId);
-            try {
-              await binding.dispose();
-            } catch {
-              targetCleanupFailed = true;
-            }
-          }
-        }
-        if (managerSettlementFailed || targetCleanupFailed) {
           throw durableOutcome(
             handle.operationIntentId,
-            targetCleanupFailed
-              ? 'authority-transfer-target-cancellation-cleanup-incomplete'
-              : 'authority-transfer-manager-status-incomplete',
+            'authority-transfer-manager-status-incomplete',
           );
         }
         return status;
       },
+    );
+  }
+
+  private async completeCancelledCloudToLanTarget(
+    binding: TargetBinding,
+    cleanup: NonNullable<TargetBinding['terminalCleanup']>,
+  ): Promise<CollabAuthorityTransferStatus> {
+    const { handle, status } = cleanup;
+    let managerSettlementFailed = false;
+    try {
+      await this.settleMatchingCloudToLanManager(handle, status);
+    } catch {
+      managerSettlementFailed = true;
+    }
+    let targetCleanupFailed = false;
+    if (!cleanup.targetDisposed) {
+      try {
+        await binding.dispose();
+        cleanup.targetDisposed = true;
+      } catch {
+        targetCleanupFailed = true;
+      }
+    }
+    if (!managerSettlementFailed && !targetCleanupFailed) {
+      if (this.targetBindings.get(handle.projectId) === binding) {
+        this.targetBindings.delete(handle.projectId);
+      }
+      return status;
+    }
+    throw durableOutcome(
+      handle.operationIntentId,
+      targetCleanupFailed
+        ? 'authority-transfer-target-cancellation-cleanup-incomplete'
+        : 'authority-transfer-manager-status-incomplete',
     );
   }
 
@@ -1014,21 +1100,36 @@ export class AuthorityTransferModule {
         }
         const binding = this.targetBindings.get(input.projectId);
         const preparation = this.targetPreparations.get(input.projectId);
-        this.targetBindings.delete(input.projectId);
-        this.targetPreparations.delete(input.projectId);
-        const cleanup = await Promise.allSettled([
-          ...(binding ? [binding.dispose()] : []),
-          ...(preparation ? [disposeCloudToLanTargetPreparation(
-            preparation.connection,
-            preparation.target,
-          )] : []),
-        ]);
-        const failed = cleanup.find(
-          (result): result is PromiseRejectedResult => result.status === 'rejected',
-        );
-        if (failed) throw failed.reason;
+        if (!binding && !preparation) return;
+        if (!(await this.disposeCloudToLanTargetRuntime(input.projectId))) {
+          throw durableOutcome(
+            entry.operationIntentId,
+            'authority-transfer-target-withdrawal-cleanup-incomplete',
+          );
+        }
       },
     );
+  }
+
+  private async disposeCloudToLanTargetRuntime(projectId: CollabProjectId): Promise<boolean> {
+    const binding = this.targetBindings.get(projectId);
+    const preparation = this.targetPreparations.get(projectId);
+    const [bindingResult, preparationResult] = await Promise.allSettled([
+      binding?.dispose() ?? Promise.resolve(),
+      preparation
+        ? disposeCloudToLanTargetPreparation(preparation.connection, preparation.target)
+        : Promise.resolve(),
+    ]);
+    if (bindingResult.status === 'fulfilled' && this.targetBindings.get(projectId) === binding) {
+      this.targetBindings.delete(projectId);
+    }
+    if (
+      preparationResult.status === 'fulfilled'
+      && this.targetPreparations.get(projectId) === preparation
+    ) {
+      this.targetPreparations.delete(projectId);
+    }
+    return bindingResult.status === 'fulfilled' && preparationResult.status === 'fulfilled';
   }
 
   async observeCloudToLanTransfer(
@@ -1465,7 +1566,10 @@ export class AuthorityTransferModule {
           await input.lanClient.requestWithMember(
             'acknowledgeTransferredMembershipClaimRedemption',
             {
-              idempotencyKey: `${record.operationIntentId}-source-ack`,
+              idempotencyKey: authorityTransferChildIdempotencyKey(
+                record.operationIntentId,
+                'source-ack',
+              ),
               projectId: record.projectId,
               receipt: record.redemptionReceipt,
               transferId: record.transferId,
@@ -1647,7 +1751,10 @@ export class AuthorityTransferModule {
           await input.cloudSession.lifecycle.authorityTransfer(
             'acknowledgeTransferredMembershipClaimRedemption',
             {
-              idempotencyKey: `${record.operationIntentId}-source-ack`,
+              idempotencyKey: authorityTransferChildIdempotencyKey(
+                record.operationIntentId,
+                'source-ack',
+              ),
               projectId: record.projectId,
               receipt: record.redemptionReceipt,
               transferId: record.transferId,

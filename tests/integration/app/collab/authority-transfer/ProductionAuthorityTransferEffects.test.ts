@@ -152,6 +152,89 @@ describe('production authority-transfer effects', () => {
     expect(unpinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID, endpoint);
   });
 
+  it('retains a Cloud-to-LAN target preparation until disposal succeeds', async () => {
+    const dispose = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target cleanup failure'))
+      .mockResolvedValue(undefined);
+    const effects = new ProductionCloudToLanTargetEffects({
+      cloudSession: {} as CloudAuthorityConnection,
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: {
+        lanHost: {
+          prepareAuthorityTransferTarget: jest.fn(async () => ({
+            caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+            caFingerprint: 'c'.repeat(64),
+            dispose,
+            endpoint: 'https://127.0.0.1:54545',
+          })),
+        },
+      } as never,
+      persistence: {} as never,
+      projectId: PROJECT_ID,
+    });
+
+    await effects.prepareTarget();
+    await expect(effects.dispose()).rejects.toThrow('simulated target cleanup failure');
+    await expect(effects.dispose()).resolves.toBeUndefined();
+
+    expect(dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains a cancelled Cloud-to-LAN target preparation until disposal succeeds', async () => {
+    const dispose = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target cancellation cleanup failure'))
+      .mockResolvedValue(undefined);
+    const discardAuthorityTransferTarget = jest.fn(async () => undefined);
+    const removeReservedProjectsFolderChild = jest.fn(async () => true);
+    const effects = new ProductionCloudToLanTargetEffects({
+      cloudSession: {} as CloudAuthorityConnection,
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: {
+        discardAuthorityTransferTarget,
+        lanHost: {
+          prepareAuthorityTransferTarget: jest.fn(async () => ({
+            caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+            caFingerprint: 'c'.repeat(64),
+            dispose,
+            endpoint: 'https://127.0.0.1:54545',
+          })),
+          stopAuthorityTransferRoute: jest.fn(async () => undefined),
+        },
+        local: {
+          projects: {
+            loadMembership: jest.fn(async () => ({
+              project: { workspacePath: '/vault/Projects/Portable' },
+            })),
+          },
+          workspace: { removeReservedProjectsFolderChild },
+        },
+      } as never,
+      persistence: {} as never,
+      projectId: PROJECT_ID,
+    });
+    const record = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...status('cloud-to-lan', 'cancelled', 'https://127.0.0.1:54545'),
+        state: 'cancelled',
+      },
+    });
+
+    await effects.prepareTarget();
+    await expect(effects.cancelStaging(record)).rejects.toThrow(
+      'simulated target cancellation cleanup failure',
+    );
+    await expect(effects.cancelStaging(record)).resolves.toBeUndefined();
+
+    expect(dispose).toHaveBeenCalledTimes(2);
+    expect(discardAuthorityTransferTarget).toHaveBeenCalledTimes(1);
+    expect(removeReservedProjectsFolderChild).toHaveBeenCalledTimes(1);
+  });
+
   it('uses ordinary guarded Host start for an open-fence cancelled record', async () => {
     const startProject = jest.fn(async () => ({
       endpoint: 'https://127.0.0.1:54545',
