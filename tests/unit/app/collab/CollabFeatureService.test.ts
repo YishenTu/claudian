@@ -14,6 +14,9 @@ import {
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
+  CollabAuthorityTransferOutcomeError,
+} from '@/app/collab/authority-transfer/CollabAuthorityTransferOutcomeError';
+import {
   type CollabFeatureFoundationPort,
   CollabFeatureService,
   type CollabHostTransferPort,
@@ -24,6 +27,7 @@ import {
 } from '@/app/collab/CollabFeatureService';
 import type { CollabLocalProjectIndex } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabPublishOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -504,6 +508,298 @@ describe('CollabFeatureService', () => {
     });
     expect(foundation.requireGitFoundation).toHaveBeenCalledTimes(1);
     expect(states).toEqual(['uninitialized', 'initializing', 'initializing', 'ready']);
+  });
+
+  it('exposes the selected-target Cloud-to-LAN handshake through the ordinary feature facade', async () => {
+    const descriptor = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      preparationId: 'intent-target-preparation',
+      projectId: 'project-alpha',
+      publishedAt: CREATED_AT,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+    };
+    const handle = {
+      operationIntentId: 'intent-manager-begin',
+      preparationId: descriptor.preparationId,
+      projectId: descriptor.projectId,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: descriptor.selectedTargetMemberId,
+      sourceAuthorityGeneration: descriptor.sourceAuthorityGeneration,
+      sourceCloudUrl: descriptor.sourceCloudUrl,
+      targetUrl: descriptor.targetUrl,
+      transferId: 'transfer-cloud-to-lan',
+    };
+    const status = { projectId: 'project-alpha', transferId: handle.transferId } as never;
+    const authorityTransfer = {
+      acceptCloudToLanTransfer: jest.fn(async () => status),
+      beginCloudToLanTransfer: jest.fn(async () => handle),
+      cancelCloudToLanTransfer: jest.fn(async () => status),
+      observeCloudToLanTransfer: jest.fn(async () => status),
+      prepareCloudToLanTarget: jest.fn(async () => descriptor),
+      withdrawCloudToLanTarget: jest.fn(async () => undefined),
+    };
+    const service = createService({ authorityTransfer });
+
+    await expect(service.prepareCloudToLanTarget({
+      projectId: descriptor.projectId,
+    })).resolves.toEqual({ status: 'success', value: descriptor });
+    await expect(service.beginCloudToLanTransfer({
+      descriptor,
+    })).resolves.toEqual({ status: 'success', value: handle });
+    await expect(service.acceptCloudToLanTransfer(handle))
+      .resolves.toEqual({ status: 'success', value: status });
+    await expect(service.observeCloudToLanTransfer(descriptor.projectId))
+      .resolves.toEqual({ status: 'success', value: status });
+    await expect(service.cancelCloudToLanTransfer(handle))
+      .resolves.toEqual({ status: 'success', value: status });
+    await expect(service.withdrawCloudToLanTarget({
+      preparationId: descriptor.preparationId,
+      projectId: descriptor.projectId,
+    })).resolves.toEqual({ status: 'success', value: undefined });
+
+    expect(authorityTransfer.acceptCloudToLanTransfer).toHaveBeenCalledWith({ handle }, {});
+    expect(authorityTransfer.prepareCloudToLanTarget).toHaveBeenCalledWith(
+      {
+        operationIntentId: expect.stringMatching(/^cloud-to-lan-target-[a-f0-9]{32}$/),
+        projectId: descriptor.projectId,
+      },
+      {},
+    );
+    expect(authorityTransfer.beginCloudToLanTransfer).toHaveBeenCalledWith(
+      {
+        descriptor,
+        operationIntentId: expect.stringMatching(/^cloud-to-lan-manager-[a-f0-9]{32}$/),
+      },
+      {},
+    );
+    expect(authorityTransfer.observeCloudToLanTransfer).toHaveBeenCalledWith(
+      descriptor.projectId,
+      {},
+    );
+    expect(authorityTransfer.cancelCloudToLanTransfer).toHaveBeenCalledWith(
+      handle,
+      {},
+    );
+    expect(authorityTransfer.withdrawCloudToLanTarget).toHaveBeenCalledWith(
+      { preparationId: descriptor.preparationId, projectId: descriptor.projectId },
+      {},
+    );
+  });
+
+  it('preserves a durable authority-transfer recovery outcome across the feature facade', async () => {
+    const operationId = 'intent-manager-durable-begin';
+    const error = new CollabError({
+      code: 'durable-progress-recovery-required',
+      recoveryActions: ['resume'],
+      safeContext: { reason: 'authority-transfer-manager-begin-ambiguous' },
+    });
+    const authorityTransfer = {
+      acceptCloudToLanTransfer: jest.fn(),
+      beginCloudToLanTransfer: jest.fn(async () => {
+        throw new CollabAuthorityTransferOutcomeError({
+          durablePhase: 'committed',
+          durableProgress: true,
+          error,
+          operationId,
+          status: 'recovery-required',
+        });
+      }),
+      cancelCloudToLanTransfer: jest.fn(),
+      observeCloudToLanTransfer: jest.fn(),
+      prepareCloudToLanTarget: jest.fn(),
+      withdrawCloudToLanTarget: jest.fn(),
+    };
+    const service = createService({ authorityTransfer });
+
+    await expect(service.beginCloudToLanTransfer({
+      descriptor: {
+        caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+        caFingerprint: 'c'.repeat(64),
+        preparationId: 'intent-target-preparation',
+        projectId: 'project-alpha',
+        publishedAt: CREATED_AT,
+        schemaVersion: 1,
+        selectedTargetMemberId: 'member-target',
+        sourceAuthorityGeneration: 1,
+        sourceCloudUrl: 'https://cloud.example.test/',
+        targetUrl: 'https://192.168.1.20:54545',
+      },
+    })).resolves.toEqual({
+      durablePhase: 'committed',
+      durableProgress: true,
+      error,
+      operationId,
+      status: 'recovery-required',
+    });
+  });
+
+  it('does not replace a completed authority transfer with a late cancellation', async () => {
+    const controller = new AbortController();
+    const status = { projectId: 'project-alpha' } as never;
+    const authorityTransfer = {
+      acceptCloudToLanTransfer: jest.fn(),
+      beginCloudToLanTransfer: jest.fn(),
+      cancelCloudToLanTransfer: jest.fn(async () => {
+        controller.abort();
+        return status;
+      }),
+      observeCloudToLanTransfer: jest.fn(),
+      prepareCloudToLanTarget: jest.fn(),
+      withdrawCloudToLanTarget: jest.fn(),
+    };
+    const service = createService({ authorityTransfer });
+
+    await expect(service.cancelCloudToLanTransfer({
+      operationIntentId: 'intent-manager-begin',
+      preparationId: 'intent-target-preparation',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+      transferId: 'transfer-cloud-to-lan',
+    }, {
+      signal: controller.signal,
+    })).resolves.toEqual({ status: 'success', value: status });
+  });
+
+  it('keeps target-side Cloud-to-LAN work outside the ordinary Project drain', async () => {
+    const acceptingStarted = deferred<void>();
+    const acceptingReleased = deferred<void>();
+    const authorityTransfer = {
+      acceptCloudToLanTransfer: jest.fn(async () => {
+        acceptingStarted.resolve();
+        await acceptingReleased.promise;
+        return { projectId: 'project-alpha' } as never;
+      }),
+      beginCloudToLanTransfer: jest.fn(),
+      cancelCloudToLanTransfer: jest.fn(),
+      close: jest.fn(async () => undefined),
+      observeCloudToLanTransfer: jest.fn(),
+      prepareCloudToLanTarget: jest.fn(),
+      withdrawCloudToLanTarget: jest.fn(),
+    };
+    const service = createService({ authorityTransfer });
+    const accepting = service.acceptCloudToLanTransfer({
+      operationIntentId: 'intent-manager-begin',
+      preparationId: 'intent-target-preparation',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+      transferId: 'transfer-cloud-to-lan',
+    });
+    await acceptingStarted.promise;
+
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    let drained = false;
+    await service.drainAdmittedOperations('project-alpha').then(() => {
+      drained = true;
+    });
+    expect(drained).toBe(true);
+
+    let closed = false;
+    const closing = service.close().then(() => { closed = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(closed).toBe(false);
+    expect(authorityTransfer.close).not.toHaveBeenCalled();
+
+    acceptingReleased.resolve();
+    await expect(accepting).resolves.toMatchObject({ status: 'success' });
+    await closing;
+    expect(authorityTransfer.close).toHaveBeenCalledTimes(1);
+    expect(service.resumeProjectAdmission(suspension)).toBe(false);
+  });
+
+  it('keeps a lifecycle-queued Manager begin outside the lane holder ordinary drain', async () => {
+    const projectId = 'project-alpha';
+    const descriptor = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      preparationId: 'intent-target-preparation',
+      projectId,
+      publishedAt: CREATED_AT,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+    };
+    const handle = {
+      operationIntentId: 'intent-manager-begin',
+      preparationId: descriptor.preparationId,
+      projectId,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: descriptor.selectedTargetMemberId,
+      sourceAuthorityGeneration: descriptor.sourceAuthorityGeneration,
+      sourceCloudUrl: descriptor.sourceCloudUrl,
+      targetUrl: descriptor.targetUrl,
+      transferId: 'transfer-cloud-to-lan',
+    };
+    const laneAcquired = deferred<void>();
+    const beginQueued = deferred<void>();
+    const startDrain = deferred<void>();
+    const releaseDrain = deferred<void>();
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    let drainCompleted = false;
+    const authorityTransfer = {
+      acceptCloudToLanTransfer: jest.fn(() => lifecycle.runExclusive(
+        projectId,
+        'authority-transfer',
+        'continuation',
+        async () => {
+          laneAcquired.resolve();
+          await startDrain.promise;
+          const drain = service.drainAdmittedOperations(projectId).then(() => {
+            drainCompleted = true;
+          });
+          await Promise.race([drain, releaseDrain.promise]);
+          return { projectId } as never;
+        },
+      )),
+      beginCloudToLanTransfer: jest.fn(() => {
+        beginQueued.resolve();
+        return lifecycle.runExclusive(
+          projectId,
+          'authority-transfer',
+          'continuation',
+          async () => handle,
+        );
+      }),
+      cancelCloudToLanTransfer: jest.fn(),
+      close: jest.fn(async () => undefined),
+      observeCloudToLanTransfer: jest.fn(),
+      prepareCloudToLanTarget: jest.fn(),
+      withdrawCloudToLanTarget: jest.fn(),
+    };
+    const service = createService({ authorityTransfer });
+
+    const accepting = service.acceptCloudToLanTransfer(handle);
+    await laneAcquired.promise;
+    const beginning = service.beginCloudToLanTransfer({ descriptor });
+    await beginQueued.promise;
+    startDrain.resolve();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const drainedBeforeRelease = drainCompleted;
+    releaseDrain.resolve();
+    await Promise.all([accepting, beginning]);
+
+    expect(drainedBeforeRelease).toBe(true);
   });
 
   it('projects a Vault pending Cloud Leave after the Project index was removed', async () => {
@@ -1423,6 +1719,11 @@ describe('CollabFeatureService', () => {
       order.push('publication');
     });
     const service = createService({
+      authorityTransfer: {
+        close: jest.fn(async () => {
+          order.push('authority-transfer');
+        }),
+      } as never,
       hostTransfer: {
         close: jest.fn(async () => {
           order.push('host-transfer');
@@ -1468,6 +1769,7 @@ describe('CollabFeatureService', () => {
       'recovery-close-started',
       'admitted-operation',
       'recovery-close-finished',
+      'authority-transfer',
       'retirement',
       'host-transfer',
       'publication-subscription',

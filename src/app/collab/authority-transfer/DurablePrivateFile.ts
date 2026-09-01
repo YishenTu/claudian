@@ -37,3 +37,17 @@ export async function writeDurablePrivateFile(
     throw errors.writeFailed();
   }
 }
+
+export async function removeDurablePrivateFile(
+  filePath: string,
+  removeFailed: () => Error,
+): Promise<void> {
+  try {
+    await rm(filePath, { force: true });
+  } catch {
+    throw removeFailed();
+  }
+  const directory = await open(path.dirname(filePath), 'r').catch(() => null);
+  await directory?.sync().catch(() => undefined);
+  await directory?.close().catch(() => undefined);
+}
