@@ -62,30 +62,18 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       : undefined;
     for (const projectId of catalog.projectIds) {
       throwIfCancelled(options.signal);
-      let catalogRecord: AuthorityTransferRecord | null = null;
-      try {
-        catalogRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
-      } catch {
-        // Let lifecycle inspection normalize corrupt owned state consistently below.
-      }
-      if (catalogRecord) {
-        try {
-          if (!await this.isCurrentRecoveryOwner(catalogRecord)) continue;
-        } catch (error) {
-          firstError ??= error;
-          continue;
-        }
-      }
       await this.lifecycle.runExclusive(
         projectId,
         this.durableOwner.name,
         'recovery',
         async () => {
+          let ownerState = await this.persistence.inspectLifecycleOwner(projectId);
+          if (ownerState === 'absent' || ownerState === 'terminal') return;
           const ownerRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
           if (!ownerRecord) return;
           await this.assertRecoveryOwner(ownerRecord.ownerInstallationKey, projectId);
           await this.persistence.recoverInterruptedClaimCommitment(projectId);
-          const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
+          ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') {
             return;
           }
@@ -115,20 +103,5 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
     projectId: CollabProjectId,
   ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
     return this.persistence.inspectLifecycleOwner(projectId);
-  }
-
-  private async isCurrentRecoveryOwner(record: AuthorityTransferRecord): Promise<boolean> {
-    try {
-      await this.assertRecoveryOwner(record.ownerInstallationKey, record.projectId);
-      return true;
-    } catch (error) {
-      if (
-        record.ownerInstallationKey !== undefined
-        &&
-        error instanceof CollabError
-        && error.safeContext.reason === 'host-installation-recovery-owner-mismatch'
-      ) return false;
-      throw error;
-    }
   }
 }

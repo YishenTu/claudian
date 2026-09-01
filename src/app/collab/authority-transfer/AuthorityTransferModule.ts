@@ -1,5 +1,8 @@
 import type {
+  AcceptLanToCloudTransferTargetRequest,
+  CollabAuthorityTransferStatus,
   CollabProjectId,
+  RequestLanToCloudTransferRequest,
 } from '@claudian-collab/protocol';
 
 import type {
@@ -30,11 +33,16 @@ import {
   type CloudToLanTargetCoordinatorOptions,
 } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
 import {
+  LanToCloudRequesterCoordinator,
+} from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
+import {
   LanToCloudSourceCoordinator,
   type LanToCloudSourceCoordinatorOptions,
+  LanToCloudSourceProposalCoordinator,
 } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudSourceCoordinator';
 import type {
   AuthorityTransferPersistence,
+  LanToCloudCancellationIntent,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import {
   AuthorityTransferRecovery,
@@ -56,6 +64,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface AuthorityTransferSourceRouteInput {
+  readonly authorityGeneration: number;
   readonly authenticateMemberCredential: (
     credential: string,
   ) => Promise<LanAuthorityTransferActor>;
@@ -64,6 +73,10 @@ export interface AuthorityTransferSourceRouteInput {
 }
 
 export interface AuthorityTransferModuleOptions {
+  readonly assertLanToCloudSourceOwner: (
+    projectId: CollabProjectId,
+    expectedAuthorityGeneration: number,
+  ) => Promise<void> | void;
   readonly assertRecoveryOwner: (
     ownerInstallationKey: string | undefined,
     projectId: CollabProjectId,
@@ -101,7 +114,21 @@ export interface AuthorityTransferModuleOptions {
 export interface BindLanToCloudSourceInput {
   readonly cloudSession: CloudAuthorityConnection;
   readonly expectedSourceEndpoint?: string;
+  readonly expectedTargetUrl?: string;
   readonly projectId: CollabProjectId;
+}
+
+export interface CreateLanToCloudRequesterInput {
+  readonly lanClient: LanAuthorityTransferClient;
+  readonly memberCredential: string;
+  readonly memberId: LanAuthorityTransferActor['memberId'];
+  readonly projectId: CollabProjectId;
+}
+
+export interface LanToCloudSourceProposalView {
+  readonly proposedByMemberId: LanAuthorityTransferActor['memberId'];
+  readonly request: Readonly<RequestLanToCloudTransferRequest>;
+  readonly status: CollabAuthorityTransferStatus;
 }
 
 export interface BindCloudToLanTargetInput {
@@ -176,6 +203,7 @@ export interface CloudToLanAuthorityTransferBinding
 interface SourceBinding {
   readonly cleanupRoute: () => Promise<void>;
   readonly coordinator: LanToCloudSourceCoordinator;
+  readonly targetUrl: string;
   readonly unregister: () => void;
 }
 
@@ -202,6 +230,7 @@ export class AuthorityTransferModule {
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly runtimes: AuthorityTransferRuntimeRegistry;
   private readonly claimantRecovery: AuthorityTransferClaimantRecovery;
+  private readonly sourceProposals: LanToCloudSourceProposalCoordinator;
   private readonly sourceBindings = new Map<CollabProjectId, SourceBinding>();
   private readonly targetBindings = new Map<CollabProjectId, TargetBinding>();
   private readonly transferRecovery: AuthorityTransferRecovery;
@@ -213,6 +242,10 @@ export class AuthorityTransferModule {
     });
     this.claimants = new AuthorityTransferClaimantRuntimeRegistry({
       resolve: record => this.resolveClaimantRuntime(record),
+    });
+    this.sourceProposals = new LanToCloudSourceProposalCoordinator({
+      installationKey: options.installationKey,
+      persistence: options.persistence,
     });
     this.transferRecovery = new AuthorityTransferRecovery(
       options.persistence,
@@ -231,6 +264,29 @@ export class AuthorityTransferModule {
     input: BindLanToCloudSourceInput,
   ): Promise<AuthorityTransferDirectionBinding<LanToCloudSourceCoordinator>> {
     this.assertCloudSession(input.projectId, input.cloudSession);
+    const sourceEntry = await this.options.persistence.loadSourceEntry(input.projectId);
+    const record = sourceEntry ? null : await this.options.persistence.load(input.projectId);
+    const expectedAuthorityGeneration = sourceEntry?.request.expectedAuthorityGeneration
+      ?? (record?.localRole === 'source'
+        ? record.status.sourceAuthority.generation
+        : undefined);
+    if (expectedAuthorityGeneration === undefined) {
+      throw moduleError('authority-transfer-source-owner-unavailable');
+    }
+    await this.assertLanToCloudSourceOwner(
+      input.projectId,
+      expectedAuthorityGeneration,
+    );
+    const persistedTargetUrl = sourceEntry?.request.targetUrl
+      ?? (record?.localRole === 'source' ? record.status.targetUrl : undefined);
+    if (
+      !persistedTargetUrl
+      || (input.expectedTargetUrl !== undefined
+        && input.expectedTargetUrl !== persistedTargetUrl)
+      || input.cloudSession.serverUrl !== persistedTargetUrl
+    ) {
+      throw moduleError('authority-transfer-cloud-target-mismatch');
+    }
     if (this.sourceBindings.has(input.projectId) || this.targetBindings.has(input.projectId)) {
       throw moduleError('authority-transfer-direction-runtime-conflict');
     }
@@ -245,6 +301,7 @@ export class AuthorityTransferModule {
     const binding: SourceBinding = {
       cleanupRoute: () => cleanupRoute(),
       coordinator,
+      targetUrl: persistedTargetUrl,
       unregister,
     };
     this.sourceBindings.set(input.projectId, binding);
@@ -267,6 +324,86 @@ export class AuthorityTransferModule {
       unregister();
       throw error;
     }
+  }
+
+  createLanToCloudRequester(
+    input: CreateLanToCloudRequesterInput,
+  ): LanToCloudRequesterCoordinator {
+    return new LanToCloudRequesterCoordinator({
+      client: input.lanClient,
+      installationKey: this.options.installationKey,
+      memberCredential: input.memberCredential,
+      memberId: input.memberId,
+      persistence: this.options.persistence,
+      projectId: input.projectId,
+    });
+  }
+
+  async readLanToCloudSourceProposal(
+    projectId: CollabProjectId,
+  ): Promise<LanToCloudSourceProposalView | null> {
+    const entry = await this.options.persistence.loadSourceEntry(projectId);
+    if (!entry || entry.phase !== 'proposed') return null;
+    return Object.freeze({
+      proposedByMemberId: entry.proposedByMemberId,
+      request: entry.request,
+      status: entry.status,
+    });
+  }
+
+  acceptLanToCloudTransferTarget(
+    request: AcceptLanToCloudTransferTargetRequest,
+  ): Promise<CollabAuthorityTransferStatus> {
+    return this.options.lifecycle.runExclusive(
+      request.projectId,
+      'authority-transfer',
+      'continuation',
+      async () => {
+        await this.assertLanToCloudSourceOwner(
+          request.projectId,
+          request.expectedAuthorityGeneration,
+        );
+        const binding = this.sourceBindings.get(request.projectId);
+        if (!binding) throw moduleError('authority-transfer-source-runtime-unavailable');
+        if (binding.targetUrl !== request.targetUrl) {
+          throw moduleError('authority-transfer-cloud-target-mismatch');
+        }
+        return binding.coordinator.acceptAndTransfer(request);
+      },
+    );
+  }
+
+  cancelLanToCloudTransfer(
+    request: LanToCloudCancellationIntent,
+  ): Promise<CollabAuthorityTransferStatus> {
+    return this.options.lifecycle.runExclusive(
+      request.projectId,
+      'authority-transfer',
+      'continuation',
+      async () => {
+        await this.assertLanToCloudSourceOwner(
+          request.projectId,
+          request.expectedAuthorityGeneration,
+        );
+        const record = await this.options.persistence.load(request.projectId);
+        if (!record) {
+          const status = await this.sourceProposals.cancel(request);
+          const binding = this.sourceBindings.get(request.projectId);
+          if (binding) {
+            this.sourceBindings.delete(request.projectId);
+            binding.unregister();
+            await binding.cleanupRoute();
+          }
+          return status;
+        }
+        const binding = this.sourceBindings.get(request.projectId);
+        if (binding) return binding.coordinator.cancel(request);
+        const prepared = await this.options.persistence.prepareLanToCloudCancellation(request);
+        if (prepared.terminalCleanupCompleted) return prepared.status;
+        await this.runtimes.resume(prepared, {});
+        return (await this.options.persistence.load(request.projectId))?.status ?? prepared.status;
+      },
+    );
   }
 
   async bindCloudToLanTarget(
@@ -616,49 +753,45 @@ export class AuthorityTransferModule {
   sourceActiveService(
     input: AuthorityTransferSourceRouteInput,
   ): LanAuthorityTransferSourceActiveService | null {
-    const binding = this.sourceBindings.get(input.projectId);
-    if (!binding) return null;
-    const requireHost = (actor: LanAuthorityTransferActor): void => {
-      if (actor.memberId !== input.hostMemberId) {
-        throw new CollabError({ code: 'authorization-denied' });
-      }
+    const requireLocalHostAction = (): never => {
+      throw new CollabError({
+        code: 'authorization-denied',
+        safeContext: { reason: 'authority-transfer-local-host-confirmation-required' },
+      });
     };
     const service: LanAuthorityTransferSourceActiveService = {
-      acceptLanToCloudTransferTarget: async (actor, request) => {
-        requireHost(actor);
-        return this.options.lifecycle.runExclusive(
-          input.projectId,
-          'authority-transfer',
-          'continuation',
-          () => binding.coordinator.acceptAndTransfer(request),
-        );
-      },
+      acceptLanToCloudTransferTarget: async () => requireLocalHostAction(),
       authenticateMemberCredential: input.authenticateMemberCredential,
-      cancelProjectAuthorityTransfer: async (actor, request) => {
-        requireHost(actor);
+      cancelProjectAuthorityTransfer: async () => requireLocalHostAction(),
+      getProjectAuthorityTransfer: async (_actor, request) => {
+        if (request.projectId !== input.projectId) {
+          throw new CollabError({ code: 'authority-transfer-not-found' });
+        }
+        const record = await this.options.persistence.load(input.projectId);
+        if (record) {
+          if (record.localRole === 'source' && record.transferId === request.transferId) {
+            return record.status;
+          }
+          throw new CollabError({ code: 'authority-transfer-not-found' });
+        }
+        const entry = await this.options.persistence.loadSourceEntry(input.projectId);
+        if (
+          entry?.status.transferId === request.transferId
+        ) return entry.status;
+        throw new CollabError({ code: 'authority-transfer-not-found' });
+      },
+      requestLanToCloudTransfer: async (actor, request) => {
         if (request.projectId !== input.projectId) {
           throw new CollabError({ code: 'project-not-found' });
         }
-        return this.options.lifecycle.runExclusive(
-          input.projectId,
-          'authority-transfer',
-          'continuation',
-          () => binding.coordinator.cancel(input.projectId),
-        );
+        if (request.expectedAuthorityGeneration !== input.authorityGeneration) {
+          throw new CollabError({
+            code: 'authority-transfer-stale',
+            safeContext: { reason: 'lan-to-cloud-source-generation-stale' },
+          });
+        }
+        return this.sourceProposals.propose(actor.memberId, request);
       },
-      getProjectAuthorityTransfer: async (_actor, request) => {
-        const record = await this.options.persistence.load(input.projectId);
-        if (
-          request.projectId !== input.projectId
-          || !record
-          || record.localRole !== 'source'
-          || record.transferId !== request.transferId
-        ) throw new CollabError({ code: 'authority-transfer-not-found' });
-        return record.status;
-      },
-      requestLanToCloudTransfer: (_actor, request) => (
-        binding.coordinator.propose(request)
-      ),
     };
     return Object.freeze(service);
   }
@@ -674,6 +807,16 @@ export class AuthorityTransferModule {
     ) throw moduleError('authority-transfer-cloud-session-incompatible');
   }
 
+  private assertLanToCloudSourceOwner(
+    projectId: CollabProjectId,
+    expectedAuthorityGeneration: number,
+  ): Promise<void> {
+    return Promise.resolve(this.options.assertLanToCloudSourceOwner(
+      projectId,
+      expectedAuthorityGeneration,
+    ));
+  }
+
   private async resolveRuntime(
     record: AuthorityTransferRecord,
   ): Promise<AuthorityTransferDirectionRuntime | null> {
@@ -685,28 +828,37 @@ export class AuthorityTransferModule {
       ? this.sourceBindings.get(record.projectId)?.coordinator
       : this.targetBindings.get(record.projectId)?.coordinator;
     if (bound) return bound;
-    if (record.status.state === 'completed') {
-      return this.options.terminalResolver?.resolve(record) ?? null;
-    }
+    const locallyResolved = await this.options.terminalResolver?.resolve(record) ?? null;
+    if (locallyResolved) return locallyResolved;
+    if (record.status.state === 'completed') return null;
     const recoverCloudSession = this.options.recoverCloudSession;
     if (!recoverCloudSession) {
       return this.options.terminalResolver?.resolve(record) ?? null;
     }
     const session = await recoverCloudSession(record);
     try {
-      return record.localRole === 'source'
-        ? (await this.bindLanToCloudSource({
-            cloudSession: session,
-            ...(record.sourceLanEndpoint
-              ? { expectedSourceEndpoint: record.sourceLanEndpoint }
-              : {}),
-            projectId: record.projectId,
-          })).coordinator
-        : (await this.bindCloudToLanTarget({
-            cloudSession: session,
-            expectedTargetUrl: record.status.targetUrl,
-            projectId: record.projectId,
-          })).coordinator;
+      if (record.localRole === 'source') {
+        const binding = await this.bindLanToCloudSource({
+          cloudSession: session,
+          ...(record.sourceLanEndpoint
+            ? { expectedSourceEndpoint: record.sourceLanEndpoint }
+            : {}),
+          expectedTargetUrl: record.status.targetUrl,
+          projectId: record.projectId,
+        });
+        try {
+          await binding.coordinator.restoreSourceEndpoint(record);
+          return binding.coordinator;
+        } catch (error) {
+          await binding.dispose();
+          throw error;
+        }
+      }
+      return (await this.bindCloudToLanTarget({
+        cloudSession: session,
+        expectedTargetUrl: record.status.targetUrl,
+        projectId: record.projectId,
+      })).coordinator;
     } catch (error) {
       session.dispose();
       throw error;

@@ -14,6 +14,10 @@ import {
 } from '@test/helpers/installations';
 
 import {
+  createAuthorityTransferEntryRecord as createOwnedAuthorityTransferEntryRecord,
+  prepareAuthorityTransferSourceCancellation,
+} from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import {
   createAuthorityTransferRecord,
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
@@ -40,6 +44,18 @@ import {
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-alpha';
+
+function createAuthorityTransferEntryRecord(
+  input: Omit<
+    Parameters<typeof createOwnedAuthorityTransferEntryRecord>[0],
+    'ownerInstallationKey'
+  >,
+) {
+  return createOwnedAuthorityTransferEntryRecord({
+    ...input,
+    ownerInstallationKey: TEST_INSTALLATION_A,
+  });
+}
 
 function claimBatch(): CollabTransferredMembershipClaimBatch {
   const unsigned: CollabTransferredMembershipClaimBatch = {
@@ -261,6 +277,76 @@ describe('AuthorityTransferRecovery', () => {
     expect(resume).not.toHaveBeenCalled();
   });
 
+  it('enumerates a source entry proposal without constructing a Cloud runtime', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+    });
+    await repository.authorityTransferEntries.saveSource(
+      createAuthorityTransferEntryRecord({
+      proposedByMemberId: 'member-proposer',
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-entry-proposal',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: {
+        ...status('collecting-readiness'),
+        expiresAt: '2026-09-25T00:00:00.000Z',
+      },
+      }),
+    );
+    const inspect = jest.spyOn(persistence, 'inspectLifecycleOwner');
+    const prepare = jest.fn().mockResolvedValue(undefined);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    const recovery = new AuthorityTransferRecovery(persistence, { prepare, resume }, () => {
+      throw new Error('A nonphysical proposal has no installation recovery owner');
+    });
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+
+    await expect(subsystem.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(inspect).toHaveBeenCalledWith(PROJECT_ID);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('proposal');
+  });
+
+  it('expires an entry-only proposal during startup enumeration', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.authorityTransferEntries.saveSource(
+      createAuthorityTransferEntryRecord({
+      proposedByMemberId: 'member-proposer',
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-entry-expiry',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: {
+        ...status('collecting-readiness'),
+        expiresAt: '2026-09-25T00:00:00.000Z',
+      },
+      }),
+    );
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-09-25T00:00:00.000Z'),
+    });
+    const resume = jest.fn().mockResolvedValue(undefined);
+    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+
+    await expect(subsystem.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(resume).not.toHaveBeenCalled();
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toBeNull();
+  });
+
   it('repairs an interrupted unacknowledged commitment before resuming its owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
@@ -317,6 +403,74 @@ describe('AuthorityTransferRecovery', () => {
       terminalCleanupCompleted: false,
       transferId: 'transfer-one',
     }), {});
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+  });
+
+  it('resumes terminal cleanup when the completion marker precedes entry removal', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
+    const proposal = createAuthorityTransferEntryRecord({
+      proposedByMemberId: 'member-proposer',
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-one',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: {
+        ...status('collecting-readiness'),
+        expiresAt: '2026-09-25T00:00:00.000Z',
+      },
+    });
+    await repository.authorityTransferEntries.saveSource(
+      prepareAuthorityTransferSourceCancellation({
+        ...proposal,
+        phase: 'handed-off',
+        successor: {
+          operationIntentId: 'intent-one',
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          transferId: 'transfer-one',
+        },
+      }, {
+        expectedAuthorityGeneration: 1,
+        expectedPhase: 'collecting-readiness',
+        idempotencyKey: 'intent-cancel-terminal-cleanup',
+        projectId: PROJECT_ID,
+        transferId: 'transfer-one',
+      }),
+    );
+    await repository.authorityTransferRecords.save({
+      ...createAuthorityTransferRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: 'intent-one',
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        stagingDirectoryName: '.claudian-authority-transfer-transfer-one',
+        status: {
+          ...status('cancelled'),
+          expiresAt: proposal.status.expiresAt,
+        },
+      }),
+      terminalCleanupCompleted: true,
+    });
+    const resume = jest.fn(async record => persistence.completeTerminalCleanup({
+      operationIntentId: record.operationIntentId,
+      projectId: record.projectId,
+      stagingDirectoryName: record.stagingDirectoryName,
+      transferId: record.transferId,
+    }));
+    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+
+    await expect(subsystem.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(resume).toHaveBeenCalledTimes(1);
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      phase: 'cancelled',
+      status: { state: 'cancelled' },
+    });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
   });
 
