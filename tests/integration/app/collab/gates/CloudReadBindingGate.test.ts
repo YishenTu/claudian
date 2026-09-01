@@ -562,6 +562,7 @@ async function createClient(
         resolveRefs: (...input) => repositories.resolveRefs(...input),
         rotateOrigin: (record, localPath) => rotateCloudBootstrapOrigin(repositories, {
           newRemoteUrl: record.newAuthority.gitRemoteUrl,
+          newServerUrl: record.newAuthority.serverUrl,
           oldRemoteUrl: record.oldAuthority.gitRemoteUrl,
           projectId: record.projectId,
           repositoryPath: localPath,

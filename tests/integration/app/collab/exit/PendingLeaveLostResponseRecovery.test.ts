@@ -320,6 +320,7 @@ function recoveryHarness(input: {
     return {
       prepareLeave: pendingAuthority.prepare.bind(pendingAuthority),
       refreshLeave: pendingAuthority.refresh.bind(pendingAuthority),
+      recoverRejectedLeave: pendingAuthority.recoverRejected.bind(pendingAuthority),
       resolveLeaveHost: pendingAuthority.resolveHost.bind(pendingAuthority),
       settleLeave: pendingAuthority.settle.bind(pendingAuthority),
     };

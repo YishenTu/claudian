@@ -1,18 +1,18 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
+import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferProjectionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
-import type {
-  LanAuthorityProjectionTransitionPort,
-} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface LocalHostTransferProjectionOptions {
-  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly loadMembership: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;

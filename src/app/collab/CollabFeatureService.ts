@@ -21,7 +21,9 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
+import { CollabMembershipOutcomeError } from '@/app/collab/membership/CollabMembershipService';
 import {
   type CollabPendingProjectOperation,
   decodeCollabPendingProjectOperation,
@@ -34,7 +36,7 @@ import {
   type ProjectOperationPolicy,
   type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
-import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
+import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabRevokeInvitationRequest } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -80,6 +82,14 @@ export interface CollabLanHostPort {
 }
 
 export interface CollabMembershipPort {
+  reissueMemberClaim(request: CollabImportedMemberClaimRequest, options?: CollabOperationOptions): Promise<CollabInvitationView>;
+  revokeMemberClaim(request: CollabImportedMemberClaimRequest, options?: CollabOperationOptions): Promise<void>;
+  listManagerResponsibilityOffers(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<readonly CollabManagerResponsibilityOfferSummary[]>;
+  listMembers(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<readonly CollabMemberSummaryView[]>;
+  listInvitations(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<readonly CollabInvitationSummaryView[]>;
+  readManagementOperation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabManagementOperationView | null>;
+  resumeManagementOperation(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabManagementOperationView>;
+  completeManagementOperation(request: CollabCompleteManagementOperationRequest, options?: CollabOperationOptions): Promise<void>;
   cancelManagerResponsibilityOffer(
     request: CollabCancelManagerResponsibilityOfferRequest,
     options?: CollabOperationOptions,
@@ -97,7 +107,7 @@ export interface CollabMembershipPort {
     options?: CollabOperationOptions,
   ): Promise<void>;
   revokeInvitation(
-    projectId: CollabProjectId,
+    request: CollabRevokeInvitationRequest,
     options?: CollabOperationOptions,
   ): Promise<void>;
   promoteManager(
@@ -344,6 +354,13 @@ export interface CollabFeatureServiceOptions {
   readonly lifecycleRecovery: CollabLifecycleRecoveryPort;
   readonly localExit: CollabLocalExitPort;
   readonly membership: CollabMembershipPort;
+  readonly cloudRetirementIntents: {
+    listProjectIds(): Promise<readonly CollabProjectId[]>;
+  };
+  readonly pendingLeaves: {
+    listProjectIds(): Promise<readonly CollabProjectId[]>;
+    load(projectId: CollabProjectId): Promise<PendingLeaveRecord | null>;
+  };
   readonly publication: CollabPublicationPort;
   readonly retirement: CollabRetirementPort;
   readonly vaultRoot: string;
@@ -756,7 +773,9 @@ class CollabFeatureServiceCore {
       'pending-operation',
       decodeCollabPendingProjectOperation,
     );
-    return pending?.record.operationId ?? null;
+    return pending && pending.kind !== 'cloud-relocation'
+      ? pending.record.operationId
+      : null;
   }
 
   async listPendingSetupOperationIds(): Promise<readonly CollabOperationId[]> {
@@ -770,7 +789,7 @@ class CollabFeatureServiceCore {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending) {
+      if (pending && pending.kind !== 'cloud-relocation') {
         if (seen.has(pending.record.operationId)) {
           throw operationError('pending-operation-duplicate');
         }
@@ -971,7 +990,6 @@ class CollabFeatureServiceCore {
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabInvitationView>> {
     try {
-      throwIfCancelled(options.signal);
       return {
         status: 'success',
         value: await this.options.membership.createInvitation(projectId, options),
@@ -982,16 +1000,73 @@ class CollabFeatureServiceCore {
   }
 
   async revokeInvitation(
-    projectId: CollabProjectId,
+    request: CollabRevokeInvitationRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
     try {
-      throwIfCancelled(options.signal);
-      await this.options.membership.revokeInvitation(projectId, options);
+      await this.options.membership.revokeInvitation(request, options);
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
     }
+  }
+
+  async readManagementOperation(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<CollabManagementOperationView | null>> {
+    try {
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: await this.options.membership.readManagementOperation(projectId, options) };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async resumeManagementOperation(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<CollabManagementOperationView>> {
+    try {
+      throwIfCancelled(options.signal);
+      return {
+        status: 'success',
+        value: await this.options.membership.resumeManagementOperation(projectId, options),
+      };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async listInvitations(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<readonly CollabInvitationSummaryView[]>> {
+    try {
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: await this.options.membership.listInvitations(projectId, options) };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async listMembers(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<readonly CollabMemberSummaryView[]>> {
+    try {
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: await this.options.membership.listMembers(projectId, options) };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async listManagerResponsibilityOffers(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<readonly CollabManagerResponsibilityOfferSummary[]>> {
+    try {
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: await this.options.membership.listManagerResponsibilityOffers(projectId, options) };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async completeManagementOperation(request: CollabCompleteManagementOperationRequest, options: CollabOperationOptions = {}): Promise<CollabResult<void>> {
+    try {
+      throwIfCancelled(options.signal);
+      await this.options.membership.completeManagementOperation(request, options);
+      return { status: 'success', value: undefined };
+    } catch (error) { return this.#failureResult(error); }
+  }
+
+  async reissueMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<CollabResult<CollabInvitationView>> {
+    try { return { status: 'success', value: await this.options.membership.reissueMemberClaim(request, options) }; }
+    catch (error) { return this.#failureResult(error); }
+  }
+
+  async revokeMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<CollabResult<void>> {
+    try {
+      await this.options.membership.revokeMemberClaim(request, options);
+      return { status: 'success', value: undefined };
+    } catch (error) { return this.#failureResult(error); }
   }
 
   async startHost(
@@ -1508,7 +1583,6 @@ class CollabFeatureServiceCore {
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
     try {
-      throwIfCancelled(options.signal);
       await this.options.membership.removeMember(request, options);
       await this.#refreshProjects();
       return { status: 'success', value: undefined };
@@ -1554,7 +1628,6 @@ class CollabFeatureServiceCore {
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
     try {
-      throwIfCancelled(options.signal);
       await this.options.membership.promoteManager(request, options);
       await this.#refreshProjects();
       return { status: 'success', value: undefined };
@@ -1568,7 +1641,6 @@ class CollabFeatureServiceCore {
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<void>> {
     try {
-      throwIfCancelled(options.signal);
       await this.options.membership.demoteManager(request, options);
       await this.#refreshProjects();
       return { status: 'success', value: undefined };
@@ -1819,8 +1891,23 @@ class CollabFeatureServiceCore {
   }
 
    async #readProjectProjection(): Promise<CollabProjectProjection> {
-    const index = await this.foundation.local.projects.loadIndex();
+    const [index, pendingLeaveProjectIds, cloudRetirementProjectIds] = await Promise.all([
+      this.foundation.local.projects.loadIndex(),
+      this.options.pendingLeaves.listProjectIds(),
+      this.options.cloudRetirementIntents.listProjectIds(),
+    ]);
+    const pendingLeaves = await Promise.all(pendingLeaveProjectIds.map(async projectId => {
+      try {
+        return { corrupt: false as const, projectId, record: await this.options.pendingLeaves.load(projectId) };
+      } catch {
+        return { corrupt: true as const, projectId, record: null };
+      }
+    }));
+    const pendingByProject = new Map(pendingLeaves.map(entry => [entry.projectId, entry]));
+    const cloudRetirementProjects = new Set(cloudRetirementProjectIds);
     const projects = await Promise.all(index.projects.map(async project => {
+      const pendingLeave = pendingByProject.get(project.id) ?? null;
+      const hasCloudRetirementIntent = cloudRetirementProjects.has(project.id);
       const [membership, pending, workingCopyHealthy] = await Promise.all([
         this.foundation.local.projects.loadMembership(project.id).catch(error => {
           if (isUnsupportedLocalMembership(error)) return null;
@@ -1833,9 +1920,48 @@ class CollabFeatureServiceCore {
         ),
         this.#hasWorkingCopy(project.workspacePath),
       ]);
-      return this.#projectSummary(project, membership, pending !== null, workingCopyHealthy);
+      const summary = await this.#projectSummary(
+        project,
+        membership,
+        pending !== null || pendingLeave !== null || hasCloudRetirementIntent,
+        workingCopyHealthy,
+      );
+      pendingByProject.delete(project.id);
+      return pendingLeave
+        ? {
+          ...summary,
+          cleanupStatus: pendingLeave.corrupt
+            ? 'failed' as const
+            : pendingLeave.record?.localCleanupComplete
+            ? 'complete' as const
+            : pendingLeave.record?.phase === 'recovery-required'
+              ? 'failed' as const
+              : 'pending' as const,
+          health: 'needs-attention' as const,
+          lifecycle: 'leaving' as const,
+        }
+        : summary;
     }));
-    return { projects, selectedProjectId: index.selectedProjectId };
+    const journalOnly = [...pendingByProject.values()]
+      .flatMap(entry => entry.record ? [entry.record] : [])
+      .map(record => ({
+        authorityKind: 'authorityKind' in record ? 'cloud' as const : 'lan' as const,
+        cleanupStatus: record.localCleanupComplete
+          ? 'complete' as const
+          : record.phase === 'recovery-required'
+            ? 'failed' as const
+            : 'pending' as const,
+        connectionStatus: 'needs-attention' as const,
+        health: 'needs-attention' as const,
+        hostInstallationStatus: 'not-host' as const,
+        hostStatus: 'not-host' as const,
+        id: record.projectId,
+        lifecycle: 'leaving' as const,
+        name: record.projectName,
+        role: record.localRole,
+        workspacePath: record.workspacePath,
+      }));
+    return { projects: [...projects, ...journalOnly], selectedProjectId: index.selectedProjectId };
   }
 
    async #hasWorkingCopy(workspacePath: string): Promise<boolean> {
@@ -1979,7 +2105,10 @@ class CollabFeatureServiceCore {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending?.record.operationId === operationId) {
+      if (
+        pending?.kind !== 'cloud-relocation'
+        && pending?.record.operationId === operationId
+      ) {
         if (match) throw operationError('pending-operation-duplicate');
         match = pending;
       }
@@ -1988,6 +2117,7 @@ class CollabFeatureServiceCore {
   }
 
    #failureResult<T>(error: unknown): CollabResult<T> {
+    if (error instanceof CollabMembershipOutcomeError) return error.result;
     const collabError = error instanceof CollabError
       ? error
       : operationError('collab-operation-failed');
@@ -2115,7 +2245,10 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.runGlobal(() => this.core.joinProject(...args))
   );
   reconnectProject: CollabFeaturePort['reconnectProject'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.reconnectProject(...args))
+    this.projectTransition(
+      () => args[0].projectId,
+      () => this.core.reconnectProject(...args),
+    )
   );
   resumeSetup: CollabFeaturePort['resumeSetup'] = (...args) => (
     this.runGlobal(() => this.core.resumeSetup(...args))
@@ -2151,8 +2284,32 @@ export class CollabFeatureService implements CollabFeaturePort {
   createInvitation: CollabFeaturePort['createInvitation'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.createInvitation(...args))
   );
+  readManagementOperation: CollabFeaturePort['readManagementOperation'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.readManagementOperation(...args))
+  );
+  resumeManagementOperation: CollabFeaturePort['resumeManagementOperation'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.resumeManagementOperation(...args))
+  );
+  listInvitations: CollabFeaturePort['listInvitations'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.listInvitations(...args))
+  );
+  completeManagementOperation: CollabFeaturePort['completeManagementOperation'] = (...args) => (
+    this.project(() => args[0].projectId, 'active', () => this.core.completeManagementOperation(...args))
+  );
+  listMembers: CollabFeaturePort['listMembers'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.listMembers(...args))
+  );
+  listManagerResponsibilityOffers: CollabFeaturePort['listManagerResponsibilityOffers'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.listManagerResponsibilityOffers(...args))
+  );
+  reissueMemberClaim: CollabFeaturePort['reissueMemberClaim'] = (...args) => (
+    this.project(() => args[0].projectId, 'active', () => this.core.reissueMemberClaim(...args))
+  );
+  revokeMemberClaim: CollabFeaturePort['revokeMemberClaim'] = (...args) => (
+    this.project(() => args[0].projectId, 'active', () => this.core.revokeMemberClaim(...args))
+  );
   revokeInvitation: CollabFeaturePort['revokeInvitation'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.revokeInvitation(...args))
+    this.project(() => typeof args[0] === 'string' ? args[0] : args[0].projectId, 'active', () => this.core.revokeInvitation(...args))
   );
   claimLegacyHostInstallation: CollabFeaturePort[
     'claimLegacyHostInstallation'
@@ -2219,42 +2376,40 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.project(() => args[0].projectId, 'active', () => this.core.removeMember(...args))
   );
   leaveProject: CollabFeaturePort['leaveProject'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.leaveProject(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.leaveProject(...args))
   );
   createManagerResponsibilityOffer: CollabFeaturePort[
     'createManagerResponsibilityOffer'
-  ] = (...args) => this.project(
+  ] = (...args) => this.projectTransition(
     () => args[0].projectId,
-    'active',
     () => this.core.createManagerResponsibilityOffer(...args),
   );
   cancelManagerResponsibilityOffer: CollabFeaturePort[
     'cancelManagerResponsibilityOffer'
-  ] = (...args) => this.project(
+  ] = (...args) => this.projectTransition(
     () => args[0].projectId,
-    'active',
     () => this.core.cancelManagerResponsibilityOffer(...args),
   );
   promoteManager: CollabFeaturePort['promoteManager'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.promoteManager(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.promoteManager(...args))
   );
   demoteManager: CollabFeaturePort['demoteManager'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.demoteManager(...args))
   );
   createHostTransfer: CollabFeaturePort['createHostTransfer'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.createHostTransfer(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.createHostTransfer(...args))
   );
   acceptHostTransfer: CollabFeaturePort['acceptHostTransfer'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.acceptHostTransfer(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.acceptHostTransfer(...args))
   );
   declineHostTransfer: CollabFeaturePort['declineHostTransfer'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.declineHostTransfer(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.declineHostTransfer(...args))
   );
   cancelHostTransfer: CollabFeaturePort['cancelHostTransfer'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.cancelHostTransfer(...args))
   );
   retireProject: CollabFeaturePort['retireProject'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.retireProject(...args))
+    this.projectTransition(() => args[0].projectId, () => this.core.retireProject(...args))
   );
   finalizeRetiredProject: CollabFeaturePort['finalizeRetiredProject'] = (...args) => (
     this.project(
@@ -2312,8 +2467,15 @@ export class CollabFeatureService implements CollabFeaturePort {
     return this.#operationAdmission.resumeProject(suspension);
   }
 
-  drainAdmittedOperations(): Promise<void> {
-    return this.#operationAdmission.drain();
+  drainAdmittedOperations(projectId: CollabProjectId): Promise<void> {
+    return this.#operationAdmission.drainAdmittedOperations(projectId);
+  }
+
+  runProjectLifecycleTransition<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.#operationAdmission.runProjectTransition(() => projectId, operation);
   }
 
   recoverPendingCloudBootstraps(): Promise<void> {
@@ -2348,6 +2510,13 @@ export class CollabFeatureService implements CollabFeaturePort {
     return this.#operationAdmission.runGlobal(operation);
   }
 
+  private projectTransition<T>(
+    resolveProjectId: () => CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.#operationAdmission.runProjectTransition(resolveProjectId, operation);
+  }
+
   private project<T>(
     resolveProjectId: () => CollabProjectId,
     policy: ProjectOperationPolicy,
@@ -2361,11 +2530,15 @@ export class CollabFeatureService implements CollabFeaturePort {
       const pending = await this.foundation.local.projects.loadProjectDocument(
         projectId, 'pending-operation', decodeCollabPendingProjectOperation,
       );
-      if (pending?.kind === 'cloud-entry') {
+      if (pending?.kind === 'cloud-entry' || pending?.kind === 'cloud-relocation') {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
           recoveryActions: ['resume'],
-          safeContext: { reason: 'cloud-project-entry-pending' },
+          safeContext: {
+            reason: pending.kind === 'cloud-entry'
+              ? 'cloud-project-entry-pending'
+              : 'cloud-relocation-pending',
+          },
         });
       }
       return operation();

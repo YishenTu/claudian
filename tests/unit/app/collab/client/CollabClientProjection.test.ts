@@ -119,7 +119,32 @@ describe('CollabClientProjection', () => {
     expect(reconcileSnapshot).not.toHaveBeenCalled();
   });
 
-  it('reconciles offered Manager responsibility before caching the snapshot', async () => {
+  it('does not keep a session-owned snapshot open while lifecycle reconciliation is queued', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    let releaseReconciliation!: () => void;
+    const reconciliation = new Promise<null>(resolve => {
+      releaseReconciliation = () => resolve(null);
+    });
+    const reconcileSnapshot = jest.fn().mockReturnValue(reconciliation);
+    const projection = new CollabClientProjection(store, control, {
+      ...projectionOptions(),
+      managerResponsibility: { reconcileSnapshot },
+    });
+
+    const read = projection.readSnapshot('project-a');
+    const firstSettled = await Promise.race([
+      read.then(() => 'snapshot' as const),
+      new Promise<'lifecycle'>(resolve => setImmediate(() => resolve('lifecycle'))),
+    ]);
+
+    releaseReconciliation();
+    await read;
+    expect(firstSettled).toBe('snapshot');
+    expect(reconcileSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('schedules offered Manager responsibility after caching the raw snapshot', async () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();
     const offered = {
@@ -131,16 +156,17 @@ describe('CollabClientProjection', () => {
       status: 'offered' as const,
       targetMemberId: 'member-a',
     };
-    const acknowledged = {
-      ...offered,
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
-      status: 'acknowledged' as const,
-    };
     control.readSnapshot.mockResolvedValue({
       ...snapshot(),
       managerResponsibilityOffer: offered,
     });
-    const reconcileSnapshot = jest.fn().mockResolvedValue(acknowledged);
+    const reconcileSnapshot = jest.fn((_snapshot, assertCurrent: () => void) => {
+      assertCurrent();
+      expect(store.documents.get('project-a')).toMatchObject({
+        snapshot: { managerResponsibilityOffer: offered },
+      });
+      expect(store.membership.lastEventSequence).toBe(5);
+    });
     const projection = new CollabClientProjection(store, control, {
       ...projectionOptions(),
       managerResponsibility: { reconcileSnapshot },
@@ -148,14 +174,15 @@ describe('CollabClientProjection', () => {
 
     const result = await projection.readSnapshot('project-a');
 
-    expect(reconcileSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-      managerResponsibilityOffer: offered,
-    }));
+    expect(reconcileSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ managerResponsibilityOffer: offered }),
+      expect.any(Function),
+    );
     expect(isCollabLanProjectSnapshot(result.snapshot)).toBe(true);
     if (!isCollabLanProjectSnapshot(result.snapshot)) throw new Error('Expected LAN snapshot');
-    expect(result.snapshot.managerResponsibilityOffer).toEqual(acknowledged);
+    expect(result.snapshot.managerResponsibilityOffer).toEqual(offered);
     expect(store.documents.get('project-a')).toMatchObject({
-      snapshot: { managerResponsibilityOffer: acknowledged },
+      snapshot: { managerResponsibilityOffer: offered },
     });
   });
 

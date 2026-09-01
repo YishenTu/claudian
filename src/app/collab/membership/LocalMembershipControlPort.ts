@@ -24,6 +24,7 @@ export interface LocalMembershipControlPortOptions {
 }
 
 export class LocalMembershipControlPort implements CollabAuthorityMembershipControlPort {
+  readonly authorityKind = 'lan' as const;
   private client: Pick<
     MembershipControlClient,
     CollabAuthorityMembershipOperation

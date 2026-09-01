@@ -24,6 +24,7 @@ const RETIRED_CLEANUP_DIRECTORY = '.claudian/collab/retired-cleanups';
 
 export interface PendingLeaveJournalPort {
   list(): Promise<readonly PendingLeaveRecord[]>;
+  listProjectIds(): Promise<readonly CollabProjectId[]>;
   load(projectId: CollabProjectId): Promise<PendingLeaveRecord | null>;
   remove(projectId: CollabProjectId): Promise<boolean>;
   save(record: PendingLeaveRecord): Promise<void>;
@@ -76,20 +77,26 @@ class PendingLeaveJournal implements PendingLeaveJournalPort {
   }
 
   async list(): Promise<readonly PendingLeaveRecord[]> {
+    const projectIds = await this.listProjectIds();
+    const records: PendingLeaveRecord[] = [];
+    for (const projectId of projectIds) {
+      const record = await this.load(projectId);
+      if (record) records.push(record);
+    }
+    return records;
+  }
+
+  async listProjectIds(): Promise<readonly CollabProjectId[]> {
     const directory = await resolveCollabVaultPath(this.vaultRoot, PENDING_LEAVE_DIRECTORY);
     const names = await readdir(directory).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw journalError('pending-leave-list-failed');
     });
-    const records: PendingLeaveRecord[] = [];
-    for (const name of names.sort()) {
-      if (!name.endsWith('.json')) continue;
-      const projectId = name.slice(0, -5);
-      if (!isCollabProjectId(projectId)) throw journalError('pending-leave-name-invalid');
-      const record = await this.load(projectId);
-      if (record) records.push(record);
-    }
-    return records;
+    return names
+      .filter(name => name.endsWith('.json'))
+      .map(name => name.slice(0, -5))
+      .filter(isCollabProjectId)
+      .sort();
   }
 
   async save(record: PendingLeaveRecord): Promise<void> {

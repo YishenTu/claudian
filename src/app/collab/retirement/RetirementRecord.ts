@@ -33,7 +33,6 @@ const KEYS = new Set([
   'cloudRetirementId',
   'cloudServerUrl',
 ]);
-const LAN_RESERVED_CLOUD_KEYS = new Set([...KEYS, 'cloudDevelopmentActorId']);
 function field(value: Value, key: string, max: number, pattern?: RegExp): string {
   const result = value[key];
   if (typeof result !== 'string' || !result || result.length > max || (pattern && !pattern.test(result))) throw new TypeError(`Invalid ${key}`);
@@ -56,12 +55,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     && recordKeys.every(key => KEYS.has(key));
   const legacyShape = recordKeys.length === LEGACY_KEYS.size
     && recordKeys.every(key => LEGACY_KEYS.has(key));
-  const reservedLanShape = recordKeys.length === LAN_RESERVED_CLOUD_KEYS.size
-    && recordKeys.every(key => LAN_RESERVED_CLOUD_KEYS.has(key))
-    && record.cloudDevelopmentActorId === null
-    && record.cloudRetirementId === null
-    && record.cloudServerUrl === null;
-  if ((!currentShape && !legacyShape && !reservedLanShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
+  if ((!currentShape && !legacyShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
   const cleanupStatus = record.cleanupStatus;
   const acknowledgementStatus = record.acknowledgementStatus;
   if ((cleanupStatus !== 'pending' && cleanupStatus !== 'running' && cleanupStatus !== 'failed' && cleanupStatus !== 'complete') || (acknowledgementStatus !== 'pending' && acknowledgementStatus !== 'acknowledged' && acknowledgementStatus !== 'expired')) throw new TypeError('Invalid retirement state');

@@ -258,7 +258,7 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(authorityMutation).toHaveBeenCalledTimes(1);
   });
 
-  it('admits only the declared durable predecessor into an owner handoff', async () => {
+  it('admits only declared durable predecessors into an owner handoff', async () => {
     const localExit = { leaveProject: jest.fn().mockResolvedValue(undefined) };
     const subsystem = new CollabProjectLifecycleSubsystem({
       ...ports(),
@@ -277,15 +277,12 @@ describe('CollabProjectLifecycleSubsystem', () => {
     })).resolves.toBeUndefined();
     expect(localExit.leaveProject).toHaveBeenCalledTimes(1);
 
-    const blockedRetirement = jest.fn().mockResolvedValue('retired');
+    const responsibilityRetirement = jest.fn().mockResolvedValue('retired');
     await expect(subsystem.runRetirementAdoption(
       'project-alpha',
-      blockedRetirement,
-    )).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'lifecycle-owner-pending' },
-    });
-    expect(blockedRetirement).not.toHaveBeenCalled();
+      responsibilityRetirement,
+    )).resolves.toBe('retired');
+    expect(responsibilityRetirement).toHaveBeenCalledTimes(1);
 
     const localExitOwner = new CollabProjectLifecycleSubsystem({
       ...ports(),
@@ -298,6 +295,21 @@ describe('CollabProjectLifecycleSubsystem', () => {
       retirement,
     )).resolves.toBe('retired');
     expect(retirement).toHaveBeenCalledTimes(1);
+
+    const unrelatedOwner = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [{ inspect: async () => 'nonterminal', name: 'host-transfer' }],
+      recoveryStages: [],
+    });
+    const blockedRetirement = jest.fn().mockResolvedValue('retired');
+    await expect(unrelatedOwner.runRetirementAdoption(
+      'project-alpha',
+      blockedRetirement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(blockedRetirement).not.toHaveBeenCalled();
   });
 
   it('routes every locally stateful lifecycle mutation through the Project arbiter', async () => {

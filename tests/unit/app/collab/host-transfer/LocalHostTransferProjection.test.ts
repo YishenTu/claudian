@@ -1,8 +1,8 @@
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
-import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 
-function transitions(): LanAuthorityProjectionTransitionCoordinator {
-  return new LanAuthorityProjectionTransitionCoordinator();
+function transitions(): AuthorityProjectionTransitionCoordinator {
+  return new AuthorityProjectionTransitionCoordinator();
 }
 
 const membership = {

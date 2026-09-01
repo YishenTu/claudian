@@ -554,7 +554,7 @@ describe('CloudAuthorityAdapter', () => {
     }
   });
 
-  it('does not expose unimplemented Step 12 management capabilities', async () => {
+  it('exposes only the implemented Step 13 membership-management capabilities', async () => {
     const request = jest.fn(async () => ({
       body: collabCloudCapabilityDocument(
         STEP_12_CLOUD_MANAGEMENT_CAPABILITIES,
@@ -573,10 +573,169 @@ describe('CloudAuthorityAdapter', () => {
     ]);
 
     for (const capability of STEP_12_CLOUD_MANAGEMENT_CAPABILITIES) {
-      expect(session.supports(capability)).toBe(false);
-      expect(lifecycle.supports(capability)).toBe(false);
+      const expected = [
+        'cloud-imported-membership-claims',
+        'cloud-project-invitations',
+        'cloud-project-leave',
+        'cloud-project-manager-responsibility',
+        'cloud-project-membership',
+      ].includes(capability);
+      expect(session.supports(capability)).toBe(expected);
+      expect(lifecycle.supports(capability)).toBe(expected);
     }
-    expect(session.membership).toBeUndefined();
+    expect(session.membership?.authorityKind).toBe('cloud');
+  });
+
+  it('opens one exact bound Cloud Leave recovery connection', async () => {
+    const readPersonalRef = jest.fn(async () => HEAD_OID);
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument([
+            'cloud-project-leave',
+            'cloud-project-manager-responsibility',
+            'cloud-project-membership',
+            'git-upload-pack',
+            'project-snapshot',
+          ], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      const data = operation === 'getProjectSnapshot'
+        ? cloudSnapshot()
+        : operation === 'listProjectMembers'
+          ? {
+            managerSetGeneration: 7,
+            members: [{
+              bindingState: 'bound',
+              displayName: 'Alice',
+              importedClaimGeneration: null,
+              importedClaimState: 'not-applicable',
+              memberId: ACTOR_ID,
+              membershipRevision: 9,
+              role: 'manager',
+            }],
+            projectId: PROJECT_ID,
+          }
+          : {
+            discardedRequestId: null,
+            leftAt: CREATED_AT,
+            managerSetGeneration: 8,
+            memberId: ACTOR_ID,
+            projectId: PROJECT_ID,
+            promotedSuccessorMemberId: null,
+            status: 'left',
+          };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${String(operation)}`, data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter({
+      readPersonalRef,
+      request,
+    }).connectPendingLeave({
+      authorityGeneration: 1,
+      memberId: ACTOR_ID,
+      personalRef: 'refs/heads/members/member-alice',
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    });
+
+    await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+      currentMember: { id: ACTOR_ID },
+    });
+    await expect(connection.listProjectMembers({ projectId: PROJECT_ID })).resolves
+      .toMatchObject({ managerSetGeneration: 7 });
+    await expect(connection.readPersonalRefOid(
+      'refs/heads/members/member-alice',
+    )).resolves.toBe(HEAD_OID);
+    await expect(connection.leaveProject({
+      expectedManagerSetGeneration: 7,
+      expectedMembershipRevision: 9,
+      expectedOfferRevision: null,
+      expectedPersonalRefOid: HEAD_OID,
+      idempotencyKey: 'leave-cloud-one',
+      managerResponsibilityOfferId: null,
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({ memberId: ACTOR_ID, status: 'left' });
+
+    expect(readPersonalRef).toHaveBeenCalledWith(expect.objectContaining({
+      personalRef: 'refs/heads/members/member-alice',
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    }));
+    connection.dispose();
+  });
+
+  it('opens one exact bound Cloud Retirement recovery connection', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument([
+            'cloud-project-membership',
+            'project-retirement',
+            'project-snapshot',
+          ], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      const data = operation === 'getProjectSnapshot'
+        ? cloudSnapshot()
+        : operation === 'listProjectMembers'
+          ? {
+            managerSetGeneration: 7,
+            members: [{
+              bindingState: 'bound',
+              displayName: 'Alice',
+              importedClaimGeneration: null,
+              importedClaimState: 'not-applicable',
+              memberId: ACTOR_ID,
+              membershipRevision: 9,
+              role: 'manager',
+            }],
+            projectId: PROJECT_ID,
+          }
+          : {
+            acknowledgementRequired: true,
+            kind: 'project-retired',
+            projectId: PROJECT_ID,
+            retiredAt: CREATED_AT,
+            retirementId: 'retirement-cloud-one',
+            terminalExpiresAt: '2026-09-26T00:00:00.000Z',
+          };
+      return {
+        body: collabCloudSuccessEnvelope(`response-${String(operation)}`, data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter({ request })
+      .connectPendingRetirement({
+        authorityGeneration: 1,
+        memberId: ACTOR_ID,
+        personalRef: 'refs/heads/members/member-alice',
+        projectId: PROJECT_ID,
+        serverUrl: 'https://cloud.example.test',
+      });
+
+    await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+      currentMember: { id: ACTOR_ID },
+    });
+    await expect(connection.listProjectMembers({ projectId: PROJECT_ID })).resolves
+      .toMatchObject({ managerSetGeneration: 7 });
+    await expect(connection.retireProject({
+      expectedAuthorityGeneration: 1,
+      expectedMainOid: HEAD_OID,
+      idempotencyKey: 'retire-cloud-one',
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({ retirementId: 'retirement-cloud-one' });
+    connection.dispose();
   });
 
   it('reads an unbound lifecycle snapshot using only the server-established Member identity', async () => {

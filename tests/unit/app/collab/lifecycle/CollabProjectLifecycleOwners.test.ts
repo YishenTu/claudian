@@ -10,6 +10,7 @@ import {
 function stores() {
   return {
     cloudBootstrapTransitions: { inspectLifecycleOwner: jest.fn().mockResolvedValue('absent') },
+    cloudRetirementIntents: { load: jest.fn().mockResolvedValue(null) },
     hostTransferRecovery: { load: jest.fn().mockResolvedValue(null) },
     localCleanup: { load: jest.fn().mockResolvedValue(null) },
     managerReceipts: { load: jest.fn().mockResolvedValue(null) },
@@ -73,6 +74,25 @@ describe('CollabProjectLifecycleOwners', () => {
     await expect(owner.inspect('project-alpha')).resolves.toBe('nonterminal');
   });
 
+  it('classifies Cloud receipt phases without reopening a submitted mutation as a proposal', async () => {
+    const backing = stores();
+    const owner = createCollabProjectLifecycleDurableOwners(backing, () => true)
+      .find(candidate => candidate.name === 'manager-responsibility')!;
+    const receipt = (phase: 'prepared' | 'submitted' | 'settled', state: string) => ({
+      phase,
+      offer: { offerId: 'offer-cloud', state },
+    } as never);
+
+    backing.managerReceipts.load.mockResolvedValue(receipt('prepared', 'offered'));
+    await expect(owner.inspect('project-alpha')).resolves.toBe('proposal');
+    backing.managerReceipts.load.mockResolvedValue(receipt('submitted', 'offered'));
+    await expect(owner.inspect('project-alpha')).resolves.toBe('nonterminal');
+    backing.managerReceipts.load.mockResolvedValue(receipt('settled', 'acknowledged'));
+    await expect(owner.inspect('project-alpha')).resolves.toBe('nonterminal');
+    backing.managerReceipts.load.mockResolvedValue(receipt('settled', 'declined'));
+    await expect(owner.inspect('project-alpha')).resolves.toBe('terminal');
+  });
+
   it('lets a pending Leave durably subsume an acknowledged Manager receipt', async () => {
     const backing = stores();
     backing.managerReceipts.load.mockResolvedValue({ status: 'acknowledged' });
@@ -117,11 +137,17 @@ describe('CollabProjectLifecycleOwners', () => {
   it('lets a durable retirement absorb an overlapping pending Leave', async () => {
     const backing = stores();
     backing.pendingLeaves.load.mockResolvedValue({ phase: 'recovery-required' });
+    backing.managerReceipts.load.mockResolvedValue({
+      phase: 'submitted',
+      offer: { offerId: 'offer-cloud', state: 'offered' },
+    });
     backing.retirements.loadRetirementRecord.mockResolvedValue({ cleanupStatus: 'pending' });
     const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
+    const managerResponsibility = owners.find(owner => owner.name === 'manager-responsibility')!;
     const localExit = owners.find(owner => owner.name === 'local-exit')!;
     const retirement = owners.find(owner => owner.name === 'retirement')!;
 
+    await expect(managerResponsibility.inspect('project-alpha')).resolves.toBe('terminal');
     await expect(localExit.inspect('project-alpha')).resolves.toBe('terminal');
     await expect(retirement.inspect('project-alpha')).resolves.toBe('nonterminal');
   });
@@ -136,6 +162,18 @@ describe('CollabProjectLifecycleOwners', () => {
       .find(owner => owner.name === 'retirement')!;
 
     await expect(retirement.inspect('project-alpha')).resolves.toBe('nonterminal');
+  });
+
+  it('treats an active Cloud Retire intent as the existing retirement owner', async () => {
+    const backing = stores();
+    const retirement = createCollabProjectLifecycleDurableOwners(backing, () => true)
+      .find(owner => owner.name === 'retirement')!;
+
+    backing.cloudRetirementIntents.load.mockResolvedValue({ phase: 'submitted' });
+    await expect(retirement.inspect('project-alpha')).resolves.toBe('nonterminal');
+
+    backing.cloudRetirementIntents.load.mockResolvedValue({ phase: 'rejected' });
+    await expect(retirement.inspect('project-alpha')).resolves.toBe('terminal');
   });
 
   it('keeps foreign Host-transfer and retirement journals out of local lifecycle ownership', async () => {

@@ -7,7 +7,7 @@ import type { ProjectOperationSuspension } from '@/app/collab/ProjectOperationAd
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 interface AuthorityTransferAdmissionPort {
-  drainAdmittedOperations(): Promise<void>;
+  drainAdmittedOperations(projectId: CollabProjectId): Promise<void>;
   resumeProjectAdmission(suspension: ProjectOperationSuspension): boolean;
   suspendProjectAdmission(projectId: CollabProjectId): ProjectOperationSuspension;
 }
@@ -61,7 +61,7 @@ export class AuthorityTransferLocalFence {
         throw error;
       }
     }
-    await this.options.admission.drainAdmittedOperations();
+    await this.options.admission.drainAdmittedOperations(projectId);
     await operation();
     await this.resume(projectId, suspension);
   }

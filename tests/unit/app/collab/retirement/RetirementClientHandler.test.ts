@@ -292,6 +292,39 @@ describe('RetirementClientHandler', () => {
     expect(cleanup.cleanup).not.toHaveBeenCalled();
   });
 
+  it('rejects an out-of-order Cloud terminal result with a different retirement id', async () => {
+    const store = new MemoryProjectionStore([]);
+    await store.transitionProjectToRetired({
+      ...pendingRecord(),
+      cloudRetirementId: 'retirement-cloud-one',
+      cloudServerUrl: 'https://cloud.example.test/',
+      hostCaCertificatePem: null,
+      hostCaFingerprint: null,
+      hostEndpoint: null,
+      memberCredential: null,
+    });
+    const cleanup = cleanupPort([]);
+    const handler = new RetirementClientHandler(
+      store,
+      {
+        closeProject: jest.fn(async (_projectId) => undefined),
+        drainProject: jest.fn(async (_projectId) => undefined),
+      },
+      { schedule: jest.fn((_projectId) => undefined) },
+      cleanup,
+    );
+
+    await expect(handler.handle({
+      projectId: 'project-a',
+      retiredAt: RETIRED_AT,
+      retirementId: 'retirement-cloud-two',
+    }, 'terminal-fallback')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'retirement-result-changed' },
+    });
+    expect(cleanup.cleanup).not.toHaveBeenCalled();
+  });
+
   it('retains failed cleanup state and resumes the same cleanup operation', async () => {
     const store = new MemoryProjectionStore([]);
     const cleanup = cleanupPort([]);
@@ -380,6 +413,51 @@ describe('RetirementClientHandler', () => {
       choice: 'keep-files',
       phase: 'choice-applied',
       purpose: 'retire',
+    });
+  });
+
+  it('adopts a Cloud terminal race from the surviving Cloud Leave journal', async () => {
+    const store = new MemoryProjectionStore([]);
+    store.membership = null;
+    const pending = cloudPendingLeaveRecord();
+    const handler = new RetirementClientHandler(
+      store,
+      {
+        closeProject: jest.fn(async () => undefined),
+        drainProject: jest.fn(async () => undefined),
+      },
+      { schedule: jest.fn() },
+      cleanupPort([]),
+      {
+        createOperationId: () => 'retire-local-cloud',
+        now: () => new Date(RETIRED_AT),
+        pendingLeaves: {
+          load: jest.fn(async () => pending),
+          remove: jest.fn(async () => true),
+        },
+        retiredCleanupRecords: {
+          load: jest.fn(async () => null),
+          save: jest.fn(async () => undefined),
+        },
+      },
+    );
+
+    await handler.handle({
+      projectId: 'project-a',
+      retiredAt: RETIRED_AT,
+      retirementId: 'retirement-cloud-one',
+    }, 'event');
+
+    expect(store.lastProjectionSeed).toEqual({
+      authorityKind: 'cloud',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      name: 'Alpha',
+      workspacePath: 'workspace/project-a',
+    });
+    expect(store.retirement).toMatchObject({
+      cloudRetirementId: 'retirement-cloud-one',
+      cloudServerUrl: 'https://cloud.example.test/operator',
+      memberId: 'member-a',
     });
   });
 
@@ -568,6 +646,40 @@ function pendingLeaveRecord(): PendingLeaveRecord {
     projectId: 'project-a',
     projectName: 'Alpha',
     schemaVersion: 2,
+    updatedAt: RETIRED_AT,
+    workspacePath: 'workspace/project-a',
+  };
+}
+
+function cloudPendingLeaveRecord(): PendingLeaveRecord {
+  return {
+    authorityGeneration: 3,
+    authorityKind: 'cloud',
+    cleanupChoice: 'keep-files',
+    cleanupMarkerNonce: 'n'.repeat(43),
+    createdAt: RETIRED_AT,
+    idempotencyKey: 'leave-cloud-request',
+    kind: 'pending-leave',
+    localCleanupComplete: true,
+    localRole: 'member',
+    memberId: 'member-a',
+    operationId: 'leave-cloud-cleanup',
+    personalRef: 'refs/heads/members/member-a',
+    phase: 'submitted',
+    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectId: 'project-a',
+    projectName: 'Alpha',
+    request: {
+      expectedManagerSetGeneration: 7,
+      expectedMembershipRevision: 9,
+      expectedOfferRevision: null,
+      expectedPersonalRefOid: 'a'.repeat(40),
+      idempotencyKey: 'leave-cloud-request',
+      managerResponsibilityOfferId: null,
+      projectId: 'project-a',
+    },
+    schemaVersion: 3,
+    serverUrl: 'https://cloud.example.test/operator',
     updatedAt: RETIRED_AT,
     workspacePath: 'workspace/project-a',
   };

@@ -13,7 +13,11 @@ import {
   type LocalCleanupRecord,
 } from '@/app/collab/exit/LocalCleanupRecord';
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
-import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
+import {
+  isCloudPendingLeaveRecord,
+  isLanPendingLeaveRecord,
+  type PendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
 import type {
   RetirementAcknowledgementScheduler,
   RetirementClientStore,
@@ -129,7 +133,10 @@ export class RetirementClientHandler {
   ): Promise<void> {
     const existing = await this.store.loadRetirementRecord(result.projectId);
     if (existing) {
-      if (existing.retiredAt !== result.retiredAt) {
+      if (
+        existing.retiredAt !== result.retiredAt
+        || existing.cloudRetirementId !== (result.retirementId ?? null)
+      ) {
         throw new CollabError({
           code: 'authority-integrity-error',
           safeContext: { reason: 'retirement-result-changed' },
@@ -167,7 +174,20 @@ export class RetirementClientHandler {
     const pendingLeave = membership
       ? null
       : await this.pendingLeaves?.load(result.projectId) ?? null;
+    const pendingLanLeave = pendingLeave && isLanPendingLeaveRecord(pendingLeave)
+      ? pendingLeave
+      : null;
+    const pendingCloudLeave = pendingLeave && isCloudPendingLeaveRecord(pendingLeave)
+      ? pendingLeave
+      : null;
     if (!membership && !pendingLeave) throw new CollabError({ code: 'project-not-found' });
+    if (pendingCloudLeave && !result.retirementId) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['retry', 'open-diagnostics'],
+        safeContext: { reason: 'cloud-retirement-acknowledgement-unavailable' },
+      });
+    }
     const createdAt = maxTimestamp(this.now().toISOString(), result.retiredAt);
     const pendingLeaveCleanupComplete = pendingLeave
       ? await this.adoptPendingLeaveCleanup(pendingLeave)
@@ -177,18 +197,18 @@ export class RetirementClientHandler {
       acknowledgementStatus: 'pending',
       cleanupOperationId: this.createOperationId(),
       cleanupStatus: pendingLeaveCleanupComplete ? 'complete' : 'pending',
-      cloudRetirementId: cloudMembership ? result.retirementId : null,
-      cloudServerUrl: cloudMembership?.authority.serverUrl ?? null,
+      cloudRetirementId: cloudMembership || pendingCloudLeave ? result.retirementId : null,
+      cloudServerUrl: cloudMembership?.authority.serverUrl ?? pendingCloudLeave?.serverUrl ?? null,
       createdAt,
       hostCaCertificatePem: lanMembership?.authority.hostCaCertificatePem
-        ?? pendingLeave?.hostCaCertificatePem
+        ?? pendingLanLeave?.hostCaCertificatePem
         ?? null,
       hostCaFingerprint: lanMembership?.authority.hostCaFingerprint
-        ?? pendingLeave?.hostCaFingerprint
+        ?? pendingLanLeave?.hostCaFingerprint
         ?? null,
-      hostEndpoint: lanMembership?.authority.endpoint ?? pendingLeave?.hostEndpoint ?? null,
+      hostEndpoint: lanMembership?.authority.endpoint ?? pendingLanLeave?.hostEndpoint ?? null,
       kind: 'retirement',
-      memberCredential: lanMembership?.member.credential ?? pendingLeave?.memberCredential ?? null,
+      memberCredential: lanMembership?.member.credential ?? pendingLanLeave?.memberCredential ?? null,
       memberId: membership?.member.id ?? pendingLeave?.memberId,
       projectId: result.projectId,
       retiredAt: result.retiredAt,
@@ -294,7 +314,7 @@ export class RetirementClientHandler {
     record: PendingLeaveRecord,
   ): CollabRetiredProjectProjectionSeed {
     return {
-      authorityKind: 'lan',
+      authorityKind: isCloudPendingLeaveRecord(record) ? 'cloud' : 'lan',
       createdAt: record.projectCreatedAt,
       name: record.projectName,
       workspacePath: record.workspacePath,

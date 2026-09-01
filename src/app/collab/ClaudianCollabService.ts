@@ -29,6 +29,9 @@ import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import {
+  AuthorityProjectionTransitionCoordinator,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
+import {
   bindLegacyCloudBootstrapSourceOwner,
 } from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBootstrapTransitionStore';
@@ -98,9 +101,6 @@ import {
 import type {
   CollabTerminalProjectService,
 } from '@/app/collab/lan/routes/RouteTypes';
-import {
-  LanAuthorityProjectionTransitionCoordinator,
-} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import type {
   CollabProjectLifecycleAdmission,
   CollabProjectLifecycleAuthorityAdmission,
@@ -225,7 +225,7 @@ export class ClaudianCollabService {
   readonly lanHost: LanHostCoordinator;
   readonly local: CollabLocalFoundation;
   readonly reconnect: ReconnectProjectCoordinator;
-  readonly #authorityProjectionTransitions = new LanAuthorityProjectionTransitionCoordinator();
+  readonly #authorityProjectionTransitions = new AuthorityProjectionTransitionCoordinator();
   private readonly authorityFoundations = new Map<
     CollabProjectId,
     Promise<CollabAuthorityFoundation>
@@ -656,6 +656,13 @@ export class ClaudianCollabService {
     this.#assertOpen();
     const capability = await this.hostInstallations.createOwned(projectId);
     return this.#openOwnedAuthority(capability);
+  }
+
+  runAuthorityProjectionTransition<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.#authorityProjectionTransitions.run(projectId, operation);
   }
 
   async openAuthority(projectId: CollabProjectId): Promise<CollabAuthorityFoundation> {
