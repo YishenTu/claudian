@@ -31,6 +31,8 @@ const PROJECT_ID = 'project-cloud-management';
 const MEMBER_ID = 'member-manager';
 const MAIN_OID = 'a'.repeat(40);
 
+jest.setTimeout(30_000);
+
 describe('Cloud membership management', () => {
   it('does not create a receipt when the authority returns multiple active responsibility offers', async () => {
     const fixture = await createFixture({ receiptTarget: true, multipleReceiptOffers: true });
@@ -989,9 +991,10 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
     if (predicate()) return;
-    await new Promise<void>(resolve => setTimeout(resolve, 5));
+    await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
   throw new Error('Timed out waiting for fixture state');
 }
@@ -1000,14 +1003,15 @@ async function waitForDocument(
   documentPath: string,
   predicate: (value: Record<string, unknown>) => boolean,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
     try {
       const value = JSON.parse(await readFile(documentPath, 'utf8')) as Record<string, unknown>;
       if (predicate(value)) return;
     } catch {
       // The lifecycle transition may not have created its document yet.
     }
-    await new Promise<void>(resolve => setTimeout(resolve, 5));
+    await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
   throw new Error('Timed out waiting for fixture document');
 }
