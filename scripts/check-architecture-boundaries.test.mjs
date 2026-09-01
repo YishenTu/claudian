@@ -32,12 +32,16 @@ function listTypeScriptFiles(root) {
   return files;
 }
 
+function normalizeRepositoryPath(filePath) {
+  return filePath.replaceAll('\\', '/');
+}
+
 function findMatches(roots, pattern) {
   const matches = [];
   for (const root of roots) {
     for (const file of listTypeScriptFiles(root)) {
       if (pattern.test(fs.readFileSync(file, 'utf8'))) {
-        matches.push(path.relative(process.cwd(), file));
+        matches.push(normalizeRepositoryPath(path.relative(process.cwd(), file)));
       }
     }
   }
@@ -99,7 +103,7 @@ function inspectForbiddenSymbolInventory(entries, pattern, allowedOccurrences) {
 function findForbiddenSymbolInventoryViolations(pattern, allowedOccurrences) {
   return inspectForbiddenSymbolInventory(
     listTypeScriptFiles(sourceRoot).map(file => ({
-      file: path.relative(process.cwd(), file),
+      file: normalizeRepositoryPath(path.relative(process.cwd(), file)),
       source: fs.readFileSync(file, 'utf8'),
     })),
     pattern,
@@ -277,6 +281,11 @@ const allowedProviderAppImports = new Set([
     path.join(appRoot, 'settings', 'ClaudianSettingsStorage'),
   ),
 ]);
+
+test('repository paths use POSIX separators for stable cross-platform comparison', () => {
+  assert.equal(normalizeRepositoryPath('src\\main.ts'), 'src/main.ts');
+  assert.equal(normalizeRepositoryPath('src/main.ts'), 'src/main.ts');
+});
 
 test('concrete provider pattern covers every registered provider directory', () => {
   assert.notEqual(concreteProviderNames.length, 0);
@@ -567,7 +576,9 @@ test('tab runtime construction stays private to the factory boundary', () => {
     new RegExp(`\\b${assemblySymbol}\\b`),
   ).sort();
 
-  assert.deepEqual(assemblyReferences, [path.relative(process.cwd(), factorySource)]);
+  assert.deepEqual(assemblyReferences, [
+    normalizeRepositoryPath(path.relative(process.cwd(), factorySource)),
+  ]);
   assert.equal(fs.existsSync(tabSource), false);
 
   const factory = fs.readFileSync(factorySource, 'utf8');
@@ -642,8 +653,8 @@ test('only TabRuntimeFactory can register runtime resource ownership', () => {
   ).sort();
 
   assert.deepEqual(registrationReferences, [
-    path.relative(process.cwd(), factorySource),
-    path.relative(process.cwd(), lifecycleSource),
+    normalizeRepositoryPath(path.relative(process.cwd(), factorySource)),
+    normalizeRepositoryPath(path.relative(process.cwd(), lifecycleSource)),
   ].sort());
 });
 
@@ -764,7 +775,7 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     ...listTypeScriptFiles(path.join(appRoot, 'collab')),
     ...listTypeScriptFiles(path.join(featuresRoot, 'collab')),
   ].map(file => ({
-    file: path.relative(process.cwd(), file),
+    file: normalizeRepositoryPath(path.relative(process.cwd(), file)),
     source: fs.readFileSync(file, 'utf8'),
   }));
 
@@ -879,6 +890,10 @@ test('Collab consumer CI does not retain protocol producer gates', () => {
   assert.doesNotMatch(workflow, /protocol-contract:|verify:protocol|check:protocol-compatibility/);
   assert.doesNotMatch(workflow, /packages\/collab-protocol/);
   assert.match(crossPlatformJob, /npm run build/);
+  assert.match(
+    crossPlatformJob,
+    /name: Run Windows architecture boundaries\s+if: runner\.os == 'Windows'\s+run: npm run test:architecture/,
+  );
   assert.match(crossPlatformJob, /npm run test:cross-platform-collab/);
 });
 
@@ -970,10 +985,20 @@ test('TypeScript resolves the Collab protocol through the installed registry pac
     parsed.options,
     ts.sys,
   ).resolvedModule;
+  const expectedFileName = path.join(
+    process.cwd(),
+    'node_modules',
+    '@claudian-collab',
+    'protocol',
+    'dist',
+    'index.d.ts',
+  );
 
   assert.equal(
-    resolution?.resolvedFileName,
-    path.join(process.cwd(), 'node_modules', '@claudian-collab', 'protocol', 'dist', 'index.d.ts'),
+    resolution?.resolvedFileName
+      ? normalizeRepositoryPath(resolution.resolvedFileName)
+      : undefined,
+    normalizeRepositoryPath(expectedFileName),
   );
 });
 

@@ -182,6 +182,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run Windows architecture boundaries
+        if: runner.os == 'Windows'
+        run: npm run test:architecture
+
       - name: Build production plugin
         run: npm run build
 
