@@ -86,6 +86,7 @@ describe('G3 local Project milestone gate', () => {
       ),
       getConfiguredGitPath: () => configuredGitPath,
       installationKey: TEST_INSTALLATION_A,
+      lanHost: { portCandidates: [0] },
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
@@ -464,7 +465,9 @@ describe('G3 local Project milestone gate', () => {
       'startAuthorityTransferRoute',
     );
     readSnapshot.mockRejectedValueOnce(new Error('simulated Cloud snapshot outage'));
-    await expect(reopened.feature.restoreLifecycle()).rejects.toThrow();
+    await expect(reopened.feature.restoreLifecycle()).rejects.toThrow(
+      'simulated Cloud snapshot outage',
+    );
     expect(restoreTerminalRoute).toHaveBeenCalledTimes(1);
     await expect(reopened.feature.restoreLifecycle()).resolves.toBeUndefined();
     const convergedMembership = await reopenedFoundation.local.projects.loadMembership(PROJECT_ID);

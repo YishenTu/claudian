@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   access,
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -1375,6 +1376,36 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
       transferId: 'transfer-prepared-target',
     }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+  });
+
+  it('retains Cloud-to-LAN listener-lock ownership until cleanup can be retried', async () => {
+    if (process.platform === 'win32') return;
+    const preparation = await coordinator.prepareAuthorityTransferTarget();
+    const lockPath = hostLockPath(root);
+    const lockDirectory = path.dirname(hostLockPath(root));
+
+    await chmod(lockPath, 0o000);
+    try {
+      await expect(preparation.dispose()).rejects.toMatchObject({
+        safeContext: { reason: 'vault-host-lock-read-failed' },
+      });
+    } finally {
+      await chmod(lockPath, 0o600);
+    }
+    expect(await readFile(lockPath, 'utf8')).toContain(`"pid":${process.pid}`);
+
+    await chmod(lockDirectory, 0o500);
+    try {
+      await expect(preparation.dispose()).rejects.toMatchObject({
+        safeContext: { reason: 'vault-host-lock-release-failed' },
+      });
+    } finally {
+      await chmod(lockDirectory, 0o700);
+    }
+    expect(await readFile(lockPath, 'utf8')).toContain(`"pid":${process.pid}`);
+
+    await expect(preparation.dispose()).resolves.toBeUndefined();
+    await expect(access(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('replaces ordinary authority-transfer routes with a restart-safe terminal responder', async () => {
