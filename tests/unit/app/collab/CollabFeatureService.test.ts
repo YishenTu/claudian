@@ -28,6 +28,9 @@ import {
 import type { CollabLocalProjectIndex } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import {
+  encodeCloudMembershipClaimInvitation,
+} from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabPublishOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -1459,6 +1462,48 @@ describe('CollabFeatureService', () => {
     expect(publish.reconnectProject).toHaveBeenCalledWith(request, {
       signal: expect.any(AbortSignal),
     });
+    expect(service.state.activeOperation).toBeUndefined();
+  });
+
+  it('routes an imported Cloud claim through claimant convergence instead of ordinary reconnect or Join', async () => {
+    const publish = publication();
+    const claim = {
+      claim: Buffer.alloc(32, 4).toString('base64url'),
+      claimGeneration: 4,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      expiresAt: '2026-10-31T00:00:00.000Z',
+      memberId: 'member-host',
+      projectId: 'project-alpha',
+      secretReplayExpiresAt: '2026-10-31T00:00:00.000Z',
+      targetAuthorityGeneration: 2,
+      transferId: 'transfer-manager-reissued',
+    };
+    const invitation = {
+      claim,
+      kind: 'cloud-membership-claim' as const,
+      serverUrl: 'https://cloud.example.test/',
+    };
+    const authorityTransfer = {
+      redeemManagerReissuedClaim: jest.fn(async () => undefined),
+    };
+    const service = createService({ authorityTransfer, publication: publish });
+
+    await expect(service.reconnectProject({
+      encodedInvitation: encodeCloudMembershipClaimInvitation({
+        claim: invitation.claim,
+        serverUrl: invitation.serverUrl,
+      }),
+      projectId: 'project-alpha',
+    })).resolves.toMatchObject({
+      status: 'success',
+      value: { id: 'project-alpha' },
+    });
+
+    expect(authorityTransfer.redeemManagerReissuedClaim).toHaveBeenCalledWith(
+      invitation,
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(publish.reconnectProject).not.toHaveBeenCalled();
     expect(service.state.activeOperation).toBeUndefined();
   });
 

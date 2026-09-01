@@ -200,6 +200,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       projectId: PROJECT_ID,
       status: input.status,
       targetCredential: null,
+      variant: 'source-issued',
     } as AuthorityTransferClaimantRecord);
 
     expect(membership).toMatchObject({
@@ -421,6 +422,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       projectId: PROJECT_ID,
       status: completed('cloud-to-lan'),
       targetCredential: credential,
+      variant: 'source-issued',
     } as AuthorityTransferClaimantRecord);
 
     expect(membership).toMatchObject({

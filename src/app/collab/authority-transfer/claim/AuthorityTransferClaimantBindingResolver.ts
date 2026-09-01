@@ -64,6 +64,35 @@ export class AuthorityTransferClaimantBindingResolver {
     if (!membership || membership.member.id !== record.memberId) {
       throw resolutionError('authority-transfer-claimant-membership-invalid');
     }
+    if (record.variant === 'manager-reissued') {
+      if (membership.member.personalRef !== record.memberPersonalRef) {
+        throw resolutionError('authority-transfer-claimant-membership-invalid');
+      }
+      if (isCollabLocalCloudMembership(membership)) {
+        if (
+          record.phase !== 'target-confirmed'
+          && record.phase !== 'membership-converged'
+          && record.phase !== 'completed'
+        ) throw resolutionError('authority-transfer-claimant-phase-invalid');
+        if (
+          membership.authority.authorityGeneration
+            !== record.descriptor.targetAuthorityGeneration
+          || membership.authority.serverUrl !== record.serverUrl
+        ) throw resolutionError('authority-transfer-claimant-target-invalid');
+        return { direction: 'lan-to-cloud', mode: 'local-only' };
+      }
+      if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority) {
+        throw resolutionError('authority-transfer-claimant-source-invalid');
+      }
+      return {
+        cloudSession: await this.options.createCloudConnection({
+          projectId: record.projectId,
+          serverUrl: record.serverUrl,
+        }),
+        direction: 'lan-to-cloud',
+        mode: 'manager-reissued',
+      };
+    }
     const requiresSource = authorityTransferClaimantRequiresSource(record, this.now());
     if (record.status.direction === 'lan-to-cloud') {
       if (isCollabLocalCloudMembership(membership)) {
