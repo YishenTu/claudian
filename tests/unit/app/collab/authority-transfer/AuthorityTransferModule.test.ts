@@ -91,6 +91,7 @@ class AuthorityTransferModule extends ProductionAuthorityTransferModule {
 function recoverableClaimantRecord(input: Readonly<{
   direction?: 'cloud-to-lan' | 'lan-to-cloud';
   expiresAt?: string;
+  operationIntentId?: string;
   phase?: SourceIssuedAuthorityTransferClaimantPhase;
 }> = {}): SourceIssuedAuthorityTransferClaimantRecord {
   const direction = input.direction ?? 'lan-to-cloud';
@@ -170,7 +171,7 @@ function recoverableClaimantRecord(input: Readonly<{
         }
       : null,
     memberId: 'member-host',
-    operationIntentId: 'intent-claimant-recovery',
+    operationIntentId: input.operationIntentId ?? 'intent-claimant-recovery',
     phase,
     projectId: PROJECT_ID,
     redemptionReceipt: phaseIndex >= 3
@@ -178,7 +179,7 @@ function recoverableClaimantRecord(input: Readonly<{
           checkpointSha256,
           claimSha256: createHash('sha256').update(claimValue, 'utf8').digest('hex'),
           memberId: 'member-host',
-          operationIntentId: 'intent-claimant-recovery',
+          operationIntentId: input.operationIntentId ?? 'intent-claimant-recovery',
           projectId: PROJECT_ID,
           receiptId: 'receipt-claimant-recovery',
           receiptKeyId: 'receipt-key-recovery',
@@ -809,7 +810,9 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('prepares a product-owned Cloud-to-LAN target without exposing raw effects', async () => {
-    const dispose = jest.fn();
+    const dispose = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target cleanup failure'))
+      .mockResolvedValue(undefined);
     const prepareTarget = jest.fn(async () => ({
       targetUrl: 'https://192.168.1.20:54545',
     }));
@@ -855,8 +858,9 @@ describe('AuthorityTransferModule', () => {
 
     expect(binding.targetUrl).toBe('https://192.168.1.20:54545');
     expect(prepareTarget).toHaveBeenCalledWith('https://192.168.1.20:54545');
-    binding.dispose();
-    expect(dispose).toHaveBeenCalledTimes(1);
+    await expect(binding.dispose()).rejects.toThrow('simulated target cleanup failure');
+    await expect(binding.dispose()).resolves.toBeUndefined();
+    expect(dispose).toHaveBeenCalledTimes(2);
   });
 
   it('persists a selected non-Manager target before listener effects and freezes Manager begin before send', async () => {
@@ -1614,7 +1618,106 @@ describe('AuthorityTransferModule', () => {
     });
   });
 
-  it('releases a withdrawn preparation even when listener disposal fails', async () => {
+  it('releases failed pre-publication target cleanup before rebuilding the preparation', async () => {
+    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    const persistence = {
+      loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+        targetEntry = entry;
+        return entry;
+      }),
+      publishCloudToLanTargetEntry: jest.fn()
+        .mockRejectedValueOnce(new Error('simulated descriptor persistence failure'))
+        .mockImplementation(async (
+          entry: CloudToLanTargetEntryRecord,
+          descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        ) => {
+          targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+          return targetEntry;
+        }),
+    } as unknown as AuthorityTransferPersistence;
+    const connections = [0, 1].map(() => ({
+      authorityGeneration: 1,
+      dispose: jest.fn(),
+      lifecycle: { authorityTransfer: jest.fn() },
+      listProjectMembers: jest.fn(),
+      memberId: 'member-target',
+      personalRef: 'refs/heads/members/member-target',
+      projectId: PROJECT_ID,
+      readSnapshot: jest.fn(async () => ({
+        currentMember: {
+          displayName: 'Target',
+          id: 'member-target',
+          personalRef: 'refs/heads/members/member-target',
+          role: 'member',
+        },
+        project: { authorityGeneration: 1, id: PROJECT_ID },
+      })),
+      serverUrl: 'https://cloud.example.test/',
+    }));
+    const firstDispose = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated listener cleanup failure'))
+      .mockResolvedValue(undefined);
+    const targetDisposals = [firstDispose, jest.fn(async () => undefined)];
+    let connectionIndex = 0;
+    let targetIndex = 0;
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: () => Promise.resolve([]),
+        load: () => Promise.resolve(null),
+        remove: () => Promise.resolve(false),
+        save: () => Promise.resolve(),
+      },
+      convergence: {} as never,
+      createCloudToLanConnection: async () => connections[connectionIndex++] as never,
+      createCloudToLanTarget: () => ({
+        acceptanceRequest: jest.fn(),
+        activate: jest.fn(),
+        cancelStaging: jest.fn(),
+        dispose: targetDisposals[targetIndex++],
+        prepareTarget: jest.fn(async () => ({
+          caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+          caFingerprint: 'c'.repeat(64),
+          targetUrl: 'https://192.168.1.20:54545',
+        })),
+        stage: jest.fn(),
+      }),
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+        runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      persistence,
+    });
+
+    await expect(module.prepareCloudToLanTarget({
+      operationIntentId: 'intent-failed-target-publication',
+      projectId: PROJECT_ID,
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: 'intent-failed-target-publication',
+        status: 'recovery-required',
+      },
+    });
+    await expect(module.prepareCloudToLanTarget({
+      operationIntentId: 'intent-failed-target-publication',
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({
+      preparationId: 'intent-failed-target-publication',
+    });
+
+    expect(firstDispose).toHaveBeenCalledTimes(2);
+    expect(connections[0].dispose).toHaveBeenCalledTimes(2);
+    expect(connections[1].dispose).not.toHaveBeenCalled();
+  });
+
+  it('retains a withdrawn preparation until listener disposal can be retried', async () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
@@ -1707,15 +1810,35 @@ describe('AuthorityTransferModule', () => {
       preparationId: 'intent-first-target-preparation',
       projectId: PROJECT_ID,
     }))
-      .rejects.toThrow('listener-dispose-failed');
-    await module.prepareCloudToLanTarget({
+      .rejects.toMatchObject({
+        result: {
+          durableProgress: true,
+          operationId: 'intent-first-target-preparation',
+          status: 'recovery-required',
+        },
+      });
+    await expect(module.prepareCloudToLanTarget({
       operationIntentId: 'intent-replacement-target-preparation',
       projectId: PROJECT_ID,
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: 'intent-first-target-preparation',
+        status: 'recovery-required',
+      },
     });
+    await expect(module.withdrawCloudToLanTarget({
+      preparationId: 'intent-first-target-preparation',
+      projectId: PROJECT_ID,
+    })).resolves.toBeUndefined();
+    await expect(module.prepareCloudToLanTarget({
+      operationIntentId: 'intent-replacement-target-preparation',
+      projectId: PROJECT_ID,
+    })).resolves.toBeDefined();
     await module.close();
 
-    expect(firstDispose).toHaveBeenCalledTimes(1);
-    expect(connections[0].dispose).toHaveBeenCalledTimes(1);
+    expect(firstDispose).toHaveBeenCalledTimes(2);
+    expect(connections[0].dispose).toHaveBeenCalledTimes(2);
     expect(connections[1].dispose).toHaveBeenCalledTimes(1);
   });
 
@@ -1769,9 +1892,9 @@ describe('AuthorityTransferModule', () => {
       })),
       serverUrl: 'https://cloud.example.test/',
     };
-    const disposeTarget = jest.fn(async () => {
-      throw new Error('listener-dispose-failed');
-    });
+    const disposeTarget = jest.fn()
+      .mockRejectedValueOnce(new Error('listener-dispose-failed'))
+      .mockResolvedValue(undefined);
     const module = new AuthorityTransferModule({
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
@@ -1827,13 +1950,23 @@ describe('AuthorityTransferModule', () => {
     await expect(module.withdrawCloudToLanTarget({
       preparationId: descriptor.preparationId,
       projectId: PROJECT_ID,
-    })).rejects.toThrow('listener-dispose-failed');
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: descriptor.preparationId,
+        status: 'recovery-required',
+      },
+    });
+    await expect(module.withdrawCloudToLanTarget({
+      preparationId: descriptor.preparationId,
+      projectId: PROJECT_ID,
+    })).resolves.toBeUndefined();
 
     expect(targetEntry).toMatchObject({ phase: 'withdrawn' });
-    expect(disposeTarget).toHaveBeenCalledTimes(1);
-    expect(connection.dispose).toHaveBeenCalledTimes(1);
+    expect(disposeTarget).toHaveBeenCalledTimes(2);
+    expect(connection.dispose).toHaveBeenCalledTimes(2);
     await module.close();
-    expect(disposeTarget).toHaveBeenCalledTimes(1);
+    expect(disposeTarget).toHaveBeenCalledTimes(2);
   });
 
   it('classifies an existing target binding retry failure after durable progress', async () => {
@@ -1873,7 +2006,10 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: completedStatus,
     });
-    const targetEntry = handoffCloudToLanTargetEntry(published, physical);
+    const targetEntry = handoffCloudToLanTargetEntry(
+      published,
+      physical,
+    );
     let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
       markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
         createdAt: collectingStatus.createdAt,
@@ -1961,7 +2097,7 @@ describe('AuthorityTransferModule', () => {
     expect(createCloudToLanConnection).toHaveBeenCalledTimes(1);
   });
 
-  it('releases the target listener and Cloud session when Manager cancellation settlement fails', async () => {
+  it('retries retained target cleanup when cancelled acceptance settlement fails', async () => {
     const collectingStatus = proposal({
       direction: 'cloud-to-lan',
       sourceAuthority: { generation: 1, kind: 'cloud' },
@@ -1999,7 +2135,10 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: cancelledStatus,
     });
-    const targetEntry = handoffCloudToLanTargetEntry(published, physical);
+    let targetEntry: CloudToLanTargetEntryRecord | null = handoffCloudToLanTargetEntry(
+      published,
+      physical,
+    );
     let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
       markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
         createdAt: collectingStatus.createdAt,
@@ -2011,7 +2150,9 @@ describe('AuthorityTransferModule', () => {
       })),
       collectingStatus,
     );
-    const completeTerminalCleanup = jest.fn(async () => undefined);
+    const completeTerminalCleanup = jest.fn(async () => {
+      targetEntry = null;
+    });
     const persistence = {
       completeTerminalCleanup,
       load: jest.fn(async () => physical),
@@ -2023,7 +2164,9 @@ describe('AuthorityTransferModule', () => {
       settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
     } as unknown as AuthorityTransferPersistence;
     const cancelStaging = jest.fn(async () => undefined);
-    const disposeTarget = jest.fn(async () => undefined);
+    const disposeTarget = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target cleanup failure'))
+      .mockResolvedValue(undefined);
     const connection = {
       authorityGeneration: 1,
       dispose: jest.fn(),
@@ -2035,6 +2178,7 @@ describe('AuthorityTransferModule', () => {
       readSnapshot: jest.fn(),
       serverUrl: 'https://cloud.example.test/',
     };
+    const createCloudToLanConnection = jest.fn(async () => connection as never);
     const module = new AuthorityTransferModule({
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
@@ -2045,7 +2189,7 @@ describe('AuthorityTransferModule', () => {
         save: () => Promise.resolve(),
       },
       convergence: {} as never,
-      createCloudToLanConnection: async () => connection as never,
+      createCloudToLanConnection,
       createCloudToLanTarget: () => ({
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
@@ -2080,11 +2224,41 @@ describe('AuthorityTransferModule', () => {
         status: 'recovery-required',
       },
     });
+    await expect(module.prepareCloudToLanTarget({
+      operationIntentId: 'intent-replacement-after-disposed-cancelled-target',
+      projectId: PROJECT_ID,
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: physical.operationIntentId,
+        status: 'recovery-required',
+      },
+    });
+    await expect(module.acceptCloudToLanTransfer({
+      handle: cloudToLanTransferHandle(managerEntry!),
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: physical.operationIntentId,
+        status: 'recovery-required',
+      },
+    });
+    await expect(module.prepareCloudToLanTarget({
+      operationIntentId: 'intent-replacement-after-cancelled-cleanup',
+      projectId: PROJECT_ID,
+    })).rejects.toMatchObject({
+      result: {
+        durableProgress: true,
+        operationId: physical.operationIntentId,
+        status: 'recovery-required',
+      },
+    });
 
     expect(cancelStaging).toHaveBeenCalledTimes(1);
     expect(completeTerminalCleanup).toHaveBeenCalledTimes(1);
-    expect(disposeTarget).toHaveBeenCalledTimes(1);
-    expect(connection.dispose).toHaveBeenCalledTimes(2);
+    expect(disposeTarget).toHaveBeenCalledTimes(2);
+    expect(createCloudToLanConnection).toHaveBeenCalledTimes(2);
+    expect(connection.dispose).toHaveBeenCalledTimes(3);
     expect(managerEntry).toMatchObject({ phase: 'observing' });
   });
 
@@ -2955,6 +3129,100 @@ describe('AuthorityTransferModule', () => {
     expect(record).toBeNull();
     expect(cloudSession.dispose).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['lan-to-cloud', 'cloud-to-lan'] as const)(
+    'derives a bounded source ACK key for a maximum-length %s claimant intent',
+    async (direction) => {
+      const operationIntentId = 'x'.repeat(128);
+      let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
+        direction,
+        operationIntentId,
+        phase: 'target-claimed',
+      });
+      const sourceAck = { idempotencyKey: null as string | null };
+      const lanRequest = jest.fn(async (
+        _operation: string,
+        request: Readonly<{ readonly idempotencyKey: string }>,
+      ) => {
+        sourceAck.idempotencyKey = request.idempotencyKey;
+      });
+      const cloudRequest = jest.fn(async (
+        _operation: string,
+        request: Readonly<{ readonly idempotencyKey: string }>,
+      ) => {
+        sourceAck.idempotencyKey = request.idempotencyKey;
+      });
+      const cloudSession = {
+        dispose: jest.fn(),
+        lifecycle: { authorityTransfer: cloudRequest },
+        projectId: PROJECT_ID,
+        readSnapshot: jest.fn(async () => ({
+          currentMember: { id: 'member-host' },
+          eventSequence: 1,
+          project: { id: PROJECT_ID },
+        })),
+        serverUrl: 'https://cloud.example.test/',
+        supports: () => true,
+      } as unknown as CloudAuthorityConnection;
+      const module = new AuthorityTransferModule({
+        assertLanToCloudSourceOwner: () => undefined,
+        assertRecoveryOwner: () => undefined,
+        claimantStore: {
+          listProjectIds: async () => record ? [PROJECT_ID] : [],
+          load: async () => record,
+          remove: async () => {
+            const existed = record !== null;
+            record = null;
+            return existed;
+          },
+          save: async current => { record = current; },
+        },
+        convergence: {
+          cloudToLanMember: jest.fn(async () => undefined),
+          lanToCloudMember: jest.fn(async () => undefined),
+        } as never,
+        createLanTargetSnapshotReader: () => ({
+          readSnapshot: jest.fn(async () => ({
+            currentMember: { id: 'member-host' },
+            eventSequence: 1,
+            project: { id: PROJECT_ID },
+          } as never)),
+        }),
+        createLanToCloudSource: jest.fn() as never,
+        installationKey: TEST_INSTALLATION_A,
+        lifecycle: {
+          registerDurableOwner: jest.fn(),
+          registerRecoveryStage: jest.fn(),
+        } as unknown as CollabProjectLifecycleSubsystem,
+        persistence: {} as AuthorityTransferPersistence,
+      });
+      const lanClient = {
+        claimTransferredMembership: jest.fn(),
+        requestWithMember: lanRequest,
+      } as unknown as LanAuthorityTransferClient;
+      const binding = direction === 'lan-to-cloud'
+        ? module.bindLanToCloudClaimant({
+            cloudSession,
+            lanClient,
+            memberCredential: Buffer.alloc(32, 1).toString('base64url'),
+            projectId: PROJECT_ID,
+          })
+        : module.bindCloudToLanClaimant({
+            cloudSession,
+            lanClient,
+            projectId: PROJECT_ID,
+            targetHost: record!.lanTarget!,
+          });
+
+      await binding.coordinator.resume(PROJECT_ID);
+
+      if (sourceAck.idempotencyKey === null) throw new Error('Missing source ACK key');
+      expect(sourceAck.idempotencyKey).toMatch(/^[A-Za-z0-9._:-]+$/);
+      expect(sourceAck.idempotencyKey.length).toBeLessThanOrEqual(128);
+      expect(sourceAck.idempotencyKey).not.toContain(operationIntentId);
+      expect(record).toBeNull();
+    },
+  );
 
   it('redeems a Manager-reissued claim through exact Cloud status and snapshot confirmation', async () => {
     let record: AuthorityTransferClaimantRecord | null = null;

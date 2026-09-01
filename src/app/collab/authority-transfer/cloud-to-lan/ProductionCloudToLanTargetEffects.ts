@@ -445,8 +445,9 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
 
   async dispose(): Promise<void> {
     const preparation = this.#preparation;
-    this.#preparation = null;
-    await preparation?.dispose();
+    if (!preparation) return;
+    await preparation.dispose();
+    if (this.#preparation === preparation) this.#preparation = null;
   }
 
   async prepareTarget(expectedEndpoint?: string): Promise<Readonly<{
@@ -685,8 +686,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     );
     this.#stagedRegistration = null;
     const preparation = this.#preparation;
-    this.#preparation = null;
     await preparation?.dispose();
+    if (this.#preparation === preparation) this.#preparation = null;
     await this.options.foundation.discardAuthorityTransferTarget(
       record.projectId,
       record.ownerInstallationKey,

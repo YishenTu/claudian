@@ -359,6 +359,7 @@ describe('production authority-transfer direction coordinators', () => {
       'claims',
       'custody',
       'relinquish',
+      'source-ack',
       'stage',
     ] as const).map(operation => authorityTransferChildIdempotencyKey(
       operationIntentId,

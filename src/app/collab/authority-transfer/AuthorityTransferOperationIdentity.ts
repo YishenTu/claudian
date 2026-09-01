@@ -8,6 +8,7 @@ export type AuthorityTransferChildOperation =
   | 'claims'
   | 'custody'
   | 'relinquish'
+  | 'source-ack'
   | 'stage';
 
 export function authorityTransferChildIdempotencyKey(
