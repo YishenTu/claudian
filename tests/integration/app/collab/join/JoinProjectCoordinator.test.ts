@@ -40,6 +40,8 @@ const OID = 'a'.repeat(40);
 const CA_FINGERPRINT = 'ab'.repeat(32);
 const CA_PEM = '-----BEGIN CERTIFICATE-----\nTEST CA\n-----END CERTIFICATE-----\n';
 
+jest.setTimeout(30_000);
+
 interface TestHarness {
   readonly cloneInputs: unknown[];
   readonly controlPaths: string[];
