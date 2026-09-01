@@ -4,6 +4,7 @@ import type {
   ChatRewindConflict,
   ChatRewindMode,
 } from '../../../core/execution';
+import { resolveProviderCustomContextLimit } from '../../../core/providers/modelSelection';
 import type { ProviderIconSvg, TitleGenerationService } from '../../../core/providers/types';
 import type {
   ChatMessage,
@@ -38,6 +39,7 @@ import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { ExternalContextSelector } from '../ui/InputToolbar';
 import type { StatusPanel } from '../ui/StatusPanel';
+import { recalculateUsageForModel } from '../utils/usageInfo';
 
 function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
   void action().catch(() => {
@@ -657,7 +659,23 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
-    state.usage = conversation.usage ?? null;
+    const persistedUsage = conversation.usage ?? null;
+    const usageModel = conversation.selectedModel ?? persistedUsage?.model;
+    const customContextLimit = usageModel
+      ? resolveProviderCustomContextLimit(
+          conversation.providerId,
+          usageModel,
+          plugin.settings.customContextLimits,
+        )
+      : undefined;
+    state.usage = persistedUsage && usageModel && customContextLimit
+      ? recalculateUsageForModel(
+          persistedUsage,
+          usageModel,
+          customContextLimit,
+          customContextLimit,
+        )
+      : persistedUsage;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.hasPendingConversationSave = false;
 

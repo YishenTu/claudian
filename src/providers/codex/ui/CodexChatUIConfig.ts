@@ -1,3 +1,4 @@
+import { resolveProviderCustomContextLimit } from '../../../core/providers/modelSelection';
 import {
   DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
@@ -124,8 +125,9 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       : DEFAULT_REASONING_VALUE;
   },
 
-  getContextWindowSize(): number {
-    return DEFAULT_CONTEXT_WINDOW;
+  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
+    return resolveProviderCustomContextLimit('codex', model, customLimits)
+      ?? DEFAULT_CONTEXT_WINDOW;
   },
 
   isDefaultModel(model: string): boolean {

@@ -8,6 +8,7 @@ import {
   getEnabledProviderForModel,
   getProviderForModel,
 } from '../../../../core/providers/modelRouting';
+import { resolveProviderCustomContextLimit } from '../../../../core/providers/modelSelection';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import type {
   ProviderChatUIConfig,
@@ -392,6 +393,11 @@ function buildInputToolbar(
           currentUsage,
           normalizedModel,
           newContextWindow,
+          resolveProviderCustomContextLimit(
+            boundProvider,
+            normalizedModel,
+            providerSettings.customContextLimits,
+          ),
         );
       }
     },

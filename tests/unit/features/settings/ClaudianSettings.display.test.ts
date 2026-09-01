@@ -149,6 +149,7 @@ function createTab(enableDualPane: boolean): {
       mutation(settings);
     }),
     getAllViews: jest.fn(() => [{ refreshDualPaneLayout: jest.fn() }]),
+    notifyProviderChatOptionsChanged: jest.fn(),
     notifyAgentSkillsChanged: jest.fn(),
     checkCollabGitInstallation: jest.fn().mockResolvedValue('available'),
     setCollabEnabled: jest.fn(async (enabled: boolean) => {
@@ -294,6 +295,27 @@ describe('ClaudianSettingTab display settings', () => {
     expect(container.empty).toHaveBeenCalledTimes(1);
     expect(container.addClass).toHaveBeenCalledWith('claudian-settings');
     expect(findContainer(container, t('settings.tabs.general'))).not.toBeNull();
+  });
+
+  it('flushes a pending custom context limit refresh when settings cleanup runs', async () => {
+    jest.useFakeTimers();
+    try {
+      const { tab, plugin } = createTab(true);
+      const cleanup = (tab as any).renderSettings(createContainer()) as () => void;
+
+      await (tab as any).updateCustomContextLimit(
+        'codex',
+        'my-custom-model',
+        1_000_000,
+      );
+      cleanup();
+
+      expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
+      jest.advanceTimersByTime(150);
+      expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('renders the dual-pane position only while dual-pane mode is enabled', () => {

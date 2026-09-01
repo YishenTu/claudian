@@ -3,6 +3,7 @@ import {
   encodeProviderModelSelectionId,
   getProviderModelSelectionPrefix,
   isProviderModelSelectionId,
+  resolveProviderCustomContextLimit,
   toProviderRuntimeModelId,
 } from '@/core/providers/modelSelection';
 
@@ -137,6 +138,40 @@ describe('model selection namespacing', () => {
 
     it('returns an empty string unchanged', () => {
       expect(toProviderRuntimeModelId('claude', '')).toBe('');
+    });
+  });
+
+  describe('resolveProviderCustomContextLimit', () => {
+    it('resolves a raw-keyed limit for a namespaced Codex selection', () => {
+      expect(resolveProviderCustomContextLimit(
+        'codex',
+        'openai-codex/my-custom-model',
+        { 'my-custom-model': 1_000_000 },
+      )).toBe(1_000_000);
+    });
+
+    it('resolves a namespaced limit for a raw model id', () => {
+      expect(resolveProviderCustomContextLimit(
+        'codex',
+        'my-custom-model',
+        { 'openai-codex/my-custom-model': 500_000 },
+      )).toBe(500_000);
+    });
+
+    it('prefers the exact model key and rejects invalid limits', () => {
+      expect(resolveProviderCustomContextLimit(
+        'codex',
+        'openai-codex/my-custom-model',
+        {
+          'openai-codex/my-custom-model': 750_000,
+          'my-custom-model': 1_000_000,
+        },
+      )).toBe(750_000);
+      expect(resolveProviderCustomContextLimit(
+        'codex',
+        'openai-codex/my-custom-model',
+        { 'my-custom-model': 0 },
+      )).toBeUndefined();
     });
   });
 
