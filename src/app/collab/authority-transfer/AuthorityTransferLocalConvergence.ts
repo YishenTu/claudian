@@ -6,6 +6,9 @@ import {
 } from '@claudian-collab/protocol';
 
 import type {
+  AuthorityTransferImportedTargetIdentity,
+} from '@/app/collab/authority-transfer/AuthorityTransferImportedTargetIdentity';
+import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import type {
@@ -73,8 +76,8 @@ export interface CloudToLanHostConvergenceInput {
   readonly endpoint: string;
   readonly hostCaCertificatePem: string;
   readonly hostCaFingerprint: string;
+  readonly identity: AuthorityTransferImportedTargetIdentity;
   readonly memberCredential: string;
-  readonly snapshot: CollabProjectSnapshot;
   readonly status: CollabAuthorityTransferStatus;
 }
 
@@ -322,7 +325,14 @@ export class AuthorityTransferLocalConvergence {
     targetOwnsAuthority: boolean,
   ): Promise<void> {
     const membership = await this.requireMembership(input.status.projectId);
-    assertSnapshot(membership, input.snapshot);
+    const identity = input.identity;
+    if (
+      identity.project.id !== membership.project.id
+      || identity.project.name !== membership.project.name
+      || identity.currentMember.id !== membership.member.id
+      || identity.currentMember.personalRef !== membership.member.personalRef
+      || identity.authorityGeneration !== input.status.targetAuthority.generation
+    ) throw convergenceError('authority-transfer-convergence-target-identity-mismatch');
     const newRemoteUrl = lanRemoteUrl(input.endpoint, input.status.projectId);
     if (isCollabLocalCloudMembership(membership)) {
       await this.rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
@@ -339,14 +349,14 @@ export class AuthorityTransferLocalConvergence {
           autoStart: targetOwnsAuthority,
           ownsAuthority: targetOwnsAuthority,
         },
-        lastEventSequence: input.snapshot.eventSequence,
+        lastEventSequence: identity.eventSequence,
         ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }),
         member: {
           credential: input.memberCredential,
-          displayName: input.snapshot.currentMember.displayName,
-          id: input.snapshot.currentMember.id,
-          personalRef: input.snapshot.currentMember.personalRef,
-          role: input.snapshot.currentMember.role,
+          displayName: identity.currentMember.displayName,
+          id: identity.currentMember.id,
+          personalRef: identity.currentMember.personalRef,
+          role: identity.currentMember.role,
         },
         project: membership.project,
         schemaVersion: membership.schemaVersion,

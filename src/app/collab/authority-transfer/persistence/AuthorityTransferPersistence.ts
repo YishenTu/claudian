@@ -36,6 +36,9 @@ import {
   settleAuthorityTransferSourceCancellation,
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
+import {
   assertAuthorityTransferTransition,
   type AuthorityTransferRecord,
   bindLegacyAuthorityTransferSourceOwner,
@@ -47,6 +50,21 @@ import {
   markAuthorityTransferTerminalCleanupCompleted,
   pinAuthorityTransferReceiptVerifier,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import {
+  type CloudToLanManagerEntryRecord,
+  type CloudToLanTargetEntryRecord,
+  type CloudToLanTargetPreparationDescriptor,
+  decodeCloudToLanManagerEntryRecord,
+  decodeCloudToLanTargetEntryRecord,
+  handoffCloudToLanTargetEntry,
+  markCloudToLanManagerBeginPossiblySent,
+  markCloudToLanManagerCancellationPossiblySent,
+  prepareCloudToLanManagerCancellation,
+  publishCloudToLanTargetEntry,
+  recordCloudToLanManagerStatus,
+  rejectCloudToLanManagerEntry,
+  withdrawCloudToLanTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import {
   type AuthorityTransferClaimBatchCommitmentRecord,
   createAuthorityTransferClaimBatchCommitmentRecord,
@@ -211,8 +229,15 @@ export class AuthorityTransferPersistence {
       ]);
       const entry = await this.#removeExpiredEntry(loadedEntry, record);
       const source = entry?.source ?? null;
+      const target = entry?.target ?? null;
+      const manager = entry?.manager ?? null;
       const localSource = source !== null && this.#isLocalSourceEntry(source);
+      const localTarget = target !== null && this.#isLocalTargetEntry(target);
       const foreignPhysical = record !== null && this.#isForeignPhysical(record);
+      const managerMatchesLocalPhysical = manager !== null
+        && record !== null
+        && !foreignPhysical
+        && this.#managerMatchesPhysical(manager, record);
       if (localSource && source.phase === 'handed-off' && foreignPhysical) {
         throw transferError(
           'durable-progress-recovery-required',
@@ -227,8 +252,24 @@ export class AuthorityTransferPersistence {
       ) {
         await this.#reconcileEntrySuccessor(source, record);
       }
+      if (localTarget && target.phase === 'handed-off' && foreignPhysical) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-entry-successor-owner-mismatch',
+        );
+      }
+      if (localTarget && record && !foreignPhysical && target.phase !== 'withdrawn') {
+        await this.#reconcileTargetEntrySuccessor(target, record);
+      }
       if (!record) {
         if (custody || commitment) return 'nonterminal';
+        if (localTarget && target.phase === 'handed-off') {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-target-entry-successor-missing',
+          );
+        }
+        if (localTarget && target.phase !== 'withdrawn') return 'nonterminal';
         if (!localSource || source.phase === 'cancelled') return 'absent';
         return source.phase === 'proposed' ? 'proposal' : 'nonterminal';
       }
@@ -240,6 +281,8 @@ export class AuthorityTransferPersistence {
       return isAuthorityTransferTerminal(record)
         && record.terminalCleanupCompleted
         && (!localSource || source.phase === 'cancelled')
+        && !localTarget
+        && !managerMatchesLocalPhysical
         ? 'terminal'
         : 'nonterminal';
     });
@@ -254,6 +297,7 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferRecords.load(projectId),
       ]);
       const source = entry?.source;
+      const target = entry?.target;
       if (
         !record
         && source?.phase === 'handed-off'
@@ -263,6 +307,19 @@ export class AuthorityTransferPersistence {
           'durable-progress-recovery-required',
           'authority-transfer-entry-successor-missing',
         );
+      }
+      if (
+        !record
+        && target?.phase === 'handed-off'
+        && this.#isLocalTargetEntry(target)
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-entry-successor-missing',
+        );
+      }
+      if (record && target && this.#isLocalTargetEntry(target)) {
+        await this.#reconcileTargetEntrySuccessor(target, record);
       }
       return record;
     });
@@ -312,6 +369,355 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferRecords.load(projectId),
       ]);
       return (await this.#removeExpiredEntry(loadedEntry, record))?.source ?? null;
+    });
+  }
+
+  loadCloudToLanTargetEntry(
+    projectId: CollabProjectId,
+  ): Promise<CloudToLanTargetEntryRecord | null> {
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      const entry = await this.#removeExpiredEntry(loadedEntry, record);
+      const target = entry?.target ?? null;
+      if (target && record && this.#isLocalTargetEntry(target)) {
+        await this.#reconcileTargetEntrySuccessor(target, record);
+      }
+      return target;
+    });
+  }
+
+  loadCloudToLanManagerEntry(
+    projectId: CollabProjectId,
+  ): Promise<CloudToLanManagerEntryRecord | null> {
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      return (await this.#removeExpiredEntry(loadedEntry, record))?.manager ?? null;
+    });
+  }
+
+  prepareCloudToLanTargetEntry(
+    entry: CloudToLanTargetEntryRecord,
+  ): Promise<CloudToLanTargetEntryRecord> {
+    let decoded: CloudToLanTargetEntryRecord;
+    try {
+      decoded = decodeCloudToLanTargetEntryRecord(entry);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-invalid',
+      );
+    }
+    if (!this.#isRecoveryOwner(decoded.ownerInstallationKey)) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-owner-mismatch',
+      );
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [loadedEntry, loadedRecord] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      let record = loadedRecord;
+      const document = await this.#removeExpiredEntry(loadedEntry, record);
+      if (
+        record
+        && !this.#isForeignPhysical(record)
+        && record.localRole === 'target'
+        && record.status.direction === 'cloud-to-lan'
+        && record.status.state === 'cancelled'
+        && record.terminalCleanupCompleted
+      ) {
+        if (!await this.stores.authorityTransferRecords.removeExact(record)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-physical-record-stale',
+          );
+        }
+        record = null;
+      }
+      const existing = document?.target;
+      const managerIsUnresolved = document?.manager !== null
+        && document?.manager !== undefined
+        && document.manager.phase !== 'settled';
+      if (existing) {
+        if (sameValue(existing, decoded)) return existing;
+        if (
+          existing.phase === 'withdrawn'
+          && record === null
+          && !managerIsUnresolved
+        ) {
+          await this.stores.authorityTransferEntries.saveTarget(decoded);
+          return decoded;
+        }
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-entry-conflict',
+        );
+      }
+      if (
+        record
+        || managerIsUnresolved
+        || (document?.source !== null && document?.source !== undefined)
+      ) throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-conflict',
+      );
+      await this.stores.authorityTransferEntries.saveTarget(decoded);
+      return decoded;
+    });
+  }
+
+  publishCloudToLanTargetEntry(
+    entry: CloudToLanTargetEntryRecord,
+    descriptor: Pick<
+      CloudToLanTargetPreparationDescriptor,
+      'caCertificatePem' | 'caFingerprint' | 'publishedAt' | 'targetUrl'
+    >,
+  ): Promise<CloudToLanTargetEntryRecord> {
+    let decoded: CloudToLanTargetEntryRecord;
+    let published: CloudToLanTargetEntryRecord;
+    try {
+      decoded = decodeCloudToLanTargetEntryRecord(entry);
+      published = publishCloudToLanTargetEntry(decoded, descriptor);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-publish-invalid',
+      );
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const current = (await this.stores.authorityTransferEntries.load(decoded.projectId))?.target;
+      if (!current || !sameValue(current, decoded)) {
+        if (current && sameValue(current, published)) return current;
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-entry-stale',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveTarget(published);
+      return published;
+    });
+  }
+
+  withdrawCloudToLanTargetEntry(
+    entry: CloudToLanTargetEntryRecord,
+  ): Promise<CloudToLanTargetEntryRecord> {
+    let decoded: CloudToLanTargetEntryRecord;
+    let withdrawn: CloudToLanTargetEntryRecord;
+    try {
+      decoded = decodeCloudToLanTargetEntryRecord(entry);
+      withdrawn = withdrawCloudToLanTargetEntry(decoded, this.now().toISOString());
+    } catch {
+      throw transferError(
+        'authority-transfer-stale',
+        'authority-transfer-target-withdrawal-invalid',
+      );
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      const current = document?.target;
+      if (current && sameValue(current, withdrawn)) return current;
+      if (!current || !sameValue(current, decoded) || record !== null) {
+        throw transferError(
+          'authority-transfer-cancellation-forbidden',
+          'authority-transfer-target-withdrawal-stale',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveTarget(withdrawn);
+      return withdrawn;
+    });
+  }
+
+  handoffCloudToLanTargetEntry(
+    entry: CloudToLanTargetEntryRecord,
+    record: AuthorityTransferRecord,
+  ): Promise<AuthorityTransferRecord> {
+    let decodedEntry: CloudToLanTargetEntryRecord;
+    let decodedRecord: AuthorityTransferRecord;
+    let handedOff: CloudToLanTargetEntryRecord;
+    try {
+      decodedEntry = decodeCloudToLanTargetEntryRecord(entry);
+      decodedRecord = decodeAuthorityTransferRecord(record);
+      handedOff = handoffCloudToLanTargetEntry(decodedEntry, decodedRecord);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-handoff-invalid',
+      );
+    }
+    return this.runProject(decodedEntry.projectId, async () => {
+      const [document, physical] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decodedEntry.projectId),
+        this.stores.authorityTransferRecords.load(decodedEntry.projectId),
+      ]);
+      const current = document?.target;
+      if (!current) throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-handoff-missing',
+      );
+      if (physical) {
+        if (!sameValue(physical, decodedRecord)) throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-entry-successor-conflict',
+        );
+      } else {
+        // The canonical physical record becomes durable before the logical
+        // preparation records its successor. A crash between these writes is
+        // recovered only by the exact entry/record linkage below.
+        await this.stores.authorityTransferRecords.save(decodedRecord);
+      }
+      if (sameValue(current, handedOff)) return decodedRecord;
+      if (!sameValue(current, decodedEntry)) throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-handoff-stale',
+      );
+      await this.stores.authorityTransferEntries.saveTarget(handedOff);
+      return decodedRecord;
+    });
+  }
+
+  prepareCloudToLanManagerEntry(
+    entry: CloudToLanManagerEntryRecord,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    let decoded: CloudToLanManagerEntryRecord;
+    try {
+      decoded = decodeCloudToLanManagerEntryRecord(entry);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-manager-entry-invalid',
+      );
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      const existing = document?.manager;
+      if (existing) {
+        if (sameValue(existing, decoded)) return existing;
+        if (
+          existing.phase === 'settled'
+          && record === null
+        ) {
+          await this.stores.authorityTransferEntries.saveManager(decoded);
+          return decoded;
+        }
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-manager-entry-conflict',
+        );
+      }
+      const target = document?.target;
+      const compatibleSameDeviceTarget = target === undefined || target === null
+        || (
+          target.phase === 'published'
+          && target.descriptor !== null
+          && sameValue(target.descriptor, decoded.descriptor)
+        );
+      if (record || document?.source || !compatibleSameDeviceTarget) throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-manager-entry-conflict',
+      );
+      await this.stores.authorityTransferEntries.saveManager(decoded);
+      return decoded;
+    });
+  }
+
+  markCloudToLanManagerBeginPossiblySent(
+    entry: CloudToLanManagerEntryRecord,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.#updateCloudToLanManagerEntry(
+      entry,
+      markCloudToLanManagerBeginPossiblySent(entry),
+    );
+  }
+
+  recordCloudToLanManagerStatus(
+    entry: CloudToLanManagerEntryRecord,
+    status: CollabAuthorityTransferStatus,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.#updateCloudToLanManagerEntry(
+      entry,
+      recordCloudToLanManagerStatus(entry, status),
+    );
+  }
+
+  prepareCloudToLanManagerCancellation(
+    entry: CloudToLanManagerEntryRecord,
+    request: Parameters<typeof prepareCloudToLanManagerCancellation>[1],
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.#updateCloudToLanManagerEntry(
+      entry,
+      prepareCloudToLanManagerCancellation(entry, request),
+    );
+  }
+
+  markCloudToLanManagerCancellationPossiblySent(
+    entry: CloudToLanManagerEntryRecord,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.#updateCloudToLanManagerEntry(
+      entry,
+      markCloudToLanManagerCancellationPossiblySent(entry),
+    );
+  }
+
+  rejectCloudToLanManagerEntry(
+    entry: CloudToLanManagerEntryRecord,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.#updateCloudToLanManagerEntry(
+      entry,
+      rejectCloudToLanManagerEntry(entry),
+    );
+  }
+
+  settleCloudToLanManagerEntry(
+    entry: CloudToLanManagerEntryRecord,
+  ): Promise<void> {
+    if (entry.phase !== 'settled' && entry.phase !== 'rejected') {
+      throw transferError(
+        'authority-transfer-stale',
+        'authority-transfer-manager-entry-not-settled',
+      );
+    }
+    return this.runProject(entry.projectId, async () => {
+      if (!await this.stores.authorityTransferEntries.removeManager(entry)) {
+        const current = (await this.stores.authorityTransferEntries.load(entry.projectId))?.manager;
+        if (current !== null && current !== undefined) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-manager-entry-stale',
+          );
+        }
+      }
+    });
+  }
+
+  #updateCloudToLanManagerEntry(
+    expected: CloudToLanManagerEntryRecord,
+    next: CloudToLanManagerEntryRecord,
+  ): Promise<CloudToLanManagerEntryRecord> {
+    return this.runProject(expected.projectId, async () => {
+      const current = (await this.stores.authorityTransferEntries.load(expected.projectId))?.manager;
+      if (!current || !sameValue(current, expected)) {
+        if (current && sameValue(current, next)) return current;
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-manager-entry-stale',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveManager(next);
+      return next;
     });
   }
 
@@ -997,12 +1403,20 @@ export class AuthorityTransferPersistence {
           'authority-transfer-terminal-cleanup-owner-stale',
         );
       }
-      const source = entry?.source;
+      let source = entry?.source;
+      let target = entry?.target;
       if (
         source
         && this.#isLocalSourceEntry(source)
         && source.phase !== 'cancelled'
-      ) await this.#reconcileEntrySuccessor(source, record);
+      ) {
+        await this.#reconcileEntrySuccessor(source, record);
+        source = (await this.stores.authorityTransferEntries.load(input.projectId))?.source;
+      }
+      if (target && this.#isLocalTargetEntry(target)) {
+        await this.#reconcileTargetEntrySuccessor(target, record);
+        target = (await this.stores.authorityTransferEntries.load(input.projectId))?.target;
+      }
       if (
         record.terminalResponder?.state === 'active'
         || record.terminalResponder?.state === 'pending'
@@ -1037,6 +1451,14 @@ export class AuthorityTransferPersistence {
           );
         }
       }
+      if (target && this.#isLocalTargetEntry(target)) {
+        if (!await this.stores.authorityTransferEntries.removeTarget(target)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-entry-target-stale',
+          );
+        }
+      }
     });
   }
 
@@ -1065,6 +1487,7 @@ export class AuthorityTransferPersistence {
         await this.#assertClaimBatchOwner(custody, record);
       }
       const source = entry?.source;
+      const target = entry?.target;
       if (
         source
         && this.#isLocalSourceEntry(source)
@@ -1073,6 +1496,9 @@ export class AuthorityTransferPersistence {
         && source.phase !== 'cancelled'
       ) {
         await this.#reconcileEntrySuccessor(source, record);
+      }
+      if (target && record && this.#isLocalTargetEntry(target)) {
+        await this.#reconcileTargetEntrySuccessor(target, record);
       }
       return record;
     });
@@ -1619,9 +2045,13 @@ export class AuthorityTransferPersistence {
     ]);
     const entry = await this.#removeExpiredEntry(loadedEntry, record);
     const source = entry?.source;
+    const target = entry?.target;
     const localSource = source !== null
       && source !== undefined
       && this.#isLocalSourceEntry(source);
+    const localTarget = target !== null
+      && target !== undefined
+      && this.#isLocalTargetEntry(target);
     if (
       localSource
       && source.phase === 'handed-off'
@@ -1636,6 +2066,9 @@ export class AuthorityTransferPersistence {
     if (record && this.#isForeignPhysical(record)) return;
     if (localSource && record && source.phase !== 'cancelled') {
       await this.#reconcileEntrySuccessor(source, record);
+    }
+    if (localTarget && record && target.phase !== 'withdrawn') {
+      await this.#reconcileTargetEntrySuccessor(target, record);
     }
     if (record && record.ownerInstallationKey === undefined) {
       throw transferError(
@@ -1654,6 +2087,12 @@ export class AuthorityTransferPersistence {
       throw transferError(
         'durable-progress-recovery-required',
         'authority-transfer-entry-successor-missing',
+      );
+    }
+    if (!record && localTarget && target.phase === 'handed-off') {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-successor-missing',
       );
     }
     if (commitment && !custody) {
@@ -1766,15 +2205,29 @@ export class AuthorityTransferPersistence {
       )
       ? entry.source
       : null;
+    const managerIsRemovable = entry.manager !== null
+      && (entry.manager.phase === 'settled' || entry.manager.phase === 'rejected')
+      && now >= Date.parse(entry.manager.expiresAt);
+    const targetIsRemovable = entry.target !== null
+      && entry.target.phase === 'withdrawn'
+      && now >= Date.parse(entry.target.expiresAt);
     if (
       source === entry.source
       && expiredRequesters.length === 0
+      && !managerIsRemovable
+      && !targetIsRemovable
     ) return entry;
     for (const requester of expiredRequesters) {
       await this.stores.authorityTransferEntries.removeRequester(requester);
     }
     if (entry.source && source === null) {
       await this.stores.authorityTransferEntries.removeSource(entry.source);
+    }
+    if (managerIsRemovable && entry.manager) {
+      await this.stores.authorityTransferEntries.removeManager(entry.manager);
+    }
+    if (targetIsRemovable && entry.target) {
+      await this.stores.authorityTransferEntries.removeTarget(entry.target);
     }
     return this.stores.authorityTransferEntries.load(entry.projectId);
   }
@@ -1784,7 +2237,28 @@ export class AuthorityTransferPersistence {
       && !this.#isRecoveryOwner(record.ownerInstallationKey);
   }
 
+  #managerMatchesPhysical(
+    manager: CloudToLanManagerEntryRecord,
+    record: AuthorityTransferRecord,
+  ): boolean {
+    return manager.status !== null
+      && record.localRole === 'target'
+      && record.status.direction === 'cloud-to-lan'
+      && manager.operationIntentId === record.operationIntentId
+      && manager.projectId === record.projectId
+      && manager.status.transferId === record.transferId
+      && manager.status.createdAt === record.status.createdAt
+      && manager.status.expiresAt === record.status.expiresAt
+      && manager.descriptor.sourceAuthorityGeneration
+        === record.status.sourceAuthority.generation
+      && manager.descriptor.targetUrl === record.status.targetUrl;
+  }
+
   #isLocalSourceEntry(entry: AuthorityTransferSourceEntryRecord): boolean {
+    return this.#isRecoveryOwner(entry.ownerInstallationKey);
+  }
+
+  #isLocalTargetEntry(entry: CloudToLanTargetEntryRecord): boolean {
     return this.#isRecoveryOwner(entry.ownerInstallationKey);
   }
 
@@ -1809,6 +2283,31 @@ export class AuthorityTransferPersistence {
       throw transferError(
         'durable-progress-recovery-required',
         'authority-transfer-entry-successor-mismatch',
+      );
+    }
+  }
+
+  async #reconcileTargetEntrySuccessor(
+    entry: CloudToLanTargetEntryRecord,
+    record: AuthorityTransferRecord,
+  ): Promise<void> {
+    let expected: CloudToLanTargetEntryRecord;
+    try {
+      expected = handoffCloudToLanTargetEntry(entry, record);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-successor-mismatch',
+      );
+    }
+    if (entry.phase === 'published') {
+      await this.stores.authorityTransferEntries.saveTarget(expected);
+      return;
+    }
+    if (!sameValue(entry, expected)) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-target-entry-successor-mismatch',
       );
     }
   }
@@ -1926,10 +2425,13 @@ export class AuthorityTransferPersistence {
       ?? await this.stores.authorityTransferRecords.load(custody.projectId);
     const checkpointMatches = record?.status.checkpointSha256 === null
       || record?.status.checkpointSha256 === custody.checkpointSha256;
+    const expectedOperationIntentId = record?.localRole === 'target'
+      ? authorityTransferChildIdempotencyKey(record.operationIntentId, 'stage')
+      : record?.operationIntentId;
     if (
       !record
       || record.transferId !== custody.transferId
-      || record.operationIntentId !== custody.operationIntentId
+      || expectedOperationIntentId !== custody.operationIntentId
       || !checkpointMatches
       || record.status.targetAuthority.generation !== custody.targetAuthorityGeneration
       || record.status.expiresAt !== custody.expiresAt
@@ -1974,7 +2476,11 @@ export class AuthorityTransferPersistence {
     if (
       commitment.projectId !== record.projectId
       || commitment.transferId !== record.transferId
-      || commitment.operationIntentId !== record.operationIntentId
+      || commitment.operationIntentId !== (
+        record.localRole === 'target'
+          ? authorityTransferChildIdempotencyKey(record.operationIntentId, 'stage')
+          : record.operationIntentId
+      )
     ) {
       throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
     }

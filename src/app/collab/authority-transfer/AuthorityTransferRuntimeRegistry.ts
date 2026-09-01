@@ -1,7 +1,6 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
-import type { AuthorityTransferRecoveryHandler } from '@/app/collab/authority-transfer/recovery/AuthorityTransferRecovery';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -35,7 +34,7 @@ function runtimeError(reason: string): CollabError {
  * Holds only live operation adapters. Durable ownership remains in the
  * Project-local transfer record and the existing lifecycle recovery catalog.
  */
-export class AuthorityTransferRuntimeRegistry implements AuthorityTransferRecoveryHandler {
+export class AuthorityTransferRuntimeRegistry {
   private readonly runtimes = new Map<CollabProjectId, RegisteredRuntime>();
 
   constructor(private readonly resolver?: AuthorityTransferRuntimeResolver) {}

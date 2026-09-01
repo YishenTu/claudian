@@ -1,4 +1,4 @@
-import type { CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
+import type { CollabAuthorityTransferStatus, CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
 import type { CollabImportedClaimState, CollabProjectInvitationState, CollabProjectMemberBindingState, CollabRole } from '@claudian-collab/protocol';
 
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -421,6 +421,44 @@ export interface CollabFinalizeRetiredProjectRequest {
   cleanupChoice: CollabLocalCleanupChoice;
 }
 
+export interface CollabCloudToLanTargetPreparationDescriptor {
+  readonly caCertificatePem: string;
+  readonly caFingerprint: string;
+  readonly preparationId: string;
+  readonly projectId: CollabProjectId;
+  readonly publishedAt: CollabIsoTimestamp;
+  readonly schemaVersion: 1;
+  readonly selectedTargetMemberId: CollabMemberId;
+  readonly sourceAuthorityGeneration: number;
+  readonly sourceCloudUrl: string;
+  readonly targetUrl: string;
+}
+
+export interface CollabCloudToLanTransferHandle {
+  readonly operationIntentId: string;
+  readonly preparationId: string;
+  readonly projectId: CollabProjectId;
+  readonly schemaVersion: 1;
+  readonly selectedTargetMemberId: CollabMemberId;
+  readonly sourceAuthorityGeneration: number;
+  readonly sourceCloudUrl: string;
+  readonly targetUrl: string;
+  readonly transferId: string;
+}
+
+export interface CollabPrepareCloudToLanTargetRequest {
+  readonly projectId: CollabProjectId;
+}
+
+export interface CollabBeginCloudToLanTransferRequest {
+  readonly descriptor: CollabCloudToLanTargetPreparationDescriptor;
+}
+
+export interface CollabWithdrawCloudToLanTargetRequest {
+  readonly preparationId: string;
+  readonly projectId: CollabProjectId;
+}
+
 export interface CollabRemoveMemberRequest {
   projectId: CollabProjectId;
   memberId: CollabMemberId;
@@ -484,6 +522,12 @@ export interface CollabFeaturePort {
   retireProject(request: CollabRetireProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   finalizeRetiredProject(request: CollabFinalizeRetiredProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   retryProjectCleanup(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<void>>;
+  prepareCloudToLanTarget(request: CollabPrepareCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTargetPreparationDescriptor>>;
+  beginCloudToLanTransfer(request: CollabBeginCloudToLanTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTransferHandle>>;
+  acceptCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  withdrawCloudToLanTarget(request: CollabWithdrawCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
+  observeCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  cancelCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription;
 }
 

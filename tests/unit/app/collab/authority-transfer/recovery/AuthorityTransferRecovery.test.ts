@@ -22,6 +22,10 @@ import {
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
+  createCloudToLanTargetEntry,
+  publishCloudToLanTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import {
   createAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
 import {
@@ -32,6 +36,7 @@ import {
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import {
   AuthorityTransferRecovery,
+  type AuthorityTransferRecoveryHandler,
 } from '@/app/collab/authority-transfer/recovery/AuthorityTransferRecovery';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import {
@@ -118,6 +123,17 @@ function lifecycle() {
   });
 }
 
+function recoveryHandler(
+  overrides: Partial<AuthorityTransferRecoveryHandler> = {},
+): AuthorityTransferRecoveryHandler {
+  return {
+    resume: jest.fn(async () => undefined),
+    resumeManager: jest.fn(async () => undefined),
+    resumeTargetPreparation: jest.fn(async () => undefined),
+    ...overrides,
+  };
+}
+
 describe('AuthorityTransferRecovery', () => {
   let vaultRoot: string;
 
@@ -141,7 +157,11 @@ describe('AuthorityTransferRecovery', () => {
       status: status('collecting-readiness'),
     }));
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -151,6 +171,32 @@ describe('AuthorityTransferRecovery', () => {
       expect.objectContaining({ projectId: PROJECT_ID, transferId: 'transfer-one' }),
       {},
     );
+  });
+
+  it('recovers the transfer predecessor while a same-Project claimant is pending', async () => {
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => 'absent'),
+      scanProjectCatalog: jest.fn(async () => ({
+        invalidEntryCount: 0,
+        projectIds: [PROJECT_ID],
+      })),
+    } as unknown as AuthorityTransferPersistence;
+    const resumeManager = jest.fn(async () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resumeManager }),
+      () => undefined,
+    );
+    const subsystem = lifecycle();
+    subsystem.registerDurableOwner({
+      inspect: async projectId => projectId === PROJECT_ID ? 'nonterminal' : 'absent',
+      name: 'authority-transfer-claimant',
+    });
+    recovery.register(subsystem);
+
+    await expect(subsystem.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(resumeManager).toHaveBeenCalledWith(PROJECT_ID, {});
   });
 
   it('rejects a foreign installation owner before commitment repair or runtime effects', async () => {
@@ -171,7 +217,7 @@ describe('AuthorityTransferRecovery', () => {
     });
     const recovery = new AuthorityTransferRecovery(
       persistence,
-      { resume },
+      recoveryHandler({ resume }),
       assertRecoveryOwner,
     );
     const subsystem = lifecycle();
@@ -199,7 +245,7 @@ describe('AuthorityTransferRecovery', () => {
     }));
     const repair = jest.spyOn(persistence, 'recoverInterruptedClaimCommitment');
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({ resume }), () => {
       throw new CollabError({
         code: 'durable-progress-recovery-required',
         safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
@@ -233,14 +279,18 @@ describe('AuthorityTransferRecovery', () => {
       isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
     });
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, ownerInstallationKey => {
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      ownerInstallationKey => {
       if (ownerInstallationKey === undefined) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
           safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
         });
       }
-    });
+      },
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -264,7 +314,11 @@ describe('AuthorityTransferRecovery', () => {
     }));
     const prepare = jest.fn().mockResolvedValue(undefined);
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { prepare, resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ prepare, resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -301,9 +355,13 @@ describe('AuthorityTransferRecovery', () => {
     const inspect = jest.spyOn(persistence, 'inspectLifecycleOwner');
     const prepare = jest.fn().mockResolvedValue(undefined);
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { prepare, resume }, () => {
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ prepare, resume }),
+      () => {
       throw new Error('A nonphysical proposal has no installation recovery owner');
-    });
+      },
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -313,6 +371,45 @@ describe('AuthorityTransferRecovery', () => {
     expect(prepare).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('proposal');
+  });
+
+  it('rebinds an entry-only Cloud-to-LAN target preparation during startup recovery', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
+    });
+    const preparing = createCloudToLanTargetEntry({
+      createdAt: '2026-08-27T00:00:00.000Z',
+      expiresAt: '2026-09-26T00:00:00.000Z',
+      operationIntentId: 'intent-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: 'member-target',
+      selectedTargetPersonalRef: 'refs/heads/members/member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(preparing, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-27T00:01:00.000Z',
+      targetUrl: 'https://192.168.1.20:54545',
+    });
+    await repository.authorityTransferEntries.saveTarget(published);
+    const resumeTargetPreparation = jest.fn().mockResolvedValue(undefined);
+    const assertRecoveryOwner = jest.fn();
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resumeTargetPreparation }),
+      assertRecoveryOwner,
+    );
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+
+    await expect(subsystem.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(assertRecoveryOwner).toHaveBeenCalledWith(TEST_INSTALLATION_A, PROJECT_ID);
+    expect(resumeTargetPreparation).toHaveBeenCalledWith(published, {});
   });
 
   it('expires an entry-only proposal during startup enumeration', async () => {
@@ -337,7 +434,11 @@ describe('AuthorityTransferRecovery', () => {
       now: () => new Date('2026-09-25T00:00:00.000Z'),
     });
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -365,7 +466,11 @@ describe('AuthorityTransferRecovery', () => {
       purpose: 'source-terminal',
     }));
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -393,7 +498,11 @@ describe('AuthorityTransferRecovery', () => {
       stagingDirectoryName: record.stagingDirectoryName,
       transferId: record.transferId,
     }));
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -460,7 +569,11 @@ describe('AuthorityTransferRecovery', () => {
       stagingDirectoryName: record.stagingDirectoryName,
       transferId: record.transferId,
     }));
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -506,7 +619,11 @@ describe('AuthorityTransferRecovery', () => {
       stagingDirectoryName: record.stagingDirectoryName,
       transferId: record.transferId,
     }));
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -528,9 +645,9 @@ describe('AuthorityTransferRecovery', () => {
       stagingDirectoryName: '.claudian-authority-transfer-transfer-one',
       status: status('source-quiesced'),
     }));
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn().mockResolvedValue(undefined),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -576,9 +693,9 @@ describe('AuthorityTransferRecovery', () => {
         return record ? 'nonterminal' : 'absent';
       },
     };
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn().mockResolvedValue(undefined),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     subsystem.registerDurableOwner(hostTransferOwner);
     recovery.register(subsystem);
@@ -599,9 +716,9 @@ describe('AuthorityTransferRecovery', () => {
       stagingDirectoryName: '.claudian-authority-transfer-transfer-one',
       status: status('collecting-readiness'),
     }));
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn().mockResolvedValue(undefined),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     recovery.register(subsystem);
     const operation = jest.fn().mockResolvedValue('admitted');
@@ -633,12 +750,12 @@ describe('AuthorityTransferRecovery', () => {
     }
     const firstError = new Error('alpha recovery unavailable');
     const resumed: string[] = [];
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn(async record => {
         resumed.push(record.projectId);
         if (record.projectId === 'project-alpha') throw firstError;
       }),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -661,9 +778,9 @@ describe('AuthorityTransferRecovery', () => {
     await mkdir(path.dirname(corruptPath), { recursive: true });
     await writeFile(corruptPath, '{', { mode: 0o600 });
     const resumed: string[] = [];
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn(async record => { resumed.push(record.projectId); }),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -689,9 +806,9 @@ describe('AuthorityTransferRecovery', () => {
       recursive: true,
     });
     const resumed: string[] = [];
-    const recovery = new AuthorityTransferRecovery(persistence, {
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
       resume: jest.fn(async record => { resumed.push(record.projectId); }),
-    }, () => undefined);
+    }), () => undefined);
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
@@ -714,7 +831,11 @@ describe('AuthorityTransferRecovery', () => {
       status: status('collecting-readiness'),
     }));
     const resume = jest.fn().mockResolvedValue(undefined);
-    const recovery = new AuthorityTransferRecovery(persistence, { resume }, () => undefined);
+    const recovery = new AuthorityTransferRecovery(
+      persistence,
+      recoveryHandler({ resume }),
+      () => undefined,
+    );
     const subsystem = lifecycle();
     recovery.register(subsystem);
     let releaseBlocker!: () => void;

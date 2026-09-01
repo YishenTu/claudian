@@ -306,8 +306,13 @@ describe('AuthorityTransferLocalConvergence', () => {
       endpoint: 'https://192.168.1.20:54545',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'e'.repeat(64),
+      identity: {
+        authorityGeneration: 2,
+        currentMember: snapshot('lan').currentMember,
+        eventSequence: snapshot('lan').eventSequence,
+        project: snapshot('lan').project,
+      },
       memberCredential,
-      snapshot: snapshot('lan'),
       status: completed('cloud-to-lan'),
     });
 
@@ -397,8 +402,13 @@ describe('AuthorityTransferLocalConvergence', () => {
       endpoint: 'https://192.168.1.20:54545',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'e'.repeat(64),
+      identity: {
+        authorityGeneration: 2,
+        currentMember: snapshot('lan').currentMember,
+        eventSequence: snapshot('lan').eventSequence,
+        project: snapshot('lan').project,
+      },
       memberCredential: credential,
-      snapshot: snapshot('lan'),
       status: completed('cloud-to-lan'),
     });
     await convergence.recoverConvertedClaimant({

@@ -2,10 +2,13 @@ import { createHash } from 'node:crypto';
 
 export type AuthorityTransferChildOperation =
   | 'accept'
+  | 'activate'
   | 'begin'
+  | 'cancel'
   | 'claims'
   | 'custody'
-  | 'relinquish';
+  | 'relinquish'
+  | 'stage';
 
 export function authorityTransferChildIdempotencyKey(
   operationIntentId: string,

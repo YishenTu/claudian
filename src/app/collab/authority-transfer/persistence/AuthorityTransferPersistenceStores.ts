@@ -7,6 +7,10 @@ import type {
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { type AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import type {
+  CloudToLanManagerEntryRecord,
+  CloudToLanTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import type {
   AuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
 import {
@@ -24,10 +28,14 @@ export interface AuthorityTransferRecordStorePort {
 
 export interface AuthorityTransferEntryStorePort {
   load(projectId: CollabProjectId): Promise<AuthorityTransferEntryRecord | null>;
+  removeManager(record: CloudToLanManagerEntryRecord): Promise<boolean>;
   removeRequester(record: AuthorityTransferRequesterEntryRecord): Promise<boolean>;
   removeSource(record: AuthorityTransferSourceEntryRecord): Promise<boolean>;
+  removeTarget(record: CloudToLanTargetEntryRecord): Promise<boolean>;
+  saveManager(record: CloudToLanManagerEntryRecord): Promise<void>;
   saveRequester(record: AuthorityTransferRequesterEntryRecord): Promise<void>;
   saveSource(record: AuthorityTransferSourceEntryRecord): Promise<void>;
+  saveTarget(record: CloudToLanTargetEntryRecord): Promise<void>;
 }
 
 export interface AuthorityTransferProjectCatalog {

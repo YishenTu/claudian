@@ -3,6 +3,9 @@ import { type CollabProjectId } from '@claudian-collab/protocol';
 import {
   type AuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import type {
+  CloudToLanTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import {
   type AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -17,6 +20,11 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 export interface AuthorityTransferRecoveryHandler {
   prepare?(record: AuthorityTransferRecord): Promise<void>;
   resume(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
+  resumeManager(projectId: CollabProjectId, options: CollabOperationOptions): Promise<void>;
+  resumeTargetPreparation(
+    entry: CloudToLanTargetEntryRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
 }
 
 function throwIfCancelled(signal?: AbortSignal): void {
@@ -62,15 +70,23 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       : undefined;
     for (const projectId of catalog.projectIds) {
       throwIfCancelled(options.signal);
-      await this.lifecycle.runExclusive(
+      await this.lifecycle.runAuthorityTransferRecovery(
         projectId,
-        this.durableOwner.name,
-        'recovery',
         async () => {
+          await this.handler.resumeManager(projectId, options);
           let ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') return;
           const ownerRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
-          if (!ownerRecord) return;
+          if (!ownerRecord) {
+            const targetEntry = await this.persistence.loadCloudToLanTargetEntry(projectId);
+            if (
+              !targetEntry
+              || (targetEntry.phase !== 'preparing' && targetEntry.phase !== 'published')
+            ) return;
+            await this.assertRecoveryOwner(targetEntry.ownerInstallationKey, projectId);
+            await this.handler.resumeTargetPreparation(targetEntry, options);
+            return;
+          }
           await this.assertRecoveryOwner(ownerRecord.ownerInstallationKey, projectId);
           await this.persistence.recoverInterruptedClaimCommitment(projectId);
           ownerState = await this.persistence.inspectLifecycleOwner(projectId);

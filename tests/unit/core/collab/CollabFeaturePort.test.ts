@@ -70,6 +70,12 @@ describe('CollabFeaturePort', () => {
       retireProject: true,
       finalizeRetiredProject: true,
       retryProjectCleanup: true,
+      prepareCloudToLanTarget: true,
+      beginCloudToLanTransfer: true,
+      acceptCloudToLanTransfer: true,
+      withdrawCloudToLanTarget: true,
+      observeCloudToLanTransfer: true,
+      cancelCloudToLanTransfer: true,
       subscribe: true,
     } satisfies Record<keyof CollabFeaturePort, true>;
 
