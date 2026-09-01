@@ -471,6 +471,7 @@ export class LanHostCoordinator {
   );
    readonly #clearAuthorityTransferExpiryTimeout: (handle: number) => void;
   private hostLock: HeldHostLock | null = null;
+  private hostLockRelease: Promise<void> | null = null;
    readonly #hostLockPath: string;
   private listener: RunningListener | null = null;
    #listenerFailure: CollabError | null = null;
@@ -1819,23 +1820,45 @@ export class LanHostCoordinator {
   }
 
    async #releaseHostLock(): Promise<void> {
+    if (this.hostLockRelease) return this.hostLockRelease;
     const lock = this.hostLock;
     if (!lock) return;
-    this.hostLock = null;
+    const release = this.#releaseOwnedHostLock(lock);
+    this.hostLockRelease = release;
     try {
-      await lock.handle.close().catch(() => undefined);
-      const contents = await readFile(lock.path, 'utf8').catch(() => null);
-      if (contents === null) return;
-      const current = parseHostLock(contents);
-      if (current.nonce !== lock.nonce || current.pid !== lock.pid) {
-        throw hostError('authorization-denied', 'vault-host-lock-replaced');
-      }
-      await unlink(lock.path).catch(() => {
-        throw hostError('operation-failed', 'vault-host-lock-release-failed');
-      });
+      await release;
     } finally {
-      ACTIVE_HOST_LOCK_NONCES.delete(lock.nonce);
+      if (this.hostLockRelease === release) this.hostLockRelease = null;
     }
+  }
+
+   async #releaseOwnedHostLock(lock: HeldHostLock): Promise<void> {
+    await lock.handle.close().catch(() => undefined);
+    let contents: string | null;
+    try {
+      contents = await readFile(lock.path, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw hostError('operation-failed', 'vault-host-lock-read-failed');
+      }
+      contents = null;
+    }
+    if (contents === null) {
+      if (this.hostLock === lock) this.hostLock = null;
+      ACTIVE_HOST_LOCK_NONCES.delete(lock.nonce);
+      return;
+    }
+    const current = parseHostLock(contents);
+    if (current.nonce !== lock.nonce || current.pid !== lock.pid) {
+      if (this.hostLock === lock) this.hostLock = null;
+      ACTIVE_HOST_LOCK_NONCES.delete(lock.nonce);
+      throw hostError('authorization-denied', 'vault-host-lock-replaced');
+    }
+    await unlink(lock.path).catch(() => {
+      throw hostError('operation-failed', 'vault-host-lock-release-failed');
+    });
+    if (this.hostLock === lock) this.hostLock = null;
+    ACTIVE_HOST_LOCK_NONCES.delete(lock.nonce);
   }
 
    async #closeListenerAndLock(): Promise<void> {
@@ -2144,7 +2167,12 @@ export class LanHostCoordinator {
    #releaseAuthorityTransferPreparation(token: symbol): Promise<void> {
     return this.#operationQueue.run(async () => {
       if (!this.#authorityTransferPreparations.delete(token)) return;
-      await this.#closeUnusedListener();
+      try {
+        await this.#closeUnusedListener();
+      } catch (error) {
+        this.#authorityTransferPreparations.add(token);
+        throw error;
+      }
     });
   }
 
