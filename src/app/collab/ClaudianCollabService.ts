@@ -350,39 +350,61 @@ export class ClaudianCollabService {
       installationKey: options.installationKey,
       localProjects: projects,
       openProject: projectId => this.#openLanHostProject(projectId),
-      runWithProjectStartGuard: async (projectId, operation) => {
-        const tombstone = await projects.loadRetirementTombstone(projectId);
-        if (tombstone && tombstone.ownerInstallationKey === undefined) {
-          throw new CollabError({
-            code: 'durable-progress-recovery-required',
-            recoveryActions: ['resume', 'open-diagnostics'],
-            safeContext: {
-              projectId,
-              reason: 'retirement-tombstone-legacy-owner-missing',
-            },
-          });
-        }
-        if (
-          tombstone
-          && this.hostInstallations.isRecoveryOwner(tombstone.ownerInstallationKey)
-        ) {
-          throw new CollabError({
-            code: 'project-retired',
-            safeContext: {
-              projectId,
-              reason: 'retirement-tombstone-durable',
-              retiredAt: tombstone.retiredAt,
-            },
-          });
-        }
-        return this.cloudBootstrapTransitions.runWithLanHostStartGuard(
+      runWithProjectStartGuard: (projectId, operation) => (
+        this.#runWithLanHostStartGuards(
           projectId,
-          () => this.authorityTransfers.runWithAuthorityStartGuard(projectId, operation),
-        );
-      },
+          operation,
+          guarded => this.authorityTransfers.runWithAuthorityStartGuard(projectId, guarded),
+        )
+      ),
+      runWithAuthorityTransferCancellationRestartGuard: (input, operation) => (
+        this.#runWithLanHostStartGuards(
+          input.projectId,
+          operation,
+          guarded => this.authorityTransfers.runWithLanToCloudCancellationRestartGuard(
+            input,
+            guarded,
+          ),
+        )
+      ),
       tlsIdentity,
       vaultRoot: options.vaultRoot,
     });
+  }
+
+  async #runWithLanHostStartGuards<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+    authorityGuard: (operation: () => Promise<T>) => Promise<T>,
+  ): Promise<T> {
+    const tombstone = await this.local.projects.loadRetirementTombstone(projectId);
+    if (tombstone && tombstone.ownerInstallationKey === undefined) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['resume', 'open-diagnostics'],
+        safeContext: {
+          projectId,
+          reason: 'retirement-tombstone-legacy-owner-missing',
+        },
+      });
+    }
+    if (
+      tombstone
+      && this.hostInstallations.isRecoveryOwner(tombstone.ownerInstallationKey)
+    ) {
+      throw new CollabError({
+        code: 'project-retired',
+        safeContext: {
+          projectId,
+          reason: 'retirement-tombstone-durable',
+          retiredAt: tombstone.retiredAt,
+        },
+      });
+    }
+    return this.cloudBootstrapTransitions.runWithLanHostStartGuard(
+      projectId,
+      () => authorityGuard(operation),
+    );
   }
 
   resolveGitRuntime(rescan = false): Promise<GitRuntimeResolution> {
@@ -405,11 +427,30 @@ export class ClaudianCollabService {
     this.#authorityTransferModule = module;
   }
 
+  async assertLanToCloudSourceOwner(
+    projectId: CollabProjectId,
+    expectedAuthorityGeneration: number,
+  ): Promise<void> {
+    await this.hostInstallations.assertOwned(projectId, 'recover');
+    const authority = await this.inspectAuthority(projectId);
+    const project = await authority?.database.read(connection => authority.projects.get(connection));
+    if (!project || project.authorityGeneration !== expectedAuthorityGeneration) {
+      throw new CollabError({
+        code: 'authority-transfer-stale',
+        recoveryActions: ['retry'],
+        safeContext: { reason: 'lan-to-cloud-source-generation-stale' },
+      });
+    }
+  }
+
   async activateAuthorityTransferSourceRoute(
     projectId: CollabProjectId,
     expectedEndpoint?: string,
   ): Promise<() => Promise<void>> {
     this.#assertOpen();
+    if (this.lanHost.isProjectRunning(projectId)) {
+      return async () => undefined;
+    }
     const authority = await this.inspectAuthority(projectId);
     if (!authority) {
       throw collabServiceError(
@@ -426,6 +467,7 @@ export class ClaudianCollabService {
     }
     const authenticator = new AuthorityMemberCredentialAuthenticator(authority.database);
     const service = this.#authorityTransferModule?.sourceActiveService({
+      authorityGeneration: project.authorityGeneration,
       authenticateMemberCredential: async credential => ({
         memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
       }),
@@ -1031,6 +1073,7 @@ export class ClaudianCollabService {
       authority.database,
     );
     const authorityTransfer = this.#authorityTransferModule?.sourceActiveService({
+      authorityGeneration: authorityProject.authorityGeneration,
       authenticateMemberCredential: async credential => ({
         memberId: (await authorityTransferAuthenticator.authenticate(
           credential,

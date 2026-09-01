@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import type { CollabProjectId } from '@claudian-collab/protocol';
+import {
+  COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES,
+  type CollabProjectId,
+} from '@claudian-collab/protocol';
 
 import type {
   CollabProjectWorkSessionSuspension,
@@ -1007,6 +1010,9 @@ export function createCollabFeatureSubcomposition(
     activateLanToCloudSourceRoute: (projectId, expectedEndpoint) => (
       foundation.activateAuthorityTransferSourceRoute(projectId, expectedEndpoint)
     ),
+    assertLanToCloudSourceOwner: (projectId, expectedAuthorityGeneration) => (
+      foundation.assertLanToCloudSourceOwner(projectId, expectedAuthorityGeneration)
+    ),
     assertRecoveryOwner: (ownerInstallationKey, projectId) => (
       foundation.hostInstallations.assertRecoveryOwner(
         ownerInstallationKey,
@@ -1062,6 +1068,60 @@ export function createCollabFeatureSubcomposition(
     recoverClaimant: record => claimantBindingResolver.resolve(record),
     terminalResolver: {
       resolve: async record => {
+        const sourceEntry = record.localRole === 'source'
+          && record.status.direction === 'lan-to-cloud'
+          ? await foundation.authorityTransfers.loadSourceEntry(record.projectId)
+          : null;
+        const locallyProvedCancellation = sourceEntry?.cancellation !== null
+          && sourceEntry?.cancellation !== undefined
+          && sourceEntry.beginSubmission !== 'possibly-sent'
+          && (
+            record.status.phase === 'collecting-readiness'
+            || COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES.includes(
+              record.status.phase as never,
+            )
+          );
+        if (
+          record.localRole === 'source'
+          && record.status.direction === 'lan-to-cloud'
+          && (record.status.state === 'cancelled' || locallyProvedCancellation)
+        ) {
+          return {
+            resume: async () => {
+              const sourceEffects = new ProductionLanToCloudSourceEffects({
+                cloudSession: null,
+                convergence: authorityTransferConvergence,
+                foundation,
+                persistence: foundation.authorityTransfers,
+                projectId: record.projectId,
+              });
+              let settled = record;
+              if (record.status.state !== 'cancelled') {
+                const cancellation = sourceEntry?.cancellation;
+                if (!cancellation) {
+                  throw bootstrapCompositionError(
+                    'authority-transfer-cancellation-intent-missing',
+                  );
+                }
+                const prepared = record.status.phase === 'collecting-readiness'
+                  ? await foundation.authorityTransfers.cancelUnbegunLanToCloudSource(cancellation)
+                  : await foundation.authorityTransfers
+                    .resumeUnbegunLanToCloudCancellation(record);
+                await sourceEffects.reopenAfterCancellation(prepared);
+                settled = await foundation.authorityTransfers
+                  .completeUnbegunLanToCloudCancellation(prepared);
+              } else {
+                await sourceEffects.reopenAfterCancellation(record);
+              }
+              await foundation.authorityTransfers.completeTerminalCleanup({
+                operationIntentId: settled.operationIntentId,
+                projectId: settled.projectId,
+                stagingDirectoryName: settled.stagingDirectoryName,
+                transferId: settled.transferId,
+              });
+            },
+          };
+        }
         if (
           record.localRole === 'target'
           && record.status.direction === 'cloud-to-lan'

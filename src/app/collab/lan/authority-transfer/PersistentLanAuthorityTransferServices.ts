@@ -45,6 +45,7 @@ export interface PersistentTerminalSourceServiceOptions {
   readonly cleanupStaging: (record: AuthorityTransferRecord) => Promise<void>;
   readonly expiresAt: string;
   readonly now?: () => Date;
+  readonly prepareExpiry?: () => Promise<void>;
   readonly persistence: Pick<
     AuthorityTransferPersistence,
     | 'completeTerminalCleanup'
@@ -91,6 +92,7 @@ implements LanAuthorityTransferTerminalSourceService {
         'authority-transfer-terminal-source-unavailable',
       );
     }
+    await this.options.prepareExpiry?.();
     await this.options.persistence.expireTerminalResponder(
       this.options.projectId,
       this.options.transferId,

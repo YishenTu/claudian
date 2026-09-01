@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES,
   type CollabAuthorityTransferReceiptVerifier,
   type CollabAuthorityTransferStatus,
   type CollabIsoTimestamp,
@@ -10,6 +11,7 @@ import {
   type CollabTransferredMembershipClaimBatch,
   type CollabTransferredMembershipClaimCustodyReceipt,
   type CollabTransferredMembershipRedemptionReceipt,
+  decodeCollabAuthorityTransferStatus,
   decodeCollabTransferredMembershipClaimBatch,
   decodeCollabTransferredMembershipClaimCustodyReceipt,
   decodeCollabTransferredMembershipRedemptionReceipt,
@@ -17,9 +19,27 @@ import {
 } from '@claudian-collab/protocol';
 
 import {
+  type AuthorityTransferEntryRecord,
+  type AuthorityTransferRequesterEntryRecord,
+  type AuthorityTransferSourceCancellationIntent,
+  type AuthorityTransferSourceEntryRecord,
+  cancelAuthorityTransferSourceEntry,
+  clearAuthorityTransferSourceCancellation,
+  completeAuthorityTransferRequesterEntry,
+  createAuthorityTransferEntryDocument,
+  decodeAuthorityTransferEntryComponent,
+  handoffAuthorityTransferEntry,
+  markAuthorityTransferSourceBeginPossiblySent,
+  markAuthorityTransferSourceCancellationPossiblySent,
+  markAuthorityTransferSourceCloudAbsent,
+  prepareAuthorityTransferSourceCancellation,
+  settleAuthorityTransferSourceCancellation,
+} from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import {
   assertAuthorityTransferTransition,
   type AuthorityTransferRecord,
   bindLegacyAuthorityTransferSourceOwner,
+  createAuthorityTransferRecord,
   decodeAuthorityTransferRecord,
   expireAuthorityTransferTerminalResponder,
   isAuthorityTransferProposal,
@@ -44,6 +64,8 @@ import {
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
+
+export type LanToCloudCancellationIntent = AuthorityTransferSourceCancellationIntent;
 
 export interface AuthorityTransferPersistenceOptions {
   readonly isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean;
@@ -181,21 +203,43 @@ export class AuthorityTransferPersistence {
     projectId: CollabProjectId,
   ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
     return this.runProject(projectId, async () => {
-      const [record, custody, commitment] = await Promise.all([
+      const [loadedEntry, record, custody, commitment] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
         this.stores.authorityTransferRecords.load(projectId),
         this.stores.authorityTransferClaims.load(projectId),
         this.stores.authorityTransferClaimCommitments.load(projectId),
       ]);
-      if (!record) return custody || commitment ? 'nonterminal' : 'absent';
+      const entry = await this.#removeExpiredEntry(loadedEntry, record);
+      const source = entry?.source ?? null;
+      const localSource = source !== null && this.#isLocalSourceEntry(source);
+      const foreignPhysical = record !== null && this.#isForeignPhysical(record);
+      if (localSource && source.phase === 'handed-off' && foreignPhysical) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-entry-successor-owner-mismatch',
+        );
+      }
       if (
-        record.ownerInstallationKey !== undefined
-        && !this.#isRecoveryOwner(record.ownerInstallationKey)
-      ) return 'absent';
+        localSource
+        && source.phase !== 'cancelled'
+        && record
+        && !foreignPhysical
+      ) {
+        await this.#reconcileEntrySuccessor(source, record);
+      }
+      if (!record) {
+        if (custody || commitment) return 'nonterminal';
+        if (!localSource || source.phase === 'cancelled') return 'absent';
+        return source.phase === 'proposed' ? 'proposal' : 'nonterminal';
+      }
+      if (foreignPhysical) return 'absent';
       if (custody || commitment) {
         return 'nonterminal';
       }
       if (isAuthorityTransferProposal(record)) return 'proposal';
-      return isAuthorityTransferTerminal(record) && record.terminalCleanupCompleted
+      return isAuthorityTransferTerminal(record)
+        && record.terminalCleanupCompleted
+        && (!localSource || source.phase === 'cancelled')
         ? 'terminal'
         : 'nonterminal';
     });
@@ -204,10 +248,679 @@ export class AuthorityTransferPersistence {
   loadRecoveryOwnerRecord(
     projectId: CollabProjectId,
   ): Promise<AuthorityTransferRecord | null> {
-    return this.runProject(
-      projectId,
-      () => this.stores.authorityTransferRecords.load(projectId),
-    );
+    return this.runProject(projectId, async () => {
+      const [entry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      const source = entry?.source;
+      if (
+        !record
+        && source?.phase === 'handed-off'
+        && this.#isLocalSourceEntry(source)
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-entry-successor-missing',
+        );
+      }
+      return record;
+    });
+  }
+
+  loadSourceEntry(projectId: CollabProjectId): Promise<AuthorityTransferSourceEntryRecord | null> {
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      const entry = await this.#removeExpiredEntry(loadedEntry, record);
+      const source = entry?.source ?? null;
+      if (
+        source
+        && this.#isLocalSourceEntry(source)
+        && record
+        && !this.#isForeignPhysical(record)
+        && source.phase !== 'cancelled'
+      ) {
+        await this.#reconcileEntrySuccessor(source, record);
+      }
+      return source && this.#isLocalSourceEntry(source) ? source : null;
+    });
+  }
+
+  loadRequesterEntry(
+    projectId: CollabProjectId,
+    installationKey: InstallationKey,
+  ): Promise<AuthorityTransferRequesterEntryRecord | null> {
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      const entry = await this.#removeExpiredEntry(loadedEntry, record);
+      return entry?.requesters[installationKey] ?? null;
+    });
+  }
+
+  loadObservedSourceEntry(
+    projectId: CollabProjectId,
+  ): Promise<AuthorityTransferSourceEntryRecord | null> {
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      return (await this.#removeExpiredEntry(loadedEntry, record))?.source ?? null;
+    });
+  }
+
+  submitRequesterEntry(
+    entry: AuthorityTransferRequesterEntryRecord,
+  ): Promise<AuthorityTransferRequesterEntryRecord> {
+    let decoded: AuthorityTransferRequesterEntryRecord;
+    try {
+      const candidate = decodeAuthorityTransferEntryComponent(entry);
+      if (candidate.entryRole !== 'requester') throw new TypeError();
+      decoded = candidate;
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-requester-entry-invalid',
+      ));
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [loadedEntry, physical] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      const document = await this.#removeExpiredEntry(loadedEntry, physical);
+      const existing = document?.requesters[decoded.requesterInstallationKey] ?? null;
+      if (existing) {
+        if (
+          existing.proposedByMemberId === decoded.proposedByMemberId
+          && sameValue(existing.request, decoded.request)
+        ) return existing;
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-entry-conflict',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveRequester(decoded);
+      return decoded;
+    });
+  }
+
+  completeRequesterEntry(
+    entry: AuthorityTransferRequesterEntryRecord,
+    status: CollabAuthorityTransferStatus,
+  ): Promise<AuthorityTransferRequesterEntryRecord> {
+    let decoded: AuthorityTransferRequesterEntryRecord;
+    let completed: AuthorityTransferRequesterEntryRecord;
+    try {
+      const candidate = decodeAuthorityTransferEntryComponent(entry);
+      if (candidate.entryRole !== 'requester') throw new TypeError();
+      decoded = candidate;
+      completed = completeAuthorityTransferRequesterEntry(decoded, status);
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-requester-result-invalid',
+      ));
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [loadedEntry, physical] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      const document = await this.#removeExpiredEntry(loadedEntry, physical);
+      const current = document?.requesters[decoded.requesterInstallationKey] ?? null;
+      if (
+        !current
+        || current.proposedByMemberId !== decoded.proposedByMemberId
+        || !sameValue(current.request, decoded.request)
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-requester-entry-stale',
+        );
+      }
+      if (current.status) {
+        if (sameValue(current.status, status)) return current;
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-requester-result-conflict',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveRequester(completed);
+      return completed;
+    });
+  }
+
+  settleRequesterCancellation(
+    entry: AuthorityTransferRequesterEntryRecord,
+    status: CollabAuthorityTransferStatus,
+  ): Promise<void> {
+    let decoded: AuthorityTransferRequesterEntryRecord;
+    let cancelled: CollabAuthorityTransferStatus;
+    try {
+      const candidate = decodeAuthorityTransferEntryComponent(entry);
+      if (candidate.entryRole !== 'requester' || !candidate.status) throw new TypeError();
+      decoded = candidate;
+      const knownStatus = candidate.status;
+      cancelled = decodeCollabAuthorityTransferStatus(status);
+      if (
+        cancelled.phase !== 'cancelled'
+        || cancelled.state !== 'cancelled'
+        || cancelled.projectId !== decoded.projectId
+        || cancelled.transferId !== knownStatus.transferId
+        || cancelled.direction !== knownStatus.direction
+        || cancelled.sourceAuthority.generation
+          !== knownStatus.sourceAuthority.generation
+        || cancelled.targetAuthority.generation
+          !== knownStatus.targetAuthority.generation
+        || cancelled.targetUrl !== knownStatus.targetUrl
+      ) throw new TypeError();
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-requester-cancellation-invalid',
+      ));
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const document = await this.stores.authorityTransferEntries.load(decoded.projectId);
+      const current = document?.requesters[decoded.requesterInstallationKey] ?? null;
+      if (!current || !sameValue(current, decoded)) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-requester-entry-stale',
+        );
+      }
+      if (!await this.stores.authorityTransferEntries.removeRequester(decoded)) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-requester-entry-stale',
+        );
+      }
+    });
+  }
+
+  proposeEntry(
+    record: AuthorityTransferSourceEntryRecord,
+  ): Promise<AuthorityTransferSourceEntryRecord> {
+    let decoded: AuthorityTransferSourceEntryRecord;
+    try {
+      const candidate = decodeAuthorityTransferEntryComponent(record);
+      if (candidate.entryRole !== 'source') throw new TypeError();
+      decoded = candidate;
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-entry-invalid',
+      ));
+    }
+    if (!this.#isLocalSourceEntry(decoded)) {
+      return Promise.reject(transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-source-entry-owner-mismatch',
+      ));
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const [loadedEntry, physical] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decoded.projectId),
+        this.stores.authorityTransferRecords.load(decoded.projectId),
+      ]);
+      const document = await this.#removeExpiredEntry(loadedEntry, physical);
+      const existing = document?.source ?? null;
+      if (existing) {
+        if (!this.#isLocalSourceEntry(existing)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-source-entry-owner-mismatch',
+          );
+        }
+        if (
+          existing.proposedByMemberId === decoded.proposedByMemberId
+          && sameValue(existing.request, decoded.request)
+        ) {
+          return existing;
+        }
+        if (existing.phase === 'cancelled') {
+          if (existing.request.idempotencyKey === decoded.request.idempotencyKey) {
+            throw transferError(
+              'authority-transfer-stale',
+              'authority-transfer-entry-idempotency-key-reused',
+            );
+          }
+          if (physical) {
+            if (this.#isForeignPhysical(physical)) {
+              throw transferError(
+                'durable-progress-recovery-required',
+                'authority-transfer-foreign-record-conflict',
+              );
+            }
+            await this.#assertSafeCancelledPhysicalReplacement(physical);
+            if (!await this.stores.authorityTransferRecords.removeExact(physical)) {
+              throw transferError(
+                'durable-progress-recovery-required',
+                'authority-transfer-physical-record-stale',
+              );
+            }
+          }
+          await this.stores.authorityTransferEntries.saveSource(decoded);
+          return decoded;
+        }
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-entry-conflict',
+        );
+      }
+      if (physical) {
+        if (this.#isForeignPhysical(physical)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-foreign-record-conflict',
+          );
+        }
+        await this.#assertSafeCancelledPhysicalReplacement(physical);
+        if (!await this.stores.authorityTransferRecords.removeExact(physical)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-physical-record-stale',
+          );
+        }
+      }
+      await this.stores.authorityTransferEntries.saveSource(decoded);
+      return decoded;
+    });
+  }
+
+  cancelSourceEntry(
+    request: LanToCloudCancellationIntent,
+  ): Promise<AuthorityTransferSourceEntryRecord> {
+    const projectId = request.projectId;
+    return this.runProject(projectId, async () => {
+      const [loadedEntry, physical] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+      ]);
+      const document = await this.#removeExpiredEntry(loadedEntry, physical);
+      const entry = document?.source;
+      if (!entry || !this.#isLocalSourceEntry(entry)) {
+        throw transferError('authority-transfer-not-found', 'authority-transfer-entry-missing');
+      }
+      if (
+        entry.status.transferId !== request.transferId
+        || entry.request.expectedAuthorityGeneration !== request.expectedAuthorityGeneration
+      ) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-entry-cancel-stale');
+      }
+      let prepared: AuthorityTransferSourceEntryRecord;
+      try {
+        prepared = prepareAuthorityTransferSourceCancellation(entry, request);
+      } catch {
+        throw transferError('authority-transfer-stale', 'authority-transfer-entry-cancel-stale');
+      }
+      if (entry.phase === 'cancelled') return prepared;
+      if (entry.status.phase !== request.expectedPhase) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-entry-cancel-stale');
+      }
+      if (physical || entry.phase === 'handed-off') {
+        throw transferError('authority-transfer-stale', 'authority-transfer-entry-handed-off');
+      }
+      let cancelled: AuthorityTransferSourceEntryRecord;
+      try {
+        cancelled = cancelAuthorityTransferSourceEntry(
+          prepared,
+          request,
+          this.now().toISOString(),
+        );
+      } catch {
+        throw transferError('authority-transfer-stale', 'authority-transfer-entry-cancel-invalid');
+      }
+      await this.stores.authorityTransferEntries.saveSource(cancelled);
+      return cancelled;
+    });
+  }
+
+  prepareLanToCloudCancellation(
+    request: LanToCloudCancellationIntent,
+  ): Promise<AuthorityTransferRecord> {
+    return this.runProject(request.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(request.projectId),
+        this.stores.authorityTransferRecords.load(request.projectId),
+      ]);
+      const entry = document?.source;
+      if (!entry || !this.#isLocalSourceEntry(entry) || !record) {
+        throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
+      }
+      if (entry.phase === 'cancelled') {
+        try {
+          const replay = prepareAuthorityTransferSourceCancellation(entry, request);
+          if (
+            replay !== entry
+            || record.localRole !== 'source'
+            || record.status.state !== 'cancelled'
+            || record.ownerInstallationKey !== entry.ownerInstallationKey
+            || record.transferId !== entry.status.transferId
+            || record.operationIntentId !== entry.request.idempotencyKey
+          ) throw new TypeError();
+          return record;
+        } catch {
+          throw transferError(
+            'authority-transfer-stale',
+            'authority-transfer-cancel-intent-stale',
+          );
+        }
+      }
+      await this.#reconcileEntrySuccessor(entry, record);
+      if (
+        entry.phase !== 'handed-off'
+        || record.localRole !== 'source'
+        || record.transferId !== request.transferId
+        || record.status.sourceAuthority.generation !== request.expectedAuthorityGeneration
+        || record.status.relinquishmentProof !== null
+      ) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-cancel-intent-stale');
+      }
+      let prepared: AuthorityTransferSourceEntryRecord;
+      try {
+        prepared = prepareAuthorityTransferSourceCancellation(entry, request);
+      } catch {
+        throw transferError('authority-transfer-stale', 'authority-transfer-cancel-intent-stale');
+      }
+      if (
+        prepared === entry
+        && record.status.state === 'cancelled'
+      ) return record;
+      if (
+        entry.cancellation === null
+        && record.status.phase !== request.expectedPhase
+      ) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-cancel-intent-stale');
+      }
+      if (prepared !== entry) {
+        await this.stores.authorityTransferEntries.saveSource(prepared);
+      }
+      return record;
+    });
+  }
+
+  markLanToCloudCancellationPossiblySent(
+    request: LanToCloudCancellationIntent,
+  ): Promise<void> {
+    return this.runProject(request.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(request.projectId),
+        this.stores.authorityTransferRecords.load(request.projectId),
+      ]);
+      const entry = document?.source;
+      if (!entry || !this.#isLocalSourceEntry(entry) || !record) {
+        throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
+      }
+      await this.#reconcileEntrySuccessor(entry, record);
+      let prepared: AuthorityTransferSourceEntryRecord;
+      try {
+        prepared = prepareAuthorityTransferSourceCancellation(entry, request);
+      } catch {
+        throw transferError('authority-transfer-stale', 'authority-transfer-cancel-intent-stale');
+      }
+      const marked = markAuthorityTransferSourceCancellationPossiblySent(prepared);
+      if (marked !== entry) await this.stores.authorityTransferEntries.saveSource(marked);
+    });
+  }
+
+  settleRejectedLanToCloudCancellation(
+    request: LanToCloudCancellationIntent,
+    record: AuthorityTransferRecord,
+  ): Promise<void> {
+    return this.runProject(request.projectId, async () => {
+      const [document, current] = await Promise.all([
+        this.stores.authorityTransferEntries.load(request.projectId),
+        this.stores.authorityTransferRecords.load(request.projectId),
+      ]);
+      const source = document?.source;
+      const cancellation = source?.cancellation;
+      if (
+        !source
+        || !this.#isLocalSourceEntry(source)
+        || source.phase !== 'handed-off'
+        || !cancellation
+        || !current
+        || !sameValue(current, record)
+        || cancellation.expectedAuthorityGeneration !== request.expectedAuthorityGeneration
+        || cancellation.expectedPhase !== request.expectedPhase
+        || cancellation.idempotencyKey !== request.idempotencyKey
+        || cancellation.projectId !== request.projectId
+        || cancellation.transferId !== request.transferId
+        || current.status.phase === request.expectedPhase
+        || current.status.state === 'cancelled'
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-cancellation-rejection-stale',
+        );
+      }
+      await this.stores.authorityTransferEntries.saveSource(
+        clearAuthorityTransferSourceCancellation(source),
+      );
+    });
+  }
+
+  cancelUnbegunLanToCloudSource(
+    request: LanToCloudCancellationIntent,
+    cloudAbsenceProven = false,
+  ): Promise<AuthorityTransferRecord> {
+    return this.runProject(request.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(request.projectId),
+        this.stores.authorityTransferRecords.load(request.projectId),
+      ]);
+      const entry = document?.source;
+      if (!entry || !this.#isLocalSourceEntry(entry) || !record) {
+        throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
+      }
+      await this.#reconcileEntrySuccessor(entry, record);
+      let prepared: AuthorityTransferSourceEntryRecord;
+      try {
+        prepared = prepareAuthorityTransferSourceCancellation(entry, request);
+      } catch {
+        throw transferError('authority-transfer-stale', 'authority-transfer-local-cancel-stale');
+      }
+      if (
+        entry.phase !== 'handed-off'
+        || (
+          entry.beginSubmission !== 'not-sent'
+          && !(cloudAbsenceProven && entry.beginSubmission === 'possibly-sent')
+        )
+        || record.localRole !== 'source'
+        || record.transferId !== request.transferId
+        || record.status.sourceAuthority.generation !== request.expectedAuthorityGeneration
+        || record.status.phase !== request.expectedPhase
+        || record.status.phase !== 'collecting-readiness'
+        || record.status.relinquishmentProof !== null
+      ) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-local-cancel-stale');
+      }
+      if (cloudAbsenceProven && entry.beginSubmission === 'possibly-sent') {
+        await this.stores.authorityTransferEntries.saveSource(
+          markAuthorityTransferSourceCloudAbsent(prepared),
+        );
+      } else if (prepared !== entry) {
+        await this.stores.authorityTransferEntries.saveSource(prepared);
+      }
+      return this.#advanceUnbegunCancellation(record, 'target-cleaned');
+    });
+  }
+
+  resumeUnbegunLanToCloudCancellation(
+    record: AuthorityTransferRecord,
+  ): Promise<AuthorityTransferRecord> {
+    return this.runProject(record.projectId, async () => {
+      const [document, current] = await Promise.all([
+        this.stores.authorityTransferEntries.load(record.projectId),
+        this.stores.authorityTransferRecords.load(record.projectId),
+      ]);
+      const entry = document?.source;
+      if (
+        !entry
+        || !this.#isLocalSourceEntry(entry)
+        || entry.phase !== 'handed-off'
+        || (
+          entry.beginSubmission !== 'not-sent'
+          && entry.beginSubmission !== 'cloud-absent'
+        )
+        || !current
+        || !sameValue(current, record)
+        || (
+          !COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES.includes(
+            current.status.phase as never,
+          )
+          && !(
+            current.status.phase === 'collecting-readiness'
+            && entry.beginSubmission === 'cloud-absent'
+            && entry.cancellation !== null
+          )
+        )
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-local-cancel-stale',
+        );
+      }
+      await this.#reconcileEntrySuccessor(entry, current);
+      return this.#advanceUnbegunCancellation(current, 'target-cleaned');
+    });
+  }
+
+  completeUnbegunLanToCloudCancellation(
+    record: AuthorityTransferRecord,
+  ): Promise<AuthorityTransferRecord> {
+    return this.runProject(record.projectId, async () => {
+      const [document, current] = await Promise.all([
+        this.stores.authorityTransferEntries.load(record.projectId),
+        this.stores.authorityTransferRecords.load(record.projectId),
+      ]);
+      const entry = document?.source;
+      if (
+        !entry
+        || !this.#isLocalSourceEntry(entry)
+        || entry.phase !== 'handed-off'
+        || entry.beginSubmission === 'possibly-sent'
+        || entry.cancellation === null
+        || !current
+        || !sameValue(current, record)
+        || (
+          current.status.phase !== 'target-cleaned'
+          && current.status.phase !== 'source-reopened'
+          && current.status.phase !== 'cancelled'
+        )
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-local-cancel-completion-stale',
+        );
+      }
+      await this.#reconcileEntrySuccessor(entry, current);
+      return this.#advanceUnbegunCancellation(current, 'cancelled');
+    });
+  }
+
+  markLanToCloudBeginPossiblySent(
+    record: AuthorityTransferRecord,
+  ): Promise<void> {
+    return this.runProject(record.projectId, async () => {
+      const [document, current] = await Promise.all([
+        this.stores.authorityTransferEntries.load(record.projectId),
+        this.stores.authorityTransferRecords.load(record.projectId),
+      ]);
+      const source = document?.source;
+      if (
+        !document
+        || !source
+        || !this.#isLocalSourceEntry(source)
+        || !current
+        || !sameValue(current, record)
+        || record.status.phase !== 'collecting-readiness'
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-begin-submission-stale',
+        );
+      }
+      await this.#reconcileEntrySuccessor(source, current);
+      let marked: AuthorityTransferSourceEntryRecord;
+      try {
+        marked = markAuthorityTransferSourceBeginPossiblySent(source);
+      } catch {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-begin-submission-stale',
+        );
+      }
+      if (marked === source) return;
+      await this.stores.authorityTransferEntries.saveSource(marked);
+    });
+  }
+
+  handoffEntry(
+    entry: AuthorityTransferSourceEntryRecord,
+    record: AuthorityTransferRecord,
+  ): Promise<AuthorityTransferRecord> {
+    let decodedEntry: AuthorityTransferSourceEntryRecord;
+    let decodedRecord: AuthorityTransferRecord;
+    let handedOff: AuthorityTransferEntryRecord;
+    try {
+      const candidate = decodeAuthorityTransferEntryComponent(entry);
+      if (candidate.entryRole !== 'source') throw new TypeError();
+      decodedEntry = candidate;
+      decodedRecord = decodeAuthorityTransferRecord(record);
+      handedOff = createAuthorityTransferEntryDocument({
+        projectId: decodedEntry.projectId,
+        source: handoffAuthorityTransferEntry(decodedEntry, decodedRecord),
+      });
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-entry-handoff-invalid',
+      ));
+    }
+    return this.runProject(decodedEntry.projectId, async () => {
+      const [loadedEntry, currentRecord] = await Promise.all([
+        this.stores.authorityTransferEntries.load(decodedEntry.projectId),
+        this.stores.authorityTransferRecords.load(decodedEntry.projectId),
+      ]);
+      const currentDocument = await this.#removeExpiredEntry(loadedEntry, currentRecord);
+      const currentEntry = currentDocument?.source;
+      if (
+        !currentEntry
+        || currentEntry.projectId !== decodedEntry.projectId
+        || currentEntry.proposedByMemberId !== decodedEntry.proposedByMemberId
+        || !sameValue(currentEntry.request, decodedEntry.request)
+        || currentEntry.status.transferId !== decodedEntry.status.transferId
+      ) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-entry-handoff-stale',
+        );
+      }
+      if (currentRecord && !sameValue(currentRecord, decodedRecord)) {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-entry-successor-conflict',
+        );
+      }
+      if (!currentRecord) {
+        await this.stores.authorityTransferRecords.save(decodedRecord);
+      }
+      const handedOffSource = handedOff.source;
+      if (!handedOffSource) throw new TypeError('Missing handed-off source entry');
+      if (!sameValue(currentEntry, handedOffSource)) {
+        await this.stores.authorityTransferEntries.saveSource(handedOffSource);
+      }
+      return decodedRecord;
+    });
   }
 
   bindLegacySourceOwner(
@@ -268,7 +981,10 @@ export class AuthorityTransferPersistence {
     // the terminal fence before removing claim files so a crash can only
     // leave recoverable residual custody, never an uncommitted terminal.
     return this.runProject(input.projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(input.projectId);
+      const [entry, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(input.projectId),
+        this.stores.authorityTransferRecords.load(input.projectId),
+      ]);
       if (
         !record
         || record.transferId !== input.transferId
@@ -281,6 +997,12 @@ export class AuthorityTransferPersistence {
           'authority-transfer-terminal-cleanup-owner-stale',
         );
       }
+      const source = entry?.source;
+      if (
+        source
+        && this.#isLocalSourceEntry(source)
+        && source.phase !== 'cancelled'
+      ) await this.#reconcileEntrySuccessor(source, record);
       if (
         record.terminalResponder?.state === 'active'
         || record.terminalResponder?.state === 'pending'
@@ -302,14 +1024,31 @@ export class AuthorityTransferPersistence {
       }
       await this.stores.authorityTransferClaims.remove(input.projectId);
       await this.stores.authorityTransferClaimCommitments.remove(input.projectId);
+      if (entry && source && this.#isLocalSourceEntry(source)) {
+        const settledSource = record.status.state === 'cancelled'
+          ? settleAuthorityTransferSourceCancellation(source, record)
+          : null;
+        if (settledSource) {
+          await this.stores.authorityTransferEntries.saveSource(settledSource);
+        } else if (!await this.stores.authorityTransferEntries.removeSource(source)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-entry-source-stale',
+          );
+        }
+      }
     });
   }
 
   load(projectId: CollabProjectId): Promise<AuthorityTransferRecord | null> {
     return this.runProject(projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(projectId);
-      const custody = await this.stores.authorityTransferClaims.load(projectId);
-      const commitment = await this.stores.authorityTransferClaimCommitments.load(projectId);
+      const [loadedEntry, record, custody, commitment] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+        this.stores.authorityTransferClaims.load(projectId),
+        this.stores.authorityTransferClaimCommitments.load(projectId),
+      ]);
+      const entry = await this.#removeExpiredEntry(loadedEntry, record);
       if (!record && (custody || commitment)) {
         throw transferError(
           'durable-progress-recovery-required',
@@ -322,7 +1061,19 @@ export class AuthorityTransferPersistence {
           'authority-transfer-claim-commitment-orphaned',
         );
       }
-      if (record && custody) await this.#assertClaimBatchOwner(custody, record);
+      if (record && custody && !this.#isForeignPhysical(record)) {
+        await this.#assertClaimBatchOwner(custody, record);
+      }
+      const source = entry?.source;
+      if (
+        source
+        && this.#isLocalSourceEntry(source)
+        && record
+        && !this.#isForeignPhysical(record)
+        && source.phase !== 'cancelled'
+      ) {
+        await this.#reconcileEntrySuccessor(source, record);
+      }
       return record;
     });
   }
@@ -396,6 +1147,63 @@ export class AuthorityTransferPersistence {
         );
       }
       await this.#assertClaimCustodyForStatus(decoded.status);
+      await this.stores.authorityTransferRecords.save(decoded);
+    });
+  }
+
+  adoptLanToCloudCanonicalIdentity(
+    record: AuthorityTransferRecord,
+  ): Promise<void> {
+    let decoded: AuthorityTransferRecord;
+    try {
+      decoded = decodeAuthorityTransferRecord(record);
+    } catch {
+      return Promise.reject(transferError(
+        'authority-transfer-stale',
+        'authority-transfer-record-invalid',
+      ));
+    }
+    return this.runProject(decoded.projectId, async () => {
+      const previous = await this.stores.authorityTransferRecords.load(decoded.projectId);
+      if (!previous) {
+        throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
+      }
+      try {
+        if (
+          previous.lifecycleOwnership !== 'owned'
+          || previous.localRole !== 'source'
+          || previous.ownerInstallationKey === undefined
+          || previous.status.direction !== 'lan-to-cloud'
+          || previous.status.phase !== 'collecting-readiness'
+          || previous.status.state !== 'active'
+          || previous.status.updatedAt !== previous.status.createdAt
+          || previous.status.batchRevision !== null
+          || previous.status.batchSha256 !== null
+          || previous.status.checkpointSha256 !== null
+          || previous.status.relinquishmentProof !== null
+        ) throw new TypeError();
+        const canonicalPrevious = createAuthorityTransferRecord({
+          lifecycleOwnership: previous.lifecycleOwnership,
+          localRole: previous.localRole,
+          operationIntentId: previous.operationIntentId,
+          ownerInstallationKey: previous.ownerInstallationKey,
+          receiptVerifier: previous.receiptVerifier,
+          sourceLanEndpoint: previous.sourceLanEndpoint,
+          stagingDirectoryName: previous.stagingDirectoryName,
+          status: {
+            ...previous.status,
+            createdAt: decoded.status.createdAt,
+            expiresAt: decoded.status.expiresAt,
+            updatedAt: decoded.status.createdAt,
+          },
+        });
+        assertAuthorityTransferTransition(canonicalPrevious, decoded);
+      } catch {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-canonical-identity-adoption-invalid',
+        );
+      }
       await this.stores.authorityTransferRecords.save(decoded);
     });
   }
@@ -711,6 +1519,58 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  runWithLanToCloudCancellationRestartGuard<T>(
+    input: Readonly<{
+      operationIntentId: string;
+      projectId: CollabProjectId;
+      transferId: string;
+    }>,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runProject(input.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(input.projectId),
+        this.stores.authorityTransferRecords.load(input.projectId),
+      ]);
+      const source = document?.source;
+      if (
+        !record
+        || !source
+        || !this.#isLocalSourceEntry(source)
+        || source.phase !== 'handed-off'
+        || record.localRole !== 'source'
+        || record.status.direction !== 'lan-to-cloud'
+        || record.operationIntentId !== input.operationIntentId
+        || record.transferId !== input.transferId
+        || source.status.transferId !== input.transferId
+        || source.request.idempotencyKey !== input.operationIntentId
+        || source.cancellation === null
+        || source.cancellation.projectId !== input.projectId
+        || source.cancellation.transferId !== input.transferId
+        || source.cancellation.expectedAuthorityGeneration
+          !== record.status.sourceAuthority.generation
+        || record.status.relinquishmentProof !== null
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-cancellation-restart-stale',
+        );
+      }
+      await this.#reconcileEntrySuccessor(source, record);
+      const locallyProvedCancellation = source.beginSubmission !== 'possibly-sent'
+        && COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES.includes(
+          record.status.phase as never,
+        );
+      if (record.status.state !== 'cancelled' && !locallyProvedCancellation) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-cancellation-restart-stale',
+        );
+      }
+      return operation();
+    });
+  }
+
   expireClaims(
     projectId: CollabProjectId,
     transferId: string,
@@ -748,12 +1608,35 @@ export class AuthorityTransferPersistence {
     });
   }
 
-   async #assertAuthorityRestartAllowedUnlocked(
+  async #assertAuthorityRestartAllowedUnlocked(
     projectId: CollabProjectId,
   ): Promise<void> {
-    const record = await this.stores.authorityTransferRecords.load(projectId);
-    const custody = await this.stores.authorityTransferClaims.load(projectId);
-    const commitment = await this.stores.authorityTransferClaimCommitments.load(projectId);
+    const [loadedEntry, record, custody, commitment] = await Promise.all([
+      this.stores.authorityTransferEntries.load(projectId),
+      this.stores.authorityTransferRecords.load(projectId),
+      this.stores.authorityTransferClaims.load(projectId),
+      this.stores.authorityTransferClaimCommitments.load(projectId),
+    ]);
+    const entry = await this.#removeExpiredEntry(loadedEntry, record);
+    const source = entry?.source;
+    const localSource = source !== null
+      && source !== undefined
+      && this.#isLocalSourceEntry(source);
+    if (
+      localSource
+      && source.phase === 'handed-off'
+      && record
+      && this.#isForeignPhysical(record)
+    ) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-entry-successor-owner-mismatch',
+      );
+    }
+    if (record && this.#isForeignPhysical(record)) return;
+    if (localSource && record && source.phase !== 'cancelled') {
+      await this.#reconcileEntrySuccessor(source, record);
+    }
     if (record && record.ownerInstallationKey === undefined) {
       throw transferError(
         'durable-progress-recovery-required',
@@ -765,6 +1648,12 @@ export class AuthorityTransferPersistence {
       throw transferError(
         'durable-progress-recovery-required',
         'authority-transfer-claim-custody-orphaned',
+      );
+    }
+    if (!record && localSource && source.phase === 'handed-off') {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-entry-successor-missing',
       );
     }
     if (commitment && !custody) {
@@ -845,6 +1734,127 @@ export class AuthorityTransferPersistence {
     return queue.run(operation);
   }
 
+  async #removeExpiredEntry(
+    entry: AuthorityTransferEntryRecord | null,
+    record: AuthorityTransferRecord | null,
+  ): Promise<AuthorityTransferEntryRecord | null> {
+    if (!entry) return null;
+    const now = this.now().getTime();
+    const expiredRequesters = Object.values(entry.requesters).filter(
+      requester => now >= Date.parse(requester.expiresAt),
+    );
+    const sourceIsLocal = entry.source !== null && this.#isLocalSourceEntry(entry.source);
+    const sourceHasSettledLocalPhysical = sourceIsLocal
+      && entry.source?.phase === 'cancelled'
+      && record !== null
+      && !this.#isForeignPhysical(record)
+      && record.status.state === 'cancelled'
+      && record.terminalCleanupCompleted
+      && record.transferId === entry.source.status.transferId
+      && record.operationIntentId === entry.source.request.idempotencyKey;
+    const sourceRemovalIsSafe = sourceIsLocal
+      && (
+        record === null
+        || this.#isForeignPhysical(record)
+        || sourceHasSettledLocalPhysical
+      );
+    const source = entry.source
+      && (
+        entry.source.phase === 'handed-off'
+        || now < Date.parse(entry.source.expiresAt)
+        || !sourceRemovalIsSafe
+      )
+      ? entry.source
+      : null;
+    if (
+      source === entry.source
+      && expiredRequesters.length === 0
+    ) return entry;
+    for (const requester of expiredRequesters) {
+      await this.stores.authorityTransferEntries.removeRequester(requester);
+    }
+    if (entry.source && source === null) {
+      await this.stores.authorityTransferEntries.removeSource(entry.source);
+    }
+    return this.stores.authorityTransferEntries.load(entry.projectId);
+  }
+
+  #isForeignPhysical(record: AuthorityTransferRecord): boolean {
+    return record.ownerInstallationKey !== undefined
+      && !this.#isRecoveryOwner(record.ownerInstallationKey);
+  }
+
+  #isLocalSourceEntry(entry: AuthorityTransferSourceEntryRecord): boolean {
+    return this.#isRecoveryOwner(entry.ownerInstallationKey);
+  }
+
+  async #reconcileEntrySuccessor(
+    entry: AuthorityTransferSourceEntryRecord,
+    record: AuthorityTransferRecord,
+  ): Promise<void> {
+    let expected: AuthorityTransferSourceEntryRecord;
+    try {
+      expected = handoffAuthorityTransferEntry(entry, record);
+    } catch {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-entry-successor-mismatch',
+      );
+    }
+    if (entry.phase === 'proposed') {
+      await this.stores.authorityTransferEntries.saveSource(expected);
+      return;
+    }
+    if (!sameValue(entry, expected)) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-entry-successor-mismatch',
+      );
+    }
+  }
+
+  async #advanceUnbegunCancellation(
+    initial: AuthorityTransferRecord,
+    finalPhase: typeof COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES[number],
+  ): Promise<AuthorityTransferRecord> {
+    const phases = COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES;
+    const currentCancellationIndex = phases.indexOf(initial.status.phase as never);
+    const startIndex = currentCancellationIndex >= 0 ? currentCancellationIndex + 1 : 0;
+    const finalIndex = phases.indexOf(finalPhase);
+    let record = initial;
+    const timestamp = new Date(Math.max(
+      this.now().getTime(),
+      Date.parse(record.status.updatedAt),
+    )).toISOString();
+    for (let index = startIndex; index <= finalIndex; index += 1) {
+      const phase = phases[index];
+      if (!phase) continue;
+      const next = decodeAuthorityTransferRecord({
+        ...record,
+        restartFence: phase === 'source-reopened' || phase === 'cancelled'
+          ? 'open'
+          : 'temporary',
+        status: {
+          ...record.status,
+          phase,
+          state: phase === 'cancelled' ? 'cancelled' : 'active',
+          updatedAt: timestamp,
+        },
+      });
+      try {
+        assertAuthorityTransferTransition(record, next);
+      } catch {
+        throw transferError(
+          'authority-transfer-stale',
+          'authority-transfer-local-cancel-invalid',
+        );
+      }
+      await this.stores.authorityTransferRecords.save(next);
+      record = next;
+    }
+    return record;
+  }
+
    #closedError(): CollabError {
     return transferError(
       'durable-progress-recovery-required',
@@ -867,26 +1877,32 @@ export class AuthorityTransferPersistence {
       const existing = await this.stores.authorityTransferRecords.load(decoded.projectId);
       if (existing) {
         if (sameValue(existing, decoded)) return;
-        if (
-          existing.status.state !== 'cancelled'
-          || !existing.terminalCleanupCompleted
-          || existing.restartFence !== 'open'
-        ) {
-          throw transferError('authority-transfer-stale', 'authority-transfer-record-conflict');
-        }
-        const [custody, commitment] = await Promise.all([
-          this.stores.authorityTransferClaims.load(decoded.projectId),
-          this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
-        ]);
-        if (custody || commitment) {
-          throw transferError(
-            'durable-progress-recovery-required',
-            'authority-transfer-terminal-cleanup-incomplete',
-          );
-        }
+        await this.#assertSafeCancelledPhysicalReplacement(existing);
       }
       await this.stores.authorityTransferRecords.save(decoded);
     });
+  }
+
+  async #assertSafeCancelledPhysicalReplacement(
+    existing: AuthorityTransferRecord,
+  ): Promise<void> {
+    if (
+      existing.status.state !== 'cancelled'
+      || !existing.terminalCleanupCompleted
+      || existing.restartFence !== 'open'
+    ) {
+      throw transferError('authority-transfer-stale', 'authority-transfer-record-conflict');
+    }
+    const [custody, commitment] = await Promise.all([
+      this.stores.authorityTransferClaims.load(existing.projectId),
+      this.stores.authorityTransferClaimCommitments.load(existing.projectId),
+    ]);
+    if (custody || commitment) {
+      throw transferError(
+        'durable-progress-recovery-required',
+        'authority-transfer-terminal-cleanup-incomplete',
+      );
+    }
   }
 
    async #assertClaimCustodyForStatus(status: CollabAuthorityTransferStatus): Promise<void> {

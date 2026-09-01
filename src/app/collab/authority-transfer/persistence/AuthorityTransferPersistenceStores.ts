@@ -1,5 +1,10 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
+import type {
+  AuthorityTransferEntryRecord,
+  AuthorityTransferRequesterEntryRecord,
+  AuthorityTransferSourceEntryRecord,
+} from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { type AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import type {
   AuthorityTransferClaimBatchCommitmentRecord,
@@ -13,7 +18,16 @@ export interface AuthorityTransferRecordStorePort {
   scanProjectCatalog(): Promise<AuthorityTransferProjectCatalog>;
   load(projectId: CollabProjectId): Promise<AuthorityTransferRecord | null>;
   remove(projectId: CollabProjectId): Promise<boolean>;
+  removeExact(record: AuthorityTransferRecord): Promise<boolean>;
   save(record: AuthorityTransferRecord): Promise<void>;
+}
+
+export interface AuthorityTransferEntryStorePort {
+  load(projectId: CollabProjectId): Promise<AuthorityTransferEntryRecord | null>;
+  removeRequester(record: AuthorityTransferRequesterEntryRecord): Promise<boolean>;
+  removeSource(record: AuthorityTransferSourceEntryRecord): Promise<boolean>;
+  saveRequester(record: AuthorityTransferRequesterEntryRecord): Promise<void>;
+  saveSource(record: AuthorityTransferSourceEntryRecord): Promise<void>;
 }
 
 export interface AuthorityTransferProjectCatalog {
@@ -36,5 +50,6 @@ export interface AuthorityTransferClaimCommitmentStorePort {
 export interface AuthorityTransferPersistenceStores {
   readonly authorityTransferClaimCommitments: AuthorityTransferClaimCommitmentStorePort;
   readonly authorityTransferClaims: AuthorityTransferClaimCustodyStorePort;
+  readonly authorityTransferEntries: AuthorityTransferEntryStorePort;
   readonly authorityTransferRecords: AuthorityTransferRecordStorePort;
 }

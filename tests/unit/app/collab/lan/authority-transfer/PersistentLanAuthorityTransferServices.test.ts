@@ -86,6 +86,9 @@ describe('persistent LAN authority-transfer services', () => {
         calls.push('staging');
       },
       expiresAt: status().expiresAt,
+      prepareExpiry: async () => {
+        calls.push('converge');
+      },
       persistence: {
         completeTerminalCleanup: async (input: unknown) => {
           expect(input).toEqual({
@@ -106,7 +109,7 @@ describe('persistent LAN authority-transfer services', () => {
     });
 
     await expect(service.expire()).resolves.toBeUndefined();
-    expect(calls).toEqual(['expire', 'staging', 'complete']);
+    expect(calls).toEqual(['converge', 'expire', 'staging', 'complete']);
   });
 
   it('serves only the authenticated former Member claim and scrubs after signature verification', async () => {

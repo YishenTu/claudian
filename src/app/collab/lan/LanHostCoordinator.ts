@@ -218,6 +218,14 @@ export interface LanHostCoordinatorOptions {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ) => Promise<T>;
+  readonly runWithAuthorityTransferCancellationRestartGuard?: <T>(
+    input: Readonly<{
+      operationIntentId: string;
+      projectId: CollabProjectId;
+      transferId: string;
+    }>,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
   readonly setAuthorityTransferExpiryTimeout?: (
     callback: () => void,
     milliseconds: number,
@@ -536,6 +544,29 @@ export class LanHostCoordinator {
       'starting',
       guarded,
     );
+  }
+
+  restartProjectAfterAuthorityTransferCancellation(input: Readonly<{
+    operationIntentId: string;
+    projectId: CollabProjectId;
+    transferId: string;
+  }>): Promise<CollabHostSession & { endpoint: string }> {
+    this.#projectTransitions.set(input.projectId, 'starting');
+    const operation = () => this.#operationQueue.run(
+      () => this.#startProjectUnlocked(input.projectId),
+    );
+    const guarded = (async () => {
+      await this.options.assertHostInstallationOwned(input.projectId);
+      const guard = this.options.runWithAuthorityTransferCancellationRestartGuard;
+      if (!guard) {
+        throw hostError(
+          'durable-progress-recovery-required',
+          'authority-transfer-cancellation-restart-guard-missing',
+        );
+      }
+      return guard(input, operation);
+    })();
+    return this.#withTransition(input.projectId, 'starting', guarded);
   }
 
   stopProject(projectId: CollabProjectId): Promise<CollabHostSession> {
