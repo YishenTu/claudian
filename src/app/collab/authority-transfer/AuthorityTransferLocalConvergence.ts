@@ -64,6 +64,11 @@ export interface LanToCloudHostConvergenceInput {
   readonly status: CollabAuthorityTransferStatus;
 }
 
+type LanToCloudMemberProjection = Pick<
+  CollabProjectSnapshot['currentMember'],
+  'displayName' | 'id' | 'personalRef' | 'role'
+>;
+
 export interface CloudToLanHostConvergenceInput {
   readonly endpoint: string;
   readonly hostCaCertificatePem: string;
@@ -145,6 +150,23 @@ export class AuthorityTransferLocalConvergence {
       input.status.projectId,
       () => this.lanToCloud(input, true),
     );
+  }
+
+  async lanToCloudHostOffline(status: CollabAuthorityTransferStatus): Promise<void> {
+    assertCompleted(status, 'lan-to-cloud');
+    return this.transitionProject(status.projectId, async () => {
+      const membership = await this.requireMembership(status.projectId);
+      if (status.relinquishmentProof?.sourceHostMemberId !== membership.member.id) {
+        throw convergenceError('authority-transfer-source-member-mismatch');
+      }
+      await this.convergeLanMembershipToCloud(
+        membership,
+        status,
+        membership.member,
+        membership.lastEventSequence,
+        true,
+      );
+    });
   }
 
   async lanToCloudMember(input: LanToCloudHostConvergenceInput): Promise<void> {
@@ -232,9 +254,25 @@ export class AuthorityTransferLocalConvergence {
       input.snapshot.project.authorityKind !== 'cloud'
       || input.snapshot.project.authorityGeneration !== input.status.targetAuthority.generation
     ) throw convergenceError('authority-transfer-convergence-generation-mismatch');
-    const newRemoteUrl = cloudRemoteUrl(input.status.targetUrl, input.status.projectId);
+    await this.convergeLanMembershipToCloud(
+      membership,
+      input.status,
+      input.snapshot.currentMember,
+      input.snapshot.eventSequence,
+      sourceOwnsAuthority,
+    );
+  }
+
+  private async convergeLanMembershipToCloud(
+    membership: CollabLocalMembershipRecord,
+    status: CollabAuthorityTransferStatus,
+    member: LanToCloudMemberProjection,
+    lastEventSequence: number,
+    sourceOwnsAuthority: boolean,
+  ): Promise<void> {
+    const newRemoteUrl = cloudRemoteUrl(status.targetUrl, status.projectId);
     const serverUrl = validateCloudServerUrl(
-      input.status.targetUrl,
+      status.targetUrl,
       'authorityTransferTargetUrl',
     );
     if (isCollabLocalLanMembership(membership)) {
@@ -248,7 +286,7 @@ export class AuthorityTransferLocalConvergence {
       await this.rotate(membership, oldRemoteUrl, newRemoteUrl, serverUrl);
       await this.options.projects.saveMembership({
         authority: {
-          authorityGeneration: input.status.targetAuthority.generation,
+          authorityGeneration: status.targetAuthority.generation,
           bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
           gitRemoteUrl: newRemoteUrl,
           kind: 'cloud',
@@ -256,13 +294,13 @@ export class AuthorityTransferLocalConvergence {
           wireVersion: COLLAB_PROTOCOL_VERSION,
         },
         createdAt: membership.createdAt,
-        lastEventSequence: input.snapshot.eventSequence,
+        lastEventSequence,
         ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }),
         member: {
-          displayName: input.snapshot.currentMember.displayName,
-          id: input.snapshot.currentMember.id,
-          personalRef: input.snapshot.currentMember.personalRef,
-          role: input.snapshot.currentMember.role,
+          displayName: member.displayName,
+          id: member.id,
+          personalRef: member.personalRef,
+          role: member.role,
         },
         project: membership.project,
         schemaVersion: membership.schemaVersion,
@@ -271,12 +309,12 @@ export class AuthorityTransferLocalConvergence {
     } else {
       if (
         membership.authority.authorityGeneration
-          !== input.status.targetAuthority.generation
+          !== status.targetAuthority.generation
         || membership.authority.gitRemoteUrl !== newRemoteUrl
         || membership.authority.serverUrl !== serverUrl
       ) throw convergenceError('authority-transfer-cloud-membership-conflict');
     }
-    await this.finish(input.status.projectId, 'cloud');
+    await this.finish(status.projectId, 'cloud');
   }
 
   private async cloudToLan(

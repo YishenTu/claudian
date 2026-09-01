@@ -15,7 +15,6 @@ import {
 import path from 'node:path';
 
 import {
-  type AcceptLanToCloudTransferTargetRequest,
   COLLAB_MAIN_REF,
   COLLAB_MEMBER_REF_PREFIX,
   type CollabAuthorityRelinquishmentProof,
@@ -266,27 +265,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     );
   }
 
-  acceptanceRequest(record: AuthorityTransferRecord): Promise<AcceptLanToCloudTransferTargetRequest> {
-    return Promise.resolve({
-      expectedAuthorityGeneration: record.status.sourceAuthority.generation,
-      idempotencyKey: `${record.operationIntentId}-accept`,
-      projectId: record.projectId,
-      targetUrl: record.status.targetUrl,
-      transferId: record.transferId,
-    });
-  }
-
-  acceptProposal(
-    request: AcceptLanToCloudTransferTargetRequest,
-    options: CollabOperationOptions = {},
-  ) {
-    return this.requireCloudSession().lifecycle.authorityTransfer(
-      'acceptLanToCloudTransferTarget',
-      request,
-      options,
-    );
-  }
-
   async activateTerminal(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions = {},
@@ -314,6 +292,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     }
     const service = await this.terminalService(record);
     if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
+      await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
       await service.expire();
       return;
     }
@@ -340,6 +319,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       cleanupStaging: current => this.cleanupStaging(current),
       expiresAt: record.status.expiresAt,
       persistence: this.options.persistence,
+      prepareExpiry: () => this.options.convergence.lanToCloudHostOffline(record.status),
       projectId: record.projectId,
       transferId: record.transferId,
     });
@@ -532,8 +512,14 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       await this.options.foundation.lanHost.reopenProjectAfterAuthorityTransferCancellation(
         record.projectId,
       );
-    } else {
+    } else if (record.restartFence === 'open') {
       await this.options.foundation.lanHost.startProject(record.projectId);
+    } else {
+      await this.options.foundation.lanHost.restartProjectAfterAuthorityTransferCancellation({
+        operationIntentId: record.operationIntentId,
+        projectId: record.projectId,
+        transferId: record.transferId,
+      });
     }
     if (record.sourceLanEndpoint) {
       await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
@@ -542,17 +528,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       );
     }
     await this.cleanupStaging(record);
-  }
-
-  requestProposal(
-    request: Parameters<LanToCloudSourceEffects['requestProposal']>[0],
-    options: CollabOperationOptions = {},
-  ) {
-    return this.requireCloudSession().lifecycle.authorityTransfer(
-      'requestLanToCloudTransfer',
-      request,
-      options,
-    );
   }
 
   private requireCloudSession(): CloudAuthorityConnection {

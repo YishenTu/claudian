@@ -218,6 +218,51 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(transitionProject).toHaveBeenCalledTimes(3);
   });
 
+  it('converges a completed LAN Host offline from its relinquishment proof', async () => {
+    let membership = lanMembership();
+    const rotate = jest.fn(async () => undefined);
+    const projects = {
+      loadMembership: jest.fn(async () => membership),
+      repairIndexFromMemberships: jest.fn(async () => ({
+        projects: [{ authorityKind: membership.authority.kind, id: PROJECT_ID }],
+        schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+        selectedProjectId: PROJECT_ID,
+      })),
+      saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => {
+        membership = next;
+      }),
+    };
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
+      git: { rotate },
+      projects: projects as never,
+      workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
+    });
+    const transferStatus = completed('lan-to-cloud');
+
+    await convergence.lanToCloudHostOffline(transferStatus);
+    await convergence.lanToCloudHostOffline(transferStatus);
+
+    expect(membership).toMatchObject({
+      authority: {
+        authorityGeneration: 2,
+        bindingVersion: 3,
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example.test/',
+        wireVersion: 7,
+      },
+      lastEventSequence: 1,
+      member: {
+        displayName: 'Host',
+        id: 'member-host',
+        role: 'manager',
+      },
+    });
+    expect(rotate).toHaveBeenCalledTimes(1);
+    expect(projects.repairIndexFromMemberships).toHaveBeenCalledTimes(2);
+  });
+
   it('replaces Cloud target membership with the exact bound LAN Host identity', async () => {
     let membership = {
       ...lanMembership(),

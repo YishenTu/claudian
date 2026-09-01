@@ -89,14 +89,44 @@ function sameIdentity(
     && record.status.expiresAt === observed.expiresAt;
 }
 
+function canAdoptLanToCloudCanonicalIdentity(
+  record: AuthorityTransferRecord,
+  observed: CollabAuthorityTransferStatus,
+): boolean {
+  return record.lifecycleOwnership === 'owned'
+    && record.localRole === 'source'
+    && record.status.direction === 'lan-to-cloud'
+    && record.status.phase === 'collecting-readiness'
+    && record.status.state === 'active'
+    && record.status.updatedAt === record.status.createdAt
+    && record.status.batchRevision === null
+    && record.status.batchSha256 === null
+    && record.status.checkpointSha256 === null
+    && record.status.relinquishmentProof === null
+    && observed.direction === 'lan-to-cloud'
+    && observed.phase !== 'collecting-readiness'
+    && record.projectId === observed.projectId
+    && record.transferId === observed.transferId
+    && record.status.sourceAuthority.kind === observed.sourceAuthority.kind
+    && record.status.sourceAuthority.generation === observed.sourceAuthority.generation
+    && record.status.targetAuthority.kind === observed.targetAuthority.kind
+    && record.status.targetAuthority.generation === observed.targetAuthority.generation
+    && record.status.targetUrl === observed.targetUrl;
+}
+
 /** Persists every durable phase implied by one later authoritative observation. */
 export async function advanceThroughObservedAuthorityStatus(
-  persistence: Pick<AuthorityTransferPersistence, 'advance'>,
+  persistence: Pick<
+    AuthorityTransferPersistence,
+    'adoptLanToCloudCanonicalIdentity' | 'advance'
+  >,
   initial: AuthorityTransferRecord,
   observedValue: CollabAuthorityTransferStatus,
 ): Promise<AuthorityTransferRecord> {
   const observed = decodeCollabAuthorityTransferStatus(observedValue);
-  if (!sameIdentity(initial, observed)) {
+  const adoptingCanonicalIdentity = !sameIdentity(initial, observed)
+    && canAdoptLanToCloudCanonicalIdentity(initial, observed);
+  if (!sameIdentity(initial, observed) && !adoptingCanonicalIdentity) {
     throw statusError('authority-transfer-observed-identity-mismatch');
   }
   if (initial.status.phase === observed.phase) {
@@ -136,7 +166,11 @@ export async function advanceThroughObservedAuthorityStatus(
       stagingDirectoryName: current.stagingDirectoryName,
       status,
     });
-    await persistence.advance(next, current.status.phase);
+    if (adoptingCanonicalIdentity && current === initial) {
+      await persistence.adoptLanToCloudCanonicalIdentity(next);
+    } else {
+      await persistence.advance(next, current.status.phase);
+    }
     current = next;
   }
   return current;

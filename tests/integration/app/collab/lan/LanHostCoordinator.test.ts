@@ -27,6 +27,10 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
+import { AuthorityTransferModule } from '@/app/collab/authority-transfer/AuthorityTransferModule';
+import {
+  AuthorityTransferPersistence,
+} from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { CollabClientProjection, type CollabClientProjectionOptions } from '@/app/collab/client/CollabClientProjection';
 import {
@@ -38,6 +42,9 @@ import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import type {
+  LanAuthorityTransferSourceActiveService,
+} from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouter';
 import {
   type CollabHostTrustStore,
   CollabHttpClient,
@@ -63,6 +70,9 @@ import {
 import type {
   CollabProjectLifecycleAuthorityAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
+import type {
+  CollabProjectLifecycleSubsystem,
+} from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
 import { LocalMembershipControlPort } from '@/app/collab/membership/LocalMembershipControlPort';
 import {
@@ -261,6 +271,7 @@ describe('LanHostCoordinator production transport', () => {
   let authorityTransferNow: Date | null;
   let authorityTransferTimeoutOverride: ((callback: () => void, milliseconds: number) => number)
     | null;
+  let sourceAuthorityTransfer: LanAuthorityTransferSourceActiveService | null;
   let outgoingHostTransfer: {
     close?: jest.Mock;
     inspectStartupRecovery: jest.Mock;
@@ -336,6 +347,7 @@ describe('LanHostCoordinator production transport', () => {
   beforeEach(async () => {
     authorityTransferNow = null;
     authorityTransferTimeoutOverride = null;
+    sourceAuthorityTransfer = null;
     advertisementStop = jest.fn(async () => undefined);
     advertiseProject = jest.fn(async () => ({ stop: advertisementStop }));
     addressMonitorClose = jest.fn();
@@ -457,6 +469,9 @@ describe('LanHostCoordinator production transport', () => {
         return {
           authority: { database: authorityDatabase, events, idempotency, projects },
           authorityDirectory,
+          ...(sourceAuthorityTransfer
+            ? { authorityTransfer: sourceAuthorityTransfer }
+            : {}),
           events: eventHub,
           git: gitRuntime(),
           lifecycle: {
@@ -1442,6 +1457,73 @@ describe('LanHostCoordinator production transport', () => {
     }, HOST_CREDENTIAL)).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-route-not-found' },
     });
+  });
+
+  it('serves a source-local proposal from the composed Host route before Cloud is bound', async () => {
+    const createLanToCloudSource = jest.fn();
+    const persistence = new AuthorityTransferPersistence(localProjects, {
+      isRecoveryOwner: () => true,
+    });
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: localProjects.authorityTransferClaimants,
+      convergence: {} as never,
+      createLanToCloudSource,
+      installationKey: INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence,
+    });
+    const requesterCredential = Buffer.alloc(32, 8).toString('base64url');
+    sourceAuthorityTransfer = module.sourceActiveService({
+      authorityGeneration: 1,
+      authenticateMemberCredential: async credential => {
+        if (credential !== requesterCredential) throw new Error('Invalid requester credential');
+        return { memberId: 'member-requester' };
+      },
+      hostMemberId: 'member-host',
+      projectId: PROJECT_ID,
+    });
+    const running = await coordinator.startProject(PROJECT_ID);
+    const membership = await localProjects.loadMembership(PROJECT_ID);
+    if (!membership || !isCollabLocalLanMembership(membership)) {
+      throw new Error('Missing LAN membership');
+    }
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: membership.authority.hostCaCertificatePem!,
+      caFingerprint: membership.authority.hostCaFingerprint!,
+      endpoint: running.endpoint,
+      projectId: PROJECT_ID,
+    });
+
+    const proposed = await client.requestWithMember('requestLanToCloudTransfer', {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: 'intent-composed-source-proposal',
+      projectId: PROJECT_ID,
+      targetUrl: 'http://cloud.example.test:8787',
+    }, requesterCredential);
+
+    expect(proposed).toMatchObject({
+      direction: 'lan-to-cloud',
+      phase: 'collecting-readiness',
+      targetUrl: 'http://cloud.example.test:8787',
+    });
+    await expect(localProjects.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      source: {
+        proposedByMemberId: 'member-requester',
+        status: { transferId: proposed.transferId },
+      },
+    });
+    expect(createLanToCloudSource).not.toHaveBeenCalled();
   });
 
   it('expires a terminal authority-transfer route and releases its listener', async () => {
