@@ -10,10 +10,16 @@ import {
   COLLAB_PROTOCOL_VERSION,
   type CollabAuthorityTransferStatus,
   type CollabCloudAuthorityTransferArtifact,
+  type CollabCloudCapability,
+  type CollabTransferredMembershipClaimBatch,
   decodeCollabProjectCheckpointManifest,
   encodeCollabProjectCheckpointManifestCanonicalJson,
+  encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
-import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -23,8 +29,12 @@ import {
 } from '@/app/collab';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { createAuthorityTransferEntryRecord } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import { AuthorityTransferLocalFence } from '@/app/collab/authority-transfer/AuthorityTransferLocalFence';
+import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
@@ -138,6 +148,514 @@ describe('production authority-transfer effects', () => {
 
     expect(pinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID);
     expect(unpinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID, endpoint);
+  });
+
+  it('uses ordinary guarded Host start for an open-fence cancelled record', async () => {
+    const startProject = jest.fn(async () => ({
+      endpoint: 'https://127.0.0.1:54545',
+      projectId: PROJECT_ID,
+      status: 'running' as const,
+    }));
+    const restartProjectAfterAuthorityTransferCancellation = jest.fn();
+    const effects = new ProductionLanToCloudSourceEffects({
+      cloudSession: null,
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: {
+        lanHost: {
+          isProjectRunning: () => false,
+          restartProjectAfterAuthorityTransferCancellation,
+          startProject,
+          unpinAuthorityTransferSourceEndpoint: jest.fn(),
+        },
+        local: {
+          projects: {
+            loadMembership: jest.fn(async () => ({
+              project: { workspacePath: '/vault/Projects/Portable' },
+            })),
+          },
+          workspace: {
+            removeReservedProjectsFolderChild: jest.fn(async () => false),
+          },
+        },
+      } as never,
+      persistence: {} as never,
+      projectId: PROJECT_ID,
+    });
+    const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...status('lan-to-cloud', 'cancelled', 'https://cloud.example.test/'),
+        state: 'cancelled',
+      },
+    });
+
+    await effects.reopenAfterCancellation(record);
+
+    expect(startProject).toHaveBeenCalledWith(PROJECT_ID);
+    expect(restartProjectAfterAuthorityTransferCancellation).not.toHaveBeenCalled();
+  });
+
+  it('converges an expired completed LAN source locally before terminal cleanup', async () => {
+    const completed = status('lan-to-cloud', 'completed', 'https://cloud.example.test/');
+    const completedRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...completed,
+        batchRevision: 1,
+        batchSha256: 'b'.repeat(64),
+        checkpointSha256: 'a'.repeat(64),
+        expiresAt: '2026-08-29T00:00:00.000Z',
+        phase: 'completed',
+        relinquishmentProof: {
+          batchRevision: 1,
+          batchSha256: 'b'.repeat(64),
+          certificate: Buffer.alloc(64, 2).toString('base64url'),
+          certificateAlgorithm: 'ed25519',
+          checkpointSha256: 'a'.repeat(64),
+          committedAt: '2026-08-28T00:02:00.000Z',
+          operationIntentId: OPERATION_ID,
+          projectId: PROJECT_ID,
+          sourceAuthority: { generation: 1, kind: 'lan' },
+          sourceHostMemberId: MEMBER_ID,
+          targetAuthority: { generation: 2, kind: 'cloud' },
+          transferId: TRANSFER_ID,
+        },
+        state: 'completed',
+        updatedAt: '2026-08-28T00:03:00.000Z',
+      },
+    });
+    const events: string[] = [];
+    const convergence = {
+      lanToCloudHostOffline: jest.fn(async () => { events.push('converge'); }),
+    } as unknown as AuthorityTransferLocalConvergence;
+    const persistence = {
+      completeTerminalCleanup: jest.fn(async () => { events.push('cleanup'); }),
+      expireTerminalResponder: jest.fn(async () => { events.push('expire'); }),
+      load: jest.fn(async () => completedRecord),
+    };
+    const effects = new ProductionLanToCloudSourceEffects({
+      cloudSession: null,
+      convergence,
+      foundation: {
+        inspectAuthority: jest.fn(async () => ({ database: {} })),
+        lanHost: {
+          relinquishProjectForAuthorityTransfer: jest.fn(async () => {
+            events.push('relinquish');
+          }),
+        },
+        local: {
+          projects: {
+            loadMembership: jest.fn(async () => ({
+              project: { workspacePath: '/vault/Projects/Portable' },
+            })),
+          },
+          workspace: {
+            removeReservedProjectsFolderChild: jest.fn(async () => {
+              events.push('remove-staging');
+            }),
+          },
+        },
+      } as never,
+      persistence: persistence as never,
+      projectId: PROJECT_ID,
+    });
+
+    await effects.restoreCompleted(completedRecord);
+
+    expect(convergence.lanToCloudHostOffline).toHaveBeenCalledWith(completedRecord.status);
+    expect(events).toEqual([
+      'relinquish',
+      'converge',
+      'expire',
+      'remove-staging',
+      'cleanup',
+    ]);
+  });
+
+  it('runs an ordinary LAN Member proposal and exact Host acceptance through production effects', async () => {
+    const sourceFoundation = foundation(sourceRoot);
+    const sourceSetup = new CollabProjectSetupService(sourceFoundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => HOST_CREDENTIAL,
+      createId: kind => {
+        if (kind === 'member') return MEMBER_ID;
+        if (kind === 'operation') return 'create-joined-production-effects';
+        return PROJECT_ID;
+      },
+      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      vaultRoot: sourceRoot,
+    });
+    const composition = createCollabFeatureSubcomposition({
+      foundation: sourceFoundation,
+      projectSetup: sourceSetup,
+      vaultRoot: sourceRoot,
+    });
+    const sourceFeature = composition.feature;
+    const peerCredential = Buffer.alloc(32, 8).toString('base64url');
+    const targetUrl = 'https://cloud.example.test/';
+    try {
+      await sourceFeature.initialize();
+      await sourceFeature.createProject({ memberDisplayName: 'Alice', name: 'Portable' });
+      const authority = await sourceFoundation.openAuthority(PROJECT_ID);
+      await authority.database.mutate(connection => {
+        connection.run(`
+          INSERT INTO members (
+            member_id, display_name, personal_ref, role, status, credential_hash,
+            join_attempt_id, created_at, activated_at, revoked_at
+          ) VALUES (
+            'member-production-peer', 'Bob',
+            'refs/heads/members/member-production-peer', 'member', 'active', ?,
+            NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
+          )
+        `, [createHash('sha256').update(peerCredential, 'utf8').digest()]);
+      });
+      const authorityRepository = path.join(authority.authorityDirectory, 'repository.git');
+      const mainOid = git(authorityRepository, ['rev-parse', 'refs/heads/main']);
+      git(authorityRepository, [
+        'update-ref',
+        'refs/heads/members/member-production-peer',
+        mainOid,
+      ]);
+      const membership = await sourceFoundation.local.projects.loadMembership(PROJECT_ID);
+      if (!membership || membership.authority.kind !== 'lan') {
+        throw new Error('Missing source LAN membership');
+      }
+      const client = new LanAuthorityTransferClient({
+        caCertificatePem: membership.authority.hostCaCertificatePem!,
+        caFingerprint: membership.authority.hostCaFingerprint!,
+        endpoint: membership.authority.endpoint!,
+        projectId: PROJECT_ID,
+      });
+      const proposal = await client.requestWithMember('requestLanToCloudTransfer', {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_ID,
+        projectId: PROJECT_ID,
+        targetUrl,
+      }, peerCredential);
+      const acceptance = {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: authorityTransferChildIdempotencyKey(OPERATION_ID, 'accept'),
+        projectId: PROJECT_ID,
+        targetUrl,
+        transferId: proposal.transferId,
+      };
+      await expect(client.requestWithMember('cancelProjectAuthorityTransfer', {
+        expectedPhase: 'collecting-readiness',
+        idempotencyKey: `${OPERATION_ID}-remote-cancel`,
+        projectId: PROJECT_ID,
+        transferId: proposal.transferId,
+      }, HOST_CREDENTIAL)).rejects.toMatchObject({
+        code: 'authorization-denied',
+        safeContext: { reason: 'authority-transfer-local-host-confirmation-required' },
+      });
+      const foreignFoundation = foundation(sourceRoot, TEST_INSTALLATION_B);
+      const foreignSetup = new CollabProjectSetupService(foreignFoundation, {
+        installationKey: TEST_INSTALLATION_B,
+        vaultRoot: sourceRoot,
+      });
+      const foreignComposition = createCollabFeatureSubcomposition({
+        foundation: foreignFoundation,
+        projectSetup: foreignSetup,
+        vaultRoot: sourceRoot,
+      });
+      try {
+        await expect(foreignComposition.authorityTransfer
+          .acceptLanToCloudTransferTarget(acceptance)).rejects.toMatchObject({
+          code: 'authorization-denied',
+          safeContext: { reason: 'host-installation-owner-mismatch' },
+        });
+        await expect(sourceFoundation.authorityTransfers.load(PROJECT_ID)).resolves.toBeNull();
+      } finally {
+        await foreignFoundation.close();
+      }
+      const canonicalCreatedAt = new Date(
+        Date.parse(proposal.createdAt) + 5 * 60_000,
+      ).toISOString();
+      const canonicalExpiresAt = new Date(
+        Date.parse(canonicalCreatedAt) + 30 * 24 * 60 * 60_000,
+      ).toISOString();
+      const unsignedBatch: CollabTransferredMembershipClaimBatch = {
+        batchRevision: 1,
+        batchSha256: '0'.repeat(64),
+        checkpointSha256: '0'.repeat(64),
+        claims: [
+          { claim: Buffer.alloc(32, 1).toString('base64url'), memberId: MEMBER_ID },
+          {
+            claim: Buffer.alloc(32, 2).toString('base64url'),
+            memberId: 'member-production-peer',
+          },
+        ],
+        expiresAt: canonicalExpiresAt,
+        projectId: PROJECT_ID,
+        targetAuthorityGeneration: 2,
+        transferId: proposal.transferId,
+      };
+      let checkpointSha256 = '';
+      let batch: CollabTransferredMembershipClaimBatch | null = null;
+      let statusReadCount = 0;
+      const transferTimestamp = (minute: number): string => new Date(
+        Date.parse(canonicalCreatedAt) + minute * 60_000,
+      ).toISOString();
+      const withCheckpoint = (
+        phase: CollabAuthorityTransferStatus['phase'],
+      ): CollabAuthorityTransferStatus => {
+        const validated = phase !== 'source-quiesced';
+        return {
+          ...proposal,
+          createdAt: canonicalCreatedAt,
+          expiresAt: canonicalExpiresAt,
+          batchRevision: validated && batch ? 1 : null,
+          batchSha256: validated ? (batch?.batchSha256 ?? null) : null,
+          checkpointSha256: validated ? (checkpointSha256 || null) : null,
+          phase,
+          updatedAt: phase === 'source-quiesced'
+            ? transferTimestamp(1)
+            : phase === 'checkpoint-validated'
+              ? transferTimestamp(2)
+              : transferTimestamp(3),
+        };
+      };
+      const authorityTransfer = jest.fn(async (operation: string, request: never) => {
+        if (operation === 'beginLanToCloudTransfer') {
+          checkpointSha256 = (request as { checkpointManifestSha256: string })
+            .checkpointManifestSha256;
+          const candidate = {
+            ...unsignedBatch,
+            checkpointSha256,
+          };
+          batch = {
+            ...candidate,
+            batchSha256: createHash('sha256')
+              .update(encodeCollabTransferredMembershipClaimBatchDigestInput(candidate), 'utf8')
+              .digest('hex'),
+          };
+          return withCheckpoint('source-quiesced');
+        }
+        if (operation === 'getAuthorityTransferReceiptVerifier') {
+          return {
+            projectId: PROJECT_ID,
+            receiptKeyId: 'receipt-key-joined-production-effects',
+            receiptPublicKey: Buffer.alloc(32, 4).toString('base64url'),
+            receiptPublicKeyEncoding: 'base64url-raw',
+            signatureAlgorithm: 'ed25519',
+            transferId: proposal.transferId,
+          };
+        }
+        if (operation === 'rotateTransferredMembershipClaims') return batch!;
+        if (operation === 'acknowledgeTransferredMembershipClaimBatch') {
+          return {
+            batchRevision: 1,
+            batchSha256: batch!.batchSha256,
+            checkpointSha256,
+            committedAt: transferTimestamp(2.5),
+            custodyAuthority: { generation: 1, kind: 'lan' },
+            operationIntentId: OPERATION_ID,
+            projectId: PROJECT_ID,
+            receiptId: 'receipt-joined-production-effects',
+            submittedByMemberId: MEMBER_ID,
+            targetAuthorityGeneration: 2,
+            transferId: proposal.transferId,
+          };
+        }
+        if (operation === 'getProjectAuthorityTransfer') {
+          statusReadCount += 1;
+          return statusReadCount === 1
+            ? withCheckpoint('checkpoint-validated')
+            : withCheckpoint('repository-published');
+        }
+        if (operation === 'commitLanToCloudRelinquishment') {
+          const proof = (request as { proof: NonNullable<
+            CollabAuthorityTransferStatus['relinquishmentProof']
+          > }).proof;
+          return {
+            ...withCheckpoint('completed'),
+            phase: 'completed',
+            relinquishmentProof: proof,
+            state: 'completed',
+            updatedAt: transferTimestamp(4),
+          };
+        }
+        throw new Error(`Unexpected Cloud operation ${operation}`);
+      });
+      const currentMember = {
+        activatedAt: '2026-08-08T00:00:00.000Z',
+        createdAt: '2026-08-08T00:00:00.000Z',
+        displayName: 'Alice',
+        id: MEMBER_ID,
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        role: 'manager' as const,
+        status: 'active' as const,
+      };
+      const cloudSession = {
+        developmentActorId: MEMBER_ID,
+        dispose: jest.fn(),
+        lifecycle: {
+          authorityTransfer,
+          downloadAuthorityTransferArtifact: jest.fn(),
+          retirement: jest.fn(),
+          uploadAuthorityTransferArtifact: jest.fn(async input => {
+            let uploadedBytes = 0;
+            for await (const chunk of input.body) {
+              uploadedBytes += Buffer.byteLength(chunk as Uint8Array);
+            }
+            expect(uploadedBytes).toBeGreaterThan(0);
+          }),
+        },
+        projectId: PROJECT_ID,
+        readSnapshot: jest.fn(async () => ({
+          currentMember,
+          eventSequence: 3,
+          members: [currentMember],
+          openRequests: [],
+          openTicketCount: 0,
+          project: {
+            authorityGeneration: 2,
+            authorityKind: 'cloud',
+            createdAt: '2026-08-08T00:00:00.000Z',
+            id: PROJECT_ID,
+            mainOid,
+            mainRef: 'refs/heads/main',
+            name: 'Portable',
+          },
+          ticketHighlights: [],
+        })),
+        serverUrl: targetUrl,
+        supports: (capability: CollabCloudCapability) => (
+          capability === 'authority-transfer' || capability === 'project-snapshot'
+        ),
+      } as unknown as CloudAuthorityConnection;
+      await composition.authorityTransfer.bindLanToCloudSource({
+        cloudSession,
+        projectId: PROJECT_ID,
+      });
+
+      await expect(client.requestWithMember(
+        'acceptLanToCloudTransferTarget',
+        acceptance,
+        HOST_CREDENTIAL,
+      )).rejects.toMatchObject({
+        code: 'authorization-denied',
+        safeContext: { reason: 'authority-transfer-local-host-confirmation-required' },
+      });
+      const completed = await composition.authorityTransfer
+        .acceptLanToCloudTransferTarget(acceptance);
+
+      expect(completed).toMatchObject({ phase: 'completed', state: 'completed' });
+      expect(authorityTransfer.mock.calls.map(([operation]) => operation)).not.toEqual(
+        expect.arrayContaining([
+          'requestLanToCloudTransfer',
+          'acceptLanToCloudTransferTarget',
+        ]),
+      );
+      expect(authorityTransfer.mock.calls.filter(
+        ([operation]) => operation === 'acknowledgeTransferredMembershipClaimBatch',
+      )).toHaveLength(1);
+      await expect(sourceFoundation.local.projects.loadMembership(PROJECT_ID))
+        .resolves.toMatchObject({
+          authority: {
+            authorityGeneration: 2,
+            kind: 'cloud',
+            serverUrl: targetUrl,
+          },
+        });
+    } finally {
+      await sourceFeature.close();
+      await sourceFoundation.close();
+    }
+  });
+
+  it('restarts the exact LAN Host while recovering a locally proved cancellation', async () => {
+    const initialFoundation = foundation(sourceRoot);
+    const initialSetup = new CollabProjectSetupService(initialFoundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => HOST_CREDENTIAL,
+      createId: kind => {
+        if (kind === 'member') return MEMBER_ID;
+        if (kind === 'operation') return 'create-cancellation-restart';
+        return PROJECT_ID;
+      },
+      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      vaultRoot: sourceRoot,
+    });
+    const initialComposition = createCollabFeatureSubcomposition({
+      foundation: initialFoundation,
+      projectSetup: initialSetup,
+      vaultRoot: sourceRoot,
+    });
+    await initialComposition.feature.initialize();
+    await initialComposition.feature.createProject({
+      memberDisplayName: 'Alice',
+      name: 'Portable',
+    });
+    const route = initialFoundation.lanHost.getActiveProjectRoute(PROJECT_ID);
+    if (!route) throw new Error('Missing initial LAN Host route');
+    const transferStatus = status(
+      'lan-to-cloud',
+      'collecting-readiness',
+      'https://cloud.example.test/',
+    );
+    const entry = createAuthorityTransferEntryRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      proposedByMemberId: MEMBER_ID,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'https://cloud.example.test/',
+      },
+      status: transferStatus,
+    });
+    const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      sourceLanEndpoint: route.endpoint,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus,
+    });
+    await initialFoundation.authorityTransfers.proposeEntry(entry);
+    await initialFoundation.authorityTransfers.handoffEntry(entry, record);
+    const cancellation = {
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness' as const,
+      idempotencyKey: 'cancel-cancellation-restart',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    };
+    await initialComposition.feature.close();
+    await initialFoundation.close();
+
+    const reopenedFoundation = foundation(sourceRoot);
+    const reopenedComposition = createCollabFeatureSubcomposition({
+      foundation: reopenedFoundation,
+      projectSetup: new CollabProjectSetupService(reopenedFoundation, {
+        installationKey: TEST_INSTALLATION_A,
+        vaultRoot: sourceRoot,
+      }),
+      vaultRoot: sourceRoot,
+    });
+    try {
+      await reopenedComposition.feature.initialize();
+      await expect(reopenedComposition.authorityTransfer.cancelLanToCloudTransfer(cancellation))
+        .resolves.toMatchObject({ phase: 'cancelled', state: 'cancelled' });
+      expect(reopenedFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
+      await expect(reopenedFoundation.authorityTransfers.load(PROJECT_ID)).resolves.toMatchObject({
+        status: { phase: 'cancelled', state: 'cancelled' },
+        terminalCleanupCompleted: true,
+      });
+    } finally {
+      await reopenedComposition.feature.close();
+      await reopenedFoundation.close();
+    }
   });
 
   async function captureSource() {
@@ -794,13 +1312,16 @@ describe('production authority-transfer effects', () => {
     await targetFoundation.close();
   });
 
-  function foundation(vaultRoot: string): ClaudianCollabService {
+  function foundation(
+    vaultRoot: string,
+    installationKey: typeof TEST_INSTALLATION_A | typeof TEST_INSTALLATION_B = TEST_INSTALLATION_A,
+  ): ClaudianCollabService {
     return new ClaudianCollabService({
       createAuthorityDatabase: authorityDirectory => (
         new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
-      installationKey: TEST_INSTALLATION_A,
+      installationKey,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });

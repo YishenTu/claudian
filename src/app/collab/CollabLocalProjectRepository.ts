@@ -5,6 +5,15 @@ import path from 'node:path';
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
+  type AuthorityTransferEntryComponent,
+  type AuthorityTransferEntryRecord,
+  type AuthorityTransferRequesterEntryRecord,
+  type AuthorityTransferSourceEntryRecord,
+  createAuthorityTransferEntryDocument,
+  decodeAuthorityTransferEntryComponent,
+} from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import {
+  type AuthorityTransferRecord,
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
@@ -20,6 +29,7 @@ import {
 import type {
   AuthorityTransferClaimCommitmentStorePort,
   AuthorityTransferClaimCustodyStorePort,
+  AuthorityTransferEntryStorePort,
   AuthorityTransferProjectCatalog,
   AuthorityTransferRecordStorePort,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistenceStores';
@@ -188,6 +198,7 @@ export interface CollabLocalProjectPaths {
   readonly conflictDirectory: string;
   readonly hostTransferRecovery: string;
   readonly authorityTransfer: string;
+  readonly authorityTransferEntry: string;
   readonly authorityTransferClaimCommitment: string;
   readonly authorityTransferClaims: string;
   readonly authorityTransferClaimant: string;
@@ -291,7 +302,7 @@ function requireExactKeys(
 
 function localRecordError(
   reason: string,
-  recordKind: CollabLocalProjectDocumentKind | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
+  recordKind: CollabLocalProjectDocumentKind | 'authority-transfer-entry' | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
   projectId?: string,
 ): CollabError {
   return new CollabError({
@@ -303,6 +314,17 @@ function localRecordError(
     },
     recoveryActions: ['open-diagnostics'],
   });
+}
+
+function decodeLocalAuthorityTransferEntryComponent(
+  value: unknown,
+  projectId: CollabProjectId,
+): AuthorityTransferEntryComponent {
+  try {
+    return decodeAuthorityTransferEntryComponent(value);
+  } catch {
+    throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+  }
 }
 
 function schemaVersionError(recordKind: 'index' | 'membership'): CollabError {
@@ -725,6 +747,7 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): boolean {
 }
 
 export class CollabLocalProjectRepository {
+  readonly authorityTransferEntries: AuthorityTransferEntryStorePort;
   readonly authorityTransferClaimants: AuthorityTransferClaimantStore;
   readonly authorityTransferClaimCommitments: AuthorityTransferClaimCommitmentStorePort;
   readonly authorityTransferClaims: AuthorityTransferClaimCustodyStorePort;
@@ -747,6 +770,14 @@ export class CollabLocalProjectRepository {
       : parseInstallationKey(options.installationKey);
     this.now = options.now ?? (() => new Date());
     this.#onDiagnostic = options.onDiagnostic;
+    const authorityTransferEntries: AuthorityTransferEntryStorePort = {
+      load: projectId => this.#loadAuthorityTransferEntry(projectId),
+      removeRequester: record => this.#removeAuthorityTransferRequester(record),
+      removeSource: record => this.#removeAuthorityTransferSource(record),
+      saveRequester: record => this.#saveAuthorityTransferRequester(record),
+      saveSource: record => this.#saveAuthorityTransferSource(record),
+    };
+    this.authorityTransferEntries = Object.freeze(authorityTransferEntries);
     const authorityTransferRecords: AuthorityTransferRecordStorePort = {
       listProjectIds: () => this.listAuthorityTransferProjectIds(),
       scanProjectCatalog: () => this.scanAuthorityTransferProjectCatalog(),
@@ -759,6 +790,7 @@ export class CollabLocalProjectRepository {
         projectId,
         'authority-transfer',
       ),
+      removeExact: record => this.#removeExactAuthorityTransferRecord(record),
       save: record => this.saveLifecycleProjectDocument(
         record.projectId,
         'authority-transfer',
@@ -864,6 +896,37 @@ export class CollabLocalProjectRepository {
           decodeLocalCleanupRecord,
         )
       ),
+    });
+  }
+
+  #removeExactAuthorityTransferRecord(record: AuthorityTransferRecord): Promise<boolean> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(async () => {
+      const value = await this.#readJson(
+        this.#lifecycleDocumentPath(record.projectId, 'authority-transfer'),
+        'authority-transfer',
+        record.projectId,
+      );
+      if (value === null) return false;
+      let current: AuthorityTransferRecord;
+      try {
+        current = decodeAuthorityTransferRecord(value);
+      } catch {
+        throw localRecordError('local-record-corrupt', 'authority-transfer', record.projectId);
+      }
+      if (serializeJson(current) !== serializeJson(record)) return false;
+      const removed = await removeCollabFileDurably(
+        this.vaultRoot,
+        this.#lifecycleDocumentPath(record.projectId, 'authority-transfer'),
+        this.#onDiagnostic,
+      );
+      if (removed) {
+        await syncCollabVaultDirectoryDurably(
+          this.vaultRoot,
+          `${PRIVATE_STATE_DIRECTORY}/projects/${record.projectId}`,
+        );
+      }
+      return removed;
     });
   }
 
@@ -1457,6 +1520,204 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  #loadAuthorityTransferEntry(
+    projectId: CollabProjectId,
+  ): Promise<AuthorityTransferEntryRecord | null> {
+    this.#requireProjectId(projectId);
+    return this.#operationQueue.run(() => this.#loadAuthorityTransferEntryUnlocked(projectId));
+  }
+
+  async #loadAuthorityTransferEntryUnlocked(
+    projectId: CollabProjectId,
+  ): Promise<AuthorityTransferEntryRecord | null> {
+    const entryDirectory = this.getProjectPaths(projectId).authorityTransferEntry;
+    const absoluteEntryDirectory = await resolveCollabVaultPath(this.vaultRoot, entryDirectory);
+    const entryStat = await lstat(absoluteEntryDirectory).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw localRecordError('local-record-read-failed', 'authority-transfer-entry', projectId);
+    });
+    if (entryStat === null) return null;
+    if (!entryStat.isDirectory() || entryStat.isSymbolicLink()) {
+      throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+    }
+    const entries = await readdir(absoluteEntryDirectory, { withFileTypes: true }).catch(() => {
+      throw localRecordError('local-record-read-failed', 'authority-transfer-entry', projectId);
+    });
+    if (entries.some(entry => (
+      entry.isSymbolicLink()
+      || (entry.name !== 'source.json' && entry.name !== 'requesters')
+      || (entry.name === 'source.json' ? !entry.isFile() : !entry.isDirectory())
+    ))) {
+      throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+    }
+    let source: AuthorityTransferSourceEntryRecord | null = null;
+    if (entries.some(entry => entry.name === 'source.json')) {
+      const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
+        `${entryDirectory}/source.json`,
+        'authority-transfer-entry',
+        projectId,
+      ), projectId);
+      if (decoded.entryRole !== 'source') {
+        throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+      }
+      source = decoded;
+    }
+    const requesters: Record<string, AuthorityTransferRequesterEntryRecord> = {};
+    if (entries.some(entry => entry.name === 'requesters')) {
+      const requesterDirectory = `${entryDirectory}/requesters`;
+      const absoluteRequesterDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        requesterDirectory,
+        { mustExist: true },
+      );
+      const requesterEntries = await readdir(
+        absoluteRequesterDirectory,
+        { withFileTypes: true },
+      ).catch(() => {
+        throw localRecordError('local-record-read-failed', 'authority-transfer-entry', projectId);
+      });
+      for (const requesterEntry of requesterEntries) {
+        const match = /^(device-[a-f0-9]{64})\.json$/.exec(requesterEntry.name);
+        if (!match || !requesterEntry.isFile() || requesterEntry.isSymbolicLink()) {
+          throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+        }
+        const installationKey = parseInstallationKey(match[1]);
+        const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
+          `${requesterDirectory}/${requesterEntry.name}`,
+          'authority-transfer-entry',
+          projectId,
+        ), projectId);
+        if (
+          decoded.entryRole !== 'requester'
+          || decoded.requesterInstallationKey !== installationKey
+        ) {
+          throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+        }
+        requesters[installationKey] = decoded;
+      }
+    }
+    if (!source && Object.keys(requesters).length === 0) return null;
+    return createAuthorityTransferEntryDocument({ projectId, requesters, source });
+  }
+
+  #saveAuthorityTransferRequester(
+    record: AuthorityTransferRequesterEntryRecord,
+  ): Promise<void> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(() => this.#saveAuthorityTransferRequesterUnlocked(record));
+  }
+
+  async #saveAuthorityTransferRequesterUnlocked(
+    record: AuthorityTransferRequesterEntryRecord,
+  ): Promise<void> {
+    const decoded = decodeLocalAuthorityTransferEntryComponent(record, record.projectId);
+    if (decoded.entryRole !== 'requester') {
+      throw localRecordError('local-record-corrupt', 'authority-transfer-entry', record.projectId);
+    }
+    const entryDirectory = this.getProjectPaths(record.projectId).authorityTransferEntry;
+    await this.#ensurePrivateProjectDirectory(record.projectId, true);
+    await ensureCollabVaultDirectory(this.vaultRoot, `${entryDirectory}/requesters`, {
+      durable: true,
+      mode: 0o700,
+      onDiagnostic: this.#onDiagnostic,
+    });
+    await writeCollabFileAtomically(
+      this.vaultRoot,
+      `${entryDirectory}/requesters/${decoded.requesterInstallationKey}.json`,
+      serializeJson(decoded),
+      { mode: 0o600, onDiagnostic: this.#onDiagnostic },
+    );
+  }
+
+  #saveAuthorityTransferSource(record: AuthorityTransferSourceEntryRecord): Promise<void> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(() => this.#saveAuthorityTransferSourceUnlocked(record));
+  }
+
+  async #saveAuthorityTransferSourceUnlocked(
+    record: AuthorityTransferSourceEntryRecord,
+  ): Promise<void> {
+    const decoded = decodeLocalAuthorityTransferEntryComponent(record, record.projectId);
+    if (decoded.entryRole !== 'source') {
+      throw localRecordError('local-record-corrupt', 'authority-transfer-entry', record.projectId);
+    }
+    const entryDirectory = this.getProjectPaths(record.projectId).authorityTransferEntry;
+    await this.#ensurePrivateProjectDirectory(record.projectId, true);
+    await ensureCollabVaultDirectory(this.vaultRoot, entryDirectory, {
+      durable: true,
+      mode: 0o700,
+      onDiagnostic: this.#onDiagnostic,
+    });
+    await writeCollabFileAtomically(
+      this.vaultRoot,
+      `${entryDirectory}/source.json`,
+      serializeJson(decoded),
+      { mode: 0o600, onDiagnostic: this.#onDiagnostic },
+    );
+  }
+
+  #removeAuthorityTransferRequester(
+    record: AuthorityTransferRequesterEntryRecord,
+  ): Promise<boolean> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(async () => {
+      const current = await this.#readJson(
+        `${this.getProjectPaths(record.projectId).authorityTransferEntry}`
+          + `/requesters/${record.requesterInstallationKey}.json`,
+        'authority-transfer-entry',
+        record.projectId,
+      );
+      if (current === null) return false;
+      const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
+      if (
+        decoded.entryRole !== 'requester'
+        || serializeJson(decoded) !== serializeJson(record)
+      ) return false;
+      return this.#removeAuthorityTransferRequesterUnlocked(
+        record.projectId,
+        record.requesterInstallationKey,
+      );
+    });
+  }
+
+  #removeAuthorityTransferRequesterUnlocked(
+    projectId: CollabProjectId,
+    requesterInstallationKey: InstallationKey,
+  ): Promise<boolean> {
+    return removeCollabFileDurably(
+      this.vaultRoot,
+      `${this.getProjectPaths(projectId).authorityTransferEntry}`
+        + `/requesters/${requesterInstallationKey}.json`,
+      this.#onDiagnostic,
+    );
+  }
+
+  #removeAuthorityTransferSource(record: AuthorityTransferSourceEntryRecord): Promise<boolean> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(async () => {
+      const current = await this.#readJson(
+        `${this.getProjectPaths(record.projectId).authorityTransferEntry}/source.json`,
+        'authority-transfer-entry',
+        record.projectId,
+      );
+      if (current === null) return false;
+      const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
+      if (
+        decoded.entryRole !== 'source'
+        || serializeJson(decoded) !== serializeJson(record)
+      ) return false;
+      return this.#removeAuthorityTransferSourceUnlocked(record.projectId);
+    });
+  }
+
+  #removeAuthorityTransferSourceUnlocked(projectId: CollabProjectId): Promise<boolean> {
+    return removeCollabFileDurably(
+      this.vaultRoot,
+      `${this.getProjectPaths(projectId).authorityTransferEntry}/source.json`,
+      this.#onDiagnostic,
+    );
+  }
+
   listPendingOperationProjectIds(): Promise<readonly CollabProjectId[]> {
     return this.#operationQueue.run(async () => {
       const kind = 'pending-operation' as const;
@@ -1546,7 +1807,8 @@ export class CollabLocalProjectRepository {
         continue;
       }
       if (documentNames.some(name => (
-        name === 'authority-transfer.json'
+        name === 'authority-transfer-entry'
+        || name === 'authority-transfer.json'
         || name === 'authority-transfer-claims.json'
         || name === 'authority-transfer-claim-commitment.json'
       ))) {
@@ -1755,6 +2017,7 @@ export class CollabLocalProjectRepository {
     return {
       authorityDirectory: `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`,
       authorityTransfer: `${projectDirectory}/authority-transfer.json`,
+      authorityTransferEntry: `${projectDirectory}/authority-transfer-entry`,
       authorityTransferClaimCommitment: `${projectDirectory}/authority-transfer-claim-commitment.json`,
       authorityTransferClaims: `${projectDirectory}/authority-transfer-claims.json`,
       authorityTransferClaimant: `${projectDirectory}/authority-transfer-claimant.json`,
@@ -2516,7 +2779,7 @@ export class CollabLocalProjectRepository {
 
    async #readJson(
     relativePath: string,
-    recordKind: CollabLocalProjectDocumentKind | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
+    recordKind: CollabLocalProjectDocumentKind | 'authority-transfer-entry' | 'index' | 'membership' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
     projectId?: string,
   ): Promise<unknown> {
     let absolutePath: string;
@@ -2534,7 +2797,7 @@ export class CollabLocalProjectRepository {
     }
   }
 
-   #projectDocumentPath(
+  #projectDocumentPath(
     projectId: CollabProjectId,
     kind: CollabLocalProjectDocumentKind,
   ): string {
