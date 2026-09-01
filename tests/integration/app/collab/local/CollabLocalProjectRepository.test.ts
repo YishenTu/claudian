@@ -27,6 +27,9 @@ import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
 import {
+  decodeCloudRetirementIntent,
+} from '@/app/collab/retirement/CloudRetirementIntent';
+import {
   decodeRetirementRecord,
   type RetirementRecord,
 } from '@/app/collab/retirement/RetirementRecord';
@@ -331,6 +334,52 @@ describe('CollabLocalProjectRepository', () => {
     expect(persisted.member).not.toHaveProperty('credential');
     expect(persisted.authority).not.toHaveProperty('hostCaCertificatePem');
     expect(persisted.authority).not.toHaveProperty('developmentActorId');
+  });
+
+  it('persists the current Cloud membership while the Vault Leave journal owns exit', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = { ...cloudMembershipRecord(), lifecycle: 'leaving' as const };
+
+    await repository.saveMembership(record);
+
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toEqual(record);
+  });
+
+  it('persists and enumerates the strict private Cloud retirement intent', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const intent = decodeCloudRetirementIntent({
+      authorityGeneration: 7,
+      createdAt: '2026-08-13T00:00:00.000Z',
+      kind: 'cloud-retirement-intent',
+      memberId: 'member-alice',
+      personalRef: 'refs/heads/members/member-alice',
+      phase: 'submitted',
+      projectId: PROJECT_ID,
+      request: {
+        expectedAuthorityGeneration: 7,
+        expectedMainOid: 'a'.repeat(40),
+        idempotencyKey: 'retire-request-one',
+        projectId: PROJECT_ID,
+      },
+      result: null,
+      schemaVersion: 1,
+      serverUrl: 'http://198.51.100.20:8787/operator/cloud',
+      updatedAt: '2026-08-13T00:00:00.000Z',
+    });
+
+    await repository.saveProjectDocument(
+      PROJECT_ID,
+      'cloud-retirement-intent',
+      intent,
+    );
+
+    await expect(repository.loadProjectDocument(
+      PROJECT_ID,
+      'cloud-retirement-intent',
+      decodeCloudRetirementIntent,
+    )).resolves.toEqual(intent);
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
   });
 
   it('rejects any persisted Cloud development actor, including the current Member', async () => {
@@ -1306,6 +1355,91 @@ describe('CollabLocalProjectRepository', () => {
     await expect(repository.loadIndex()).resolves.toMatchObject({ projects: [] });
     await expect(repository.listPendingOperationProjectIds())
       .resolves.toEqual([PROJECT_ID]);
+  });
+
+  it('enumerates recovery document presence without decoding a corrupt payload', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      operationId: 'create-project-alpha',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    const projectDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    );
+    await writeFile(path.join(projectDirectory, 'pending-operation.json'), '{invalid');
+    await repository.saveProjectDocument(PROJECT_ID, 'cloud-retirement-intent', {
+      kind: 'cloud-retirement-intent',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    await writeFile(path.join(projectDirectory, 'cloud-retirement-intent.json'), '{invalid');
+
+    await expect(repository.listPendingOperationProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+    await expect(repository.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      value => value as never,
+    )).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+  });
+
+  it('enumerates non-regular retirement nodes without blocking another Project', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const projectIds = ['project-directory', 'project-symlink', 'project-valid'] as const;
+    for (const projectId of projectIds) {
+      await repository.saveProjectDocument(projectId, 'cloud-retirement-intent', {
+        kind: 'cloud-retirement-intent',
+        projectId,
+        schemaVersion: 1,
+      });
+    }
+    const directoryPath = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      'project-directory',
+      'cloud-retirement-intent.json',
+    );
+    await rm(directoryPath);
+    await mkdir(directoryPath);
+    const symlinkProjectDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      'project-symlink',
+    );
+    const targetPath = path.join(symlinkProjectDirectory, 'retirement-target.json');
+    await writeFile(targetPath, '{}', 'utf8');
+    await rm(path.join(symlinkProjectDirectory, 'cloud-retirement-intent.json'));
+    await symlink(targetPath, path.join(
+      symlinkProjectDirectory,
+      'cloud-retirement-intent.json',
+    ));
+
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual(projectIds);
+    await expect(repository.loadProjectDocument(
+      'project-directory',
+      'cloud-retirement-intent',
+      value => value as never,
+    )).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(repository.loadProjectDocument(
+      'project-symlink',
+      'cloud-retirement-intent',
+      value => value as never,
+    )).rejects.toMatchObject({ code: 'workspace-boundary-invalid' });
   });
 
   it('ignores ordinary files while enumerating Project-local recovery documents', async () => {

@@ -84,6 +84,7 @@ function createPort(
       hostInstallationStatus: 'hosted-here',
       hostStatus: 'stopped',
     }))),
+    completeManagementOperation: jest.fn().mockResolvedValue(success(undefined)),
     createHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(success({} as never)),
     declineHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
@@ -314,7 +315,6 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       purpose: 'manager-promotion',
       targetMemberId: 'member-maya',
@@ -418,7 +418,6 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.promoteManager).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       managerResponsibilityOfferId: 'promotion-one',
       projectId: 'project-alpha',
       targetMemberId: 'member-maya',
@@ -483,8 +482,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
-
     listener?.({
       lifecycle: 'ready',
       projects: [project()],
@@ -498,7 +495,6 @@ describe('ProjectManagementModal', () => {
 
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
     expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0]).toEqual({
-      intentId: firstIntentId,
       projectId: 'project-alpha',
       purpose: 'manager-promotion',
       targetMemberId: 'member-maya',
@@ -567,8 +563,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.promoteManager.mock.calls[0]?.[0].intentId;
-
     listener?.({
       lifecycle: 'ready',
       projects: [project()],
@@ -582,7 +576,6 @@ describe('ProjectManagementModal', () => {
 
     expect(port.promoteManager).toHaveBeenCalledTimes(2);
     expect(port.promoteManager.mock.calls[1]?.[0]).toEqual({
-      intentId: firstIntentId,
       managerResponsibilityOfferId: 'promotion-one',
       projectId: 'project-alpha',
       targetMemberId: 'member-maya',
@@ -619,13 +612,12 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.demoteManager).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       targetMemberId: 'member-host',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
-  it('discards a failed mutation intent when another confirmation replaces it', async () => {
+  it('requests project-scoped LAN intent abandonment when another confirmation replaces it', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),
       member('member-bob', 'Bob', { role: 'manager' }),
@@ -651,8 +643,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.demoteManager.mock.calls[0]?.[0].intentId;
-
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="make-manager"][data-member-id="member-maya"]',
     )?.click();
@@ -668,7 +658,12 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.demoteManager).toHaveBeenCalledTimes(2);
-    expect(port.demoteManager.mock.calls[1]?.[0].intentId).not.toBe(firstIntentId);
+    expect(port.demoteManager.mock.calls[1]?.[0]).toEqual({
+      projectId: 'project-alpha', targetMemberId: 'member-bob',
+    });
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+    });
   });
 
   it('submits Manager removal and surfaces last-Manager authority protection', async () => {
@@ -704,7 +699,6 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.removeMember).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       memberId: 'member-bob',
       projectId: 'project-alpha',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
@@ -889,7 +883,6 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.removeMember).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       memberId: 'member-maya',
       projectId: 'project-alpha',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
@@ -982,14 +975,15 @@ describe('ProjectManagementModal', () => {
 
     expect(managerModal.contentEl.querySelector('[role="alert"]')?.textContent)
       .toContain('could not be completed');
-    const firstIntentId = port.removeMember.mock.calls[0]?.[0].intentId;
-    expect(firstIntentId).toEqual(expect.any(String));
+    expect(port.removeMember.mock.calls[0]?.[0]).toEqual({
+      memberId: 'member-maya', projectId: 'project-alpha',
+    });
     managerModal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
     expect(port.removeMember).toHaveBeenCalledTimes(2);
-    expect(port.removeMember.mock.calls[1]?.[0].intentId).toBe(firstIntentId);
+    expect(port.removeMember.mock.calls[1]?.[0]).toEqual(port.removeMember.mock.calls[0]?.[0]);
   });
 
   it('aborts loading and ignores its late result after close', async () => {
@@ -1132,7 +1126,6 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       purpose: 'manager-leave',
       targetMemberId: 'member-maya',
@@ -1199,18 +1192,18 @@ describe('ProjectManagementModal', () => {
 
     await enterSuccessorFlow();
     await selectSuccessor();
-    const firstIntent = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
     await selectSuccessor();
-    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0].intentId)
-      .toBe(firstIntent);
+    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
 
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="cancel-access-action"]',
     )?.click();
     await enterSuccessorFlow();
     await selectSuccessor();
-    expect(port.createManagerResponsibilityOffer.mock.calls[2]?.[0].intentId)
-      .not.toBe(firstIntent);
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({ projectId: 'project-alpha' });
+    expect(port.createManagerResponsibilityOffer.mock.calls[2]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
   });
 
   it('discards actor-scoped Leave intents when the current Member changes', async () => {
@@ -1267,8 +1260,6 @@ describe('ProjectManagementModal', () => {
     };
 
     await createOffer();
-    const firstIntent = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
-
     currentMember = members[1]!;
     listener?.({
       lifecycle: 'ready',
@@ -1278,8 +1269,9 @@ describe('ProjectManagementModal', () => {
     await flush();
     await createOffer();
 
-    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0].intentId)
-      .not.toBe(firstIntent);
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({ projectId: 'project-alpha' });
+    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
   });
 
   it('does not ask the target to manually confirm Manager responsibility', async () => {

@@ -7,13 +7,13 @@ import {
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
 
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { HostTransferModule } from '@/app/collab/host-transfer/HostTransferModule';
 import { createHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
-import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const membership = {
@@ -94,7 +94,7 @@ describe('HostTransferModule', () => {
     ) => operation());
     const module = new HostTransferModule({
       activateTransferredAuthority: jest.fn(),
-      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner,
       bindTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),
@@ -267,7 +267,7 @@ describe('HostTransferModule', () => {
     });
     const module = new HostTransferModule({
       activateTransferredAuthority: jest.fn(),
-      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner: jest.fn().mockResolvedValue(undefined),
       bindTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),

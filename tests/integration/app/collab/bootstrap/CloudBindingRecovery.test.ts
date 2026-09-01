@@ -369,6 +369,7 @@ async function createEffects(fixture: RecoveryFixture): Promise<CloudBootstrapBi
       resolveRefs: (...input) => repositories.resolveRefs(...input),
       rotateOrigin: (record, repositoryPath) => rotateCloudBootstrapOrigin(repositories, {
         newRemoteUrl: record.newAuthority.gitRemoteUrl,
+        newServerUrl: record.newAuthority.serverUrl,
         oldRemoteUrl: record.oldAuthority.gitRemoteUrl,
         projectId: record.projectId,
         repositoryPath,

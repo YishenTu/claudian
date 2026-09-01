@@ -63,7 +63,7 @@ import type {
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
 import type {
-  CollabAuthorityMembershipControlPort,
+  CollabAuthorityMembershipRouterPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthorityAdapter } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -209,7 +209,7 @@ export class CollabPublicationService {
     });
   }
 
-  get membershipControl(): CollabAuthorityMembershipControlPort {
+  get membershipControl(): CollabAuthorityMembershipRouterPort {
     return this.control;
   }
 
@@ -240,7 +240,7 @@ export class CollabPublicationService {
     return snapshot;
   }
 
-  async transferSnapshot(
+  async readAuthoritySnapshot(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
@@ -768,15 +768,20 @@ export class CollabPublicationService {
     });
   }
 
-  reconnectProject(
+  async reconnectProject(
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.enqueueProjectMutation(request.projectId, async () => {
+    const reconnect = async (): Promise<CollabResult<CollabLocalProjectSummary>> => {
       const result = await this.options.reconnect.reconnectProject(request, options);
-      if (result.status === 'success') this.resetProjectConnection(request.projectId);
+      if (result.status === 'success' && result.value.authorityKind === 'lan') {
+        this.resetProjectConnection(request.projectId);
+      }
       return result;
-    });
+    };
+    return 'encodedInvitation' in request
+      ? this.enqueueProjectMutation(request.projectId, reconnect)
+      : reconnect();
   }
 
   tryAutoReconnect(

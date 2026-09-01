@@ -17,6 +17,22 @@ export interface CollabTrustedOriginTransition {
   readonly repositoryPath: string;
 }
 
+export interface CollabCloudOriginRelocation extends CollabTrustedOriginTransition {
+  readonly newServerUrl: string;
+  readonly oldServerUrl: string;
+}
+
+export interface CollabAuthorityTransferOriginTransition
+  extends CollabTrustedOriginTransition {
+  readonly newServerUrl: string | null;
+  readonly oldServerUrl: string | null;
+}
+
+export interface CollabCloudBootstrapOriginTransition
+  extends CollabTrustedOriginTransition {
+  readonly newServerUrl: string;
+}
+
 function isGeneratedLanHostRemoteUrl(remoteUrl: string, projectId: string): boolean {
   let parsed: URL;
   try {
@@ -88,22 +104,19 @@ export async function rotateTrustedCollabOrigin(
 
 export async function rotateCloudBootstrapOrigin(
   git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
-  transition: CollabTrustedOriginTransition,
+  transition: CollabCloudBootstrapOriginTransition,
 ): Promise<void> {
-  let parsed: URL;
   let canonicalNewRemoteUrl: string;
   try {
-    parsed = new URL(transition.newRemoteUrl);
-    canonicalNewRemoteUrl = cloudProjectGitRemoteUrl(parsed.origin, transition.projectId);
+    canonicalNewRemoteUrl = cloudProjectGitRemoteUrl(
+      transition.newServerUrl,
+      transition.projectId,
+    );
   } catch {
     throw originError('collab-origin-transition-invalid');
   }
   if (
     !isGeneratedLanHostRemoteUrl(transition.oldRemoteUrl, transition.projectId)
-    || parsed.username.length > 0
-    || parsed.password.length > 0
-    || parsed.search.length > 0
-    || parsed.hash.length > 0
     || transition.newRemoteUrl !== canonicalNewRemoteUrl
   ) {
     throw originError('collab-origin-transition-invalid');
@@ -125,29 +138,63 @@ export async function rotateCloudBootstrapOrigin(
   await writeVerifiedOrigin(git, transition.repositoryPath, transition.newRemoteUrl);
 }
 
+export async function rotateCloudRelocationOrigin(
+  git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
+  transition: CollabCloudOriginRelocation,
+): Promise<void> {
+  let expectedOldRemoteUrl: string;
+  let expectedNewRemoteUrl: string;
+  try {
+    expectedOldRemoteUrl = cloudProjectGitRemoteUrl(
+      transition.oldServerUrl,
+      transition.projectId,
+    );
+    expectedNewRemoteUrl = cloudProjectGitRemoteUrl(
+      transition.newServerUrl,
+      transition.projectId,
+    );
+  } catch {
+    throw originError('collab-origin-transition-invalid');
+  }
+  if (
+    transition.oldRemoteUrl !== expectedOldRemoteUrl
+    || transition.newRemoteUrl !== expectedNewRemoteUrl
+    || transition.oldRemoteUrl === transition.newRemoteUrl
+  ) throw originError('collab-origin-transition-invalid');
+  const urls = await git.listRemoteUrls(transition.repositoryPath, 'origin');
+  if (urls.length !== 1) throw originError('collab-origin-transition-mismatch');
+  if (urls[0] === transition.newRemoteUrl) return;
+  if (urls[0] !== transition.oldRemoteUrl) {
+    throw originError('collab-origin-transition-mismatch');
+  }
+  await writeVerifiedOrigin(git, transition.repositoryPath, transition.newRemoteUrl);
+}
+
 export async function rotateAuthorityTransferOrigin(
   git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
-  transition: CollabTrustedOriginTransition,
+  transition: CollabAuthorityTransferOriginTransition,
 ): Promise<void> {
-  const sourceIsLan = isGeneratedLanHostRemoteUrl(
+  const sourceIsLan = transition.oldServerUrl === null && isGeneratedLanHostRemoteUrl(
     transition.oldRemoteUrl,
     transition.projectId,
   );
-  const targetIsLan = isGeneratedLanHostRemoteUrl(
+  const targetIsLan = transition.newServerUrl === null && isGeneratedLanHostRemoteUrl(
     transition.newRemoteUrl,
     transition.projectId,
   );
   let sourceIsCloud: boolean;
   let targetIsCloud: boolean;
   try {
-    sourceIsCloud = transition.oldRemoteUrl === cloudProjectGitRemoteUrl(
-      new URL(transition.oldRemoteUrl).origin,
-      transition.projectId,
-    );
-    targetIsCloud = transition.newRemoteUrl === cloudProjectGitRemoteUrl(
-      new URL(transition.newRemoteUrl).origin,
-      transition.projectId,
-    );
+    sourceIsCloud = transition.oldServerUrl !== null
+      && transition.oldRemoteUrl === cloudProjectGitRemoteUrl(
+        transition.oldServerUrl,
+        transition.projectId,
+      );
+    targetIsCloud = transition.newServerUrl !== null
+      && transition.newRemoteUrl === cloudProjectGitRemoteUrl(
+        transition.newServerUrl,
+        transition.projectId,
+      );
   } catch {
     throw originError('collab-origin-transition-invalid');
   }

@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian-collab/protocol';
+import type { CollabProjectId, CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
 import type {
   CollabProjectWorkSessionRegistry,
@@ -8,9 +8,12 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type {
+  CloudMembershipBinding,
+  CloudMembershipOperation,
   CollabAuthorityMembershipControlPort,
   CollabAuthorityMembershipOperation,
   CollabAuthorityMembershipOperationMap,
+  CollabAuthorityMembershipRouterPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type {
@@ -40,7 +43,7 @@ function routerError(reason: string): CollabError {
 
 export class CollabAuthorityControlRouter implements
   CollabAuthorityControlPort,
-  CollabAuthorityMembershipControlPort {
+  CollabAuthorityMembershipRouterPort {
   constructor(
     private readonly memberships: CollabAuthorityMembershipStore,
     private readonly sessions: CollabProjectWorkSessionRegistry,
@@ -229,6 +232,21 @@ export class CollabAuthorityControlRouter implements
     ));
   }
 
+  cloudMembership<Operation extends CloudMembershipOperation>(
+    operation: Operation,
+    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    binding: CloudMembershipBinding,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+    // A frozen Cloud intent must never enter LAN discovery or semantic reconnect retry.
+    return this.session(request.projectId).then(session => {
+      if (session.authorityKind !== 'cloud' || session.membership?.authorityKind !== 'cloud') {
+        throw routerError('authority-session-cloud-membership-unavailable');
+      }
+      return session.membership.cloudMembership(operation, request, binding, options);
+    });
+  }
+
   private async execute<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
@@ -243,7 +261,7 @@ export class CollabAuthorityControlRouter implements
     operation: (control: CollabAuthorityMembershipControlPort) => Promise<T>,
   ): Promise<T> {
     return this.executeSession(projectId, options, session => {
-      if (!session.membership) {
+      if (session.authorityKind !== 'lan' || session.membership?.authorityKind !== 'lan') {
         throw routerError('authority-session-membership-control-unavailable');
       }
       return operation(session.membership);

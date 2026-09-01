@@ -1,8 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
+import type {
+  CloudPendingLeaveRecord,
+  PendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 
 const pendingLeave = (): PendingLeaveRecord => ({
@@ -33,6 +36,38 @@ const pendingLeave = (): PendingLeaveRecord => ({
   workspacePath: 'workspace/project-alpha',
 });
 
+const pendingCloudLeave = (): CloudPendingLeaveRecord => ({
+  authorityGeneration: 4,
+  authorityKind: 'cloud',
+  cleanupChoice: 'delete-files',
+  cleanupMarkerNonce: 'm'.repeat(43),
+  createdAt: '2026-08-13T00:00:00.000Z',
+  idempotencyKey: 'leave-cloud-request',
+  kind: 'pending-leave',
+  localCleanupComplete: true,
+  localRole: 'member',
+  memberId: 'member-alpha',
+  operationId: 'leave-cloud-cleanup',
+  personalRef: 'refs/heads/members/member-alpha',
+  phase: 'submitted',
+  projectCreatedAt: '2026-08-12T00:00:00.000Z',
+  projectId: 'project-alpha',
+  projectName: 'Alpha',
+  request: {
+    expectedManagerSetGeneration: 7,
+    expectedMembershipRevision: 9,
+    expectedOfferRevision: null,
+    expectedPersonalRefOid: 'a'.repeat(40),
+    idempotencyKey: 'leave-cloud-request',
+    managerResponsibilityOfferId: null,
+    projectId: 'project-alpha',
+  },
+  schemaVersion: 3,
+  serverUrl: 'http://127.0.0.1:8787/operator-prefix',
+  updatedAt: '2026-08-13T00:00:00.000Z',
+  workspacePath: 'workspace/project-alpha',
+});
+
 describe('CollabLifecycleJournalStore', () => {
   let root: string;
   let store: CollabLifecycleJournalStore;
@@ -59,6 +94,40 @@ describe('CollabLifecycleJournalStore', () => {
     )).resolves.toContain('memberCredential');
     await expect(store.pendingLeaves.remove('project-alpha')).resolves.toBe(true);
     await expect(store.pendingLeaves.remove('project-alpha')).resolves.toBe(false);
+  });
+
+  it('round-trips the frozen Cloud Leave independently from its removed Project', async () => {
+    await store.pendingLeaves.save(pendingCloudLeave());
+
+    await expect(store.pendingLeaves.load('project-alpha'))
+      .resolves.toEqual(pendingCloudLeave());
+    await expect(store.pendingLeaves.list()).resolves.toEqual([pendingCloudLeave()]);
+    await expect(readFile(
+      path.join(root, '.claudian', 'collab', 'pending-leaves', 'project-alpha.json'),
+      'utf8',
+    )).resolves.toContain('leave-cloud-request');
+  });
+
+  it('enumerates valid Project identities without decoding another corrupt Leave', async () => {
+    const original = pendingCloudLeave();
+    if (original.phase !== 'submitted') throw new Error('Expected submitted Cloud Leave');
+    const valid: CloudPendingLeaveRecord = {
+      ...original,
+      projectId: 'project-valid',
+      request: { ...original.request, projectId: 'project-valid' },
+    };
+    await store.pendingLeaves.save(valid);
+    const directory = path.join(root, '.claudian', 'collab', 'pending-leaves');
+    await writeFile(path.join(directory, 'project-corrupt.json'), '{', 'utf8');
+
+    await expect(store.pendingLeaves.listProjectIds()).resolves.toEqual([
+      'project-corrupt',
+      'project-valid',
+    ]);
+    await expect(store.pendingLeaves.load('project-corrupt')).rejects.toMatchObject({
+      safeContext: { reason: 'pending-leave-corrupt' },
+    });
+    await expect(store.pendingLeaves.load('project-valid')).resolves.toEqual(valid);
   });
 
   it('discovers applied Retired cleanup journals without a Project index', async () => {

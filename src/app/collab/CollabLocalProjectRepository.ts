@@ -1,5 +1,6 @@
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readdir, readFile, rename, rm } from 'node:fs/promises';
+import path from 'node:path';
 
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
@@ -176,6 +177,8 @@ export function isCollabLocalCloudMembership(
 }
 
 export interface CollabLocalProjectPaths {
+  readonly cloudManagementIntent: string;
+  readonly cloudRetirementIntent: string;
   readonly membership: string;
   readonly cache: string;
   readonly pendingOperation: string;
@@ -195,6 +198,8 @@ export interface CollabLocalProjectPaths {
 
 export type CollabLocalProjectDocumentKind =
   | 'authority-transfer-claimant'
+  | 'cloud-management-intent'
+  | 'cloud-retirement-intent'
   | 'cache'
   | 'pending-operation'
   | 'publication-state'
@@ -535,9 +540,6 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     throw new TypeError('Invalid membership lifecycle');
   }
   const lifecycle: 'active' | 'leaving' = lifecycleValue;
-  if (authorityKind === 'cloud' && lifecycle !== 'active') {
-    throw new TypeError('Invalid Cloud membership lifecycle');
-  }
 
   const projectId = requireProjectId(value.project);
   const memberId = requireString(value.member, 'id', { maxLength: 64 });
@@ -1198,6 +1200,8 @@ export class CollabLocalProjectRepository {
       const activeDocuments = [
         this.getProjectPaths(projectId).membership,
         this.getProjectPaths(projectId).cache,
+        this.getProjectPaths(projectId).cloudManagementIntent,
+        this.getProjectPaths(projectId).cloudRetirementIntent,
         this.getProjectPaths(projectId).pendingOperation,
         this.getProjectPaths(projectId).publicationState,
         this.getProjectPaths(projectId).requestDraft,
@@ -1476,12 +1480,7 @@ export class CollabLocalProjectRepository {
           throw localRecordError('local-project-directory-invalid', kind, entry.name);
         }
         const projectId = entry.name;
-        const value = await this.#readJson(
-          this.#projectDocumentPath(projectId, kind),
-          kind,
-          projectId,
-        );
-        if (value !== null) projectIds.push(projectId);
+        if (await this.#projectDocumentExists(projectId, kind)) projectIds.push(projectId);
       }
       return projectIds;
     });
@@ -1489,6 +1488,10 @@ export class CollabLocalProjectRepository {
 
   listAuthorityTransferClaimantProjectIds(): Promise<readonly CollabProjectId[]> {
     return this.#listProjectDocumentProjectIds('authority-transfer-claimant');
+  }
+
+  listCloudRetirementIntentProjectIds(): Promise<readonly CollabProjectId[]> {
+    return this.#listProjectDocumentProjectIds('cloud-retirement-intent');
   }
 
   listAuthorityTransferProjectIds(): Promise<readonly CollabProjectId[]> {
@@ -1756,6 +1759,8 @@ export class CollabLocalProjectRepository {
       authorityTransferClaims: `${projectDirectory}/authority-transfer-claims.json`,
       authorityTransferClaimant: `${projectDirectory}/authority-transfer-claimant.json`,
       cache: `${projectDirectory}/cache.json`,
+      cloudManagementIntent: `${projectDirectory}/cloud-management-intent.json`,
+      cloudRetirementIntent: `${projectDirectory}/cloud-retirement-intent.json`,
       conflictDirectory: this.getConflictDirectoryPath(),
       hostTransferRecovery: `${projectDirectory}/host-transfer-recovery.json`,
       localCleanup: `${projectDirectory}/local-cleanup.json`,
@@ -2536,6 +2541,8 @@ export class CollabLocalProjectRepository {
     const paths = this.getProjectPaths(projectId);
     if (kind === 'authority-transfer-claimant') return paths.authorityTransferClaimant;
     if (kind === 'cache') return paths.cache;
+    if (kind === 'cloud-management-intent') return paths.cloudManagementIntent;
+    if (kind === 'cloud-retirement-intent') return paths.cloudRetirementIntent;
     if (kind === 'pending-operation') return paths.pendingOperation;
     if (kind === 'publication-state') return paths.publicationState;
     return paths.requestDraft;
@@ -2564,15 +2571,31 @@ export class CollabLocalProjectRepository {
         if (!isCollabProjectId(entry.name)) {
           throw localRecordError('local-project-directory-invalid', kind, entry.name);
         }
-        const value = await this.#readJson(
-          this.#projectDocumentPath(entry.name, kind),
-          kind,
-          entry.name,
-        );
-        if (value !== null) projectIds.push(entry.name);
+        if (await this.#projectDocumentExists(entry.name, kind)) {
+          projectIds.push(entry.name);
+        }
       }
       return projectIds;
     });
+  }
+
+  async #projectDocumentExists(
+    projectId: CollabProjectId,
+    kind: CollabLocalProjectDocumentKind,
+  ): Promise<boolean> {
+    try {
+      const relativePath = this.#projectDocumentPath(projectId, kind);
+      const parentDirectory = await resolveCollabVaultPath(
+        this.vaultRoot,
+        path.posix.dirname(relativePath),
+      );
+      await lstat(path.join(parentDirectory, path.posix.basename(relativePath)));
+      return true;
+    } catch (error) {
+      if (error instanceof CollabError) throw error;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw localRecordError('local-record-read-failed', kind, projectId);
+    }
   }
 
    #lifecycleDocumentPath(

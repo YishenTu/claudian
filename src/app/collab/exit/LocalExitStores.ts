@@ -6,11 +6,14 @@ import type {
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
+  type CloudManagerResponsibilityReceiptRecord,
   COLLAB_MANAGER_RESPONSIBILITY_RECEIPT_SCHEMA_VERSION,
+  decodeCloudManagerResponsibilityReceiptRecord,
   decodeManagerResponsibilityReceiptRecord,
   type ManagerResponsibilityReceiptRecord,
+  managerResponsibilityReceiptState,
 } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
-import type { CollabMembershipManagerReceiptPort } from '@/app/collab/membership/CollabMembershipService';
+import type { CollabMembershipManagerReceiptPort } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import type { CollabLocalCleanupStatus, CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 
 type LifecycleRepository = Pick<
@@ -169,6 +172,7 @@ implements CollabMembershipManagerReceiptPort {
     summary: CollabManagerResponsibilityOfferSummary,
   ): Promise<void> {
     const existing = await this.load(projectId);
+    if (existing?.schemaVersion === 3) throw new TypeError('Cloud responsibility cannot be overwritten by LAN');
     const minimumUpdatedAt = summary.acknowledgedAt ?? summary.offeredAt;
     const updatedAt = new Date(Math.max(
       this.now().getTime(),
@@ -188,10 +192,12 @@ implements CollabMembershipManagerReceiptPort {
       targetMemberId: summary.targetMemberId,
       updatedAt,
     });
+    const existingState = existing ? managerResponsibilityReceiptState(existing) : null;
+    const recordState = managerResponsibilityReceiptState(record);
     if (
-      existing
-      && existing.offerId !== record.offerId
-      && (existing.status === 'offered' || existing.status === 'acknowledged')
+      existingState
+      && existingState.offerId !== recordState.offerId
+      && (existingState.status === 'offered' || existingState.status === 'acknowledged')
     ) {
       throw new TypeError('Another Manager responsibility receipt is pending');
     }
@@ -201,5 +207,10 @@ implements CollabMembershipManagerReceiptPort {
       record,
       decodeManagerResponsibilityReceiptRecord,
     );
+  }
+
+  saveCloud(record: CloudManagerResponsibilityReceiptRecord): Promise<void> {
+    return this.projects.saveLifecycleProjectDocument(record.projectId, 'manager-responsibility-receipt',
+      decodeCloudManagerResponsibilityReceiptRecord(record), decodeCloudManagerResponsibilityReceiptRecord);
   }
 }

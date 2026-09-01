@@ -8,7 +8,6 @@ import {
   LanHostSection,
 } from '@/features/collab/modals/project/LanHostSection';
 import { ProjectInvitationModal } from '@/features/collab/modals/project/ProjectInvitationModal';
-import { MutationIntentStore } from '@/features/collab/shared/MutationIntentStore';
 import { t } from '@/i18n/i18n';
 import {
   type LatestTaskHandle,
@@ -22,6 +21,7 @@ export type ProjectManagementModalPort = Pick<
   | 'cancelHostTransfer'
   | 'cancelManagerResponsibilityOffer'
   | 'claimLegacyHostInstallation'
+  | 'completeManagementOperation'
   | 'createInvitation'
   | 'createHostTransfer'
   | 'createManagerResponsibilityOffer'
@@ -72,8 +72,6 @@ interface AccessStatus {
   readonly text: string;
 }
 
-type AccessMutationIntentKind = 'demote' | 'manager-offer' | 'promote' | 'remove';
-
 export class ProjectManagementModal extends Modal {
   private accessContentEl: HTMLDivElement | null = null;
   private readonly appInstance: App;
@@ -89,7 +87,6 @@ export class ProjectManagementModal extends Modal {
   private invitationModal: ProjectInvitationModal | null = null;
   private lifecycleActionsEl: HTMLDivElement | null = null;
   private members: readonly CollabMember[] = [];
-  private readonly mutationIntents = new MutationIntentStore<AccessMutationIntentKind>();
   private opened = false;
   private operationPending = false;
   private readonly readTasks = new LatestTaskScope();
@@ -113,7 +110,6 @@ export class ProjectManagementModal extends Modal {
     this.hostMemberId = null;
     this.hostProject = this.options.project;
     this.members = [];
-    this.mutationIntents.clearAll();
     this.opened = true;
     this.operationPending = false;
     this.snapshot = null;
@@ -139,7 +135,7 @@ export class ProjectManagementModal extends Modal {
     this.featureSubscription?.dispose();
     this.featureSubscription = null;
     this.readTasks.cancel();
-    this.mutationIntents.clearAll();
+    this.abandonLanManagementIntent();
     this.hostSection?.destroy();
     this.hostSection = null;
     this.hostDiagnosticsModal?.close();
@@ -241,7 +237,7 @@ export class ProjectManagementModal extends Modal {
       this.currentMemberId !== null
       && this.currentMemberId !== snapshot.currentMember.id
     ) {
-      this.mutationIntents.clearAll();
+      this.abandonLanManagementIntent();
       this.confirmation = null;
       this.status = null;
     }
@@ -643,13 +639,10 @@ export class ProjectManagementModal extends Modal {
           purpose: 'manager-leave',
           targetMemberId: candidate.id,
         } as const;
-        const intentId = this.mutationIntents.intent('manager-offer', request);
-        void this.runLifecycleAction(() => this.port.createManagerResponsibilityOffer({
-          ...request,
-          intentId,
-        }, { signal: this.abortController.signal }), () => {
-          this.mutationIntents.clear('manager-offer', intentId);
-        });
+        void this.runLifecycleAction(() => this.port.createManagerResponsibilityOffer(
+          request,
+          { signal: this.abortController.signal },
+        ));
       });
     }
   }
@@ -692,18 +685,15 @@ export class ProjectManagementModal extends Modal {
 
   private async createManagerPromotion(
     confirmation: Extract<AccessConfirmation, { readonly kind: 'promote' }>,
-    intentId: string,
   ) {
     if (confirmation.operation.kind === 'complete-promotion') {
       return this.port.promoteManager({
-        intentId,
         managerResponsibilityOfferId: confirmation.operation.managerResponsibilityOfferId,
         projectId: this.options.project.id,
         targetMemberId: confirmation.member.id,
       }, { signal: this.abortController.signal });
     }
     return this.port.createManagerResponsibilityOffer({
-      intentId,
       projectId: this.options.project.id,
       purpose: 'manager-promotion',
       targetMemberId: confirmation.member.id,
@@ -749,7 +739,7 @@ export class ProjectManagementModal extends Modal {
     });
     cancel.disabled = this.operationPending;
     cancel.addEventListener('click', () => {
-      this.discardConfirmationIntent(this.confirmation ?? confirmation);
+      this.abandonLanManagementIntent();
       this.confirmation = null;
       this.status = null;
       this.render();
@@ -814,7 +804,7 @@ export class ProjectManagementModal extends Modal {
       && this.confirmationWorkflowKey(this.confirmation)
         !== this.confirmationWorkflowKey(confirmation)
     ) {
-      this.discardConfirmationIntent(this.confirmation);
+      this.abandonLanManagementIntent();
     }
     this.confirmation = confirmation;
     this.status = null;
@@ -833,41 +823,9 @@ export class ProjectManagementModal extends Modal {
       : `${confirmation.kind}:${confirmation.member.id}:${confirmation.operation.kind}`;
   }
 
-  private confirmationIntent(
-    confirmation: AccessConfirmation,
-  ): { readonly intentId: string; readonly kind: AccessMutationIntentKind } | null {
-    if (
-      confirmation.kind !== 'promote'
-      && confirmation.kind !== 'demote'
-      && confirmation.kind !== 'remove'
-    ) return null;
-    const kind = confirmation.kind;
-    const identity = kind === 'promote'
-      ? {
-        operation: confirmation.operation,
-        projectId: this.options.project.id,
-        targetMemberId: confirmation.member.id,
-      }
-      : {
-        projectId: this.options.project.id,
-        targetMemberId: confirmation.member.id,
-      };
-    return {
-      intentId: this.mutationIntents.intent(kind, identity),
-      kind,
-    };
-  }
-
-  private discardConfirmationIntent(confirmation: AccessConfirmation): void {
-    if (confirmation.kind === 'leave') {
-      this.mutationIntents.discard('manager-offer');
-    } else if (
-      confirmation.kind === 'promote'
-      || confirmation.kind === 'demote'
-      || confirmation.kind === 'remove'
-    ) {
-      this.mutationIntents.discard(confirmation.kind);
-    }
+  private abandonLanManagementIntent(): void {
+    if (this.hostProject.authorityKind !== 'lan') return;
+    void this.port.completeManagementOperation({ projectId: this.options.project.id });
   }
 
   private async confirmAccessAction(
@@ -877,7 +835,6 @@ export class ProjectManagementModal extends Modal {
     this.operationPending = true;
     this.status = null;
     this.render();
-    const mutationIntent = this.confirmationIntent(confirmation);
     const operation = confirmation.kind === 'leave'
       ? this.port.leaveProject({
         cleanupChoice: confirmation.cleanupChoice,
@@ -888,25 +845,16 @@ export class ProjectManagementModal extends Modal {
       }, { signal: this.abortController.signal })
       : confirmation.kind === 'remove'
         ? this.port.removeMember({
-          ...(mutationIntent ? { intentId: mutationIntent.intentId } : {}),
           memberId: confirmation.member.id,
           projectId: this.options.project.id,
         }, { signal: this.abortController.signal })
         : confirmation.kind === 'demote'
           ? this.port.demoteManager({
-            ...(mutationIntent ? { intentId: mutationIntent.intentId } : {}),
             projectId: this.options.project.id,
             targetMemberId: confirmation.member.id,
           }, { signal: this.abortController.signal })
           : confirmation.kind === 'promote'
-            ? this.createManagerPromotion(
-              confirmation,
-              mutationIntent?.intentId ?? this.mutationIntents.intent('promote', {
-                operation: confirmation.operation,
-                projectId: this.options.project.id,
-                targetMemberId: confirmation.member.id,
-              }),
-            )
+            ? this.createManagerPromotion(confirmation)
             : this.port.retireProject({
               projectId: this.options.project.id,
             }, { signal: this.abortController.signal });
@@ -948,9 +896,6 @@ export class ProjectManagementModal extends Modal {
       this.status = { kind: 'error', text: t('collab.access.actionFailed') };
       this.render();
       return;
-    }
-    if (mutationIntent) {
-      this.mutationIntents.clear(mutationIntent.kind, mutationIntent.intentId);
     }
     this.options.onChanged?.();
     if (confirmation.kind === 'leave' || confirmation.kind === 'retire') {

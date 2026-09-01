@@ -305,7 +305,7 @@ describe('CollabPublicationService reconnect', () => {
 
     try {
       await expect(
-        service.transferSnapshot(LAN_PROJECT_ID),
+        service.readAuthoritySnapshot(LAN_PROJECT_ID),
       ).resolves.toMatchObject({
         snapshot: {
           currentMember: { id: LAN_MEMBER_ID },
@@ -688,7 +688,7 @@ describe('CollabPublicationService reconnect', () => {
     await expect(service.tryAutoReconnect('project-a')).rejects.toBe(integrityError);
   });
 
-  it('serializes same-Project reconnect transactions behind its mutation queue', async () => {
+  it('retains the publication mutation lane for explicit LAN reconnects', async () => {
     const first = deferred<{
       status: 'success';
       value: {
@@ -754,6 +754,68 @@ describe('CollabPublicationService reconnect', () => {
     await expect(firstResult).resolves.toMatchObject({ status: 'success' });
     await expect(secondResult).resolves.toMatchObject({ status: 'success' });
     expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not self-enqueue a Cloud relocation that owns the publication suspension', async () => {
+    const first = deferred<{
+      status: 'success';
+      value: {
+        authorityKind: 'cloud';
+        connectionStatus: 'connected';
+        health: 'healthy';
+        hostStatus: 'not-host';
+        id: string;
+        name: string;
+        role: 'member';
+        workspacePath: string;
+      };
+    }>();
+    const reconnect = {
+      reconnectProject: jest.fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValueOnce({
+          status: 'success',
+          value: {
+            authorityKind: 'cloud',
+            connectionStatus: 'connected',
+            health: 'healthy',
+            hostStatus: 'not-host',
+            id: 'project-a',
+            name: 'Alpha',
+            role: 'member',
+            workspacePath: 'workspace/project-a',
+          },
+        }),
+    };
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects: {} },
+      requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({ reconnect }));
+    const request = {
+      authority: { kind: 'cloud' as const, serverUrl: 'https://cloud.example.test/operator' },
+      projectId: 'project-a',
+    };
+
+    const firstResult = service.reconnectProject(request);
+    const secondResult = service.reconnectProject(request);
+    await Promise.resolve();
+    expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
+    await expect(secondResult).resolves.toMatchObject({ status: 'success' });
+
+    first.resolve({
+      status: 'success',
+      value: {
+        authorityKind: 'cloud',
+        connectionStatus: 'connected',
+        health: 'healthy',
+        hostStatus: 'not-host',
+        id: 'project-a',
+        name: 'Alpha',
+        role: 'member',
+        workspacePath: 'workspace/project-a',
+      },
+    });
+    await expect(firstResult).resolves.toMatchObject({ status: 'success' });
   });
 
   it('serializes same-Project request metadata writes and preserves the failed newer draft', async () => {

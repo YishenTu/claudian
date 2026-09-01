@@ -699,7 +699,9 @@ export class JoinProjectCoordinator {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending) reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+      if (pending && pending.kind !== 'cloud-relocation') {
+        reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
+      }
     }
     if (requestedSlug !== undefined) {
       const slug = requestedSlug.trim();

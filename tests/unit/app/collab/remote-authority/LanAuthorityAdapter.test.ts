@@ -42,7 +42,7 @@ describe('LanAuthorityAdapter', () => {
     const adapter = new LanAuthorityAdapter({
       createControl: () => control,
       createEvent,
-      createMembershipControl: () => ({ membership: jest.fn() }),
+      createMembershipControl: () => ({ authorityKind: 'lan', membership: jest.fn() }),
     });
 
     const session = await adapter.create(membership());
@@ -105,7 +105,7 @@ describe('LanAuthorityAdapter', () => {
       createEvent,
       createMembershipControl: record => {
         membershipControlMemberships.push(record);
-        return { membership: jest.fn() };
+        return { authorityKind: 'lan', membership: jest.fn() };
       },
       resolveLocalTarget: jest.fn().mockResolvedValue(
         localEndpoint === null ? null : { endpoint: localEndpoint },

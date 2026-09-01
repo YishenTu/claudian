@@ -1,4 +1,4 @@
-import type { CollabMemberId, CollabOperationId, CollabProjectId } from '@claudian-collab/protocol';
+import type { CollabMemberId, CollabOperationId, CollabProjectId, CollabProjectMembershipOperation, CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
 import type {
   CollabInvitationView,
@@ -66,9 +66,34 @@ export interface CollabAuthorityMembershipOperationMap {
 export type CollabAuthorityMembershipOperation = keyof CollabAuthorityMembershipOperationMap;
 
 export interface CollabAuthorityMembershipControlPort {
+  readonly authorityKind: 'lan';
   membership<Operation extends CollabAuthorityMembershipOperation>(
     operation: Operation,
     input: CollabAuthorityMembershipOperationMap[Operation]['input'],
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityMembershipOperationMap[Operation]['result']>;
 }
+
+export interface CloudMembershipBinding {
+  readonly projectId: CollabProjectId;
+  readonly serverUrl: string;
+  readonly memberId: CollabMemberId;
+  readonly authorityGeneration: number;
+}
+
+export type CloudMembershipOperation = Exclude<CollabProjectMembershipOperation,
+  'createCloudProject' | 'joinCloudProject'>;
+
+export interface CloudAuthorityMembershipControlPort {
+  readonly authorityKind: 'cloud';
+  cloudMembership<Operation extends CloudMembershipOperation>(
+    operation: Operation,
+    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    binding: CloudMembershipBinding,
+    options?: CollabOperationOptions,
+  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']>;
+}
+
+export type CollabAuthorityMembershipRouterPort =
+  Pick<CollabAuthorityMembershipControlPort, 'membership'>
+  & Pick<CloudAuthorityMembershipControlPort, 'cloudMembership'>;

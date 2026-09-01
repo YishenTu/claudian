@@ -7,7 +7,7 @@ import type { ProjectOperationSuspension } from '@/app/collab/ProjectOperationAd
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CloudBootstrapAdmissionPort {
-  drainAdmittedOperations(): Promise<void>;
+  drainAdmittedOperations(projectId: CollabProjectId): Promise<void>;
   resumeProjectAdmission(suspension: ProjectOperationSuspension): boolean;
   suspendProjectAdmission(projectId: CollabProjectId): ProjectOperationSuspension;
 }
@@ -71,7 +71,7 @@ export class CloudBootstrapLocalFence {
         throw error;
       }
     }
-    await this.admission.drainAdmittedOperations();
+    await this.admission.drainAdmittedOperations(projectId);
     this.quiescedProjects.add(projectId);
   }
 

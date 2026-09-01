@@ -1,10 +1,14 @@
 import {
+  type CloudPendingLeaveAuthorityClientPort,
   type PendingLeaveAuthorityClientPort,
   PendingLeaveAuthorityService,
 } from '@/app/collab/exit/PendingLeaveAuthorityService';
-import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
+import type {
+  CloudPendingLeaveRecord,
+  LanPendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
 import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabCloudProjectSnapshot, CollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 describe('PendingLeaveAuthorityService', () => {
@@ -155,6 +159,167 @@ describe('PendingLeaveAuthorityService', () => {
       memberRole: 'manager',
     });
   });
+
+  it('freezes a Cloud Member Leave from authenticated snapshot, member list, and personal ref', async () => {
+    const client = cloudClientPort();
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.prepare({ pending: cloudRecord() })).resolves.toEqual({
+      memberRole: 'member',
+      request: {
+        expectedManagerSetGeneration: 7,
+        expectedMembershipRevision: 9,
+        expectedOfferRevision: null,
+        expectedPersonalRefOid: 'b'.repeat(40),
+        idempotencyKey: 'leave-cloud-one',
+        managerResponsibilityOfferId: null,
+        projectId: 'project-alpha',
+      },
+    });
+    expect(client.readPersonalRefOid).toHaveBeenCalledWith(
+      'refs/heads/members/member-alice',
+      {},
+    );
+    expect(client.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a submitted Cloud Leave without active snapshot, member list, or Git', async () => {
+    const client = cloudClientPort();
+    client.readSnapshot.mockRejectedValue(new Error('membership is already gone'));
+    client.listProjectMembers.mockRejectedValue(new Error('membership is already gone'));
+    client.readPersonalRefOid.mockRejectedValue(new Error('working copy is gone'));
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+    const pending = submittedCloudRecord();
+
+    await expect(service.settle({ pending })).resolves.toMatchObject({
+      memberId: 'member-alice',
+      status: 'left',
+    });
+
+    expect(client.leaveProject).toHaveBeenCalledWith(pending.request, {});
+    expect(client.readSnapshot).not.toHaveBeenCalled();
+    expect(client.listProjectMembers).not.toHaveBeenCalled();
+    expect(client.readPersonalRefOid).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Cloud Leave response for a different Member tuple', async () => {
+    const client = cloudClientPort();
+    client.leaveProject.mockResolvedValueOnce({
+      discardedRequestId: null,
+      leftAt: '2026-08-13T00:00:00.000Z',
+      managerSetGeneration: 8,
+      memberId: 'member-other',
+      projectId: 'project-alpha',
+      promotedSuccessorMemberId: null,
+      status: 'left',
+    });
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.settle({ pending: submittedCloudRecord() })).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-pending-leave-response-mismatch' },
+    });
+  });
+
+  it('keeps a rejected Cloud request frozen when the recovery barrier cannot prove the Member', async () => {
+    const client = cloudClientPort();
+    client.listProjectMembers.mockResolvedValueOnce({
+      managerSetGeneration: 8,
+      members: [],
+      projectId: 'project-alpha',
+    });
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.recoverRejected({
+      pending: submittedCloudRecord(),
+    })).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-pending-leave-recovery-member-mismatch' },
+    });
+    expect(client.readPersonalRefOid).not.toHaveBeenCalled();
+  });
+
+  it('requires an acknowledged successor only for the final Cloud Manager', async () => {
+    const client = cloudClientPort('manager');
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.prepare({ pending: cloudRecord('manager') })).rejects.toMatchObject({
+      code: 'manager-responsibility-pending',
+      safeContext: { reason: 'cloud-pending-leave-successor-required' },
+    });
+    client.getManagerResponsibilityOffer.mockResolvedValueOnce({
+      offer: {
+        acknowledgedAt: '2026-08-12T01:00:00.000Z',
+        expiresAt: '2026-08-14T00:00:00.000Z',
+        managerSetGenerationAtOffer: 7,
+        offeredAt: '2026-08-12T00:30:00.000Z',
+        offerId: 'offer-successor',
+        purpose: 'manager-leave',
+        revision: 2,
+        sourceManagerMemberId: 'member-alice',
+        state: 'acknowledged',
+        targetMemberId: 'member-bob',
+        targetMembershipRevisionAtOffer: 5,
+        terminalAt: null,
+      },
+    });
+
+    await expect(service.prepare({
+      managerResponsibilityOfferId: 'offer-successor',
+      pending: cloudRecord('manager'),
+    })).resolves.toMatchObject({
+      memberRole: 'manager',
+      request: {
+        expectedOfferRevision: 2,
+        managerResponsibilityOfferId: 'offer-successor',
+      },
+    });
+  });
+
+  it('uses null succession fields for a non-final Cloud Manager', async () => {
+    const client = cloudClientPort('manager');
+    const manager = {
+      bindingState: 'bound' as const,
+      displayName: 'Alice',
+      importedClaimGeneration: null,
+      importedClaimState: 'not-applicable' as const,
+      memberId: 'member-alice' as const,
+      membershipRevision: 9,
+      role: 'manager' as const,
+    };
+    client.listProjectMembers.mockResolvedValueOnce({
+      managerSetGeneration: 7,
+      members: [manager, {
+        ...manager,
+        displayName: 'Carol',
+        memberId: 'member-carol',
+        membershipRevision: 6,
+      }],
+      projectId: 'project-alpha',
+    });
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.prepare({ pending: cloudRecord('manager') })).resolves.toMatchObject({
+      memberRole: 'manager',
+      request: {
+        expectedOfferRevision: null,
+        managerResponsibilityOfferId: null,
+      },
+    });
+    expect(client.getManagerResponsibilityOffer).not.toHaveBeenCalled();
+  });
 });
 
 function clientPort(): jest.Mocked<PendingLeaveAuthorityClientPort> {
@@ -170,8 +335,8 @@ function clientPort(): jest.Mocked<PendingLeaveAuthorityClientPort> {
 }
 
 function record(
-  authorityReplay: PendingLeaveRecord['authorityReplay'] = null,
-): PendingLeaveRecord {
+  authorityReplay: LanPendingLeaveRecord['authorityReplay'] = null,
+): LanPendingLeaveRecord {
   return {
     authorityReplay,
     cleanupChoice: 'keep-files',
@@ -223,5 +388,137 @@ function snapshot(): CollabLanProjectSnapshot {
       name: 'Alpha',
     },
     ticketHighlights: [],
+  };
+}
+
+function cloudRecord(
+  localRole: 'manager' | 'member' = 'member',
+): CloudPendingLeaveRecord {
+  return {
+    authorityGeneration: 4,
+    authorityKind: 'cloud',
+    cleanupChoice: 'keep-files',
+    cleanupMarkerNonce: 'q'.repeat(43),
+    createdAt: '2026-08-13T00:00:00.000Z',
+    idempotencyKey: 'leave-cloud-one',
+    kind: 'pending-leave',
+    localCleanupComplete: false,
+    localRole,
+    memberId: 'member-alice',
+    operationId: 'leave-cloud-one',
+    personalRef: 'refs/heads/members/member-alice',
+    phase: 'queued',
+    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectId: 'project-alpha',
+    projectName: 'Alpha',
+    request: null,
+    schemaVersion: 3,
+    serverUrl: 'https://cloud.example.test/base',
+    updatedAt: '2026-08-13T00:00:00.000Z',
+    workspacePath: 'workspace/project-alpha',
+  };
+}
+
+function submittedCloudRecord(): CloudPendingLeaveRecord {
+  return {
+    ...cloudRecord(),
+    phase: 'submitted',
+    request: {
+      expectedManagerSetGeneration: 7,
+      expectedMembershipRevision: 9,
+      expectedOfferRevision: null,
+      expectedPersonalRefOid: 'b'.repeat(40),
+      idempotencyKey: 'leave-cloud-one',
+      managerResponsibilityOfferId: null,
+      projectId: 'project-alpha',
+    },
+  };
+}
+
+function cloudSnapshot(role: 'manager' | 'member'): CollabCloudProjectSnapshot {
+  const currentMember = {
+    activatedAt: '2026-08-12T00:00:00.000Z',
+    createdAt: '2026-08-12T00:00:00.000Z',
+    displayName: 'Alice',
+    id: 'member-alice' as const,
+    personalRef: 'refs/heads/members/member-alice',
+    role,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 1,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 4,
+      authorityKind: 'cloud',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      id: 'project-alpha',
+      mainOid: 'a'.repeat(40),
+      mainRef: 'refs/heads/main',
+      name: 'Alpha',
+    },
+    ticketHighlights: [],
+  };
+}
+
+function cloudClientPort(
+  role: 'manager' | 'member' = 'member',
+): jest.Mocked<CloudPendingLeaveAuthorityClientPort & { dispose(): void }> {
+  const member = {
+    bindingState: 'bound' as const,
+    displayName: 'Alice',
+    importedClaimGeneration: null,
+    importedClaimState: 'not-applicable' as const,
+    memberId: 'member-alice' as const,
+    membershipRevision: 9,
+    role,
+  };
+  return {
+    dispose: jest.fn(),
+    getManagerResponsibilityOffer: jest.fn<
+      ReturnType<CloudPendingLeaveAuthorityClientPort['getManagerResponsibilityOffer']>,
+      Parameters<CloudPendingLeaveAuthorityClientPort['getManagerResponsibilityOffer']>
+    >(),
+    leaveProject: jest.fn(async (
+      ..._args: Parameters<CloudPendingLeaveAuthorityClientPort['leaveProject']>
+    ): Promise<Awaited<ReturnType<CloudPendingLeaveAuthorityClientPort['leaveProject']>>> => ({
+      discardedRequestId: null,
+      leftAt: '2026-08-13T00:00:00.000Z',
+      managerSetGeneration: 8,
+      memberId: 'member-alice',
+      projectId: 'project-alpha',
+      promotedSuccessorMemberId: null,
+      status: 'left' as const,
+    })),
+    listProjectMembers: jest.fn(async (
+      ..._args: Parameters<CloudPendingLeaveAuthorityClientPort['listProjectMembers']>
+    ): Promise<Awaited<ReturnType<CloudPendingLeaveAuthorityClientPort['listProjectMembers']>>> => ({
+      managerSetGeneration: 7,
+      members: role === 'manager'
+        ? [member, {
+          ...member,
+          displayName: 'Bob',
+          memberId: 'member-bob',
+          membershipRevision: 5,
+          role: 'member' as const,
+        }]
+        : [member, {
+          ...member,
+          displayName: 'Manager',
+          memberId: 'member-manager',
+          membershipRevision: 3,
+          role: 'manager' as const,
+        }],
+      projectId: 'project-alpha',
+    })),
+    readPersonalRefOid: jest.fn(async (
+      ..._args: Parameters<CloudPendingLeaveAuthorityClientPort['readPersonalRefOid']>
+    ) => 'b'.repeat(40)),
+    readSnapshot: jest.fn(async (
+      ..._args: Parameters<CloudPendingLeaveAuthorityClientPort['readSnapshot']>
+    ) => cloudSnapshot(role)),
   };
 }

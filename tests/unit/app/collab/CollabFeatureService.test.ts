@@ -190,6 +190,18 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
       encodedInvitation: 'claudian-collab:v2:test',
       expiresAt: '2026-08-08T01:00:00.000Z',
     }),
+    readManagementOperation: jest.fn().mockResolvedValue(null),
+    resumeManagementOperation: jest.fn().mockResolvedValue({
+      action: 'remove-member',
+      invitation: null,
+      status: 'result-retained',
+    }),
+    listInvitations: jest.fn().mockResolvedValue([]),
+    listMembers: jest.fn().mockResolvedValue([]),
+    reissueMemberClaim: jest.fn(),
+    revokeMemberClaim: jest.fn(),
+    listManagerResponsibilityOffers: jest.fn().mockResolvedValue([]),
+    completeManagementOperation: jest.fn().mockResolvedValue(undefined),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(offer),
     removeMember: jest.fn().mockResolvedValue(undefined),
     revokeInvitation: jest.fn().mockResolvedValue(undefined),
@@ -492,6 +504,181 @@ describe('CollabFeatureService', () => {
     });
     expect(foundation.requireGitFoundation).toHaveBeenCalledTimes(1);
     expect(states).toEqual(['uninitialized', 'initializing', 'initializing', 'ready']);
+  });
+
+  it('projects a Vault pending Cloud Leave after the Project index was removed', async () => {
+    currentIndex = { ...currentIndex, projects: [], selectedProjectId: null };
+    const service = createService({
+      pendingLeaves: {
+        listProjectIds: jest.fn(async () => ['project-cloud']),
+        load: jest.fn(async () => ({
+          authorityGeneration: 4,
+          authorityKind: 'cloud' as const,
+          cleanupChoice: 'keep-files' as const,
+          cleanupMarkerNonce: 'q'.repeat(43),
+          createdAt: CREATED_AT,
+          idempotencyKey: 'leave-cloud-one',
+          kind: 'pending-leave' as const,
+          localCleanupComplete: true,
+          localRole: 'member' as const,
+          memberId: 'member-alice',
+          operationId: 'leave-cleanup-one',
+          personalRef: 'refs/heads/members/member-alice',
+          phase: 'submitted' as const,
+          projectCreatedAt: CREATED_AT,
+          projectId: 'project-cloud',
+          projectName: 'Cloud Project',
+          request: {
+            expectedManagerSetGeneration: 7,
+            expectedMembershipRevision: 9,
+            expectedOfferRevision: null,
+            expectedPersonalRefOid: 'a'.repeat(40),
+            idempotencyKey: 'leave-cloud-one',
+            managerResponsibilityOfferId: null,
+            projectId: 'project-cloud',
+          },
+          schemaVersion: 3 as const,
+          serverUrl: 'https://cloud.example.test',
+          updatedAt: CREATED_AT,
+          workspacePath: 'workspace/cloud-project',
+        })),
+      },
+    });
+
+    await expect(service.listProjects()).resolves.toEqual({
+      status: 'success',
+      value: [{
+        authorityKind: 'cloud',
+        cleanupStatus: 'complete',
+        connectionStatus: 'needs-attention',
+        health: 'needs-attention',
+        hostInstallationStatus: 'not-host',
+        hostStatus: 'not-host',
+        id: 'project-cloud',
+        lifecycle: 'leaving',
+        name: 'Cloud Project',
+        role: 'member',
+        workspacePath: 'workspace/cloud-project',
+      }],
+    });
+    expect(foundation.local.projects.loadMembership).not.toHaveBeenCalled();
+  });
+
+  it('isolates a corrupt pending Leave while projecting another valid Project', async () => {
+    await mkdir(path.join(vaultRoot, 'workspace', 'beta', '.git'), { recursive: true });
+    currentIndex = {
+      ...currentIndex,
+      projects: [
+        currentIndex.projects[0],
+        {
+          authorityKind: 'lan',
+          createdAt: CREATED_AT,
+          id: 'project-beta',
+          name: 'Beta',
+          updatedAt: CREATED_AT,
+          workspacePath: 'workspace/beta',
+        },
+      ],
+    };
+    foundation.local.projects.loadMembership = jest.fn(async projectId => ({
+      ...membership(),
+      project: {
+        id: projectId,
+        name: projectId === 'project-alpha' ? 'Alpha' : 'Beta',
+        workspacePath: projectId === 'project-alpha' ? 'workspace/alpha' : 'workspace/beta',
+      },
+    }));
+    const valid = {
+      authorityReplay: {
+        expectedHostMemberId: 'member-host',
+        idempotencyManagerMemberId: 'member-host',
+        managerResponsibilityOfferId: null,
+      },
+      cleanupChoice: 'keep-files' as const,
+      cleanupMarkerNonce: 'v'.repeat(43),
+      createdAt: CREATED_AT,
+      hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
+      hostCaFingerprint: 'a'.repeat(64),
+      hostEndpoint: 'https://192.168.1.10:4321/',
+      idempotencyKey: 'leave-beta',
+      kind: 'pending-leave' as const,
+      localCleanupComplete: false,
+      localRole: 'member' as const,
+      memberCredential: 'c'.repeat(43),
+      memberId: 'member-beta',
+      operationId: 'leave-beta',
+      phase: 'queued' as const,
+      projectCreatedAt: CREATED_AT,
+      projectId: 'project-beta',
+      projectName: 'Beta',
+      schemaVersion: 2 as const,
+      updatedAt: CREATED_AT,
+      workspacePath: 'workspace/beta',
+    };
+    const service = createService({
+      pendingLeaves: {
+        listProjectIds: async () => ['project-alpha', 'project-beta'],
+        load: async projectId => {
+          if (projectId === 'project-alpha') throw new Error('corrupt');
+          return valid;
+        },
+      },
+    });
+
+    await expect(service.listProjects()).resolves.toMatchObject({
+      status: 'success',
+      value: [
+        { cleanupStatus: 'failed', health: 'needs-attention', id: 'project-alpha', lifecycle: 'leaving' },
+        { cleanupStatus: 'pending', health: 'needs-attention', id: 'project-beta', lifecycle: 'leaving' },
+      ],
+    });
+  });
+
+  it('projects a durable Cloud Retirement intent as needing attention', async () => {
+    currentIndex = {
+      ...currentIndex,
+      projects: [{ ...currentIndex.projects[0], authorityKind: 'cloud' }],
+    };
+    foundation.local.projects.loadMembership = jest.fn(async () => ({
+      authority: {
+        authorityGeneration: 3,
+        bindingVersion: 3 as const,
+        gitRemoteUrl: 'https://cloud.example.test/operator/projects/project-alpha/repository.git',
+        kind: 'cloud' as const,
+        serverUrl: 'https://cloud.example.test/operator',
+        wireVersion: 7 as const,
+      },
+      createdAt: CREATED_AT,
+      lastEventSequence: 1,
+      lifecycle: 'active' as const,
+      member: {
+        displayName: 'Alice',
+        id: 'member-host',
+        personalRef: 'refs/heads/members/member-host',
+        role: 'manager' as const,
+      },
+      project: {
+        id: 'project-alpha',
+        name: 'Alpha',
+        workspacePath: 'workspace/alpha',
+      },
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      updatedAt: CREATED_AT,
+    }));
+    const service = createService({
+      cloudRetirementIntents: {
+        listProjectIds: jest.fn(async () => ['project-alpha']),
+      },
+    });
+
+    await expect(service.listProjects()).resolves.toMatchObject({
+      status: 'success',
+      value: [{
+        authorityKind: 'cloud',
+        health: 'needs-attention',
+        id: 'project-alpha',
+      }],
+    });
   });
 
   it.each([
@@ -1338,18 +1525,15 @@ describe('CollabFeatureService', () => {
     });
 
     await expect(service.promoteManager({
-      intentId: 'promote-a',
       managerResponsibilityOfferId: 'offer-a',
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
     })).resolves.toMatchObject({ status: 'success' });
     await expect(service.demoteManager({
-      intentId: 'demote-a',
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
     })).resolves.toMatchObject({ status: 'success' });
     await expect(service.removeMember({
-      intentId: 'remove-a',
       memberId: 'member-a',
       projectId: 'project-alpha',
     })).resolves.toMatchObject({ status: 'success' });
@@ -1361,18 +1545,15 @@ describe('CollabFeatureService', () => {
     });
 
     expect(access.promoteManager).toHaveBeenCalledWith({
-      intentId: 'promote-a',
       managerResponsibilityOfferId: 'offer-a',
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
     }, {});
     expect(access.demoteManager).toHaveBeenCalledWith({
-      intentId: 'demote-a',
       projectId: 'project-alpha',
       targetMemberId: 'member-a',
     }, {});
     expect(access.removeMember).toHaveBeenCalledWith({
-      intentId: 'remove-a',
       memberId: 'member-a',
       projectId: 'project-alpha',
     }, {});
@@ -1400,7 +1581,6 @@ describe('CollabFeatureService', () => {
     const initialReads = (foundation.local.projects.loadIndex as jest.Mock).mock.calls.length;
 
     await expect(service.createManagerResponsibilityOffer({
-      intentId: 'offer-a',
       projectId: 'project-alpha',
       purpose: 'manager-promotion',
       targetMemberId: 'member-a',
@@ -1436,6 +1616,37 @@ describe('CollabFeatureService', () => {
     expect(retirement.finalizeRetiredProject).toHaveBeenCalledTimes(1);
     expect((foundation.local.projects.loadIndex as jest.Mock).mock.calls.length)
       .toBe(initialReads + 9);
+  });
+
+  it('excludes admitted lifecycle transitions from the relocation ordinary-work drain', async () => {
+    const retirementStarted = deferred<void>();
+    const retirementReleased = deferred<void>();
+    const retirement = {
+      finalizeRetiredProject: jest.fn().mockResolvedValue(undefined),
+      retireProject: jest.fn(async () => {
+        retirementStarted.resolve();
+        await retirementReleased.promise;
+      }),
+      retryProjectCleanup: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = createService({ retirement });
+    const retiring = service.retireProject({ projectId: 'project-alpha' });
+    await retirementStarted.promise;
+
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    let drained = false;
+    const draining = service.drainAdmittedOperations('project-alpha').then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(drained).toBe(true);
+
+    retirementReleased.resolve();
+    await expect(retiring).resolves.toMatchObject({ status: 'success' });
+    await draining;
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
   });
 
   it('projects Retired lifecycle without requiring the detached Git directory', async () => {

@@ -18,6 +18,7 @@ import {
   collabControlOperationCodec,
   type CollabControlOperationMap,
   collabMemberRef,
+  type CollabProjectMembershipOperationMap,
   type CollabProjectRetirementOperation,
   type CollabProjectRetirementOperationMap,
   decodeCollabCloudCapabilityDocument,
@@ -37,17 +38,23 @@ import {
   cloudAuthorityError,
   cloudAuthorityOperationError,
   cloudAuthorityProtocolError,
+  CloudAuthorityRejection,
 } from '@/app/collab/remote-authority/CloudAuthorityError';
 import {
   cloudProjectGitRemoteUrl,
   resolveCloudRoute,
   validateCloudServerUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import {
+  CloudPersonalRefReader,
+  type CloudPersonalRefReadInput,
+} from '@/app/collab/remote-authority/CloudPersonalRefReader';
 import { decodeCloudAuthorityProjectSnapshot } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type {
   CollabAuthorityLifecyclePort,
 } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
+import type { CloudAuthorityMembershipControlPort, CloudMembershipBinding, CloudMembershipOperation } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabAuthorityAdapter,
   CollabAuthorityEventConnectionInput,
@@ -73,6 +80,11 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
 const IMPLEMENTED_CLOUD_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new Set([
   'accept',
   'authority-transfer',
+  'cloud-imported-membership-claims',
+  'cloud-project-invitations',
+  'cloud-project-leave',
+  'cloud-project-manager-responsibility',
+  'cloud-project-membership',
   'git-receive-pack-personal-ref',
   'git-upload-pack',
   'project-events',
@@ -124,11 +136,60 @@ export interface CloudAuthorityAdapterOptions {
   ) => { dispose(): void; start(): void };
   readonly request?: CloudAuthorityHttpTransport;
   readonly requestIdFactory?: () => string;
+  readonly readPersonalRef?: (input: CloudPersonalRefReadInput) => Promise<string>;
 }
 
 export interface CloudAuthorityConnectionInput {
   readonly projectId: string;
   readonly serverUrl: string;
+}
+
+export interface CloudPendingLeaveConnectionInput extends CloudAuthorityConnectionInput {
+  readonly authorityGeneration: number;
+  readonly memberId: string;
+  readonly personalRef: string;
+}
+
+export type CloudPendingRetirementConnectionInput = CloudPendingLeaveConnectionInput;
+
+export interface CloudPendingLeaveConnection {
+  dispose(): void;
+  getManagerResponsibilityOffer(
+    request: CollabProjectMembershipOperationMap['getManagerResponsibilityOffer']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['getManagerResponsibilityOffer']['response']>;
+  leaveProject(
+    request: CollabProjectMembershipOperationMap['leaveProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['leaveProject']['response']>;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readPersonalRefOid(
+    personalRef: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<string>;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+}
+
+export interface CloudPendingRetirementConnection {
+  dispose(): void;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+  retireProject(
+    request: CollabProjectRetirementOperationMap['retireProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectRetirementOperationMap['retireProject']['response']>;
 }
 
 export interface CloudAuthorityConnection {
@@ -196,7 +257,8 @@ function assertRequestActive(signal?: AbortSignal): void {
   }
 }
 
-class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthorityLifecyclePort {
+class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthorityLifecyclePort, CloudAuthorityMembershipControlPort {
+  readonly authorityKind = 'cloud' as const;
   readonly #lifetime = new AbortController();
 
   constructor(
@@ -224,6 +286,38 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
 
   assertActive(): void {
     assertRequestActive(this.#lifetime.signal);
+  }
+
+  cloudMembership<Operation extends CloudMembershipOperation>(
+    operation: Operation,
+    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    binding: CloudMembershipBinding,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+    if (!this.identity || binding.serverUrl !== this.origin || binding.projectId !== this.projectId
+      || binding.memberId !== this.identity.memberId
+      || binding.authorityGeneration !== this.identity.authorityGeneration) {
+      throw cloudAuthorityOperationError('cloud-membership-binding-mismatch');
+    }
+    switch (operation) {
+      case 'listProjectMembers': return this.execute('cloud-project-membership', operation, request, options);
+      case 'demoteManager': return this.execute('cloud-project-membership', operation, request, options);
+      case 'removeMember': return this.execute('cloud-project-membership', operation, request, options);
+      case 'promoteManager': return this.execute('cloud-project-membership', operation, request, options);
+      case 'reissueTransferredMembershipClaim': return this.execute('cloud-imported-membership-claims', operation, request, options);
+      case 'revokeTransferredMembershipClaim': return this.execute('cloud-imported-membership-claims', operation, request, options);
+      case 'createManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'getManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'listCurrentManagerResponsibilityOffers': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'cancelManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'acknowledgeManagerResponsibility': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'declineManagerResponsibility': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'createProjectInvitation': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'listProjectInvitations': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'revokeProjectInvitation': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'leaveProject': return this.execute('cloud-project-leave', operation, request, options);
+      default: throw cloudAuthorityOperationError('cloud-membership-operation-unavailable');
+    }
   }
 
   private signal(caller?: AbortSignal): AbortSignal {
@@ -644,7 +738,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     assertJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
-      throw new CollabError(envelope.error);
+      throw new CloudAuthorityRejection(envelope.error);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
     return codec.decodeResponse(envelope.data);
@@ -916,6 +1010,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
   readonly authorityKind = 'cloud' as const;
    readonly #createEventClient: NonNullable<CloudAuthorityAdapterOptions['createEventClient']>;
   private readonly artifacts: CloudAuthorityArtifactTransport;
+  private readonly readPersonalRef: NonNullable<CloudAuthorityAdapterOptions['readPersonalRef']>;
   private readonly request: CloudAuthorityHttpTransport;
   private readonly requestId: () => string;
 
@@ -923,6 +1018,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     this.artifacts = options.artifacts ?? new NodeCloudAuthorityArtifactTransport();
     this.#createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation));
+    const personalRefs = new CloudPersonalRefReader();
+    this.readPersonalRef = options.readPersonalRef ?? (input => personalRefs.read(input));
     this.request = options.request ?? new NodeCloudAuthorityHttpTransport().request;
     this.requestId = options.requestIdFactory
       ?? (() => `cloud-${randomUUID().replaceAll('-', '')}`);
@@ -1007,7 +1104,156 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
         remoteUrl: gitRemoteUrl,
       },
       lifecycle: control,
+      membership: control,
       supports: capability => cloudCapabilityImplemented(document, capability),
+    };
+  }
+
+  async connectPendingLeave(
+    binding: CloudPendingLeaveConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudPendingLeaveConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud pending Leave binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const capabilities = new Set(document.capabilities);
+    const control = new CloudAuthorityControl(
+      this.artifacts,
+      capabilities,
+      document.limits,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
+      origin,
+      binding.projectId,
+      this.request,
+      this.requestId,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    const lifetime = new AbortController();
+    const requestOptions = (
+      caller: { readonly signal?: AbortSignal } = {},
+    ): { readonly signal: AbortSignal } => ({
+      signal: caller.signal
+        ? AbortSignal.any([lifetime.signal, caller.signal])
+        : lifetime.signal,
+    });
+    return {
+      dispose: () => {
+        lifetime.abort();
+        control.dispose();
+      },
+      getManagerResponsibilityOffer: (request, requestOptionsInput) => (
+        control.cloudMembership(
+          'getManagerResponsibilityOffer',
+          request,
+          membershipBinding,
+          requestOptions(requestOptionsInput),
+        )
+      ),
+      leaveProject: (request, requestOptionsInput) => control.cloudMembership(
+        'leaveProject',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      readPersonalRefOid: (personalRef, requestOptionsInput) => {
+        if (
+          personalRef !== binding.personalRef
+          || !cloudCapabilityImplemented(document, 'git-upload-pack')
+        ) throw controlIntegrityError('cloud-pending-leave-personal-ref-mismatch');
+        return this.readPersonalRef({
+          personalRef,
+          projectId: binding.projectId,
+          serverUrl: origin,
+          ...requestOptions(requestOptionsInput),
+        });
+      },
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptions(requestOptionsInput),
+      ),
+    };
+  }
+
+  async connectPendingRetirement(
+    binding: CloudPendingRetirementConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudPendingRetirementConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud pending Retirement binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const control = new CloudAuthorityControl(
+      this.artifacts,
+      new Set(document.capabilities),
+      document.limits,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
+      origin,
+      binding.projectId,
+      this.request,
+      this.requestId,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    const lifetime = new AbortController();
+    const requestOptions = (
+      caller: { readonly signal?: AbortSignal } = {},
+    ): { readonly signal: AbortSignal } => ({
+      signal: caller.signal
+        ? AbortSignal.any([lifetime.signal, caller.signal])
+        : lifetime.signal,
+    });
+    return {
+      dispose: () => {
+        lifetime.abort();
+        control.dispose();
+      },
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptions(requestOptionsInput),
+      ),
+      retireProject: (request, requestOptionsInput) => control.retirement(
+        'retireProject',
+        request,
+        requestOptions(requestOptionsInput),
+      ),
     };
   }
 

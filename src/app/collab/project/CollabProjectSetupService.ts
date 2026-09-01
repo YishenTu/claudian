@@ -720,7 +720,7 @@ export class CollabProjectSetupService {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending) {
+      if (pending && pending.kind !== 'cloud-relocation') {
         reservedPaths.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
       }
     }

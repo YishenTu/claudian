@@ -89,6 +89,75 @@ describe('ProjectOperationAdmission', () => {
     expect(drained).toBe(true);
   });
 
+  it('lets a projection transition suspend and drain without waiting for itself', async () => {
+    const admission = new ProjectOperationAdmission();
+    let transitionFinished = false;
+
+    await admission.runProjectTransition(
+      () => 'project-a',
+      async () => {
+        const suspension = admission.suspendProject('project-a');
+        await admission.drainAdmittedOperations('project-a');
+        expect(admission.resumeProject(suspension)).toBe(true);
+        transitionFinished = true;
+      },
+    );
+
+    expect(transitionFinished).toBe(true);
+  });
+
+  it('keeps admitted projection transitions visible to feature shutdown', async () => {
+    const admission = new ProjectOperationAdmission();
+    let release!: () => void;
+    const transition = admission.runProjectTransition(
+      () => 'project-a',
+      () => new Promise<void>(resolve => { release = resolve; }),
+    );
+    await Promise.resolve();
+
+    admission.beginClose();
+    let drained = false;
+    const draining = admission.drain().then(() => { drained = true; });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    release();
+    await transition;
+    await draining;
+    expect(drained).toBe(true);
+  });
+
+  it('drains ordinary work only for the transitioning Project', async () => {
+    const admission = new ProjectOperationAdmission();
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    const operationA = admission.runProject(
+      () => 'project-a',
+      'active',
+      () => new Promise<void>(resolve => { releaseA = resolve; }),
+    );
+    const operationB = admission.runProject(
+      () => 'project-b',
+      'active',
+      () => new Promise<void>(resolve => { releaseB = resolve; }),
+    );
+    await Promise.resolve();
+
+    let drained = false;
+    const draining = admission.drainAdmittedOperations('project-a').then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    releaseA();
+    await operationA;
+    await draining;
+    expect(drained).toBe(true);
+
+    releaseB();
+    await operationB;
+  });
+
   it('normalizes non-Error failures at the admission boundary', async () => {
     const admission = new ProjectOperationAdmission();
 
