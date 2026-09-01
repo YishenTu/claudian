@@ -30,7 +30,11 @@ import {
   decodeCollabPendingProjectOperation,
 } from '@/app/collab/PendingProjectOperation';
 import type { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
-import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
+import {
+  type CloudMembershipClaimInvitation,
+  decodeCloudMembershipClaimInvitation,
+  decodeCloudProjectInvitation,
+} from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import {
   ProjectOperationAdmission,
@@ -397,6 +401,10 @@ export interface CollabAuthorityTransferEntryPort {
     input: CollabPrepareCloudToLanTargetRequest & Readonly<{ readonly operationIntentId: string }>,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTargetPreparationDescriptor>;
+  redeemManagerReissuedClaim(
+    invitation: CloudMembershipClaimInvitation,
+    options?: CollabOperationOptions,
+  ): Promise<void>;
   withdrawCloudToLanTarget(
     input: CollabWithdrawCloudToLanTargetRequest,
     options?: CollabOperationOptions,
@@ -948,9 +956,12 @@ class CollabFeatureServiceCore {
     });
     try {
       throwIfCancelled(controller.signal);
-      const result = await this.options.publication.reconnectProject(request, {
-        signal: controller.signal,
-      });
+      const result = 'encodedInvitation' in request
+        && request.encodedInvitation.startsWith('claudian-cloud-claim:')
+        ? await this.reconnectManagerReissuedClaim(request, { signal: controller.signal })
+        : await this.options.publication.reconnectProject(request, {
+            signal: controller.signal,
+          });
       await this.#refreshAfterMutation(result);
       return result;
     } catch (error) {
@@ -964,6 +975,20 @@ class CollabFeatureServiceCore {
         this.#publishState(state);
       }
     }
+  }
+
+  private async reconnectManagerReissuedClaim(
+    request: Extract<CollabReconnectProjectRequest, { encodedInvitation: string }>,
+    options: CollabOperationOptions,
+  ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    const invitation = decodeCloudMembershipClaimInvitation(request.encodedInvitation.trim());
+    if (invitation.claim.projectId !== request.projectId) {
+      throw operationError('authority-transfer-claimant-project-mismatch');
+    }
+    await this.options.authorityTransfer.redeemManagerReissuedClaim(invitation, options);
+    const project = (await this.#refreshProjects()).find(item => item.id === request.projectId);
+    if (!project) throw operationError('authority-transfer-claimant-project-missing');
+    return { status: 'success', value: project };
   }
 
   async readSnapshot(

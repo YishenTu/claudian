@@ -11,6 +11,9 @@ import type {
 import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import {
+  authorityTransferClaimantStatus,
+} from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import type {
   AuthorityProjectionTransitionPort,
 } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
@@ -197,27 +200,32 @@ export class AuthorityTransferLocalConvergence {
   }
 
   async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
-    assertCompleted(record.status, record.status.direction);
+    const status = authorityTransferClaimantStatus(record);
+    if (!status) throw convergenceError('authority-transfer-claimant-status-missing');
+    assertCompleted(status, status.direction);
     return this.transitionProject(record.projectId, async () => {
       const membership = await this.requireMembership(record.projectId);
       if (membership.member.id !== record.memberId) {
         throw convergenceError('authority-transfer-claimant-member-conflict');
       }
-      if (record.status.direction === 'lan-to-cloud') {
+      if (status.direction === 'lan-to-cloud') {
         const serverUrl = validateCloudServerUrl(
-          record.status.targetUrl,
+          status.targetUrl,
           'authorityTransferTargetUrl',
         );
         if (
           !isCollabLocalCloudMembership(membership)
           || membership.authority.authorityGeneration
-            !== record.status.targetAuthority.generation
+            !== status.targetAuthority.generation
           || membership.authority.serverUrl !== serverUrl
           || membership.authority.gitRemoteUrl
-            !== cloudRemoteUrl(record.status.targetUrl, record.projectId)
+            !== cloudRemoteUrl(status.targetUrl, record.projectId)
         ) throw convergenceError('authority-transfer-cloud-membership-conflict');
         await this.finish(record.projectId, 'cloud');
         return;
+      }
+      if (record.variant !== 'source-issued') {
+        throw convergenceError('authority-transfer-claimant-direction-invalid');
       }
       const lanTarget = record.lanTarget;
       const targetCredential = record.targetCredential;

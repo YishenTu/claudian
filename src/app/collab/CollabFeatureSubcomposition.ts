@@ -997,6 +997,9 @@ export function createCollabFeatureSubcomposition(
       )
     ),
     claimantStore: foundation.local.projects.authorityTransferClaimants,
+    createManagerReissuedClaimConnection: (binding, operationOptions) => (
+      cloudAuthority.connect(binding, operationOptions)
+    ),
     convergence: authorityTransferConvergence,
     createCloudToLanConnection: async projectId => {
       const membership = await foundation.local.projects.loadMembership(projectId);
@@ -1067,6 +1070,7 @@ export function createCollabFeatureSubcomposition(
       })
     ),
     lifecycle,
+    loadClaimantMembership: projectId => foundation.local.projects.loadMembership(projectId),
     installationKey: foundation.installationKey,
     persistence: foundation.authorityTransfers,
     recoverCloudSession: async record => {
