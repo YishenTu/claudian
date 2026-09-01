@@ -16,6 +16,10 @@ import type {
   AuthoritySqlRow,
   AuthoritySqlValue,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import {
+  type AuthorityTransferImportedTargetIdentity,
+  decodeAuthorityTransferImportedTargetIdentity,
+} from '@/app/collab/authority-transfer/AuthorityTransferImportedTargetIdentity';
 import { verifyAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -336,6 +340,47 @@ function requireEmptyAuthority(connection: AuthorityDatabaseConnection): void {
   }
 }
 
+function importedTargetIdentity(
+  connection: AuthorityDatabaseConnection,
+  targetHostMemberId: CollabMemberId,
+): AuthorityTransferImportedTargetIdentity {
+  const project = connection.get(`
+    SELECT project_id, name
+    FROM project
+    WHERE singleton = 1
+  `);
+  const member = connection.get(`
+    SELECT member_id, display_name, personal_ref, role, status, access_state
+    FROM members
+    WHERE member_id = ?
+  `, [targetHostMemberId]);
+  const sequence = connection.get(`
+    SELECT COALESCE(MAX(sequence), 0) AS event_sequence
+    FROM events
+  `);
+  if (
+    !project
+    || !member
+    || status(member.status) !== 'active'
+    || text(member, 'access_state') !== 'bound'
+    || !sequence
+  ) throw checkpointError('checkpoint-imported-target-identity-invalid');
+  return decodeAuthorityTransferImportedTargetIdentity({
+    authorityGeneration: new AuthorityMetadataRepository().getGeneration(connection),
+    currentMember: {
+      displayName: text(member, 'display_name'),
+      id: text(member, 'member_id'),
+      personalRef: text(member, 'personal_ref'),
+      role: role(member.role),
+    },
+    eventSequence: integer(sequence, 'event_sequence'),
+    project: {
+      id: text(project, 'project_id'),
+      name: text(project, 'name'),
+    },
+  });
+}
+
 export class AuthorityTransferCheckpointRepository {
   activateImportedAuthority(
     connection: AuthorityDatabaseConnection,
@@ -383,7 +428,7 @@ export class AuthorityTransferCheckpointRepository {
   importCoordination(
     connection: AuthorityDatabaseConnection,
     input: ImportAuthorityTransferCoordinationInput,
-  ): void {
+  ): AuthorityTransferImportedTargetIdentity {
     if (input.targetHostCredentialHash.byteLength !== 32) {
       throw checkpointError('checkpoint-target-credential-invalid');
     }
@@ -566,5 +611,6 @@ export class AuthorityTransferCheckpointRepository {
           break;
       }
     }
+    return importedTargetIdentity(connection, input.targetHostMemberId);
   }
 }

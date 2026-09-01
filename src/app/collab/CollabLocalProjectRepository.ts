@@ -20,6 +20,10 @@ import {
   type AuthorityTransferClaimantStore,
   decodeAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type {
+  CloudToLanManagerEntryRecord,
+  CloudToLanTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import {
   decodeAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -772,10 +776,14 @@ export class CollabLocalProjectRepository {
     this.#onDiagnostic = options.onDiagnostic;
     const authorityTransferEntries: AuthorityTransferEntryStorePort = {
       load: projectId => this.#loadAuthorityTransferEntry(projectId),
+      removeManager: record => this.#removeCloudToLanManagerEntry(record),
       removeRequester: record => this.#removeAuthorityTransferRequester(record),
       removeSource: record => this.#removeAuthorityTransferSource(record),
+      removeTarget: record => this.#removeCloudToLanTargetEntry(record),
+      saveManager: record => this.#saveCloudToLanManagerEntry(record),
       saveRequester: record => this.#saveAuthorityTransferRequester(record),
       saveSource: record => this.#saveAuthorityTransferSource(record),
+      saveTarget: record => this.#saveCloudToLanTargetEntry(record),
     };
     this.authorityTransferEntries = Object.freeze(authorityTransferEntries);
     const authorityTransferRecords: AuthorityTransferRecordStorePort = {
@@ -1545,10 +1553,27 @@ export class CollabLocalProjectRepository {
     });
     if (entries.some(entry => (
       entry.isSymbolicLink()
-      || (entry.name !== 'source.json' && entry.name !== 'requesters')
-      || (entry.name === 'source.json' ? !entry.isFile() : !entry.isDirectory())
+      || (
+        entry.name !== 'manager.json'
+        && entry.name !== 'requesters'
+        && entry.name !== 'source.json'
+        && entry.name !== 'target.json'
+      )
+      || (entry.name === 'requesters' ? !entry.isDirectory() : !entry.isFile())
     ))) {
       throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+    }
+    let manager: CloudToLanManagerEntryRecord | null = null;
+    if (entries.some(entry => entry.name === 'manager.json')) {
+      const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
+        `${entryDirectory}/manager.json`,
+        'authority-transfer-entry',
+        projectId,
+      ), projectId);
+      if (decoded.entryRole !== 'cloud-to-lan-manager') {
+        throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+      }
+      manager = decoded;
     }
     let source: AuthorityTransferSourceEntryRecord | null = null;
     if (entries.some(entry => entry.name === 'source.json')) {
@@ -1561,6 +1586,18 @@ export class CollabLocalProjectRepository {
         throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
       }
       source = decoded;
+    }
+    let target: CloudToLanTargetEntryRecord | null = null;
+    if (entries.some(entry => entry.name === 'target.json')) {
+      const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
+        `${entryDirectory}/target.json`,
+        'authority-transfer-entry',
+        projectId,
+      ), projectId);
+      if (decoded.entryRole !== 'cloud-to-lan-target') {
+        throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
+      }
+      target = decoded;
     }
     const requesters: Record<string, AuthorityTransferRequesterEntryRecord> = {};
     if (entries.some(entry => entry.name === 'requesters')) {
@@ -1596,8 +1633,43 @@ export class CollabLocalProjectRepository {
         requesters[installationKey] = decoded;
       }
     }
-    if (!source && Object.keys(requesters).length === 0) return null;
-    return createAuthorityTransferEntryDocument({ projectId, requesters, source });
+    if (!manager && !source && !target && Object.keys(requesters).length === 0) return null;
+    return createAuthorityTransferEntryDocument({ manager, projectId, requesters, source, target });
+  }
+
+  #saveCloudToLanManagerEntry(record: CloudToLanManagerEntryRecord): Promise<void> {
+    return this.#saveAuthorityTransferSingleton(record, 'cloud-to-lan-manager', 'manager.json');
+  }
+
+  #saveCloudToLanTargetEntry(record: CloudToLanTargetEntryRecord): Promise<void> {
+    return this.#saveAuthorityTransferSingleton(record, 'cloud-to-lan-target', 'target.json');
+  }
+
+  #saveAuthorityTransferSingleton(
+    record: CloudToLanManagerEntryRecord | CloudToLanTargetEntryRecord,
+    expectedRole: 'cloud-to-lan-manager' | 'cloud-to-lan-target',
+    fileName: 'manager.json' | 'target.json',
+  ): Promise<void> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(async () => {
+      const decoded = decodeLocalAuthorityTransferEntryComponent(record, record.projectId);
+      if (decoded.entryRole !== expectedRole) {
+        throw localRecordError('local-record-corrupt', 'authority-transfer-entry', record.projectId);
+      }
+      const entryDirectory = this.getProjectPaths(record.projectId).authorityTransferEntry;
+      await this.#ensurePrivateProjectDirectory(record.projectId, true);
+      await ensureCollabVaultDirectory(this.vaultRoot, entryDirectory, {
+        durable: true,
+        mode: 0o700,
+        onDiagnostic: this.#onDiagnostic,
+      });
+      await writeCollabFileAtomically(
+        this.vaultRoot,
+        `${entryDirectory}/${fileName}`,
+        serializeJson(decoded),
+        { mode: 0o600, onDiagnostic: this.#onDiagnostic },
+      );
+    });
   }
 
   #saveAuthorityTransferRequester(
@@ -1716,6 +1788,38 @@ export class CollabLocalProjectRepository {
       `${this.getProjectPaths(projectId).authorityTransferEntry}/source.json`,
       this.#onDiagnostic,
     );
+  }
+
+  #removeCloudToLanManagerEntry(record: CloudToLanManagerEntryRecord): Promise<boolean> {
+    return this.#removeAuthorityTransferSingleton(record, 'cloud-to-lan-manager', 'manager.json');
+  }
+
+  #removeCloudToLanTargetEntry(record: CloudToLanTargetEntryRecord): Promise<boolean> {
+    return this.#removeAuthorityTransferSingleton(record, 'cloud-to-lan-target', 'target.json');
+  }
+
+  #removeAuthorityTransferSingleton(
+    record: CloudToLanManagerEntryRecord | CloudToLanTargetEntryRecord,
+    expectedRole: 'cloud-to-lan-manager' | 'cloud-to-lan-target',
+    fileName: 'manager.json' | 'target.json',
+  ): Promise<boolean> {
+    this.#requireProjectId(record.projectId);
+    return this.#operationQueue.run(async () => {
+      const entryPath = `${this.getProjectPaths(record.projectId).authorityTransferEntry}`
+        + `/${fileName}`;
+      const current = await this.#readJson(
+        entryPath,
+        'authority-transfer-entry',
+        record.projectId,
+      );
+      if (current === null) return false;
+      const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
+      if (
+        decoded.entryRole !== expectedRole
+        || serializeJson(decoded) !== serializeJson(record)
+      ) return false;
+      return removeCollabFileDurably(this.vaultRoot, entryPath, this.#onDiagnostic);
+    });
   }
 
   listPendingOperationProjectIds(): Promise<readonly CollabProjectId[]> {

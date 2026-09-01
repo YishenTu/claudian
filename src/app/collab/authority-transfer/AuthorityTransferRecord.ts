@@ -241,7 +241,10 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     throw new TypeError('Invalid authority transfer ownership');
   }
   if (relinquishmentProof !== null && (
-    relinquishmentProof.operationIntentId !== operationIntentId
+    (
+      status.direction === 'lan-to-cloud'
+      && relinquishmentProof.operationIntentId !== operationIntentId
+    )
     || relinquishmentProof.committedAt < status.createdAt
     || relinquishmentProof.committedAt > status.updatedAt
     || relinquishmentProof.committedAt >= status.expiresAt

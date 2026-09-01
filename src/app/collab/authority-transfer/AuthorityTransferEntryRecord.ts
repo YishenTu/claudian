@@ -12,6 +12,12 @@ import {
 
 import type { AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
+  type CloudToLanManagerEntryRecord,
+  type CloudToLanTargetEntryRecord,
+  decodeCloudToLanManagerEntryRecord,
+  decodeCloudToLanTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import {
   type InstallationKey,
   parseInstallationKey,
 } from '@/core/device/InstallationKey';
@@ -63,23 +69,29 @@ export interface AuthorityTransferSourceEntryRecord extends AuthorityTransferEnt
 }
 
 export type AuthorityTransferEntryComponent =
+  | CloudToLanManagerEntryRecord
   | AuthorityTransferRequesterEntryRecord
-  | AuthorityTransferSourceEntryRecord;
+  | AuthorityTransferSourceEntryRecord
+  | CloudToLanTargetEntryRecord;
 
 export interface AuthorityTransferEntryRecord {
   readonly kind: 'authority-transfer-entry';
+  readonly manager: CloudToLanManagerEntryRecord | null;
   readonly projectId: CollabProjectId;
   readonly requesters: Readonly<Record<string, AuthorityTransferRequesterEntryRecord>>;
   readonly schemaVersion: typeof AUTHORITY_TRANSFER_ENTRY_SCHEMA_VERSION;
   readonly source: AuthorityTransferSourceEntryRecord | null;
+  readonly target: CloudToLanTargetEntryRecord | null;
 }
 
 const DOCUMENT_KEYS = new Set([
   'kind',
+  'manager',
   'projectId',
   'requesters',
   'schemaVersion',
   'source',
+  'target',
 ]);
 const COMPONENT_KEYS = [
   'expiresAt',
@@ -231,6 +243,12 @@ function assertCancelledEntryStatus(status: CollabAuthorityTransferStatus): void
 export function decodeAuthorityTransferEntryComponent(
   value: unknown,
 ): AuthorityTransferEntryComponent {
+  if (isRecord(value) && value.entryRole === 'cloud-to-lan-manager') {
+    return decodeCloudToLanManagerEntryRecord(value);
+  }
+  if (isRecord(value) && value.entryRole === 'cloud-to-lan-target') {
+    return decodeCloudToLanTargetEntryRecord(value);
+  }
   if (
     !isRecord(value)
     || (value.entryRole !== 'requester' && value.entryRole !== 'source')
@@ -352,32 +370,52 @@ export function decodeAuthorityTransferEntryRecord(
   const source = value.source === null
     ? null
     : decodeAuthorityTransferEntryComponent(value.source);
+  const manager = value.manager === null
+    ? null
+    : decodeAuthorityTransferEntryComponent(value.manager);
+  const target = value.target === null
+    ? null
+    : decodeAuthorityTransferEntryComponent(value.target);
   if (
     (source !== null && source.entryRole !== 'source')
-    || (Object.keys(requesters).length === 0 && source === null)
+    || (manager !== null && manager.entryRole !== 'cloud-to-lan-manager')
+    || (target !== null && target.entryRole !== 'cloud-to-lan-target')
+    || (source !== null && (manager !== null || target !== null))
+    || (Object.keys(requesters).length === 0
+      && source === null
+      && manager === null
+      && target === null)
     || Object.values(requesters).some(requester => requester.projectId !== value.projectId)
     || (source !== null && source.projectId !== value.projectId)
+    || (manager !== null && manager.projectId !== value.projectId)
+    || (target !== null && target.projectId !== value.projectId)
   ) throw new TypeError('Invalid authority transfer entry document components');
   return {
     kind: 'authority-transfer-entry',
-    projectId: (Object.values(requesters)[0] ?? source).projectId,
+    manager: manager,
+    projectId: (Object.values(requesters)[0] ?? source ?? manager ?? target).projectId,
     requesters: Object.freeze(requesters),
     schemaVersion: AUTHORITY_TRANSFER_ENTRY_SCHEMA_VERSION,
     source,
+    target: target,
   };
 }
 
 export function createAuthorityTransferEntryDocument(input: Readonly<{
+  readonly manager?: CloudToLanManagerEntryRecord | null;
   readonly projectId: CollabProjectId;
   readonly requesters?: Readonly<Record<string, AuthorityTransferRequesterEntryRecord>>;
   readonly source?: AuthorityTransferSourceEntryRecord | null;
+  readonly target?: CloudToLanTargetEntryRecord | null;
 }>): AuthorityTransferEntryRecord {
   return decodeAuthorityTransferEntryRecord({
     kind: 'authority-transfer-entry',
+    manager: input.manager ?? null,
     projectId: input.projectId,
     requesters: input.requesters ?? {},
     schemaVersion: AUTHORITY_TRANSFER_ENTRY_SCHEMA_VERSION,
     source: input.source ?? null,
+    target: input.target ?? null,
   });
 }
 

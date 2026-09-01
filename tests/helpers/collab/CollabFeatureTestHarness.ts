@@ -1,4 +1,5 @@
 import type {
+  CollabAuthorityTransferEntryPort,
   CollabCloudBootstrapPort,
   CollabFeatureServiceOptions,
   CollabHostTransferPort,
@@ -81,6 +82,12 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'retireProject',
   'finalizeRetiredProject',
   'retryProjectCleanup',
+  'prepareCloudToLanTarget',
+  'beginCloudToLanTransfer',
+  'acceptCloudToLanTransfer',
+  'withdrawCloudToLanTarget',
+  'observeCloudToLanTransfer',
+  'cancelCloudToLanTransfer',
   'subscribe',
 ] as const satisfies readonly (keyof CollabFeaturePort)[];
 
@@ -94,6 +101,7 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 ] as const satisfies readonly CollabResult<unknown>['status'][];
 
 type FeatureOptionsOverrides = {
+  readonly authorityTransfer?: Partial<CollabAuthorityTransferEntryPort>;
   readonly cloudEntry?: Partial<CollabFeatureServiceOptions['cloudEntry']>;
   readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
   readonly cloudRetirementIntents?: CollabFeatureServiceOptions['cloudRetirementIntents'];
@@ -118,6 +126,18 @@ function defaultCloudBootstrap(): CollabCloudBootstrapPort {
     recoverPending: () => Promise.resolve(),
     startFormerHost: () => unexpected('startCloudBootstrapFormerHost'),
     submitParticipant: () => unexpected('submitCloudBootstrapParticipant'),
+  };
+}
+
+function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
+  return {
+    acceptCloudToLanTransfer: () => unexpected('acceptCloudToLanTransfer'),
+    beginCloudToLanTransfer: () => unexpected('beginCloudToLanTransfer'),
+    cancelCloudToLanTransfer: () => unexpected('cancelCloudToLanTransfer'),
+    close: () => Promise.resolve(),
+    observeCloudToLanTransfer: () => unexpected('observeCloudToLanTransfer'),
+    prepareCloudToLanTarget: () => unexpected('prepareCloudToLanTarget'),
+    withdrawCloudToLanTarget: () => unexpected('withdrawCloudToLanTarget'),
   };
 }
 
@@ -329,6 +349,10 @@ export function completeCollabFeatureOptions(
   overrides: FeatureOptionsOverrides,
 ): CollabFeatureServiceOptions {
   return {
+    authorityTransfer: {
+      ...defaultAuthorityTransfer(),
+      ...overrides.authorityTransfer,
+    },
     cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
     cloudRetirementIntents: overrides.cloudRetirementIntents ?? {
       listProjectIds: () => Promise.resolve([]),
