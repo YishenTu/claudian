@@ -33,11 +33,16 @@ interface MarkdownSegment {
   fence?: MarkdownFenceOpening;
   rawHtml?: boolean;
   sealed?: boolean;
+  wikilink?: MarkdownWikilink;
 }
 
 export interface MarkdownFenceOpening {
   info: string;
   infoStart: number;
+}
+
+export interface MarkdownWikilink {
+  embedded: boolean;
 }
 
 interface InlineContinuation {
@@ -262,6 +267,18 @@ function appendFenceOpeningSegment(
       infoStart,
     },
     sealed: true,
+  });
+}
+
+function appendWikilinkSegment(
+  segments: MarkdownSegment[],
+  text: string,
+  embedded: boolean,
+): void {
+  segments.push({
+    text,
+    transformable: false,
+    wikilink: { embedded },
   });
 }
 
@@ -554,14 +571,20 @@ function splitInlineMarkdown(
       continue;
     }
 
-    if (char === '[') {
-      const wikilinkEnd = findWikilinkEnd(line, index);
+    const embeddedWikilink = char === '!' && line.startsWith('![[', index);
+    if (embeddedWikilink || char === '[') {
+      const wikilinkStart = embeddedWikilink ? index + 1 : index;
+      const wikilinkEnd = findWikilinkEnd(line, wikilinkStart);
       if (wikilinkEnd !== null) {
         appendSegment(segments, line.slice(segmentStart, index), true);
-        appendSegment(segments, line.slice(index, wikilinkEnd + 1), false);
+        appendWikilinkSegment(
+          segments,
+          line.slice(index, wikilinkEnd + 1),
+          embeddedWikilink,
+        );
         segmentStart = wikilinkEnd + 1;
         index = wikilinkEnd;
-      } else if (!isBackslashEscaped(line, index)) {
+      } else if (char === '[' && !isBackslashEscaped(line, index)) {
         bracketDepth += 1;
       }
       continue;
@@ -836,6 +859,7 @@ interface MarkdownTransforms {
   fence?: (opener: string, fence: MarkdownFenceOpening) => string;
   text?: (text: string) => string;
   rawHtml?: (text: string) => string;
+  wikilink?: (wikilink: string, metadata: MarkdownWikilink) => string;
 }
 
 /** Applies targeted transforms while preserving protected Markdown syntax. */
@@ -847,6 +871,9 @@ export function transformMarkdownSegments(
     .map(segment => {
       if (segment.fence) {
         return transforms.fence?.(segment.text, segment.fence) ?? segment.text;
+      }
+      if (segment.wikilink) {
+        return transforms.wikilink?.(segment.text, segment.wikilink) ?? segment.text;
       }
       if (segment.rawHtml) {
         return transforms.rawHtml?.(segment.text) ?? segment.text;
