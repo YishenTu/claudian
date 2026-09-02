@@ -61,8 +61,13 @@ describe('LanHostSection', () => {
 
     const sectionEl = container.querySelector<HTMLElement>('.claudian-collab-host-section')!;
     expect(sectionEl.tagName).toBe('DIV');
-    expect(sectionEl.textContent).toContain('LAN Host');
-    expect(sectionEl.textContent).toContain('Hosted on this device');
+    const header = sectionEl.querySelector<HTMLElement>(
+      '.claudian-collab-host-section-header',
+    )!;
+    expect(header.firstElementChild?.textContent).toBe('LAN Host (on this device)');
+    expect(header.querySelector('span.claudian-collab-host-badge')).toBeNull();
+    expect(header.querySelector<HTMLButtonElement>('[data-action="start-host"]')
+      ?.classList.contains('mod-cta')).toBe(true);
     expect(sectionEl.textContent).toContain('Stopped');
     expect(sectionEl.querySelectorAll('button')).toHaveLength(1);
     expect(sectionEl.querySelector('[data-action="create-invitation"]')).toBeNull();
@@ -162,8 +167,8 @@ describe('LanHostSection', () => {
       }),
     });
 
-    expect(container.textContent).toContain('LAN Host');
-    expect(container.textContent).toContain('Hosted on another device');
+    expect(container.textContent).toContain('LAN Host (on another device)');
+    expect(container.querySelector('.claudian-collab-host-badge')).toBeNull();
     expect(container.querySelectorAll('button')).toHaveLength(0);
     expect(port.startHost).not.toHaveBeenCalled();
   });

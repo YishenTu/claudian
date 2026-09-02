@@ -55,8 +55,11 @@ describe('ProjectInvitationModal', () => {
     await flush();
 
     expect(port.createInvitation).not.toHaveBeenCalled();
-    modal.contentEl.querySelector<HTMLButtonElement>('[data-action="create-invitation"]')
-      ?.click();
+    const create = modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="create-invitation"]',
+    )!;
+    expect(create.classList.contains('mod-cta')).toBe(true);
+    create.click();
     await flush();
     expect(port.createInvitation).toHaveBeenCalledWith(
       'project-alpha',

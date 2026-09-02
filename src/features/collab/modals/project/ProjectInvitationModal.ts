@@ -108,6 +108,7 @@ export class ProjectInvitationModal extends Modal {
       });
       const create = this.contentEl.createEl('button', {
         attr: { 'data-action': 'create-invitation', type: 'button' },
+        cls: 'mod-cta',
         text: this.#status?.kind === 'error'
           ? t('collab.access.retry')
           : t('collab.access.createInvitation'),
@@ -335,6 +336,7 @@ export class ProjectInvitationModal extends Modal {
     } else {
       const create = this.contentEl.createEl('button', {
         attr: { 'data-action': 'create-invitation', type: 'button' },
+        cls: 'mod-cta',
         text: t('collab.access.createInvitation'),
       });
       create.disabled = this.#operationPending || this.#managementSlotOccupied;
