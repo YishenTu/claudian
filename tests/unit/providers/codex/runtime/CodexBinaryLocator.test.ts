@@ -43,14 +43,46 @@ describe('CodexBinaryLocator', () => {
     expect(findCodexBinaryPath(pathDir, 'win32')).toBe(pathBinary);
   });
 
-  it('prefers the macOS Codex app bundle over generic PATH auto-detection', () => {
+  it('prefers the macOS Codex app bundle over the ChatGPT app fallback', () => {
     process.env.HOME = tempDir;
     const appDir = path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources');
+    const appBinary = path.join(appDir, 'codex');
+    const chatGptAppDir = path.join(
+      tempDir,
+      'Applications',
+      'ChatGPT.app',
+      'Contents',
+      'Resources',
+    );
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.mkdirSync(chatGptAppDir, { recursive: true });
+    fs.writeFileSync(appBinary, '');
+    fs.writeFileSync(path.join(chatGptAppDir, 'codex'), '');
+
+    expect(findCodexBinaryPath('', 'darwin')).toBe(appBinary);
+  });
+
+  it('falls back to the unified macOS ChatGPT app bundle', () => {
+    process.env.HOME = tempDir;
+    const appDir = path.join(tempDir, 'Applications', 'ChatGPT.app', 'Contents', 'Resources');
     const appBinary = path.join(appDir, 'codex');
     fs.mkdirSync(appDir, { recursive: true });
     fs.writeFileSync(appBinary, '');
 
     expect(findCodexBinaryPath('', 'darwin')).toBe(appBinary);
+  });
+
+  it('prefers a user-local Codex binary over the ChatGPT app fallback', () => {
+    process.env.HOME = tempDir;
+    const localDir = path.join(tempDir, '.local', 'bin');
+    const localBinary = path.join(localDir, 'codex');
+    const appDir = path.join(tempDir, 'Applications', 'ChatGPT.app', 'Contents', 'Resources');
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(localBinary, '');
+    fs.writeFileSync(path.join(appDir, 'codex'), '');
+
+    expect(findCodexBinaryPath('', 'darwin')).toBe(localBinary);
   });
 
   it('honors an explicit runtime PATH before preferred macOS Codex locations', () => {
