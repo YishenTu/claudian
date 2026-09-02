@@ -165,7 +165,8 @@ describe('locale files', () => {
       .toBe('Use this device as the Host owner?');
   });
 
-  it('uses the accepted hosted-here label', () => {
-    expect(english['collab.host.hostedHere']).toBe('Hosted on this device');
+  it('uses the accepted local Host summary', () => {
+    expect(english['collab.host.hostedHereSummary'])
+      .toBe('LAN Host (on this device)');
   });
 });
