@@ -24,7 +24,7 @@
 
 - Project creation is empty-only. `project/CreateProjectModal.ts` collects Project name and initial Member display name, defaults to LAN, and shows a complete Server URL field only for Cloud. It never discovers, previews, selects, copies, or summarizes Vault files. Existing Create/Join/Management/Reconnect surfaces own Cloud entry; do not add a Cloud-only product or login/token/certificate form.
 - Join distinguishes ordinary LAN/Cloud invitations from imported-Member recovery material; an imported claim restores an existing identity rather than creating membership. Reconnect distinguishes same-authority endpoint relocation from claim convergence. Authority movement stays in Project Management and may expose only the selected Member's permitted preparation/acceptance or Manager/Host actions, not caller proofs or listener ownership.
-- Create, Join, and Reconnect prevent duplicate submission, abort active work on close, ignore stale completion, and preserve retry input. Durable-progress results expose the existing Resume setup operation instead of rotating operation intent.
+- Create, Join, and Reconnect prevent duplicate submission, abort only their caller-local wait on close, ignore stale completion, and preserve retry input. LAN transient work may honor that cancellation; an externally possible or durable Cloud operation remains application-owned and recoverable. Durable-progress results expose the existing Resume setup operation instead of rotating operation intent.
 
 ## Verification
 
