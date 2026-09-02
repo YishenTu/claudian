@@ -234,7 +234,8 @@ export class AuthorityTransferLocalConvergence {
       }
       const endpoint = new URL(lanTarget.endpoint).origin;
       if (
-        membership.authority.endpoint !== endpoint
+        membership.authority.authorityGeneration !== status.targetAuthority.generation
+        || membership.authority.endpoint !== endpoint
         || membership.authority.gitRemoteUrl !== lanRemoteUrl(lanTarget.endpoint, record.projectId)
         || membership.authority.hostCaCertificatePem !== lanTarget.caCertificatePem
         || membership.authority.hostCaFingerprint !== lanTarget.caFingerprint
@@ -346,6 +347,7 @@ export class AuthorityTransferLocalConvergence {
       await this.rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
       const candidate: CollabLocalLanMembershipRecord = {
         authority: {
+          authorityGeneration: input.status.targetAuthority.generation,
           endpoint: new URL(input.endpoint).origin,
           gitRemoteUrl: newRemoteUrl,
           hostCaCertificatePem: input.hostCaCertificatePem,
@@ -373,6 +375,8 @@ export class AuthorityTransferLocalConvergence {
       await this.options.projects.saveMembership(candidate);
     } else if (
       membership.authority.endpoint !== new URL(input.endpoint).origin
+      || membership.authority.authorityGeneration
+        !== input.status.targetAuthority.generation
       || membership.authority.gitRemoteUrl !== newRemoteUrl
       || membership.authority.hostCaCertificatePem !== input.hostCaCertificatePem
       || membership.authority.hostCaFingerprint !== input.hostCaFingerprint

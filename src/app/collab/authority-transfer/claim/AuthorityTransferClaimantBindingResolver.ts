@@ -138,6 +138,9 @@ export class AuthorityTransferClaimantBindingResolver {
       if (record.phase !== 'source-acknowledged') {
         throw resolutionError('authority-transfer-claimant-phase-invalid');
       }
+      if (membership.authority.authorityGeneration !== record.status.targetAuthority.generation) {
+        throw resolutionError('authority-transfer-claimant-target-generation-mismatch');
+      }
       return { direction: 'cloud-to-lan', mode: 'local-only' };
     }
     if (!isCollabLocalCloudMembership(membership) || !record.lanTarget) {

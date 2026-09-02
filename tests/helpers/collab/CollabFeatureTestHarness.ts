@@ -1,6 +1,5 @@
 import type {
   CollabAuthorityTransferEntryPort,
-  CollabCloudBootstrapPort,
   CollabFeatureServiceOptions,
   CollabHostTransferPort,
   CollabJoinProjectPort,
@@ -33,8 +32,11 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'createProject',
   'joinProject',
   'reconnectProject',
+  'readPendingReconnect',
+  'resumeReconnect',
   'resumeSetup',
   'readSnapshot',
+  'readProjectCapabilities',
   'readPublishDescription',
   'publish',
   'confirmPublish',
@@ -71,6 +73,7 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'acceptRequest',
   'removeMember',
   'leaveProject',
+  'resumeLeave',
   'createManagerResponsibilityOffer',
   'cancelManagerResponsibilityOffer',
   'promoteManager',
@@ -82,6 +85,11 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'retireProject',
   'finalizeRetiredProject',
   'retryProjectCleanup',
+  'proposeLanToCloudTransfer',
+  'readLanToCloudTransfer',
+  'readCloudToLanTransfer',
+  'acceptLanToCloudTransfer',
+  'cancelLanToCloudTransfer',
   'prepareCloudToLanTarget',
   'beginCloudToLanTransfer',
   'acceptCloudToLanTransfer',
@@ -103,7 +111,6 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 type FeatureOptionsOverrides = {
   readonly authorityTransfer?: Partial<CollabAuthorityTransferEntryPort>;
   readonly cloudEntry?: Partial<CollabFeatureServiceOptions['cloudEntry']>;
-  readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
   readonly cloudRetirementIntents?: CollabFeatureServiceOptions['cloudRetirementIntents'];
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
@@ -118,25 +125,19 @@ type FeatureOptionsOverrides = {
   readonly vaultRoot: string;
 };
 
-function defaultCloudBootstrap(): CollabCloudBootstrapPort {
-  return {
-    cancel: () => unexpected('cancelCloudBootstrap'),
-    close: () => Promise.resolve(),
-    prepareLocalRecovery: () => Promise.resolve(),
-    recoverPending: () => Promise.resolve(),
-    startFormerHost: () => unexpected('startCloudBootstrapFormerHost'),
-    submitParticipant: () => unexpected('submitCloudBootstrapParticipant'),
-  };
-}
-
 function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
   return {
+    acceptLanToCloudTransfer: () => unexpected('acceptLanToCloudTransfer'),
     acceptCloudToLanTransfer: () => unexpected('acceptCloudToLanTransfer'),
     beginCloudToLanTransfer: () => unexpected('beginCloudToLanTransfer'),
     cancelCloudToLanTransfer: () => unexpected('cancelCloudToLanTransfer'),
+    cancelLanToCloudTransfer: () => unexpected('cancelLanToCloudTransfer'),
     close: () => Promise.resolve(),
     observeCloudToLanTransfer: () => unexpected('observeCloudToLanTransfer'),
     prepareCloudToLanTarget: () => unexpected('prepareCloudToLanTarget'),
+    proposeLanToCloudTransfer: () => unexpected('proposeLanToCloudTransfer'),
+    readLanToCloudTransfer: () => unexpected('readLanToCloudTransfer'),
+    readCloudToLanTransfer: () => unexpected('readCloudToLanTransfer'),
     redeemManagerReissuedClaim: () => unexpected('redeemManagerReissuedClaim'),
     withdrawCloudToLanTarget: () => unexpected('withdrawCloudToLanTarget'),
   };
@@ -234,7 +235,10 @@ function defaultLifecycleRecovery(): CollabLifecycleRecoveryPort {
 }
 
 function defaultLocalExit(): CollabLocalExitPort {
-  return { leaveProject: () => Promise.resolve() };
+  return {
+    leaveProject: () => Promise.resolve(),
+    resumeLeave: () => Promise.resolve(),
+  };
 }
 
 function defaultMembership(): CollabMembershipPort {
@@ -307,6 +311,16 @@ function defaultPublication(): CollabPublicationPort {
         status: 'synchronized',
       },
     }),
+    readProjectCapabilities: () => Promise.resolve({
+      authorityKind: 'lan',
+      authorityTransfer: true,
+      importedMemberClaims: false,
+      invitations: true,
+      leave: true,
+      managerResponsibility: true,
+      membershipManagement: true,
+      retirement: true,
+    }),
     readGitStatus: () => Promise.resolve({
       acceptedMainOid: OID_A,
       aheadBy: 0,
@@ -354,7 +368,6 @@ export function completeCollabFeatureOptions(
       ...defaultAuthorityTransfer(),
       ...overrides.authorityTransfer,
     },
-    cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
     cloudRetirementIntents: overrides.cloudRetirementIntents ?? {
       listProjectIds: () => Promise.resolve([]),
     },

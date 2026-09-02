@@ -510,6 +510,8 @@ export class CollabPanel implements CollabSidebarSurfaceController {
 
     if (project.lifecycle === 'retired') {
       this.renderRetiredProject(home, project);
+    } else if (project.lifecycle === 'leaving') {
+      this.renderLeaveRecovery(home, project);
     } else if (project.health === 'needs-attention') {
       const recovery = home.createDiv({ cls: 'claudian-collab-project-recovery' });
       recovery.createDiv({ text: t('collab.panel.setupIncomplete') });
@@ -773,6 +775,34 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     const result = await this.options.port.resumeSetup({ operationId });
     if (result.status !== 'success') button.disabled = false;
     if (this.active) this.render();
+  }
+
+  private renderLeaveRecovery(
+    container: HTMLElement,
+    project: CollabLocalProjectSummary,
+  ): void {
+    const recovery = container.createDiv({ cls: 'claudian-collab-project-recovery' });
+    recovery.createDiv({ text: t('collab.panel.leaveRecovery') });
+    const resume = recovery.createEl('button', {
+      attr: { 'data-action': 'resume-leave', type: 'button' },
+      text: t('collab.panel.resumeLeave'),
+    });
+    resume.addEventListener('click', () => {
+      resume.disabled = true;
+      void this.options.port.resumeLeave(project.id).then(result => {
+        if (this.destroyed) return;
+        if (result.status !== 'success') {
+          resume.disabled = false;
+          recovery.querySelector('[role="alert"]')?.remove();
+          recovery.createDiv({
+            attr: { role: 'alert' },
+            text: t('collab.panel.leaveRecoveryFailed'),
+          });
+          return;
+        }
+        if (this.active) this.render();
+      });
+    });
   }
 
   private renderPendingRecoveryAction(): void {
