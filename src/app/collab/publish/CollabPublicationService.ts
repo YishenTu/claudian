@@ -65,7 +65,10 @@ import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/Coll
 import type {
   CollabAuthorityMembershipRouterPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
-import type { CollabAuthorityAdapter } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import type {
+  CollabAuthorityAdapter,
+  CollabAuthoritySession,
+} from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 import {
@@ -83,7 +86,7 @@ import {
 import { WorkingTreeReviewService } from '@/app/collab/review/WorkingTreeReviewService';
 import type { CollabProjectSnapshot } from '@/core/collab';
 import type { CollabChangedFile } from '@/core/collab';
-import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictDescriptor, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateTicketRequest, type CollabGitStatus, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRequestReview, type CollabResult, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
+import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictDescriptor, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateTicketRequest, type CollabGitStatus, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectCapabilities, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRequestReview, type CollabResult, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabPublicationFoundationPort {
@@ -228,6 +231,46 @@ export class CollabPublicationService {
     options: CollabOperationOptions = {},
   ): Promise<CollabProjectSnapshot> {
     return this.projection.readSnapshot(projectId, options).then(result => result.snapshot);
+  }
+
+  async readProjectCapabilities(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabProjectCapabilities> {
+    if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    const membership = await this.foundation.local.projects.loadMembership(projectId);
+    if (!membership || membership.project.id !== projectId) {
+      throw new CollabError({ code: 'project-not-found' });
+    }
+    const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
+      () => this.authoritySessions.create(membership),
+    );
+    work.assertGeneration(generation);
+    if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    if (authority.authorityKind === 'lan') {
+      return Object.freeze({
+        authorityKind: 'lan',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: true,
+        leave: true,
+        managerResponsibility: true,
+        membershipManagement: true,
+        retirement: true,
+      });
+    }
+    return Object.freeze({
+      authorityKind: 'cloud',
+      authorityTransfer: authority.supports('authority-transfer'),
+      importedMemberClaims: authority.supports('cloud-imported-membership-claims'),
+      invitations: authority.supports('cloud-project-invitations'),
+      leave: authority.supports('cloud-project-leave'),
+      managerResponsibility: authority.supports('cloud-project-manager-responsibility'),
+      membershipManagement: authority.supports('cloud-project-membership'),
+      retirement: authority.supports('project-retirement'),
+    });
   }
 
   async readCoordinationSnapshot(

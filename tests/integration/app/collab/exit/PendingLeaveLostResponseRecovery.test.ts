@@ -393,6 +393,7 @@ function localMembership(
 ): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.10:54545',
       gitRemoteUrl: 'https://192.168.1.10:54545/v1/git/project-alpha/repository.git',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',

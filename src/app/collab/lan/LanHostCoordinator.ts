@@ -1271,6 +1271,7 @@ export class LanHostCoordinator {
       const hostedMembership: CollabLocalLanMembershipRecord = {
         ...membership,
         authority: {
+          authorityGeneration: membership.authority.authorityGeneration,
           endpoint: listener.endpoint,
           gitRemoteUrl: `${listener.endpoint}/v1/git/${projectId}/repository.git`,
           hostCaCertificatePem: listener.caCertificatePem,
@@ -2077,6 +2078,7 @@ export class LanHostCoordinator {
         const updated: CollabLocalLanMembershipRecord = {
           ...membership,
           authority: {
+            authorityGeneration: membership.authority.authorityGeneration,
             endpoint: next.endpoint,
             gitRemoteUrl: `${next.endpoint}/v1/git/${projectId}/repository.git`,
             hostCaCertificatePem: next.caCertificatePem,

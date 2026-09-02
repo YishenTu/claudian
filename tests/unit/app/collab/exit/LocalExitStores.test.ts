@@ -14,6 +14,7 @@ const NOW = '2026-08-13T00:00:00.000Z';
 function membership(): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.10:54545',
       gitRemoteUrl: null,
       hostCaCertificatePem: 'certificate',

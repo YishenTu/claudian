@@ -131,9 +131,8 @@ function flattenTranslations(
 describe('locale files', () => {
   const english = flattenTranslations(en as unknown as TranslationTree);
 
-  it('keeps every locale structurally aligned with English', () => {
+  it('keeps every locale structurally aligned with the English dictionary', () => {
     const englishKeys = Object.keys(english).sort();
-
     for (const [locale, translations] of Object.entries(locales)) {
       const localeKeys = Object.keys(flattenTranslations(translations as unknown as TranslationTree)).sort();
       expect(localeKeys).toEqual(englishKeys);
