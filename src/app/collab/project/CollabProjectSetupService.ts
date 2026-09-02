@@ -576,6 +576,7 @@ export class CollabProjectSetupService {
   private async saveMembership(record: CollabProjectSetupRecord): Promise<void> {
     await this.foundation.local.projects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,

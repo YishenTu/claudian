@@ -61,6 +61,7 @@ describe('Local Publish adapters', () => {
   it('loads a stopped Host Project without fabricating a Host-only Git target', async () => {
     await projects.saveMembership(membership({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,
@@ -369,6 +370,7 @@ function membership(
 ): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:54545',
       gitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: [

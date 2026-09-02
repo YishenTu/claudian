@@ -77,11 +77,78 @@
 
 .claudian-collab-host-body,
 .claudian-collab-access-members,
-.claudian-collab-access-confirmation {
+.claudian-collab-access-confirmation,
+.claudian-collab-authority-transfer,
+.claudian-collab-authority-transfer-target,
+.claudian-collab-authority-transfer-manager,
+.claudian-collab-access-claim {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding-top: 8px;
+}
+
+.claudian-collab-authority-transfer {
+  margin-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-authority-transfer h3,
+.claudian-collab-authority-transfer h4 {
+  margin: 0;
+}
+
+.claudian-collab-authority-transfer input,
+.claudian-collab-authority-transfer textarea,
+.claudian-collab-access-claim textarea,
+.claudian-collab-project-invitation-modal textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+  color: var(--text-normal);
+  font: inherit;
+}
+
+.claudian-collab-authority-transfer input:hover,
+.claudian-collab-authority-transfer textarea:hover,
+.claudian-collab-access-claim textarea:hover,
+.claudian-collab-project-invitation-modal textarea:hover {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+}
+
+.claudian-collab-authority-transfer input:focus,
+.claudian-collab-authority-transfer textarea:focus,
+.claudian-collab-access-claim textarea:focus,
+.claudian-collab-project-invitation-modal textarea:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+  box-shadow: none;
+}
+
+.claudian-collab-authority-transfer input::placeholder,
+.claudian-collab-authority-transfer textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.claudian-collab-authority-transfer input:disabled,
+.claudian-collab-authority-transfer textarea:disabled,
+.claudian-collab-access-claim textarea:disabled,
+.claudian-collab-project-invitation-modal textarea:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-collab-authority-transfer textarea,
+.claudian-collab-access-claim textarea {
+  max-height: 180px;
+  overflow-y: auto;
+  resize: none;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
 }
 
 .claudian-collab-project-actions {

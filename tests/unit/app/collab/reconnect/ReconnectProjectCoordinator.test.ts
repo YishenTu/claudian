@@ -45,6 +45,7 @@ const certificate = '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\
 function membership(): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: oldEndpoint,
       gitRemoteUrl: `${oldEndpoint}/v1/git/project-a/repository.git`,
       hostCaCertificatePem: certificate,

@@ -1,7 +1,6 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
-  CollabCloudBootstrapPort,
   CollabHostTransferPort,
   CollabLifecycleRecoveryPort,
   CollabLocalExitPort,
@@ -58,7 +57,6 @@ export class CollabProjectLifecycleSubsystem {
   private readonly durableOwners = new Map<string, CollabProjectLifecycleDurableOwner>();
   private readonly projectQueues = new Map<CollabProjectId, Promise<void>>();
   private readonly recoveryStages: CollabProjectLifecycleRecoveryStage[];
-  private cloudBootstrapBound = false;
   private closePromise: Promise<void> | null = null;
   private closed = false;
   private membershipBound = false;
@@ -101,6 +99,12 @@ export class CollabProjectLifecycleSubsystem {
         ['manager-responsibility'],
         'continuation',
         () => options.localExit.leaveProject(request, operationOptions),
+      ),
+      resumeLeave: (projectId, operationOptions) => this.runExclusive(
+        projectId,
+        'local-exit',
+        'recovery',
+        () => options.localExit.resumeLeave(projectId, operationOptions),
       ),
     });
     this.retirement = Object.freeze<CollabRetirementPort>({
@@ -263,37 +267,6 @@ export class CollabProjectLifecycleSubsystem {
       if (this.projectQueues.get(projectId) === tail) this.projectQueues.delete(projectId);
     });
     return result;
-  }
-
-  bindCloudBootstrap(cloudBootstrap: CollabCloudBootstrapPort): CollabCloudBootstrapPort {
-    this.assertRegistrationOpen();
-    if (this.cloudBootstrapBound) {
-      throw new Error('Cloud bootstrap lifecycle port is already bound');
-    }
-    this.cloudBootstrapBound = true;
-    return Object.freeze<CollabCloudBootstrapPort>({
-      cancel: projectId => this.runExclusive(
-        projectId,
-        'cloud-bootstrap',
-        'continuation',
-        () => cloudBootstrap.cancel(projectId),
-      ),
-      close: () => cloudBootstrap.close(),
-      prepareLocalRecovery: () => cloudBootstrap.prepareLocalRecovery(),
-      recoverPending: () => cloudBootstrap.recoverPending(),
-      startFormerHost: input => this.runExclusive(
-        input.projectId,
-        'cloud-bootstrap',
-        'operation',
-        () => cloudBootstrap.startFormerHost(input),
-      ),
-      submitParticipant: input => this.runExclusive(
-        input.projectId,
-        'cloud-bootstrap',
-        'operation',
-        () => cloudBootstrap.submitParticipant(input),
-      ),
-    });
   }
 
   bindMembership(membership: CollabMembershipPort): CollabMembershipPort {

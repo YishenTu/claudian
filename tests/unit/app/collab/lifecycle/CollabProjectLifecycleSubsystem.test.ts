@@ -259,7 +259,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
   });
 
   it('admits only declared durable predecessors into an owner handoff', async () => {
-    const localExit = { leaveProject: jest.fn().mockResolvedValue(undefined) };
+    const localExit = {
+      leaveProject: jest.fn().mockResolvedValue(undefined),
+      resumeLeave: jest.fn().mockResolvedValue(undefined),
+    };
     const subsystem = new CollabProjectLifecycleSubsystem({
       ...ports(),
       durableOwners: [{
@@ -320,7 +323,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
       createHostTransfer: jest.fn().mockResolvedValue(undefined),
       declineHostTransfer: jest.fn().mockResolvedValue(undefined),
     };
-    const localExit = { leaveProject: jest.fn().mockResolvedValue(undefined) };
+    const localExit = {
+      leaveProject: jest.fn().mockResolvedValue(undefined),
+      resumeLeave: jest.fn().mockResolvedValue(undefined),
+    };
     const membership = {
       cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue({}),
       createInvitation: jest.fn().mockResolvedValue({}),
@@ -329,14 +335,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       promoteManager: jest.fn().mockResolvedValue(undefined),
       removeMember: jest.fn().mockResolvedValue(undefined),
       revokeInvitation: jest.fn().mockResolvedValue(undefined),
-    };
-    const cloudBootstrap = {
-      cancel: jest.fn().mockResolvedValue({}),
-      close: jest.fn().mockResolvedValue(undefined),
-      prepareLocalRecovery: jest.fn().mockResolvedValue(undefined),
-      recoverPending: jest.fn().mockResolvedValue(undefined),
-      startFormerHost: jest.fn().mockResolvedValue({}),
-      submitParticipant: jest.fn().mockResolvedValue({}),
     };
     const retirement = {
       close: jest.fn().mockResolvedValue(undefined),
@@ -352,7 +350,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       recoveryStages: [],
       retirement,
     });
-    const guardedCloudBootstrap = subsystem.bindCloudBootstrap(cloudBootstrap as never);
     const guardedMembership = subsystem.bindMembership(membership as never);
     subsystem.registerDurableOwner({
       inspect: async () => 'nonterminal',
@@ -376,22 +373,12 @@ describe('CollabProjectLifecycleSubsystem', () => {
         cleanupChoice: 'keep-files',
         projectId: 'project-alpha',
       }),
+      subsystem.localExit.resumeLeave('project-alpha'),
       subsystem.retirement.finalizeRetiredProject({
         cleanupChoice: 'keep-files',
         projectId: 'project-alpha',
       }),
       subsystem.retirement.retryProjectCleanup('project-alpha'),
-      guardedCloudBootstrap.startFormerHost({
-        memberId: 'member-host',
-        projectId: 'project-alpha',
-        serverUrl: 'https://cloud.example.test/',
-      }),
-      guardedCloudBootstrap.submitParticipant({
-        memberId: 'member-host',
-        projectId: 'project-alpha',
-        serverUrl: 'https://cloud.example.test/',
-      } as never),
-      guardedCloudBootstrap.cancel('project-alpha'),
       guardedMembership.createManagerResponsibilityOffer({
         projectId: 'project-alpha',
         purpose: 'manager-promotion',
@@ -420,12 +407,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(hostTransfer.declineHostTransfer).not.toHaveBeenCalled();
     expect(hostTransfer.cancelHostTransfer).toHaveBeenCalledTimes(1);
     expect(localExit.leaveProject).not.toHaveBeenCalled();
+    expect(localExit.resumeLeave).not.toHaveBeenCalled();
     expect(retirement.retireProject).toHaveBeenCalledTimes(1);
     expect(retirement.finalizeRetiredProject).not.toHaveBeenCalled();
     expect(retirement.retryProjectCleanup).not.toHaveBeenCalled();
-    expect(cloudBootstrap.startFormerHost).not.toHaveBeenCalled();
-    expect(cloudBootstrap.submitParticipant).not.toHaveBeenCalled();
-    expect(cloudBootstrap.cancel).not.toHaveBeenCalled();
     expect(membership.createManagerResponsibilityOffer).not.toHaveBeenCalled();
     expect(membership.cancelManagerResponsibilityOffer).not.toHaveBeenCalled();
   });

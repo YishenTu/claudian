@@ -60,6 +60,7 @@ function membershipRecord(
 ): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:54545',
       gitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: [
@@ -244,6 +245,30 @@ describe('CollabLocalProjectRepository', () => {
     });
     expect(await readFile(path.join(workspace, 'note.md'), 'utf8')).toBe('preserved\n');
     expect(await readdir(workspace)).toEqual(['note.md']);
+  });
+
+  it('adds LAN authority generation 1 to an existing local membership', async () => {
+    const projectState = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    );
+    await mkdir(projectState, { recursive: true });
+    const record = membershipRecord();
+    const { authorityGeneration: _authorityGeneration, ...legacyAuthority } = record.authority;
+    await writeFile(path.join(projectState, 'membership.json'), JSON.stringify({
+      ...record,
+      authority: legacyAuthority,
+    }));
+
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { authorityGeneration: 1, kind: 'lan' },
+    });
+    await expect(readFile(path.join(projectState, 'membership.json'), 'utf8'))
+      .resolves.toContain('"authorityGeneration": 1');
   });
 
   it('migrates v2 lifecycle projections without reactivating leaving or retired Projects', async () => {
@@ -1115,6 +1140,7 @@ describe('CollabLocalProjectRepository', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = membershipRecord({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,

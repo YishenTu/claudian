@@ -10,6 +10,7 @@ const CREATED_AT = '2026-09-01T00:00:00.000Z';
 function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:41730',
       gitRemoteUrl: `https://192.168.1.20:41730/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: 'fixture-ca',

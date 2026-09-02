@@ -143,6 +143,7 @@ interface CollabLocalMembershipRecordBase {
 export interface CollabLocalLanMembershipRecord
   extends CollabLocalMembershipRecordBase {
   readonly authority: {
+    readonly authorityGeneration: number;
     readonly kind: 'lan';
     readonly endpoint: string | null;
     readonly gitRemoteUrl: string | null;
@@ -649,7 +650,7 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   requireExactKeys(value.authority, [
     'endpoint', 'gitRemoteUrl', 'hostCaCertificatePem',
     'hostCaFingerprint', 'kind',
-  ]);
+  ], ['authorityGeneration']);
   requireExactKeys(value.member, [
     'credential', 'displayName', 'id', 'personalRef', 'role',
   ]);
@@ -659,6 +660,10 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   const autoStart = value.hostOwnership.autoStart;
   if (autoStart !== undefined && typeof autoStart !== 'boolean') {
     throw new TypeError('Invalid Host auto-start intent');
+  }
+  const authorityGeneration = value.authority.authorityGeneration ?? 1;
+  if (!Number.isSafeInteger(authorityGeneration) || (authorityGeneration as number) < 1) {
+    throw new TypeError('Invalid authority generation');
   }
   const hostCaCertificatePem = value.authority.hostCaCertificatePem === null
     ? null
@@ -689,6 +694,7 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   const membership: CollabLocalLanMembershipRecord = {
     ...common,
     authority: {
+      authorityGeneration: authorityGeneration as number,
       endpoint,
       gitRemoteUrl,
       hostCaCertificatePem,
@@ -2843,13 +2849,17 @@ export class CollabLocalProjectRepository {
     const value = await this.#readJson(relativePath, 'membership', projectId);
     if (value === null) return null;
     try {
-      const migrated = isRecord(value)
+      const schemaMigrated = isRecord(value)
         && (value.schemaVersion === 1 || value.schemaVersion === 2);
-      const membership = migrated ? migrateMembership(value) : normalizeMembership(value);
+      const lanGenerationMigrated = isRecord(value)
+        && isRecord(value.authority)
+        && value.authority.kind === 'lan'
+        && value.authority.authorityGeneration === undefined;
+      const membership = schemaMigrated ? migrateMembership(value) : normalizeMembership(value);
       if (membership.project.id !== projectId) {
         throw new TypeError('Membership Project mismatch');
       }
-      if (migrated && persistMigration) {
+      if ((schemaMigrated || lanGenerationMigrated) && persistMigration) {
         await this.#ensurePrivateProjectDirectory(projectId);
         await writeCollabFileAtomically(
           this.vaultRoot,

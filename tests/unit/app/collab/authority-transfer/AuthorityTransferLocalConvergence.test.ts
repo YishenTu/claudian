@@ -86,6 +86,7 @@ function snapshot(authorityKind: 'cloud' | 'lan'): CollabProjectSnapshot {
 function lanMembership(): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.10:54545',
       gitRemoteUrl: `https://192.168.1.10:54545/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
@@ -412,7 +413,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       memberCredential: credential,
       status: completed('cloud-to-lan'),
     });
-    await convergence.recoverConvertedClaimant({
+    const claimant = {
       lanTarget: {
         caCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
         caFingerprint: 'e'.repeat(64),
@@ -423,7 +424,19 @@ describe('AuthorityTransferLocalConvergence', () => {
       status: completed('cloud-to-lan'),
       targetCredential: credential,
       variant: 'source-issued',
-    } as AuthorityTransferClaimantRecord);
+    } as AuthorityTransferClaimantRecord;
+    membership = {
+      ...membership,
+      authority: { ...membership.authority, authorityGeneration: 1 },
+    } as CollabLocalMembershipRecord;
+    await expect(convergence.recoverConvertedClaimant(claimant)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
+    });
+    membership = {
+      ...membership,
+      authority: { ...membership.authority, authorityGeneration: 2 },
+    } as CollabLocalMembershipRecord;
+    await convergence.recoverConvertedClaimant(claimant);
 
     expect(membership).toMatchObject({
       authority: { kind: 'lan' },

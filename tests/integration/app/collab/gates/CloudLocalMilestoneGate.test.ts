@@ -127,6 +127,7 @@ function sourceMembership(
   const ownsAuthority = memberId === descriptor.manifest.comparison.sourceHostMemberId;
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: OLD_ENDPOINT,
       gitRemoteUrl: `${OLD_ENDPOINT}v1/git/${projectId}/repository.git`,
       hostCaCertificatePem: [

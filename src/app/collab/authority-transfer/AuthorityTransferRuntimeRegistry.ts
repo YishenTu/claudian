@@ -55,6 +55,15 @@ export class AuthorityTransferRuntimeRegistry {
     };
   }
 
+  release(
+    projectId: CollabProjectId,
+    localRole: AuthorityTransferRecord['localRole'],
+  ): boolean {
+    const registered = this.runtimes.get(projectId);
+    if (!registered || registered.localRole !== localRole) return false;
+    return this.runtimes.delete(projectId);
+  }
+
   async resume(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,

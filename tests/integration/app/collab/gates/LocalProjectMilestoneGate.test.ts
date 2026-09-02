@@ -632,6 +632,7 @@ describe('G3 local Project milestone gate', () => {
         await foundation.local.projects.saveMembership({
           ...membership,
           authority: {
+            authorityGeneration: 2,
             endpoint: new URL(targetUrl).origin,
             gitRemoteUrl: `${new URL(targetUrl).origin}/v1/git/${PROJECT_ID}/repository.git`,
             hostCaCertificatePem: lanTarget!.caCertificatePem,
