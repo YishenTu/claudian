@@ -596,7 +596,7 @@ describe('Cloud membership management', () => {
       const serverUrl = drift === 'endpoint' ? `${fixture.serverUrl}/new` : fixture.serverUrl;
       await projects.saveMembership({
         ...membership,
-        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v3/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
+        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v4/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
         member: drift === 'member' ? { ...membership.member, id: 'member-other', personalRef: 'refs/heads/members/member-other' } : membership.member,
       });
       await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({ status: 'failure', error: { code: 'authority-integrity-error' } });
@@ -1007,7 +1007,7 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
     seed: async (foundation: ClaudianCollabService) => {
       await foundation.local.projects.saveMembership({
         schemaVersion: 3, createdAt, updatedAt: createdAt, lastEventSequence: options.receiptTarget ? 0 : 7,
-        authority: { authorityGeneration: 7, bindingVersion: 3, gitRemoteUrl: `${serverUrl}/v3/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 7 },
+        authority: { authorityGeneration: 7, bindingVersion: 4, gitRemoteUrl: `${serverUrl}/v4/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 8 },
         member: { id: MEMBER_ID, displayName: 'Alice', role: 'manager', personalRef: member.personalRef },
         project: { id: PROJECT_ID, name: 'Management', workspacePath: 'Projects/management' },
       });

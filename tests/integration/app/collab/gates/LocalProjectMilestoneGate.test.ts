@@ -611,7 +611,7 @@ describe('G3 local Project milestone gate', () => {
           authority: {
             authorityGeneration: 2,
             bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-            gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+            gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
             kind: 'cloud',
             serverUrl: 'https://cloud.example.test/',
             wireVersion: COLLAB_PROTOCOL_VERSION,
@@ -831,7 +831,7 @@ describe('G3 local Project milestone gate', () => {
         member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}` },
       });
       expect(git(repositoryPath, ['remote', 'get-url', 'origin'])).toBe(
-        `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+        `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
       );
       await expect(
         foundation.local.projects.authorityTransferClaimants.load(PROJECT_ID),
