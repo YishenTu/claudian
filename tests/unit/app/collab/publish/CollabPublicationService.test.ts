@@ -122,6 +122,7 @@ function cloudSnapshot() {
 function lanMembership(ownsAuthority: boolean): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: LAN_STORED_ENDPOINT,
       gitRemoteUrl: `${LAN_STORED_ENDPOINT}/v1/git/${LAN_PROJECT_ID}/repository.git`,
       hostCaCertificatePem: LAN_CA,
@@ -249,6 +250,16 @@ describe('CollabPublicationService reconnect', () => {
       }));
 
       try {
+        await expect(service.readProjectCapabilities(LAN_PROJECT_ID)).resolves.toEqual({
+          authorityKind: 'lan',
+          authorityTransfer: true,
+          importedMemberClaims: false,
+          invitations: true,
+          leave: true,
+          managerResponsibility: true,
+          membershipManagement: true,
+          retirement: true,
+        });
         await expect(service.readSnapshot(LAN_PROJECT_ID)).resolves.toMatchObject({
           currentMember: {
             id: LAN_MEMBER_ID,
@@ -407,6 +418,9 @@ describe('CollabPublicationService reconnect', () => {
       }
       if (request.method === 'GET') {
         response.end(JSON.stringify(collabCloudCapabilityDocument([
+          'authority-transfer',
+          'cloud-project-invitations',
+          'cloud-project-membership',
           'project-snapshot',
         ], cloudLimits)));
         return;
@@ -454,6 +468,16 @@ describe('CollabPublicationService reconnect', () => {
       } finally {
         connection.dispose();
       }
+      await expect(service.readProjectCapabilities(CLOUD_PROJECT_ID)).resolves.toEqual({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: true,
+        leave: false,
+        managerResponsibility: false,
+        membershipManagement: true,
+        retirement: false,
+      });
       await expect(service.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
         currentMember: { id: CLOUD_MEMBER_ID },
         project: { authorityKind: 'cloud', id: CLOUD_PROJECT_ID },

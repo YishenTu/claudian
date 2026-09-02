@@ -71,6 +71,7 @@ function projectIndex(): CollabLocalProjectIndex {
 function membership(options: { readonly hostAutoStart?: boolean } = {}) {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: null,
       gitRemoteUrl: null,
       hostCaCertificatePem: null,
@@ -148,6 +149,33 @@ function pendingJoin() {
   };
 }
 
+function pendingRelocation() {
+  return {
+    authorityGeneration: 2,
+    createdAt: CREATED_AT,
+    memberId: 'member-host',
+    newAuthority: {
+      bindingVersion: 3,
+      gitRemoteUrl: 'https://new.example.test/v3/projects/project-alpha/repository.git',
+      serverUrl: 'https://new.example.test/',
+      wireVersion: 7,
+    },
+    oldAuthority: {
+      bindingVersion: 3,
+      gitRemoteUrl: 'https://old.example.test/v3/projects/project-alpha/repository.git',
+      serverUrl: 'https://old.example.test/',
+      wireVersion: 7,
+    },
+    operationId: 'relocate-project-alpha',
+    operationKind: 'cloud-relocation' as const,
+    personalRef: 'refs/heads/members/member-host',
+    phase: 'prepared' as const,
+    projectId: 'project-alpha',
+    schemaVersion: 1 as const,
+    updatedAt: CREATED_AT,
+  };
+}
+
 function authoritySnapshot(): CollabLanProjectSnapshot {
   const currentMember = {
     activatedAt: CREATED_AT,
@@ -220,6 +248,7 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
 function localExit(): jest.Mocked<CollabLocalExitPort> {
   return {
     leaveProject: jest.fn().mockResolvedValue(undefined),
+    resumeLeave: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -352,6 +381,16 @@ function publication(): jest.Mocked<CollabPublicationPort> {
         status: 'synchronized',
       },
     }),
+    readProjectCapabilities: jest.fn().mockResolvedValue({
+      authorityKind: 'lan',
+      authorityTransfer: true,
+      importedMemberClaims: false,
+      invitations: true,
+      leave: true,
+      managerResponsibility: true,
+      membershipManagement: true,
+      retirement: true,
+    }),
     readPublishDescription: jest.fn().mockResolvedValue(null),
     readConflict: jest.fn().mockResolvedValue({
       status: 'success',
@@ -424,7 +463,10 @@ function deferred<T>() {
 
 describe('CollabFeatureService', () => {
   let vaultRoot: string;
-  let pending: ReturnType<typeof pendingSetup> | ReturnType<typeof pendingJoin> | null;
+  let pending: ReturnType<typeof pendingSetup>
+    | ReturnType<typeof pendingJoin>
+    | ReturnType<typeof pendingRelocation>
+    | null;
   let currentIndex: ReturnType<typeof projectIndex>;
   let foundation: CollabFeatureFoundationPort;
   let setup: jest.Mocked<CollabProjectSetupPort>;
@@ -594,6 +636,156 @@ describe('CollabFeatureService', () => {
     );
   });
 
+  it('exposes negotiated capabilities and the source-owned LAN-to-Cloud workflow through the ordinary feature facade', async () => {
+    const status = {
+      projectId: 'project-alpha',
+      targetUrl: 'https://cloud.example.test/operator',
+      transferId: 'transfer-lan-to-cloud',
+    } as never;
+    const view = {
+      proposedByMemberId: 'member-host',
+      serverUrl: 'https://cloud.example.test/operator',
+      sourceOwned: true,
+      status,
+    };
+    const authorityTransfer = {
+      acceptLanToCloudTransfer: jest.fn(async () => status),
+      cancelLanToCloudTransfer: jest.fn(async () => status),
+      proposeLanToCloudTransfer: jest.fn(async () => status),
+      readLanToCloudTransfer: jest.fn(async () => view),
+    };
+    const capabilities = {
+      authorityKind: 'lan' as const,
+      authorityTransfer: true,
+      importedMemberClaims: false,
+      invitations: true,
+      leave: true,
+      managerResponsibility: true,
+      membershipManagement: true,
+      retirement: true,
+    };
+    const publish = publication();
+    publish.readProjectCapabilities.mockResolvedValue(capabilities);
+    const service = createService({ authorityTransfer, publication: publish });
+
+    await expect(service.readProjectCapabilities('project-alpha'))
+      .resolves.toEqual({ status: 'success', value: capabilities });
+    await expect(service.proposeLanToCloudTransfer({
+      projectId: 'project-alpha',
+      serverUrl: 'https://cloud.example.test/operator',
+    })).resolves.toEqual({ status: 'success', value: status });
+    await expect(service.readLanToCloudTransfer('project-alpha'))
+      .resolves.toEqual({ status: 'success', value: view });
+    const selection = { projectId: 'project-alpha', transferId: 'transfer-lan-to-cloud' };
+    await expect(service.acceptLanToCloudTransfer(selection))
+      .resolves.toEqual({ status: 'success', value: status });
+    await expect(service.cancelLanToCloudTransfer(selection))
+      .resolves.toEqual({ status: 'success', value: status });
+
+    expect(publish.readProjectCapabilities).toHaveBeenCalledWith('project-alpha', {});
+    expect(authorityTransfer.proposeLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      serverUrl: 'https://cloud.example.test/operator',
+    }, {});
+    expect(authorityTransfer.readLanToCloudTransfer)
+      .toHaveBeenCalledWith('project-alpha', {});
+    expect(authorityTransfer.acceptLanToCloudTransfer)
+      .toHaveBeenCalledWith(selection, {});
+    expect(authorityTransfer.cancelLanToCloudTransfer)
+      .toHaveBeenCalledWith(selection, {});
+  });
+
+  it('keeps durable LAN-to-Cloud reads reachable after admission closes', async () => {
+    const view = {
+      proposedByMemberId: 'member-requester',
+      serverUrl: 'https://cloud.example.test/',
+      sourceOwned: false,
+      status: null,
+    };
+    const authorityTransfer = {
+      readLanToCloudTransfer: jest.fn(async () => view),
+    };
+    const service = createService({ authorityTransfer });
+    const suspension = service.suspendProjectAdmission('project-alpha');
+
+    await expect(service.readLanToCloudTransfer('project-alpha'))
+      .resolves.toEqual({ status: 'success', value: view });
+
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
+  });
+
+  it('drains an in-flight LAN-to-Cloud proposal as ordinary Project work', async () => {
+    const started = deferred<void>();
+    const released = deferred<void>();
+    const authorityTransfer = {
+      proposeLanToCloudTransfer: jest.fn(async () => {
+        started.resolve();
+        await released.promise;
+        return { projectId: 'project-alpha' } as never;
+      }),
+    };
+    const service = createService({ authorityTransfer });
+    const proposing = service.proposeLanToCloudTransfer({
+      projectId: 'project-alpha',
+      serverUrl: 'https://cloud.example.test/',
+    });
+    await started.promise;
+
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    let drained = false;
+    const draining = service.drainAdmittedOperations('project-alpha').then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    released.resolve();
+    await proposing;
+    await draining;
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
+  });
+
+  it('keeps durable management read and local completion reachable after admission closes', async () => {
+    const membership = membershipControl();
+    const operation = {
+      action: 'remove-member' as const,
+      invitation: null,
+      status: 'result-retained' as const,
+    };
+    membership.readManagementOperation.mockResolvedValue(operation);
+    const service = createService({ membership });
+    const suspension = service.suspendProjectAdmission('project-alpha');
+
+    await expect(service.readManagementOperation('project-alpha'))
+      .resolves.toEqual({ status: 'success', value: operation });
+    await expect(service.completeManagementOperation({ projectId: 'project-alpha' }))
+      .resolves.toEqual({ status: 'success', value: undefined });
+
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
+  });
+
+  it('refreshes and publishes the Project projection after terminal authority convergence', async () => {
+    const completed = { phase: 'completed', state: 'completed' } as never;
+    const authorityTransfer = {
+      acceptLanToCloudTransfer: jest.fn(async () => completed),
+    };
+    const service = createService({ authorityTransfer });
+    const states: unknown[] = [];
+    service.subscribe(state => states.push(state));
+    const readsBefore = (foundation.local.projects.loadIndex as jest.Mock).mock.calls.length;
+
+    await expect(service.acceptLanToCloudTransfer({
+      projectId: 'project-alpha',
+      transferId: 'transfer-alpha',
+    })).resolves.toEqual({
+      status: 'success',
+      value: completed,
+    });
+
+    expect(foundation.local.projects.loadIndex).toHaveBeenCalledTimes(readsBefore + 1);
+    expect(states).toHaveLength(2);
+  });
+
   it('preserves a durable authority-transfer recovery outcome across the feature facade', async () => {
     const operationId = 'intent-manager-durable-begin';
     const error = new CollabError({
@@ -618,6 +810,7 @@ describe('CollabFeatureService', () => {
       withdrawCloudToLanTarget: jest.fn(),
     };
     const service = createService({ authorityTransfer });
+    const readsBefore = (foundation.local.projects.loadIndex as jest.Mock).mock.calls.length;
 
     await expect(service.beginCloudToLanTransfer({
       descriptor: {
@@ -639,6 +832,74 @@ describe('CollabFeatureService', () => {
       operationId,
       status: 'recovery-required',
     });
+    expect(foundation.local.projects.loadIndex).toHaveBeenCalledTimes(readsBefore + 1);
+  });
+
+  it('projects durable Cloud-to-LAN responsibility without requiring an active authority read', async () => {
+    const transfer = {
+      manager: null,
+      target: {
+        canWithdraw: false,
+        descriptor: null,
+        handle: null,
+        status: null,
+      },
+    } as const;
+    const authorityTransfer = {
+      readCloudToLanTransfer: jest.fn(async () => transfer),
+    };
+    const service = createService({ authorityTransfer });
+
+    await expect((service as unknown as {
+      readCloudToLanTransfer(projectId: string): Promise<unknown>;
+    }).readCloudToLanTransfer('project-alpha')).resolves.toEqual({
+      status: 'success',
+      value: transfer,
+    });
+    expect(authorityTransfer.readCloudToLanTransfer).toHaveBeenCalledWith(
+      'project-alpha',
+      {},
+    );
+  });
+
+  it('reads and resumes the exact durable Cloud relocation request', async () => {
+    pending = pendingRelocation();
+    const publish = publication();
+    publish.reconnectProject.mockResolvedValue({
+      status: 'success',
+      value: {
+        authorityKind: 'cloud',
+        connectionStatus: 'connected',
+        health: 'healthy',
+        hostInstallationStatus: 'not-host',
+        hostStatus: 'not-host',
+        id: 'project-alpha',
+        name: 'Alpha',
+        role: 'manager',
+        workspacePath: 'workspace/alpha',
+      },
+    });
+    const service = createService({ publication: publish });
+    const reconnect = service as unknown as {
+      readPendingReconnect(projectId: string): Promise<unknown>;
+      resumeReconnect(projectId: string): Promise<unknown>;
+    };
+
+    await expect(reconnect.readPendingReconnect('project-alpha')).resolves.toEqual({
+      status: 'success',
+      value: {
+        operationId: 'relocate-project-alpha',
+        projectId: 'project-alpha',
+        serverUrl: 'https://new.example.test/',
+      },
+    });
+    await expect(reconnect.resumeReconnect('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+    });
+    expect(publish.reconnectProject).toHaveBeenCalledWith({
+      authority: { kind: 'cloud', serverUrl: 'https://new.example.test/' },
+      projectId: 'project-alpha',
+    }, expect.anything());
   });
 
   it('does not replace a completed authority transfer with a late cancellation', async () => {
@@ -670,6 +931,34 @@ describe('CollabFeatureService', () => {
     }, {
       signal: controller.signal,
     })).resolves.toEqual({ status: 'success', value: status });
+  });
+
+  it('keeps Cloud-to-LAN observation and cancellation reachable after Project admission closes', async () => {
+    const status = { projectId: 'project-alpha', transferId: 'transfer-cloud-to-lan' } as never;
+    const authorityTransfer = {
+      cancelCloudToLanTransfer: jest.fn(async () => status),
+      observeCloudToLanTransfer: jest.fn(async () => status),
+    };
+    const service = createService({ authorityTransfer });
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    const handle = {
+      operationIntentId: 'intent-manager-begin',
+      preparationId: 'intent-target-preparation',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+      transferId: 'transfer-cloud-to-lan',
+    } as const;
+
+    await expect(service.observeCloudToLanTransfer('project-alpha'))
+      .resolves.toEqual({ status: 'success', value: status });
+    await expect(service.cancelCloudToLanTransfer(handle))
+      .resolves.toEqual({ status: 'success', value: status });
+
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
   });
 
   it('keeps target-side Cloud-to-LAN work outside the ordinary Project drain', async () => {
@@ -1890,6 +2179,9 @@ describe('CollabFeatureService', () => {
     })).resolves.toMatchObject({
       status: 'success',
     });
+    await expect(service.resumeLeave('project-alpha')).resolves.toMatchObject({
+      status: 'success',
+    });
 
     expect(access.promoteManager).toHaveBeenCalledWith({
       managerResponsibilityOfferId: 'offer-a',
@@ -1908,6 +2200,7 @@ describe('CollabFeatureService', () => {
       cleanupChoice: 'keep-files',
       projectId: 'project-alpha',
     }, {});
+    expect(exits.resumeLeave).toHaveBeenCalledWith('project-alpha', {});
   });
 
   it('delegates lifecycle intents and refreshes the local Project projection', async () => {
@@ -1957,12 +2250,14 @@ describe('CollabFeatureService', () => {
     })).resolves.toMatchObject({ status: 'success' });
     await expect(service.retryProjectCleanup('project-alpha'))
       .resolves.toMatchObject({ status: 'success' });
+    await expect(service.resumeLeave('project-alpha'))
+      .resolves.toMatchObject({ status: 'success' });
 
     expect(retirement.retireProject).toHaveBeenCalledTimes(1);
     expect(transfers.createHostTransfer).toHaveBeenCalledTimes(1);
     expect(retirement.finalizeRetiredProject).toHaveBeenCalledTimes(1);
     expect((foundation.local.projects.loadIndex as jest.Mock).mock.calls.length)
-      .toBe(initialReads + 9);
+      .toBe(initialReads + 10);
   });
 
   it('excludes admitted lifecycle transitions from the relocation ordinary-work drain', async () => {

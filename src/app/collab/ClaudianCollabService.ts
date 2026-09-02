@@ -32,10 +32,6 @@ import {
   AuthorityProjectionTransitionCoordinator,
 } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import {
-  bindLegacyCloudBootstrapSourceOwner,
-} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
-import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBootstrapTransitionStore';
-import {
   type CollabFilesystemDiagnosticSink,
 } from '@/app/collab/CollabFilesystemBoundary';
 import {
@@ -216,7 +212,6 @@ function environmentPath(environment: NodeJS.ProcessEnv): string | undefined {
 
 export class ClaudianCollabService {
   readonly authorityTransfers: AuthorityTransferPersistence;
-  readonly cloudBootstrapTransitions: CloudBootstrapTransitionStore;
   readonly discovery: CollabLanDiscoveryService;
   readonly hostTransitionCandidates: HostTransitionCandidateResolver;
   readonly hostInstallations: HostInstallationBindingService;
@@ -335,11 +330,6 @@ export class ClaudianCollabService {
       hostTransitionCandidates: this.hostTransitionCandidates,
       request: (trust, input) => this.#sendRetirementAcknowledgement(trust, input),
     });
-    this.cloudBootstrapTransitions = new CloudBootstrapTransitionStore(options.vaultRoot, {
-      isRecoveryOwner: ownerInstallationKey => (
-        this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
-      ),
-    });
     this.lanHost = new LanHostCoordinator({
       ...options.lanHost,
       assertHostInstallationOwned: async projectId => {
@@ -401,10 +391,7 @@ export class ClaudianCollabService {
         },
       });
     }
-    return this.cloudBootstrapTransitions.runWithLanHostStartGuard(
-      projectId,
-      () => authorityGuard(operation),
-    );
+    return authorityGuard(operation);
   }
 
   resolveGitRuntime(rescan = false): Promise<GitRuntimeResolution> {
@@ -1343,16 +1330,6 @@ export class ClaudianCollabService {
 
     await this.authorityTransfers.bindLegacySourceOwner(projectId, installationKey);
 
-    const cloudBootstrap = await this.cloudBootstrapTransitions.load(projectId);
-    if (
-      cloudBootstrap?.schemaVersion === 1
-      && cloudBootstrap.memberId === cloudBootstrap.oldAuthority.sourceHostMemberId
-      && cloudBootstrap.fence.state !== 'not-applicable'
-    ) {
-      await this.cloudBootstrapTransitions.save(
-        bindLegacyCloudBootstrapSourceOwner(cloudBootstrap, installationKey),
-      );
-    }
   }
 
    async #requireTrustedMembership(projectId: CollabProjectId): Promise<{

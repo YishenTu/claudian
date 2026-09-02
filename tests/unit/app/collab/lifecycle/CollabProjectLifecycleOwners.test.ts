@@ -9,7 +9,6 @@ import {
 
 function stores() {
   return {
-    cloudBootstrapTransitions: { inspectLifecycleOwner: jest.fn().mockResolvedValue('absent') },
     cloudRetirementIntents: { load: jest.fn().mockResolvedValue(null) },
     hostTransferRecovery: { load: jest.fn().mockResolvedValue(null) },
     localCleanup: { load: jest.fn().mockResolvedValue(null) },
@@ -30,14 +29,12 @@ describe('CollabProjectLifecycleOwners', () => {
     backing.pendingLeaves.load.mockResolvedValue({ phase: 'queued' });
     backing.managerReceipts.load.mockResolvedValue({ status: 'acknowledged' });
     backing.retirements.loadRetirementRecord.mockResolvedValue({ cleanupStatus: 'complete' });
-    backing.cloudBootstrapTransitions.inspectLifecycleOwner.mockResolvedValue('nonterminal');
     const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
 
     await expect(Promise.all(owners.map(async owner => ({
       name: owner.name,
       state: await owner.inspect('project-alpha'),
     })))).resolves.toEqual([
-      { name: 'cloud-bootstrap', state: 'nonterminal' },
       { name: 'host-transfer', state: 'nonterminal' },
       { name: 'manager-responsibility', state: 'terminal' },
       { name: 'local-exit', state: 'terminal' },
@@ -45,16 +42,14 @@ describe('CollabProjectLifecycleOwners', () => {
     ]);
   });
 
-  it('treats completed bootstrap cleanup as terminal and absent stores as absent', async () => {
+  it('treats absent durable stores as absent', async () => {
     const backing = stores();
-    backing.cloudBootstrapTransitions.inspectLifecycleOwner.mockResolvedValue('terminal');
     const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
 
     await expect(Promise.all(owners.map(async owner => ({
       name: owner.name,
       state: await owner.inspect('project-alpha'),
     })))).resolves.toEqual([
-      { name: 'cloud-bootstrap', state: 'terminal' },
       { name: 'host-transfer', state: 'absent' },
       { name: 'manager-responsibility', state: 'absent' },
       { name: 'local-exit', state: 'absent' },

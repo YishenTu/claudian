@@ -519,6 +519,27 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
   );
 });
 
+test('production Collab composition cannot reach the private Cloud bootstrap fixture', () => {
+  const collabRoot = path.join(appRoot, 'collab');
+  const bootstrapRoot = path.join(collabRoot, 'bootstrap');
+  const violations = listTypeScriptFiles(collabRoot)
+    .filter(file => !isPathWithin(file, bootstrapRoot))
+    .flatMap(file => listSourceImports(file).flatMap(sourceImport => {
+      const target = resolveSourceImport(file, sourceImport.specifier);
+      return target && isPathWithin(target, bootstrapRoot)
+        ? [`${path.relative(process.cwd(), file)}:${sourceImport.line}`
+          + ` imports ${sourceImport.specifier}`]
+        : [];
+    }));
+
+  assert.deepEqual(violations, []);
+  assert.ok(fs.existsSync(path.join(bootstrapRoot, 'CloudBootstrapCoordinator.ts')));
+  assert.ok(fs.existsSync(path.join(
+    process.cwd(),
+    'tests/unit/app/collab/bootstrap/CloudBootstrapCoordinator.test.ts',
+  )));
+});
+
 test('persisted settings changes use the coordinator boundary', () => {
   const matches = findMatches([sourceRoot], /\.saveSettings\(\)/).filter(file => ![
     'src/main.ts',
