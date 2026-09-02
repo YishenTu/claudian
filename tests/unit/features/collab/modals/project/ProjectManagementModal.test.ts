@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 
 import { type CollabMember } from '@claudian-collab/protocol';
+import { within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
@@ -1145,6 +1146,49 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.querySelector('[data-action="cancel-lan-to-cloud"]')).not.toBeNull();
   });
 
+  it('treats a persisted cancelled Cloud move as no current move', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        proposedByMemberId: 'member-manager',
+        serverUrl: 'http://100.89.0.41:8787',
+        sourceOwned: true,
+        status: {
+          phase: 'cancelled',
+          state: 'cancelled',
+          transferId: 'transfer-cancelled',
+        },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const hosting = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-hosting',
+    )!;
+    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to Cloud' }))
+      .not.toBeNull();
+    expect(hosting.textContent).not.toContain('Cloud target:');
+    expect(hosting.textContent).not.toContain('Cancelled');
+    expect(hosting.querySelector('[data-field="lan-to-cloud-server-url"]')).not.toBeNull();
+    const requestMove = within(hosting).getByRole('button', {
+      name: 'Request move to Cloud',
+    });
+    expect(requestMove.classList.contains('mod-cta')).toBe(true);
+    expect(requestMove.classList.contains(
+      'claudian-collab-authority-transfer-submit',
+    )).toBe(true);
+    expect(requestMove).toHaveProperty('disabled', true);
+  });
+
   it('shows persisted Cloud-to-LAN progress to the selected non-Manager target', async () => {
     const members = [member('member-maya', 'Maya')];
     const descriptor = {
@@ -1262,6 +1306,13 @@ describe('ProjectManagementModal', () => {
     modal.onOpen();
     await flush();
     await flush();
+
+    const hosting = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-hosting',
+    )!;
+    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to LAN' }))
+      .not.toBeNull();
+    expect(hosting.textContent).not.toContain('authority');
 
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="prepare-cloud-to-lan"]',
@@ -1672,14 +1723,17 @@ describe('ProjectManagementModal', () => {
     );
     expect(projectActions).not.toBeNull();
     expect(Array.from(projectActions?.children ?? []).map(child => (
-      child.className
+      `${child.tagName}:${child.className}`
     ))).toEqual([
-      'claudian-collab-project-actions-primary',
-      'claudian-collab-project-actions-lifecycle',
+      'H3:',
+      'DIV:claudian-collab-project-actions-lifecycle',
     ]);
     expect(Array.from(projectActions?.querySelectorAll('button') ?? []).map(button => (
       button.getAttribute('data-action')
-    ))).toEqual(['create-invitation', 'leave-project', 'retire-project']);
+    ))).toEqual(['leave-project', 'retire-project']);
+    expect(modal.contentEl.querySelector(
+      '.claudian-collab-access-members [data-action="create-invitation"]',
+    )).not.toBeNull();
     expect(modal.contentEl.querySelector(
       '[data-member-id="member-manager"] [data-action="leave-project"]',
     )).toBeNull();
@@ -2209,12 +2263,11 @@ describe('ProjectManagementModal', () => {
     modal.onOpen();
     await flush();
     expect(modal.contentEl.querySelector(
-      '.claudian-collab-project-actions [data-action="start-host"]',
+      '.claudian-collab-hosting [data-action="start-host"]',
     )).not.toBeNull();
     expect(Array.from(modal.contentEl.querySelectorAll(
       '.claudian-collab-project-actions button',
     )).map(button => button.getAttribute('data-action'))).toEqual([
-      'start-host',
       'leave-project',
     ]);
     modal.contentEl.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
@@ -2227,6 +2280,56 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.textContent).toContain('Running');
     expect(modal.contentEl.querySelectorAll('[data-action="start-host"]')).toHaveLength(0);
     expect(modal.contentEl.querySelectorAll('[data-action="stop-host"]')).toHaveLength(1);
+  });
+
+  it('groups invitation, Hosting, and Project actions by their user intent', async () => {
+    const host = member('member-host', 'Host operator', { role: 'manager' });
+    const modal = new ProjectManagementModal({} as never, createPort(
+      [host],
+      {},
+      { currentMemberId: host.id, hostMemberId: host.id },
+    ), {
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const members = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-access-members',
+    )!;
+    expect(within(members).getByRole('heading', { level: 3, name: 'Members' }))
+      .not.toBeNull();
+    expect(within(members).getByRole('button', { name: 'Create invitation' }))
+      .toHaveProperty('className', 'mod-cta');
+
+    const hosting = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-hosting',
+    )!;
+    expect(within(hosting).getByRole('heading', { level: 3, name: 'Hosting' }))
+      .not.toBeNull();
+    expect(within(hosting).getByText('LAN Host (on this device)')).not.toBeNull();
+    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to Cloud' }))
+      .not.toBeNull();
+    expect(hosting.textContent).not.toContain('authority');
+
+    const projectActions = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-project-actions',
+    )!;
+    expect(within(projectActions).getByRole('heading', {
+      level: 3,
+      name: 'Project actions',
+    })).not.toBeNull();
+    expect(within(projectActions).getByRole('button', { name: 'Leave project' }))
+      .toHaveProperty('className', 'mod-cta');
+    expect(within(projectActions).getByRole('button', { name: 'Retire project' }))
+      .toHaveProperty('className', 'mod-warning');
+    expect(projectActions.querySelector('[data-action="create-invitation"]')).toBeNull();
+    expect(projectActions.querySelector('[data-action="stop-host"]')).toBeNull();
   });
 
   it('shows a synchronized foreign Host as status-only in Project management', async () => {
@@ -2245,7 +2348,7 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     const host = modal.contentEl.querySelector('.claudian-collab-project-host-action');
-    expect(host?.textContent).toContain('Hosted on another device');
+    expect(host?.textContent).toContain('LAN Host (on another device)');
     expect(host?.querySelectorAll('button')).toHaveLength(0);
     expect(port.startHost).not.toHaveBeenCalled();
   });
@@ -2332,7 +2435,7 @@ describe('ProjectManagementModal', () => {
     modal.contentEl.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
     await flush();
     expect(modal.contentEl.querySelector(
-      '.claudian-collab-project-actions [data-action="host-diagnostics"]',
+      '.claudian-collab-hosting [data-action="host-diagnostics"]',
     )).not.toBeNull();
     expect(modal.contentEl.querySelector('[data-state="host-diagnostics"]')).toBeNull();
   });

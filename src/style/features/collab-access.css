@@ -2,8 +2,12 @@
   min-width: 0;
 }
 
-.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning, .claudian-collab-host-badge),
-.claudian-collab-project-invitation-modal button,
+.claudian-collab-project-management-modal {
+  width: 448px;
+}
+
+.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning),
+.claudian-collab-project-invitation-modal button:not(.mod-cta),
 .claudian-collab-host-diagnostics-modal button,
 .claudian-collab-retired-panel button:not(.mod-warning) {
   border: 0;
@@ -12,8 +16,8 @@
   color: var(--text-muted);
 }
 
-.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning, .claudian-collab-host-badge):is(:hover, :focus-visible, :active),
-.claudian-collab-project-invitation-modal button:is(:hover, :focus-visible, :active),
+.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning):is(:hover, :focus-visible, :active),
+.claudian-collab-project-invitation-modal button:not(.mod-cta):is(:hover, :focus-visible, :active),
 .claudian-collab-host-diagnostics-modal button:is(:hover, :focus-visible, :active),
 .claudian-collab-retired-panel button:not(.mod-warning):is(:hover, :focus-visible, :active) {
   border: 0;
@@ -22,10 +26,10 @@
   color: var(--text-normal);
 }
 
-.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning, .claudian-collab-host-badge):disabled,
-.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning, .claudian-collab-host-badge):disabled:is(:hover, :focus-visible, :active),
-.claudian-collab-project-invitation-modal button:disabled,
-.claudian-collab-project-invitation-modal button:disabled:is(:hover, :focus-visible, :active),
+.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning):disabled,
+.claudian-collab-project-management-modal button:not(.mod-cta, .mod-warning):disabled:is(:hover, :focus-visible, :active),
+.claudian-collab-project-invitation-modal button:not(.mod-cta):disabled,
+.claudian-collab-project-invitation-modal button:not(.mod-cta):disabled:is(:hover, :focus-visible, :active),
 .claudian-collab-host-diagnostics-modal button:disabled,
 .claudian-collab-host-diagnostics-modal button:disabled:is(:hover, :focus-visible, :active),
 .claudian-collab-retired-panel button:not(.mod-warning):disabled,
@@ -47,8 +51,7 @@
   font-size: var(--font-ui-small);
 }
 
-.claudian-collab-access-badge,
-.claudian-collab-host-badge {
+.claudian-collab-access-badge {
   width: auto;
   min-width: 0;
   min-height: 0;
@@ -63,13 +66,19 @@
   white-space: nowrap;
 }
 
-.claudian-collab-host-badge:hover,
-.claudian-collab-host-badge:focus-visible {
-  background: var(--background-modifier-active-hover);
+.claudian-collab-host-status-button {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
   box-shadow: none;
+  white-space: nowrap;
 }
 
-.claudian-collab-host-badge--warning,
 .claudian-collab-access-status--error,
 .claudian-collab-host-error {
   color: var(--text-warning);
@@ -78,6 +87,7 @@
 .claudian-collab-host-body,
 .claudian-collab-access-members,
 .claudian-collab-access-confirmation,
+.claudian-collab-hosting,
 .claudian-collab-authority-transfer,
 .claudian-collab-authority-transfer-target,
 .claudian-collab-authority-transfer-manager,
@@ -88,14 +98,24 @@
   padding-top: 8px;
 }
 
-.claudian-collab-authority-transfer {
+.claudian-collab-hosting {
   margin-top: 12px;
-  border-top: 1px solid var(--background-modifier-border);
 }
 
+.claudian-collab-hosting > h3,
 .claudian-collab-authority-transfer h3,
 .claudian-collab-authority-transfer h4 {
   margin: 0;
+}
+
+.claudian-collab-hosting-current {
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
+.claudian-collab-hosting-current .claudian-collab-host-section-header {
+  min-height: 0;
 }
 
 .claudian-collab-authority-transfer input,
@@ -151,52 +171,47 @@
   font-size: var(--font-ui-smaller);
 }
 
-.claudian-collab-project-actions {
-  display: flex;
-  gap: 8px 16px;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 12px;
-  margin-top: 12px;
-  border-top: 1px solid var(--background-modifier-border);
+.claudian-collab-authority-transfer-submit {
+  align-self: flex-end;
 }
 
-.claudian-collab-project-actions-primary,
+.claudian-collab-project-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.claudian-collab-project-actions[hidden] {
+  display: none;
+}
+
+.claudian-collab-project-actions h3 {
+  margin: 0;
+}
+
 .claudian-collab-project-actions-lifecycle {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: space-between;
   min-width: 0;
-}
-
-.claudian-collab-project-actions-primary {
-  flex: 1 1 auto;
-}
-
-.claudian-collab-project-actions-lifecycle {
-  flex: 0 1 auto;
-}
-
-.claudian-collab-project-actions-lifecycle {
-  margin-left: auto;
 }
 
 .claudian-collab-project-actions button {
   white-space: nowrap;
 }
 
-.claudian-collab-project-host-action,
 .claudian-collab-project-invitation-action {
-  flex: 0 1 auto;
+  display: flex;
+  justify-content: flex-end;
   min-width: 0;
 }
 
-.claudian-collab-project-actions .claudian-collab-host-section-header {
-  min-height: 0;
-}
-
-.claudian-collab-project-actions .claudian-collab-host-body {
-  padding: 4px 0 0;
+.claudian-collab-project-actions-lifecycle .mod-warning {
+  margin-left: auto;
 }
 
 .claudian-collab-cleanup-choices {
