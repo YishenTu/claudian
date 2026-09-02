@@ -222,6 +222,7 @@ async function membershipAccess(
       projection.readSnapshot(projectId, options)
     ),
   }, {}, {
+    cloudManagementAdmission: async (_projectId, operation) => operation(),
     projects,
     managerResponsibilityAdmission: async (_projectId, operation) => operation(),
     managerReceipts: {

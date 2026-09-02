@@ -98,6 +98,10 @@ function transferError(reason: string): CollabError {
   });
 }
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+}
+
 function stagingDirectory(transferId: string): string {
   return `.claudian-authority-transfer-${transferId}`;
 }
@@ -115,6 +119,7 @@ export class LanToCloudSourceCoordinator {
     request: AcceptLanToCloudTransferTargetRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
+    throwIfCancelled(options.signal);
     const entry = await this.options.persistence.loadSourceEntry(request.projectId);
     if (
       !entry

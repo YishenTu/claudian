@@ -296,6 +296,18 @@ describe('ProjectManagementModal', () => {
         encodedInvitation: 'claudian-cloud-claim:v1:replacement',
         expiresAt: '2026-09-10T00:00:00.000Z',
       })),
+      readManagementOperation: jest.fn()
+        .mockResolvedValueOnce(success(null))
+        .mockResolvedValue(success({
+          action: 'reissue-member-claim',
+          completionId: 'completion-reissued-claim',
+          invitation: {
+            encodedInvitation: 'claudian-cloud-claim:v1:replacement',
+            expiresAt: '2026-09-10T00:00:00.000Z',
+          },
+          secretAvailableUntil: '2026-09-10T00:00:00.000Z',
+          status: 'result-retained',
+        })),
     });
     const copyText = jest.fn().mockResolvedValue(undefined);
     const modal = new ProjectManagementModal({} as never, port, {
@@ -342,8 +354,121 @@ describe('ProjectManagementModal', () => {
     await flush();
     expect(copyText).toHaveBeenCalledWith('claudian-cloud-claim:v1:replacement');
     expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      completionId: 'completion-reissued-claim',
       projectId: 'project-alpha',
     });
+  });
+
+  it('redacts a retained member claim when its secret availability expires', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      const members = [member('member-manager', 'Alice', { role: 'manager' })];
+      const port = createPort(members, {
+        readManagementOperation: jest.fn().mockResolvedValue(success({
+          action: 'reissue-member-claim',
+          completionId: 'completion-expiring-claim',
+          invitation: {
+            encodedInvitation: 'claudian-cloud-claim:v1:expiring-secret',
+            expiresAt: '2026-09-10T00:00:00.000Z',
+          },
+          secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+          status: 'result-retained',
+        })),
+        readProjectCapabilities: jest.fn().mockResolvedValue(success({
+          authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+          invitations: true, leave: true, managerResponsibility: true,
+          membershipManagement: true, retirement: true,
+        })),
+        readSnapshot: jest.fn().mockResolvedValue(success({
+          snapshot: {
+            currentMember: members[0], members,
+            project: { authorityGeneration: 4, authorityKind: 'cloud' },
+          },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never)),
+      } as never);
+      const modal = new ProjectManagementModal({} as never, port, {
+        project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+      });
+
+      modal.onOpen();
+      await flush();
+      await flush();
+      expect(modal.contentEl.textContent)
+        .toContain('claudian-cloud-claim:v1:expiring-secret');
+
+      jest.advanceTimersByTime(1_000);
+
+      expect(modal.contentEl.textContent)
+        .not.toContain('claudian-cloud-claim:v1:expiring-secret');
+      expect(modal.contentEl.querySelector('[data-action="copy-member-claim"]')).toBeNull();
+      expect(modal.contentEl.querySelector(
+        '[data-action="complete-management-operation"]',
+      )).not.toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('revalidates a retained member claim immediately before copying it', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      const members = [member('member-manager', 'Alice', { role: 'manager' })];
+      const retained = {
+        action: 'reissue-member-claim' as const,
+        completionId: 'completion-claim-revalidation',
+        invitation: {
+          encodedInvitation: 'claudian-cloud-claim:v1:stale-secret',
+          expiresAt: '2026-09-10T00:00:00.000Z',
+        },
+        secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+        status: 'result-retained' as const,
+      };
+      const port = createPort(members, {
+        readManagementOperation: jest.fn()
+          .mockResolvedValueOnce(success(retained))
+          .mockResolvedValueOnce(success({ ...retained, invitation: null })),
+        readProjectCapabilities: jest.fn().mockResolvedValue(success({
+          authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+          invitations: true, leave: true, managerResponsibility: true,
+          membershipManagement: true, retirement: true,
+        })),
+        readSnapshot: jest.fn().mockResolvedValue(success({
+          snapshot: {
+            currentMember: members[0], members,
+            project: { authorityGeneration: 4, authorityKind: 'cloud' },
+          },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never)),
+      } as never);
+      const copyText = jest.fn().mockResolvedValue(undefined);
+      const modal = new ProjectManagementModal({} as never, port, {
+        copyText,
+        project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+      });
+
+      modal.onOpen();
+      await flush();
+      await flush();
+      jest.setSystemTime(new Date('2026-09-02T00:00:01.000Z'));
+      modal.contentEl.querySelector<HTMLButtonElement>(
+        '[data-action="copy-member-claim"]',
+      )?.click();
+      await flush();
+
+      expect(port.readManagementOperation).toHaveBeenCalledTimes(2);
+      expect(copyText).not.toHaveBeenCalled();
+      expect(modal.contentEl.textContent)
+        .not.toContain('claudian-cloud-claim:v1:stale-secret');
+      expect(modal.contentEl.querySelector(
+        '[data-action="complete-management-operation"]',
+      )).not.toBeNull();
+      expect(port.completeManagementOperation).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('hides imported-claim actions for an already bound Member', async () => {
@@ -458,7 +583,9 @@ describe('ProjectManagementModal', () => {
       })))),
       readManagementOperation: jest.fn().mockResolvedValue(success({
         action: 'remove-member',
+        completionId: 'completion-pending',
         invitation: null,
+        secretAvailableUntil: null,
         status: 'pending',
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
@@ -475,7 +602,9 @@ describe('ProjectManagementModal', () => {
       } as never)),
       resumeManagementOperation: jest.fn().mockResolvedValue(success({
         action: 'remove-member',
+        completionId: 'completion-retained',
         invitation: null,
+        secretAvailableUntil: null,
         status: 'result-retained',
       })),
     });
@@ -499,7 +628,9 @@ describe('ProjectManagementModal', () => {
     const port = createPort([], {
       readManagementOperation: jest.fn().mockResolvedValue(success({
         action: 'remove-member',
+        completionId: 'completion-offline',
         invitation: null,
+        secretAvailableUntil: null,
         status: 'result-retained',
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue({
@@ -751,7 +882,9 @@ describe('ProjectManagementModal', () => {
     const port = createPort(members, {
       readManagementOperation: jest.fn().mockResolvedValue(success({
         action: 'remove-member',
+        completionId: 'completion-lock',
         invitation: null,
+        secretAvailableUntil: null,
         status: 'pending',
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
@@ -915,7 +1048,9 @@ describe('ProjectManagementModal', () => {
     const port = createPort(members, {
       readManagementOperation: jest.fn().mockResolvedValue(success({
         action: 'create-invitation',
+        completionId: 'completion-invitation',
         invitation: null,
+        secretAvailableUntil: null,
         status: 'pending',
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
@@ -1320,6 +1455,7 @@ describe('ProjectManagementModal', () => {
     'create-manager-offer',
     'cancel-manager-offer',
     'promote-manager',
+    'reissue-member-claim',
     'revoke-member-claim',
   ] as const)('finishes a retained %s result explicitly', async action => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
@@ -1330,7 +1466,13 @@ describe('ProjectManagementModal', () => {
         return success(undefined);
       }),
       readManagementOperation: jest.fn().mockImplementation(async () => success(retained
-        ? { action, invitation: null, status: 'result-retained' as const }
+        ? {
+          action,
+          completionId: `completion-${action}`,
+          invitation: null,
+          secretAvailableUntil: null,
+          status: 'result-retained' as const,
+        }
         : null)),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
@@ -1360,6 +1502,7 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      completionId: `completion-${action}`,
       projectId: 'project-alpha',
     });
   });

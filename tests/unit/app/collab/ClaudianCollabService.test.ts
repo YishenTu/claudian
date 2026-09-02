@@ -24,6 +24,69 @@ async function admitProjectRecovery(
   await operation();
 }
 
+describe('ClaudianCollabService authority transfer routing', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('forwards cancellation through source route activation', async () => {
+    const service = new ClaudianCollabService({
+      getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
+      obsidianConfigDirectory: '.obsidian',
+      vaultRoot: '/tmp/claudian-authority-transfer-route-cancellation',
+    });
+    const projectId = 'project-source-route-cancellation';
+    service.bindAuthorityTransferModule({
+      sourceActiveService: jest.fn(() => ({ kind: 'source-active-service' })),
+    } as never);
+    jest.spyOn(service, 'inspectAuthority').mockResolvedValue({
+      database: {
+        read: async (operation: (connection: unknown) => Promise<unknown>) => operation({}),
+      },
+      projects: {
+        get: async () => ({
+          authorityGeneration: 1,
+          hostMemberId: 'member-host',
+          projectId,
+        }),
+      },
+    } as never);
+    jest.spyOn(service.lanHost, 'isProjectRunning').mockReturnValue(false);
+    let releaseRoute!: () => void;
+    let enteredRoute!: () => void;
+    const routeGate = new Promise<void>(resolve => { releaseRoute = resolve; });
+    const routeStarted = new Promise<void>(resolve => { enteredRoute = resolve; });
+    let routeSignal: AbortSignal | undefined;
+    jest.spyOn(service.lanHost, 'startAuthorityTransferRoute').mockImplementation(async (
+      _registration,
+      options = {},
+    ) => {
+      routeSignal = options.signal;
+      enteredRoute();
+      await routeGate;
+      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+      return {} as never;
+    });
+    const stopRoute = jest.spyOn(service.lanHost, 'stopAuthorityTransferRoute')
+      .mockResolvedValue(undefined);
+    const controller = new AbortController();
+    const activation = service.activateAuthorityTransferSourceRoute(
+      projectId,
+      'https://192.168.1.10:54545',
+      { signal: controller.signal },
+    );
+    await routeStarted;
+
+    controller.abort();
+    releaseRoute();
+
+    await expect(activation).rejects.toMatchObject({ code: 'cancelled' });
+    expect(routeSignal).toBe(controller.signal);
+    expect(stopRoute).not.toHaveBeenCalled();
+  });
+});
+
 describe('ClaudianCollabService retirement recovery', () => {
   afterEach(() => {
     jest.restoreAllMocks();

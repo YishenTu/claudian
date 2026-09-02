@@ -1,4 +1,10 @@
-import { COLLAB_CHECKPOINT_ARTIFACT_LIMITS, COLLAB_LIMITS, collabCloudCapabilityDocument, type CollabTicketDetail } from '@claudian-collab/protocol';
+import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
+  COLLAB_LIMITS,
+  collabCloudCapabilityDocument,
+  collabCloudSuccessEnvelope,
+  type CollabTicketDetail,
+} from '@claudian-collab/protocol';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
@@ -20,7 +26,7 @@ import {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
-import type { CloudAuthorityHttpResponse, CloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import type { CloudAuthorityHttpRequest, CloudAuthorityHttpResponse, CloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { type CollabCloudProjectSnapshot, type CollabLanProjectSnapshot, type CollabProjectSnapshot, isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -702,9 +708,11 @@ describe('CollabClientProjection', () => {
     const requested = deferred<void>();
     const response = deferred<CloudAuthorityHttpResponse>();
     const createSocket = jest.fn(() => new FakeEventSocket());
+    let requestCount = 0;
     const projection = new CollabClientProjection(store, controlPort(), {
       ...projectionOptions(),
-      authoritySessions: cloudEventSessions(createSocket, async () => {
+      authoritySessions: cloudEventSessions(createSocket, async input => {
+        if (requestCount++ > 0) return cloudSnapshotResponse(input);
         requested.resolve();
         return response.promise;
       }),
@@ -937,7 +945,9 @@ function lanEventSessions(createSocket: ProjectEventClientSocketFactory): Collab
 
 function cloudEventSessions(
   createSocket: NonNullable<CloudProjectEventClientOptions['createSocket']>,
-  request: CloudAuthorityHttpTransport = async () => cloudCapabilities(),
+  request: CloudAuthorityHttpTransport = async input => (
+    input.method === 'GET' ? cloudCapabilities() : cloudSnapshotResponse(input)
+  ),
 ): CollabAuthoritySessionFactory {
   return new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
     createEventClient: (input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation, { createSocket }),
@@ -947,7 +957,7 @@ function cloudEventSessions(
 
 function cloudCapabilities(): CloudAuthorityHttpResponse {
   return {
-    body: collabCloudCapabilityDocument(['project-events'], {
+    body: collabCloudCapabilityDocument(['project-events', 'project-snapshot'], {
       maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
       maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
       maxCheckpointRepositoryBundleBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
@@ -960,6 +970,22 @@ function cloudCapabilities(): CloudAuthorityHttpResponse {
       maxJsonPayloadUtf8Bytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
       maxRepositoryBytes: 1_024,
     }),
+    contentType: 'application/json',
+    status: 200,
+  };
+}
+
+function cloudSnapshotResponse(input: CloudAuthorityHttpRequest): CloudAuthorityHttpResponse {
+  const snapshot = cloudSnapshot();
+  const { authorityKind: _authorityKind, mainOid, ...project } = snapshot.project;
+  return {
+    body: collabCloudSuccessEnvelope(
+      (input.body as { readonly requestId: string }).requestId,
+      {
+        ...snapshot,
+        project: { ...project, authorityGeneration: 1, expectedMainOid: mainOid },
+      },
+    ),
     contentType: 'application/json',
     status: 200,
   };
