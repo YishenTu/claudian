@@ -440,6 +440,7 @@ describe('CollabPublicationService reconnect', () => {
         ...input,
         headers: { ...input.headers, 'x-test-ingress': 'private-fixture' },
       }),
+      requestIdFactory: () => 'response-snapshot',
     });
     const projects = {
       loadMembership: jest.fn().mockResolvedValue(membership),
@@ -486,6 +487,7 @@ describe('CollabPublicationService reconnect', () => {
         '/collab/capabilities',
         `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         '/collab/capabilities',
+        `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         `/v3/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {

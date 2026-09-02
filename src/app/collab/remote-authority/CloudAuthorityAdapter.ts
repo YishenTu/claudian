@@ -242,6 +242,12 @@ function controlIntegrityError(reason: string): CollabError {
   });
 }
 
+function assertResponseRequestId(actual: string, expected: string): void {
+  if (actual !== expected) {
+    throw controlIntegrityError('cloud-control-response-request-id-mismatch');
+  }
+}
+
 function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
   if (
     response.contentType === null
@@ -432,11 +438,12 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     const route = collabCloudProjectOperationRoute(projectId, 'getProjectSnapshot');
     const decoded = COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC.decodeRequest({ projectId });
     if (decoded.status !== 'ok') throw decoded.error;
+    const requestId = this.requestId();
     const response = await this.request({
       body: {
         data: decoded.value,
         protocolVersion: COLLAB_PROTOCOL_VERSION,
-        requestId: this.requestId(),
+        requestId,
       },
       headers: {},
       method: route.method,
@@ -446,9 +453,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     assertJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
+      assertResponseRequestId(envelope.requestId, requestId);
       throw new CollabError(envelope.error);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
+    assertResponseRequestId(envelope.requestId, requestId);
     const snapshot = decodeCloudAuthorityProjectSnapshot(envelope.data);
     if (
       snapshot.project.id !== projectId
@@ -724,11 +733,12 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     const decoded = codec.decodeRequest(input);
     if (decoded.status !== 'ok') throw decoded.error;
     const route = collabCloudProjectOperationRoute(input.projectId, operation);
+    const requestId = this.requestId();
     const response = await this.request({
       body: {
         data: decoded.value,
         protocolVersion: COLLAB_PROTOCOL_VERSION,
-        requestId: this.requestId(),
+        requestId,
       },
       headers: {},
       method: route.method,
@@ -738,9 +748,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     assertJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
+      assertResponseRequestId(envelope.requestId, requestId);
       throw new CloudAuthorityRejection(envelope.error);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
+    assertResponseRequestId(envelope.requestId, requestId);
     return codec.decodeResponse(envelope.data);
   }
 
@@ -1062,6 +1074,12 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       this.request,
       this.requestId,
     );
+    try {
+      await control.readSnapshot(projectId, options);
+    } catch (error) {
+      control.dispose();
+      throw error;
+    }
     let eventConnection: { dispose(): void } | null = null;
     return {
       authorityKind: 'cloud',

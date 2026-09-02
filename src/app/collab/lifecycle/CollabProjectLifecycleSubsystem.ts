@@ -179,6 +179,33 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runCloudManagement<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'cloud-management',
+      ['manager-responsibility'],
+      'continuation',
+      operation,
+    );
+  }
+
+  runManagerResponsibility<T>(
+    projectId: CollabProjectId,
+    mode: CollabProjectLifecycleAdmissionMode,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'manager-responsibility',
+      ['cloud-management'],
+      mode,
+      operation,
+    );
+  }
+
   runRetirementAdoption<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
@@ -233,18 +260,41 @@ export class CollabProjectLifecycleSubsystem {
         }
         if (state === 'nonterminal') pendingOwners.push(owner.name);
       }
-      if (pendingOwners.length > 1) {
+      const isCloudManagementResponsibilityPair = pendingOwners.length === 2
+        && pendingOwners.includes('cloud-management')
+        && pendingOwners.includes('manager-responsibility');
+      const permitsCloudManagementResponsibilityPair = isCloudManagementResponsibilityPair
+        && predecessorOwnerNames.length === 1
+        && (
+          (ownerName === 'manager-responsibility'
+            && predecessorOwnerNames[0] === 'cloud-management')
+          || (ownerName === 'cloud-management'
+            && mode === 'continuation'
+            && predecessorOwnerNames[0] === 'manager-responsibility')
+        );
+      if (pendingOwners.length > 1 && !permitsCloudManagementResponsibilityPair) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
           recoveryActions: ['resume'],
           safeContext: { reason: 'lifecycle-owner-ambiguous' },
         });
       }
-      const pendingOwner = pendingOwners[0];
+      const unexpectedOwner = pendingOwners.find(name => (
+        name !== ownerName && !predecessorOwnerNames.includes(name)
+      ));
+      if (unexpectedOwner !== undefined) {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          recoveryActions: ['resume'],
+          safeContext: { reason: 'lifecycle-owner-pending' },
+        });
+      }
       if (
-        pendingOwner !== undefined
-        && pendingOwner !== ownerName
-        && !predecessorOwnerNames.includes(pendingOwner)
+        ownerName === 'cloud-management'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'manager-responsibility'
+        && pendingOwners.includes('manager-responsibility')
+        && !pendingOwners.includes(ownerName)
       ) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
@@ -252,7 +302,7 @@ export class CollabProjectLifecycleSubsystem {
           safeContext: { reason: 'lifecycle-owner-pending' },
         });
       }
-      if (pendingOwner === ownerName && mode === 'operation') {
+      if (pendingOwners.includes(ownerName) && mode === 'operation') {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
           recoveryActions: ['resume'],
@@ -284,18 +334,16 @@ export class CollabProjectLifecycleSubsystem {
       readManagementOperation: (...args) => membership.readManagementOperation(...args),
       resumeManagementOperation: (...args) => membership.resumeManagementOperation(...args),
       completeManagementOperation: (...args) => membership.completeManagementOperation(...args),
-      cancelManagerResponsibilityOffer: (request, operationOptions) => this.runExclusive(
+      cancelManagerResponsibilityOffer: (request, operationOptions) => this.runManagerResponsibility(
         request.projectId,
-        'manager-responsibility',
         'operation',
         () => membership.cancelManagerResponsibilityOffer(request, operationOptions),
       ),
       createInvitation: (projectId, operationOptions) => (
         membership.createInvitation(projectId, operationOptions)
       ),
-      createManagerResponsibilityOffer: (request, operationOptions) => this.runExclusive(
+      createManagerResponsibilityOffer: (request, operationOptions) => this.runManagerResponsibility(
         request.projectId,
-        'manager-responsibility',
         'operation',
         () => membership.createManagerResponsibilityOffer(request, operationOptions),
       ),

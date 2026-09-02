@@ -398,6 +398,7 @@ export interface CollabAuthorityTransferEntryPort {
     input: CollabBeginCloudToLanTransferRequest & Readonly<{ readonly operationIntentId: string }>,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferHandle>;
+  beginClose(): void;
   close(): Promise<void>;
   cancelCloudToLanTransfer(
     handle: CollabCloudToLanTransferHandle,
@@ -2024,23 +2025,24 @@ class CollabFeatureServiceCore {
     if (this.#closePromise) return this.#closePromise;
     this.#closing = true;
     this.operationAdmission.beginClose();
+    this.options.authorityTransfer.beginClose();
     this.#activeOperationController?.abort();
     this.#lifecycleRecoveryController?.abort();
     const lifecycleRecoveryDrain = this.#lifecycleRecoveryPromise?.catch(() => undefined)
       ?? Promise.resolve();
-    let lifecycleRecoveryClose: Promise<void>;
-    try {
-      lifecycleRecoveryClose = Promise.resolve(this.options.lifecycleRecovery.close())
-        .catch(() => undefined);
-    } catch {
-      lifecycleRecoveryClose = Promise.resolve();
-    }
     const close = (async () => {
       await this.options.cloudEntry.close();
       await this.operationAdmission.drain();
       await lifecycleRecoveryDrain;
-      await lifecycleRecoveryClose;
-      await this.options.authorityTransfer.close();
+      await Promise.resolve()
+        .then(() => this.options.lifecycleRecovery.close())
+        .catch(() => undefined);
+      const closeErrors: unknown[] = [];
+      try {
+        await this.options.authorityTransfer.close();
+      } catch (error) {
+        closeErrors.push(error);
+      }
       await Promise.resolve()
         .then(() => this.options.retirement.close())
         .catch(() => undefined);
@@ -2048,12 +2050,19 @@ class CollabFeatureServiceCore {
         .then(() => this.options.hostTransfer.close())
         .catch(() => undefined);
       this.disposed = true;
-      this.#publicationSubscription.dispose();
+      try {
+        this.#publicationSubscription.dispose();
+      } catch (error) {
+        closeErrors.push(error);
+      }
       try {
         await this.options.publication.close();
+      } catch (error) {
+        closeErrors.push(error);
       } finally {
         this.listeners.clear();
       }
+      if (closeErrors.length > 0) throw closeErrors[0];
     })();
     this.#closePromise = close;
     return close;

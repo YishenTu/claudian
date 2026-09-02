@@ -315,6 +315,91 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(blockedRetirement).not.toHaveBeenCalled();
   });
 
+  it('keeps Manager responsibility independent from Cloud management without opening other lifecycle lanes', async () => {
+    let responsibilityPending = false;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        { inspect: async () => 'nonterminal', name: 'cloud-management' },
+        {
+          inspect: async () => responsibilityPending ? 'nonterminal' : 'absent',
+          name: 'manager-responsibility',
+        },
+      ],
+      recoveryStages: [],
+    });
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'operation',
+      async () => 'started',
+    )).resolves.toBe('started');
+
+    responsibilityPending = true;
+    const reconcileResponsibility = jest.fn().mockResolvedValue('reconciled');
+
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'continuation',
+      reconcileResponsibility,
+    )).resolves.toBe('reconciled');
+    expect(reconcileResponsibility).toHaveBeenCalledTimes(1);
+
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'operation',
+      async () => 'must-not-start',
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-recovery-required' },
+    });
+
+    responsibilityPending = false;
+    const retire = jest.fn().mockResolvedValue('retired');
+    await expect(subsystem.runExclusive(
+      'project-alpha',
+      'retirement',
+      'operation',
+      retire,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it('continues an existing Cloud management intent beside responsibility without starting behind responsibility alone', async () => {
+    let cloudManagementPending = true;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        { inspect: async () => 'nonterminal', name: 'manager-responsibility' },
+      ],
+      recoveryStages: [],
+    });
+    const continueCloudManagement = jest.fn().mockResolvedValue('continued');
+
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      continueCloudManagement,
+    )).resolves.toBe('continued');
+    expect(continueCloudManagement).toHaveBeenCalledTimes(1);
+
+    cloudManagementPending = false;
+    const startCloudManagement = jest.fn().mockResolvedValue('started');
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      startCloudManagement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(startCloudManagement).not.toHaveBeenCalled();
+  });
+
   it('routes every locally stateful lifecycle mutation through the Project arbiter', async () => {
     const hostTransfer = {
       acceptHostTransfer: jest.fn().mockResolvedValue(undefined),

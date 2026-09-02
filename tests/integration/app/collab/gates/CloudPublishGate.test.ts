@@ -127,6 +127,34 @@ function capabilityLimits() {
   };
 }
 
+function projectSnapshot(actor: typeof ACTORS[number], mainOid: string) {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: actor,
+    id: actor,
+    personalRef: collabMemberRef(actor),
+    role: actor === ACTORS[0] ? 'manager' as const : 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 0,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 1,
+      createdAt: CREATED_AT,
+      expectedMainOid: mainOid,
+      id: PROJECT_ID,
+      mainRef: COLLAB_MAIN_REF,
+      name: 'Cloud Publish Gate',
+    },
+    ticketHighlights: [],
+  };
+}
+
 async function startGateServer(repository: RepositoryFixture): Promise<GateServer> {
   const attempts = new Map<string, string[]>();
   const errors: string[] = [];
@@ -145,6 +173,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         writeJson(response, 200, collabCloudCapabilityDocument([
           'git-receive-pack-personal-ref',
           'git-upload-pack',
+          'project-snapshot',
           'requests',
         ], capabilityLimits()));
         return;
@@ -173,6 +202,17 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
           { ...repository, executablePath: GIT_EXECUTABLE, remoteUser: actor },
           pathname.slice(prefix.length),
         );
+        return;
+      }
+      if (match.kind === 'project-operation' && match.operation === 'getProjectSnapshot') {
+        const envelope = decodeCollabProtocolEnvelope(
+          JSON.parse((await readBody(request)).toString('utf8')) as unknown,
+        );
+        if (envelope.status !== 'ok') throw new Error('snapshot-envelope-invalid');
+        writeJson(response, 200, collabCloudSuccessEnvelope(
+          envelope.value.requestId,
+          projectSnapshot(actor as typeof ACTORS[number], repository.mainOid),
+        ));
         return;
       }
       if (match.kind === 'project-operation' && match.operation === 'ensureMyRequest') {

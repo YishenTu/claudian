@@ -54,9 +54,9 @@ describe('Cloud membership management', () => {
       await fixture.seed(client.foundation);
       const at = fixture.invitation.createdAt;
       await client.foundation.local.projects.saveProjectDocument(PROJECT_ID, 'cloud-management-intent', {
-        schemaVersion: 1, kind: 'cloud-management-intent', projectId: PROJECT_ID, memberId: MEMBER_ID,
+        schemaVersion: 1, kind: 'cloud-management-intent', completionId: 'completion-prior-user-invitation', projectId: PROJECT_ID, memberId: MEMBER_ID,
         authorityGeneration: 7, serverUrl: fixture.serverUrl, phase: 'submitted', operation: 'createProjectInvitation',
-        request: { projectId: PROJECT_ID, idempotencyKey: 'prior-user-invitation', expectedManagerSetGeneration: 8 }, response: null, createdAt: at, updatedAt: at,
+        request: { projectId: PROJECT_ID, idempotencyKey: 'prior-user-invitation', expectedManagerSetGeneration: 9 }, response: null, createdAt: at, updatedAt: at,
       });
       const userIntent = await readFile(fixture.intentPath, 'utf8');
       await client.feature.readSnapshot(PROJECT_ID);
@@ -73,6 +73,27 @@ describe('Cloud membership management', () => {
       expect(fixture.acknowledgements).toEqual([receipt.request, receipt.request]);
       expect(JSON.parse(await readFile(fixture.receiptPath, 'utf8'))).toMatchObject({ phase: 'settled', offer: { state: 'acknowledged', revision: 2 } });
       expect(await readFile(fixture.intentPath, 'utf8')).toBe(userIntent);
+      const firstResume = await client.feature.resumeManagementOperation(PROJECT_ID);
+      expect(firstResume).toMatchObject({ status: 'recovery-required' });
+      expect(fixture.requests).toHaveLength(1);
+      const resumed = await client.feature.resumeManagementOperation(PROJECT_ID);
+      expect(resumed).toMatchObject({
+        status: 'success',
+        value: {
+          action: 'create-invitation',
+          status: 'result-retained',
+        },
+      });
+      if (resumed.status !== 'success') throw new Error('Expected retained management result');
+      await expect(client.feature.completeManagementOperation({
+        completionId: resumed.value.completionId,
+        projectId: PROJECT_ID,
+      })).resolves.toMatchObject({ status: 'success' });
+      await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(JSON.parse(await readFile(fixture.receiptPath, 'utf8'))).toMatchObject({
+        phase: 'settled',
+        offer: { state: 'acknowledged', revision: 2 },
+      });
       expect(fixture.failures).toEqual([]);
     } finally { await client.close(); await fixture.close(); }
   });
@@ -131,7 +152,9 @@ describe('Cloud membership management', () => {
       if (state === 'retained') await client.feature.reissueMemberClaim(request);
       const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(fixture.claim.expiresAt) + 1);
       try {
-        const expectedValue = state === 'retained' ? null : { status: 'pending', invitation: null };
+        const expectedValue = state === 'retained'
+          ? { status: 'result-retained', invitation: null }
+          : { status: 'pending', invitation: null };
         await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({
           status: 'success', value: expectedValue,
         });
@@ -521,7 +544,8 @@ describe('Cloud membership management', () => {
       await client.close();
       client = fixture.client();
 
-      await expect(client.feature.resumeManagementOperation(PROJECT_ID)).resolves.toEqual({
+      const resumed = await client.feature.resumeManagementOperation(PROJECT_ID);
+      expect(resumed).toMatchObject({
         status: 'success',
         value: {
           action: 'revoke-invitation',
@@ -529,13 +553,17 @@ describe('Cloud membership management', () => {
           status: 'result-retained',
         },
       });
+      if (resumed.status !== 'success') throw new Error('Expected retained management result');
       expect(fixture.revocations).toEqual([submitted.request, submitted.request]);
       await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({
         status: 'success',
         value: { action: 'revoke-invitation', status: 'result-retained' },
       });
       await expect(access(fixture.intentPath)).resolves.toBeUndefined();
-      await expect(client.feature.completeManagementOperation({ projectId: PROJECT_ID }))
+      await expect(client.feature.completeManagementOperation({
+        completionId: resumed.value.completionId,
+        projectId: PROJECT_ID,
+      }))
         .resolves.toMatchObject({ status: 'success' });
       await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally { await client.close(); await fixture.close(); }
@@ -590,14 +618,15 @@ describe('Cloud membership management', () => {
       try {
         const result = await client.feature.readManagementOperation(PROJECT_ID);
         const expectedPending = expect.objectContaining({ status: 'pending', invitation: null });
-        expect(result).toEqual({ status: 'success', value: state === 'retained' ? null : expectedPending });
+        const expectedRetained = expect.objectContaining({ status: 'result-retained', invitation: null });
+        expect(result).toEqual({ status: 'success', value: state === 'retained' ? expectedRetained : expectedPending });
       } finally { clock.mockRestore(); }
       expect(fixture.requests).toHaveLength(state === 'retained' ? 2 : 1);
       const present = await access(fixture.intentPath).then(() => true, error => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
         throw error;
       });
-      expect(present).toBe(state === 'pending');
+      expect(present).toBe(true);
     } finally { await client.close(); await fixture.close(); }
   });
 
@@ -616,7 +645,10 @@ describe('Cloud membership management', () => {
       expect(state.value).toMatchObject({ action: 'create-invitation', status: 'result-retained', invitation: { expiresAt: fixture.invitation.expiresAt } });
       expect(state.value).not.toHaveProperty('operationId');
       await expect(access(fixture.intentPath)).resolves.toBeUndefined();
-      await expect(client.feature.completeManagementOperation({ projectId: PROJECT_ID }))
+      await expect(client.feature.completeManagementOperation({
+        completionId: state.value.completionId,
+        projectId: PROJECT_ID,
+      }))
         .resolves.toMatchObject({ status: 'success' });
       await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(fixture.requests).toHaveLength(2);
@@ -736,8 +768,13 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
         })));
         return;
       }
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const envelope = decodeCollabProtocolEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      assert.equal(envelope.status, 'ok');
+      if (envelope.status !== 'ok') throw new Error('Invalid fixture request');
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'getProjectSnapshot').target) {
-        response.end(JSON.stringify(collabCloudSuccessEnvelope('snapshot', {
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
           ...snapshot,
           currentMember: { ...snapshot.currentMember, role: currentRole },
           members: snapshot.members.map(snapshotMember => snapshotMember.id === MEMBER_ID
@@ -748,7 +785,7 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
       }
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'listProjectMembers').target) {
         if (managerSetGeneration === 10 && options.blockBarrier) { request.socket.destroy(); return; }
-        response.end(JSON.stringify(collabCloudSuccessEnvelope('members', {
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
           managerSetGeneration, projectId: PROJECT_ID,
           members: [{ bindingState: 'bound', displayName: 'Alice', importedClaimGeneration: null,
             importedClaimState: 'not-applicable', memberId: MEMBER_ID, membershipRevision: 4, role: currentRole },
@@ -762,17 +799,12 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
         return;
       }
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'listProjectInvitations').target) {
-        response.end(JSON.stringify(collabCloudSuccessEnvelope('invitations', {
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
           managerSetGeneration: 9, projectId: PROJECT_ID,
           invitations: [{ createdAt, expiresAt: invitation.expiresAt, invitationId: 'invitation-existing', revision: 5, state: 'active', terminalAt: null }],
         })));
         return;
       }
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const envelope = decodeCollabProtocolEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      assert.equal(envelope.status, 'ok');
-      if (envelope.status !== 'ok') throw new Error('Invalid fixture request');
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'acknowledgeManagerResponsibility').target) {
         const decoded = collabControlOperationCodec('acknowledgeManagerResponsibility').decodeRequest(envelope.value.data);
         if (decoded.status !== 'ok') throw decoded.error;

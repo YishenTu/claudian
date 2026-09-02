@@ -6,6 +6,7 @@ import type { CloudMembershipBinding } from '@/app/collab/remote-authority/Colla
 interface CloudManagementIntentBase extends CloudMembershipBinding {
   readonly schemaVersion: 1;
   readonly kind: 'cloud-management-intent';
+  readonly completionId: string;
   readonly phase: 'prepared' | 'submitted' | 'result-retained';
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -22,7 +23,7 @@ export type CloudManagementIntent = {
 }[CloudManagementMutation];
 
 export function decodeCloudManagementIntent(value: unknown): CloudManagementIntent {
-  const keys = ['schemaVersion', 'kind', 'operation', 'phase', 'request', 'response', 'createdAt', 'updatedAt', 'projectId', 'serverUrl', 'memberId', 'authorityGeneration'];
+  const keys = ['schemaVersion', 'kind', 'completionId', 'operation', 'phase', 'request', 'response', 'createdAt', 'updatedAt', 'projectId', 'serverUrl', 'memberId', 'authorityGeneration'];
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) {
     throw new TypeError('Invalid Cloud management intent');
@@ -30,6 +31,7 @@ export function decodeCloudManagementIntent(value: unknown): CloudManagementInte
   const input = value as Record<string, unknown>;
   if (input.schemaVersion !== 1 || input.kind !== 'cloud-management-intent'
     || !MUTATIONS.some(operation => operation === input.operation)
+    || typeof input.completionId !== 'string' || !/^[A-Za-z0-9-]{1,128}$/u.test(input.completionId)
     || !isCollabProjectId(input.projectId) || !isCollabMemberId(input.memberId)
     || typeof input.authorityGeneration !== 'number' || !Number.isSafeInteger(input.authorityGeneration) || input.authorityGeneration < 1
     || typeof input.serverUrl !== 'string'
@@ -85,7 +87,7 @@ export function decodeCloudManagementIntent(value: unknown): CloudManagementInte
   const updatedAt = timestamp(input.updatedAt);
   if (updatedAt < createdAt) throw new TypeError('Invalid Cloud management time');
   return {
-    authorityGeneration: input.authorityGeneration, createdAt, kind: input.kind, memberId: input.memberId,
+    authorityGeneration: input.authorityGeneration, completionId: input.completionId, createdAt, kind: input.kind, memberId: input.memberId,
     operation: input.operation, phase: input.phase, projectId: input.projectId, request: request.value,
     response, schemaVersion: 1, serverUrl: validateCloudServerUrl(input.serverUrl, 'serverUrl'), updatedAt,
   } as CloudManagementIntent;

@@ -6,8 +6,11 @@ import type {
   CollabFeaturePort,
   CollabInvitationSummaryView,
   CollabInvitationView,
+  CollabManagementOperationView,
 } from '@/core/collab';
 import { t } from '@/i18n/i18n';
+
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export type ProjectInvitationModalPort = Pick<
   CollabFeaturePort,
@@ -35,11 +38,13 @@ export class ProjectInvitationModal extends Modal {
   #invitation: CollabInvitationView | null = null;
   #invitations: readonly CollabInvitationSummaryView[] = [];
   #managementReadFailed = false;
+  #managementSlotOccupied = false;
   #opened = false;
   #operationGeneration = 0;
   #operationPending = false;
   #pendingCreation = false;
-  #retainedResult = false;
+  #retainedCompletionId: string | null = null;
+  #secretExpiryTimer: number | null = null;
   #status: InvitationStatus = null;
   readonly #port: ProjectInvitationModalPort;
   readonly #options: ProjectInvitationModalOptions;
@@ -55,15 +60,17 @@ export class ProjectInvitationModal extends Modal {
   }
 
   onOpen(): void {
+    this.#clearSecretExpiryTimer();
     this.#abortController = new AbortController();
     this.#invitation = null;
     this.#invitations = [];
     this.#managementReadFailed = false;
+    this.#managementSlotOccupied = false;
     this.#opened = true;
     this.#operationGeneration += 1;
     this.#operationPending = false;
     this.#pendingCreation = false;
-    this.#retainedResult = false;
+    this.#retainedCompletionId = null;
     this.#status = null;
     this.setTitle(t('collab.access.invitations'));
     this.modalEl.classList.add('claudian-collab-project-invitation-modal');
@@ -79,6 +86,7 @@ export class ProjectInvitationModal extends Modal {
     this.#opened = false;
     this.#operationGeneration += 1;
     this.#abortController.abort();
+    this.#clearSecretExpiryTimer();
     this.contentEl.replaceChildren();
     this.#options.onClosed?.();
   }
@@ -146,7 +154,7 @@ export class ProjectInvitationModal extends Modal {
   }
 
   async #createInvitation(): Promise<void> {
-    if (this.#operationPending) return;
+    if (this.#operationPending || this.#managementSlotOccupied) return;
     this.#operationPending = true;
     const generation = ++this.#operationGeneration;
     this.#status = null;
@@ -158,34 +166,79 @@ export class ProjectInvitationModal extends Modal {
         : []),
     );
     if (!this.#isCurrent(generation)) return;
-    this.#operationPending = false;
-    if (result.status === 'success') {
+    if (result.status === 'success' && this.#options.authorityKind === 'cloud') {
+      const retained = await this.#port.readManagementOperation(
+        this.#options.projectId,
+        { signal: this.#abortController.signal },
+      );
+      if (!this.#isCurrent(generation)) return;
+      if (
+        retained.status === 'success'
+        && retained.value?.action === 'create-invitation'
+        && retained.value.status === 'result-retained'
+        && retained.value.invitation?.encodedInvitation === result.value.encodedInvitation
+        && retained.value.invitation.expiresAt === result.value.expiresAt
+      ) {
+        this.#applyManagementOperation(retained.value);
+      } else {
+        this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
+      }
+    } else if (result.status === 'success') {
       this.#invitation = result.value;
-      this.#retainedResult = this.#options.authorityKind === 'cloud';
     } else {
       this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
     }
+    this.#operationPending = false;
     this.#render();
   }
 
   async #copyInvitation(): Promise<void> {
     if (!this.#invitation || !this.#options.copyText || this.#operationPending) return;
+    const invitation = this.#invitation;
+    const completionId = this.#retainedCompletionId;
     this.#operationPending = true;
     this.#status = null;
     this.#render();
     try {
-      await this.#options.copyText(this.#invitation.encodedInvitation);
+      if (this.#options.authorityKind === 'cloud' && completionId) {
+        const retained = await this.#port.readManagementOperation(
+          this.#options.projectId,
+          { signal: this.#abortController.signal },
+        );
+        if (!this.#opened || this.#abortController.signal.aborted) return;
+        if (retained.status !== 'success') {
+          this.#clearSecretExpiryTimer();
+          this.#invitation = null;
+          this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
+          return;
+        }
+        this.#applyManagementOperation(retained.value);
+        if (
+          retained.value?.action !== 'create-invitation'
+          || retained.value.status !== 'result-retained'
+          || retained.value.completionId !== completionId
+          || this.#invitation?.encodedInvitation !== invitation.encodedInvitation
+          || this.#invitation.expiresAt !== invitation.expiresAt
+        ) {
+          this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
+          return;
+        }
+      }
+      await this.#options.copyText(invitation.encodedInvitation);
       if (!this.#opened || this.#abortController.signal.aborted) return;
-      if (this.#retainedResult) {
+      if (completionId) {
         const completed = await this.#port.completeManagementOperation(
-          { projectId: this.#options.projectId },
+          {
+            completionId,
+            projectId: this.#options.projectId,
+          },
         );
         if (!this.#opened || this.#abortController.signal.aborted) return;
         if (completed.status !== 'success') {
           this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
           return;
         }
-        this.#retainedResult = false;
+        this.#applyManagementOperation(null);
       }
       this.#status = { kind: 'success', text: t('collab.access.invitationCopied') };
     } catch {
@@ -202,6 +255,7 @@ export class ProjectInvitationModal extends Modal {
   async #revokeInvitation(invitationId?: string): Promise<void> {
     if (
       this.#operationPending
+      || this.#managementSlotOccupied
       || (this.#options.authorityKind === 'lan' && !this.#invitation)
       || (this.#options.authorityKind === 'cloud' && !invitationId)
     ) return;
@@ -252,17 +306,7 @@ export class ProjectInvitationModal extends Modal {
     }
     this.#managementReadFailed = false;
     const retained = operation.value;
-    if (retained?.action === 'create-invitation') {
-      this.#pendingCreation = retained.status === 'pending';
-    }
-    if (
-      retained?.action === 'create-invitation'
-      && retained.status === 'result-retained'
-      && retained.invitation
-    ) {
-      this.#invitation = retained.invitation;
-      this.#retainedResult = true;
-    }
+    this.#applyManagementOperation(retained);
     const listed = await this.#port.listInvitations(
       this.#options.projectId,
       { signal: this.#abortController.signal },
@@ -293,7 +337,7 @@ export class ProjectInvitationModal extends Modal {
         attr: { 'data-action': 'create-invitation', type: 'button' },
         text: t('collab.access.createInvitation'),
       });
-      create.disabled = this.#operationPending || this.#pendingCreation;
+      create.disabled = this.#operationPending || this.#managementSlotOccupied;
       create.addEventListener('click', () => void this.#createInvitation());
     }
     if (this.#pendingCreation) {
@@ -303,6 +347,14 @@ export class ProjectInvitationModal extends Modal {
       });
       resume.disabled = this.#operationPending;
       resume.addEventListener('click', () => void this.#resumeInvitationCreation());
+    }
+    if (this.#retainedCompletionId && !this.#invitation) {
+      const complete = this.contentEl.createEl('button', {
+        attr: { 'data-action': 'complete-invitation', type: 'button' },
+        text: t('collab.access.finishOperation'),
+      });
+      complete.disabled = this.#operationPending;
+      complete.addEventListener('click', () => void this.#completeRetainedInvitation());
     }
     if (this.#invitations.length === 0) {
       heading.insertAdjacentElement('afterend', this.contentEl.createDiv({
@@ -330,7 +382,7 @@ export class ProjectInvitationModal extends Modal {
         });
         revoke.disabled = this.#operationPending
           || this.#managementReadFailed
-          || this.#pendingCreation
+          || this.#managementSlotOccupied
           || invitation.state !== 'active';
         revoke.addEventListener('click', () => void this.#revokeInvitation(
           invitation.invitationId,
@@ -361,12 +413,82 @@ export class ProjectInvitationModal extends Modal {
       this.#render();
       return;
     }
-    this.#pendingCreation = result.value.status === 'pending';
-    if (result.value.status === 'result-retained' && result.value.invitation) {
-      this.#invitation = result.value.invitation;
-      this.#retainedResult = true;
-    }
+    this.#applyManagementOperation(result.value);
     this.#render();
+  }
+
+  async #completeRetainedInvitation(): Promise<void> {
+    const completionId = this.#retainedCompletionId;
+    if (!completionId || this.#invitation || this.#operationPending) return;
+    const generation = ++this.#operationGeneration;
+    this.#operationPending = true;
+    this.#render();
+    const result = await this.#port.completeManagementOperation({
+      completionId,
+      projectId: this.#options.projectId,
+    });
+    if (!this.#isCurrent(generation)) return;
+    this.#operationPending = false;
+    if (result.status !== 'success') {
+      this.#status = { kind: 'error', text: t('collab.access.invitationFailed') };
+      this.#render();
+      return;
+    }
+    this.#applyManagementOperation(null);
+    this.#status = null;
+    await this.#loadCloudInvitations();
+  }
+
+  #applyManagementOperation(
+    operation: CollabManagementOperationView | null,
+  ): void {
+    this.#clearSecretExpiryTimer();
+    this.#invitation = null;
+    this.#pendingCreation = operation?.action === 'create-invitation'
+      && operation.status === 'pending';
+    this.#managementSlotOccupied = operation !== null;
+    this.#retainedCompletionId = null;
+    if (
+      operation?.action !== 'create-invitation'
+      || operation.status !== 'result-retained'
+    ) return;
+    this.#retainedCompletionId = operation.completionId;
+    if (!operation.invitation || !operation.secretAvailableUntil) return;
+    this.#invitation = operation.invitation;
+    this.#scheduleSecretExpiry(
+      operation.completionId,
+      operation.secretAvailableUntil,
+    );
+  }
+
+  #scheduleSecretExpiry(completionId: string, deadline: string): void {
+    const expiresAt = Date.parse(deadline);
+    const remaining = expiresAt - Date.now();
+    if (!Number.isFinite(expiresAt) || remaining <= 0) {
+      this.#redactRetainedInvitation(completionId);
+      return;
+    }
+    this.#secretExpiryTimer = window.setTimeout(() => {
+      this.#secretExpiryTimer = null;
+      if (!this.#opened || this.#retainedCompletionId !== completionId) return;
+      if (Date.now() < expiresAt) {
+        this.#scheduleSecretExpiry(completionId, deadline);
+        return;
+      }
+      this.#redactRetainedInvitation(completionId);
+    }, Math.min(remaining, MAX_TIMER_DELAY_MS));
+  }
+
+  #redactRetainedInvitation(completionId: string): void {
+    if (this.#retainedCompletionId !== completionId) return;
+    this.#invitation = null;
+    this.#render();
+  }
+
+  #clearSecretExpiryTimer(): void {
+    if (this.#secretExpiryTimer === null) return;
+    window.clearTimeout(this.#secretExpiryTimer);
+    this.#secretExpiryTimer = null;
   }
 
   #isCurrent(generation: number): boolean {

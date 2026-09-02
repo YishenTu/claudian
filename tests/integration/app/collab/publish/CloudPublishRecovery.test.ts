@@ -173,7 +173,10 @@ class LostResponseCloudTransport {
   async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
     if (input.method === 'GET') {
       return {
-        body: collabCloudCapabilityDocument(['requests'], capabilityLimits()),
+        body: collabCloudCapabilityDocument([
+          'project-snapshot',
+          'requests',
+        ], capabilityLimits()),
         contentType: 'application/json',
         status: 200,
       };
@@ -182,6 +185,13 @@ class LostResponseCloudTransport {
       readonly data: Readonly<Record<string, unknown>>;
       readonly requestId: string;
     };
+    if (input.url.endsWith('/getProjectSnapshot')) {
+      return {
+        body: collabCloudSuccessEnvelope(envelope.requestId, cloudSnapshot(this.mainOid)),
+        contentType: 'application/json',
+        status: 200,
+      };
+    }
     const intent = String(envelope.data.idempotencyKey);
     this.requestIntents.push(intent);
     if (!this.requestRecord) {
@@ -213,6 +223,34 @@ class LostResponseCloudTransport {
       status: 200,
     };
   }
+}
+
+function cloudSnapshot(mainOid: string) {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: 'Alice',
+    id: ACTOR_ID,
+    personalRef: PERSONAL_REF,
+    role: 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 0,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 1,
+      createdAt: CREATED_AT,
+      expectedMainOid: mainOid,
+      id: PROJECT_ID,
+      mainRef: 'refs/heads/main',
+      name: 'Cloud Project',
+    },
+    ticketHighlights: [],
+  };
 }
 
 class DirectNetwork implements PublishGitNetworkPort {
