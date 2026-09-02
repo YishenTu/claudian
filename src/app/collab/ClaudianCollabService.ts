@@ -120,7 +120,11 @@ import {
 import { RetirementTerminalService } from '@/app/collab/retirement/RetirementTerminalService';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import type { CollabRetirementResult, CollabRetireProjectRequest } from '@/core/collab';
+import type {
+  CollabOperationOptions,
+  CollabRetirementResult,
+  CollabRetireProjectRequest,
+} from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
@@ -201,6 +205,10 @@ function collabServiceError(
         : [],
     safeContext: { reason, ...safeContext },
   });
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
 }
 
 function environmentPath(environment: NodeJS.ProcessEnv): string | undefined {
@@ -433,12 +441,15 @@ export class ClaudianCollabService {
   async activateAuthorityTransferSourceRoute(
     projectId: CollabProjectId,
     expectedEndpoint?: string,
+    options: CollabOperationOptions = {},
   ): Promise<() => Promise<void>> {
     this.#assertOpen();
+    throwIfCancelled(options.signal);
     if (this.lanHost.isProjectRunning(projectId)) {
       return async () => undefined;
     }
     const authority = await this.inspectAuthority(projectId);
+    throwIfCancelled(options.signal);
     if (!authority) {
       throw collabServiceError(
         'not-initialized',
@@ -446,6 +457,7 @@ export class ClaudianCollabService {
       );
     }
     const project = await authority.database.read(connection => authority.projects.get(connection));
+    throwIfCancelled(options.signal);
     if (!project || project.projectId !== projectId) {
       throw collabServiceError(
         'not-initialized',
@@ -473,7 +485,7 @@ export class ClaudianCollabService {
       projectId,
       service,
       state: 'source-active',
-    });
+    }, options);
     return () => this.lanHost.stopAuthorityTransferRoute(projectId, 'source-active');
   }
 

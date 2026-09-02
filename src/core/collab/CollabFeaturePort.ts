@@ -288,8 +288,12 @@ export interface CollabMemberSummaryView {
 
 export interface CollabManagementOperationView {
   readonly action: 'create-invitation' | 'revoke-invitation' | 'demote-manager' | 'remove-member' | 'create-manager-offer' | 'cancel-manager-offer' | 'promote-manager' | 'reissue-member-claim' | 'revoke-member-claim';
-  readonly status: 'pending' | 'result-retained';
+  /** Opaque local result identity; it is never the authority idempotency key. */
+  readonly completionId: string;
   readonly invitation: CollabInvitationView | null;
+  /** Last instant at which a retained invitation or claim secret may be presented. */
+  readonly secretAvailableUntil: CollabIsoTimestamp | null;
+  readonly status: 'pending' | 'result-retained';
 }
 
 /** LAN revokes its singleton invitation; Cloud requires the selected invitation identity. */
@@ -300,6 +304,8 @@ export type CollabRevokeInvitationRequest = CollabProjectId | {
 
 export interface CollabCompleteManagementOperationRequest {
   readonly projectId: CollabProjectId;
+  /** Required for Cloud compare-and-remove; omitted for transient LAN abandonment. */
+  readonly completionId?: string;
 }
 
 export interface CollabImportedMemberClaimRequest {

@@ -10,11 +10,15 @@ import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/Host
 import type {
   CollabProjectLifecycleDurableOwner,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import type { CloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import type { CloudRetirementIntent } from '@/app/collab/retirement/CloudRetirementIntent';
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';
 import type { RetirementTombstoneRecord } from '@/app/collab/retirement/RetirementTombstoneRecord';
 
 export interface CollabProjectLifecycleOwnerStores {
+  readonly cloudManagementIntents: {
+    load(projectId: CollabProjectId): Promise<CloudManagementIntent | null>;
+  };
   readonly cloudRetirementIntents: {
     load(projectId: CollabProjectId): Promise<CloudRetirementIntent | null>;
   };
@@ -71,6 +75,14 @@ export function createCollabProjectLifecycleDurableOwners(
           : 'absent' as const;
       },
       name: 'host-transfer',
+    }),
+    Object.freeze({
+      inspect: async (projectId: CollabProjectId) => (
+        await stores.cloudManagementIntents.load(projectId)
+          ? 'nonterminal' as const
+          : 'absent' as const
+      ),
+      name: 'cloud-management',
     }),
     Object.freeze({
       inspect: async (projectId: CollabProjectId) => {

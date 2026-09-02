@@ -13,6 +13,7 @@ import {
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
+import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
 import {
   CollabAuthorityTransferOutcomeError,
 } from '@/app/collab/authority-transfer/CollabAuthorityTransferOutcomeError';
@@ -228,6 +229,7 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
     readManagementOperation: jest.fn().mockResolvedValue(null),
     resumeManagementOperation: jest.fn().mockResolvedValue({
       action: 'remove-member',
+      completionId: 'completion-remove-member',
       invitation: null,
       status: 'result-retained',
     }),
@@ -749,7 +751,9 @@ describe('CollabFeatureService', () => {
     const membership = membershipControl();
     const operation = {
       action: 'remove-member' as const,
+      completionId: 'completion-remove-member',
       invitation: null,
+      secretAvailableUntil: null,
       status: 'result-retained' as const,
     };
     membership.readManagementOperation.mockResolvedValue(operation);
@@ -758,7 +762,10 @@ describe('CollabFeatureService', () => {
 
     await expect(service.readManagementOperation('project-alpha'))
       .resolves.toEqual({ status: 'success', value: operation });
-    await expect(service.completeManagementOperation({ projectId: 'project-alpha' }))
+    await expect(service.completeManagementOperation({
+      completionId: operation.completionId,
+      projectId: 'project-alpha',
+    }))
       .resolves.toEqual({ status: 'success', value: undefined });
 
     expect(service.resumeProjectAdmission(suspension)).toBe(true);
@@ -2043,6 +2050,7 @@ describe('CollabFeatureService', () => {
   it('closes required owners in the feature lifecycle order', async () => {
     const hostStarted = deferred<void>();
     const releaseHost = deferred<void>();
+    const recoveryCloseStarted = deferred<void>();
     const releaseRecoveryClose = deferred<void>();
     const order: string[] = [];
     const publish = publication();
@@ -2074,6 +2082,7 @@ describe('CollabFeatureService', () => {
       lifecycleRecovery: {
         close: jest.fn(() => {
           order.push('recovery-close-started');
+          recoveryCloseStarted.resolve();
           return releaseRecoveryClose.promise.then(() => {
             order.push('recovery-close-finished');
           });
@@ -2091,17 +2100,17 @@ describe('CollabFeatureService', () => {
     await hostStarted.promise;
     const closing = service.close();
 
-    expect(order).toEqual(['recovery-close-started']);
+    expect(order).toEqual([]);
     releaseHost.resolve();
     await restoring;
-    await Promise.resolve();
-    expect(order).toEqual(['recovery-close-started', 'admitted-operation']);
+    await recoveryCloseStarted.promise;
+    expect(order).toEqual(['admitted-operation', 'recovery-close-started']);
 
     releaseRecoveryClose.resolve();
     await expect(closing).resolves.toBeUndefined();
     expect(order).toEqual([
-      'recovery-close-started',
       'admitted-operation',
+      'recovery-close-started',
       'recovery-close-finished',
       'authority-transfer',
       'retirement',
@@ -2110,6 +2119,126 @@ describe('CollabFeatureService', () => {
       'publication',
     ]);
     expect(service).not.toHaveProperty('dispose');
+  });
+
+  it('drains a same-turn admitted lifecycle transition before closing its arbiter', async () => {
+    const order: string[] = [];
+    const hostTransfer = {
+      acceptHostTransfer: jest.fn(),
+      cancelHostTransfer: jest.fn(),
+      close: jest.fn(async () => undefined),
+      createHostTransfer: jest.fn(async () => {
+        order.push('transition');
+      }),
+      declineHostTransfer: jest.fn(),
+    };
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: () => {
+        order.push('arbiter-close');
+      },
+      durableOwners: [],
+      hostTransfer,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const service = createService({
+      hostTransfer: lifecycle.hostTransfer,
+      lifecycleRecovery: lifecycle.lifecycleRecovery,
+    });
+
+    const transition = service.createHostTransfer({
+      projectId: 'project-alpha',
+      targetMemberId: 'member-a',
+    });
+    const closing = service.close();
+
+    await expect(transition).resolves.toMatchObject({ status: 'success' });
+    await expect(closing).resolves.toBeUndefined();
+    expect(order).toEqual(['transition', 'arbiter-close']);
+  });
+
+  it('aborts and quiesces a stalled LAN-to-Cloud acceptance before closing its resources', async () => {
+    const cleanupGate = deferred<void>();
+    const underlyingStarted = deferred<AbortSignal>();
+    const module = {
+      acceptLanToCloudTransferTarget: jest.fn((
+        _request,
+        _sourceInput,
+        options: { readonly signal?: AbortSignal } = {},
+      ) => {
+        const signal = options.signal;
+        if (!signal) throw new Error('Missing service-owned acceptance signal');
+        underlyingStarted.resolve(signal);
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => {
+            void cleanupGate.promise.then(() => reject(new CollabError({ code: 'cancelled' })));
+          }, { once: true });
+        });
+      }),
+      assertLanToCloudSourceInstallationOwner: jest.fn(async () => undefined),
+      close: jest.fn(async () => undefined),
+      readLanToCloudSourceProposal: jest.fn(async () => ({
+        proposedByMemberId: 'member-host',
+        request: {
+          expectedAuthorityGeneration: 1,
+          idempotencyKey: 'intent-feature-close',
+          projectId: 'project-alpha',
+          targetUrl: 'https://cloud.example.test/',
+        },
+        status: {
+          phase: 'collecting-readiness',
+          projectId: 'project-alpha',
+          state: 'active',
+          transferId: 'transfer-feature-close',
+        },
+      })),
+    };
+    const localMembership = membership();
+    const entry = new AuthorityTransferEntryService({
+      connectCloud: async () => ({
+        dispose: jest.fn(),
+        projectId: 'project-alpha',
+        serverUrl: 'https://cloud.example.test/',
+        supports: () => true,
+      }) as never,
+      loadMembership: async () => ({
+        ...localMembership,
+        authority: {
+          ...localMembership.authority,
+          endpoint: 'https://192.168.1.10:54545',
+          gitRemoteUrl: 'https://192.168.1.10:54545/v1/git/project-alpha/repository.git',
+          hostCaCertificatePem: 'test-ca',
+          hostCaFingerprint: 'a'.repeat(64),
+        },
+      }),
+      module: module as never,
+    });
+    const service = createService({
+      authorityTransfer: {
+        acceptLanToCloudTransfer: (...args) => entry.acceptLanToCloudTransfer(...args),
+        beginClose: () => entry.beginClose(),
+        close: () => entry.close(),
+      },
+    });
+
+    const accepting = service.acceptLanToCloudTransfer({
+      projectId: 'project-alpha',
+      transferId: 'transfer-feature-close',
+    });
+    const serviceSignal = await underlyingStarted.promise;
+    let closed = false;
+    const closing = service.close().then(() => { closed = true; });
+
+    expect(serviceSignal.aborted).toBe(true);
+    await expect(accepting).resolves.toMatchObject({ status: 'failure' });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    expect(module.close).not.toHaveBeenCalled();
+
+    cleanupGate.resolve();
+    await expect(closing).resolves.toBeUndefined();
+    expect(module.close).toHaveBeenCalledTimes(1);
   });
 
   it('continues feature close when best-effort owners throw synchronously', async () => {
@@ -2135,6 +2264,42 @@ describe('CollabFeatureService', () => {
 
     await expect(service.close()).resolves.toBeUndefined();
     expect(publish.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles remaining teardown after authority transfer close fails and reports it', async () => {
+    const closeError = new Error('authority-transfer-close-failed');
+    const publish = publication();
+    const subscription = { dispose: jest.fn() };
+    publish.subscribeCoordination.mockReturnValue(subscription);
+    const retirement = {
+      close: jest.fn(async () => undefined),
+    };
+    const transfer = {
+      close: jest.fn(async () => {
+        throw closeError;
+      }),
+    };
+    const host = {
+      close: jest.fn(async () => undefined),
+    };
+    const service = createService({
+      authorityTransfer: transfer as never,
+      hostTransfer: host,
+      publication: publish,
+      retirement,
+    });
+    service.subscribe(jest.fn());
+
+    await expect(service.close()).rejects.toBe(closeError);
+
+    expect(retirement.close).toHaveBeenCalledTimes(1);
+    expect(host.close).toHaveBeenCalledTimes(1);
+    expect(subscription.dispose).toHaveBeenCalledTimes(1);
+    expect(publish.close).toHaveBeenCalledTimes(1);
+    const core = service as unknown as {
+      readonly core: { readonly listeners: ReadonlySet<unknown> };
+    };
+    expect(core.core.listeners.size).toBe(0);
   });
 
   it('clears feature listeners when publication close fails', async () => {

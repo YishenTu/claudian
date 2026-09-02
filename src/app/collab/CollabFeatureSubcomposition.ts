@@ -59,6 +59,7 @@ import {
   createCollabProjectLifecycleDurableOwners,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleOwners';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
 import {
   ManagerResponsibilityOperationCoordinator,
@@ -424,9 +425,8 @@ export function createCollabFeatureSubcomposition(
       reconcileSnapshot: (snapshot, assertCurrent) => {
         void requireFeature().runProjectLifecycleTransition(
           snapshot.project.id,
-          () => requireLifecycle().runExclusive(
+          () => requireLifecycle().runManagerResponsibility(
             snapshot.project.id,
-            'manager-responsibility',
             'continuation',
             async () => {
               assertCurrent();
@@ -453,10 +453,15 @@ export function createCollabFeatureSubcomposition(
     },
     {},
     {
-      managerResponsibilityAdmission: (projectId, operation) => (
-        requireLifecycle().runExclusive(
+      cloudManagementAdmission: (projectId, operation) => (
+        requireLifecycle().runCloudManagement(
           projectId,
-          'manager-responsibility',
+          operation,
+        )
+      ),
+      managerResponsibilityAdmission: (projectId, operation) => (
+        requireLifecycle().runManagerResponsibility(
+          projectId,
           'operation',
           operation,
         )
@@ -608,6 +613,13 @@ export function createCollabFeatureSubcomposition(
     closeRecovery: () => acknowledgementWorker.close(),
     durableOwners: createCollabProjectLifecycleDurableOwners(
       {
+        cloudManagementIntents: {
+          load: projectId => foundation.local.projects.loadProjectDocument(
+            projectId,
+            'cloud-management-intent',
+            decodeCloudManagementIntent,
+          ),
+        },
         cloudRetirementIntents: retirementIntents,
         hostTransferRecovery: foundation.local.projects.hostTransferRecovery,
         localCleanup: foundation.local.projects.localCleanup,
@@ -791,8 +803,12 @@ export function createCollabFeatureSubcomposition(
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
   });
   const authorityTransfer = new AuthorityTransferModule({
-    activateLanToCloudSourceRoute: (projectId, expectedEndpoint) => (
-      foundation.activateAuthorityTransferSourceRoute(projectId, expectedEndpoint)
+    activateLanToCloudSourceRoute: (projectId, expectedEndpoint, operationOptions) => (
+      foundation.activateAuthorityTransferSourceRoute(
+        projectId,
+        expectedEndpoint,
+        operationOptions,
+      )
     ),
     assertLanToCloudSourceOwner: (projectId, expectedAuthorityGeneration) => (
       foundation.assertLanToCloudSourceOwner(projectId, expectedAuthorityGeneration)

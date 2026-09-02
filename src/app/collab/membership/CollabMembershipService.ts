@@ -5,6 +5,7 @@ import { type CollabManagerResponsibilityOffer, type CollabMemberId, type Collab
 import { type CollabLocalProjectRepository, isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   CollabProjectLifecycleAdmission,
+  CollabProjectLifecycleAuthorityAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
 import { type CloudManagementIntent, type CloudManagementMutation, decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import type {
@@ -53,6 +54,7 @@ export interface CollabMembershipServiceOptions {
 }
 
 export interface CollabMembershipSafetyContext {
+  readonly cloudManagementAdmission: CollabProjectLifecycleAuthorityAdmission;
   readonly projects: CollabLocalProjectRepository;
   readonly managerResponsibilityAdmission: CollabProjectLifecycleAdmission;
   readonly managerResponsibilityOperations: ManagerResponsibilityOperationCoordinator;
@@ -86,7 +88,11 @@ export class CollabMembershipService {
   ): Promise<CollabInvitationView> {
     const membership = await this.safety.projects.loadMembership(projectId);
     if (membership && isCollabLocalCloudMembership(membership)) {
-      return this.runCloudMutation(projectId, options, () => this.createCloudInvitation(projectId, options));
+      return this.runCloudManagementMutation(
+        projectId,
+        options,
+        () => this.createCloudInvitation(projectId, options),
+      );
     }
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     return this.control.membership('createInvitation', {
@@ -110,7 +116,11 @@ export class CollabMembershipService {
     }
     await this.executeCloudIntent(intent, options);
     intent = await this.loadCloudIntent(projectId);
-    if (intent?.operation !== 'createProjectInvitation' || !intent.response) throw new CollabError({ code: 'invitation-expired' });
+    if (
+      intent?.operation !== 'createProjectInvitation'
+      || !intent.response
+      || retainedSecretExpired(intent.response)
+    ) throw new CollabError({ code: 'invitation-expired' });
     return { encodedInvitation: encodeCloudProjectInvitation({ invitation: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
   }
 
@@ -125,8 +135,8 @@ export class CollabMembershipService {
         if (error instanceof CloudAuthorityRejection) {
           // A completed rejection cannot prove whether the exact idempotent
           // mutation committed. Keep the frozen request until replay recovers
-          // its result. These authenticated reads only classify a synchronized
-          // stale outcome; they never release the intent.
+          // its result. These authenticated reads classify a synchronized
+          // stale outcome but are not operation-specific negative proof.
           await this.readCloudBinding(intent.projectId, options);
           const members = await this.control.cloudMembership('listProjectMembers', { projectId: intent.projectId }, intent, options);
           if (members.projectId !== intent.projectId || !members.members.some(member => member.memberId === intent.memberId)) {
@@ -148,7 +158,7 @@ export class CollabMembershipService {
   }
 
   reissueMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<CollabInvitationView> {
-    return this.runCloudMutation(request.projectId, options, async () => {
+    return this.runCloudManagementMutation(request.projectId, options, async () => {
       let intent = await this.loadCloudIntent(request.projectId);
       if (intent && (intent.operation !== 'reissueTransferredMembershipClaim' || intent.request.memberId !== request.memberId)) throw managementPending();
       if (!intent) {
@@ -156,13 +166,17 @@ export class CollabMembershipService {
       }
       await this.executeCloudIntent(intent, options);
       intent = await this.loadCloudIntent(request.projectId);
-      if (intent?.operation !== 'reissueTransferredMembershipClaim' || !intent.response) throw new CollabError({ code: 'invitation-expired' });
+      if (
+        intent?.operation !== 'reissueTransferredMembershipClaim'
+        || !intent.response
+        || retainedSecretExpired(intent.response)
+      ) throw new CollabError({ code: 'invitation-expired' });
       return { encodedInvitation: encodeCloudMembershipClaimInvitation({ claim: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
     });
   }
 
   revokeMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<void> {
-    return this.runCloudMutation(request.projectId, options, async () => {
+    return this.runCloudManagementMutation(request.projectId, options, async () => {
       let intent = await this.loadCloudIntent(request.projectId);
       if (intent && (intent.operation !== 'revokeTransferredMembershipClaim' || intent.request.memberId !== request.memberId)) throw managementPending();
       if (!intent) intent = await this.prepareCloudMemberClaim('revokeTransferredMembershipClaim', request, options);
@@ -250,7 +264,7 @@ export class CollabMembershipService {
   ): Promise<CloudManagementIntent> {
     const now = new Date().toISOString();
     const intent = decodeCloudManagementIntent({
-      ...binding, createdAt: now, updatedAt: now, kind: 'cloud-management-intent', operation,
+      ...binding, completionId: randomUUID(), createdAt: now, updatedAt: now, kind: 'cloud-management-intent', operation,
       phase: 'prepared', request, response: null, schemaVersion: 1,
     });
     await this.saveCloudIntent(intent);
@@ -276,10 +290,6 @@ export class CollabMembershipService {
       || intent.authorityGeneration !== membership.authority.authorityGeneration) {
       throw new CollabError({ code: 'authority-integrity-error', safeContext: { reason: 'cloud-management-binding-mismatch' } });
     }
-    if ((intent.operation === 'createProjectInvitation' || intent.operation === 'reissueTransferredMembershipClaim') && intent.response && Date.now() >= Math.min(Date.parse(intent.response.expiresAt), Date.parse(intent.response.secretReplayExpiresAt))) {
-      await this.safety.projects.removeProjectDocument(projectId, 'cloud-management-intent');
-      return null;
-    }
     return intent;
   }
 
@@ -296,7 +306,7 @@ export class CollabMembershipService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagementOperationView> {
-    return this.runCloudMutation(projectId, options, async () => {
+    return this.runCloudManagementMutation(projectId, options, async () => {
       let intent = await this.loadCloudIntent(projectId);
       if (!intent) throw new CollabError({ code: 'project-not-found' });
       await this.executeCloudIntent(intent, options);
@@ -312,21 +322,31 @@ export class CollabMembershipService {
     });
   }
 
-  completeManagementOperation(request: CollabCompleteManagementOperationRequest, options: CollabOperationOptions = {}): Promise<void> {
-    return this.runManagement(request.projectId, async () => {
-      const membership = await this.safety.projects.loadMembership(request.projectId);
-      if (!membership || !isCollabLocalCloudMembership(membership)) {
+  async completeManagementOperation(request: CollabCompleteManagementOperationRequest, options: CollabOperationOptions = {}): Promise<void> {
+    const membership = await this.safety.projects.loadMembership(request.projectId);
+    if (!membership || !isCollabLocalCloudMembership(membership)) {
+      return this.runManagement(request.projectId, async () => {
         this.lanManagementIntents.delete(request.projectId);
-        return;
-      }
-      const intent = await this.loadCloudIntent(request.projectId);
-      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
-      if (!intent) return;
-      if (intent.phase !== 'result-retained') {
-        throw new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-management-result-not-settled' } });
-      }
-      await this.safety.projects.removeProjectDocument(request.projectId, 'cloud-management-intent');
-    });
+      });
+    }
+    return this.safety.cloudManagementAdmission(
+      request.projectId,
+      () => this.runManagement(request.projectId, async () => {
+        const intent = await this.loadCloudIntent(request.projectId);
+        if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+        if (!intent) return;
+        if (request.completionId !== intent.completionId) {
+          throw new CollabError({
+            code: 'operation-failed',
+            safeContext: { reason: 'cloud-management-completion-mismatch' },
+          });
+        }
+        if (intent.phase !== 'result-retained') {
+          throw new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-management-result-not-settled' } });
+        }
+        await this.safety.projects.removeProjectDocument(request.projectId, 'cloud-management-intent');
+      }),
+    );
   }
 
   private runManagement<T>(projectId: CollabProjectId, operation: () => Promise<T>): Promise<T> {
@@ -362,6 +382,17 @@ export class CollabMembershipService {
     });
   }
 
+  private runCloudManagementMutation<T>(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.safety.cloudManagementAdmission(
+      projectId,
+      () => this.runCloudMutation(projectId, options, operation),
+    );
+  }
+
   private runLanManagement<T>(
     projectId: CollabProjectId,
     identity: string,
@@ -393,7 +424,7 @@ export class CollabMembershipService {
     const membership = await this.safety.projects.loadMembership(projectId);
     if (membership && isCollabLocalCloudMembership(membership)) {
       if (typeof request === 'string') throw new CollabError({ code: 'invitation-invalid' });
-      return this.runCloudMutation(projectId, options, async () => {
+      return this.runCloudManagementMutation(projectId, options, async () => {
         let intent = await this.loadCloudIntent(projectId);
         if (intent && (intent.operation !== 'revokeProjectInvitation' || intent.request.invitationId !== request.invitationId)) throw managementPending();
         if (!intent) {
@@ -490,7 +521,7 @@ export class CollabMembershipService {
   }
 
   private async changeCloudMember(operation: 'demoteManager' | 'removeMember', projectId: CollabProjectId, targetMemberId: CollabMemberId, options: CollabOperationOptions): Promise<void> {
-      await this.runCloudMutation(projectId, options, async () => {
+      await this.runCloudManagementMutation(projectId, options, async () => {
         let intent = await this.loadCloudIntent(projectId);
         if (intent && (intent.operation !== operation || intent.request.targetMemberId !== targetMemberId)) throw managementPending();
         if (!intent) {
@@ -639,11 +670,40 @@ function cloudManagerOfferSummary(offer: CollabManagerResponsibilityOffer): Coll
 
 function retainedInvitation(intent: CloudManagementIntent): CollabInvitationView | null {
   if (intent.operation === 'createProjectInvitation' && intent.response) {
+    if (retainedSecretExpired(intent.response)) return null;
     return { encodedInvitation: encodeCloudProjectInvitation({ invitation: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
   }
   if (intent.operation === 'reissueTransferredMembershipClaim' && intent.response) {
+    if (retainedSecretExpired(intent.response)) return null;
     return { encodedInvitation: encodeCloudMembershipClaimInvitation({ claim: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
   }
+  return null;
+}
+
+function retainedSecretExpired(response: {
+  readonly expiresAt: string;
+  readonly secretReplayExpiresAt: string;
+}): boolean {
+  return Date.now() >= Date.parse(retainedSecretAvailableUntil(response));
+}
+
+function retainedSecretAvailableUntil(response: {
+  readonly expiresAt: string;
+  readonly secretReplayExpiresAt: string;
+}): string {
+  return Date.parse(response.expiresAt) <= Date.parse(response.secretReplayExpiresAt)
+    ? response.expiresAt
+    : response.secretReplayExpiresAt;
+}
+
+function managementSecretAvailableUntil(
+  intent: CloudManagementIntent,
+): string | null {
+  if (
+    (intent.operation === 'createProjectInvitation'
+      || intent.operation === 'reissueTransferredMembershipClaim')
+    && intent.response
+  ) return retainedSecretAvailableUntil(intent.response);
   return null;
 }
 
@@ -662,7 +722,9 @@ function managementOperationView(
       reissueTransferredMembershipClaim: 'reissue-member-claim',
       revokeTransferredMembershipClaim: 'revoke-member-claim',
     } as const)[intent.operation],
+    completionId: intent.completionId,
     invitation: retainedInvitation(intent),
+    secretAvailableUntil: managementSecretAvailableUntil(intent),
     status: intent.phase === 'result-retained' ? 'result-retained' : 'pending',
   };
 }

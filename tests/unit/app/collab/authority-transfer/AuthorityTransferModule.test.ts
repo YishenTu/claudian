@@ -707,6 +707,16 @@ describe('AuthorityTransferModule', () => {
       );
       await service.close();
       expect(capture).toHaveBeenCalledTimes(2);
+      expect(capture).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(capture).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
       expect(reopenAfterCancellation).toHaveBeenCalledTimes(1);
       expect(cleanupSourceRoute).toHaveBeenCalledTimes(2);
     } finally {
@@ -999,6 +1009,165 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
     })).rejects.toBeDefined();
     expect(routeActivationOwnership).toEqual([false, true]);
+  });
+
+  it('removes a source route when acceptance is cancelled during route activation', async () => {
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: 'intent-route-cancellation',
+      projectId: PROJECT_ID,
+      targetUrl: 'https://cloud.example.test/',
+    };
+    const sourceEntry = createAuthorityTransferEntryRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      proposedByMemberId: 'member-host',
+      request,
+      status: proposal(),
+    });
+    let releaseRoute!: () => void;
+    let enteredRoute!: () => void;
+    const routeGate = new Promise<void>(resolve => { releaseRoute = resolve; });
+    const routeStarted = new Promise<void>(resolve => { enteredRoute = resolve; });
+    const cleanupRoute = jest.fn(async () => undefined);
+    let routeSignal: AbortSignal | undefined;
+    const capture = jest.fn();
+    const module = new AuthorityTransferModule({
+      activateLanToCloudSourceRoute: async (_projectId, _endpoint, options) => {
+        routeSignal = options.signal;
+        enteredRoute();
+        await routeGate;
+        return cleanupRoute;
+      },
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: () => Promise.resolve([]),
+        load: () => Promise.resolve(null),
+        remove: () => Promise.resolve(false),
+        save: () => Promise.resolve(),
+      },
+      convergence: {} as never,
+      createLanToCloudSource: () => ({
+        activateTerminal: jest.fn(),
+        capture,
+        commitRelinquishmentFence: jest.fn(),
+        reopenAfterCancellation: jest.fn(),
+      }),
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+        runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence: {
+        loadSourceEntry: jest.fn(async () => sourceEntry),
+      } as unknown as AuthorityTransferPersistence,
+    });
+    const cloudSession = {
+      dispose: jest.fn(),
+      lifecycle: {},
+      projectId: PROJECT_ID,
+      serverUrl: request.targetUrl,
+      supports: () => true,
+    } as unknown as CloudAuthorityConnection;
+    const controller = new AbortController();
+    const accepting = module.acceptLanToCloudTransferTarget({
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: 'unused-after-route-cancellation',
+      projectId: PROJECT_ID,
+      targetUrl: request.targetUrl,
+      transferId: TRANSFER_ID,
+    }, {
+      cloudSession,
+      expectedSourceEndpoint: 'https://192.168.1.10:54545',
+      expectedTargetUrl: request.targetUrl,
+      projectId: PROJECT_ID,
+    }, { signal: controller.signal });
+    await routeStarted;
+
+    controller.abort();
+    releaseRoute();
+
+    await expect(accepting).rejects.toMatchObject({ code: 'cancelled' });
+    expect(routeSignal).toBe(controller.signal);
+    expect(cleanupRoute).toHaveBeenCalledTimes(1);
+    expect(capture).not.toHaveBeenCalled();
+    await expect(module.close()).resolves.toBeUndefined();
+    expect(cleanupRoute).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for every owned disposer before reporting the first close failure', async () => {
+    const secondProjectId = 'project-authority-transfer-module-second';
+    const sourceEntry = (projectId: string) => createAuthorityTransferEntryRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      proposedByMemberId: 'member-host',
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: `intent-close-${projectId}`,
+        projectId,
+        targetUrl: 'https://cloud.example.test/',
+      },
+      status: proposal({ projectId }),
+    });
+    const firstFailure = new Error('first-source-dispose-failed');
+    const firstCleanup = jest.fn(async () => { throw firstFailure; });
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>(resolve => { releaseSecond = resolve; });
+    const secondCleanup = jest.fn(async () => secondGate);
+    const module = new AuthorityTransferModule({
+      activateLanToCloudSourceRoute: async projectId => (
+        projectId === PROJECT_ID ? firstCleanup : secondCleanup
+      ),
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: () => Promise.resolve([]),
+        load: () => Promise.resolve(null),
+        remove: () => Promise.resolve(false),
+        save: () => Promise.resolve(),
+      },
+      convergence: {} as never,
+      createLanToCloudSource: () => ({
+        activateTerminal: jest.fn(),
+        capture: jest.fn(),
+        commitRelinquishmentFence: jest.fn(),
+        reopenAfterCancellation: jest.fn(),
+      }),
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence: {
+        loadSourceEntry: jest.fn(async projectId => sourceEntry(projectId)),
+      } as unknown as AuthorityTransferPersistence,
+    });
+    const cloudSession = (projectId: string) => ({
+      dispose: jest.fn(),
+      lifecycle: {},
+      projectId,
+      serverUrl: 'https://cloud.example.test/',
+      supports: () => true,
+    }) as unknown as CloudAuthorityConnection;
+    await module.bindLanToCloudSource({
+      cloudSession: cloudSession(PROJECT_ID),
+      projectId: PROJECT_ID,
+    });
+    await module.bindLanToCloudSource({
+      cloudSession: cloudSession(secondProjectId),
+      projectId: secondProjectId,
+    });
+
+    let closeSettled = false;
+    const closing = module.close().finally(() => { closeSettled = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(firstCleanup).toHaveBeenCalledTimes(1);
+    expect(secondCleanup).toHaveBeenCalledTimes(1);
+    expect(closeSettled).toBe(false);
+    releaseSecond();
+    await expect(closing).rejects.toBe(firstFailure);
   });
 
   it('prepares a product-owned Cloud-to-LAN target without exposing raw effects', async () => {

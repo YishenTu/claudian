@@ -54,7 +54,9 @@ function lanMembership() {
   };
 }
 
-function createSubject() {
+function createSubject(options: Readonly<{
+  loadMembership?: () => Promise<ReturnType<typeof lanMembership>>;
+}> = {}) {
   const requester = {
     propose: jest.fn(async () => status()),
     resumeMatching: jest.fn(async () => null),
@@ -109,12 +111,15 @@ function createSubject() {
     supports: jest.fn(() => true),
   };
   const createLanClient = jest.fn(() => ({ kind: 'lan-client' }));
-  const connectCloud = jest.fn(async () => connection);
+  const connectCloud = jest.fn(async (
+    _input?: unknown,
+    _options?: { readonly signal?: AbortSignal },
+  ) => connection);
   const service = new AuthorityTransferEntryService({
     connectCloud: connectCloud as never,
     createIdempotencyKey: () => 'intent-new',
     createLanClient: createLanClient as never,
-    loadMembership: async () => lanMembership(),
+    loadMembership: options.loadMembership ?? (async () => lanMembership()),
     module: module as never,
   });
   return {
@@ -242,6 +247,7 @@ describe('AuthorityTransferEntryService', () => {
         expectedTargetUrl: SERVER_URL,
         projectId: PROJECT_ID,
       },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(subject.sourceBinding.dispose).not.toHaveBeenCalled();
     expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
@@ -316,6 +322,80 @@ describe('AuthorityTransferEntryService', () => {
     release();
     await expect(first).resolves.toEqual(status());
     expect(subject.module.acceptLanToCloudTransferTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the shared acceptance lifetime on close without borrowing caller cancellation', async () => {
+    const subject = createSubject();
+    let entered!: () => void;
+    const enteredAcceptance = new Promise<void>(resolve => { entered = resolve; });
+    let releaseCleanup!: () => void;
+    const cleanupGate = new Promise<void>(resolve => { releaseCleanup = resolve; });
+    let underlyingQuiesced = false;
+    subject.module.acceptLanToCloudTransferTarget.mockImplementation((...args: readonly unknown[]) => {
+      const options = args[2] as { readonly signal?: AbortSignal } | undefined;
+      entered();
+      return new Promise<CollabAuthorityTransferStatus>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          void cleanupGate.then(() => {
+            underlyingQuiesced = true;
+            reject(new CollabError({ code: 'cancelled' }));
+          });
+        }, { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const accepting = subject.service.acceptLanToCloudTransfer(
+      { projectId: PROJECT_ID, transferId: 'transfer-entry-service' },
+      { signal: controller.signal },
+    );
+    await enteredAcceptance;
+
+    const serviceSignal = subject.connectCloud.mock.calls[0]?.[1]?.signal;
+    expect(serviceSignal).toBeDefined();
+    expect(serviceSignal).not.toBe(controller.signal);
+    controller.abort();
+    await expect(accepting).rejects.toMatchObject({ code: 'cancelled' });
+    expect(serviceSignal?.aborted).toBe(false);
+
+    const closing = subject.service.close();
+    expect(serviceSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(subject.module.close).not.toHaveBeenCalled();
+    releaseCleanup();
+    await expect(closing).resolves.toBeUndefined();
+    expect(underlyingQuiesced).toBe(true);
+    expect(subject.module.close).toHaveBeenCalledTimes(1);
+    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cross the preflight read fence after close begins', async () => {
+    let releaseMembership!: () => void;
+    let enteredMembership!: () => void;
+    const membershipGate = new Promise<void>(resolve => { releaseMembership = resolve; });
+    const membershipStarted = new Promise<void>(resolve => { enteredMembership = resolve; });
+    const subject = createSubject({
+      loadMembership: async () => {
+        enteredMembership();
+        await membershipGate;
+        return lanMembership();
+      },
+    });
+    const accepting = subject.service.acceptLanToCloudTransfer({
+      projectId: PROJECT_ID,
+      transferId: 'transfer-entry-service',
+    });
+    await membershipStarted;
+
+    const closing = subject.service.close();
+    releaseMembership();
+
+    await expect(accepting).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-entry-service-closed' },
+    });
+    await expect(closing).resolves.toBeUndefined();
+    expect(subject.module.assertLanToCloudSourceInstallationOwner).not.toHaveBeenCalled();
+    expect(subject.connectCloud).not.toHaveBeenCalled();
+    expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
   });
 
   it('closes a source session that finishes connecting during shutdown', async () => {

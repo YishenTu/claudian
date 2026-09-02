@@ -107,6 +107,10 @@ const ACTIVE_HOST_LOCK_NONCES = (() => {
   return created;
 })();
 
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+}
+
 export interface LanHostGitProxy {
   close(): Promise<void>;
   enable(): Promise<void>;
@@ -662,19 +666,28 @@ export class LanHostCoordinator {
 
   startAuthorityTransferRoute(
     registration: LanAuthorityTransferRouteRegistration,
+    options: Readonly<{ readonly signal?: AbortSignal }> = {},
   ): Promise<LanHostAuthorityTransferSession> {
     return this.#operationQueue.run(async () => {
+      throwIfCancelled(options.signal);
       this.#assertOpen();
       const firstListenerOwner = !this.listener
         && this.#hostedProjects.size === 0
         && this.terminalProjects.size === 0
         && this.provisionalTransfers.size === 0
         && this.#authorityTransferRoutes.size === 0;
-      if (firstListenerOwner) await this.#acquireHostLock();
+      let routeInstalled = false;
       try {
+        if (firstListenerOwner) {
+          await this.#acquireHostLock();
+          throwIfCancelled(options.signal);
+        }
         const expectedEndpoint = registration.expectedEndpoint
           ?? (registration.state === 'source-active' ? null : (this.listener?.endpoint ?? null));
-        if (!this.listener) this.listener = await this.#startListener(expectedEndpoint);
+        if (!this.listener) {
+          this.listener = await this.#startListener(expectedEndpoint);
+          throwIfCancelled(options.signal);
+        }
         this.#assertOpen();
         if (expectedEndpoint !== null && this.listener.endpoint !== expectedEndpoint) {
           throw hostError(
@@ -695,6 +708,7 @@ export class LanHostCoordinator {
             && current.transferId === registration.transferId
           )
         ) {
+          throwIfCancelled(options.signal);
           return {
             caCertificatePem: this.listener.caCertificatePem,
             caFingerprint: this.listener.caFingerprint,
@@ -702,7 +716,10 @@ export class LanHostCoordinator {
             projectId: registration.projectId,
           };
         }
+        throwIfCancelled(options.signal);
         await this.#authorityTransferRoutes.install(registration);
+        routeInstalled = true;
+        throwIfCancelled(options.signal);
         this.#scheduleAuthorityTransferExpiry(registration);
         this.#startAddressMonitor();
         return {
@@ -712,6 +729,13 @@ export class LanHostCoordinator {
           projectId: registration.projectId,
         };
       } catch (error) {
+        if (routeInstalled) {
+          const removed = await this.#authorityTransferRoutes.remove(
+            registration.projectId,
+            registration.state,
+          );
+          if (removed) this.#clearAuthorityTransferExpiry(registration.projectId);
+        }
         if (firstListenerOwner) await this.#closeUnusedListener().catch(() => undefined);
         throw error;
       }
