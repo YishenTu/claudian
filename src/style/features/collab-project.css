@@ -107,6 +107,7 @@
   justify-content: space-between;
 }
 
+.claudian-collab-access-member-count,
 .claudian-collab-access-manager-count {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);

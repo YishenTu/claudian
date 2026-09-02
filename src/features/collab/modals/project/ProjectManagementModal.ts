@@ -127,6 +127,7 @@ export class ProjectManagementModal extends Modal {
   #currentMemberId: CollabMemberId | null = null;
   #featureSubscription: { dispose(): void } | null = null;
   #hostDiagnosticsModal: HostDiagnosticsModal | null = null;
+  #hostActionEl: HTMLDivElement | null = null;
   #hostMemberId: CollabMemberId | null = null;
   #hostProject: CollabLocalProjectSummary;
   #hostSection: LanHostSection | null = null;
@@ -140,6 +141,7 @@ export class ProjectManagementModal extends Modal {
   #members: readonly CollabMember[] = [];
   #opened = false;
   #operationPending = false;
+  #projectActionsEl: HTMLDivElement | null = null;
   readonly #readTasks = new LatestTaskScope();
   #retainedInvitation: CollabInvitationView | null = null;
   #secretExpiryTimer: number | null = null;
@@ -225,6 +227,7 @@ export class ProjectManagementModal extends Modal {
     this.#abandonLanManagementIntent();
     this.#hostSection?.destroy();
     this.#hostSection = null;
+    this.#hostActionEl = null;
     this.#hostDiagnosticsModal?.close();
     this.#hostDiagnosticsModal = null;
     this.#invitationModal?.close();
@@ -233,6 +236,7 @@ export class ProjectManagementModal extends Modal {
     this.#accessContentEl = null;
     this.#invitationActionsEl = null;
     this.#lifecycleActionsEl = null;
+    this.#projectActionsEl = null;
     this.contentEl.replaceChildren();
     this.#options.onClosed?.();
   }
@@ -244,17 +248,15 @@ export class ProjectManagementModal extends Modal {
     this.#accessContentEl = this.contentEl.createDiv({
       cls: 'claudian-collab-project-management-access',
     });
-    const actions = this.contentEl.createDiv({
-      cls: 'claudian-collab-project-actions',
-    });
-    const primary = actions.createDiv({
-      cls: 'claudian-collab-project-actions-primary',
-    });
+    this.#invitationActionsEl = null;
     if (
       this.#hostProject.authorityKind === 'lan'
       && this.#hostProject.hostInstallationStatus !== 'not-host'
     ) {
-      const host = primary.createDiv({ cls: 'claudian-collab-project-host-action' });
+      const host = this.contentEl.createDiv({
+        cls: 'claudian-collab-project-host-action',
+      });
+      this.#hostActionEl = host;
       this.#hostSection = new LanHostSection(host, {
         confirmLegacyClaim: () => confirm(
           this.#appInstance,
@@ -270,13 +272,17 @@ export class ProjectManagementModal extends Modal {
         port: this.#port,
         project: this.#hostProject,
       });
+    } else {
+      this.#hostActionEl = null;
     }
-    this.#invitationActionsEl = primary.createDiv({
-      cls: 'claudian-collab-project-invitation-action',
+    this.#projectActionsEl = this.contentEl.createDiv({
+      cls: 'claudian-collab-project-actions',
     });
-    this.#lifecycleActionsEl = actions.createDiv({
+    this.#projectActionsEl.createEl('h3', { text: t('collab.access.projectActions') });
+    this.#lifecycleActionsEl = this.#projectActionsEl.createDiv({
       cls: 'claudian-collab-project-actions-lifecycle',
     });
+    this.#projectActionsEl.hidden = true;
   }
 
   #openHostDiagnostics(diagnostics: LanHostDiagnostics): void {
@@ -499,13 +505,14 @@ export class ProjectManagementModal extends Modal {
   #render(): void {
     if (!this.#opened) return;
     const accessContent = this.#requireAccessContent();
+    this.#invitationActionsEl = null;
     accessContent.replaceChildren();
     const current = this.#currentMember();
     const isManager = current?.role === 'manager' && current.status === 'active';
 
     this.#renderMembers(current, isManager);
     this.#renderProjectActions(current, isManager);
-    this.#renderAuthorityTransfer(current, isManager);
+    this.#renderHosting(accessContent, current, isManager);
     this.#renderPendingManagementOperation();
     this.#renderStatus();
     this.#renderRetainedInvitation();
@@ -519,8 +526,10 @@ export class ProjectManagementModal extends Modal {
     const section = this.#requireAccessContent().createDiv({
       cls: 'claudian-collab-access-members',
     });
+    section.createEl('h3', { text: t('collab.access.members') });
     const summary = section.createDiv({ cls: 'claudian-collab-access-summary' });
-    summary.createEl('h3', {
+    summary.createSpan({
+      cls: 'claudian-collab-access-member-count',
       text: t('collab.access.memberCount', { count: this.#members.length }),
     });
     summary.createSpan({
@@ -531,6 +540,9 @@ export class ProjectManagementModal extends Modal {
         )).length,
       }),
     });
+    this.#invitationActionsEl = section.createDiv({
+      cls: 'claudian-collab-project-invitation-action',
+    });
     if (this.#members.length === 0) {
       section.createDiv({ text: t('collab.access.noMembers') });
       return;
@@ -539,6 +551,7 @@ export class ProjectManagementModal extends Modal {
     for (const member of this.#members) {
       this.#renderMember(list, member, current, isManager);
     }
+    section.appendChild(this.#invitationActionsEl);
   }
 
   #renderMember(
@@ -740,6 +753,7 @@ export class ProjectManagementModal extends Modal {
   #renderLeaveAction(container: HTMLElement): void {
     const leave = container.createEl('button', {
       attr: { 'data-action': 'leave-project', type: 'button' },
+      cls: 'mod-cta',
       text: t('collab.access.leaveProject'),
     });
     leave.disabled = this.#managementActionBlocked();
@@ -814,32 +828,37 @@ export class ProjectManagementModal extends Modal {
     const lifecycleActions = this.#requireLifecycleActions();
     invitationActions.replaceChildren();
     lifecycleActions.replaceChildren();
-    if (!current || current.status !== 'active') return;
-    const recoversInvitation = this.#managementOperation?.action === 'create-invitation';
-    if (isManager && (this.#capabilities?.invitations || recoversInvitation)) {
-      const invite = invitationActions.createEl('button', {
-        attr: { 'data-action': 'create-invitation', type: 'button' },
-        text: recoversInvitation
-          ? t('collab.access.resumeInvitation')
-          : t('collab.access.createInvitation'),
-      });
-      invite.disabled = this.#operationPending
-        || !!this.#invitationModal
-        || (this.#managementOperation !== null && !recoversInvitation);
-      invite.addEventListener('click', () => {
-        this.#openInvitationModal();
-      });
+    if (current?.status === 'active') {
+      const recoversInvitation = this.#managementOperation?.action === 'create-invitation';
+      if (isManager && (this.#capabilities?.invitations || recoversInvitation)) {
+        const invite = invitationActions.createEl('button', {
+          attr: { 'data-action': 'create-invitation', type: 'button' },
+          cls: 'mod-cta',
+          text: recoversInvitation
+            ? t('collab.access.resumeInvitation')
+            : t('collab.access.createInvitation'),
+        });
+        invite.disabled = this.#operationPending
+          || !!this.#invitationModal
+          || (this.#managementOperation !== null && !recoversInvitation);
+        invite.addEventListener('click', () => {
+          this.#openInvitationModal();
+        });
+      }
+      if (this.#capabilities?.leave) this.#renderLeaveAction(lifecycleActions);
+      if (isManager && this.#capabilities?.retirement) {
+        const retire = lifecycleActions.createEl('button', {
+          attr: { 'data-action': 'retire-project', type: 'button' },
+          cls: 'mod-warning',
+          text: t('collab.access.retireProject'),
+        });
+        retire.disabled = this.#managementActionBlocked();
+        retire.addEventListener('click', () => {
+          this.#showConfirmation({ kind: 'retire', member: current });
+        });
+      }
     }
-    if (this.#capabilities?.leave) this.#renderLeaveAction(lifecycleActions);
-    if (!isManager || !this.#capabilities?.retirement) return;
-    const retire = lifecycleActions.createEl('button', {
-      attr: { 'data-action': 'retire-project', type: 'button' },
-      text: t('collab.access.retireProject'),
-    });
-    retire.disabled = this.#managementActionBlocked();
-    retire.addEventListener('click', () => {
-      this.#showConfirmation({ kind: 'retire', member: current });
-    });
+    this.#syncProjectActionsVisibility();
   }
 
   #openInvitationModal(): void {
@@ -1233,26 +1252,57 @@ export class ProjectManagementModal extends Modal {
     });
   }
 
-  #renderAuthorityTransfer(
+  #renderHosting(
+    container: HTMLElement,
     current: CollabMember | undefined,
     isManager: boolean,
+    recovery = false,
   ): void {
-    if (!current || current.status !== 'active') return;
     const actionsAvailable = this.#capabilities?.authorityTransfer === true;
-    if (!actionsAvailable && !this.#lanToCloudProposal && !this.#cloudTransferView) return;
-    const section = this.#requireAccessContent().createDiv({
+    const lanToCloudProposal = this.#presentableLanToCloudProposal();
+    const transferPresent = !!lanToCloudProposal || !!this.#cloudTransferView;
+    const transferAvailable = (
+      current?.status === 'active'
+      && (actionsAvailable || transferPresent)
+    ) || (recovery && transferPresent);
+    const hostAvailable = (this.#hostActionEl?.childElementCount ?? 0) > 0;
+    if (!hostAvailable && !transferAvailable) return;
+
+    const hosting = container.createDiv({ cls: 'claudian-collab-hosting' });
+    hosting.createEl('h3', { text: t('collab.access.hosting') });
+    if (hostAvailable && this.#hostActionEl) {
+      const currentHosting = hosting.createDiv({
+        cls: 'claudian-collab-hosting-current',
+      });
+      currentHosting.appendChild(this.#hostActionEl);
+    }
+    if (!transferAvailable) return;
+
+    const section = hosting.createDiv({
       cls: 'claudian-collab-authority-transfer',
     });
-    section.createEl('h3', { text: t('collab.access.authorityTransfer') });
+    section.createEl('h4', {
+      text: this.#hostProject.authorityKind === 'lan'
+        ? t('collab.access.moveToCloud')
+        : t('collab.access.moveToLan'),
+    });
     if (this.#hostProject.authorityKind === 'lan') {
-      this.#renderLanToCloudTransfer(section, actionsAvailable);
+      this.#renderLanToCloudTransfer(section, recovery || actionsAvailable);
       return;
     }
-    this.#renderCloudToLanTransfer(section, current.id, isManager, actionsAvailable);
+    const currentMemberId = current?.id
+      ?? this.#cloudTransferView?.target?.descriptor?.selectedTargetMemberId
+      ?? '';
+    this.#renderCloudToLanTransfer(
+      section,
+      currentMemberId,
+      recovery ? Boolean(this.#cloudTransferView?.manager) : isManager,
+      recovery || actionsAvailable,
+    );
   }
 
   #renderLanToCloudTransfer(section: HTMLElement, actionsAvailable = true): void {
-    const proposal = this.#lanToCloudProposal;
+    const proposal = this.#presentableLanToCloudProposal();
     if (proposal) {
       section.createDiv({
         text: t('collab.access.lanToCloudProposal', {
@@ -1318,6 +1368,7 @@ export class ProjectManagementModal extends Modal {
     if (proposal?.status === null) input.value = proposal.serverUrl;
     const propose = row.createEl('button', {
       attr: { 'data-action': 'propose-lan-to-cloud', type: 'button' },
+      cls: 'mod-cta claudian-collab-authority-transfer-submit',
       text: proposal?.status === null
         ? t('collab.joinProject.resume')
         : t('collab.access.proposeLanToCloud'),
@@ -1342,6 +1393,12 @@ export class ProjectManagementModal extends Modal {
         return result;
       });
     });
+  }
+
+  #presentableLanToCloudProposal(): CollabLanToCloudTransferView | null {
+    return this.#lanToCloudProposal?.status?.state === 'cancelled'
+      ? null
+      : this.#lanToCloudProposal;
   }
 
   #renderCloudToLanTransfer(
@@ -1787,18 +1844,21 @@ export class ProjectManagementModal extends Modal {
     if (!this.#opened) return;
     this.#clearProjectActions();
     const accessContent = this.#requireAccessContent();
+    this.#invitationActionsEl = null;
     accessContent.replaceChildren();
     accessContent.createDiv({
       attr: { 'aria-live': 'polite' },
       cls: 'claudian-collab-access-status',
       text: t('collab.access.loading'),
     });
+    this.#renderHosting(accessContent, undefined, false);
   }
 
   #renderLoadFailure(): void {
     if (!this.#opened) return;
     this.#clearProjectActions();
     const accessContent = this.#requireAccessContent();
+    this.#invitationActionsEl = null;
     accessContent.replaceChildren();
     accessContent.createDiv({
       attr: { role: 'alert' },
@@ -1818,29 +1878,10 @@ export class ProjectManagementModal extends Modal {
       && this.#hostProject.lifecycle !== 'leaving'
       && this.#hostProject.lifecycle !== 'retired'
     ) {
-      const lifecycle = accessContent.createDiv({
-        cls: 'claudian-collab-project-actions-lifecycle',
-      });
-      this.#renderLeaveAction(lifecycle);
+      this.#renderLeaveAction(this.#requireLifecycleActions());
+      this.#syncProjectActionsVisibility();
     }
-    if (this.#cloudTransferView) {
-      const transfer = accessContent.createDiv({
-        cls: 'claudian-collab-authority-transfer',
-      });
-      transfer.createEl('h3', { text: t('collab.access.authorityTransfer') });
-      this.#renderCloudToLanTransfer(
-        transfer,
-        this.#cloudTransferView.target?.descriptor?.selectedTargetMemberId ?? '',
-        this.#cloudTransferView.manager !== null,
-      );
-    }
-    if (this.#lanToCloudProposal) {
-      const transfer = accessContent.createDiv({
-        cls: 'claudian-collab-authority-transfer',
-      });
-      transfer.createEl('h3', { text: t('collab.access.authorityTransfer') });
-      this.#renderLanToCloudTransfer(transfer);
-    }
+    this.#renderHosting(accessContent, this.#currentMember(), false, true);
     this.#renderPendingManagementOperation();
     this.#renderStatus();
     this.#renderRetainedInvitation();
@@ -1850,6 +1891,12 @@ export class ProjectManagementModal extends Modal {
   #clearProjectActions(): void {
     this.#invitationActionsEl?.replaceChildren();
     this.#lifecycleActionsEl?.replaceChildren();
+    this.#syncProjectActionsVisibility();
+  }
+
+  #syncProjectActionsVisibility(): void {
+    if (!this.#projectActionsEl || !this.#lifecycleActionsEl) return;
+    this.#projectActionsEl.hidden = this.#lifecycleActionsEl.childElementCount === 0;
   }
 
   #currentMember(): CollabMember | undefined {
