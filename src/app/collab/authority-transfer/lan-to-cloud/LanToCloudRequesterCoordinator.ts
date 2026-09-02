@@ -136,6 +136,39 @@ export class LanToCloudRequesterCoordinator {
     return this.propose(entry.request, operationOptions);
   }
 
+  async resumeMatching(
+    request: Omit<RequestLanToCloudTransferRequest, 'idempotencyKey'>,
+    operationOptions: CollabOperationOptions = {},
+  ): Promise<CollabAuthorityTransferStatus | null> {
+    const entry = await this.options.persistence.loadRequesterEntry(
+      this.options.projectId,
+      this.options.installationKey,
+    );
+    if (
+      !entry
+      || entry.projectId !== request.projectId
+      || entry.request.expectedAuthorityGeneration !== request.expectedAuthorityGeneration
+      || entry.request.targetUrl !== request.targetUrl
+    ) return null;
+    if (entry.status) {
+      const status = await this.options.client.requestWithMember(
+        'getProjectAuthorityTransfer',
+        {
+          projectId: entry.projectId,
+          transferId: entry.status.transferId,
+        },
+        this.options.memberCredential,
+        operationOptions,
+      );
+      if (status.state === 'cancelled') {
+        await this.options.persistence.settleRequesterCancellation(entry, status);
+        return null;
+      }
+      return status;
+    }
+    return this.resume(operationOptions);
+  }
+
   private async adoptObservedSource(
     entry: AuthorityTransferRequesterEntryRecord,
   ): Promise<CollabAuthorityTransferStatus | null> {

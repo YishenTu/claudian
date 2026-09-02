@@ -263,6 +263,10 @@ function createPort(initialState: CollabFeatureState) {
       status: 'success',
       value: project(),
     }),
+    resumeLeave: jest.fn().mockResolvedValue({
+      status: 'success',
+      value: undefined,
+    }),
     createInvitation: jest.fn().mockResolvedValue({
       status: 'success',
       value: {
@@ -728,6 +732,42 @@ describe('CollabPanel', () => {
     resume.click();
     await flush();
     expect(port.resumeSetup).toHaveBeenCalledWith({ operationId: 'create-project-alpha' });
+  });
+
+  it('labels and resumes a journal-only Leave without treating it as setup', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({
+      lifecycle: 'ready',
+      projects: [project({
+        cleanupStatus: 'failed',
+        health: 'needs-attention',
+        lifecycle: 'leaving',
+      })],
+      selectedProjectId: 'project-alpha',
+    });
+    const getPendingSetupOperationId = jest.fn().mockResolvedValue(null);
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(),
+      configuredGitPath: () => '',
+      initialGitResolution: Promise.resolve(AVAILABLE),
+      onSaveConfiguredGitPath: jest.fn(),
+      port,
+      projectSetup: { getPendingSetupOperationId },
+      resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
+    });
+
+    panel.preload();
+    await flush();
+    panel.setActive(true);
+
+    expect(container.textContent).toContain('Leaving this project needs attention');
+    expect(container.textContent).not.toContain('setup is incomplete');
+    expect(getPendingSetupOperationId).not.toHaveBeenCalled();
+    const resume = container.querySelector<HTMLButtonElement>('[data-action="resume-leave"]')!;
+    expect(resume).not.toBeNull();
+    resume.click();
+    await flush();
+    expect(port.resumeLeave).toHaveBeenCalledWith('project-alpha');
   });
 
   it('opens the Project picker with an Obsidian DOM menu', async () => {

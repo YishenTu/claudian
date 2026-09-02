@@ -789,6 +789,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       !membership
       || !isCollabLocalLanMembership(membership)
       || membership.project.id !== record.projectId
+      || membership.authority.authorityGeneration
+        !== record.status.targetAuthority.generation
       || membership.authority.endpoint !== targetEndpoint
       || membership.authority.gitRemoteUrl
         !== `${targetEndpoint}/v1/git/${record.projectId}/repository.git`

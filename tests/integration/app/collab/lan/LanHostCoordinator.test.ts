@@ -380,6 +380,7 @@ describe('LanHostCoordinator production transport', () => {
     });
     await localProjects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,
@@ -681,6 +682,7 @@ describe('LanHostCoordinator production transport', () => {
     await writeFile(retainedRefPath, `${MAIN_OID}\n`);
     await memberProjects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: host.endpoint,
         gitRemoteUrl: `${host.endpoint}/v1/git/${PROJECT_ID}/repository.git`,
         hostCaCertificatePem: hostCa,
@@ -2522,6 +2524,7 @@ describe('LanHostCoordinator production transport', () => {
     });
     await memberProjects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: firstHost.endpoint,
         gitRemoteUrl: `${firstHost.endpoint}/v1/git/${PROJECT_ID}/repository.git`,
         hostCaCertificatePem: hostCa,
@@ -2700,6 +2703,7 @@ describe('LanHostCoordinator production transport', () => {
     const betaId = 'project-beta';
     await localProjects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,

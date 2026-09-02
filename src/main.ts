@@ -735,12 +735,6 @@ export default class ClaudianPlugin extends Plugin {
       projectSetup,
       vaultRoot,
     });
-    try {
-      await feature.prepareCloudBootstrapLocalRecovery();
-    } catch (error) {
-      await Promise.allSettled([feature.close(), foundation.close()]);
-      throw error;
-    }
     if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) {
       await feature.close();
       await foundation.close();
@@ -748,7 +742,6 @@ export default class ClaudianPlugin extends Plugin {
     }
     this.collabFoundation = foundation;
     this.collabFeatureService = feature;
-    void feature.recoverPendingCloudBootstraps().catch(() => undefined);
     return feature;
   }
 

@@ -18,11 +18,6 @@ export interface CollabProjectLifecycleOwnerStores {
   readonly cloudRetirementIntents: {
     load(projectId: CollabProjectId): Promise<CloudRetirementIntent | null>;
   };
-  readonly cloudBootstrapTransitions: {
-    inspectLifecycleOwner(
-      projectId: CollabProjectId,
-    ): Promise<'absent' | 'nonterminal' | 'terminal'>;
-  };
   readonly hostTransferRecovery: {
     load(
       projectId: CollabProjectId,
@@ -54,12 +49,6 @@ export function createCollabProjectLifecycleDurableOwners(
   isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean,
 ): readonly CollabProjectLifecycleDurableOwner[] {
   return Object.freeze([
-    Object.freeze({
-      inspect: (projectId: CollabProjectId) => (
-        stores.cloudBootstrapTransitions.inspectLifecycleOwner(projectId)
-      ),
-      name: 'cloud-bootstrap',
-    }),
     Object.freeze({
       inspect: async (projectId: CollabProjectId) => {
         const [incoming, outgoing] = await Promise.all([

@@ -494,6 +494,7 @@ export class JoinProjectCoordinator {
     const timestamp = this.now().toISOString();
     const membership: CollabLocalMembershipRecord = {
       authority: {
+        authorityGeneration: 1,
         endpoint: record.endpoint,
         gitRemoteUrl: gitRemoteUrl(record),
         hostCaCertificatePem: record.hostCaCertificatePem!,

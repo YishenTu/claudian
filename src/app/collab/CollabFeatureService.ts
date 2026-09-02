@@ -6,13 +6,6 @@ import { type CollabAuthorityTransferStatus, type CollabChangeRequest, type Coll
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
 import { CollabAuthorityTransferOutcomeError } from '@/app/collab/authority-transfer/CollabAuthorityTransferOutcomeError';
-import type {
-  StartCloudBootstrapServiceInput,
-  SubmitCloudBootstrapServiceParticipantInput,
-} from '@/app/collab/bootstrap/CloudBootstrapService';
-import type {
-  CloudBootstrapTransitionRecord,
-} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
   CollabAuthorityInstallationStatus,
@@ -48,7 +41,13 @@ import type {
   CollabBeginCloudToLanTransferRequest,
   CollabCloudToLanTargetPreparationDescriptor,
   CollabCloudToLanTransferHandle,
+  CollabCloudToLanTransferView,
+  CollabLanToCloudTransferRequest,
+  CollabLanToCloudTransferSelectionRequest,
+  CollabLanToCloudTransferView,
+  CollabPendingReconnectView,
   CollabPrepareCloudToLanTargetRequest,
+  CollabProjectCapabilities,
   CollabWithdrawCloudToLanTargetRequest,
 } from '@/core/collab/CollabFeaturePort';
 
@@ -135,6 +134,10 @@ export interface CollabMembershipPort {
 export interface CollabLocalExitPort {
   leaveProject(
     request: CollabLeaveProjectRequest,
+    options?: CollabOperationOptions,
+  ): Promise<void>;
+  resumeLeave(
+    projectId: CollabProjectId,
     options?: CollabOperationOptions,
   ): Promise<void>;
 }
@@ -245,6 +248,10 @@ export interface CollabPublicationPort {
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
   ): Promise<CollabCoordinationSnapshot>;
+  readProjectCapabilities(
+    projectId: CollabProjectId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabProjectCapabilities>;
   readPublishDescription(projectId: CollabProjectId): Promise<string | null>;
   listRequestComments(
     projectId: CollabProjectId,
@@ -359,7 +366,6 @@ export interface CollabCloudProjectEntryPort {
 export interface CollabFeatureServiceOptions {
   readonly authorityTransfer: CollabAuthorityTransferEntryPort;
   readonly cloudEntry: CollabCloudProjectEntryPort;
-  readonly cloudBootstrap: CollabCloudBootstrapPort;
   readonly hostTransfer: CollabHostTransferPort;
   readonly hostInstallation: Pick<HostInstallationBindingService, 'claimLegacy' | 'inspect'>;
   readonly join: CollabJoinProjectPort;
@@ -380,6 +386,10 @@ export interface CollabFeatureServiceOptions {
 }
 
 export interface CollabAuthorityTransferEntryPort {
+  acceptLanToCloudTransfer(
+    request: CollabLanToCloudTransferSelectionRequest,
+    options?: CollabOperationOptions,
+  ): Promise<CollabAuthorityTransferStatus>;
   acceptCloudToLanTransfer(
     input: Readonly<{ readonly handle: CollabCloudToLanTransferHandle }>,
     options?: CollabOperationOptions,
@@ -393,6 +403,10 @@ export interface CollabAuthorityTransferEntryPort {
     handle: CollabCloudToLanTransferHandle,
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus>;
+  cancelLanToCloudTransfer(
+    request: CollabLanToCloudTransferSelectionRequest,
+    options?: CollabOperationOptions,
+  ): Promise<CollabAuthorityTransferStatus>;
   observeCloudToLanTransfer(
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
@@ -401,6 +415,18 @@ export interface CollabAuthorityTransferEntryPort {
     input: CollabPrepareCloudToLanTargetRequest & Readonly<{ readonly operationIntentId: string }>,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTargetPreparationDescriptor>;
+  proposeLanToCloudTransfer(
+    request: CollabLanToCloudTransferRequest,
+    options?: CollabOperationOptions,
+  ): Promise<CollabAuthorityTransferStatus>;
+  readLanToCloudTransfer(
+    projectId: CollabProjectId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabLanToCloudTransferView | null>;
+  readCloudToLanTransfer(
+    projectId: CollabProjectId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabCloudToLanTransferView | null>;
   redeemManagerReissuedClaim(
     invitation: CloudMembershipClaimInvitation,
     options?: CollabOperationOptions,
@@ -409,19 +435,6 @@ export interface CollabAuthorityTransferEntryPort {
     input: CollabWithdrawCloudToLanTargetRequest,
     options?: CollabOperationOptions,
   ): Promise<void>;
-}
-
-export interface CollabCloudBootstrapPort {
-  cancel(projectId: CollabProjectId): Promise<CloudBootstrapTransitionRecord>;
-  close(): Promise<void>;
-  prepareLocalRecovery(): Promise<void>;
-  recoverPending(): Promise<void>;
-  startFormerHost(
-    input: StartCloudBootstrapServiceInput,
-  ): Promise<CloudBootstrapTransitionRecord>;
-  submitParticipant(
-    input: SubmitCloudBootstrapServiceParticipantInput,
-  ): Promise<CloudBootstrapTransitionRecord>;
 }
 
 function operationError(reason: string): CollabError {
@@ -535,6 +548,56 @@ class CollabFeatureServiceCore {
     return this.#stateValue;
   }
 
+  proposeLanToCloudTransfer(
+    request: CollabLanToCloudTransferRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    return this.#runAuthorityTransfer(
+      options,
+      port => port.proposeLanToCloudTransfer(request, options),
+    );
+  }
+
+  readCloudToLanTransfer(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabCloudToLanTransferView | null>> {
+    return this.#runAuthorityTransfer(
+      options,
+      port => port.readCloudToLanTransfer(projectId, options),
+    );
+  }
+
+  readLanToCloudTransfer(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabLanToCloudTransferView | null>> {
+    return this.#runAuthorityTransfer(
+      options,
+      port => port.readLanToCloudTransfer(projectId, options),
+    );
+  }
+
+  acceptLanToCloudTransfer(
+    request: CollabLanToCloudTransferSelectionRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    return this.#runAuthorityTransferStatus(
+      options,
+      port => port.acceptLanToCloudTransfer(request, options),
+    );
+  }
+
+  cancelLanToCloudTransfer(
+    request: CollabLanToCloudTransferSelectionRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    return this.#runAuthorityTransferStatus(
+      options,
+      port => port.cancelLanToCloudTransfer(request, options),
+    );
+  }
+
   prepareCloudToLanTarget(
     request: CollabPrepareCloudToLanTargetRequest,
     options: CollabOperationOptions = {},
@@ -559,7 +622,7 @@ class CollabFeatureServiceCore {
     handle: CollabCloudToLanTransferHandle,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
-    return this.#runAuthorityTransfer(
+    return this.#runAuthorityTransferStatus(
       options,
       port => port.acceptCloudToLanTransfer({ handle }, options),
     );
@@ -579,7 +642,7 @@ class CollabFeatureServiceCore {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
-    return this.#runAuthorityTransfer(
+    return this.#runAuthorityTransferStatus(
       options,
       port => port.observeCloudToLanTransfer(projectId, options),
     );
@@ -589,7 +652,7 @@ class CollabFeatureServiceCore {
     handle: CollabCloudToLanTransferHandle,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
-    return this.#runAuthorityTransfer(
+    return this.#runAuthorityTransferStatus(
       options,
       port => port.cancelCloudToLanTransfer(handle, options),
     );
@@ -977,6 +1040,49 @@ class CollabFeatureServiceCore {
     }
   }
 
+  async readPendingReconnect(
+    projectId: CollabProjectId,
+    _options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabPendingReconnectView | null>> {
+    try {
+      const pending = await this.foundation.local.projects.loadProjectDocument(
+        projectId,
+        'pending-operation',
+        decodeCollabPendingProjectOperation,
+      );
+      return {
+        status: 'success',
+        value: pending?.kind === 'cloud-relocation'
+          ? Object.freeze({
+              operationId: pending.record.operationId,
+              projectId,
+              serverUrl: pending.record.newAuthority.serverUrl,
+            })
+          : null,
+      };
+    } catch (error) {
+      return this.#failureResult(error);
+    }
+  }
+
+  async resumeReconnect(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabLocalProjectSummary>> {
+    const pending = await this.readPendingReconnect(projectId);
+    if (pending.status !== 'success') return pending;
+    if (!pending.value) {
+      return {
+        error: operationError('cloud-relocation-pending-missing'),
+        status: 'failure',
+      };
+    }
+    return this.reconnectProject({
+      authority: { kind: 'cloud', serverUrl: pending.value.serverUrl },
+      projectId,
+    }, options);
+  }
+
   private async reconnectManagerReissuedClaim(
     request: Extract<CollabReconnectProjectRequest, { encodedInvitation: string }>,
     options: CollabOperationOptions,
@@ -1003,6 +1109,23 @@ class CollabFeatureServiceCore {
       );
       throwIfCancelled(options.signal);
       return { status: 'success', value: snapshot };
+    } catch (error) {
+      return this.#failureResult(error);
+    }
+  }
+
+  async readProjectCapabilities(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabProjectCapabilities>> {
+    try {
+      throwIfCancelled(options.signal);
+      const capabilities = await this.options.publication.readProjectCapabilities(
+        projectId,
+        options,
+      );
+      throwIfCancelled(options.signal);
+      return { status: 'success', value: capabilities };
     } catch (error) {
       return this.#failureResult(error);
     }
@@ -1727,6 +1850,20 @@ class CollabFeatureServiceCore {
     }
   }
 
+  async resumeLeave(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<void>> {
+    try {
+      throwIfCancelled(options.signal);
+      await this.options.localExit.resumeLeave(projectId, options);
+      await this.#refreshProjects();
+      return { status: 'success', value: undefined };
+    } catch (error) {
+      return this.#failureResult(error);
+    }
+  }
+
   async createManagerResponsibilityOffer(
     request: CollabCreateManagerResponsibilityOfferRequest,
     options: CollabOperationOptions = {},
@@ -1902,7 +2039,6 @@ class CollabFeatureServiceCore {
       await this.options.cloudEntry.close();
       await this.operationAdmission.drain();
       await lifecycleRecoveryDrain;
-      await this.options.cloudBootstrap.close();
       await lifecycleRecoveryClose;
       await this.options.authorityTransfer.close();
       await Promise.resolve()
@@ -2260,8 +2396,26 @@ class CollabFeatureServiceCore {
       const value = await operation(this.options.authorityTransfer);
       return { status: 'success', value };
     } catch (error) {
-      return this.#failureResult(error);
+      const result = this.#failureResult<T>(error);
+      if (result.status === 'recovery-required') {
+        await this.#refreshAfterMutation(result);
+      }
+      return result;
     }
+  }
+
+  async #runAuthorityTransferStatus(
+    options: CollabOperationOptions,
+    operation: (
+      port: CollabAuthorityTransferEntryPort,
+    ) => Promise<CollabAuthorityTransferStatus>,
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    const result = await this.#runAuthorityTransfer(options, operation);
+    if (
+      result.status === 'success'
+      && (result.value.state === 'cancelled' || result.value.state === 'completed')
+    ) await this.#refreshAfterMutation(result);
+    return result;
   }
 
    #publishState(state: CollabFeatureState): void {
@@ -2289,7 +2443,6 @@ class CollabFeatureServiceCore {
 
 export class CollabFeatureService implements CollabFeaturePort {
   readonly boundedQueries: CollabBoundedQueryPort;
-  private readonly cloudBootstrap: CollabCloudBootstrapPort;
    readonly #operationAdmission: ProjectOperationAdmission;
   private readonly core: CollabFeatureServiceCore;
 
@@ -2300,7 +2453,6 @@ export class CollabFeatureService implements CollabFeaturePort {
     operationAdmission: ProjectOperationAdmission = new ProjectOperationAdmission(),
   ) {
     this.#operationAdmission = operationAdmission;
-    this.cloudBootstrap = options.cloudBootstrap;
     this.core = new CollabFeatureServiceCore(
       foundation,
       projectSetup,
@@ -2390,11 +2542,20 @@ export class CollabFeatureService implements CollabFeaturePort {
       () => this.core.reconnectProject(...args),
     )
   );
+  readPendingReconnect: CollabFeaturePort['readPendingReconnect'] = (...args) => (
+    this.runGlobal(() => this.core.readPendingReconnect(...args))
+  );
+  resumeReconnect: CollabFeaturePort['resumeReconnect'] = (...args) => (
+    this.runGlobal(() => this.core.resumeReconnect(...args))
+  );
   resumeSetup: CollabFeaturePort['resumeSetup'] = (...args) => (
     this.runGlobal(() => this.core.resumeSetup(...args))
   );
   readSnapshot: CollabFeaturePort['readSnapshot'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.readSnapshot(...args))
+  );
+  readProjectCapabilities: CollabFeaturePort['readProjectCapabilities'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.readProjectCapabilities(...args))
   );
   readPublishDescription: CollabFeaturePort['readPublishDescription'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.readPublishDescription(...args))
@@ -2425,7 +2586,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.project(() => args[0], 'active', () => this.core.createInvitation(...args))
   );
   readManagementOperation: CollabFeaturePort['readManagementOperation'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.readManagementOperation(...args))
+    this.runGlobal(() => this.core.readManagementOperation(...args))
   );
   resumeManagementOperation: CollabFeaturePort['resumeManagementOperation'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.resumeManagementOperation(...args))
@@ -2434,7 +2595,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.project(() => args[0], 'active', () => this.core.listInvitations(...args))
   );
   completeManagementOperation: CollabFeaturePort['completeManagementOperation'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.completeManagementOperation(...args))
+    this.runGlobal(() => this.core.completeManagementOperation(...args))
   );
   listMembers: CollabFeaturePort['listMembers'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.listMembers(...args))
@@ -2518,6 +2679,9 @@ export class CollabFeatureService implements CollabFeaturePort {
   leaveProject: CollabFeaturePort['leaveProject'] = (...args) => (
     this.projectTransition(() => args[0].projectId, () => this.core.leaveProject(...args))
   );
+  resumeLeave: CollabFeaturePort['resumeLeave'] = (...args) => (
+    this.projectTransition(() => args[0], () => this.core.resumeLeave(...args))
+  );
   createManagerResponsibilityOffer: CollabFeaturePort[
     'createManagerResponsibilityOffer'
   ] = (...args) => this.projectTransition(
@@ -2565,6 +2729,25 @@ export class CollabFeatureService implements CollabFeaturePort {
       () => this.core.retryProjectCleanup(...args),
     )
   );
+  proposeLanToCloudTransfer: CollabFeaturePort['proposeLanToCloudTransfer'] = (...args) => (
+    this.project(
+      () => args[0].projectId,
+      'active',
+      () => this.core.proposeLanToCloudTransfer(...args),
+    )
+  );
+  readLanToCloudTransfer: CollabFeaturePort['readLanToCloudTransfer'] = (...args) => (
+    this.runGlobal(() => this.core.readLanToCloudTransfer(...args))
+  );
+  readCloudToLanTransfer: CollabFeaturePort['readCloudToLanTransfer'] = (...args) => (
+    this.runGlobal(() => this.core.readCloudToLanTransfer(...args))
+  );
+  acceptLanToCloudTransfer: CollabFeaturePort['acceptLanToCloudTransfer'] = (...args) => (
+    this.projectTransition(() => args[0].projectId, () => this.core.acceptLanToCloudTransfer(...args))
+  );
+  cancelLanToCloudTransfer: CollabFeaturePort['cancelLanToCloudTransfer'] = (...args) => (
+    this.projectTransition(() => args[0].projectId, () => this.core.cancelLanToCloudTransfer(...args))
+  );
   prepareCloudToLanTarget: CollabFeaturePort['prepareCloudToLanTarget'] = (...args) => (
     this.projectTransition(() => args[0].projectId, () => this.core.prepareCloudToLanTarget(...args))
   );
@@ -2581,10 +2764,10 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.projectTransition(() => args[0].projectId, () => this.core.withdrawCloudToLanTarget(...args))
   );
   observeCloudToLanTransfer: CollabFeaturePort['observeCloudToLanTransfer'] = (...args) => (
-    this.project(() => args[0], 'active', () => this.core.observeCloudToLanTransfer(...args))
+    this.runGlobal(() => this.core.observeCloudToLanTransfer(...args))
   );
   cancelCloudToLanTransfer: CollabFeaturePort['cancelCloudToLanTransfer'] = (...args) => (
-    this.project(() => args[0].projectId, 'active', () => this.core.cancelCloudToLanTransfer(...args))
+    this.runGlobal(() => this.core.cancelCloudToLanTransfer(...args))
   );
   subscribe: CollabFeaturePort['subscribe'] = (...args) => this.core.subscribe(...args);
 
@@ -2637,30 +2820,6 @@ export class CollabFeatureService implements CollabFeaturePort {
     operation: () => Promise<T>,
   ): Promise<T> {
     return this.#operationAdmission.runProjectTransition(() => projectId, operation);
-  }
-
-  recoverPendingCloudBootstraps(): Promise<void> {
-    return this.cloudBootstrap.recoverPending();
-  }
-
-  prepareCloudBootstrapLocalRecovery(): Promise<void> {
-    return this.cloudBootstrap.prepareLocalRecovery();
-  }
-
-  startCloudBootstrapFormerHost(
-    input: StartCloudBootstrapServiceInput,
-  ): Promise<CloudBootstrapTransitionRecord> {
-    return this.cloudBootstrap.startFormerHost(input);
-  }
-
-  submitCloudBootstrapParticipant(
-    input: SubmitCloudBootstrapServiceParticipantInput,
-  ): Promise<CloudBootstrapTransitionRecord> {
-    return this.cloudBootstrap.submitParticipant(input);
-  }
-
-  cancelCloudBootstrap(projectId: CollabProjectId): Promise<CloudBootstrapTransitionRecord> {
-    return this.cloudBootstrap.cancel(projectId);
   }
 
   close(): Promise<void> {

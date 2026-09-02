@@ -151,6 +151,7 @@ function manifest(mainOid: string): DevelopmentBootstrapManifest {
 function lanMembership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: OLD_ENDPOINT,
       gitRemoteUrl: OLD_REMOTE,
       hostCaCertificatePem: [

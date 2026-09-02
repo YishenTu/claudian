@@ -138,4 +138,29 @@ describe('AuthorityTransferRuntimeRegistry', () => {
       safeContext: { reason: 'authority-transfer-runtime-not-bound' },
     });
   });
+
+  it('forgets a reconstructed runtime after terminal cleanup', async () => {
+    const first = { resume: jest.fn(async () => undefined) };
+    const second = { resume: jest.fn(async () => undefined) };
+    const resolve = jest.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+    const registry = new AuthorityTransferRuntimeRegistry({ resolve });
+    const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: 'intent-runtime',
+      stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime',
+      status: status(),
+    });
+
+    await registry.resume(record, {});
+    expect(registry.release(record.projectId, record.localRole)).toBe(true);
+    await registry.resume(record, {});
+
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(first.resume).toHaveBeenCalledTimes(1);
+    expect(second.resume).toHaveBeenCalledTimes(1);
+  });
 });

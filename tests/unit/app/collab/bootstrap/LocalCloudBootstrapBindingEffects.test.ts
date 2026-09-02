@@ -86,6 +86,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     const record = activatedRecord();
     let membership: CollabLocalMembershipRecord = {
       authority: {
+        authorityGeneration: 1,
         endpoint: record.oldAuthority.endpoint.replace(/\/$/u, ''),
         gitRemoteUrl: record.oldAuthority.gitRemoteUrl,
         hostCaCertificatePem: 'PRIVATE CA',
@@ -259,6 +260,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
     const record = activatedRecord();
     const membership: CollabLocalMembershipRecord = {
       authority: {
+        authorityGeneration: 1,
         endpoint: record.oldAuthority.endpoint,
         gitRemoteUrl: record.oldAuthority.gitRemoteUrl,
         hostCaCertificatePem: 'PRIVATE CA',

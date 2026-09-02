@@ -35,6 +35,7 @@ function mergedRequest() {
 function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:54545',
       gitRemoteUrl: 'https://192.168.1.20:54545/v1/git/project-a/repository.git',
       hostCaCertificatePem: 'certificate',

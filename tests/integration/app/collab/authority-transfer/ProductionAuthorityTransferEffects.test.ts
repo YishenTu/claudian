@@ -1879,6 +1879,9 @@ describe('production authority-transfer effects', () => {
               };
             }),
           },
+          supports: (capability: CollabCloudCapability) => (
+            capability === 'authority-transfer'
+          ),
         };
       }),
     };
@@ -1970,6 +1973,7 @@ describe('production authority-transfer effects', () => {
       if (begunResult.status !== 'success') throw new Error('Manager begin failed');
       const accepted = await target.composition.feature
         .acceptCloudToLanTransfer(begunResult.value);
+      expect(accepted).toMatchObject({ status: 'success' });
       if (accepted.status !== 'success') {
         if ('error' in accepted) throw accepted.error;
         throw new Error(`Target acceptance returned ${accepted.status}`);
