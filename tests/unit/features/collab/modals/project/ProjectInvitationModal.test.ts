@@ -254,7 +254,7 @@ describe('ProjectInvitationModal', () => {
   it('redacts a retained Cloud invitation when its secret availability expires', async () => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
       const port = {
         completeManagementOperation: jest.fn().mockResolvedValue(success(undefined)),
         createInvitation: jest.fn(),
@@ -294,7 +294,7 @@ describe('ProjectInvitationModal', () => {
   it('revalidates a retained Cloud invitation immediately before copying it', async () => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
       const retained = {
         action: 'create-invitation' as const,
         completionId: 'completion-copy-revalidation',
@@ -327,7 +327,7 @@ describe('ProjectInvitationModal', () => {
 
       modal.onOpen();
       await flush();
-      jest.setSystemTime(new Date('2026-09-02T00:00:01.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:01.000Z'));
       modal.contentEl.querySelector<HTMLButtonElement>(
         '[data-action="copy-invitation"]',
       )?.click();

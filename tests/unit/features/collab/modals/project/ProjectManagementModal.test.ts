@@ -362,7 +362,7 @@ describe('ProjectManagementModal', () => {
   it('redacts a retained member claim when its secret availability expires', async () => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
       const members = [member('member-manager', 'Alice', { role: 'manager' })];
       const port = createPort(members, {
         readManagementOperation: jest.fn().mockResolvedValue(success({
@@ -414,7 +414,7 @@ describe('ProjectManagementModal', () => {
   it('revalidates a retained member claim immediately before copying it', async () => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
       const members = [member('member-manager', 'Alice', { role: 'manager' })];
       const retained = {
         action: 'reissue-member-claim' as const,
@@ -452,7 +452,7 @@ describe('ProjectManagementModal', () => {
       modal.onOpen();
       await flush();
       await flush();
-      jest.setSystemTime(new Date('2026-09-02T00:00:01.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:01.000Z'));
       modal.contentEl.querySelector<HTMLButtonElement>(
         '[data-action="copy-member-claim"]',
       )?.click();
