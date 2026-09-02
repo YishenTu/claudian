@@ -37,6 +37,8 @@ import {
 } from '@/shared/async/LatestTaskScope';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 export type ProjectManagementModalPort = Pick<
   CollabFeaturePort,
   | 'acceptHostTransfer'
@@ -140,6 +142,7 @@ export class ProjectManagementModal extends Modal {
   #operationPending = false;
   readonly #readTasks = new LatestTaskScope();
   #retainedInvitation: CollabInvitationView | null = null;
+  #secretExpiryTimer: number | null = null;
   #snapshot: CollabProjectSnapshot | null = null;
   #status: AccessStatus | null = null;
   readonly #port: ProjectManagementModalPort;
@@ -158,6 +161,7 @@ export class ProjectManagementModal extends Modal {
   }
 
   onOpen(): void {
+    this.#clearSecretExpiryTimer();
     this.#abortController = new AbortController();
     this.#confirmation = null;
     this.#capabilities = null;
@@ -214,6 +218,7 @@ export class ProjectManagementModal extends Modal {
   onClose(): void {
     this.#opened = false;
     this.#abortController.abort();
+    this.#clearSecretExpiryTimer();
     this.#featureSubscription?.dispose();
     this.#featureSubscription = null;
     this.#readTasks.cancel();
@@ -441,11 +446,54 @@ export class ProjectManagementModal extends Modal {
   }
 
   #applyManagementOperation(operation: CollabManagementOperationView | null): void {
+    this.#clearSecretExpiryTimer();
     this.#managementOperation = operation;
-    this.#retainedInvitation = operation?.action === 'reissue-member-claim'
-      && operation.status === 'result-retained'
-      ? operation.invitation
-      : null;
+    this.#retainedInvitation = null;
+    if (
+      operation?.action !== 'reissue-member-claim'
+      || operation.status !== 'result-retained'
+    ) return;
+    if (!operation.invitation || !operation.secretAvailableUntil) {
+      this.#managementOperation = { ...operation, invitation: null };
+      return;
+    }
+    this.#retainedInvitation = operation.invitation;
+    this.#scheduleSecretExpiry(
+      operation.completionId,
+      operation.secretAvailableUntil,
+    );
+  }
+
+  #scheduleSecretExpiry(completionId: string, deadline: string): void {
+    const expiresAt = Date.parse(deadline);
+    const remaining = expiresAt - Date.now();
+    if (!Number.isFinite(expiresAt) || remaining <= 0) {
+      this.#redactRetainedInvitation(completionId);
+      return;
+    }
+    this.#secretExpiryTimer = window.setTimeout(() => {
+      this.#secretExpiryTimer = null;
+      if (!this.#opened || this.#managementOperation?.completionId !== completionId) return;
+      if (Date.now() < expiresAt) {
+        this.#scheduleSecretExpiry(completionId, deadline);
+        return;
+      }
+      this.#redactRetainedInvitation(completionId);
+    }, Math.min(remaining, MAX_TIMER_DELAY_MS));
+  }
+
+  #redactRetainedInvitation(completionId: string): void {
+    const operation = this.#managementOperation;
+    if (operation?.completionId !== completionId) return;
+    this.#retainedInvitation = null;
+    this.#managementOperation = { ...operation, invitation: null };
+    if (this.#snapshot) this.#render();
+  }
+
+  #clearSecretExpiryTimer(): void {
+    if (this.#secretExpiryTimer === null) return;
+    window.clearTimeout(this.#secretExpiryTimer);
+    this.#secretExpiryTimer = null;
   }
 
   #render(): void {
@@ -1584,15 +1632,16 @@ export class ProjectManagementModal extends Modal {
       );
       return;
     }
-    if (operation.action !== 'reissue-member-claim') {
+    if (operation.action !== 'reissue-member-claim' || operation.invitation === null) {
       this.#createLifecycleButton(
         this.#requireAccessContent(),
         'complete-management-operation',
         t('collab.access.finishOperation'),
         () => this.#port.completeManagementOperation({
+          completionId: operation.completionId,
           projectId: this.#options.project.id,
         }),
-        () => { this.#managementOperation = null; },
+        () => { this.#applyManagementOperation(null); },
         true,
       );
     }
@@ -1603,11 +1652,7 @@ export class ProjectManagementModal extends Modal {
       this.#options.project.id,
     );
     if (result.status !== 'success') return result;
-    this.#managementOperation = result.value;
-    this.#retainedInvitation = result.value.action === 'reissue-member-claim'
-      && result.value.status === 'result-retained'
-      ? result.value.invitation
-      : null;
+    this.#applyManagementOperation(result.value);
     return result;
   }
 
@@ -1628,7 +1673,12 @@ export class ProjectManagementModal extends Modal {
       attr: { 'data-action': 'copy-member-claim', type: 'button' },
       text: t('collab.access.copyMemberClaim'),
     });
-    copy.disabled = this.#operationPending || !this.#options.copyText;
+    copy.disabled = this.#operationPending
+      || !this.#options.copyText
+      || this.#managementOperation?.action !== 'reissue-member-claim'
+      || this.#managementOperation.status !== 'result-retained'
+      || this.#managementOperation.invitation?.encodedInvitation
+        !== this.#retainedInvitation.encodedInvitation;
     copy.addEventListener('click', () => void this.#copyRetainedInvitation());
   }
 
@@ -1642,32 +1692,84 @@ export class ProjectManagementModal extends Modal {
       projectId: this.#options.project.id,
     });
     if (!this.#opened || this.#abortController.signal.aborted) return;
-    this.#operationPending = false;
     if (result.status === 'success') {
-      this.#retainedInvitation = result.value;
-      this.#status = { kind: 'success', text: t('collab.access.memberClaimReady') };
+      const retained = await this.#port.readManagementOperation(
+        this.#options.project.id,
+        { signal: this.#abortController.signal },
+      );
+      if (!this.#opened || this.#abortController.signal.aborted) return;
+      if (
+        retained.status === 'success'
+        && retained.value?.action === 'reissue-member-claim'
+        && retained.value.status === 'result-retained'
+        && retained.value.invitation?.encodedInvitation === result.value.encodedInvitation
+        && retained.value.invitation.expiresAt === result.value.expiresAt
+      ) {
+        this.#applyManagementOperation(retained.value);
+        this.#status = { kind: 'success', text: t('collab.access.memberClaimReady') };
+      } else {
+        this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
+      }
     } else {
       this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
     }
+    this.#operationPending = false;
     this.#render();
   }
 
   async #copyRetainedInvitation(): Promise<void> {
-    if (!this.#retainedInvitation || !this.#options.copyText || this.#operationPending) return;
+    const operation = this.#managementOperation;
+    const invitation = this.#retainedInvitation;
+    if (
+      !invitation
+      || !this.#options.copyText
+      || this.#operationPending
+      || operation?.action !== 'reissue-member-claim'
+      || operation.status !== 'result-retained'
+      || operation.invitation?.encodedInvitation !== invitation.encodedInvitation
+    ) return;
     this.#operationPending = true;
     this.#render();
     try {
-      await this.#options.copyText(this.#retainedInvitation.encodedInvitation);
+      const retained = await this.#port.readManagementOperation(
+        this.#options.project.id,
+        { signal: this.#abortController.signal },
+      );
+      if (!this.#opened || this.#abortController.signal.aborted) return;
+      if (retained.status !== 'success') {
+        this.#clearSecretExpiryTimer();
+        this.#retainedInvitation = null;
+        this.#managementOperation = { ...operation, invitation: null };
+        this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
+        return;
+      }
+      this.#applyManagementOperation(retained.value);
+      const validatedInvitation = this.#retainedInvitation;
+      if (
+        retained.value?.action !== 'reissue-member-claim'
+        || retained.value.status !== 'result-retained'
+        || retained.value.completionId !== operation.completionId
+        || !validatedInvitation
+        || validatedInvitation.encodedInvitation !== invitation.encodedInvitation
+        || validatedInvitation.expiresAt !== invitation.expiresAt
+      ) {
+        this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
+        return;
+      }
+      await this.#options.copyText(validatedInvitation.encodedInvitation);
       if (!this.#opened || this.#abortController.signal.aborted) return;
       const completed = await this.#port.completeManagementOperation(
-        { projectId: this.#options.project.id },
+        {
+          completionId: operation.completionId,
+          projectId: this.#options.project.id,
+        },
       );
       if (!this.#opened || this.#abortController.signal.aborted) return;
       if (completed.status !== 'success') {
         this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
         return;
       }
-      this.#retainedInvitation = null;
+      this.#applyManagementOperation(null);
       this.#status = { kind: 'success', text: t('collab.access.memberClaimCopied') };
     } catch {
       if (this.#opened && !this.#abortController.signal.aborted) {

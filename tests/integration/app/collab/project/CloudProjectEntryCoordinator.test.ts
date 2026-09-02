@@ -951,25 +951,25 @@ async function createFixture(options: {
         })));
         return;
       }
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const envelope = decodeCollabProtocolEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      if (envelope.status !== 'ok') throw envelope.error;
       if (routeTarget === collabCloudProjectOperationRoute(projectId, 'getProjectSnapshot').target) {
         await onSnapshot(projectId);
         if (options.snapshotFailure === 'transport') { request.socket.destroy(); return; }
         if (options.snapshotFailure === 'malformed') { response.end('{"invalid":true}'); return; }
         if (options.snapshotFailure === 'authorization') {
-          response.writeHead(403).end(JSON.stringify(collabCloudErrorEnvelope('snapshot-entry', new CollabError({ code: 'authorization-denied' }))));
+          response.writeHead(403).end(JSON.stringify(collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'authorization-denied' }))));
           return;
         }
         if (!bound) {
-          response.writeHead(404).end(JSON.stringify(collabCloudErrorEnvelope('snapshot-entry', new CollabError({ code: 'project-not-found' }))));
+          response.writeHead(404).end(JSON.stringify(collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'project-not-found' }))));
           return;
         }
-        response.end(JSON.stringify(collabCloudSuccessEnvelope('snapshot-entry', snapshot)));
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, snapshot)));
         return;
       }
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const envelope = decodeCollabProtocolEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      if (envelope.status !== 'ok') throw envelope.error;
       if (routeTarget === collabCloudProjectOperationRoute(projectId, 'joinCloudProject').target) {
         const decoded = collabControlOperationCodec('joinCloudProject').decodeRequest(envelope.value.data);
         if (decoded.status !== 'ok') throw decoded.error;

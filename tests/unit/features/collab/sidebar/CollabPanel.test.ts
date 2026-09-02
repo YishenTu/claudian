@@ -1,15 +1,19 @@
 /** @jest-environment jsdom */
 
+import { getByRole } from '@testing-library/dom';
 import { type App, Menu } from 'obsidian';
 
 import { type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { CollabTransientSurfaceRegistry } from '@/features/collab/modals/CollabTransientSurfaceRegistry';
 
 const mockOpenCreate = jest.fn();
 const mockOpenJoin = jest.fn();
 const mockOpenManagement = jest.fn();
 const mockOpenReconnect = jest.fn();
 const mockCreateManagement = jest.fn();
+let mockManagementAction: HTMLButtonElement | null = null;
+let mockManagementMutation: jest.Mock | null = null;
 
 jest.mock('@/features/collab/modals/project/CreateProjectModal', () => ({
   CreateProjectModal: class MockCreateProjectModal {
@@ -34,8 +38,44 @@ jest.mock('@/features/collab/modals/project/ReconnectProjectModal', () => ({
 
 jest.mock('@/features/collab/modals/project/ProjectManagementModal', () => ({
   ProjectManagementModal: class MockProjectManagementModal {
-    constructor(...args: unknown[]) { mockCreateManagement(...args); }
-    open(): void { mockOpenManagement(); }
+    readonly #action: HTMLButtonElement | null;
+    #closed = false;
+    readonly #onClosed: (() => void) | undefined;
+
+    constructor(...args: unknown[]) {
+      mockCreateManagement(...args);
+      const options = args[2] as {
+        onClosed?: () => void;
+        project: CollabLocalProjectSummary;
+      };
+      this.#onClosed = options.onClosed;
+      this.#action = mockManagementMutation ? document.createElement('button') : null;
+      if (this.#action) {
+        this.#action.type = 'button';
+        this.#action.setAttribute('aria-label', `Start ${options.project.name} Host`);
+        this.#action.addEventListener('click', () => {
+          if (!this.#closed) mockManagementMutation?.(options.project.id);
+        });
+      }
+    }
+
+    close(): void {
+      if (this.#closed) return;
+      this.#closed = true;
+      if (this.#action) {
+        this.#action.disabled = true;
+        this.#action.remove();
+      }
+      this.#onClosed?.();
+    }
+
+    open(): void {
+      mockOpenManagement();
+      if (this.#action) {
+        document.body.appendChild(this.#action);
+        mockManagementAction = this.#action;
+      }
+    }
   },
 }));
 
@@ -369,6 +409,9 @@ describe('CollabPanel', () => {
     mockOpenCreate.mockClear();
     mockOpenJoin.mockClear();
     mockOpenReconnect.mockClear();
+    mockManagementAction?.remove();
+    mockManagementAction = null;
+    mockManagementMutation = null;
   });
 
   afterEach(() => {
@@ -821,6 +864,56 @@ describe('CollabPanel', () => {
     expect(port.selectProject).toHaveBeenCalledWith('project-beta');
     menu.items[2]?.clickHandler?.();
     expect(mockOpenReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes old Project management before a delayed Project selection publishes', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({
+      lifecycle: 'ready',
+      projects: [
+        project(),
+        project({
+          id: 'project-beta',
+          name: 'Beta',
+          workspacePath: 'workspace/beta',
+        }),
+      ],
+      selectedProjectId: 'project-alpha',
+    });
+    let finishSelection!: () => void;
+    port.selectProject.mockImplementationOnce(() => new Promise(resolve => {
+      finishSelection = () => resolve({ status: 'cancelled' });
+    }));
+    const transientSurfaces = new CollabTransientSurfaceRegistry();
+    mockManagementMutation = jest.fn();
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(),
+      configuredGitPath: () => '',
+      onSaveConfiguredGitPath: jest.fn(),
+      port,
+      projectSetup: { getPendingSetupOperationId: jest.fn() },
+      resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
+      transientSurfaces,
+    });
+
+    panel.setActive(true);
+    await flush();
+    getByRole(container, 'button', { name: 'Project management' }).click();
+    const oldProjectAction = getByRole(document.body, 'button', {
+      name: 'Start Alpha Host',
+    }) as HTMLButtonElement;
+
+    getByRole(container, 'button', { name: 'Select project' }).click();
+    MockMenu.instances.at(-1)?.items[1]?.clickHandler?.();
+
+    expect(port.state.selectedProjectId).toBe('project-alpha');
+    expect(oldProjectAction.disabled).toBe(true);
+    expect(oldProjectAction.isConnected).toBe(false);
+    oldProjectAction.click();
+    expect(mockManagementMutation).not.toHaveBeenCalled();
+
+    finishSelection();
+    await flush();
   });
 
   it('mounts the shared personal Publish surface for a healthy Project', async () => {

@@ -130,6 +130,7 @@ function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
     acceptLanToCloudTransfer: () => unexpected('acceptLanToCloudTransfer'),
     acceptCloudToLanTransfer: () => unexpected('acceptCloudToLanTransfer'),
     beginCloudToLanTransfer: () => unexpected('beginCloudToLanTransfer'),
+    beginClose: () => undefined,
     cancelCloudToLanTransfer: () => unexpected('cancelCloudToLanTransfer'),
     cancelLanToCloudTransfer: () => unexpected('cancelLanToCloudTransfer'),
     close: () => Promise.resolve(),

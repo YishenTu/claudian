@@ -153,7 +153,7 @@ describe('LocalCloudBootstrapBindingEffects', () => {
             maxJsonPayloadUtf8Bytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
             maxRepositoryBytes: 1_024,
           })
-          : collabCloudSuccessEnvelope('bootstrap-snapshot', {
+          : collabCloudSuccessEnvelope((input.body as { readonly requestId: string }).requestId, {
             ...snapshot,
             members: [snapshot.currentMember],
             project: {

@@ -89,6 +89,7 @@ export class AuthorityTransferEntryService {
   readonly #createLanClient: NonNullable<AuthorityTransferEntryServiceOptions['createLanClient']>;
   readonly #loadMembership: AuthorityTransferEntryServiceOptions['loadMembership'];
   readonly #module: AuthorityTransferModule;
+  readonly #sharedAcceptController = new AbortController();
   readonly #pendingAccepts = new Map<CollabProjectId, PendingLanToCloudAcceptance>();
   readonly #pendingSources = new Map<
     CollabProjectId,
@@ -182,9 +183,11 @@ export class AuthorityTransferEntryService {
       if (pending.transferId !== request.transferId) {
         throw entryError('authority-transfer-source-proposal-stale');
       }
-      return this.#waitForAcceptance(pending.promise, options.signal);
+      return this.#waitForSharedAcceptance(pending.promise, options.signal);
     }
-    const promise = this.#acceptLanToCloudTransfer(request, {});
+    const promise = this.#acceptLanToCloudTransfer(request, {
+      signal: this.#sharedAcceptController.signal,
+    });
     const acceptance = { promise, transferId: request.transferId };
     this.#pendingAccepts.set(request.projectId, acceptance);
     const clear = () => {
@@ -193,7 +196,7 @@ export class AuthorityTransferEntryService {
       }
     };
     void promise.then(clear, clear);
-    return this.#waitForAcceptance(promise, options.signal);
+    return this.#waitForSharedAcceptance(promise, options.signal);
   }
 
   async #acceptLanToCloudTransfer(
@@ -205,6 +208,7 @@ export class AuthorityTransferEntryService {
       this.#requireLanMembership(request.projectId, true),
       this.#requireProposal(request.projectId),
     ]);
+    throwIfCancelled(options.signal);
     if (proposal.status.transferId !== request.transferId) {
       throw entryError('authority-transfer-source-proposal-stale');
     }
@@ -232,7 +236,7 @@ export class AuthorityTransferEntryService {
       expectedSourceEndpoint: membership.authority.endpoint!,
       expectedTargetUrl: proposal.request.targetUrl,
       projectId: request.projectId,
-    });
+    }, options);
     if (isTerminal(result)) await this.#releaseSource(request.projectId, runtime);
     return result;
   }
@@ -321,8 +325,13 @@ export class AuthorityTransferEntryService {
     return this.#module.redeemManagerReissuedClaim(invitation, options);
   }
 
-  async close(): Promise<void> {
+  beginClose(): void {
     this.#closed = true;
+    this.#sharedAcceptController.abort();
+  }
+
+  async close(): Promise<void> {
+    this.beginClose();
     await Promise.allSettled([...this.#pendingAccepts.values()].map(({ promise }) => promise));
     try {
       await this.#module.close();
@@ -422,16 +431,31 @@ export class AuthorityTransferEntryService {
   #waitForAcceptance(
     promise: Promise<CollabAuthorityTransferStatus>,
     signal?: AbortSignal,
+    abortError = new CollabError({ code: 'cancelled' }),
   ): Promise<CollabAuthorityTransferStatus> {
     if (!signal) return promise;
     throwIfCancelled(signal);
     return new Promise<CollabAuthorityTransferStatus>((resolve, reject) => {
-      const onAbort = () => reject(new CollabError({ code: 'cancelled' }));
+      const onAbort = () => reject(abortError);
       signal.addEventListener('abort', onAbort, { once: true });
       void promise.then(resolve, reject).finally(() => {
         signal.removeEventListener('abort', onAbort);
       });
     });
+  }
+
+  #waitForSharedAcceptance(
+    promise: Promise<CollabAuthorityTransferStatus>,
+    callerSignal?: AbortSignal,
+  ): Promise<CollabAuthorityTransferStatus> {
+    return this.#waitForAcceptance(
+      this.#waitForAcceptance(
+        promise,
+        this.#sharedAcceptController.signal,
+        entryError('authority-transfer-entry-service-closed'),
+      ),
+      callerSignal,
+    );
   }
 
   async #releaseSource(

@@ -6,9 +6,12 @@ import {
 import {
   createCollabProjectLifecycleDurableOwners,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleOwners';
+import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 
 function stores() {
   return {
+    cloudManagementIntents: { load: jest.fn().mockResolvedValue(null) },
     cloudRetirementIntents: { load: jest.fn().mockResolvedValue(null) },
     hostTransferRecovery: { load: jest.fn().mockResolvedValue(null) },
     localCleanup: { load: jest.fn().mockResolvedValue(null) },
@@ -36,6 +39,7 @@ describe('CollabProjectLifecycleOwners', () => {
       state: await owner.inspect('project-alpha'),
     })))).resolves.toEqual([
       { name: 'host-transfer', state: 'nonterminal' },
+      { name: 'cloud-management', state: 'absent' },
       { name: 'manager-responsibility', state: 'terminal' },
       { name: 'local-exit', state: 'terminal' },
       { name: 'retirement', state: 'nonterminal' },
@@ -51,11 +55,68 @@ describe('CollabProjectLifecycleOwners', () => {
       state: await owner.inspect('project-alpha'),
     })))).resolves.toEqual([
       { name: 'host-transfer', state: 'absent' },
+      { name: 'cloud-management', state: 'absent' },
       { name: 'manager-responsibility', state: 'absent' },
       { name: 'local-exit', state: 'absent' },
       { name: 'retirement', state: 'absent' },
     ]);
   });
+
+  it.each(['prepared', 'submitted', 'result-retained'] as const)(
+    'blocks lifecycle transitions while a Cloud management intent is %s',
+    async phase => {
+      const backing = stores();
+      backing.cloudManagementIntents.load.mockResolvedValue(decodeCloudManagementIntent({
+        authorityGeneration: 7,
+        completionId: 'completion-management',
+        createdAt: '2026-09-02T00:00:00.000Z',
+        kind: 'cloud-management-intent',
+        memberId: 'member-manager',
+        operation: 'demoteManager',
+        phase,
+        projectId: 'project-alpha',
+        request: {
+          expectedManagerSetGeneration: 4,
+          expectedTargetMembershipRevision: 2,
+          idempotencyKey: 'private-management-key',
+          projectId: 'project-alpha',
+          targetMemberId: 'member-target',
+        },
+        response: phase === 'result-retained' ? {
+          demotedMemberId: 'member-target',
+          managerSetGeneration: 5,
+          membershipRevision: 3,
+          projectId: 'project-alpha',
+        } : null,
+        schemaVersion: 1,
+        serverUrl: 'https://cloud.example',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      }));
+      const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
+      const cloudManagement = owners.find(owner => owner.name === 'cloud-management')!;
+      await expect(cloudManagement.inspect('project-alpha')).resolves.toBe('nonterminal');
+
+      const retirement = jest.fn().mockResolvedValue(undefined);
+      const subsystem = new CollabProjectLifecycleSubsystem({
+        closeRecovery: jest.fn(),
+        durableOwners: owners,
+        hostTransfer: {} as never,
+        localExit: {} as never,
+        recoveryStages: [],
+        retirement: {} as never,
+      });
+      await expect(subsystem.runExclusive(
+        'project-alpha',
+        'retirement',
+        'operation',
+        retirement,
+      )).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'lifecycle-owner-pending' },
+      });
+      expect(retirement).not.toHaveBeenCalled();
+    },
+  );
 
   it('classifies a reversible Manager offer as a proposal until the target acknowledges it', async () => {
     const backing = stores();

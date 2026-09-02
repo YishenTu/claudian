@@ -79,7 +79,10 @@ export interface CollabPanelOptions {
   readonly projectSetup: CollabPanelProjectSetupPort;
   readonly resolveGit: (rescan: boolean) => Promise<GitSetupResolution>;
   readonly ticketFocus?: TicketFocusPort;
-  readonly transientSurfaces?: Pick<CollabTransientSurfaceRegistry, 'open'>;
+  readonly transientSurfaces?: Pick<
+    CollabTransientSurfaceRegistry,
+    'closeAll' | 'open'
+  >;
 }
 
 interface CollabPanelViewState {
@@ -420,6 +423,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       projectId,
     };
     this.fallbackProjectSelection = selection;
+    this.options.transientSurfaces?.closeAll();
     void this.options.port.selectProject(projectId).then(result => {
       if (this.destroyed || this.fallbackProjectSelection !== selection) return;
       selection.pending = false;
@@ -462,6 +466,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         .setChecked(project.id === selectedProjectId)
         .onClick(() => {
           if (this.destroyed || project.id === selectedProjectId) return;
+          this.options.transientSurfaces?.closeAll();
           void this.options.port.selectProject(project.id).then(() => {
             if (this.active) this.render();
           });
