@@ -23,6 +23,7 @@ import { WebSocketServer } from 'ws';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -388,6 +389,71 @@ describe('Cloud membership management', () => {
     } finally { await client.close(); await fixture.close(); }
   });
 
+  it('resumes the exact Manager Leave successor intent through production lifecycle composition', async () => {
+    const fixture = await createFixture({ managerLeaveOffer: true });
+    let client = fixture.client();
+    try {
+      await fixture.seed(client.foundation);
+      const pendingLeaves = new CollabLifecycleJournalStore(fixture.vaultRoot).pendingLeaves;
+      await pendingLeaves.save({
+        authorityGeneration: 7,
+        authorityKind: 'cloud',
+        cleanupChoice: 'keep-files',
+        cleanupMarkerNonce: 'q'.repeat(43),
+        createdAt: fixture.createdAt,
+        idempotencyKey: 'leave-manager-private',
+        kind: 'pending-leave',
+        localCleanupComplete: false,
+        localRole: 'manager',
+        memberId: MEMBER_ID,
+        operationId: 'leave-manager-operation',
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        phase: 'queued',
+        projectCreatedAt: fixture.createdAt,
+        projectId: PROJECT_ID,
+        projectName: 'Management',
+        request: null,
+        schemaVersion: 3,
+        serverUrl: fixture.serverUrl,
+        updatedAt: fixture.createdAt,
+        workspacePath: 'Projects/management',
+      });
+      const request = {
+        projectId: PROJECT_ID,
+        purpose: 'manager-leave' as const,
+        targetMemberId: 'member-carol',
+      };
+
+      await expect(client.feature.createManagerResponsibilityOffer(request)).resolves.toMatchObject({
+        status: 'recovery-required',
+      });
+      const submitted = JSON.parse(await readFile(fixture.intentPath, 'utf8'));
+      expect(submitted).toMatchObject({
+        operation: 'createManagerResponsibilityOffer',
+        phase: 'submitted',
+        request: { projectId: PROJECT_ID, purpose: 'manager-leave', targetMemberId: 'member-carol' },
+      });
+
+      await client.close();
+      client = fixture.client();
+      const resumed = await client.feature.resumeManagementOperation(PROJECT_ID);
+      expect(resumed).toMatchObject({
+        status: 'success',
+        value: { action: 'create-manager-offer', status: 'result-retained' },
+      });
+      if (resumed.status !== 'success') throw new Error('Expected retained Manager Leave offer');
+      await expect(client.feature.completeManagementOperation({
+        completionId: resumed.value.completionId,
+        projectId: PROJECT_ID,
+      })).resolves.toMatchObject({ status: 'success' });
+
+      expect(fixture.offers).toEqual([submitted.request, submitted.request]);
+      await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(pendingLeaves.load(PROJECT_ID)).resolves.toMatchObject({ phase: 'queued' });
+      expect(fixture.failures).toEqual([]);
+    } finally { await client.close(); await fixture.close(); }
+  });
+
   it('retains member removal across response loss without recapturing the target revision', async () => {
     const fixture = await createFixture();
     let client = fixture.client();
@@ -703,7 +769,7 @@ describe('Cloud membership management', () => {
   });
 });
 
-async function createFixture(options: { onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean } = {}) {
+async function createFixture(options: { onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean; managerLeaveOffer?: boolean } = {}) {
   const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-management-'));
   const createdAt = new Date().toISOString();
   const invitation = {
@@ -723,7 +789,7 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
   };
   const offered: CollabManagerResponsibilityOffer = {
     acknowledgedAt: null, expiresAt: invitation.expiresAt, managerSetGenerationAtOffer: 9, offeredAt: createdAt,
-    offerId: 'offer-created', purpose: 'manager-promotion', revision: 1, sourceManagerMemberId: options.receiptTarget ? 'member-bob' : MEMBER_ID,
+    offerId: 'offer-created', purpose: options.managerLeaveOffer ? 'manager-leave' : 'manager-promotion', revision: 1, sourceManagerMemberId: options.receiptTarget ? 'member-bob' : MEMBER_ID,
     state: 'offered', targetMemberId: options.receiptTarget ? MEMBER_ID : 'member-carol', targetMembershipRevisionAtOffer: options.receiptTarget ? 4 : 8, terminalAt: null,
   };
   const snapshot = {
@@ -996,7 +1062,7 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
   if (!address || typeof address === 'string') throw new Error('Missing fixture address');
   const serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
   return {
-    failures, intentPath, receiptPath, invitation, requests, revocations, demotions, removals, offers, offerCancellations, promotions, claimReissues, claimRevocations, acknowledgements, claim, serverUrl,
+    failures, intentPath, receiptPath, invitation, requests, revocations, demotions, removals, offers, offerCancellations, promotions, claimReissues, claimRevocations, acknowledgements, claim, serverUrl, createdAt, vaultRoot,
     get responsibilityListings() { return responsibilityListings; },
     client: () => {
       const foundation = new ClaudianCollabService({ getConfiguredGitPath: () => '', installationKey: TEST_INSTALLATION_A, obsidianConfigDirectory: '.obsidian', vaultRoot });
