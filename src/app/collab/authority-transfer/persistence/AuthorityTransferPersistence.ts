@@ -52,6 +52,7 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   type CloudToLanManagerEntryRecord,
+  cloudToLanManagerRequiresClaimant,
   type CloudToLanTargetEntryRecord,
   type CloudToLanTargetPreparationDescriptor,
   decodeCloudToLanManagerEntryRecord,
@@ -233,9 +234,13 @@ export class AuthorityTransferPersistence {
       const manager = entry?.manager ?? null;
       const localSource = source !== null && this.#isLocalSourceEntry(source);
       const localTarget = target !== null && this.#isLocalTargetEntry(target);
+      const localManagerNeedsClaimant = manager !== null
+        && this.#isRecoveryOwner(manager.ownerInstallationKey)
+        && cloudToLanManagerRequiresClaimant(manager);
       const foreignPhysical = record !== null && this.#isForeignPhysical(record);
       const managerMatchesLocalPhysical = manager !== null
         && record !== null
+        && this.#isRecoveryOwner(manager.ownerInstallationKey)
         && !foreignPhysical
         && this.#managerMatchesPhysical(manager, record);
       if (localSource && source.phase === 'handed-off' && foreignPhysical) {
@@ -263,6 +268,7 @@ export class AuthorityTransferPersistence {
       }
       if (!record) {
         if (custody || commitment) return 'nonterminal';
+        if (localManagerNeedsClaimant) return 'nonterminal';
         if (localTarget && target.phase === 'handed-off') {
           throw transferError(
             'durable-progress-recovery-required',
@@ -273,6 +279,7 @@ export class AuthorityTransferPersistence {
         if (!localSource || source.phase === 'cancelled') return 'absent';
         return source.phase === 'proposed' ? 'proposal' : 'nonterminal';
       }
+      if (localManagerNeedsClaimant) return 'nonterminal';
       if (foreignPhysical) return 'absent';
       if (custody || commitment) {
         return 'nonterminal';
@@ -615,6 +622,7 @@ export class AuthorityTransferPersistence {
         if (
           existing.phase === 'settled'
           && record === null
+          && !cloudToLanManagerRequiresClaimant(existing)
         ) {
           await this.stores.authorityTransferEntries.saveManager(decoded);
           return decoded;
@@ -2252,7 +2260,9 @@ export class AuthorityTransferPersistence {
       ? entry.source
       : null;
     const managerIsRemovable = entry.manager !== null
+      && this.#isRecoveryOwner(entry.manager.ownerInstallationKey)
       && (entry.manager.phase === 'settled' || entry.manager.phase === 'rejected')
+      && !cloudToLanManagerRequiresClaimant(entry.manager)
       && now >= Date.parse(entry.manager.expiresAt);
     const targetIsRemovable = entry.target !== null
       && entry.target.phase === 'withdrawn'
