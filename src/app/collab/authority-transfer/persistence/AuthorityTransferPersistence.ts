@@ -599,10 +599,16 @@ export class AuthorityTransferPersistence {
       );
     }
     return this.runProject(decoded.projectId, async () => {
-      const [document, record] = await Promise.all([
+      const [document, record, custody, commitment] = await Promise.all([
         this.stores.authorityTransferEntries.load(decoded.projectId),
         this.stores.authorityTransferRecords.load(decoded.projectId),
+        this.stores.authorityTransferClaims.load(decoded.projectId),
+        this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
       ]);
+      const settledPredecessor = record !== null
+        && custody === null
+        && commitment === null
+        && this.#isSettledLanToCloudPredecessor(record);
       const existing = document?.manager;
       if (existing) {
         if (sameValue(existing, decoded)) return existing;
@@ -625,7 +631,11 @@ export class AuthorityTransferPersistence {
           && target.descriptor !== null
           && sameValue(target.descriptor, decoded.descriptor)
         );
-      if (record || document?.source || !compatibleSameDeviceTarget) throw transferError(
+      if (
+        (record !== null && !settledPredecessor)
+        || document?.source
+        || !compatibleSameDeviceTarget
+      ) throw transferError(
         'durable-progress-recovery-required',
         'authority-transfer-manager-entry-conflict',
       );
@@ -1438,6 +1448,15 @@ export class AuthorityTransferPersistence {
       }
       await this.stores.authorityTransferClaims.remove(input.projectId);
       await this.stores.authorityTransferClaimCommitments.remove(input.projectId);
+      for (const requester of Object.values(entry?.requesters ?? {})) {
+        if (!this.#requesterMatchesPhysical(requester, record)) continue;
+        if (!await this.stores.authorityTransferEntries.removeRequester(requester)) {
+          throw transferError(
+            'durable-progress-recovery-required',
+            'authority-transfer-requester-entry-stale',
+          );
+        }
+      }
       if (entry && source && this.#isLocalSourceEntry(source)) {
         const settledSource = record.status.state === 'cancelled'
           ? settleAuthorityTransferSourceCancellation(source, record)
@@ -1870,6 +1889,21 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  isRetainedClaimBatchEmpty(
+    projectId: CollabProjectId,
+    transferId: string,
+  ): Promise<boolean> {
+    return this.runProject(projectId, async () => {
+      const current = await this.stores.authorityTransferClaims.load(projectId);
+      if (!current) return false;
+      if (current.transferId !== transferId) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
+      }
+      await this.#assertClaimBatchOwner(current);
+      return current.claims.length === 0;
+    });
+  }
+
   /**
    * Persists a scrub after the direction owner verifies the receipt signature
    * against the pinned target key. This boundary revalidates every persisted
@@ -2013,7 +2047,10 @@ export class AuthorityTransferPersistence {
       }
       const now = this.now();
       const expiredAt = now.toISOString();
-      if (now.getTime() < Date.parse(current.expiresAt)) {
+      if (
+        now.getTime() < Date.parse(current.expiresAt)
+        && current.claims.length > 0
+      ) {
         throw transferError('authority-transfer-stale', 'authority-transfer-claim-expiry-early');
       }
       if (current.claims.every(claim => claim.disposition !== 'retained')) return;
@@ -2116,11 +2153,20 @@ export class AuthorityTransferPersistence {
     transferId: string,
   ): Promise<void> {
     const hasClaimState = await this.runProject(projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(projectId);
+      const [record, custody] = await Promise.all([
+        this.stores.authorityTransferRecords.load(projectId),
+        this.stores.authorityTransferClaims.load(projectId),
+      ]);
       if (!record || record.transferId !== transferId) {
         throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
       }
-      if (this.now().getTime() < Date.parse(record.status.expiresAt)) {
+      const emptyClaimBatch = custody !== null
+        && custody.transferId === transferId
+        && custody.claims.length === 0;
+      if (
+        this.now().getTime() < Date.parse(record.status.expiresAt)
+        && !emptyClaimBatch
+      ) {
         throw transferError('authority-transfer-stale', 'authority-transfer-terminal-expiry-early');
       }
       if (record.terminalResponder?.state === 'expired') {
@@ -2252,6 +2298,37 @@ export class AuthorityTransferPersistence {
       && manager.descriptor.sourceAuthorityGeneration
         === record.status.sourceAuthority.generation
       && manager.descriptor.targetUrl === record.status.targetUrl;
+  }
+
+  #requesterMatchesPhysical(
+    requester: AuthorityTransferRequesterEntryRecord,
+    record: AuthorityTransferRecord,
+  ): boolean {
+    const status = requester.status;
+    return status !== null
+      && requester.projectId === record.projectId
+      && requester.request.idempotencyKey === record.operationIntentId
+      && requester.request.expectedAuthorityGeneration
+        === record.status.sourceAuthority.generation
+      && requester.request.targetUrl === record.status.targetUrl
+      && status.projectId === record.projectId
+      && status.transferId === record.transferId
+      && status.direction === record.status.direction
+      && status.sourceAuthority.kind === record.status.sourceAuthority.kind
+      && status.sourceAuthority.generation === record.status.sourceAuthority.generation
+      && status.targetAuthority.kind === record.status.targetAuthority.kind
+      && status.targetAuthority.generation === record.status.targetAuthority.generation
+      && status.targetUrl === record.status.targetUrl;
+  }
+
+  #isSettledLanToCloudPredecessor(record: AuthorityTransferRecord): boolean {
+    return record.localRole === 'source'
+      && record.status.direction === 'lan-to-cloud'
+      && record.status.state === 'completed'
+      && record.status.relinquishmentProof !== null
+      && record.restartFence === 'permanent'
+      && record.terminalResponder?.state === 'expired'
+      && record.terminalCleanupCompleted;
   }
 
   #isLocalSourceEntry(entry: AuthorityTransferSourceEntryRecord): boolean {
