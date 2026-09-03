@@ -18,7 +18,10 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
-  prepare?(record: AuthorityTransferRecord): Promise<void>;
+  prepare?(
+    record: AuthorityTransferRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
   resume(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
   resumeManager(projectId: CollabProjectId, options: CollabOperationOptions): Promise<void>;
   resumeTargetPreparation(
@@ -96,7 +99,7 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
           const record = await this.persistence.load(projectId);
           if (!record) return;
           if (ownerState === 'proposal') {
-            await this.handler.prepare?.(record);
+            await this.handler.prepare?.(record, options);
             return;
           }
           await this.handler.resume(record, options);

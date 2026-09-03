@@ -111,13 +111,14 @@ describe('AuthorityTransferRuntimeRegistry', () => {
       status: status(),
     });
 
-    await registry.resume(record, {});
+    const options = { signal: new AbortController().signal };
+    await registry.resume(record, options);
     await registry.resume(record, {});
 
     expect(resolve).toHaveBeenCalledTimes(1);
-    expect(resolve).toHaveBeenCalledWith(record);
+    expect(resolve).toHaveBeenCalledWith(record, options);
     expect(resume).toHaveBeenCalledTimes(2);
-    expect(resume).toHaveBeenNthCalledWith(1, 'project-runtime', {});
+    expect(resume).toHaveBeenNthCalledWith(1, 'project-runtime', options);
   });
 
   it('fails closed when no production runtime can be reconstructed', async () => {

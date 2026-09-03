@@ -73,9 +73,6 @@ import {
 } from '@/app/collab/ProjectOperationAdmission';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import type {
-  CloudAuthorityMembershipControlPort,
-} from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import { CloudRetirementClient } from '@/app/collab/retirement/CloudRetirementClient';
 import { decodeCloudRetirementIntent } from '@/app/collab/retirement/CloudRetirementIntent';
 import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
@@ -86,8 +83,10 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { toError } from '@/utils/error';
 
 export interface CollabFeatureSubcompositionOptions {
-  readonly cloudAuthority?: Pick<CloudAuthorityAdapter, 'authorityKind' | 'create' | 'connect'>
-  & Partial<Pick<CloudAuthorityAdapter, 'connectPendingLeave' | 'connectPendingRetirement'>>;
+  readonly cloudAuthority?: Pick<
+  CloudAuthorityAdapter,
+  'authorityKind' | 'connect' | 'connectAuthorityTransfer' | 'create'
+  > & Partial<Pick<CloudAuthorityAdapter, 'connectPendingLeave' | 'connectPendingRetirement'>>;
   readonly foundation: ClaudianCollabService;
   readonly getProjectsFolder?: () => string;
   readonly projectSetup: CollabProjectSetupService;
@@ -825,56 +824,18 @@ export function createCollabFeatureSubcomposition(
       cloudAuthority.connect(binding, operationOptions)
     ),
     convergence: authorityTransferConvergence,
-    createCloudToLanConnection: async projectId => {
+    createCloudToLanConnection: async (projectId, operationOptions) => {
       const membership = await foundation.local.projects.loadMembership(projectId);
       if (!membership || !isCollabLocalCloudMembership(membership)) {
         throw compositionError('authority-transfer-target-membership-invalid');
       }
-      const session = await cloudAuthority.create(membership);
-      const lifecyclePort = session.lifecycle;
-      const membershipPort = session.membership as CloudAuthorityMembershipControlPort | undefined;
-      if (
-        session.authorityKind !== 'cloud'
-        || !lifecyclePort
-        || membershipPort?.authorityKind !== 'cloud'
-      ) {
-        session.dispose();
-        throw compositionError('authority-transfer-cloud-session-incomplete');
-      }
-      const binding = {
+      return cloudAuthority.connectAuthorityTransfer({
         authorityGeneration: membership.authority.authorityGeneration,
-        memberId: membership.member.id,
-        projectId,
-        serverUrl: membership.authority.serverUrl,
-      };
-      return {
-        authorityGeneration: binding.authorityGeneration,
-        dispose: () => session.dispose(),
-        lifecycle: lifecyclePort,
-        listProjectMembers: (request, operationOptions = {}) => (
-          membershipPort.cloudMembership(
-            'listProjectMembers',
-            request,
-            binding,
-            operationOptions,
-          )
-        ),
         memberId: membership.member.id,
         personalRef: membership.member.personalRef,
         projectId,
-        readSnapshot: async (requestedProjectId, operationOptions) => {
-          const snapshot = await session.control.readSnapshot(
-            requestedProjectId,
-            operationOptions,
-          );
-          if (!isCollabCloudProjectSnapshot(snapshot)) {
-            throw compositionError('authority-transfer-cloud-snapshot-invalid');
-          }
-          return snapshot;
-        },
         serverUrl: membership.authority.serverUrl,
-        supports: capability => session.supports(capability),
-      };
+      }, operationOptions);
     },
     createCloudToLanTarget: (projectId, cloudSession) => (
       new ProductionCloudToLanTargetEffects({
@@ -898,27 +859,18 @@ export function createCollabFeatureSubcomposition(
     loadClaimantMembership: projectId => foundation.local.projects.loadMembership(projectId),
     installationKey: foundation.installationKey,
     persistence: foundation.authorityTransfers,
-    recoverCloudSession: async record => {
+    recoverCloudSession: async (record, operationOptions) => {
       const membership = await foundation.local.projects.loadMembership(record.projectId);
       if (!membership) {
         throw compositionError('authority-transfer-membership-missing');
       }
-      if (record.localRole === 'source') {
-        if (!isCollabLocalLanMembership(membership)) {
-          throw compositionError('authority-transfer-source-membership-invalid');
-        }
-        return cloudAuthority.connect({
-          projectId: record.projectId,
-          serverUrl: record.status.targetUrl,
-        });
-      }
-      if (!isCollabLocalCloudMembership(membership)) {
-        throw compositionError('authority-transfer-target-membership-invalid');
+      if (record.localRole !== 'source' || !isCollabLocalLanMembership(membership)) {
+        throw compositionError('authority-transfer-source-membership-invalid');
       }
       return cloudAuthority.connect({
         projectId: record.projectId,
-        serverUrl: membership.authority.serverUrl,
-      });
+        serverUrl: record.status.targetUrl,
+      }, operationOptions);
     },
     recoverClaimant: record => claimantBindingResolver.resolve(record),
     terminalResolver: {
@@ -1026,7 +978,7 @@ export function createCollabFeatureSubcomposition(
           || record.terminalResponder === null
         ) return null;
         return {
-          resume: async () => {
+          resume: async (_projectId, operationOptions = {}) => {
             const membership = await foundation.local.projects.loadMembership(
               record.projectId,
             );
@@ -1043,7 +995,7 @@ export function createCollabFeatureSubcomposition(
                   serverUrl: isCollabLocalCloudMembership(membership)
                     ? membership.authority.serverUrl
                     : record.status.targetUrl,
-                });
+                }, operationOptions);
             try {
               await new ProductionLanToCloudSourceEffects({
                 cloudSession,
@@ -1051,7 +1003,7 @@ export function createCollabFeatureSubcomposition(
                 foundation,
                 persistence: foundation.authorityTransfers,
                 projectId: record.projectId,
-              }).restoreCompleted(record);
+              }).restoreCompleted(record, operationOptions);
             } finally {
               cloudSession?.dispose();
             }

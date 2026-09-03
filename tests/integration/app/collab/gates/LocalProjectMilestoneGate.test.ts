@@ -391,7 +391,20 @@ describe('G3 local Project milestone gate', () => {
       },
       ticketHighlights: [],
     });
-    const readSnapshot = jest.fn(async () => snapshot());
+    const snapshotSignals: AbortSignal[] = [];
+    let snapshotOutage = true;
+    const readSnapshot = jest.fn(async (
+      _projectId: string,
+      options: { readonly signal?: AbortSignal } = {},
+    ) => {
+      if (!options.signal) throw new Error('Missing terminal snapshot recovery signal');
+      snapshotSignals.push(options.signal);
+      if (snapshotOutage) {
+        snapshotOutage = false;
+        throw new Error('simulated Cloud snapshot outage');
+      }
+      return snapshot();
+    });
     const cloudSession = {
       dispose: jest.fn(),
       lifecycle: {
@@ -450,11 +463,20 @@ describe('G3 local Project milestone gate', () => {
     await foundation.close();
 
     const reopenedFoundation = createFoundation();
+    const connectionSignals: AbortSignal[] = [];
     const reopened = createCollabFeatureSubcomposition({
       cloudAuthority: {
         authorityKind: 'cloud',
         create: jest.fn() as never,
-        connect: jest.fn(async () => cloudSession),
+        connect: jest.fn(async (
+          _binding: unknown,
+          options: { readonly signal?: AbortSignal } = {},
+        ) => {
+          if (!options.signal) throw new Error('Missing terminal connection recovery signal');
+          connectionSignals.push(options.signal);
+          return cloudSession;
+        }),
+        connectAuthorityTransfer: jest.fn() as never,
       },
       foundation: reopenedFoundation,
       projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
@@ -464,7 +486,6 @@ describe('G3 local Project milestone gate', () => {
       reopenedFoundation.lanHost,
       'startAuthorityTransferRoute',
     );
-    readSnapshot.mockRejectedValueOnce(new Error('simulated Cloud snapshot outage'));
     await expect(reopened.feature.restoreLifecycle()).rejects.toThrow(
       'simulated Cloud snapshot outage',
     );
@@ -474,6 +495,8 @@ describe('G3 local Project milestone gate', () => {
     expect(convergedMembership).toMatchObject({ authority: { kind: 'cloud' } });
     expect(convergedMembership).not.toHaveProperty('hostOwnership');
     expect(readSnapshot).toHaveBeenCalledTimes(2);
+    expect(snapshotSignals).toEqual(connectionSignals);
+    expect(snapshotSignals.every(signal => signal.aborted)).toBe(true);
     expect(restoreTerminalRoute).toHaveBeenCalledTimes(2);
     await expect(reopenedFoundation.lanHost.startProject(PROJECT_ID)).rejects.toMatchObject({
       code: 'durable-progress-recovery-required',
@@ -653,7 +676,12 @@ describe('G3 local Project milestone gate', () => {
         throw new Error('Cloud source must remain unavailable');
       });
       const reopened = createCollabFeatureSubcomposition({
-        cloudAuthority: { authorityKind: 'cloud', create: jest.fn() as never, connect },
+        cloudAuthority: {
+          authorityKind: 'cloud',
+          create: jest.fn() as never,
+          connect,
+          connectAuthorityTransfer: jest.fn() as never,
+        },
         foundation: reopenedFoundation,
         projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
         vaultRoot,
@@ -786,6 +814,7 @@ describe('G3 local Project milestone gate', () => {
         authorityKind: 'cloud',
         create: jest.fn() as never,
         connect: jest.fn(async () => cloudSession),
+        connectAuthorityTransfer: jest.fn() as never,
       },
       foundation,
       projectSetup: setup,
