@@ -223,6 +223,75 @@ describe('AuthorityTransferCheckpoint', () => {
     });
   });
 
+  it('repairs only the exact interrupted target credential encoding', async () => {
+    const repository = new AuthorityTransferCheckpointRepository();
+    const coordinationNdjson = await source.read(connection => (
+      repository.exportCoordination(connection, { expectedMainOid: MAIN_OID })
+    ));
+    const credential = Buffer.alloc(32, 9).toString('base64url');
+    const decodedCredentialHash = createHash('sha256')
+      .update(Buffer.from(credential, 'base64url'))
+      .digest();
+    const canonicalCredentialHash = createHash('sha256')
+      .update(credential, 'utf8')
+      .digest();
+    await target.mutate(connection => repository.importCoordination(connection, {
+      coordinationNdjson,
+      manifest: checkpointManifest(coordinationNdjson),
+      targetHostCredentialHash: decodedCredentialHash,
+      targetHostMemberId: 'member-a',
+    }));
+
+    await target.mutate(connection => repository.repairImportedTargetCredentialEncoding(
+      connection,
+      {
+        canonicalCredentialHash,
+        decodedCredentialHash,
+        projectId: 'project-alpha',
+        targetAuthorityGeneration: 2,
+        targetHostMemberId: 'member-a',
+      },
+    ));
+    await target.mutate(connection => repository.repairImportedTargetCredentialEncoding(
+      connection,
+      {
+        canonicalCredentialHash,
+        decodedCredentialHash,
+        projectId: 'project-alpha',
+        targetAuthorityGeneration: 2,
+        targetHostMemberId: 'member-a',
+      },
+    ));
+    expect(await target.read(connection => connection.get(`
+      SELECT credential_hash
+      FROM members
+      WHERE member_id = 'member-a'
+    `))).toEqual({ credential_hash: canonicalCredentialHash });
+
+    const conflictTarget = await createDatabase(path.join(root, 'conflict-target-authority'));
+    try {
+      await conflictTarget.mutate(connection => repository.importCoordination(connection, {
+        coordinationNdjson,
+        manifest: checkpointManifest(coordinationNdjson),
+        targetHostCredentialHash: new Uint8Array(32).fill(6),
+        targetHostMemberId: 'member-a',
+      }));
+      await expect(conflictTarget.mutate(connection => (
+        repository.repairImportedTargetCredentialEncoding(connection, {
+          canonicalCredentialHash,
+          decodedCredentialHash,
+          projectId: 'project-alpha',
+          targetAuthorityGeneration: 2,
+          targetHostMemberId: 'member-a',
+        })
+      ))).rejects.toMatchObject({
+        safeContext: { reason: 'checkpoint-target-credential-conflict' },
+      });
+    } finally {
+      await conflictTarget.close();
+    }
+  });
+
   it('refuses capture while invitation or pending Join admission is live', async () => {
     await source.mutate(connection => {
       connection.run(`

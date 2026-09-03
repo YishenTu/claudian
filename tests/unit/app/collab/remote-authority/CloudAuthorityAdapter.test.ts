@@ -775,6 +775,63 @@ describe('CloudAuthorityAdapter', () => {
     connection.dispose();
   });
 
+  it('opens one exact bound authority-transfer connection without a snapshot preflight', async () => {
+    const transferStatus = {
+      batchRevision: null,
+      batchSha256: null,
+      checkpointSha256: null,
+      createdAt: CREATED_AT,
+      direction: 'cloud-to-lan',
+      expiresAt: '2026-09-21T00:00:00.000Z',
+      phase: 'collecting-readiness',
+      projectId: PROJECT_ID,
+      relinquishmentProof: null,
+      sourceAuthority: { generation: 1, kind: 'cloud' },
+      state: 'active',
+      targetAuthority: { generation: 2, kind: 'lan' },
+      targetUrl: 'https://192.168.1.10:43123',
+      transferId: 'transfer-cloud-to-lan',
+      updatedAt: CREATED_AT,
+    } satisfies CollabAuthorityTransferStatus;
+    const requests: CloudAuthorityHttpRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      requests.push(input);
+      return {
+        body: input.method === 'GET'
+          ? collabCloudCapabilityDocument([
+            'authority-transfer',
+            'cloud-project-membership',
+            'project-snapshot',
+          ], limits)
+          : collabCloudSuccessEnvelope(envelopeRequestId(input), transferStatus),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter({ request })
+      .connectAuthorityTransfer({
+        authorityGeneration: 1,
+        memberId: ACTOR_ID,
+        personalRef: 'refs/heads/members/member-alice',
+        projectId: PROJECT_ID,
+        serverUrl: 'https://cloud.example.test',
+      });
+
+    expect(requests.map(input => input.url)).toEqual([
+      'https://cloud.example.test/collab/capabilities',
+    ]);
+    await expect(connection.lifecycle.authorityTransfer(
+      'getProjectAuthorityTransfer',
+      { projectId: PROJECT_ID, transferId: transferStatus.transferId },
+    )).resolves.toEqual(transferStatus);
+    expect(requests.map(input => input.url)).toEqual([
+      'https://cloud.example.test/collab/capabilities',
+      `https://cloud.example.test/v4/projects/${PROJECT_ID}`
+        + '/operations/getProjectAuthorityTransfer',
+    ]);
+    connection.dispose();
+  });
+
   it('reads an unbound lifecycle snapshot using only the server-established Member identity', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'
