@@ -28,17 +28,21 @@ import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   type CollabAuthorityRelinquishmentProof,
   type CollabCloudAuthorityTransferArtifact,
+  type CollabCloudToLanTargetCleanupProof,
   type CollabProjectCheckpointManifest,
   type CollabTransferredMembershipClaimBatch,
   type CollabTransferredMembershipRedemptionReceipt,
+  decodeCollabCloudToLanTargetCleanupProof,
   decodeCollabProjectCheckpointCoordinationNdjson,
   decodeCollabTransferredMembershipClaimBatch,
   decodeCollabTransferredMembershipRedemptionReceipt,
+  encodeCollabCloudToLanTargetCleanupProofSigningInput,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
   encodeCollabTransferredMembershipRedemptionReceiptSigningInput,
 } from '@claudian-collab/protocol';
 
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
+import { verifyAuthorityRelinquishmentProof } from '@/app/collab/authority-transfer/AuthorityRelinquishmentProofVerifier';
 import {
   type AuthorityTransferImportedTargetIdentity,
   decodeAuthorityTransferImportedTargetIdentity,
@@ -94,18 +98,27 @@ interface TargetReceiptKey {
 
 interface TargetPrivateState {
   readonly claimBatch: CollabTransferredMembershipClaimBatch | null;
+  readonly cleanup: TargetCleanupState | null;
   readonly hostCredential: string;
   readonly importedIdentity: AuthorityTransferImportedTargetIdentity | null;
   readonly receiptKey: TargetReceiptKey;
   readonly receipts: Readonly<Record<string, CollabTransferredMembershipRedemptionReceipt>>;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly targetProof: string | null;
   readonly transferCredential: string;
   readonly transferId: string | null;
 }
 
+interface TargetCleanupState {
+  readonly cleanupSha256: string;
+  readonly invalidatedAt: string;
+  readonly operationIntentId: string;
+  readonly proof: CollabCloudToLanTargetCleanupProof | null;
+}
+
 const TARGET_PRIVATE_STATE_KEYS = [
   'claimBatch',
+  'cleanup',
   'hostCredential',
   'importedIdentity',
   'receiptKey',
@@ -269,11 +282,12 @@ function receiptKey(): TargetReceiptKey {
 function initialState(): TargetPrivateState {
   return {
     claimBatch: null,
+    cleanup: null,
     hostCredential: credential(),
     importedIdentity: null,
     receiptKey: receiptKey(),
     receipts: {},
-    schemaVersion: 1,
+    schemaVersion: 2,
     targetProof: null,
     transferCredential: credential(),
     transferId: null,
@@ -285,10 +299,10 @@ function assertState(value: unknown): TargetPrivateState {
     throw targetError('authority-transfer-target-state-invalid');
   }
   const state = value as Partial<TargetPrivateState>;
+  const schemaVersion = (value as { readonly schemaVersion?: unknown }).schemaVersion;
   if (
-    !hasExactKeys(value as Record<string, unknown>, TARGET_PRIVATE_STATE_KEYS)
-    ||
-    state.schemaVersion !== 1
+    schemaVersion !== 2
+    || !hasExactKeys(value as Record<string, unknown>, TARGET_PRIVATE_STATE_KEYS)
     || typeof state.hostCredential !== 'string'
     || Buffer.from(state.hostCredential, 'base64url').byteLength !== 32
     || typeof state.transferCredential !== 'string'
@@ -303,6 +317,37 @@ function assertState(value: unknown): TargetPrivateState {
     || (state.transferId !== null && typeof state.transferId !== 'string')
     || (state.targetProof !== null && typeof state.targetProof !== 'string')
   ) throw targetError('authority-transfer-target-state-invalid');
+  let cleanup: TargetCleanupState | null = null;
+  if (state.cleanup !== null) {
+    if (
+      !state.cleanup
+      || typeof state.cleanup !== 'object'
+      || Array.isArray(state.cleanup)
+      || !hasExactKeys(state.cleanup as unknown as Record<string, unknown>, [
+        'cleanupSha256',
+        'invalidatedAt',
+        'operationIntentId',
+        'proof',
+      ])
+      || typeof state.cleanup.cleanupSha256 !== 'string'
+      || !/^[0-9a-f]{64}$/.test(state.cleanup.cleanupSha256)
+      || typeof state.cleanup.invalidatedAt !== 'string'
+      || !Number.isFinite(Date.parse(state.cleanup.invalidatedAt))
+      || typeof state.cleanup.operationIntentId !== 'string'
+    ) throw targetError('authority-transfer-target-state-invalid');
+    try {
+      cleanup = {
+        cleanupSha256: state.cleanup.cleanupSha256,
+        invalidatedAt: state.cleanup.invalidatedAt,
+        operationIntentId: state.cleanup.operationIntentId,
+        proof: state.cleanup.proof === null
+          ? null
+          : decodeCollabCloudToLanTargetCleanupProof(state.cleanup.proof),
+      };
+    } catch {
+      throw targetError('authority-transfer-target-state-invalid');
+    }
+  }
   let importedIdentity: AuthorityTransferImportedTargetIdentity | null;
   try {
     importedIdentity = state.importedIdentity === null
@@ -311,7 +356,12 @@ function assertState(value: unknown): TargetPrivateState {
   } catch {
     throw targetError('authority-transfer-target-state-invalid');
   }
-  return { ...(state as TargetPrivateState), importedIdentity };
+  return {
+    ...(state as Omit<TargetPrivateState, 'cleanup' | 'importedIdentity' | 'schemaVersion'>),
+    cleanup,
+    importedIdentity,
+    schemaVersion: 2,
+  };
 }
 
 async function readState(filePath: string): Promise<TargetPrivateState | null> {
@@ -333,6 +383,93 @@ async function writeState(filePath: string, state: TargetPrivateState): Promise<
     invalidFile: () => targetError('authority-transfer-target-state-invalid'),
     writeFailed: () => targetError('authority-transfer-target-state-write-failed'),
   });
+}
+
+function targetCleanupInvalidatedAt(now: Date, record: AuthorityTransferRecord): string {
+  const minimum = Date.parse(record.status.updatedAt) + 1;
+  return new Date(Math.max(now.getTime(), minimum)).toISOString();
+}
+
+function targetStageSha256(state: TargetPrivateState): string | null {
+  if (!state.claimBatch || !state.targetProof) return null;
+  return sha256(JSON.stringify({
+    batchSha256: state.claimBatch.batchSha256,
+    manifestSha256: state.claimBatch.checkpointSha256,
+    targetProof: state.targetProof,
+  }));
+}
+
+function targetCleanupBatchFacts(
+  record: AuthorityTransferRecord,
+  state: TargetPrivateState,
+): Readonly<{
+  readonly batchRevision: number | null;
+  readonly batchSha256: string | null;
+  readonly checkpointSha256: string | null;
+}> {
+  if (!state.claimBatch) {
+    return {
+      batchRevision: record.status.batchRevision,
+      batchSha256: record.status.batchSha256,
+      checkpointSha256: record.status.checkpointSha256,
+    };
+  }
+  let batch: CollabTransferredMembershipClaimBatch;
+  try {
+    batch = decodeCollabTransferredMembershipClaimBatch(state.claimBatch);
+  } catch {
+    throw targetError('authority-transfer-target-state-owner-mismatch');
+  }
+  if (
+    batch.projectId !== record.projectId
+    || batch.transferId !== record.transferId
+    || batch.targetAuthorityGeneration !== record.status.targetAuthority.generation
+    || batch.checkpointSha256 !== record.status.checkpointSha256
+    || batch.batchSha256 !== sha256(
+      encodeCollabTransferredMembershipClaimBatchDigestInput(batch),
+    )
+    || (
+      record.status.batchRevision !== null
+      && batch.batchRevision !== record.status.batchRevision
+    )
+    || (
+      record.status.batchSha256 !== null
+      && batch.batchSha256 !== record.status.batchSha256
+    )
+  ) throw targetError('authority-transfer-target-state-owner-mismatch');
+  return {
+    batchRevision: batch.batchRevision,
+    batchSha256: batch.batchSha256,
+    checkpointSha256: batch.checkpointSha256,
+  };
+}
+
+function targetCleanupSha256(input: Readonly<{
+  readonly batchRevision: number | null;
+  readonly batchSha256: string | null;
+  readonly checkpointSha256: string | null;
+  readonly invalidatedAt: string;
+  readonly operationIntentId: string;
+  readonly record: AuthorityTransferRecord;
+  readonly stageSha256: string | null;
+  readonly targetHostMemberId: string;
+}>): string {
+  return sha256(JSON.stringify({
+    domain: 'claudian-collab.cloud-to-lan-target-cleanup.v1',
+    payload: {
+      batchRevision: input.batchRevision,
+      batchSha256: input.batchSha256,
+      checkpointSha256: input.checkpointSha256,
+      invalidatedAt: input.invalidatedAt,
+      operationIntentId: input.operationIntentId,
+      projectId: input.record.projectId,
+      sourceAuthority: input.record.status.sourceAuthority,
+      stageSha256: input.stageSha256,
+      targetAuthority: input.record.status.targetAuthority,
+      targetHostMemberId: input.targetHostMemberId,
+      transferId: input.record.transferId,
+    },
+  }));
 }
 
 function artifactLimit(artifact: CollabCloudAuthorityTransferArtifact): number {
@@ -679,6 +816,112 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
+  async invalidateStaging(
+    record: AuthorityTransferRecord,
+  ): Promise<CollabCloudToLanTargetCleanupProof> {
+    return this.queue.run(async () => {
+      if (
+        record.status.direction !== 'cloud-to-lan'
+        || record.status.phase !== 'cancel-intent'
+        || record.status.relinquishmentProof !== null
+      ) throw targetError('authority-transfer-target-cancellation-invalid');
+      const prepared = await this.#prepareState(record);
+      const statePath = path.join(prepared.stagingPath, TARGET_STATE_FILE);
+      let state = prepared.state;
+      const targetProof = await this.#validatePreparedStateBindings(record, state);
+      if (targetProof.payload.targetHostMemberId !== prepared.memberId) {
+        throw targetError('authority-transfer-target-imported-identity-mismatch');
+      }
+      const operationIntentId = authorityTransferChildIdempotencyKey(
+        record.operationIntentId,
+        'cancel',
+      );
+      const stageSha256 = targetStageSha256(state);
+      const batchFacts = targetCleanupBatchFacts(record, state);
+      const invalidatedAt = state.cleanup?.invalidatedAt
+        ?? targetCleanupInvalidatedAt(this.now(), record);
+      const cleanupSha256 = targetCleanupSha256({
+        ...batchFacts,
+        invalidatedAt,
+        operationIntentId,
+        record,
+        stageSha256,
+        targetHostMemberId: prepared.memberId,
+      });
+      if (
+        state.cleanup
+        && (
+          state.cleanup.cleanupSha256 !== cleanupSha256
+          || state.cleanup.operationIntentId !== operationIntentId
+        )
+      ) throw targetError('authority-transfer-target-cleanup-state-mismatch');
+      if (!state.cleanup) {
+        state = {
+          ...state,
+          cleanup: {
+            cleanupSha256,
+            invalidatedAt,
+            operationIntentId,
+            proof: null,
+          },
+        };
+        await writeState(statePath, state);
+      }
+
+      await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+        record.projectId,
+        'target-only-staged',
+      );
+      this.#stagedRegistration = null;
+      const preparation = this.#preparation;
+      await preparation?.dispose();
+      if (this.#preparation === preparation) this.#preparation = null;
+      await this.options.foundation.discardAuthorityTransferTarget(
+        record.projectId,
+        record.ownerInstallationKey,
+      );
+
+      if (state.cleanup?.proof) return state.cleanup.proof;
+      const payload = {
+        ...batchFacts,
+        cleanupSha256,
+        invalidatedAt,
+        operationIntentId,
+        projectId: record.projectId,
+        receiptKeyId: state.receiptKey.receiptKeyId,
+        signatureAlgorithm: 'ed25519' as const,
+        sourceAuthority: record.status.sourceAuthority as { readonly generation: number; readonly kind: 'cloud' },
+        stageSha256,
+        targetAuthority: record.status.targetAuthority as { readonly generation: number; readonly kind: 'lan' },
+        targetHostMemberId: prepared.memberId,
+        transferId: record.transferId,
+      };
+      const proof = decodeCollabCloudToLanTargetCleanupProof({
+        ...payload,
+        signature: sign(
+          null,
+          Buffer.from(encodeCollabCloudToLanTargetCleanupProofSigningInput(payload), 'utf8'),
+          createPrivateKey({
+            format: 'der',
+            key: Buffer.from(state.receiptKey.privateKey, 'base64url'),
+            type: 'pkcs8',
+          }),
+        ).toString('base64url'),
+      });
+      state = {
+        ...state,
+        cleanup: {
+          cleanupSha256,
+          invalidatedAt,
+          operationIntentId,
+          proof,
+        },
+      };
+      await writeState(statePath, state);
+      return proof;
+    });
+  }
+
   async cancelStaging(record: AuthorityTransferRecord): Promise<void> {
     await this.options.foundation.lanHost.stopAuthorityTransferRoute(
       record.projectId,
@@ -924,11 +1167,12 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return targetProof;
   }
 
-   async #validateStateBindings(
+  async #validateStateBindings(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
     state: TargetPrivateState,
   ): Promise<TargetProofEnvelope> {
+    await verifyAuthorityRelinquishmentProof(proof, record);
     const targetProof = await this.#validatePreparedStateBindings(record, state);
     let claimBatch: CollabTransferredMembershipClaimBatch;
     try {
@@ -958,20 +1202,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || state.importedIdentity.project.id !== record.projectId
       || state.importedIdentity.authorityGeneration !== record.status.targetAuthority.generation
       || state.importedIdentity.currentMember.id !== targetProof.payload.targetHostMemberId
-    ) throw targetError('authority-transfer-target-state-owner-mismatch');
-    let receiptPublicKey: string | undefined;
-    try {
-      receiptPublicKey = createPublicKey(createPrivateKey({
-        format: 'der',
-        key: Buffer.from(state.receiptKey.privateKey, 'base64url'),
-        type: 'pkcs8',
-      })).export({ format: 'jwk' }).x;
-    } catch {
-      throw targetError('authority-transfer-target-state-owner-mismatch');
-    }
-    if (
-      receiptPublicKey !== state.receiptKey.publicKey
-      || state.receiptKey.receiptKeyId !== `lan-${sha256(receiptPublicKey).slice(0, 32)}`
     ) throw targetError('authority-transfer-target-state-owner-mismatch');
     return targetProof;
   }
@@ -1011,6 +1241,16 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     state: TargetPrivateState,
   ): Promise<TargetProofEnvelope> {
     const targetProof = await this.#validateProof(state);
+    let receiptPublicKey: string | undefined;
+    try {
+      receiptPublicKey = createPublicKey(createPrivateKey({
+        format: 'der',
+        key: Buffer.from(state.receiptKey.privateKey, 'base64url'),
+        type: 'pkcs8',
+      })).export({ format: 'jwk' }).x;
+    } catch {
+      throw targetError('authority-transfer-target-state-owner-mismatch');
+    }
     if (
       state.transferId !== record.transferId
       || targetProof.payload.projectId !== record.projectId
@@ -1021,6 +1261,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || targetProof.payload.receiptKeyId !== state.receiptKey.receiptKeyId
       || targetProof.payload.receiptPublicKey !== state.receiptKey.publicKey
       || targetProof.payload.transferCredential !== state.transferCredential
+      || receiptPublicKey !== state.receiptKey.publicKey
+      || state.receiptKey.receiptKeyId !== `lan-${sha256(receiptPublicKey).slice(0, 32)}`
     ) throw targetError('authority-transfer-target-state-owner-mismatch');
     return targetProof;
   }
