@@ -55,6 +55,7 @@ export interface CollabMembershipServiceOptions {
 
 export interface CollabMembershipSafetyContext {
   readonly cloudManagementAdmission: CollabProjectLifecycleAuthorityAdmission;
+  readonly managerLeaveCloudManagementAdmission: CollabProjectLifecycleAuthorityAdmission;
   readonly projects: CollabLocalProjectRepository;
   readonly managerResponsibilityAdmission: CollabProjectLifecycleAdmission;
   readonly managerResponsibilityOperations: ManagerResponsibilityOperationCoordinator;
@@ -302,24 +303,31 @@ export class CollabMembershipService {
     });
   }
 
-  resumeManagementOperation(
+  async resumeManagementOperation(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagementOperationView> {
-    return this.runCloudManagementMutation(projectId, options, async () => {
-      let intent = await this.loadCloudIntent(projectId);
-      if (!intent) throw new CollabError({ code: 'project-not-found' });
-      await this.executeCloudIntent(intent, options);
-      intent = await this.loadCloudIntent(projectId);
-      if (!intent || intent.phase !== 'result-retained') {
-        throw new CollabError({
-          code: 'durable-progress-recovery-required',
-          recoveryActions: ['retry'],
-          safeContext: { reason: 'cloud-management-result-not-retained' },
-        });
-      }
-      return managementOperationView(intent);
-    });
+    const selectedIntent = await this.loadCloudIntent(projectId);
+    if (!selectedIntent) throw new CollabError({ code: 'project-not-found' });
+    const admission = this.cloudManagementAdmissionFor(selectedIntent);
+    return admission(projectId, () => this.runSelectedCloudMutation(
+      projectId,
+      options,
+      selectedIntent,
+      async selected => {
+        let intent: CloudManagementIntent | null = selected;
+        await this.executeCloudIntent(intent, options);
+        intent = await this.loadCloudIntent(projectId);
+        if (!intent || intent.phase !== 'result-retained') {
+          throw new CollabError({
+            code: 'durable-progress-recovery-required',
+            recoveryActions: ['retry'],
+            safeContext: { reason: 'cloud-management-result-not-retained' },
+          });
+        }
+        return managementOperationView(intent);
+      },
+    ));
   }
 
   async completeManagementOperation(request: CollabCompleteManagementOperationRequest, options: CollabOperationOptions = {}): Promise<void> {
@@ -329,12 +337,15 @@ export class CollabMembershipService {
         this.lanManagementIntents.delete(request.projectId);
       });
     }
-    return this.safety.cloudManagementAdmission(
+    const selectedIntent = await this.loadCloudIntent(request.projectId);
+    if (!selectedIntent) return;
+    const admission = this.cloudManagementAdmissionFor(selectedIntent);
+    return admission(
       request.projectId,
       () => this.runManagement(request.projectId, async () => {
         const intent = await this.loadCloudIntent(request.projectId);
         if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
-        if (!intent) return;
+        this.assertSelectedCloudIntent(selectedIntent, intent);
         if (request.completionId !== intent.completionId) {
           throw new CollabError({
             code: 'operation-failed',
@@ -380,6 +391,55 @@ export class CollabMembershipService {
         });
       }
     });
+  }
+
+  private runSelectedCloudMutation<T>(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+    selectedIntent: CloudManagementIntent,
+    operation: (intent: CloudManagementIntent) => Promise<T>,
+  ): Promise<T> {
+    return this.runManagement(projectId, async () => {
+      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+      const intent = await this.loadCloudIntent(projectId);
+      this.assertSelectedCloudIntent(selectedIntent, intent);
+      try {
+        return await operation(intent);
+      } catch (error) {
+        const retainedIntent = await this.loadCloudIntent(projectId);
+        if (!retainedIntent) throw error;
+        throw new CollabMembershipOutcomeError({
+          status: 'recovery-required', durableProgress: true, durablePhase: 'committed', operationId: projectId,
+          error: error instanceof CollabError ? error : new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['retry'] }),
+        });
+      }
+    });
+  }
+
+  private cloudManagementAdmissionFor(
+    intent: CloudManagementIntent,
+  ): CollabProjectLifecycleAuthorityAdmission {
+    return isManagerLeaveCloudManagementIntent(intent)
+      ? this.safety.managerLeaveCloudManagementAdmission
+      : this.safety.cloudManagementAdmission;
+  }
+
+  private assertSelectedCloudIntent(
+    selectedIntent: CloudManagementIntent,
+    currentIntent: CloudManagementIntent | null,
+  ): asserts currentIntent is CloudManagementIntent {
+    if (
+      !currentIntent
+      || currentIntent.completionId !== selectedIntent.completionId
+      || isManagerLeaveCloudManagementIntent(currentIntent)
+        !== isManagerLeaveCloudManagementIntent(selectedIntent)
+    ) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['retry'],
+        safeContext: { reason: 'cloud-management-intent-changed' },
+      });
+    }
   }
 
   private runCloudManagementMutation<T>(
@@ -658,6 +718,13 @@ export class CollabMembershipService {
 
 function managementPending(reason = 'cloud-management-operation-pending'): CollabError {
   return new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['retry'], safeContext: { reason } });
+}
+
+function isManagerLeaveCloudManagementIntent(
+  intent: CloudManagementIntent,
+): intent is Extract<CloudManagementIntent, { operation: 'createManagerResponsibilityOffer' }> {
+  return intent.operation === 'createManagerResponsibilityOffer'
+    && intent.request.purpose === 'manager-leave';
 }
 
 function cloudManagerOfferSummary(offer: CollabManagerResponsibilityOffer): CollabManagerResponsibilityOfferSummary {
