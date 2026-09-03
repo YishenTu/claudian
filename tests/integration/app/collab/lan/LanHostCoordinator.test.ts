@@ -223,6 +223,7 @@ async function membershipAccess(
     ),
   }, {}, {
     cloudManagementAdmission: async (_projectId, operation) => operation(),
+    managerLeaveCloudManagementAdmission: async (_projectId, operation) => operation(),
     projects,
     managerResponsibilityAdmission: async (_projectId, operation) => operation(),
     managerReceipts: {
