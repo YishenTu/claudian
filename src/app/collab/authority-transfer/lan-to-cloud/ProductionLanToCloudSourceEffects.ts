@@ -368,6 +368,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       transferId: record.transferId,
     });
     await this.convergeHost(record, options);
+    await this.settleEmptyClaimBatch(record, service);
   }
 
   async restoreCompleted(
@@ -381,6 +382,10 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
       await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
       await service.expire();
+      await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+        record.projectId,
+        'terminal-source',
+      );
       return;
     }
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
@@ -391,6 +396,23 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       transferId: record.transferId,
     });
     await this.convergeHost(record, options);
+    await this.settleEmptyClaimBatch(record, service);
+  }
+
+  private async settleEmptyClaimBatch(
+    record: AuthorityTransferRecord,
+    service: PersistentLanAuthorityTransferTerminalSourceService,
+  ): Promise<void> {
+    const empty = await this.options.persistence.isRetainedClaimBatchEmpty(
+      record.projectId,
+      record.transferId,
+    );
+    if (!empty) return;
+    await service.expire();
+    await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+      record.projectId,
+      'terminal-source',
+    );
   }
 
   private async terminalService(
