@@ -324,10 +324,13 @@ describe('AuthorityTransferRecovery', () => {
 
     await subsystem.lifecycleRecovery.resume();
 
-    expect(prepare).toHaveBeenCalledWith(expect.objectContaining({
-      lifecycleOwnership: 'proposal',
-      transferId: 'transfer-one',
-    }));
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lifecycleOwnership: 'proposal',
+        transferId: 'transfer-one',
+      }),
+      {},
+    );
     expect(resume).not.toHaveBeenCalled();
   });
 
