@@ -46,7 +46,10 @@ import { AuthorityTransferLocalFence } from '@/app/collab/authority-transfer/Aut
 import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
-import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import {
+  createAuthorityTransferRecord,
+  expireAuthorityTransferTerminalResponder,
+} from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { AuthorityTransferCheckpointRepository } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointRepository';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
@@ -537,6 +540,9 @@ describe('production authority-transfer effects', () => {
           relinquishProjectForAuthorityTransfer: jest.fn(async () => {
             events.push('relinquish');
           }),
+          stopAuthorityTransferRoute: jest.fn(async () => {
+            events.push('stop-route');
+          }),
         },
         local: {
           projects: {
@@ -564,7 +570,196 @@ describe('production authority-transfer effects', () => {
       'expire',
       'remove-staging',
       'cleanup',
+      'stop-route',
     ]);
+  });
+
+  it('settles an empty completed LAN source without retaining a blocking terminal route', async () => {
+    const endpoint = 'https://127.0.0.1:54545';
+    const completed = status('lan-to-cloud', 'completed', 'https://cloud.example.test/');
+    const completedRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      sourceLanEndpoint: endpoint,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...completed,
+        batchRevision: 1,
+        batchSha256: 'b'.repeat(64),
+        checkpointSha256: 'a'.repeat(64),
+        phase: 'completed',
+        relinquishmentProof: {
+          batchRevision: 1,
+          batchSha256: 'b'.repeat(64),
+          certificate: Buffer.alloc(64, 2).toString('base64url'),
+          certificateAlgorithm: 'ed25519',
+          checkpointSha256: 'a'.repeat(64),
+          committedAt: '2026-08-28T00:02:00.000Z',
+          operationIntentId: OPERATION_ID,
+          projectId: PROJECT_ID,
+          sourceAuthority: { generation: 1, kind: 'lan' },
+          sourceHostMemberId: MEMBER_ID,
+          targetAuthority: { generation: 2, kind: 'cloud' },
+          transferId: TRANSFER_ID,
+        },
+        state: 'completed',
+        updatedAt: '2026-08-28T00:03:00.000Z',
+      },
+    });
+    const events: string[] = [];
+    const convergence = {
+      lanToCloudHost: jest.fn(async () => { events.push('converge-online'); }),
+      lanToCloudHostOffline: jest.fn(async () => { events.push('converge-offline'); }),
+    } as unknown as AuthorityTransferLocalConvergence;
+    const persistence = {
+      completeTerminalCleanup: jest.fn(async () => { events.push('cleanup'); }),
+      expireTerminalResponder: jest.fn(async () => { events.push('expire'); }),
+      load: jest.fn(async () => completedRecord),
+      isRetainedClaimBatchEmpty: jest.fn(async () => true),
+    };
+    const stopAuthorityTransferRoute = jest.fn(async () => { events.push('stop-route'); });
+    const effects = new ProductionLanToCloudSourceEffects({
+      cloudSession: {
+        readSnapshot: jest.fn(async () => ({ project: { id: PROJECT_ID } })),
+      } as never,
+      convergence,
+      foundation: {
+        inspectAuthority: jest.fn(async () => ({ database: {} })),
+        lanHost: {
+          activateAuthorityTransferTerminalSource: jest.fn(async () => {
+            events.push('activate-route');
+          }),
+          relinquishProjectForAuthorityTransfer: jest.fn(async () => {
+            events.push('relinquish');
+          }),
+          stopAuthorityTransferRoute,
+        },
+        local: {
+          projects: {
+            loadMembership: jest.fn(async () => ({
+              project: { workspacePath: '/vault/Projects/Portable' },
+            })),
+          },
+          workspace: {
+            removeReservedProjectsFolderChild: jest.fn(async () => {
+              events.push('remove-staging');
+            }),
+          },
+        },
+      } as never,
+      persistence: persistence as never,
+      projectId: PROJECT_ID,
+    });
+
+    await effects.activateTerminal(completedRecord);
+
+    expect(persistence.isRetainedClaimBatchEmpty).toHaveBeenCalledWith(
+      PROJECT_ID,
+      TRANSFER_ID,
+    );
+    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source');
+    expect(events).toEqual([
+      'relinquish',
+      'activate-route',
+      'converge-online',
+      'converge-offline',
+      'expire',
+      'remove-staging',
+      'cleanup',
+      'stop-route',
+    ]);
+  });
+
+  it('removes the terminal route when empty-source cleanup resumes after responder expiry', async () => {
+    const endpoint = 'https://127.0.0.1:54545';
+    const completed = status('lan-to-cloud', 'completed', 'https://cloud.example.test/');
+    const completedRecord = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_ID,
+      sourceLanEndpoint: endpoint,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...completed,
+        batchRevision: 1,
+        batchSha256: 'b'.repeat(64),
+        checkpointSha256: 'a'.repeat(64),
+        phase: 'completed',
+        relinquishmentProof: {
+          batchRevision: 1,
+          batchSha256: 'b'.repeat(64),
+          certificate: Buffer.alloc(64, 2).toString('base64url'),
+          certificateAlgorithm: 'ed25519',
+          checkpointSha256: 'a'.repeat(64),
+          committedAt: '2026-08-28T00:02:00.000Z',
+          operationIntentId: OPERATION_ID,
+          projectId: PROJECT_ID,
+          sourceAuthority: { generation: 1, kind: 'lan' },
+          sourceHostMemberId: MEMBER_ID,
+          targetAuthority: { generation: 2, kind: 'cloud' },
+          transferId: TRANSFER_ID,
+        },
+        state: 'completed',
+        updatedAt: '2026-08-28T00:03:00.000Z',
+      },
+    });
+    let currentRecord = completedRecord;
+    const persistence = {
+      completeTerminalCleanup: jest.fn(async () => undefined),
+      expireTerminalResponder: jest.fn(async () => {
+        if (currentRecord.terminalResponder?.state === 'active') {
+          currentRecord = expireAuthorityTransferTerminalResponder(currentRecord);
+        }
+      }),
+      isRetainedClaimBatchEmpty: jest.fn(async () => true),
+      load: jest.fn(async () => currentRecord),
+    };
+    const removeReservedProjectsFolderChild = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated cleanup failure after responder expiry'))
+      .mockResolvedValue(undefined);
+    const stopAuthorityTransferRoute = jest.fn(async () => undefined);
+    const effects = new ProductionLanToCloudSourceEffects({
+      cloudSession: {
+        readSnapshot: jest.fn(async () => ({ project: { id: PROJECT_ID } })),
+      } as never,
+      convergence: {
+        lanToCloudHost: jest.fn(async () => undefined),
+        lanToCloudHostOffline: jest.fn(async () => undefined),
+      } as unknown as AuthorityTransferLocalConvergence,
+      foundation: {
+        inspectAuthority: jest.fn(async () => ({ database: {} })),
+        lanHost: {
+          activateAuthorityTransferTerminalSource: jest.fn(async () => undefined),
+          relinquishProjectForAuthorityTransfer: jest.fn(async () => undefined),
+          stopAuthorityTransferRoute,
+        },
+        local: {
+          projects: {
+            loadMembership: jest.fn(async () => ({
+              project: { workspacePath: '/vault/Projects/Portable' },
+            })),
+          },
+          workspace: { removeReservedProjectsFolderChild },
+        },
+      } as never,
+      persistence: persistence as never,
+      projectId: PROJECT_ID,
+    });
+
+    await expect(effects.activateTerminal(completedRecord)).rejects.toThrow(
+      'simulated cleanup failure after responder expiry',
+    );
+    expect(currentRecord.terminalResponder?.state).toBe('expired');
+    expect(stopAuthorityTransferRoute).not.toHaveBeenCalled();
+
+    await expect(effects.restoreCompleted(currentRecord)).resolves.toBeUndefined();
+
+    expect(removeReservedProjectsFolderChild).toHaveBeenCalledTimes(2);
+    expect(persistence.completeTerminalCleanup).toHaveBeenCalledTimes(1);
+    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source');
   });
 
   it('runs an ordinary LAN Member proposal and exact Host acceptance through production effects', async () => {
