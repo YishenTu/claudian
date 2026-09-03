@@ -18,6 +18,9 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
+  managerHandoffEstablished?(
+    projectId: CollabProjectId,
+  ): Promise<boolean>;
   prepare?(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
@@ -121,6 +124,11 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
   private async inspect(
     projectId: CollabProjectId,
   ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
-    return this.persistence.inspectLifecycleOwner(projectId);
+    const state = await this.persistence.inspectLifecycleOwner(projectId);
+    if (
+      state === 'nonterminal'
+      && await this.handler.managerHandoffEstablished?.(projectId)
+    ) return 'terminal';
+    return state;
   }
 }

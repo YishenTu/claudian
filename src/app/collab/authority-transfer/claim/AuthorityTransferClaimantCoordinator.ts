@@ -15,6 +15,7 @@ import {
   type AuthorityTransferClaimantLanTarget,
   type AuthorityTransferClaimantRecord,
   type AuthorityTransferClaimantStore,
+  type CloudToLanManagerClaimantPredecessor,
   createAuthorityTransferClaimantRecord,
   createManagerReissuedAuthorityTransferClaimantRecord,
   type ManagerReissuedAuthorityTransferClaimantRecord,
@@ -55,6 +56,10 @@ export interface AuthorityTransferClaimantConvergence {
 }
 
 export interface AuthorityTransferClaimantCoordinatorOptions {
+  readonly complete?: (
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ) => Promise<void>;
   readonly convergence: AuthorityTransferClaimantConvergence;
   readonly createCredential?: () => string;
   readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
@@ -65,6 +70,7 @@ export interface AuthorityTransferClaimantCoordinatorOptions {
 }
 
 export interface StartAuthorityTransferClaimantInput {
+  readonly managerPredecessor?: CloudToLanManagerClaimantPredecessor | null;
   readonly memberId: CollabMemberId;
   readonly operationIntentId: string;
   readonly status: CollabAuthorityTransferStatus;
@@ -99,6 +105,8 @@ function sameSourceIssuedAttempt(
     && record.transferId === input.status.transferId
     && record.memberId === input.memberId
     && record.operationIntentId === input.operationIntentId
+    && JSON.stringify(record.managerPredecessor)
+      === JSON.stringify(input.managerPredecessor ?? null)
     && record.status.direction === input.status.direction
     && record.status.targetAuthority.kind === input.status.targetAuthority.kind
     && record.status.targetAuthority.generation === input.status.targetAuthority.generation
@@ -161,6 +169,7 @@ export class AuthorityTransferClaimantCoordinator {
       await this.options.store.save(createAuthorityTransferClaimantRecord({
         createdAt: this.now().toISOString(),
         lanTarget,
+        managerPredecessor: input.managerPredecessor ?? null,
         memberId: input.memberId,
         operationIntentId: input.operationIntentId,
         status: input.status,
@@ -217,7 +226,7 @@ export class AuthorityTransferClaimantCoordinator {
           case 'prepared':
           case 'claim-retained':
           case 'credential-persisted':
-            await this.options.store.remove(record.projectId);
+            await this.complete(record, options);
             return;
           case 'target-claimed':
             record = await this.advanceSource(record, 'source-acknowledged');
@@ -254,7 +263,7 @@ export class AuthorityTransferClaimantCoordinator {
             : {
                 claim: record.claim.claim,
                 credentialHash: createHash('sha256')
-                  .update(Buffer.from(record.targetCredential, 'base64url'))
+                  .update(record.targetCredential, 'utf8')
                   .digest('hex'),
                 idempotencyKey: record.operationIntentId,
                 projectId: record.projectId,
@@ -281,7 +290,7 @@ export class AuthorityTransferClaimantCoordinator {
           break;
       }
     }
-    await this.options.store.remove(record.projectId);
+    await this.complete(record, options);
   }
 
   private async resumeManagerReissued(
@@ -335,6 +344,17 @@ export class AuthorityTransferClaimantCoordinator {
           record = await this.advanceManager(record, 'completed');
           break;
       }
+    }
+    await this.complete(record, options);
+  }
+
+  private async complete(
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<void> {
+    if (this.options.complete) {
+      await this.options.complete(record, options);
+      return;
     }
     await this.options.store.remove(record.projectId);
   }

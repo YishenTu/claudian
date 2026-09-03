@@ -63,10 +63,19 @@ export interface CloudToLanManagerEntryRecord {
   readonly initiatingMemberId: CollabMemberId;
   readonly initiatingPersonalRef: string;
   readonly operationIntentId: string;
+  readonly ownerInstallationKey: InstallationKey;
   readonly phase: 'observing' | 'prepared' | 'rejected' | 'settled' | 'submitted';
   readonly projectId: CollabProjectId;
   readonly request: BeginCloudToLanTransferRequest;
   readonly status: CollabAuthorityTransferStatus | null;
+}
+
+export function cloudToLanManagerRequiresClaimant(
+  entry: CloudToLanManagerEntryRecord,
+): boolean {
+  return entry.phase === 'settled'
+    && entry.status?.state === 'completed'
+    && entry.initiatingMemberId !== entry.descriptor.selectedTargetMemberId;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -96,6 +105,7 @@ const MANAGER_KEYS = new Set([
   'initiatingMemberId',
   'initiatingPersonalRef',
   'operationIntentId',
+  'ownerInstallationKey',
   'phase',
   'projectId',
   'request',
@@ -366,6 +376,7 @@ export function decodeCloudToLanManagerEntryRecord(
     || typeof value.initiatingPersonalRef !== 'string'
     || typeof value.operationIntentId !== 'string'
     || !isCollabOpaqueId(value.operationIntentId)
+    || typeof value.ownerInstallationKey !== 'string'
     || (
       value.phase !== 'prepared'
       && value.phase !== 'submitted'
@@ -446,6 +457,7 @@ export function decodeCloudToLanManagerEntryRecord(
     initiatingMemberId: value.initiatingMemberId,
     initiatingPersonalRef: value.initiatingPersonalRef,
     operationIntentId: value.operationIntentId,
+    ownerInstallationKey: parseInstallationKey(value.ownerInstallationKey),
     phase: value.phase,
     projectId: value.projectId,
     request,
@@ -555,6 +567,7 @@ export function createCloudToLanManagerEntry(input: Readonly<{
   readonly initiatingMemberId: CollabMemberId;
   readonly initiatingPersonalRef: string;
   readonly operationIntentId: string;
+  readonly ownerInstallationKey: InstallationKey;
 }>): CloudToLanManagerEntryRecord {
   return decodeCloudToLanManagerEntryRecord({
     cancellation: null,
@@ -565,6 +578,7 @@ export function createCloudToLanManagerEntry(input: Readonly<{
     initiatingMemberId: input.initiatingMemberId,
     initiatingPersonalRef: input.initiatingPersonalRef,
     operationIntentId: input.operationIntentId,
+    ownerInstallationKey: input.ownerInstallationKey,
     phase: 'prepared',
     projectId: input.descriptor.projectId,
     request: {

@@ -7,7 +7,11 @@ import type {
   CollabTransferredMembershipRedemptionReceipt,
   ReissueTransferredMembershipClaimResponse,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
+import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import {
   AuthorityTransferClaimantCoordinator,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantCoordinator';
@@ -17,6 +21,7 @@ import type {
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import {
   advanceAuthorityTransferClaimantRecord,
+  AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION,
   createAuthorityTransferClaimantRecord,
   createManagerReissuedAuthorityTransferClaimantRecord,
   decodeAuthorityTransferClaimantRecord,
@@ -27,6 +32,11 @@ const PROJECT_ID = 'project-claimant';
 const TRANSFER_ID = 'transfer-claimant';
 const MEMBER_ID = 'member-offline';
 const INTENT_ID = 'intent-claimant';
+const MANAGER_INTENT_ID = 'transfer-owner-intent';
+const CLOUD_TO_LAN_INTENT_ID = authorityTransferChildIdempotencyKey(
+  MANAGER_INTENT_ID,
+  'claims',
+);
 const CREATED_AT = '2026-08-27T00:00:00.000Z';
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const CLAIM_VALUE = Buffer.alloc(32, 4).toString('base64url');
@@ -35,6 +45,14 @@ const LAN_TARGET = {
   caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n',
   caFingerprint: 'd'.repeat(64),
   endpoint: 'https://192.168.1.20:54545/',
+};
+const MANAGER_PREDECESSOR = {
+  initiatingPersonalRef: 'refs/heads/members/member-offline',
+  operationIntentId: MANAGER_INTENT_ID,
+  ownerInstallationKey: TEST_INSTALLATION_A,
+  preparationId: 'intent-target-preparation',
+  selectedTargetMemberId: 'member-target',
+  sourceCloudUrl: 'https://cloud.example.test/',
 };
 
 function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityTransferStatus {
@@ -95,12 +113,12 @@ function reissuedClaim(): ReissueTransferredMembershipClaimResponse {
   };
 }
 
-function receipt(): CollabTransferredMembershipRedemptionReceipt {
+function receipt(operationIntentId = INTENT_ID): CollabTransferredMembershipRedemptionReceipt {
   return {
     checkpointSha256: CHECKPOINT_SHA256,
     claimSha256: createHash('sha256').update(CLAIM_VALUE, 'utf8').digest('hex'),
     memberId: MEMBER_ID,
-    operationIntentId: INTENT_ID,
+    operationIntentId,
     projectId: PROJECT_ID,
     receiptId: 'receipt-claimant',
     receiptKeyId: 'receipt-key-1',
@@ -504,12 +522,13 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       createdAt: CREATED_AT,
       kind: 'authority-transfer-claimant',
       lanTarget: null,
+      managerPredecessor: null,
       memberId: MEMBER_ID,
       operationIntentId: INTENT_ID,
       phase: 'completed',
       projectId: PROJECT_ID,
       redemptionReceipt: receipt(),
-      schemaVersion: 1,
+      schemaVersion: AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION,
       status: completed('lan-to-cloud'),
       targetCredential: null,
       transferId: TRANSFER_ID,
@@ -536,6 +555,9 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   ] as const)(
     'durably redeems an offline Member for %s without Join or prebinding',
     async (direction, expectsCredential) => {
+      const operationIntentId = direction === 'cloud-to-lan'
+        ? CLOUD_TO_LAN_INTENT_ID
+        : INTENT_ID;
       const store = new MemoryStore();
       const getClaim = jest.fn(async () => claim());
       const acknowledge = jest.fn(async () => undefined);
@@ -547,12 +569,12 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         expect(request).toMatchObject({
           ...(expectsCredential ? {
             credentialHash: createHash('sha256')
-              .update(Buffer.from(TARGET_CREDENTIAL, 'base64url'))
+              .update(TARGET_CREDENTIAL, 'utf8')
               .digest('hex'),
           } : {}),
         });
         expect('credentialHash' in request).toBe(expectsCredential);
-        return receipt();
+        return receipt(operationIntentId);
       });
       const converge = jest.fn(async () => undefined);
       const coordinator = new AuthorityTransferClaimantCoordinator({
@@ -566,8 +588,9 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       });
 
       await coordinator.start({
+        managerPredecessor: direction === 'cloud-to-lan' ? MANAGER_PREDECESSOR : null,
         memberId: MEMBER_ID,
-        operationIntentId: INTENT_ID,
+        operationIntentId,
         status: completed(direction),
       });
 
@@ -595,6 +618,9 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   it.each(['lan-to-cloud', 'cloud-to-lan'] as const)(
     'recovers %s after convergence commits before claimant progress',
     async (direction) => {
+      const operationIntentId = direction === 'cloud-to-lan'
+        ? CLOUD_TO_LAN_INTENT_ID
+        : INTENT_ID;
       const store = new MemoryStore();
       let membershipConverted = false;
       store.failNextSavePhase = 'membership-converged';
@@ -610,12 +636,13 @@ describe('AuthorityTransferClaimantCoordinator', () => {
           getClaim: async () => claim(),
         },
         store,
-        target: { claimTransferredMembership: async () => receipt() },
+        target: { claimTransferredMembership: async () => receipt(operationIntentId) },
       });
 
       await expect(first.start({
+        managerPredecessor: direction === 'cloud-to-lan' ? MANAGER_PREDECESSOR : null,
         memberId: MEMBER_ID,
-        operationIntentId: INTENT_ID,
+        operationIntentId,
         status: completed(direction),
       })).rejects.toThrow('simulated claimant progress crash');
       expect(membershipConverted).toBe(true);
@@ -657,8 +684,9 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     });
 
     await expect(coordinator.start({
+      managerPredecessor: MANAGER_PREDECESSOR,
       memberId: MEMBER_ID,
-      operationIntentId: INTENT_ID,
+      operationIntentId: CLOUD_TO_LAN_INTENT_ID,
       status: completed('cloud-to-lan'),
     })).rejects.toThrow('simulated source outage');
 
@@ -672,7 +700,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   it('scrubs a terminal record after a cleanup crash without replaying effects', async () => {
     const store = new MemoryStore();
     const getClaim = jest.fn(async () => claim());
-    const target = jest.fn(async () => receipt());
+    const target = jest.fn(async () => receipt(CLOUD_TO_LAN_INTENT_ID));
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: async () => undefined },
       createCredential: jest.fn(() => TARGET_CREDENTIAL),
@@ -686,8 +714,9 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     });
     store.failNextRemove = true;
     await expect(coordinator.start({
+      managerPredecessor: MANAGER_PREDECESSOR,
       memberId: MEMBER_ID,
-      operationIntentId: INTENT_ID,
+      operationIntentId: CLOUD_TO_LAN_INTENT_ID,
       status: completed('cloud-to-lan'),
     })).rejects.toThrow('simulated cleanup crash');
     const completedRecord = store.record!;
