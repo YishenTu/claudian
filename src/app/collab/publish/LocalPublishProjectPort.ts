@@ -175,9 +175,6 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
       () => this.authoritySessions.create(membership),
     );
     work.assertGeneration(generation);
-    if (authority.git.headers.length === 0) {
-      throw projectError('host-stopped', 'publish-host-endpoint-unavailable');
-    }
     try {
       await this.assertControlReachable(authority.control, context.projectId, signal);
     } catch (error) {

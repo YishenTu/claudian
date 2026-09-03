@@ -100,11 +100,11 @@ function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 3,
-      gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 4,
+      gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 7,
+      wireVersion: 8,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 3,
@@ -242,7 +242,7 @@ describe('CloudAuthorityAdapter', () => {
         ...bound,
         authority: {
           ...bound.authority,
-          gitRemoteUrl: `https://127.0.0.1:${address.port}/operator/cloud/v3/projects/project-cloud/repository.git`,
+          gitRemoteUrl: `https://127.0.0.1:${address.port}/operator/cloud/v4/projects/project-cloud/repository.git`,
           serverUrl,
         },
       });
@@ -262,9 +262,9 @@ describe('CloudAuthorityAdapter', () => {
         ]);
         expect(observed).toEqual([
           { actor: undefined, path: '/operator/cloud/collab/capabilities' },
-          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/operations/getProjectSnapshot' },
-          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json' },
-          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/events?afterSequence=3' },
+          { actor: undefined, path: '/operator/cloud/v4/projects/project-cloud/operations/getProjectSnapshot' },
+          { actor: undefined, path: '/operator/cloud/v4/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json' },
+          { actor: undefined, path: '/operator/cloud/v4/projects/project-cloud/events?afterSequence=3' },
         ]);
       } finally {
         session.dispose();
@@ -327,7 +327,7 @@ describe('CloudAuthorityAdapter', () => {
           ...bound,
           authority: {
             ...bound.authority,
-            gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+            gitRemoteUrl: `${serverUrl}/v4/projects/project-cloud/repository.git`,
             serverUrl,
           },
         }, { signal: controller.signal })
@@ -396,7 +396,7 @@ describe('CloudAuthorityAdapter', () => {
       ...bound,
       authority: {
         ...bound.authority,
-        gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+        gitRemoteUrl: `${serverUrl}/v4/projects/project-cloud/repository.git`,
         serverUrl,
       },
     });
@@ -408,7 +408,7 @@ describe('CloudAuthorityAdapter', () => {
       await new Promise<void>(resolve => setImmediate(resolve));
       expect(observed).toEqual({
         actor: undefined,
-        path: '/operator/cloud/v3/projects/project-cloud/events?afterSequence=3',
+        path: '/operator/cloud/v4/projects/project-cloud/events?afterSequence=3',
       });
       session.dispose();
       expect(await Promise.race([
@@ -461,7 +461,7 @@ describe('CloudAuthorityAdapter', () => {
       await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
       expect(observed).toEqual({
         actor: undefined,
-        path: '/operator/cloud/v3/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json',
+        path: '/operator/cloud/v4/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json',
       });
     } finally {
       connection.dispose();
@@ -502,7 +502,7 @@ describe('CloudAuthorityAdapter', () => {
         ...bound,
         authority: {
           ...bound.authority,
-          gitRemoteUrl: `${serverUrl}/v3/projects/project-cloud/repository.git`,
+          gitRemoteUrl: `${serverUrl}/v4/projects/project-cloud/repository.git`,
           serverUrl,
         },
       })
@@ -529,7 +529,7 @@ describe('CloudAuthorityAdapter', () => {
     { authorityGeneration: Number.MAX_SAFE_INTEGER + 1 },
     { bindingVersion: 2 },
     { wireVersion: 6 },
-    { gitRemoteUrl: 'https://other.example.test/v3/projects/project-cloud/repository.git' },
+    { gitRemoteUrl: 'https://other.example.test/v4/projects/project-cloud/repository.git' },
   ])('rejects invalid bound authority facts before connecting: %j', async authority => {
     const bound = membership();
     const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
@@ -570,7 +570,7 @@ describe('CloudAuthorityAdapter', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `HTTP://127.0.0.1:${address.port}/operator/cloud`;
-    const gitRemoteUrl = `http://127.0.0.1:${address.port}/operator/cloud/v3/projects/project-cloud/repository.git`;
+    const gitRemoteUrl = `http://127.0.0.1:${address.port}/operator/cloud/v4/projects/project-cloud/repository.git`;
     const bound = membership();
     const adapter = new CloudAuthorityAdapter({ requestIdFactory: () => 'prefixed-snapshot' });
     try {
@@ -582,7 +582,7 @@ describe('CloudAuthorityAdapter', () => {
         expect(session.git).toEqual({ headers: [], remoteUrl: gitRemoteUrl });
         expect(observed).toEqual([
           { actor: undefined, path: '/operator/cloud/collab/capabilities' },
-          { actor: undefined, path: '/operator/cloud/v3/projects/project-cloud/operations/getProjectSnapshot' },
+          { actor: undefined, path: '/operator/cloud/v4/projects/project-cloud/operations/getProjectSnapshot' },
         ]);
       } finally {
         session.dispose();
@@ -825,7 +825,7 @@ describe('CloudAuthorityAdapter', () => {
     });
     expect(requests.map(input => input.url)).toEqual([
       'https://cloud.example.test/collab/capabilities',
-      `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+      `https://cloud.example.test/v4/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
     ]);
   });
 
@@ -954,10 +954,10 @@ describe('CloudAuthorityAdapter', () => {
               projectId: 'project-cloud',
               projectName: 'Cloud Project',
             },
-            protocolVersion: 7,
+            protocolVersion: 8,
             requestId: 'request-entry',
           },
-          path: '/operator/cloud/v3/projects/project-cloud/operations/createCloudProject',
+          path: '/operator/cloud/v4/projects/project-cloud/operations/createCloudProject',
         }]);
         returnedProjectId = 'project-other';
         await expect(connection.createProject({
@@ -1053,7 +1053,7 @@ describe('CloudAuthorityAdapter', () => {
     for await (const chunk of download.body) downloaded.push(Buffer.from(chunk));
 
     expect(jsonRequests[2]?.url).toBe(
-      `https://cloud.example.test/v3/projects/${PROJECT_ID}`
+      `https://cloud.example.test/v4/projects/${PROJECT_ID}`
         + '/operations/getProjectAuthorityTransfer',
     );
     expect(Buffer.concat(uploaded).toString('utf8')).toBe('checkpoint');
@@ -1159,7 +1159,7 @@ describe('CloudAuthorityAdapter', () => {
       ...membership(),
       authority: {
         ...membership().authority,
-        gitRemoteUrl: `http://127.0.0.1:${address.port}/v3/projects/project-cloud/repository.git`,
+        gitRemoteUrl: `http://127.0.0.1:${address.port}/v4/projects/project-cloud/repository.git`,
         serverUrl: `http://127.0.0.1:${address.port}`,
       },
     } satisfies CollabLocalCloudMembershipRecord;
@@ -1172,7 +1172,7 @@ describe('CloudAuthorityAdapter', () => {
         { actor: undefined, url: '/collab/capabilities' },
         {
           actor: undefined,
-          url: `/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+          url: `/v4/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
         },
       ]);
       session.dispose();
@@ -1219,7 +1219,7 @@ describe('CloudAuthorityAdapter', () => {
     expect(session.supports('requests')).toBe(false);
     expect(session.git).toEqual({
       headers: [],
-      remoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+      remoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
       expect.objectContaining({
@@ -1231,7 +1231,7 @@ describe('CloudAuthorityAdapter', () => {
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
         headers: {},
         method: 'POST',
-        url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+        url: `https://cloud.example.test/v4/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
     ]);
   });
@@ -1280,13 +1280,13 @@ describe('CloudAuthorityAdapter', () => {
           idempotencyKey: 'publish-head',
           projectId: PROJECT_ID,
         },
-        protocolVersion: 7,
+        protocolVersion: 8,
         requestId: 'request-ensure',
       },
       headers: {},
       method: 'POST',
       signal: expect.any(AbortSignal),
-      url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/ensureMyRequest`,
+      url: `https://cloud.example.test/v4/projects/${PROJECT_ID}/operations/ensureMyRequest`,
     });
   });
 
@@ -1340,13 +1340,13 @@ describe('CloudAuthorityAdapter', () => {
           projectId: PROJECT_ID,
           requestId: 'request-one',
         },
-        protocolVersion: 7,
+        protocolVersion: 8,
         requestId: expect.any(String),
       },
       headers: {},
       method: 'POST',
       signal: expect.any(AbortSignal),
-      url: `https://cloud.example.test/v3/projects/${PROJECT_ID}/operations/acceptRequest`,
+      url: `https://cloud.example.test/v4/projects/${PROJECT_ID}/operations/acceptRequest`,
     });
   });
 
@@ -1780,7 +1780,7 @@ describe('CloudProjectEventClient', () => {
         retirementId: 'retirement-cloud-one',
       },
       projectId: PROJECT_ID,
-      protocolVersion: 7,
+      protocolVersion: 8,
       sequence: 4,
     }));
     await flush();
@@ -1808,7 +1808,7 @@ describe('CloudProjectEventClient', () => {
         sockets.push(socket);
         expect(input).toEqual({
           headers: {},
-          url: `wss://cloud.example.test/v3/projects/${PROJECT_ID}/events?afterSequence=${
+          url: `wss://cloud.example.test/v4/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 5
           }`,
         });
@@ -1855,7 +1855,7 @@ describe('CloudProjectEventClient', () => {
         const socket = new FakeSocket();
         sockets.push(socket);
         expect(input.url).toBe(
-          `wss://cloud.example.test/v3/projects/${PROJECT_ID}/events?afterSequence=${
+          `wss://cloud.example.test/v4/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 4
           }`,
         );
@@ -1875,7 +1875,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-one' },
       projectId: PROJECT_ID,
-      protocolVersion: 7,
+      protocolVersion: 8,
       sequence: 4,
     }));
     sockets[0]!.closed(1006);
@@ -1912,7 +1912,7 @@ describe('CloudProjectEventClient', () => {
         occurredAt: '2026-08-22T00:00:00.000Z',
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
-        protocolVersion: 7,
+        protocolVersion: 8,
         sequence,
       }));
     }
@@ -1947,7 +1947,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
-      protocolVersion: 7,
+      protocolVersion: 8,
       sequence: 4,
     }));
     await flush();

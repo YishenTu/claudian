@@ -1,8 +1,11 @@
 import {
+  constants,
   createHash,
   createPrivateKey,
   generateKeyPairSync,
   sign,
+  verify,
+  X509Certificate,
 } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -91,14 +94,34 @@ interface SourceProofEnvelope {
     readonly projectId: string;
     readonly sourceAuthorityGeneration: number;
     readonly sourceHostMemberId: string;
+    readonly sourcePrincipalId: string;
     readonly targetAuthorityGeneration: number;
     readonly targetUrl: string;
     readonly transferId: string;
   }>;
   readonly receiptKeyId: string;
   readonly receiptPublicKey: string;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
 }
+
+const SOURCE_PROOF_KEYS = new Set([
+  'caCertificatePem',
+  'certificate',
+  'payload',
+  'receiptKeyId',
+  'receiptPublicKey',
+  'schemaVersion',
+]);
+const SOURCE_PROOF_PAYLOAD_KEYS = new Set([
+  'checkpointManifestSha256',
+  'projectId',
+  'sourceAuthorityGeneration',
+  'sourceHostMemberId',
+  'sourcePrincipalId',
+  'targetAuthorityGeneration',
+  'targetUrl',
+  'transferId',
+]);
 
 export interface ProductionLanToCloudSourceEffectsOptions {
   readonly cloudSession: CloudAuthorityConnection | null;
@@ -114,6 +137,70 @@ function effectsError(reason: string): CollabError {
     recoveryActions: ['resume', 'open-diagnostics'],
     safeContext: { reason },
   });
+}
+
+function exactRecord(value: unknown, keys: ReadonlySet<string>): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const actual = Object.keys(record);
+  return actual.length === keys.size && actual.every(key => keys.has(key))
+    ? record
+    : null;
+}
+
+function currentSourceProof(
+  proof: unknown,
+  expectedPayload: SourceProofEnvelope['payload'],
+  expectedKey: SourceProofKey,
+): string | null {
+  if (typeof proof !== 'string') return null;
+  let decoded: Buffer;
+  let envelope: Record<string, unknown> | null;
+  try {
+    decoded = Buffer.from(proof, 'base64url');
+    if (decoded.toString('base64url') !== proof) return null;
+    envelope = exactRecord(JSON.parse(decoded.toString('utf8')), SOURCE_PROOF_KEYS);
+  } catch {
+    return null;
+  }
+  if (!envelope || envelope.schemaVersion !== 2) return null;
+  const payload = exactRecord(envelope.payload, SOURCE_PROOF_PAYLOAD_KEYS);
+  if (!payload) return null;
+  for (const [field, expected] of Object.entries(expectedPayload)) {
+    if (payload[field] !== expected) return null;
+  }
+  if (
+    envelope.receiptKeyId !== expectedKey.receiptKeyId
+    || envelope.receiptPublicKey !== expectedKey.publicKey
+    || typeof envelope.caCertificatePem !== 'string'
+    || typeof envelope.certificate !== 'string'
+  ) return null;
+  const signature = Buffer.from(envelope.certificate, 'base64url');
+  if (
+    signature.byteLength === 0
+    || signature.toString('base64url') !== envelope.certificate
+  ) return null;
+  try {
+    const certificate = new X509Certificate(envelope.caCertificatePem);
+    const signed = {
+      payload: expectedPayload,
+      receiptKeyId: expectedKey.receiptKeyId,
+      receiptPublicKey: expectedKey.publicKey,
+      schemaVersion: 2,
+    };
+    return verify(
+      'sha256',
+      Buffer.from(JSON.stringify(signed), 'utf8'),
+      {
+        key: certificate.publicKey,
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: 32,
+      },
+      signature,
+    ) ? proof : null;
+  } catch {
+    return null;
+  }
 }
 
 function projectsFolder(workspacePath: string): string {
@@ -367,6 +454,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (verifiedExisting && await stagedArtifactsMatch(stagingPath, verifiedExisting)) {
       manifest = verifiedExisting;
     } else {
+      await this.assertSourceReplayMutable(record, false);
       await Promise.all([
         MANIFEST_FILE,
         COORDINATION_FILE,
@@ -557,8 +645,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     stagingPath: string,
   ): Promise<string> {
     const filePath = path.join(stagingPath, SOURCE_PROOF_FILE);
-    const existing = await readJsonFile<{ readonly proof: string }>(filePath);
-    if (existing) return existing.proof;
+    const existing = await readJsonFile<unknown>(filePath);
     const membership = await this.requireLanMembership(record.projectId);
     const key = await sourceProofKey(stagingPath);
     const payload = {
@@ -566,10 +653,15 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       projectId: record.projectId,
       sourceAuthorityGeneration: record.status.sourceAuthority.generation,
       sourceHostMemberId: membership.member.id,
+      sourcePrincipalId: this.options.foundation.installationKey,
       targetAuthorityGeneration: record.status.targetAuthority.generation,
       targetUrl: record.status.targetUrl,
       transferId: record.transferId,
     };
+    const existingRecord = exactRecord(existing, new Set(['proof']));
+    const reusable = currentSourceProof(existingRecord?.proof, payload, key);
+    if (reusable !== null) return reusable;
+    await this.assertSourceReplayMutable(record, existing !== null);
     const signer = await this.options.foundation.lanHost.hostCaSigner();
     const envelope: SourceProofEnvelope = {
       caCertificatePem: signer.caCertificatePem,
@@ -577,16 +669,39 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         payload,
         receiptKeyId: key.receiptKeyId,
         receiptPublicKey: key.publicKey,
-        schemaVersion: 1,
+        schemaVersion: 2,
       }), 'utf8')),
       payload,
       receiptKeyId: key.receiptKeyId,
       receiptPublicKey: key.publicKey,
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
     const proof = Buffer.from(JSON.stringify(envelope), 'utf8').toString('base64url');
     await writePrivateJson(filePath, { proof });
-    return (await readJsonFile<{ readonly proof: string }>(filePath))?.proof ?? proof;
+    const persisted = await readJsonFile<unknown>(filePath);
+    if (exactRecord(persisted, new Set(['proof']))?.proof !== proof) {
+      throw effectsError('authority-transfer-source-proof-replay-invalid');
+    }
+    return proof;
+  }
+
+  private async assertSourceReplayMutable(
+    record: AuthorityTransferRecord,
+    requireEntry: boolean,
+  ): Promise<void> {
+    const [physicalRecord, sourceEntry] = await Promise.all([
+      this.options.persistence.load(record.projectId),
+      this.options.persistence.loadSourceEntry(record.projectId),
+    ]);
+    if (!physicalRecord && !sourceEntry && !requireEntry) return;
+    if (
+      sourceEntry?.entryRole === 'source'
+      && sourceEntry.ownerInstallationKey === this.options.foundation.installationKey
+      && sourceEntry.successor?.operationIntentId === record.operationIntentId
+      && sourceEntry.successor.transferId === record.transferId
+      && sourceEntry.beginSubmission === 'not-sent'
+    ) return;
+    throw effectsError('authority-transfer-source-proof-replay-invalid');
   }
 
   private async prepare(record: AuthorityTransferRecord): Promise<{

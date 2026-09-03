@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import {
+  constants,
+  createHash,
+  createPublicKey,
+  generateKeyPairSync,
+  sign,
+  verify,
+} from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,11 +15,15 @@ import { Readable } from 'node:stream';
 import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
+  type CollabAuthorityRelinquishmentProof,
+  type CollabAuthorityRelinquishmentProofSigningPayload,
   type CollabAuthorityTransferStatus,
   type CollabCloudAuthorityTransferArtifact,
   type CollabCloudCapability,
   type CollabTransferredMembershipClaimBatch,
   decodeCollabProjectCheckpointManifest,
+  encodeCollabAuthorityRelinquishmentProofSigningInput,
+  encodeCollabCloudToLanTargetCleanupProofSigningInput,
   encodeCollabProjectCheckpointManifestCanonicalJson,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
@@ -45,6 +56,7 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
@@ -54,6 +66,34 @@ const MEMBER_ID = 'member-production-host';
 const TRANSFER_ID = 'transfer-production-effects';
 const OPERATION_ID = 'intent-production-effects';
 const HOST_CREDENTIAL = Buffer.alloc(32, 7).toString('base64url');
+const CLOUD_RECEIPT_KEYS = generateKeyPairSync('ed25519');
+const CLOUD_RECEIPT_PUBLIC_KEY = (
+  CLOUD_RECEIPT_KEYS.publicKey.export({ format: 'jwk' }) as JsonWebKey
+).x!;
+
+function cloudReceiptVerifier() {
+  return {
+    projectId: PROJECT_ID,
+    receiptKeyId: 'receipt-key-production-cloud',
+    receiptPublicKey: CLOUD_RECEIPT_PUBLIC_KEY,
+    receiptPublicKeyEncoding: 'base64url-raw' as const,
+    signatureAlgorithm: 'ed25519' as const,
+    transferId: TRANSFER_ID,
+  };
+}
+
+function signCloudRelinquishmentProof(
+  payload: CollabAuthorityRelinquishmentProofSigningPayload,
+): CollabAuthorityRelinquishmentProof {
+  return {
+    ...payload,
+    certificate: sign(
+      null,
+      Buffer.from(encodeCollabAuthorityRelinquishmentProofSigningInput(payload), 'utf8'),
+      CLOUD_RECEIPT_KEYS.privateKey,
+    ).toString('base64url'),
+  };
+}
 
 jest.setTimeout(30_000);
 
@@ -233,6 +273,167 @@ describe('production authority-transfer effects', () => {
     expect(dispose).toHaveBeenCalledTimes(2);
     expect(discardAuthorityTransferTarget).toHaveBeenCalledTimes(1);
     expect(removeReservedProjectsFolderChild).toHaveBeenCalledTimes(1);
+  });
+
+  it('durably invalidates a staged Cloud-to-LAN target and replays one exact signed cleanup proof', async () => {
+    const now = new Date('2026-08-28T00:02:00.000Z');
+    const signer = await new LanTlsIdentity(targetRoot, {
+      installationKey: TEST_INSTALLATION_A,
+      now: () => now,
+    }).hostCaSigner();
+    const stagingPath = path.join(targetRoot, 'target-staging');
+    const statesAtDiscard: unknown[] = [];
+    const discardAuthorityTransferTarget = jest.fn(async () => {
+      statesAtDiscard.push(JSON.parse(await readFile(
+        path.join(stagingPath, 'target-private.json'),
+        'utf8',
+      )));
+    });
+    const startAuthorityTransferRoute = jest.fn(async () => undefined);
+    const stopAuthorityTransferRoute = jest.fn(async () => undefined);
+    const membership = {
+      authority: {
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example.test/',
+      },
+      member: { id: MEMBER_ID },
+      project: { workspacePath: 'Projects/Portable' },
+    };
+    const foundation = {
+      discardAuthorityTransferTarget,
+      lanHost: {
+        hostCaSigner: jest.fn(async () => signer),
+        prepareAuthorityTransferTarget: jest.fn(async () => ({
+          caCertificatePem: signer.caCertificatePem,
+          caFingerprint: signer.caFingerprint,
+          dispose: jest.fn(async () => undefined),
+          endpoint: 'https://127.0.0.1:54545',
+        })),
+        startAuthorityTransferRoute,
+        stopAuthorityTransferRoute,
+      },
+      local: {
+        projects: { loadMembership: jest.fn(async () => membership) },
+        workspace: {
+          reserveProjectsFolderChild: jest.fn(async () => ({ absolutePath: stagingPath })),
+        },
+      },
+    };
+    const createEffects = () => new ProductionCloudToLanTargetEffects({
+      cloudSession: { serverUrl: 'https://cloud.example.test/' },
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: foundation as never,
+      now: () => now,
+      persistence: {} as never,
+      projectId: PROJECT_ID,
+    });
+    const collectingRecord = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: status(
+        'cloud-to-lan',
+        'collecting-readiness',
+        'https://127.0.0.1:54545',
+      ),
+    });
+    const firstEffects = createEffects();
+    await firstEffects.acceptanceRequest(collectingRecord);
+    const targetStatePath = path.join(stagingPath, 'target-private.json');
+    const currentTargetState = JSON.parse(await readFile(targetStatePath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const { cleanup: _cleanup, ...legacyTargetState } = currentTargetState;
+    legacyTargetState.schemaVersion = 1;
+    const legacyTargetStateBytes = `${JSON.stringify(legacyTargetState)}\n`;
+    await writeFile(targetStatePath, legacyTargetStateBytes, { mode: 0o600 });
+    await expect(createEffects().acceptanceRequest(collectingRecord)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-state-invalid' },
+    });
+    await expect(readFile(targetStatePath, 'utf8')).resolves.toBe(legacyTargetStateBytes);
+    await writeFile(targetStatePath, `${JSON.stringify(currentTargetState)}\n`, { mode: 0o600 });
+    const targetStateBeforeStage = JSON.parse(await readFile(targetStatePath, 'utf8')) as {
+      claimBatch: unknown;
+    };
+    const unsignedLocalBatch = {
+      batchRevision: 1,
+      batchSha256: '0'.repeat(64),
+      checkpointSha256: 'a'.repeat(64),
+      claims: [],
+      expiresAt: '2026-09-27T00:00:00.000Z',
+      projectId: PROJECT_ID,
+      targetAuthorityGeneration: 3,
+      transferId: TRANSFER_ID,
+    };
+    const localBatch = {
+      ...unsignedLocalBatch,
+      batchSha256: createHash('sha256')
+        .update(encodeCollabTransferredMembershipClaimBatchDigestInput(unsignedLocalBatch), 'utf8')
+        .digest('hex'),
+    };
+    targetStateBeforeStage.claimBatch = localBatch;
+    await writeFile(targetStatePath, `${JSON.stringify(targetStateBeforeStage)}\n`, { mode: 0o600 });
+    const cancellationRecord = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: status(
+        'cloud-to-lan',
+        'cancel-intent',
+        'https://127.0.0.1:54545',
+        localBatch.checkpointSha256,
+      ),
+    });
+
+    const firstProof = await firstEffects.invalidateStaging(cancellationRecord);
+    const replayedProof = await createEffects().invalidateStaging(cancellationRecord);
+
+    expect(replayedProof).toEqual(firstProof);
+    expect(firstProof).toMatchObject({
+      batchRevision: localBatch.batchRevision,
+      batchSha256: localBatch.batchSha256,
+      checkpointSha256: localBatch.checkpointSha256,
+      stageSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(statesAtDiscard[0]).toMatchObject({
+      cleanup: {
+        cleanupSha256: firstProof.cleanupSha256,
+        invalidatedAt: firstProof.invalidatedAt,
+        operationIntentId: firstProof.operationIntentId,
+        proof: null,
+      },
+      schemaVersion: 2,
+      transferId: TRANSFER_ID,
+    });
+    expect(statesAtDiscard[1]).toMatchObject({ cleanup: { proof: firstProof } });
+    const targetState = JSON.parse(await readFile(targetStatePath, 'utf8')) as {
+      readonly cleanup: { readonly proof: typeof firstProof };
+      readonly receiptKey: { readonly publicKey: string };
+    };
+    expect(targetState.cleanup.proof).toEqual(firstProof);
+    const { signature, ...signingPayload } = firstProof;
+    expect(verify(
+      null,
+      Buffer.from(encodeCollabCloudToLanTargetCleanupProofSigningInput(signingPayload), 'utf8'),
+      createPublicKey({
+        format: 'jwk',
+        key: {
+          crv: 'Ed25519',
+          kty: 'OKP',
+          x: targetState.receiptKey.publicKey,
+        },
+      }),
+      Buffer.from(signature, 'base64url'),
+    )).toBe(true);
+    expect(startAuthorityTransferRoute).toHaveBeenCalledTimes(1);
+    expect(stopAuthorityTransferRoute).toHaveBeenCalledTimes(2);
+    expect(discardAuthorityTransferTarget).toHaveBeenCalledTimes(2);
   });
 
   it('uses ordinary guarded Host start for an open-fence cancelled record', async () => {
@@ -940,6 +1141,32 @@ describe('production authority-transfer effects', () => {
       { mode: 0o600 },
     )));
     const captured = await sourceEffects.capture(sourceRecord);
+    const sourceProofEnvelope = JSON.parse(Buffer.from(
+      captured.sourceProof,
+      'base64url',
+    ).toString('utf8')) as {
+      readonly caCertificatePem: string;
+      readonly certificate: string;
+      readonly payload: { readonly sourcePrincipalId: string };
+      readonly receiptKeyId: string;
+      readonly receiptPublicKey: string;
+      readonly schemaVersion: number;
+    };
+    expect(sourceProofEnvelope).toMatchObject({
+      payload: { sourcePrincipalId: TEST_INSTALLATION_A },
+      schemaVersion: 2,
+    });
+    const { caCertificatePem, certificate, ...sourceProofSigningPayload } = sourceProofEnvelope;
+    expect(verify(
+      'sha256',
+      Buffer.from(JSON.stringify(sourceProofSigningPayload), 'utf8'),
+      {
+        key: caCertificatePem,
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: 32,
+      },
+      Buffer.from(certificate, 'base64url'),
+    )).toBe(true);
     await Promise.all(interruptedPromotions.slice(0, 3).map(fileName => expect(
       access(path.join(sourceStaging.absolutePath, fileName)),
     ).rejects.toMatchObject({ code: 'ENOENT' })));
@@ -1097,6 +1324,110 @@ describe('production authority-transfer effects', () => {
       expect(await readFile(manifestPath)).toEqual(previousBytes);
       expect(await sourceFoundation.authorityTransfers.load(PROJECT_ID)).toEqual(recoveryRecord);
       expect(sourceFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    } finally {
+      await sourceFeature.close();
+      await sourceFoundation.close();
+    }
+  });
+
+  it('replaces an obsolete pre-begin source proof but preserves possibly-sent replay bytes', async () => {
+    const {
+      sourceEffects,
+      sourceFeature,
+      sourceFoundation,
+      sourceRecord,
+      sourceStaging,
+    } = await captureSource();
+    const sourceProofPath = path.join(sourceStaging.absolutePath, 'source-proof.json');
+    const obsoleteProof = Buffer.from(JSON.stringify({
+      caCertificatePem: 'legacy',
+      certificate: Buffer.alloc(64, 1).toString('base64url'),
+      payload: { projectId: PROJECT_ID },
+      receiptKeyId: 'legacy-receipt-key',
+      receiptPublicKey: Buffer.alloc(32, 1).toString('base64url'),
+      schemaVersion: 1,
+    }), 'utf8').toString('base64url');
+    try {
+      const durableSourceRecord = createAuthorityTransferRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: OPERATION_ID,
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        stagingDirectoryName: sourceRecord.stagingDirectoryName,
+        status: sourceRecord.status,
+      });
+      const sourceEntry = createAuthorityTransferEntryRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        proposedByMemberId: MEMBER_ID,
+        request: {
+          expectedAuthorityGeneration: 1,
+          idempotencyKey: OPERATION_ID,
+          projectId: PROJECT_ID,
+          targetUrl: sourceRecord.status.targetUrl,
+        },
+        status: sourceRecord.status,
+      });
+      await sourceFoundation.authorityTransfers.proposeEntry(sourceEntry);
+      await sourceFoundation.authorityTransfers.handoffEntry(sourceEntry, durableSourceRecord);
+      await writeFile(
+        sourceProofPath,
+        `${JSON.stringify({ proof: obsoleteProof })}\n`,
+        { mode: 0o600 },
+      );
+      const recovered = await sourceEffects.capture(durableSourceRecord);
+      recovered.artifacts.forEach(artifact => artifact.body.destroy());
+      expect(JSON.parse(Buffer.from(recovered.sourceProof, 'base64url').toString('utf8')))
+        .toMatchObject({ schemaVersion: 2 });
+      const currentProofBytes = await readFile(sourceProofPath);
+
+      await sourceFoundation.authorityTransfers.markLanToCloudBeginPossiblySent(
+        durableSourceRecord,
+      );
+      const possiblySentBytes = `${JSON.stringify({ proof: obsoleteProof })}\n`;
+      await writeFile(sourceProofPath, possiblySentBytes, { mode: 0o600 });
+      await expect(sourceEffects.capture(durableSourceRecord)).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-source-proof-replay-invalid' },
+      });
+      expect(await readFile(sourceProofPath, 'utf8')).toBe(possiblySentBytes);
+
+      await rm(sourceProofPath);
+      await expect(sourceEffects.capture(durableSourceRecord)).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-source-proof-replay-invalid' },
+      });
+      await expect(access(sourceProofPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      await writeFile(sourceProofPath, currentProofBytes, { mode: 0o600 });
+      const coordinationPath = path.join(sourceStaging.absolutePath, 'coordination.ndjson');
+      const damagedCoordinationBytes = Buffer.concat([
+        await readFile(coordinationPath),
+        Buffer.from('\n{"damaged":true}\n', 'utf8'),
+      ]);
+      await writeFile(coordinationPath, damagedCoordinationBytes, { mode: 0o600 });
+      await expect(sourceEffects.capture(durableSourceRecord)).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-source-proof-replay-invalid' },
+      });
+      expect(await readFile(sourceProofPath)).toEqual(currentProofBytes);
+      expect(await readFile(coordinationPath)).toEqual(damagedCoordinationBytes);
+
+      const possiblySentSourceEntry = await sourceFoundation.authorityTransfers.loadSourceEntry(
+        PROJECT_ID,
+      );
+      if (!possiblySentSourceEntry) throw new Error('Missing possibly-sent source entry');
+      expect(
+        await sourceFoundation.local.projects.authorityTransferEntries.removeSource(
+          possiblySentSourceEntry,
+        ),
+      ).toBe(true);
+      await expect(sourceEffects.capture(durableSourceRecord)).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-source-proof-replay-invalid' },
+      });
+      expect(await readFile(sourceProofPath)).toEqual(currentProofBytes);
+      expect(await readFile(coordinationPath)).toEqual(damagedCoordinationBytes);
     } finally {
       await sourceFeature.close();
       await sourceFoundation.close();
@@ -1322,6 +1653,24 @@ describe('production authority-transfer effects', () => {
     if (!exactPreparedMembership || !isCollabLocalCloudMembership(exactPreparedMembership)) {
       throw new Error('Missing prepared target Cloud membership');
     }
+    const preparedStatePath = path.join(targetStaging.absolutePath, 'target-private.json');
+    const exactPreparedState = await readFile(preparedStatePath, 'utf8');
+    const mismatchedPreparedState = JSON.parse(exactPreparedState) as {
+      receiptKey: { privateKey: string };
+    };
+    mismatchedPreparedState.receiptKey.privateKey = generateKeyPairSync('ed25519').privateKey
+      .export({ format: 'der', type: 'pkcs8' })
+      .toString('base64url');
+    await writeFile(
+      preparedStatePath,
+      `${JSON.stringify(mismatchedPreparedState)}\n`,
+      { mode: 0o600 },
+    );
+    await expect(targetEffects.stage(stagedRecord, stageArtifacts())).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-state-owner-mismatch' },
+    });
+    await expect(targetFoundation.inspectAuthority(PROJECT_ID)).resolves.toBeNull();
+    await writeFile(preparedStatePath, exactPreparedState, { mode: 0o600 });
     await targetFoundation.local.projects.saveMembership({
       ...exactPreparedMembership,
       member: {
@@ -1373,10 +1722,9 @@ describe('production authority-transfer effects', () => {
       PROJECT_ID,
       '.claudian-authority.json',
     ))).rejects.toMatchObject({ code: 'ENOENT' });
-    const relinquishmentProof = {
+    const relinquishmentProof = signCloudRelinquishmentProof({
       batchRevision: staged.claimBatch.batchRevision,
       batchSha256: staged.claimBatch.batchSha256,
-      certificate: Buffer.alloc(64, 4).toString('base64url'),
       certificateAlgorithm: 'ed25519' as const,
       checkpointSha256: staged.checkpointSha256,
       committedAt: '2026-08-28T00:02:00.000Z',
@@ -1386,7 +1734,7 @@ describe('production authority-transfer effects', () => {
       sourceHostMemberId: null,
       targetAuthority: { generation: 3, kind: 'lan' as const },
       transferId: TRANSFER_ID,
-    };
+    });
     const completedStatus: CollabAuthorityTransferStatus = {
       ...status(
         'cloud-to-lan',
@@ -1406,6 +1754,7 @@ describe('production authority-transfer effects', () => {
       lifecycleOwnership: 'owned',
       localRole: 'target',
       operationIntentId: OPERATION_ID,
+      receiptVerifier: cloudReceiptVerifier(),
       stagingDirectoryName: proposed.stagingDirectoryName,
       status: completedStatus,
     });
@@ -1739,6 +2088,9 @@ describe('production authority-transfer effects', () => {
           );
           return transferStatus;
         }
+        if (operation === 'getAuthorityTransferReceiptVerifier') {
+          return cloudReceiptVerifier();
+        }
         if (!transferStatus) throw new Error('Transfer has not begun');
         if (operation === 'getProjectAuthorityTransfer') {
           if (transferStatus.phase === 'cloud-quiesced') {
@@ -1765,10 +2117,9 @@ describe('production authority-transfer effects', () => {
             readonly claimBatch: CollabTransferredMembershipClaimBatch;
             readonly idempotencyKey: string;
           };
-          const proof = {
+          const proof = signCloudRelinquishmentProof({
             batchRevision: staged.claimBatch.batchRevision,
             batchSha256: staged.claimBatch.batchSha256,
-            certificate: Buffer.alloc(64, 4).toString('base64url'),
             certificateAlgorithm: 'ed25519' as const,
             checkpointSha256: staged.checkpointSha256,
             committedAt: '2026-08-28T00:03:00.000Z',
@@ -1778,7 +2129,7 @@ describe('production authority-transfer effects', () => {
             sourceHostMemberId: null,
             targetAuthority: { generation: 3, kind: 'lan' as const },
             transferId: TRANSFER_ID,
-          };
+          });
           transferStatus = {
             ...transferStatus,
             batchRevision: staged.claimBatch.batchRevision,

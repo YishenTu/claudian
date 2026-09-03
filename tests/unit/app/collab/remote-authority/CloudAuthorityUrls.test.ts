@@ -11,7 +11,7 @@ describe('Cloud authority URLs', () => {
     expect(resolveCloudRoute(raw, '/collab/capabilities'))
       .toBe('http://198.51.100.20:8080/operator/cloud/collab/capabilities');
     expect(cloudProjectGitRemoteUrl(raw, 'project-one'))
-      .toBe('http://198.51.100.20:8080/operator/cloud/v3/projects/project-one/repository.git');
+      .toBe('http://198.51.100.20:8080/operator/cloud/v4/projects/project-one/repository.git');
   });
 
   it.each([
