@@ -179,6 +179,19 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runAuthorityTransferManagerContinuation<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'authority-transfer',
+      ['authority-transfer-claimant'],
+      'continuation',
+      operation,
+    );
+  }
+
   runCloudManagement<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
@@ -299,11 +312,19 @@ export class CollabProjectLifecycleSubsystem {
         && predecessorOwnerNames.length === 2
         && predecessorOwnerNames.includes('cloud-management')
         && predecessorOwnerNames.includes('local-exit');
+      const permitsAuthorityTransferManagerClaimantPair = pendingOwners.length === 2
+        && pendingOwners.includes('authority-transfer')
+        && pendingOwners.includes('authority-transfer-claimant')
+        && ownerName === 'authority-transfer'
+        && mode === 'continuation'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'authority-transfer-claimant';
       if (
         pendingOwners.length > 1
         && !permitsCloudManagementResponsibilityPair
         && !permitsCloudManagerLeaveContinuation
         && !permitsManagerLeaveOfferRetry
+        && !permitsAuthorityTransferManagerClaimantPair
       ) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',

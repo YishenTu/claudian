@@ -444,7 +444,7 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(startCloudManagement).not.toHaveBeenCalled();
   });
 
-  it('does not generalize predecessor recovery to authority transfer claimants', async () => {
+  it('admits only Manager continuation beside an authority-transfer claimant', async () => {
     const subsystem = new CollabProjectLifecycleSubsystem({
       ...ports(),
       durableOwners: [
@@ -454,6 +454,13 @@ describe('CollabProjectLifecycleSubsystem', () => {
       recoveryStages: [],
     });
     const recovery = jest.fn().mockResolvedValue('recovered');
+    const managerContinuation = jest.fn().mockResolvedValue('continued');
+
+    await expect(subsystem.runAuthorityTransferManagerContinuation(
+      'project-alpha',
+      managerContinuation,
+    )).resolves.toBe('continued');
+    expect(managerContinuation).toHaveBeenCalledTimes(1);
 
     await expect(subsystem.runAuthorityTransferRecovery(
       'project-alpha',

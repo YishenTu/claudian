@@ -145,6 +145,25 @@ describe('AuthorityTransferRecovery', () => {
     await rm(vaultRoot, { force: true, recursive: true });
   });
 
+  it('retains Manager lifecycle ownership until the exact claimant handoff is durable', async () => {
+    let handoffEstablished = false;
+    const recovery = new AuthorityTransferRecovery(
+      {
+        inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
+      } as unknown as AuthorityTransferPersistence,
+      recoveryHandler({
+        managerHandoffEstablished: async () => handoffEstablished,
+      }),
+      () => undefined,
+    );
+
+    await expect(recovery.durableOwner.inspect(PROJECT_ID)).resolves.toBe('nonterminal');
+
+    handoffEstablished = true;
+
+    await expect(recovery.durableOwner.inspect(PROJECT_ID)).resolves.toBe('terminal');
+  });
+
   it('enumerates startup state and reacquires the lifecycle arbiter for recovery', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
