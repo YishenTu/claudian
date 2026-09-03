@@ -1505,6 +1505,7 @@ export class AuthorityTransferModule {
   ): Promise<void> {
     let entry = await this.options.persistence.loadCloudToLanManagerEntry(projectId);
     if (!entry) return;
+    if (entry.ownerInstallationKey !== this.options.installationKey) return;
     const claimant = await this.loadCloudToLanManagerClaimantPredecessor(projectId, entry);
     if (entry.phase === 'rejected') {
       await this.options.persistence.settleCloudToLanManagerEntry(entry);
@@ -1921,8 +1922,7 @@ export class AuthorityTransferModule {
     if (!loadMembership) return false;
     const membership = await loadMembership(claimant.projectId);
     return membership?.member.id === claimant.memberId
-      && membership.member.personalRef === claimant.managerPredecessor.initiatingPersonalRef
-      && membership.member.role === 'manager';
+      && membership.member.personalRef === claimant.managerPredecessor.initiatingPersonalRef;
   }
 
   private async isCloudToLanManagerEntryCompletionOwner(
@@ -1933,8 +1933,7 @@ export class AuthorityTransferModule {
     if (!loadMembership) return false;
     const membership = await loadMembership(entry.projectId);
     return membership?.member.id === entry.initiatingMemberId
-      && membership.member.personalRef === entry.initiatingPersonalRef
-      && membership.member.role === 'manager';
+      && membership.member.personalRef === entry.initiatingPersonalRef;
   }
 
   private async completeCloudToLanManagerEntry(
