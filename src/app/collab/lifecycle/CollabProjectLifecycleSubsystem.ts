@@ -192,6 +192,19 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runCloudManagerLeaveManagement<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'cloud-management',
+      ['local-exit'],
+      'continuation',
+      operation,
+    );
+  }
+
   runManagerResponsibility<T>(
     projectId: CollabProjectId,
     mode: CollabProjectLifecycleAdmissionMode,
@@ -272,7 +285,26 @@ export class CollabProjectLifecycleSubsystem {
             && mode === 'continuation'
             && predecessorOwnerNames[0] === 'manager-responsibility')
         );
-      if (pendingOwners.length > 1 && !permitsCloudManagementResponsibilityPair) {
+      const isCloudManagementLeavePair = pendingOwners.length === 2
+        && pendingOwners.includes('cloud-management')
+        && pendingOwners.includes('local-exit');
+      const permitsCloudManagerLeaveContinuation = isCloudManagementLeavePair
+        && ownerName === 'cloud-management'
+        && mode === 'continuation'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'local-exit';
+      const permitsManagerLeaveOfferRetry = isCloudManagementLeavePair
+        && ownerName === 'manager-responsibility'
+        && mode === 'operation'
+        && predecessorOwnerNames.length === 2
+        && predecessorOwnerNames.includes('cloud-management')
+        && predecessorOwnerNames.includes('local-exit');
+      if (
+        pendingOwners.length > 1
+        && !permitsCloudManagementResponsibilityPair
+        && !permitsCloudManagerLeaveContinuation
+        && !permitsManagerLeaveOfferRetry
+      ) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
           recoveryActions: ['resume'],
@@ -294,6 +326,19 @@ export class CollabProjectLifecycleSubsystem {
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'manager-responsibility'
         && pendingOwners.includes('manager-responsibility')
+        && !pendingOwners.includes(ownerName)
+      ) {
+        throw new CollabError({
+          code: 'durable-progress-recovery-required',
+          recoveryActions: ['resume'],
+          safeContext: { reason: 'lifecycle-owner-pending' },
+        });
+      }
+      if (
+        ownerName === 'cloud-management'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'local-exit'
+        && pendingOwners.includes('local-exit')
         && !pendingOwners.includes(ownerName)
       ) {
         throw new CollabError({
@@ -342,10 +387,20 @@ export class CollabProjectLifecycleSubsystem {
       createInvitation: (projectId, operationOptions) => (
         membership.createInvitation(projectId, operationOptions)
       ),
-      createManagerResponsibilityOffer: (request, operationOptions) => this.runManagerResponsibility(
-        request.projectId,
-        'operation',
-        () => membership.createManagerResponsibilityOffer(request, operationOptions),
+      createManagerResponsibilityOffer: (request, operationOptions) => (
+        request.purpose === 'manager-leave'
+          ? this.runExclusiveWithPredecessor(
+            request.projectId,
+            'manager-responsibility',
+            ['cloud-management', 'local-exit'],
+            'operation',
+            () => membership.createManagerResponsibilityOffer(request, operationOptions),
+          )
+          : this.runManagerResponsibility(
+            request.projectId,
+            'operation',
+            () => membership.createManagerResponsibilityOffer(request, operationOptions),
+          )
       ),
       demoteManager: (request, operationOptions) => (
         membership.demoteManager(request, operationOptions)

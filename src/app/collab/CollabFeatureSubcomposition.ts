@@ -458,6 +458,12 @@ export function createCollabFeatureSubcomposition(
           operation,
         )
       ),
+      managerLeaveCloudManagementAdmission: (projectId, operation) => (
+        requireLifecycle().runCloudManagerLeaveManagement(
+          projectId,
+          operation,
+        )
+      ),
       managerResponsibilityAdmission: (projectId, operation) => (
         requireLifecycle().runManagerResponsibility(
           projectId,

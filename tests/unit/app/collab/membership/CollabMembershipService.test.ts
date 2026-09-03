@@ -129,6 +129,7 @@ function safetyContext(
 ): CollabMembershipSafetyContext {
   return {
     cloudManagementAdmission: async (_projectId, operation) => operation(),
+    managerLeaveCloudManagementAdmission: async (_projectId, operation) => operation(),
     projects,
     managerResponsibilityAdmission: async (_projectId, operation) => operation(),
     managerReceipts: {
@@ -267,6 +268,201 @@ describe('CollabMembershipService', () => {
     await expect(service.readManagementOperation('project-alpha')).resolves.toMatchObject({
       completionId: 'completion-retained',
     });
+  });
+
+  it('uses only the dedicated Leave admission for an exact retained Manager successor offer', async () => {
+    await projects.saveMembership({
+      authority: {
+        authorityGeneration: 7,
+        bindingVersion: 4,
+        gitRemoteUrl: 'https://cloud.example/v4/projects/project-alpha/repository.git',
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example',
+        wireVersion: 8,
+      },
+      createdAt: CREATED_AT,
+      lastEventSequence: 7,
+      lifecycle: 'active',
+      member: {
+        displayName: 'Manager',
+        id: 'member-manager',
+        personalRef: 'refs/heads/members/member-manager',
+        role: 'manager',
+      },
+      project: {
+        id: 'project-alpha',
+        name: 'Alpha',
+        workspacePath: 'Projects/alpha',
+      },
+      schemaVersion: 3,
+      updatedAt: CREATED_AT,
+    });
+    await projects.saveProjectDocument(
+      'project-alpha',
+      'cloud-management-intent',
+      decodeCloudManagementIntent({
+        authorityGeneration: 7,
+        completionId: 'completion-manager-leave',
+        createdAt: CREATED_AT,
+        kind: 'cloud-management-intent',
+        memberId: 'member-manager',
+        operation: 'createManagerResponsibilityOffer',
+        phase: 'submitted',
+        projectId: 'project-alpha',
+        request: {
+          expectedManagerSetGeneration: 4,
+          expectedTargetMembershipRevision: 2,
+          idempotencyKey: 'manager-leave-private',
+          projectId: 'project-alpha',
+          purpose: 'manager-leave',
+          targetMemberId: 'member-target',
+        },
+        response: null,
+        schemaVersion: 1,
+        serverUrl: 'https://cloud.example',
+        updatedAt: CREATED_AT,
+      }),
+    );
+    const genericAdmission = jest.fn().mockRejectedValue(new Error('generic admission must remain blocked'));
+    const managerLeaveAdmission = jest.fn(async (_projectId, operation) => operation());
+    const control = client();
+    (control.cloudMembership as jest.Mock).mockResolvedValue({
+      offer: {
+        acknowledgedAt: null,
+        expiresAt: '2026-08-09T00:00:00.000Z',
+        managerSetGenerationAtOffer: 4,
+        offeredAt: CREATED_AT,
+        offerId: 'offer-manager-leave',
+        purpose: 'manager-leave',
+        revision: 1,
+        sourceManagerMemberId: 'member-manager',
+        state: 'offered',
+        targetMemberId: 'member-target',
+        targetMembershipRevisionAtOffer: 2,
+        terminalAt: null,
+      },
+    });
+    const service = new CollabMembershipService(
+      control,
+      lanSnapshotPort(),
+      {},
+      safetyContext({
+        cloudManagementAdmission: genericAdmission,
+        managerLeaveCloudManagementAdmission: managerLeaveAdmission,
+      }),
+    );
+
+    await expect(service.resumeManagementOperation('project-alpha')).resolves.toMatchObject({
+      completionId: 'completion-manager-leave',
+      status: 'result-retained',
+    });
+    await service.completeManagementOperation({
+      completionId: 'completion-manager-leave',
+      projectId: 'project-alpha',
+    });
+
+    expect(managerLeaveAdmission.mock.calls.map(([projectId]) => projectId))
+      .toEqual(['project-alpha', 'project-alpha']);
+    expect(genericAdmission).not.toHaveBeenCalled();
+    await expect(service.readManagementOperation('project-alpha')).resolves.toBeNull();
+  });
+
+  it('revalidates a retained Manager successor offer inside its dedicated admission', async () => {
+    await projects.saveMembership({
+      authority: {
+        authorityGeneration: 7,
+        bindingVersion: 4,
+        gitRemoteUrl: 'https://cloud.example/v4/projects/project-alpha/repository.git',
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example',
+        wireVersion: 8,
+      },
+      createdAt: CREATED_AT,
+      lastEventSequence: 7,
+      lifecycle: 'active',
+      member: {
+        displayName: 'Manager',
+        id: 'member-manager',
+        personalRef: 'refs/heads/members/member-manager',
+        role: 'manager',
+      },
+      project: {
+        id: 'project-alpha',
+        name: 'Alpha',
+        workspacePath: 'Projects/alpha',
+      },
+      schemaVersion: 3,
+      updatedAt: CREATED_AT,
+    });
+    const managerLeaveIntent = decodeCloudManagementIntent({
+      authorityGeneration: 7,
+      completionId: 'completion-manager-leave',
+      createdAt: CREATED_AT,
+      kind: 'cloud-management-intent',
+      memberId: 'member-manager',
+      operation: 'createManagerResponsibilityOffer',
+      phase: 'submitted',
+      projectId: 'project-alpha',
+      request: {
+        expectedManagerSetGeneration: 4,
+        expectedTargetMembershipRevision: 2,
+        idempotencyKey: 'manager-leave-private',
+        projectId: 'project-alpha',
+        purpose: 'manager-leave',
+        targetMemberId: 'member-target',
+      },
+      response: null,
+      schemaVersion: 1,
+      serverUrl: 'https://cloud.example',
+      updatedAt: CREATED_AT,
+    });
+    await projects.saveProjectDocument(
+      'project-alpha',
+      'cloud-management-intent',
+      managerLeaveIntent,
+    );
+    const replacement = decodeCloudManagementIntent({
+      authorityGeneration: 7,
+      completionId: 'completion-replacement',
+      createdAt: CREATED_AT,
+      kind: 'cloud-management-intent',
+      memberId: 'member-manager',
+      operation: 'demoteManager',
+      phase: 'submitted',
+      projectId: 'project-alpha',
+      request: {
+        expectedManagerSetGeneration: 4,
+        expectedTargetMembershipRevision: 2,
+        idempotencyKey: 'demote-private',
+        projectId: 'project-alpha',
+        targetMemberId: 'member-target',
+      },
+      response: null,
+      schemaVersion: 1,
+      serverUrl: 'https://cloud.example',
+      updatedAt: CREATED_AT,
+    });
+    const managerLeaveAdmission = jest.fn(async (_projectId, operation) => {
+      await projects.saveProjectDocument(
+        'project-alpha',
+        'cloud-management-intent',
+        replacement,
+      );
+      return operation();
+    });
+    const control = client();
+    const service = new CollabMembershipService(
+      control,
+      lanSnapshotPort(),
+      {},
+      safetyContext({ managerLeaveCloudManagementAdmission: managerLeaveAdmission }),
+    );
+
+    await expect(service.resumeManagementOperation('project-alpha')).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'cloud-management-intent-changed' },
+    });
+    expect(control.cloudMembership).not.toHaveBeenCalled();
   });
 
   it('retains the same frozen Cloud mutation after repeated synchronized stale rejections', async () => {
