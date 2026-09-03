@@ -152,6 +152,27 @@ export interface CloudPendingLeaveConnectionInput extends CloudAuthorityConnecti
 
 export type CloudPendingRetirementConnectionInput = CloudPendingLeaveConnectionInput;
 
+export type CloudAuthorityTransferConnectionInput = CloudPendingLeaveConnectionInput;
+
+export interface CloudAuthorityTransferConnection {
+  readonly authorityGeneration: number;
+  dispose(): void;
+  readonly lifecycle: CollabAuthorityLifecyclePort;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readonly memberId: string;
+  readonly personalRef: string;
+  readonly projectId: string;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+  readonly serverUrl: string;
+  supports(capability: CollabCloudCapability): boolean;
+}
+
 export interface CloudPendingLeaveConnection {
   dispose(): void;
   getManagerResponsibilityOffer(
@@ -1272,6 +1293,71 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
         request,
         requestOptions(requestOptionsInput),
       ),
+    };
+  }
+
+  async connectAuthorityTransfer(
+    binding: CloudAuthorityTransferConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudAuthorityTransferConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud authority-transfer binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const control = new CloudAuthorityControl(
+      this.artifacts,
+      new Set(document.capabilities),
+      document.limits,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
+      origin,
+      binding.projectId,
+      this.request,
+      this.requestId,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    const lifetime = new AbortController();
+    const requestOptions = (
+      caller: { readonly signal?: AbortSignal } = {},
+    ): { readonly signal: AbortSignal } => ({
+      signal: caller.signal
+        ? AbortSignal.any([lifetime.signal, caller.signal])
+        : lifetime.signal,
+    });
+    return {
+      authorityGeneration: binding.authorityGeneration,
+      dispose: () => {
+        lifetime.abort();
+        control.dispose();
+      },
+      lifecycle: control,
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      memberId: binding.memberId,
+      personalRef: binding.personalRef,
+      projectId: binding.projectId,
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptions(requestOptionsInput),
+      ),
+      serverUrl: binding.serverUrl,
+      supports: capability => cloudCapabilityImplemented(document, capability),
     };
   }
 

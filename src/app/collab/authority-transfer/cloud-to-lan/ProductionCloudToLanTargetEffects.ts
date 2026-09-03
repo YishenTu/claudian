@@ -29,6 +29,7 @@ import {
   type CollabAuthorityRelinquishmentProof,
   type CollabCloudAuthorityTransferArtifact,
   type CollabCloudToLanTargetCleanupProof,
+  type CollabMemberId,
   type CollabProjectCheckpointManifest,
   type CollabTransferredMembershipClaimBatch,
   type CollabTransferredMembershipRedemptionReceipt,
@@ -711,7 +712,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
             coordinationNdjson: coordinationBytes.toString('utf8'),
             manifest,
             targetHostCredentialHash: createHash('sha256')
-              .update(Buffer.from(state.hostCredential, 'base64url'))
+              .update(state.hostCredential, 'utf8')
               .digest(),
             targetHostMemberId: memberId,
           }))).value;
@@ -1158,13 +1159,40 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!project || project.hostMemberId !== targetProof.payload.targetHostMemberId) {
       throw targetError('authority-transfer-target-host-mismatch');
     }
-    await authority.database.mutate(connection => (
-      new AuthorityTransferCheckpointRepository().activateImportedAuthority(connection, {
+    await authority.database.mutate(connection => {
+      const checkpoint = new AuthorityTransferCheckpointRepository();
+      checkpoint.repairImportedTargetCredentialEncoding(
+        connection,
+        this.#credentialRepairInput(
+          record,
+          state,
+          targetProof.payload.targetHostMemberId,
+        ),
+      );
+      checkpoint.activateImportedAuthority(connection, {
         projectId: record.projectId,
         targetAuthorityGeneration: record.status.targetAuthority.generation,
-      })
-    ));
+      });
+    });
     return targetProof;
+  }
+
+  #credentialRepairInput(
+    record: AuthorityTransferRecord,
+    state: TargetPrivateState,
+    targetHostMemberId: CollabMemberId,
+  ) {
+    return {
+      canonicalCredentialHash: createHash('sha256')
+        .update(state.hostCredential, 'utf8')
+        .digest(),
+      decodedCredentialHash: createHash('sha256')
+        .update(Buffer.from(state.hostCredential, 'base64url'))
+        .digest(),
+      projectId: record.projectId,
+      targetAuthorityGeneration: record.status.targetAuthority.generation,
+      targetHostMemberId,
+    };
   }
 
   async #validateStateBindings(
@@ -1221,7 +1249,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const targetMembers = facts.members.filter(
       candidate => candidate.member.id === targetProof.payload.targetHostMemberId,
     );
-    const expectedCredentialHash = createHash('sha256')
+    const canonicalCredentialHash = createHash('sha256')
+      .update(state.hostCredential, 'utf8')
+      .digest();
+    const decodedCredentialHash = createHash('sha256')
       .update(Buffer.from(state.hostCredential, 'base64url'))
       .digest();
     const actualCredentialHash = targetMembers[0]?.credentialHash;
@@ -1231,8 +1262,9 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || targetMembers.length !== 1
       || targetMembers[0]?.accessState !== 'bound'
       || !actualCredentialHash
-      || actualCredentialHash.byteLength !== expectedCredentialHash.byteLength
-      || !timingSafeEqual(actualCredentialHash, expectedCredentialHash)
+      || actualCredentialHash.byteLength !== canonicalCredentialHash.byteLength
+      || (!timingSafeEqual(actualCredentialHash, canonicalCredentialHash)
+        && !timingSafeEqual(actualCredentialHash, decodedCredentialHash))
     ) throw targetError('authority-transfer-target-state-owner-mismatch');
   }
 

@@ -48,6 +48,7 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
+import { AuthorityTransferCheckpointRepository } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointRepository';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
 import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
 import {
@@ -1683,7 +1684,32 @@ describe('production authority-transfer effects', () => {
       safeContext: { reason: 'authority-transfer-target-imported-identity-mismatch' },
     });
     await targetFoundation.local.projects.saveMembership(exactPreparedMembership);
-    const staged = await targetEffects.stage(stagedRecord, stageArtifacts());
+    const legacyPreparedState = JSON.parse(exactPreparedState) as {
+      hostCredential: string;
+    };
+    const originalImport = AuthorityTransferCheckpointRepository.prototype.importCoordination;
+    const legacyImport = jest.spyOn(
+      AuthorityTransferCheckpointRepository.prototype,
+      'importCoordination',
+    ).mockImplementation((connection, input) => {
+      const imported = originalImport(connection, input);
+      connection.run(
+        'UPDATE members SET credential_hash = ? WHERE member_id = ?',
+        [
+          createHash('sha256')
+            .update(Buffer.from(legacyPreparedState.hostCredential, 'base64url'))
+            .digest(),
+          input.targetHostMemberId,
+        ],
+      );
+      return imported;
+    });
+    let staged;
+    try {
+      staged = await targetEffects.stage(stagedRecord, stageArtifacts());
+    } finally {
+      legacyImport.mockRestore();
+    }
 
     expect(staged.checkpointSha256).toBe(targetManifest.manifestSha256);
     expect(staged.claimBatch.claims).toEqual([
@@ -1935,6 +1961,14 @@ describe('production authority-transfer effects', () => {
     if (!targetMembership || targetMembership.authority.kind !== 'lan') {
       throw new Error('Missing activated target membership');
     }
+    expect(await targetAuthority?.database.read(connection => connection.get(
+      'SELECT credential_hash FROM members WHERE member_id = ?',
+      [targetMembership.member.id],
+    ))).toEqual({
+      credential_hash: createHash('sha256')
+        .update(exactConvertedMembership.member.credential, 'utf8')
+        .digest(),
+    });
     const claimantCredential = Buffer.alloc(32, 9).toString('base64url');
     const claim = staged.claimBatch.claims[0];
     if (!claim) throw new Error('Missing transferred Member claim');
@@ -2209,6 +2243,30 @@ describe('production authority-transfer effects', () => {
       connect: jest.fn(async () => {
         throw new Error('Fresh composed flow must use its bound membership');
       }),
+      connectAuthorityTransfer: jest.fn(async (binding: {
+        readonly authorityGeneration: number;
+        readonly memberId: string;
+        readonly personalRef: string;
+        readonly projectId: string;
+        readonly serverUrl: string;
+      }) => ({
+        ...binding,
+        dispose: jest.fn(),
+        lifecycle: transferLifecycle,
+        listProjectMembers: jest.fn(async () => {
+          if (begun) throw new Error('Post-begin membership read must stay closed');
+          return {
+            authorityGeneration: 2,
+            managerSetGeneration: 1,
+            members,
+            projectId: PROJECT_ID,
+          };
+        }),
+        readSnapshot: jest.fn(async () => snapshot(binding.memberId)),
+        supports: (capability: CollabCloudCapability) => (
+          capability === 'authority-transfer'
+        ),
+      })),
       create: jest.fn(async (membership: { readonly member: { readonly id: string } }) => {
         const memberId = membership.member.id;
         return {
@@ -2332,6 +2390,7 @@ describe('production authority-transfer effects', () => {
       expect(accepted.value).toMatchObject({ state: 'completed' });
       await expect(manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      expect(cloudAuthority.connectAuthorityTransfer).toHaveBeenCalled();
       await expect(target.foundation.local.projects.loadMembership(PROJECT_ID))
         .resolves.toMatchObject({
           authority: { kind: 'lan' },

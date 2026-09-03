@@ -14,6 +14,7 @@ export interface AuthorityTransferDirectionRuntime {
 export interface AuthorityTransferRuntimeResolver {
   resolve(
     record: AuthorityTransferRecord,
+    options: CollabOperationOptions,
   ): Promise<AuthorityTransferDirectionRuntime | null>;
 }
 
@@ -68,7 +69,7 @@ export class AuthorityTransferRuntimeRegistry {
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
-    await this.prepare(record);
+    await this.prepare(record, options);
     const registered = this.runtimes.get(record.projectId);
     if (!registered || registered.localRole !== record.localRole) {
       throw runtimeError('authority-transfer-runtime-not-bound');
@@ -76,7 +77,10 @@ export class AuthorityTransferRuntimeRegistry {
     await registered.runtime.resume(record.projectId, options);
   }
 
-  async prepare(record: AuthorityTransferRecord): Promise<void> {
+  async prepare(
+    record: AuthorityTransferRecord,
+    options: CollabOperationOptions = {},
+  ): Promise<void> {
     const existing = this.runtimes.get(record.projectId);
     if (existing) {
       if (existing.localRole !== record.localRole) {
@@ -84,7 +88,7 @@ export class AuthorityTransferRuntimeRegistry {
       }
       return;
     }
-    const runtime = await this.resolver?.resolve(record);
+    const runtime = await this.resolver?.resolve(record, options);
     if (!runtime) throw runtimeError('authority-transfer-runtime-not-bound');
     const registered = this.runtimes.get(record.projectId);
     if (registered) {
