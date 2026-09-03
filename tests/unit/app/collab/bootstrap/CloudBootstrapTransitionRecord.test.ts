@@ -55,7 +55,7 @@ describe('CloudBootstrapTransitionRecord', () => {
       memberId: HOST_MEMBER_ID,
       newAuthority: {
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+        gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
         serverUrl: 'https://cloud.example.test',
         wireVersion: COLLAB_PROTOCOL_VERSION,
       },
@@ -171,8 +171,8 @@ describe('CloudBootstrapTransitionRecord', () => {
   });
 
   it.each([
-    ['http://127.0.0.1:8787', 'http://127.0.0.1:8787/v3/projects/project-alpha/repository.git'],
-    ['HTTP://198.51.100.20:8787/cloud', 'http://198.51.100.20:8787/cloud/v3/projects/project-alpha/repository.git'],
+    ['http://127.0.0.1:8787', 'http://127.0.0.1:8787/v4/projects/project-alpha/repository.git'],
+    ['HTTP://198.51.100.20:8787/cloud', 'http://198.51.100.20:8787/cloud/v4/projects/project-alpha/repository.git'],
   ])('retains raw Cloud URL %s without changing LAN endpoint constraints', (serverUrl, gitRemoteUrl) => {
     const input = {
       ownerInstallationKey: TEST_INSTALLATION_A,

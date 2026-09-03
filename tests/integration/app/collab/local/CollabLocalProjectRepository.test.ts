@@ -97,11 +97,11 @@ function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 7,
-      bindingVersion: 3,
-      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v3/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 4,
+      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v4/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'HTTP://198.51.100.20:8787/operator/cloud',
-      wireVersion: 7,
+      wireVersion: 8,
     },
     createdAt: '2026-08-08T00:00:00.000Z',
     lastEventSequence: 7,

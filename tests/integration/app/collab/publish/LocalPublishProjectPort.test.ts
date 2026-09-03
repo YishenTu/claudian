@@ -7,8 +7,16 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import {
+  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
+  COLLAB_LIMITS,
+  collabCloudCapabilityDocument,
+  collabCloudSuccessEnvelope,
+} from '@claudian-collab/protocol';
+
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
+  type CollabLocalCloudMembershipRecord,
   type CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
@@ -18,8 +26,10 @@ import {
   LocalPublishGitNetworkPort,
   LocalPublishProjectPort,
 } from '@/app/collab/publish/LocalPublishProjectPort';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
+import type { CloudAuthorityHttpRequest } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-a';
@@ -167,6 +177,48 @@ describe('Local Publish adapters', () => {
     await expect(networkPort.withNetwork(context, operation)).rejects.toThrow('offline');
     expect(probe).toHaveBeenCalledWith(expect.any(Object), PROJECT_ID, undefined);
     expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('uses a headerless Cloud Git route authenticated by trusted ingress', async () => {
+    const record = cloudMembership();
+    await projects.saveMembership(record);
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument(['project-snapshot'], cloudCapabilityLimits()),
+          contentType: 'application/json',
+          status: 200,
+        } as const;
+      }
+      const requestId = (input.body as { readonly requestId: string }).requestId;
+      return {
+        body: collabCloudSuccessEnvelope(requestId, cloudSnapshot()),
+        contentType: 'application/json',
+        status: 200,
+      } as const;
+    });
+    const probe = jest.fn().mockResolvedValue(undefined);
+    const networkPort = new LocalPublishGitNetworkPort(
+      vaultRoot,
+      projects,
+      sessions,
+      new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({ request })]),
+      probe,
+    );
+    const context = {
+      memberId: record.member.id,
+      personalRef: record.member.personalRef,
+      projectId: PROJECT_ID,
+      remoteUrl: record.authority.gitRemoteUrl,
+      repositoryPath: path.join(vaultRoot, 'workspace', PROJECT_ID),
+    };
+
+    await expect(networkPort.withNetwork(context, async (network, remoteUrl) => {
+      expect(network).toEqual({ headers: [] });
+      expect(remoteUrl).toBe(record.authority.gitRemoteUrl);
+      return 'completed';
+    })).resolves.toBe('completed');
+    expect(probe).toHaveBeenCalledWith(expect.any(Object), PROJECT_ID, undefined);
   });
 
   it('uses one ephemeral local target for control and Git without persisting it', async () => {
@@ -399,5 +451,79 @@ function membership(
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
     updatedAt: NOW,
     ...overrides,
+  };
+}
+
+function cloudMembership(): CollabLocalCloudMembershipRecord {
+  return {
+    authority: {
+      authorityGeneration: 1,
+      bindingVersion: 4,
+      gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
+      kind: 'cloud',
+      serverUrl: 'https://cloud.example.test',
+      wireVersion: 8,
+    },
+    createdAt: NOW,
+    lastEventSequence: 0,
+    lifecycle: 'active',
+    member: {
+      displayName: 'Alice',
+      id: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      role: 'manager',
+    },
+    project: {
+      id: PROJECT_ID,
+      name: 'Project A',
+      workspacePath: `workspace/${PROJECT_ID}`,
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: NOW,
+  };
+}
+
+function cloudSnapshot() {
+  const currentMember = {
+    activatedAt: NOW,
+    createdAt: NOW,
+    displayName: 'Alice',
+    id: 'member-a',
+    personalRef: 'refs/heads/members/member-a',
+    role: 'manager' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 0,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 1,
+      createdAt: NOW,
+      expectedMainOid: 'a'.repeat(40),
+      id: PROJECT_ID,
+      mainRef: 'refs/heads/main',
+      name: 'Project A',
+    },
+    ticketHighlights: [],
+  };
+}
+
+function cloudCapabilityLimits() {
+  return {
+    maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
+    maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
+    maxCheckpointRepositoryBundleBytes:
+      COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
+    maxCheckpointStagingBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxStagingBytes,
+    maxDevelopmentBootstrapGitBundleBytes: 1_024,
+    maxDevelopmentBootstrapManifestUtf8Bytes: 1_024,
+    maxDevelopmentBootstrapReportUtf8Bytes: 1_024,
+    maxEventReplay: 100,
+    maxGitReceivePackBytes: 1_024,
+    maxJsonPayloadUtf8Bytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
+    maxRepositoryBytes: 1_024,
   };
 }

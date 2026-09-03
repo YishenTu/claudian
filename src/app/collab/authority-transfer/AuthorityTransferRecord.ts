@@ -227,8 +227,10 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
     || (localRole === 'source') !== (status.direction === 'lan-to-cloud')
     || (lifecycleOwnership === 'proposal' && status.phase !== 'collecting-readiness')
     || (receiptVerifier !== null && (
-      localRole !== 'source'
-      || status.direction !== 'lan-to-cloud'
+      !(
+        (localRole === 'source' && status.direction === 'lan-to-cloud')
+        || (localRole === 'target' && status.direction === 'cloud-to-lan')
+      )
       || receiptVerifier.projectId !== status.projectId
       || receiptVerifier.transferId !== status.transferId
     ))

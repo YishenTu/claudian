@@ -60,7 +60,7 @@ describe('CloudPersonalRefReader', () => {
     })).resolves.toBe('b'.repeat(40));
 
     expect(seenUrl).toBe(
-      '/operator-prefix/v3/projects/project-alpha/repository.git/info/refs?service=git-upload-pack',
+      '/operator-prefix/v4/projects/project-alpha/repository.git/info/refs?service=git-upload-pack',
     );
     expect(seenHeaders).toMatchObject({
       'cache-control': 'no-cache',

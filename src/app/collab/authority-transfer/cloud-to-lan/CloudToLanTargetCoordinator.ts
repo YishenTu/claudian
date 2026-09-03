@@ -8,6 +8,7 @@ import {
   type CollabAuthorityTransferStatus,
   type CollabCheckpointAuthority,
   type CollabCloudAuthorityTransferArtifact,
+  type CollabCloudToLanTargetCleanupProof,
   type CollabProjectId,
   type CollabTransferredMembershipClaimBatch,
 } from '@claudian-collab/protocol';
@@ -76,6 +77,10 @@ export interface CloudToLanTargetEffects {
     record: AuthorityTransferRecord,
     options?: CollabOperationOptions,
   ): Promise<void>;
+  invalidateStaging(
+    record: AuthorityTransferRecord,
+    options?: CollabOperationOptions,
+  ): Promise<CollabCloudToLanTargetCleanupProof>;
   converge?(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
@@ -220,6 +225,27 @@ export class CloudToLanTargetCoordinator {
       if (COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES.includes(
         record.status.phase as never,
       )) {
+        if (record.status.phase === 'cancel-intent') {
+          const proof = await this.options.target.invalidateStaging(record, options);
+          this.assertTargetCleanupProof(record, proof, selectedTargetMemberId);
+          const invalidated = await this.options.cloud.authorityTransfer(
+            'confirmCloudToLanTargetInvalidated',
+            {
+              idempotencyKey: proof.operationIntentId,
+              projectId: record.projectId,
+              proof,
+              transferId: record.transferId,
+            },
+            options,
+          );
+          assertTargetStatus(invalidated, record.projectId);
+          record = await advanceThroughObservedAuthorityStatus(
+            this.options.persistence,
+            record,
+            invalidated,
+          );
+          continue;
+        }
         await this.options.target.cancelStaging(record, options);
         record = await this.readAndAdvance(record, options);
         if (record.status.state === 'cancelled') {
@@ -234,30 +260,34 @@ export class CloudToLanTargetCoordinator {
         continue;
       }
       if (record.status.phase === 'collecting-readiness') {
-        const acceptance = await this.options.target.acceptanceRequest(record, options);
-        if (
-          acceptance.idempotencyKey !== authorityTransferChildIdempotencyKey(
-            record.operationIntentId,
-            'accept',
-          )
-          || acceptance.projectId !== record.projectId
-          || acceptance.transferId !== record.transferId
-          || (
-            selectedTargetMemberId !== undefined
-            && acceptance.targetHostMemberId !== selectedTargetMemberId
-          )
-        ) throw targetError('cloud-to-lan-target-acceptance-mismatch');
-        const accepted = await this.options.cloud.authorityTransfer(
-          'acceptCloudToLanTransferTarget',
-          acceptance,
-          options,
-        );
-        assertTargetStatus(accepted, record.projectId);
-        record = await advanceThroughObservedAuthorityStatus(
-          this.options.persistence,
-          record,
-          accepted,
-        );
+        try {
+          const acceptance = await this.options.target.acceptanceRequest(record, options);
+          if (
+            acceptance.idempotencyKey !== authorityTransferChildIdempotencyKey(
+              record.operationIntentId,
+              'accept',
+            )
+            || acceptance.projectId !== record.projectId
+            || acceptance.transferId !== record.transferId
+            || (
+              selectedTargetMemberId !== undefined
+              && acceptance.targetHostMemberId !== selectedTargetMemberId
+            )
+          ) throw targetError('cloud-to-lan-target-acceptance-mismatch');
+          const accepted = await this.options.cloud.authorityTransfer(
+            'acceptCloudToLanTransferTarget',
+            acceptance,
+            options,
+          );
+          assertTargetStatus(accepted, record.projectId);
+          record = await advanceThroughObservedAuthorityStatus(
+            this.options.persistence,
+            record,
+            accepted,
+          );
+        } catch (error: unknown) {
+          record = await this.advanceAfterRejectedTargetWork(record, options, error);
+        }
         continue;
       }
       if (record.status.phase === 'cloud-quiesced') {
@@ -265,52 +295,68 @@ export class CloudToLanTargetCoordinator {
         continue;
       }
       if (record.status.phase === 'checkpoint-captured') {
-        const artifacts: CloudToLanDownloadedArtifact[] = [];
-        const stageOperationIntentId = authorityTransferChildIdempotencyKey(
-          record.operationIntentId,
-          'stage',
-        );
-        let staged: CloudToLanTargetStageResult;
         try {
-          for (const artifact of COLLAB_PROJECT_CHECKPOINT_ARTIFACTS) {
-            artifacts.push({
-              artifact,
-              ...await this.options.cloud.downloadAuthorityTransferArtifact({
+          const artifacts: CloudToLanDownloadedArtifact[] = [];
+          const stageOperationIntentId = authorityTransferChildIdempotencyKey(
+            record.operationIntentId,
+            'stage',
+          );
+          let staged: CloudToLanTargetStageResult;
+          try {
+            for (const artifact of COLLAB_PROJECT_CHECKPOINT_ARTIFACTS) {
+              artifacts.push({
                 artifact,
-                projectId: record.projectId,
-                transferId: record.transferId,
-              }, options),
-            });
+                ...await this.options.cloud.downloadAuthorityTransferArtifact({
+                  artifact,
+                  projectId: record.projectId,
+                  transferId: record.transferId,
+                }, options),
+              });
+            }
+            staged = await this.options.target.stage(record, artifacts, options);
+          } finally {
+            destroyAuthorityTransferArtifactBodies(artifacts);
           }
-          staged = await this.options.target.stage(record, artifacts, options);
-        } finally {
-          destroyAuthorityTransferArtifactBodies(artifacts);
+          if (
+            selectedTargetMemberId === undefined
+            || staged.targetHostMemberId !== selectedTargetMemberId
+          ) throw targetError('cloud-to-lan-target-stage-member-mismatch');
+          await this.options.persistence.retainClaimBatch({
+            batch: staged.claimBatch,
+            operationIntentId: stageOperationIntentId,
+            purpose: 'target-delivery',
+          });
+          if (record.receiptVerifier === null) {
+            const verifier = await this.options.cloud.authorityTransfer(
+              'getAuthorityTransferReceiptVerifier',
+              { projectId: record.projectId, transferId: record.transferId },
+              options,
+            );
+            record = await this.options.persistence.pinReceiptVerifier(
+              record.projectId,
+              record.transferId,
+              verifier,
+            );
+          }
+          const receipt = await this.options.cloud.authorityTransfer(
+            'reportCloudToLanTargetStaged',
+            {
+              checkpointSha256: staged.checkpointSha256,
+              claimBatch: staged.claimBatch,
+              idempotencyKey: stageOperationIntentId,
+              projectId: record.projectId,
+              stageSha256: staged.stageSha256,
+              targetAuthority: staged.targetAuthority,
+              targetProof: staged.targetProof,
+              transferId: record.transferId,
+            },
+            options,
+          );
+          await this.options.persistence.acknowledgeClaimBatch(receipt);
+          record = await this.readAndAdvance(record, options);
+        } catch (error: unknown) {
+          record = await this.advanceAfterRejectedTargetWork(record, options, error);
         }
-        if (
-          selectedTargetMemberId === undefined
-          || staged.targetHostMemberId !== selectedTargetMemberId
-        ) throw targetError('cloud-to-lan-target-stage-member-mismatch');
-        await this.options.persistence.retainClaimBatch({
-          batch: staged.claimBatch,
-          operationIntentId: stageOperationIntentId,
-          purpose: 'target-delivery',
-        });
-        const receipt = await this.options.cloud.authorityTransfer(
-          'reportCloudToLanTargetStaged',
-          {
-            checkpointSha256: staged.checkpointSha256,
-            claimBatch: staged.claimBatch,
-            idempotencyKey: stageOperationIntentId,
-            projectId: record.projectId,
-            stageSha256: staged.stageSha256,
-            targetAuthority: staged.targetAuthority,
-            targetProof: staged.targetProof,
-            transferId: record.transferId,
-          },
-          options,
-        );
-        await this.options.persistence.acknowledgeClaimBatch(receipt);
-        record = await this.readAndAdvance(record, options);
         continue;
       }
       if (record.status.phase === 'target-staged' || record.status.phase === 'claims-retained') {
@@ -371,6 +417,37 @@ export class CloudToLanTargetCoordinator {
     }
   }
 
+  private assertTargetCleanupProof(
+    record: AuthorityTransferRecord,
+    proof: CollabCloudToLanTargetCleanupProof,
+    selectedTargetMemberId?: string,
+  ): void {
+    const proofHasBatch = proof.batchRevision !== null && proof.batchSha256 !== null;
+    const statusHasBatch = record.status.batchRevision !== null
+      && record.status.batchSha256 !== null;
+    if (
+      proof.operationIntentId !== authorityTransferChildIdempotencyKey(
+        record.operationIntentId,
+        'cancel',
+      )
+      || proof.projectId !== record.projectId
+      || proof.transferId !== record.transferId
+      || proof.targetHostMemberId !== selectedTargetMemberId
+      || proof.sourceAuthority.kind !== 'cloud'
+      || proof.sourceAuthority.generation !== record.status.sourceAuthority.generation
+      || proof.targetAuthority.kind !== 'lan'
+      || proof.targetAuthority.generation !== record.status.targetAuthority.generation
+      || proof.checkpointSha256 !== record.status.checkpointSha256
+      || (proof.batchRevision === null) !== (proof.batchSha256 === null)
+      || (proof.stageSha256 === null) === proofHasBatch
+      || (record.status.batchRevision === null) !== (record.status.batchSha256 === null)
+      || (statusHasBatch && (
+        proof.batchRevision !== record.status.batchRevision
+        || proof.batchSha256 !== record.status.batchSha256
+      ))
+    ) throw targetError('cloud-to-lan-target-cleanup-proof-mismatch');
+  }
+
   private async completeCancellation(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
@@ -408,5 +485,17 @@ export class CloudToLanTargetCoordinator {
       throw targetError('cloud-to-lan-authority-progress-pending');
     }
     return next;
+  }
+
+  private async advanceAfterRejectedTargetWork(
+    record: AuthorityTransferRecord,
+    options: CollabOperationOptions,
+    rejected: unknown,
+  ): Promise<AuthorityTransferRecord> {
+    try {
+      return await this.readAndAdvance(record, options);
+    } catch {
+      throw rejected;
+    }
   }
 }

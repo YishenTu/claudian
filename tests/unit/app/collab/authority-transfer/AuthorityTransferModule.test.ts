@@ -738,12 +738,12 @@ describe('AuthorityTransferModule', () => {
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
-          bindingVersion: 3,
+          bindingVersion: 4,
           developmentActorId: 'member-host',
-          gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+          gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test/',
-          wireVersion: 7,
+          wireVersion: 8,
         },
         createdAt: '2026-08-27T00:00:00.000Z',
         lastEventSequence: 1,
@@ -1196,6 +1196,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose,
         prepareTarget,
         stage: jest.fn(),
@@ -1507,6 +1508,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose: targetDispose,
         prepareTarget: jest.fn(async () => {
           order.push('listener-prepared');
@@ -1768,6 +1770,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose: disposeTarget,
         prepareTarget: jest.fn(async () => ({
           caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
@@ -2061,6 +2064,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         prepareTarget: jest.fn(async () => ({
           caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
           caFingerprint: 'c'.repeat(64),
@@ -2162,6 +2166,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose: targetDisposals[targetIndex++],
         prepareTarget: jest.fn(async () => ({
           caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
@@ -2268,6 +2273,7 @@ describe('AuthorityTransferModule', () => {
           acceptanceRequest: jest.fn(),
           activate: jest.fn(),
           cancelStaging: jest.fn(),
+          invalidateStaging: jest.fn(),
           dispose,
           prepareTarget: jest.fn(async () => ({
             caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
@@ -2396,6 +2402,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose: disposeTarget,
         prepareTarget: jest.fn(async () => ({
           caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
@@ -2489,6 +2496,14 @@ describe('AuthorityTransferModule', () => {
       localRole: 'target',
       operationIntentId: completedStatus.relinquishmentProof!.operationIntentId,
       ownerInstallationKey: TEST_INSTALLATION_A,
+      receiptVerifier: {
+        projectId: PROJECT_ID,
+        receiptKeyId: 'receipt-key-source',
+        receiptPublicKey: Buffer.alloc(32, 8).toString('base64url'),
+        receiptPublicKeyEncoding: 'base64url-raw',
+        signatureAlgorithm: 'ed25519',
+        transferId: TRANSFER_ID,
+      },
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: completedStatus,
     });
@@ -2555,6 +2570,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate,
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         stage: jest.fn(),
       }),
       createLanToCloudSource: jest.fn() as never,
@@ -2680,6 +2696,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging,
+        invalidateStaging: jest.fn(),
         dispose: disposeTarget,
         stage: jest.fn(),
       }),
@@ -3299,6 +3316,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         prepareTarget,
         stage: jest.fn(),
       }),
@@ -3410,6 +3428,7 @@ describe('AuthorityTransferModule', () => {
         acceptanceRequest: jest.fn(),
         activate: jest.fn(),
         cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
         dispose: disposeTarget,
         prepareTarget,
         stage: jest.fn(),

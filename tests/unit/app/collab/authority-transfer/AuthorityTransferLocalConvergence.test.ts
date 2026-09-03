@@ -207,10 +207,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 3,
+        bindingVersion: 4,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 7,
+        wireVersion: 8,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -249,10 +249,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 3,
+        bindingVersion: 4,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 7,
+        wireVersion: 8,
       },
       lastEventSequence: 1,
       member: {
@@ -270,11 +270,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 3 as const,
-        gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 4 as const,
+        gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 7 as const,
+        wireVersion: 8 as const,
       },
       member: {
         displayName: 'Host',
@@ -369,11 +369,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 3 as const,
-        gitRemoteUrl: `https://cloud.example.test/v3/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 4 as const,
+        gitRemoteUrl: `https://cloud.example.test/v4/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 7 as const,
+        wireVersion: 8 as const,
       },
       member: {
         displayName: 'Host',

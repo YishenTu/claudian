@@ -346,7 +346,7 @@ async function createClient(
   const stored = await projects.loadMembership(projectId);
   expect(stored && isCollabLocalCloudMembership(stored)).toBe(true);
   expect(await git(repositoryPath, ['remote', 'get-url', 'origin']))
-    .toBe(`${descriptor.origin}/v3/projects/${projectId}/repository.git`);
+    .toBe(`${descriptor.origin}/v4/projects/${projectId}/repository.git`);
   return {
     git: repositories,
     memberId,
