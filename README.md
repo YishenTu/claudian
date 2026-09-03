@@ -19,7 +19,7 @@ An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok, Openc
 
 ## Features & Usage
 
-Open the chat sidebar from the ribbon icon or command palette. Select text and use the hotkey for inline edit. Everything works like your familiar coding agent, Claude Code, Codex, Grok, Opencode, and Pi — talk to the agent, and it reads, writes, edits, and searches files in your vault.
+Open the chat sidebar from the ribbon icon or command palette. Select text and use the shortcut for inline editing. Everything works like your familiar coding agent, Claude Code, Codex, Grok, Opencode, and Pi — talk to the agent, and it reads, writes, edits, and searches files in your vault.
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 
