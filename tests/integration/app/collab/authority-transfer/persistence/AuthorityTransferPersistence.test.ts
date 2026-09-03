@@ -2930,7 +2930,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toBeNull();
   });
 
-  it('expires and cleans a single-member transfer with an exact empty claim batch', async () => {
+  it('expires and cleans a single-member transfer with an exact empty claim batch immediately', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
@@ -2962,6 +2962,48 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status,
     });
+    const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:05:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-next-target',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: 'http://127.0.0.1:8787/',
+    }), {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:05:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    const manager = createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:06:00.000Z',
+      descriptor: target.descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      operationIntentId: 'intent-next-manager',
+    });
+    const requester = await persistence.completeRequesterEntry(
+      await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+        proposedAt: '2026-08-26T00:00:00.000Z',
+        proposedByMemberId: MEMBER_ALICE,
+        request: {
+          expectedAuthorityGeneration: 1,
+          idempotencyKey: OPERATION_INTENT_ID,
+          projectId: PROJECT_ID,
+          targetUrl: status.targetUrl,
+        },
+      })),
+      {
+        ...transferStatus('collecting-readiness'),
+        createdAt: '2026-08-26T00:00:08.000Z',
+        expiresAt: '2026-09-30T00:00:08.000Z',
+        updatedAt: '2026-08-26T00:00:08.000Z',
+      },
+    );
     await repository.authorityTransferRecords.save(completed);
     await persistence.retainClaimBatch({
       batch,
@@ -2981,11 +3023,16 @@ describe('AuthorityTransferPersistence', () => {
       targetAuthorityGeneration: 2,
       transferId: TRANSFER_ID,
     });
+    await expect(persistence.prepareCloudToLanManagerEntry(manager)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-manager-entry-conflict' },
+    });
 
     persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date(EXPIRES_AT),
+      now: () => new Date('2026-08-26T00:04:00.000Z'),
     });
+    await expect(persistence.isRetainedClaimBatchEmpty(PROJECT_ID, TRANSFER_ID))
+      .resolves.toBe(true);
     await persistence.expireTerminalResponder(PROJECT_ID, TRANSFER_ID);
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toMatchObject({
       claims: [],
@@ -3004,6 +3051,15 @@ describe('AuthorityTransferPersistence', () => {
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toBeNull();
     await expect(repository.authorityTransferClaimCommitments.load(PROJECT_ID))
       .resolves.toBeNull();
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(repository.authorityTransferEntries.removeRequester(requester))
+      .resolves.toBe(false);
+    await expect(persistence.prepareCloudToLanManagerEntry(manager)).resolves.toEqual(manager);
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
+      restartFence: 'permanent',
+      terminalCleanupCompleted: true,
+      transferId: TRANSFER_ID,
+    });
   });
 
   it('recovers terminal completion after claim files were removed before the record fence', async () => {
