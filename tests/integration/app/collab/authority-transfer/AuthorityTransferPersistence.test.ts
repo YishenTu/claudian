@@ -797,7 +797,7 @@ describe('AuthorityTransferPersistence', () => {
     expect(removeTarget).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps a remote-only Manager observer out of lifecycle ownership and settles it exactly', async () => {
+  it('keeps a locally initiated remote-target Manager handoff in lifecycle ownership', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
@@ -835,7 +835,28 @@ describe('AuthorityTransferPersistence', () => {
       ...cloudToLanStatus('collecting-readiness'),
       targetUrl: descriptor.targetUrl,
     });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: () => persistence.close(),
+      durableOwners: [{
+        inspect: projectId => persistence.inspectLifecycleOwner(projectId),
+        name: 'authority-transfer',
+      }],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const competingOperation = jest.fn().mockResolvedValue(undefined);
+    await expect(lifecycle.runExclusive(
+      PROJECT_ID,
+      'host-transfer',
+      'operation',
+      competingOperation,
+    )).rejects.toMatchObject({
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(competingOperation).not.toHaveBeenCalled();
 
     await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
       ...cloudToLanStatus('cloud-quiesced'),
