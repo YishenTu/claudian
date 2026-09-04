@@ -27,6 +27,9 @@ import {
 } from '@/app/collab';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
+import {
   createAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
@@ -533,7 +536,10 @@ describe('G3 local Project milestone gate', () => {
         throw new Error('Expected initial LAN membership');
       }
       const transferId = `transfer-claimant-cross-write-${direction}`;
-      const operationIntentId = `intent-claimant-cross-write-${direction}`;
+      const managerOperationIntentId = `intent-source-${direction}`;
+      const operationIntentId = direction === 'cloud-to-lan'
+        ? authorityTransferChildIdempotencyKey(managerOperationIntentId, 'claims')
+        : `intent-claimant-cross-write-${direction}`;
       const checkpointSha256 = 'd'.repeat(64);
       const claimValue = Buffer.alloc(32, 8).toString('base64url');
       const targetCredential = Buffer.alloc(32, 9).toString('base64url');
@@ -569,7 +575,7 @@ describe('G3 local Project milestone gate', () => {
           certificateAlgorithm: 'ed25519',
           checkpointSha256,
           committedAt: '2026-08-27T00:00:08.000Z',
-          operationIntentId: `intent-source-${direction}`,
+          operationIntentId: managerOperationIntentId,
           projectId: PROJECT_ID,
           sourceAuthority,
           sourceHostMemberId: direction === 'lan-to-cloud' ? MEMBER_ID : null,
@@ -586,6 +592,19 @@ describe('G3 local Project milestone gate', () => {
       let claimant = createAuthorityTransferClaimantRecord({
         createdAt: '2026-08-27T00:00:00.000Z',
         lanTarget,
+        managerPredecessor: direction === 'cloud-to-lan'
+          ? {
+              initiatingPersonalRef: membership.member.personalRef,
+              operationIntentId: managerOperationIntentId,
+              ownerInstallationKey: TEST_INSTALLATION_A,
+              preparationId: authorityTransferChildIdempotencyKey(
+                managerOperationIntentId,
+                'stage',
+              ),
+              selectedTargetMemberId: 'member-target',
+              sourceCloudUrl: 'https://cloud.example.test/',
+            }
+          : null,
         memberId: MEMBER_ID,
         operationIntentId,
         status,

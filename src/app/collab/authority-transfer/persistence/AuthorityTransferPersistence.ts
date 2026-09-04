@@ -52,6 +52,7 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   type CloudToLanManagerEntryRecord,
+  cloudToLanManagerRequiresClaimant,
   type CloudToLanTargetEntryRecord,
   type CloudToLanTargetPreparationDescriptor,
   decodeCloudToLanManagerEntryRecord,
@@ -233,11 +234,9 @@ export class AuthorityTransferPersistence {
       const manager = entry?.manager ?? null;
       const localSource = source !== null && this.#isLocalSourceEntry(source);
       const localTarget = target !== null && this.#isLocalTargetEntry(target);
+      const localManager = manager !== null
+        && this.#isRecoveryOwner(manager.ownerInstallationKey);
       const foreignPhysical = record !== null && this.#isForeignPhysical(record);
-      const managerMatchesLocalPhysical = manager !== null
-        && record !== null
-        && !foreignPhysical
-        && this.#managerMatchesPhysical(manager, record);
       if (localSource && source.phase === 'handed-off' && foreignPhysical) {
         throw transferError(
           'durable-progress-recovery-required',
@@ -263,6 +262,7 @@ export class AuthorityTransferPersistence {
       }
       if (!record) {
         if (custody || commitment) return 'nonterminal';
+        if (localManager) return 'nonterminal';
         if (localTarget && target.phase === 'handed-off') {
           throw transferError(
             'durable-progress-recovery-required',
@@ -273,6 +273,7 @@ export class AuthorityTransferPersistence {
         if (!localSource || source.phase === 'cancelled') return 'absent';
         return source.phase === 'proposed' ? 'proposal' : 'nonterminal';
       }
+      if (localManager) return 'nonterminal';
       if (foreignPhysical) return 'absent';
       if (custody || commitment) {
         return 'nonterminal';
@@ -282,7 +283,6 @@ export class AuthorityTransferPersistence {
         && record.terminalCleanupCompleted
         && (!localSource || source.phase === 'cancelled')
         && !localTarget
-        && !managerMatchesLocalPhysical
         ? 'terminal'
         : 'nonterminal';
     });
@@ -615,6 +615,7 @@ export class AuthorityTransferPersistence {
         if (
           existing.phase === 'settled'
           && record === null
+          && !cloudToLanManagerRequiresClaimant(existing)
         ) {
           await this.stores.authorityTransferEntries.saveManager(decoded);
           return decoded;
@@ -2252,7 +2253,9 @@ export class AuthorityTransferPersistence {
       ? entry.source
       : null;
     const managerIsRemovable = entry.manager !== null
+      && this.#isRecoveryOwner(entry.manager.ownerInstallationKey)
       && (entry.manager.phase === 'settled' || entry.manager.phase === 'rejected')
+      && !cloudToLanManagerRequiresClaimant(entry.manager)
       && now >= Date.parse(entry.manager.expiresAt);
     const targetIsRemovable = entry.target !== null
       && entry.target.phase === 'withdrawn'
@@ -2281,23 +2284,6 @@ export class AuthorityTransferPersistence {
   #isForeignPhysical(record: AuthorityTransferRecord): boolean {
     return record.ownerInstallationKey !== undefined
       && !this.#isRecoveryOwner(record.ownerInstallationKey);
-  }
-
-  #managerMatchesPhysical(
-    manager: CloudToLanManagerEntryRecord,
-    record: AuthorityTransferRecord,
-  ): boolean {
-    return manager.status !== null
-      && record.localRole === 'target'
-      && record.status.direction === 'cloud-to-lan'
-      && manager.operationIntentId === record.operationIntentId
-      && manager.projectId === record.projectId
-      && manager.status.transferId === record.transferId
-      && manager.status.createdAt === record.status.createdAt
-      && manager.status.expiresAt === record.status.expiresAt
-      && manager.descriptor.sourceAuthorityGeneration
-        === record.status.sourceAuthority.generation
-      && manager.descriptor.targetUrl === record.status.targetUrl;
   }
 
   #requesterMatchesPhysical(

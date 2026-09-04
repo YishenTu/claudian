@@ -6,6 +6,7 @@ import path from 'node:path';
 import type {
   CollabAuthorityTransferStatus,
   CollabCloudCapability,
+  CollabProjectId,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 
@@ -19,8 +20,12 @@ import {
   type AuthorityTransferModuleOptions,
   type CloudToLanEntryConnection,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
+import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import type {
-  AuthorityTransferRecord} from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+  AuthorityTransferRecord,
+} from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   createAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
@@ -29,6 +34,7 @@ import {
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantBindingResolver';
 import {
   advanceAuthorityTransferClaimantRecord,
+  AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION,
   type AuthorityTransferClaimantRecord,
   createManagerReissuedAuthorityTransferClaimantRecord,
   decodeAuthorityTransferClaimantRecord,
@@ -63,6 +69,7 @@ import type {
   LanAuthorityTransferClient,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import {
+  type CollabProjectLifecycleDurableOwner,
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import type {
@@ -84,6 +91,20 @@ type TestAuthorityTransferModuleOptions = Omit<
 class AuthorityTransferModule extends ProductionAuthorityTransferModule {
   constructor(options: TestAuthorityTransferModuleOptions) {
     const createCloudToLanConnection = options.createCloudToLanConnection;
+    const lifecycle = typeof options.lifecycle.runAuthorityTransferManagerContinuation === 'function'
+      ? options.lifecycle
+      : {
+          ...options.lifecycle,
+          runAuthorityTransferManagerContinuation: <Result>(
+            projectId: CollabProjectId,
+            operation: () => Promise<Result>,
+          ) => options.lifecycle.runExclusive(
+            projectId,
+            'authority-transfer',
+            'continuation',
+            operation,
+          ),
+        } as CollabProjectLifecycleSubsystem;
     super({
       createCloudToLanConnection: async () => {
         throw new Error('Unexpected Cloud-to-LAN connection');
@@ -91,7 +112,9 @@ class AuthorityTransferModule extends ProductionAuthorityTransferModule {
       createCloudToLanTarget: () => {
         throw new Error('Unexpected Cloud-to-LAN target');
       },
+      loadClaimantMembership: async () => managerClaimantMembership(),
       ...options,
+      lifecycle,
       ...(createCloudToLanConnection ? {
         createCloudToLanConnection: async (projectId, operationOptions) => {
           const connection = await createCloudToLanConnection(projectId, operationOptions);
@@ -108,10 +131,17 @@ class AuthorityTransferModule extends ProductionAuthorityTransferModule {
 function recoverableClaimantRecord(input: Readonly<{
   direction?: 'cloud-to-lan' | 'lan-to-cloud';
   expiresAt?: string;
+  managerOperationIntentId?: string;
   operationIntentId?: string;
   phase?: SourceIssuedAuthorityTransferClaimantPhase;
 }> = {}): SourceIssuedAuthorityTransferClaimantRecord {
   const direction = input.direction ?? 'lan-to-cloud';
+  const managerOperationIntentId = input.managerOperationIntentId ?? 'intent-transfer-owner';
+  const operationIntentId = input.operationIntentId ?? (
+    direction === 'cloud-to-lan'
+      ? authorityTransferChildIdempotencyKey(managerOperationIntentId, 'claims')
+      : 'intent-claimant-recovery'
+  );
   const phase = input.phase ?? 'source-acknowledged';
   const phaseIndex = [
     'prepared',
@@ -149,7 +179,7 @@ function recoverableClaimantRecord(input: Readonly<{
       certificateAlgorithm: 'ed25519',
       checkpointSha256,
       committedAt: '2026-08-27T00:00:08.000Z',
-      operationIntentId: 'intent-transfer-owner',
+      operationIntentId: managerOperationIntentId,
       projectId: PROJECT_ID,
       sourceAuthority,
       sourceHostMemberId: direction === 'lan-to-cloud' ? 'member-host' : null,
@@ -187,8 +217,21 @@ function recoverableClaimantRecord(input: Readonly<{
           endpoint: targetUrl,
         }
       : null,
+    managerPredecessor: direction === 'cloud-to-lan'
+      ? {
+          initiatingPersonalRef: 'refs/heads/members/member-host',
+          operationIntentId: managerOperationIntentId,
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          preparationId: authorityTransferChildIdempotencyKey(
+            managerOperationIntentId,
+            'stage',
+          ),
+          selectedTargetMemberId: 'member-target',
+          sourceCloudUrl: 'https://cloud.example.test/',
+        }
+      : null,
     memberId: 'member-host',
-    operationIntentId: input.operationIntentId ?? 'intent-claimant-recovery',
+    operationIntentId,
     phase,
     projectId: PROJECT_ID,
     redemptionReceipt: phaseIndex >= 3
@@ -196,7 +239,7 @@ function recoverableClaimantRecord(input: Readonly<{
           checkpointSha256,
           claimSha256: createHash('sha256').update(claimValue, 'utf8').digest('hex'),
           memberId: 'member-host',
-          operationIntentId: input.operationIntentId ?? 'intent-claimant-recovery',
+          operationIntentId,
           projectId: PROJECT_ID,
           receiptId: 'receipt-claimant-recovery',
           receiptKeyId: 'receipt-key-recovery',
@@ -207,7 +250,7 @@ function recoverableClaimantRecord(input: Readonly<{
           transferId: TRANSFER_ID,
         }
       : null,
-    schemaVersion: 1,
+    schemaVersion: AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION,
     status,
     targetCredential: direction === 'cloud-to-lan' && phaseIndex >= 2
       ? Buffer.alloc(32, 5).toString('base64url')
@@ -216,6 +259,36 @@ function recoverableClaimantRecord(input: Readonly<{
     updatedAt: '2026-08-27T00:01:01.000Z',
     variant: 'source-issued',
   }) as SourceIssuedAuthorityTransferClaimantRecord;
+}
+
+function settledCloudToLanManagerEntry(
+  claimant: SourceIssuedAuthorityTransferClaimantRecord,
+  operationIntentId: string,
+): CloudToLanManagerEntryRecord {
+  const lanTarget = claimant.lanTarget!;
+  return recordCloudToLanManagerStatus(
+    markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+      createdAt: claimant.status.createdAt,
+      descriptor: {
+        caCertificatePem: lanTarget.caCertificatePem,
+        caFingerprint: lanTarget.caFingerprint,
+        preparationId: claimant.managerPredecessor!.preparationId,
+        projectId: claimant.projectId,
+        publishedAt: claimant.status.createdAt,
+        schemaVersion: 1,
+        selectedTargetMemberId: 'member-target',
+        sourceAuthorityGeneration: claimant.status.sourceAuthority.generation,
+        sourceCloudUrl: 'https://cloud.example.test/',
+        targetUrl: claimant.status.targetUrl,
+      },
+      expiresAt: claimant.status.expiresAt,
+      initiatingMemberId: claimant.memberId,
+      initiatingPersonalRef: `refs/heads/members/${claimant.memberId}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId,
+    })),
+    claimant.status,
+  );
 }
 
 function proposal(
@@ -1634,7 +1707,7 @@ describe('AuthorityTransferModule', () => {
     expect(createManagerConnection).toHaveBeenCalledTimes(2);
 
     await expect(targetModule.cancelCloudToLanTransfer(handle as never)).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-cloud-binding-mismatch' },
+      safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
     });
     const authorityTransferCallCount = managerCloud.lifecycle.authorityTransfer.mock.calls.length;
     const exclusiveCallsBeforeCancel = (lifecycle.runExclusive as jest.Mock).mock.calls.length;
@@ -2135,6 +2208,401 @@ describe('AuthorityTransferModule', () => {
     });
   });
 
+  it.each(['begin', 'observe'] as const)(
+    'converges a different-device Manager through direct %s retry after target reply loss',
+    async (retryOperation) => {
+    const completed = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId: 'intent-observer-manager-begin',
+      phase: 'target-claimed',
+    });
+    const collectingStatus: CollabAuthorityTransferStatus = {
+      ...completed.status,
+      batchRevision: null,
+      batchSha256: null,
+      checkpointSha256: null,
+      phase: 'collecting-readiness',
+      relinquishmentProof: null,
+      state: 'active',
+      updatedAt: completed.status.createdAt,
+    };
+    const descriptor = {
+      caCertificatePem: completed.lanTarget!.caCertificatePem,
+      caFingerprint: completed.lanTarget!.caFingerprint,
+      preparationId: 'intent-observer-target-preparation',
+      projectId: PROJECT_ID,
+      publishedAt: completed.status.createdAt,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: completed.status.targetUrl,
+    };
+    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
+      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+        createdAt: completed.status.createdAt,
+        descriptor,
+        expiresAt: completed.status.expiresAt,
+        initiatingMemberId: 'member-host',
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        operationIntentId: 'intent-observer-manager-begin',
+      })),
+      collectingStatus,
+    );
+    let claimant: AuthorityTransferClaimantRecord | null = null;
+    const claimantStore = {
+      listProjectIds: async () => claimant ? [PROJECT_ID] : [],
+      load: async () => claimant,
+      remove: async () => {
+        const removed = claimant !== null;
+        claimant = null;
+        return removed;
+      },
+      save: async (record: AuthorityTransferClaimantRecord) => { claimant = record; },
+    };
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => managerEntry === null
+        ? 'absent'
+        : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
+          ? 'terminal'
+          : 'nonterminal'),
+      load: jest.fn(async () => null),
+      loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      recordCloudToLanManagerStatus: jest.fn(async (
+        entry: CloudToLanManagerEntryRecord,
+        status: CollabAuthorityTransferStatus,
+      ) => {
+        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        return managerEntry;
+      }),
+      settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
+    } as unknown as AuthorityTransferPersistence;
+    const authorityTransfer = jest.fn(async (operation: string) => {
+      if (operation === 'getProjectAuthorityTransfer') return completed.status;
+      if (operation === 'getTransferredMembershipClaim') return completed.claim!;
+      if (operation === 'acknowledgeTransferredMembershipClaimRedemption') return {};
+      throw new Error(`Unexpected Cloud operation: ${operation}`);
+    });
+    const connection = {
+      authorityGeneration: 1,
+      dispose: jest.fn(),
+      lifecycle: { authorityTransfer },
+      listProjectMembers: jest.fn(),
+      memberId: 'member-host',
+      personalRef: 'refs/heads/members/member-host',
+      projectId: PROJECT_ID,
+      readSnapshot: jest.fn(),
+      serverUrl: descriptor.sourceCloudUrl,
+      supports: jest.fn(() => true),
+    };
+    const readTargetSnapshot = jest.fn(async () => ({
+      currentMember: {
+        displayName: 'Manager',
+        id: 'member-host',
+        personalRef: 'refs/heads/members/member-host',
+        role: 'manager' as const,
+      },
+      eventSequence: 9,
+      project: {
+        authorityGeneration: 2,
+        id: PROJECT_ID,
+      },
+    }));
+    const cloudToLanMember = jest.fn(async () => undefined);
+    const claimTransferredMembership = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target reply loss'))
+      .mockImplementation(async (request: { readonly idempotencyKey: string }) => ({
+        ...completed.redemptionReceipt!,
+        operationIntentId: request.idempotencyKey,
+      }));
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore,
+      convergence: { cloudToLanMember } as never,
+      createCloudToLanClaimantClient: () => ({ claimTransferredMembership }),
+      createCloudToLanConnection: async () => connection as never,
+      createCloudToLanTarget: jest.fn() as never,
+      createLanTargetSnapshotReader: () => ({ readSnapshot: readTargetSnapshot }) as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle,
+      persistence,
+      recoverClaimant: async () => ({
+        cloudSession: connection as never,
+        direction: 'cloud-to-lan',
+        lanClient: { claimTransferredMembership } as never,
+        mode: 'full',
+        targetHost: completed.lanTarget!,
+      }),
+    });
+
+    await expect(module.observeCloudToLanTransfer(PROJECT_ID)).rejects.toThrow(
+      'simulated target reply loss',
+    );
+
+    expect(managerEntry).toMatchObject({ phase: 'settled', status: completed.status });
+    expect(claimant).toMatchObject({ phase: 'credential-persisted' });
+    expect(cloudToLanMember).not.toHaveBeenCalled();
+
+    const retryResult = retryOperation === 'observe'
+      ? await module.observeCloudToLanTransfer(PROJECT_ID)
+      : await module.beginCloudToLanTransfer({
+        descriptor,
+        operationIntentId: 'intent-observer-manager-begin',
+      });
+
+    expect(retryResult).toMatchObject({ transferId: completed.status.transferId });
+
+    expect(authorityTransfer.mock.calls.map(([operation]) => operation)).toEqual([
+      'getProjectAuthorityTransfer',
+      'getTransferredMembershipClaim',
+      'acknowledgeTransferredMembershipClaimRedemption',
+    ]);
+    expect(claimTransferredMembership).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claim: completed.claim!.claim,
+        projectId: PROJECT_ID,
+        transferId: TRANSFER_ID,
+      }),
+      {},
+    );
+    expect(cloudToLanMember).toHaveBeenCalledWith(expect.objectContaining({
+      memberCredential: expect.any(String),
+      status: completed.status,
+    }));
+    expect(readTargetSnapshot).toHaveBeenCalled();
+    expect(claimTransferredMembership).toHaveBeenCalledTimes(2);
+    expect(claimant).toBeNull();
+    expect(managerEntry).toBeNull();
+    expect(connection.dispose).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('rejects an unrelated claimant before beginning a Cloud-to-LAN transfer', async () => {
+    const unrelatedClaimant = recoverableClaimantRecord({
+      direction: 'lan-to-cloud',
+      phase: 'credential-persisted',
+    });
+    const prepareCloudToLanManagerEntry = jest.fn();
+    const createCloudToLanConnection = jest.fn();
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => 'absent'),
+      loadCloudToLanManagerEntry: jest.fn(async () => null),
+      prepareCloudToLanManagerEntry,
+    } as unknown as AuthorityTransferPersistence;
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [PROJECT_ID],
+        load: async () => unrelatedClaimant,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: {} as never,
+      createCloudToLanConnection,
+      createCloudToLanTarget: jest.fn() as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle,
+      persistence,
+    });
+
+    await expect(module.beginCloudToLanTransfer({
+      descriptor: {
+        caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+        caFingerprint: 'c'.repeat(64),
+        preparationId: 'intent-unrelated-target-preparation',
+        projectId: PROJECT_ID,
+        publishedAt: '2026-08-27T00:00:00.000Z',
+        schemaVersion: 1,
+        selectedTargetMemberId: 'member-target',
+        sourceAuthorityGeneration: 1,
+        sourceCloudUrl: 'https://cloud.example.test/',
+        targetUrl: 'https://192.168.1.20:54545',
+      },
+      operationIntentId: 'intent-unrelated-manager-begin',
+    })).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-claimant-attempt-conflict' },
+    });
+
+    expect(prepareCloudToLanManagerEntry).not.toHaveBeenCalled();
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unrelated claimant before observing a settled Cloud-to-LAN transfer', async () => {
+    const completed = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      phase: 'target-claimed',
+    });
+    const descriptor = {
+      caCertificatePem: completed.lanTarget!.caCertificatePem,
+      caFingerprint: completed.lanTarget!.caFingerprint,
+      preparationId: 'intent-unrelated-observe-target-preparation',
+      projectId: PROJECT_ID,
+      publishedAt: completed.status.createdAt,
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: completed.status.targetUrl,
+    };
+    const managerEntry = recordCloudToLanManagerStatus(
+      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+        createdAt: completed.status.createdAt,
+        descriptor,
+        expiresAt: completed.status.expiresAt,
+        initiatingMemberId: 'member-host',
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        operationIntentId: 'intent-unrelated-observe-manager-begin',
+      })),
+      completed.status,
+    );
+    const unrelatedClaimant = recoverableClaimantRecord({
+      direction: 'lan-to-cloud',
+      phase: 'credential-persisted',
+    });
+    const createCloudToLanConnection = jest.fn();
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => 'terminal'),
+      loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+    } as unknown as AuthorityTransferPersistence;
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [PROJECT_ID],
+        load: async () => unrelatedClaimant,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: {} as never,
+      createCloudToLanConnection,
+      createCloudToLanTarget: jest.fn() as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle,
+      persistence,
+    });
+
+    await expect(module.observeCloudToLanTransfer(PROJECT_ID)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-claimant-attempt-conflict' },
+    });
+
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+  });
+
+  it('resumes a settled Manager through target-only claimant recovery without Cloud', async () => {
+    const managerOperationIntentId = 'intent-target-only-manager';
+    let claimant: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId,
+      operationIntentId: authorityTransferChildIdempotencyKey(
+        managerOperationIntentId,
+        'claims',
+      ),
+      phase: 'source-acknowledged',
+    });
+    const targetHost = claimant.lanTarget!;
+    let managerEntry: CloudToLanManagerEntryRecord | null =
+      settledCloudToLanManagerEntry(claimant, managerOperationIntentId);
+    const createCloudToLanConnection = jest.fn(async () => {
+      throw new Error('Cloud must remain unavailable after source acknowledgement');
+    });
+    const readSnapshot = jest.fn(async () => ({
+      currentMember: {
+        displayName: 'Manager',
+        id: 'member-host',
+        personalRef: 'refs/heads/members/member-host',
+        role: 'manager' as const,
+      },
+      eventSequence: 9,
+      project: { authorityGeneration: 2, id: PROJECT_ID },
+    }));
+    const cloudToLanMember = jest.fn(async () => undefined);
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
+      loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
+    } as unknown as AuthorityTransferPersistence;
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const recoverClaimant = jest.fn(async () => ({
+      direction: 'cloud-to-lan' as const,
+      mode: 'target-only' as const,
+      targetHost,
+    }));
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => claimant ? [PROJECT_ID] : [],
+        load: async () => claimant,
+        remove: async () => {
+          const removed = claimant !== null;
+          claimant = null;
+          return removed;
+        },
+        save: async record => { claimant = record; },
+      },
+      convergence: { cloudToLanMember } as never,
+      createCloudToLanConnection,
+      createLanTargetSnapshotReader: () => ({ readSnapshot }) as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle,
+      persistence,
+      recoverClaimant,
+    });
+
+    await expect(module.observeCloudToLanTransfer(PROJECT_ID)).resolves.toMatchObject({
+      state: 'completed',
+      transferId: TRANSFER_ID,
+    });
+
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+    expect(recoverClaimant).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'source-acknowledged',
+    }));
+    expect(readSnapshot).toHaveBeenCalledTimes(1);
+    expect(cloudToLanMember).toHaveBeenCalledTimes(1);
+    expect(managerEntry).toBeNull();
+    expect(claimant).toBeNull();
+  });
+
   it('releases failed pre-publication target cleanup before rebuilding the preparation', async () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
@@ -2545,6 +3013,7 @@ describe('AuthorityTransferModule', () => {
         expiresAt: collectingStatus.expiresAt,
         initiatingMemberId: 'member-host',
         initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
         operationIntentId: physical.operationIntentId,
       })),
       collectingStatus,
@@ -2682,6 +3151,7 @@ describe('AuthorityTransferModule', () => {
         expiresAt: collectingStatus.expiresAt,
         initiatingMemberId: 'member-host',
         initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
         operationIntentId: physical.operationIntentId,
       })),
       collectingStatus,
@@ -2995,6 +3465,7 @@ describe('AuthorityTransferModule', () => {
       expiresAt: '2026-09-26T00:00:00.000Z',
       initiatingMemberId: 'member-manager',
       initiatingPersonalRef: 'refs/heads/members/member-manager',
+      ownerInstallationKey: TEST_INSTALLATION_A,
       operationIntentId: 'intent-concurrent-manager-begin',
     });
     const persistence = {
@@ -3116,8 +3587,9 @@ describe('AuthorityTransferModule', () => {
         createdAt: '2026-08-27T00:00:00.000Z',
         descriptor,
         expiresAt: '2026-09-26T00:00:00.000Z',
-        initiatingMemberId: 'member-manager',
-        initiatingPersonalRef: 'refs/heads/members/member-manager',
+        initiatingMemberId: 'member-host',
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
         operationIntentId: 'intent-recovery-manager-begin',
       }));
     const frozenRequest = managerEntry.request;
@@ -3128,10 +3600,17 @@ describe('AuthorityTransferModule', () => {
       targetUrl: descriptor.targetUrl,
     });
     let physicalRecord: AuthorityTransferRecord | null = null;
+    let managerSettlementAttempts = 0;
     const persistence = {
-      inspectLifecycleOwner: jest.fn(async () => 'absent'),
+      inspectLifecycleOwner: jest.fn(async () => managerEntry === null
+        ? 'absent'
+        : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
+          ? 'terminal'
+          : 'nonterminal'),
       load: jest.fn(async () => physicalRecord),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadCloudToLanTargetEntry: jest.fn(async () => null),
+      loadRecoveryOwnerRecord: jest.fn(async () => physicalRecord),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
         entry: CloudToLanManagerEntryRecord,
       ) => entry),
@@ -3146,23 +3625,60 @@ describe('AuthorityTransferModule', () => {
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
       })),
-      settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
+      recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
+      settleCloudToLanManagerEntry: jest.fn(async () => {
+        managerSettlementAttempts += 1;
+        if (managerSettlementAttempts <= 2) {
+          throw new Error('simulated Manager settlement failure');
+        }
+        managerEntry = null;
+      }),
     } as unknown as AuthorityTransferPersistence;
-    const completed = recoverableClaimantRecord({ direction: 'cloud-to-lan' }).status;
-    const authorityTransfer = jest.fn()
-      .mockResolvedValueOnce(begun)
-      .mockResolvedValueOnce(completed);
+    const completed = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId: 'intent-recovery-manager-begin',
+      phase: 'target-claimed',
+    });
+    let statusReads = 0;
+    let claimAvailable = true;
+    const authorityTransfer = jest.fn(async (operation: string) => {
+      if (operation === 'beginCloudToLanTransfer') return begun;
+      if (operation === 'getProjectAuthorityTransfer') {
+        statusReads += 1;
+        return completed.status;
+      }
+      if (operation === 'getTransferredMembershipClaim') {
+        if (!claimAvailable) throw new Error('Transferred Manager claim was scrubbed');
+        return completed.claim!;
+      }
+      if (operation === 'acknowledgeTransferredMembershipClaimRedemption') {
+        claimAvailable = false;
+        return {};
+      }
+      throw new Error(`Unexpected Cloud operation: ${operation}`);
+    });
     const connection = {
       authorityGeneration: 1,
       dispose: jest.fn(),
       lifecycle: { authorityTransfer },
       listProjectMembers: jest.fn(),
-      memberId: 'member-manager',
-      personalRef: 'refs/heads/members/member-manager',
+      memberId: 'member-host',
+      personalRef: 'refs/heads/members/member-host',
       projectId: PROJECT_ID,
       readSnapshot: jest.fn(),
       serverUrl: descriptor.sourceCloudUrl,
+      supports: jest.fn(() => true),
     };
+    let claimant: AuthorityTransferClaimantRecord | null = null;
+    let membershipAuthority: 'cloud' | 'lan' = 'cloud';
+    const cloudToLanMember = jest.fn(async () => { membershipAuthority = 'lan'; });
+    const claimTransferredMembership = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated target reply loss'))
+      .mockRejectedValueOnce(new Error('simulated target reply loss'))
+      .mockImplementation(async (request: { readonly idempotencyKey: string }) => ({
+        ...completed.redemptionReceipt!,
+        operationIntentId: request.idempotencyKey,
+      }));
     const lifecycle = new CollabProjectLifecycleSubsystem({
       closeRecovery: jest.fn(),
       durableOwners: [],
@@ -3175,17 +3691,46 @@ describe('AuthorityTransferModule', () => {
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       claimantStore: {
-        listProjectIds: () => Promise.resolve([]),
-        load: () => Promise.resolve(null),
-        remove: () => Promise.resolve(false),
-        save: () => Promise.resolve(),
+        listProjectIds: async () => claimant ? [PROJECT_ID] : [],
+        load: async () => claimant,
+        remove: async () => {
+          const removed = claimant !== null;
+          claimant = null;
+          return removed;
+        },
+        save: async record => { claimant = record; },
       },
-      convergence: {} as never,
-      createCloudToLanConnection: async () => connection as never,
+      convergence: { cloudToLanMember } as never,
+      createCloudToLanClaimantClient: () => ({ claimTransferredMembership }),
+      createCloudToLanConnection: async () => {
+        if (membershipAuthority === 'lan') {
+          throw new Error('Cloud connection is unavailable after convergence');
+        }
+        return connection as never;
+      },
+      createLanTargetSnapshotReader: () => ({
+        readSnapshot: async () => ({
+          currentMember: {
+            displayName: 'Manager',
+            id: 'member-host',
+            personalRef: 'refs/heads/members/member-host',
+            role: 'manager',
+          },
+          eventSequence: 9,
+          project: { authorityGeneration: 2, id: PROJECT_ID },
+        }),
+      }) as never,
       createLanToCloudSource: jest.fn() as never,
       installationKey: TEST_INSTALLATION_A,
       lifecycle,
       persistence,
+      recoverClaimant: async () => ({
+        cloudSession: connection as never,
+        direction: 'cloud-to-lan',
+        lanClient: { claimTransferredMembership } as never,
+        mode: 'full',
+        targetHost: completed.lanTarget!,
+      }),
     });
 
     await expect(lifecycle.lifecycleRecovery.resume()).resolves.toBeUndefined();
@@ -3207,18 +3752,788 @@ describe('AuthorityTransferModule', () => {
       status: begun,
     });
 
+    await expect(lifecycle.lifecycleRecovery.resume()).rejects.toThrow(
+      'simulated target reply loss',
+    );
+
+    expect(managerEntry).toMatchObject({ phase: 'settled', status: completed.status });
+    expect(claimant).toMatchObject({ phase: 'credential-persisted' });
+    expect(cloudToLanMember).not.toHaveBeenCalled();
+
+    await expect(lifecycle.lifecycleRecovery.resume()).rejects.toThrow(
+      'simulated Manager settlement failure',
+    );
+
+    expect(managerEntry).toMatchObject({ phase: 'settled', status: completed.status });
+    expect(claimant).toMatchObject({ phase: 'completed' });
+    expect(membershipAuthority).toBe('lan');
+
     await expect(lifecycle.lifecycleRecovery.resume()).resolves.toBeUndefined();
 
-    expect(authorityTransfer).toHaveBeenLastCalledWith(
+    expect(statusReads).toBe(1);
+    expect(authorityTransfer.mock.calls.map(([operation]) => operation)).toEqual([
+      'beginCloudToLanTransfer',
       'getProjectAuthorityTransfer',
-      { projectId: PROJECT_ID, transferId: TRANSFER_ID },
-      {},
-    );
+      'getTransferredMembershipClaim',
+      'acknowledgeTransferredMembershipClaimRedemption',
+    ]);
+    expect(cloudToLanMember).toHaveBeenCalledWith(expect.objectContaining({
+      status: completed.status,
+    }));
+    expect(claimTransferredMembership).toHaveBeenCalledTimes(3);
+    expect(managerSettlementAttempts).toBe(3);
+    expect(claimant).toBeNull();
     expect(managerEntry).toBeNull();
-    expect(connection.dispose).toHaveBeenCalledTimes(2);
+    expect(connection.dispose).toHaveBeenCalledTimes(4);
   });
 
-  it('settles a same-device Manager only after its target physical recovery', async () => {
+  it('does not replay a synchronized Manager journal owned by another installation', async () => {
+    const descriptor = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      preparationId: 'intent-foreign-manager-target',
+      projectId: PROJECT_ID,
+      publishedAt: '2026-08-27T00:00:00.000Z',
+      schemaVersion: 1 as const,
+      selectedTargetMemberId: 'member-target',
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.20:54545',
+    };
+    const managerEntry = markCloudToLanManagerBeginPossiblySent(
+      createCloudToLanManagerEntry({
+        createdAt: '2026-08-27T00:00:00.000Z',
+        descriptor,
+        expiresAt: '2026-09-26T00:00:00.000Z',
+        initiatingMemberId: 'member-host',
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        operationIntentId: 'intent-foreign-manager-recovery',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+      }),
+    );
+    const persistence = {
+      inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
+      load: jest.fn(async () => null),
+      loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadCloudToLanTargetEntry: jest.fn(async () => null),
+      loadRecoveryOwnerRecord: jest.fn(async () => null),
+      scanProjectCatalog: jest.fn(async () => ({
+        invalidEntryCount: 0,
+        projectIds: [PROJECT_ID],
+      })),
+    } as unknown as AuthorityTransferPersistence;
+    const createCloudToLanConnection = jest.fn(async () => {
+      throw new Error('foreign Manager recovery must not open Cloud');
+    });
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [],
+        load: async () => null,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: {} as never,
+      createCloudToLanConnection,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_B,
+      lifecycle,
+      persistence,
+    });
+
+    await expect(lifecycle.lifecycleRecovery.resume()).resolves.toBeUndefined();
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+  });
+
+  it.each(['begin', 'observe', 'cancel'] as const)(
+    'rejects an explicit %s for a Manager journal owned by another installation',
+    async operation => {
+      const completed = recoverableClaimantRecord({ direction: 'cloud-to-lan' });
+      const collecting = {
+        ...completed.status,
+        batchRevision: null,
+        batchSha256: null,
+        checkpointSha256: null,
+        phase: 'collecting-readiness' as const,
+        relinquishmentProof: null,
+        state: 'active' as const,
+      };
+      const managerEntry = recordCloudToLanManagerStatus(
+        markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+          createdAt: collecting.createdAt,
+          descriptor: {
+            caCertificatePem: completed.lanTarget!.caCertificatePem,
+            caFingerprint: completed.lanTarget!.caFingerprint,
+            preparationId: completed.managerPredecessor!.preparationId,
+            projectId: PROJECT_ID,
+            publishedAt: collecting.createdAt,
+            schemaVersion: 1,
+            selectedTargetMemberId: 'member-target',
+            sourceAuthorityGeneration: 1,
+            sourceCloudUrl: 'https://cloud.example.test/',
+            targetUrl: completed.status.targetUrl,
+          },
+          expiresAt: collecting.expiresAt,
+          initiatingMemberId: 'member-host',
+          initiatingPersonalRef: 'refs/heads/members/member-host',
+          operationIntentId: 'intent-foreign-manager-explicit-operation',
+          ownerInstallationKey: TEST_INSTALLATION_A,
+        })),
+        collecting,
+      );
+      const createCloudToLanConnection = jest.fn();
+      const module = new AuthorityTransferModule({
+        assertLanToCloudSourceOwner: () => undefined,
+        assertRecoveryOwner: () => undefined,
+        claimantStore: {
+          listProjectIds: async () => [],
+          load: async () => null,
+          remove: async () => false,
+          save: async () => undefined,
+        },
+        convergence: {} as never,
+        createCloudToLanConnection,
+        createLanToCloudSource: jest.fn() as never,
+        installationKey: TEST_INSTALLATION_B,
+        lifecycle: {
+          registerDurableOwner: jest.fn(),
+          registerRecoveryStage: jest.fn(),
+          runExclusive: jest.fn(async (_projectId, _owner, _mode, action) => action()),
+        } as unknown as CollabProjectLifecycleSubsystem,
+        persistence: {
+          loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+        } as unknown as AuthorityTransferPersistence,
+      });
+      const handle = cloudToLanTransferHandle(managerEntry);
+
+      const result = operation === 'begin'
+        ? module.beginCloudToLanTransfer({
+            descriptor: managerEntry.descriptor,
+            operationIntentId: managerEntry.operationIntentId,
+          })
+        : operation === 'observe'
+          ? module.observeCloudToLanTransfer(PROJECT_ID)
+          : module.cancelCloudToLanTransfer(handle);
+
+      await expect(result).rejects.toMatchObject({
+        safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
+      });
+      expect(createCloudToLanConnection).not.toHaveBeenCalled();
+    },
+  );
+
+  it('scrubs an expired settled Manager gap locally after durably establishing its claimant', async () => {
+    const completed = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      expiresAt: '2026-08-28T00:00:00.000Z',
+      managerOperationIntentId: 'intent-expired-manager-gap',
+    });
+    let managerEntry: CloudToLanManagerEntryRecord | null =
+      settledCloudToLanManagerEntry(completed, 'intent-expired-manager-gap');
+    let claimant: AuthorityTransferClaimantRecord | null = null;
+    const savedPhases: string[] = [];
+    const createCloudToLanConnection = jest.fn(async () => {
+      throw new Error('expired Manager recovery must not open Cloud');
+    });
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: jest.fn(),
+      durableOwners: [],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => claimant ? [PROJECT_ID] : [],
+        load: async () => claimant,
+        remove: async () => {
+          const removed = claimant !== null;
+          claimant = null;
+          return removed;
+        },
+        save: async record => {
+          claimant = record;
+          savedPhases.push(record.phase);
+        },
+      },
+      convergence: {} as never,
+      createCloudToLanConnection,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle,
+      now: () => new Date('2026-09-01T00:00:00.000Z'),
+      persistence: {
+        inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
+        load: jest.fn(async () => null),
+        loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+        loadCloudToLanTargetEntry: jest.fn(async () => null),
+        loadRecoveryOwnerRecord: jest.fn(async () => null),
+        recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
+        scanProjectCatalog: jest.fn(async () => ({
+          invalidEntryCount: 0,
+          projectIds: [PROJECT_ID],
+        })),
+        settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
+      } as unknown as AuthorityTransferPersistence,
+    });
+
+    await expect(lifecycle.lifecycleRecovery.resume()).resolves.toBeUndefined();
+
+    expect(savedPhases).toEqual(['prepared']);
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+    expect(managerEntry).toBeNull();
+    expect(claimant).toBeNull();
+  });
+
+  it('retains a foreign Manager journal after target-side cancellation observes terminal status', async () => {
+    const collecting = proposal({
+      direction: 'cloud-to-lan',
+      sourceAuthority: { generation: 1, kind: 'cloud' },
+      targetAuthority: { generation: 2, kind: 'lan' },
+      targetUrl: 'https://192.168.1.20:54545',
+    });
+    const cancelled: CollabAuthorityTransferStatus = {
+      ...collecting,
+      phase: 'cancelled',
+      state: 'cancelled',
+      updatedAt: '2026-08-27T00:01:00.000Z',
+    };
+    let targetEntry: CloudToLanTargetEntryRecord | null = publishCloudToLanTargetEntry(
+      createCloudToLanTargetEntry({
+        createdAt: collecting.createdAt,
+        expiresAt: collecting.expiresAt,
+        operationIntentId: 'intent-foreign-manager-target-cancel',
+        ownerInstallationKey: TEST_INSTALLATION_B,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: 'member-target',
+        selectedTargetPersonalRef: 'refs/heads/members/member-target',
+        sourceAuthorityGeneration: 1,
+        sourceCloudUrl: 'https://cloud.example.test/',
+      }),
+      {
+        caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+        caFingerprint: 'c'.repeat(64),
+        publishedAt: collecting.createdAt,
+        targetUrl: collecting.targetUrl,
+      },
+    );
+    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
+      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+        createdAt: collecting.createdAt,
+        descriptor: targetEntry.descriptor!,
+        expiresAt: collecting.expiresAt,
+        initiatingMemberId: 'member-manager',
+        initiatingPersonalRef: 'refs/heads/members/member-manager',
+        operationIntentId: 'intent-foreign-manager-cancel',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+      })),
+      collecting,
+    );
+    const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
+    const persistence = {
+      loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
+      recordCloudToLanManagerStatus: jest.fn(async (
+        entry: CloudToLanManagerEntryRecord,
+        status: CollabAuthorityTransferStatus,
+      ) => {
+        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        return managerEntry;
+      }),
+      settleCloudToLanManagerEntry,
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLanTargetEntry(entry, cancelled.updatedAt);
+        return targetEntry;
+      }),
+    } as unknown as AuthorityTransferPersistence;
+    const connection = {
+      authorityGeneration: 1,
+      dispose: jest.fn(),
+      lifecycle: { authorityTransfer: jest.fn(async () => cancelled) },
+      listProjectMembers: jest.fn(),
+      memberId: 'member-target',
+      personalRef: 'refs/heads/members/member-target',
+      projectId: PROJECT_ID,
+      readSnapshot: jest.fn(),
+      serverUrl: 'https://cloud.example.test/',
+    };
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [],
+        load: async () => null,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: {} as never,
+      createCloudToLanConnection: async () => connection as never,
+      createCloudToLanTarget: () => ({
+        acceptanceRequest: jest.fn(),
+        activate: jest.fn(),
+        cancelStaging: jest.fn(),
+        invalidateStaging: jest.fn(),
+        stage: jest.fn(),
+      }),
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_B,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+        runExclusive: jest.fn(async (_projectId, _owner, _mode, action) => action()),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence,
+    });
+
+    await expect(module.acceptCloudToLanTransfer({
+      handle: cloudToLanTransferHandle(managerEntry),
+    })).resolves.toEqual(cancelled);
+
+    expect(managerEntry).toMatchObject({ phase: 'settled', status: cancelled });
+    expect(settleCloudToLanManagerEntry).not.toHaveBeenCalled();
+  });
+
+  it('retries terminal local Manager cleanup on an exact begin replay', async () => {
+    const completed = recoverableClaimantRecord({ direction: 'cloud-to-lan' });
+    const cancelled: CollabAuthorityTransferStatus = {
+      ...proposal({
+        direction: 'cloud-to-lan',
+        sourceAuthority: { generation: 1, kind: 'cloud' },
+        targetAuthority: { generation: 2, kind: 'lan' },
+        targetUrl: completed.status.targetUrl,
+      }),
+      phase: 'cancelled',
+      state: 'cancelled',
+    };
+    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
+      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+        createdAt: cancelled.createdAt,
+        descriptor: {
+          caCertificatePem: completed.lanTarget!.caCertificatePem,
+          caFingerprint: completed.lanTarget!.caFingerprint,
+          preparationId: completed.managerPredecessor!.preparationId,
+          projectId: PROJECT_ID,
+          publishedAt: cancelled.createdAt,
+          schemaVersion: 1,
+          selectedTargetMemberId: 'member-target',
+          sourceAuthorityGeneration: 1,
+          sourceCloudUrl: 'https://cloud.example.test/',
+          targetUrl: cancelled.targetUrl,
+        },
+        expiresAt: cancelled.expiresAt,
+        initiatingMemberId: 'member-host',
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        operationIntentId: 'intent-terminal-manager-replay',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+      })),
+      cancelled,
+    );
+    const handle = cloudToLanTransferHandle(managerEntry);
+    const createCloudToLanConnection = jest.fn();
+    const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
+    const module = new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [],
+        load: async () => null,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: {} as never,
+      createCloudToLanConnection,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: jest.fn(),
+        runExclusive: jest.fn(async (_projectId, _owner, _mode, action) => action()),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence: {
+        loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+        settleCloudToLanManagerEntry,
+      } as unknown as AuthorityTransferPersistence,
+    });
+
+    await expect(module.beginCloudToLanTransfer({
+      descriptor: managerEntry.descriptor,
+      operationIntentId: managerEntry.operationIntentId,
+    })).resolves.toEqual(handle);
+
+    expect(settleCloudToLanManagerEntry).toHaveBeenCalledTimes(1);
+    expect(managerEntry).toBeNull();
+    expect(createCloudToLanConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['foreign installation', TEST_INSTALLATION_B],
+    ['wrong Member on the owner installation', TEST_INSTALLATION_A],
+  ] as const)(
+    'preserves a synchronized terminal Manager claimant for a %s',
+    async (_label, installationKey) => {
+    const managerOperationIntentId = 'intent-synchronized-manager-cleanup-owner';
+    const managerRootClaimant = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId,
+      operationIntentId: authorityTransferChildIdempotencyKey(
+        managerOperationIntentId,
+        'claims',
+      ),
+      phase: 'membership-converged',
+    });
+    const managerRootEntry = settledCloudToLanManagerEntry(
+      managerRootClaimant,
+      managerOperationIntentId,
+    );
+    let targetRootClaimant: AuthorityTransferClaimantRecord | null = managerRootClaimant;
+    let targetRootManagerEntry: CloudToLanManagerEntryRecord | null = managerRootEntry;
+    let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
+    const settleCloudToLanManagerEntry = jest.fn(async () => {
+      targetRootManagerEntry = null;
+    });
+    const removeClaimant = jest.fn(async () => {
+      const removed = targetRootClaimant !== null;
+      targetRootClaimant = null;
+      return removed;
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => targetRootClaimant ? [PROJECT_ID] : [],
+        load: async () => targetRootClaimant,
+        remove: removeClaimant,
+        save: async record => { targetRootClaimant = record; },
+      },
+      convergence: {} as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: (stage: AuthorityTransferClaimantRecovery) => {
+          if (stage.name === 'authority-transfer-claimants') claimantRecovery = stage;
+        },
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      loadClaimantMembership: async () => ({
+        ...managerClaimantMembership(),
+        hostOwnership: { ownsAuthority: true },
+        member: {
+          ...managerClaimantMembership().member,
+          id: 'member-target',
+          personalRef: 'refs/heads/members/member-target',
+          role: 'member',
+        },
+      }),
+      persistence: {
+        loadCloudToLanManagerEntry: async () => targetRootManagerEntry,
+        settleCloudToLanManagerEntry,
+      } as unknown as AuthorityTransferPersistence,
+    });
+
+    await claimantRecovery!.run();
+
+    expect(targetRootManagerEntry).toEqual(managerRootEntry);
+    expect(targetRootClaimant).toEqual(managerRootClaimant);
+    expect(settleCloudToLanManagerEntry).not.toHaveBeenCalled();
+    expect(removeClaimant).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cleans a terminal Manager claimant after a target-side role demotion', async () => {
+    const managerOperationIntentId = 'intent-demoted-manager-cleanup-owner';
+    const managerClaimant = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId,
+      operationIntentId: authorityTransferChildIdempotencyKey(
+        managerOperationIntentId,
+        'claims',
+      ),
+      phase: 'membership-converged',
+    });
+    const managerEntry = settledCloudToLanManagerEntry(
+      managerClaimant,
+      managerOperationIntentId,
+    );
+    let storedClaimant: AuthorityTransferClaimantRecord | null = managerClaimant;
+    let storedManager: CloudToLanManagerEntryRecord | null = managerEntry;
+    let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
+    const settleCloudToLanManagerEntry = jest.fn(async () => {
+      storedManager = null;
+    });
+    const removeClaimant = jest.fn(async () => {
+      storedClaimant = null;
+      return true;
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => storedClaimant ? [PROJECT_ID] : [],
+        load: async () => storedClaimant,
+        remove: removeClaimant,
+        save: async record => { storedClaimant = record; },
+      },
+      convergence: {} as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: (stage: AuthorityTransferClaimantRecovery) => {
+          if (stage.name === 'authority-transfer-claimants') claimantRecovery = stage;
+        },
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      loadClaimantMembership: async () => ({
+        ...managerClaimantMembership(),
+        member: {
+          ...managerClaimantMembership().member,
+          role: 'member',
+        },
+      }),
+      persistence: {
+        loadCloudToLanManagerEntry: async () => storedManager,
+        settleCloudToLanManagerEntry,
+      } as unknown as AuthorityTransferPersistence,
+    });
+
+    await claimantRecovery!.run();
+
+    expect(storedManager).toBeNull();
+    expect(storedClaimant).toBeNull();
+    expect(settleCloudToLanManagerEntry).toHaveBeenCalledTimes(1);
+    expect(removeClaimant).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume synchronized Manager claimant effects on the target installation', async () => {
+    const managerOperationIntentId = 'intent-synchronized-manager-effects-owner';
+    const managerRootClaimant = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId,
+      operationIntentId: authorityTransferChildIdempotencyKey(
+        managerOperationIntentId,
+        'claims',
+      ),
+      phase: 'credential-persisted',
+    });
+    const managerRootEntry = settledCloudToLanManagerEntry(
+      managerRootClaimant,
+      managerOperationIntentId,
+    );
+    let targetRootClaimant: AuthorityTransferClaimantRecord | null = managerRootClaimant;
+    let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
+    let claimantOwner: CollabProjectLifecycleDurableOwner | null = null;
+    const recoverClaimant = jest.fn(async () => {
+      throw new Error('foreign claimant effects must not run');
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [PROJECT_ID],
+        load: async () => targetRootClaimant,
+        remove: async () => false,
+        save: async record => { targetRootClaimant = record; },
+      },
+      convergence: {} as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_B,
+      lifecycle: {
+        registerDurableOwner: (owner: CollabProjectLifecycleDurableOwner) => {
+          if (owner.name === 'authority-transfer-claimant') claimantOwner = owner;
+        },
+        registerRecoveryStage: (stage: AuthorityTransferClaimantRecovery) => {
+          if (stage.name === 'authority-transfer-claimants') claimantRecovery = stage;
+        },
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      loadClaimantMembership: async () => ({
+        ...managerClaimantMembership(),
+        hostOwnership: { ownsAuthority: true },
+        member: {
+          ...managerClaimantMembership().member,
+          id: 'member-target',
+          personalRef: 'refs/heads/members/member-target',
+          role: 'member',
+        },
+      }),
+      persistence: {
+        loadCloudToLanManagerEntry: async () => managerRootEntry,
+      } as unknown as AuthorityTransferPersistence,
+      recoverClaimant,
+    });
+
+    await expect(claimantOwner!.inspect(PROJECT_ID)).resolves.toBe('terminal');
+    await expect(claimantRecovery!.run()).resolves.toBeUndefined();
+
+    expect(targetRootClaimant).toEqual(managerRootClaimant);
+    expect(recoverClaimant).not.toHaveBeenCalled();
+  });
+
+  it.each(['claimant-before-terminal-manager', 'manager-deleted-before-claimant'] as const)(
+    'classifies a synchronized Manager claimant from its durable predecessor during %s delivery',
+    async (deliveryOrder) => {
+    const managerOperationIntentId = 'intent-synchronized-manager-delivery-order';
+    const claimant = Object.freeze({
+      ...recoverableClaimantRecord({
+        direction: 'cloud-to-lan',
+        managerOperationIntentId,
+        operationIntentId: authorityTransferChildIdempotencyKey(
+          managerOperationIntentId,
+          'claims',
+        ),
+        phase: deliveryOrder === 'claimant-before-terminal-manager'
+          ? 'credential-persisted'
+          : 'membership-converged',
+      }),
+      managerPredecessor: Object.freeze({
+        initiatingPersonalRef: 'refs/heads/members/member-host',
+        operationIntentId: managerOperationIntentId,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        preparationId: `${managerOperationIntentId}-target`,
+        selectedTargetMemberId: 'member-target',
+        sourceCloudUrl: 'https://cloud.example.test/',
+      }),
+    }) as SourceIssuedAuthorityTransferClaimantRecord;
+    const managerEntry = deliveryOrder === 'claimant-before-terminal-manager'
+      ? recordCloudToLanManagerStatus(
+          markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+            createdAt: claimant.status.createdAt,
+            descriptor: {
+              caCertificatePem: claimant.lanTarget!.caCertificatePem,
+              caFingerprint: claimant.lanTarget!.caFingerprint,
+              preparationId: `${managerOperationIntentId}-target`,
+              projectId: claimant.projectId,
+              publishedAt: claimant.status.createdAt,
+              schemaVersion: 1,
+              selectedTargetMemberId: 'member-target',
+              sourceAuthorityGeneration: claimant.status.sourceAuthority.generation,
+              sourceCloudUrl: 'https://cloud.example.test/',
+              targetUrl: claimant.status.targetUrl,
+            },
+            expiresAt: claimant.status.expiresAt,
+            initiatingMemberId: claimant.memberId,
+            initiatingPersonalRef: 'refs/heads/members/member-host',
+            operationIntentId: managerOperationIntentId,
+            ownerInstallationKey: TEST_INSTALLATION_A,
+          })),
+          {
+            ...claimant.status,
+            batchRevision: null,
+            batchSha256: null,
+            checkpointSha256: null,
+            phase: 'collecting-readiness',
+            relinquishmentProof: null,
+            state: 'active',
+          },
+        )
+      : null;
+    let storedClaimant: AuthorityTransferClaimantRecord | null = claimant;
+    let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
+    let claimantOwner: CollabProjectLifecycleDurableOwner | null = null;
+    const removeClaimant = jest.fn(async () => {
+      storedClaimant = null;
+      return true;
+    });
+    const recoverClaimant = jest.fn(async () => {
+      throw new Error('foreign claimant effects must not run');
+    });
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => storedClaimant ? [PROJECT_ID] : [],
+        load: async () => storedClaimant,
+        remove: removeClaimant,
+        save: async record => { storedClaimant = record; },
+      },
+      convergence: {} as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_B,
+      lifecycle: {
+        registerDurableOwner: (owner: CollabProjectLifecycleDurableOwner) => {
+          if (owner.name === 'authority-transfer-claimant') claimantOwner = owner;
+        },
+        registerRecoveryStage: (stage: AuthorityTransferClaimantRecovery) => {
+          if (stage.name === 'authority-transfer-claimants') claimantRecovery = stage;
+        },
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      loadClaimantMembership: async () => ({
+        ...managerClaimantMembership(),
+        hostOwnership: { ownsAuthority: true },
+        member: {
+          ...managerClaimantMembership().member,
+          id: 'member-target',
+          personalRef: 'refs/heads/members/member-target',
+          role: 'member',
+        },
+      }),
+      persistence: {
+        loadCloudToLanManagerEntry: async () => managerEntry,
+      } as unknown as AuthorityTransferPersistence,
+      recoverClaimant,
+    });
+
+    await expect(claimantOwner!.inspect(PROJECT_ID)).resolves.toBe('terminal');
+    await expect(claimantRecovery!.run()).resolves.toBeUndefined();
+
+    expect(storedClaimant).toEqual(claimant);
+    expect(removeClaimant).not.toHaveBeenCalled();
+    expect(recoverClaimant).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a Cloud-to-LAN claimant without a durable Manager predecessor', () => {
+    const claimant = recoverableClaimantRecord({ direction: 'cloud-to-lan' });
+    const { managerPredecessor: _managerPredecessor, ...withoutPredecessor } = claimant;
+
+    expect(() => decodeAuthorityTransferClaimantRecord({
+      ...withoutPredecessor,
+      managerPredecessor: null,
+    })).toThrow(
+      'Invalid authority-transfer claimant Manager predecessor',
+    );
+  });
+
+  it.each([
+    ['same-device Manager', 'member-host', 1],
+    ['different-device Manager', 'member-target', 0],
+  ] as const)(
+    '%s settlement follows target physical recovery without losing claimant admission',
+    async (_label, selectedTargetMemberId, expectedSettlementCount) => {
     const completedStatus = recoverableClaimantRecord({ direction: 'cloud-to-lan' }).status;
     const collectingStatus: CollabAuthorityTransferStatus = {
       ...completedStatus,
@@ -3237,7 +4552,7 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       publishedAt: completedStatus.createdAt,
       schemaVersion: 1 as const,
-      selectedTargetMemberId: 'member-host',
+      selectedTargetMemberId,
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completedStatus.targetUrl,
@@ -3249,6 +4564,7 @@ describe('AuthorityTransferModule', () => {
         expiresAt: collectingStatus.expiresAt,
         initiatingMemberId: 'member-host',
         initiatingPersonalRef: 'refs/heads/members/member-host',
+        ownerInstallationKey: TEST_INSTALLATION_A,
         operationIntentId: completedStatus.relinquishmentProof!.operationIntentId,
       })),
       collectingStatus,
@@ -3315,9 +4631,15 @@ describe('AuthorityTransferModule', () => {
 
     expect(createCloudToLanConnection).not.toHaveBeenCalled();
     expect(resume).toHaveBeenCalledWith(PROJECT_ID, {});
-    expect(settleCloudToLanManagerEntry).toHaveBeenCalledTimes(1);
-    expect(managerEntry).toBeNull();
-  });
+    expect(settleCloudToLanManagerEntry).toHaveBeenCalledTimes(expectedSettlementCount);
+    expect(managerEntry === null ? null : {
+      phase: managerEntry.phase,
+      status: managerEntry.status,
+    }).toEqual(selectedTargetMemberId === 'member-host'
+      ? null
+      : { phase: 'settled', status: completedStatus });
+    },
+  );
 
   it('reconstructs a Cloud-to-LAN target on its durable endpoint', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
@@ -3831,9 +5153,13 @@ describe('AuthorityTransferModule', () => {
   it.each(['lan-to-cloud', 'cloud-to-lan'] as const)(
     'derives a bounded source ACK key for a maximum-length %s claimant intent',
     async (direction) => {
-      const operationIntentId = 'x'.repeat(128);
+      const managerOperationIntentId = 'x'.repeat(128);
+      const operationIntentId = direction === 'cloud-to-lan'
+        ? authorityTransferChildIdempotencyKey(managerOperationIntentId, 'claims')
+        : managerOperationIntentId;
       let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
         direction,
+        managerOperationIntentId,
         operationIntentId,
         phase: 'target-claimed',
       });
@@ -3892,7 +5218,9 @@ describe('AuthorityTransferModule', () => {
           registerDurableOwner: jest.fn(),
           registerRecoveryStage: jest.fn(),
         } as unknown as CollabProjectLifecycleSubsystem,
-        persistence: {} as AuthorityTransferPersistence,
+        persistence: {
+          loadCloudToLanManagerEntry: jest.fn(async () => null),
+        } as unknown as AuthorityTransferPersistence,
       });
       const lanClient = {
         claimTransferredMembership: jest.fn(),
@@ -4377,6 +5705,66 @@ describe('AuthorityTransferModule', () => {
       safeContext: { reason: 'authority-transfer-manager-observer-pending' },
     });
     expect(recoverClaimant).not.toHaveBeenCalled();
+  });
+
+  it('does not recover a claimant that mismatches its settled Manager predecessor', async () => {
+    const managerOperationIntentId = 'intent-recovery-predecessor-manager';
+    const matchingClaimant = recoverableClaimantRecord({
+      direction: 'cloud-to-lan',
+      managerOperationIntentId,
+      operationIntentId: authorityTransferChildIdempotencyKey(
+        managerOperationIntentId,
+        'claims',
+      ),
+      phase: 'source-acknowledged',
+    });
+    const managerEntry = settledCloudToLanManagerEntry(
+      matchingClaimant,
+      managerOperationIntentId,
+    );
+    const unrelatedClaimant = recoverableClaimantRecord({
+      direction: 'lan-to-cloud',
+      phase: 'credential-persisted',
+    });
+    let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
+    const recoverClaimant = jest.fn();
+    const cloudToLanMember = jest.fn();
+    new AuthorityTransferModule({
+      assertLanToCloudSourceOwner: () => undefined,
+      assertRecoveryOwner: () => undefined,
+      claimantStore: {
+        listProjectIds: async () => [PROJECT_ID],
+        load: async () => unrelatedClaimant,
+        remove: async () => false,
+        save: async () => undefined,
+      },
+      convergence: { cloudToLanMember } as never,
+      createLanToCloudSource: jest.fn() as never,
+      installationKey: TEST_INSTALLATION_A,
+      lifecycle: {
+        registerDurableOwner: jest.fn(),
+        registerRecoveryStage: (stage: AuthorityTransferClaimantRecovery) => {
+          if (stage.name === 'authority-transfer-claimants') claimantRecovery = stage;
+        },
+        runExclusive: async <Result>(
+          _projectId: string,
+          _owner: string,
+          _mode: string,
+          operation: () => Promise<Result>,
+        ) => operation(),
+      } as unknown as CollabProjectLifecycleSubsystem,
+      persistence: {
+        loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      } as unknown as AuthorityTransferPersistence,
+      recoverClaimant,
+    });
+
+    await expect(claimantRecovery!.run()).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-claimant-attempt-conflict' },
+    });
+
+    expect(recoverClaimant).not.toHaveBeenCalled();
+    expect(cloudToLanMember).not.toHaveBeenCalled();
   });
 
   it.each(['lan-to-cloud', 'cloud-to-lan'] as const)(

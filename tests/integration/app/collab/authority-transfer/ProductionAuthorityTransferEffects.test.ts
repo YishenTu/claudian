@@ -2176,7 +2176,7 @@ describe('production authority-transfer effects', () => {
     const claimRequest = {
       claim: claim.claim,
       credentialHash: createHash('sha256')
-        .update(Buffer.from(claimantCredential, 'base64url'))
+        .update(claimantCredential, 'utf8')
         .digest('hex'),
       idempotencyKey: 'claim-production-manager',
       projectId: PROJECT_ID,
@@ -2193,7 +2193,7 @@ describe('production authority-transfer effects', () => {
     `))).toEqual({
       access_state: 'bound',
       credential_hash: createHash('sha256')
-        .update(Buffer.from(claimantCredential, 'base64url'))
+        .update(claimantCredential, 'utf8')
         .digest(),
     });
     await targetFoundation.local.projects.saveMembership({
@@ -2284,6 +2284,7 @@ describe('production authority-transfer effects', () => {
     );
 
     let begun = false;
+    let transferredClaimBatch: CollabTransferredMembershipClaimBatch | null = null;
     let transferStatus: CollabAuthorityTransferStatus | null = null;
     const members = [
       {
@@ -2332,6 +2333,28 @@ describe('production authority-transfer effects', () => {
           }
           return transferStatus;
         }
+        if (operation === 'getTransferredMembershipClaim') {
+          const batch = transferredClaimBatch;
+          const claim = batch?.claims.find(candidate => candidate.memberId === MEMBER_ID);
+          if (!batch || !claim) throw new Error('Transferred Manager claim is unavailable');
+          return {
+            ...claim,
+            expiresAt: batch.expiresAt,
+            projectId: batch.projectId,
+            targetAuthorityGeneration: batch.targetAuthorityGeneration,
+            transferId: batch.transferId,
+          };
+        }
+        if (operation === 'acknowledgeTransferredMembershipClaimRedemption') {
+          const receipt = input.receipt as { readonly memberId: string; readonly receiptId: string };
+          return {
+            acknowledgedAt: '2026-08-28T00:05:00.000Z',
+            memberId: receipt.memberId,
+            projectId: PROJECT_ID,
+            receiptId: receipt.receiptId,
+            transferId: TRANSFER_ID,
+          };
+        }
         if (operation === 'acceptCloudToLanTransferTarget') {
           transferStatus = {
             ...transferStatus,
@@ -2346,6 +2369,7 @@ describe('production authority-transfer effects', () => {
             readonly claimBatch: CollabTransferredMembershipClaimBatch;
             readonly idempotencyKey: string;
           };
+          transferredClaimBatch = staged.claimBatch;
           const proof = signCloudRelinquishmentProof({
             batchRevision: staged.claimBatch.batchRevision,
             batchSha256: staged.claimBatch.batchSha256,
@@ -2583,14 +2607,24 @@ describe('production authority-transfer effects', () => {
         throw new Error(`Target acceptance returned ${accepted.status}`);
       }
       expect(accepted.value).toMatchObject({ state: 'completed' });
-      await expect(manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID))
-        .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      const observed = await manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID);
+      if (observed.status !== 'success') {
+        if ('error' in observed) throw observed.error;
+        throw new Error(`Manager observation returned ${observed.status}`);
+      }
+      expect(observed.value).toMatchObject({ state: 'completed' });
       expect(cloudAuthority.connectAuthorityTransfer).toHaveBeenCalled();
       await expect(target.foundation.local.projects.loadMembership(PROJECT_ID))
         .resolves.toMatchObject({
           authority: { kind: 'lan' },
           hostOwnership: { autoStart: true, ownsAuthority: true },
           member: { id: 'member-production-peer', role: 'member' },
+        });
+      await expect(manager.foundation.local.projects.loadMembership(PROJECT_ID))
+        .resolves.toMatchObject({
+          authority: { kind: 'lan' },
+          hostOwnership: { ownsAuthority: false },
+          member: { id: MEMBER_ID, role: 'manager' },
         });
       await expect(manager.foundation.authorityTransfers.loadCloudToLanManagerEntry(PROJECT_ID))
         .resolves.toBeNull();
