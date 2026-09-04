@@ -544,6 +544,7 @@ describe('LanHostCoordinator production transport', () => {
         };
       },
       portCandidates: [occupiedPort, 0],
+      runWithCloudToLanTargetRecoveryStartGuard: (_input, operation) => operation(),
       setAuthorityTransferExpiryTimeout: (callback, milliseconds) => (
         authorityTransferTimeoutOverride
           ? authorityTransferTimeoutOverride(callback, milliseconds)
@@ -1683,6 +1684,207 @@ describe('LanHostCoordinator production transport', () => {
     })).rejects.toMatchObject({ code: 'endpoint-unreachable' });
   });
 
+  it('removes an expired target route before retrying terminal cleanup', async () => {
+    const callbacks: Array<() => void> = [];
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 11_000 + callbacks.length;
+    };
+    const expire = jest.fn()
+      .mockRejectedValueOnce(new Error('simulated terminal cleanup failure'))
+      .mockResolvedValueOnce(undefined);
+    const session = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: startedAt.toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-cleanup-retry',
+    });
+    const client = new LanAuthorityTransferClient({
+      caCertificatePem: session.caCertificatePem,
+      caFingerprint: session.caFingerprint,
+      endpoint: session.endpoint,
+      projectId: PROJECT_ID,
+    }, { timeoutMs: 100 });
+
+    callbacks[0]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    expect(callbacks).toHaveLength(2);
+    privateAddresses = ['192.168.50.50'];
+    await expect(checkHostAddress()).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
+    });
+    await expect(coordinator.startProject(PROJECT_ID)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-expiry-finalization-in-progress' },
+    });
+    await expect(client.claimTransferredMembership({
+      claim: Buffer.alloc(32, 6).toString('base64url'),
+      credentialHash: 'c'.repeat(64),
+      idempotencyKey: 'intent-expired-target-retry',
+      projectId: PROJECT_ID,
+      transferId: 'transfer-target-cleanup-retry',
+    })).rejects.toMatchObject({
+      code: 'authentication-failed',
+      safeContext: { reason: 'authority-transfer-authentication-failed' },
+    });
+
+    callbacks[1]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(expire).toHaveBeenCalledTimes(2);
+    expect(callbacks).toHaveLength(2);
+    privateAddresses = ['127.0.0.1'];
+    await expect(coordinator.startProject(PROJECT_ID)).resolves.toMatchObject({
+      projectId: PROJECT_ID,
+      status: 'running',
+    });
+  });
+
+  it('runs expired target cleanup outside the Host operation queue', async () => {
+    const callbacks: Array<() => void> = [];
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 12_000 + callbacks.length;
+    };
+    let resolveOutcome!: (value: 'blocked' | 'released') => void;
+    const outcome = new Promise<'blocked' | 'released'>(resolve => {
+      resolveOutcome = resolve;
+    });
+    const expire = jest.fn(async () => {
+      const stop = coordinator.stopAuthorityTransferRoute(PROJECT_ID, 'target-active');
+      const observed = await Promise.race([
+        stop.then(() => 'released' as const),
+        new Promise<'blocked'>(resolve => {
+          window.setTimeout(() => resolve('blocked'), 50);
+        }),
+      ]);
+      resolveOutcome(observed);
+    });
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: startedAt.toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-cleanup-interleaving',
+    });
+
+    callbacks[0]?.();
+
+    await expect(outcome).resolves.toBe('released');
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(expire).toHaveBeenCalledTimes(1);
+    expect(callbacks).toHaveLength(1);
+  });
+
+  it('waits for an in-flight expired target cleanup before closing', async () => {
+    const callbacks: Array<() => void> = [];
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 13_000 + callbacks.length;
+    };
+    let markCleanupStarted!: () => void;
+    const cleanupStarted = new Promise<void>(resolve => {
+      markCleanupStarted = resolve;
+    });
+    let releaseCleanup!: () => void;
+    const cleanupReleased = new Promise<void>(resolve => {
+      releaseCleanup = resolve;
+    });
+    const expire = jest.fn(async () => {
+      markCleanupStarted();
+      await cleanupReleased;
+    });
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: startedAt.toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-cleanup-shutdown',
+    });
+
+    callbacks[0]?.();
+    await cleanupStarted;
+    const closePromise = coordinator.close();
+    const observed = await Promise.race([
+      closePromise.then(() => 'closed' as const),
+      new Promise<'waiting'>(resolve => {
+        window.setTimeout(() => resolve('waiting'), 20);
+      }),
+    ]);
+    releaseCleanup();
+    await closePromise;
+
+    expect(observed).toBe('waiting');
+    expect(expire).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the target endpoint while stopping a Host during expired cleanup', async () => {
+    const callbacks: Array<() => void> = [];
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 14_000 + callbacks.length;
+    };
+    let markCleanupStarted!: () => void;
+    const cleanupStarted = new Promise<void>(resolve => {
+      markCleanupStarted = resolve;
+    });
+    let releaseCleanup!: () => void;
+    const cleanupReleased = new Promise<void>(resolve => {
+      releaseCleanup = resolve;
+    });
+    const expire = jest.fn(async () => {
+      markCleanupStarted();
+      await cleanupReleased;
+    });
+    await coordinator.startProject(PROJECT_ID);
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: startedAt.toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-cleanup-stop',
+    });
+
+    callbacks[0]?.();
+    await cleanupStarted;
+    await coordinator.stopProject(PROJECT_ID);
+    privateAddresses = ['192.168.50.50'];
+    let addressError: unknown;
+    try {
+      await checkHostAddress();
+    } catch (error) {
+      addressError = error;
+    }
+    releaseCleanup();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(addressError).toMatchObject({
+      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
+    });
+    expect(expire).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a terminal authority-transfer route through a chunked long expiry timer', async () => {
     const startedAt = new Date('2026-08-27T00:00:00.000Z');
     const expiresAt = new Date(startedAt.getTime() + 30 * 24 * 60 * 60 * 1_000);
@@ -2005,6 +2207,24 @@ describe('LanHostCoordinator production transport', () => {
     const recovered = await coordinator.prepareAuthorityTransferTarget(expectedEndpoint);
     expect(recovered.endpoint).toBe(expectedEndpoint);
     await recovered.dispose();
+  }, 30_000);
+
+  it('fails closed when recovered target Host endpoint is unavailable', async () => {
+    const expectedEndpoint = `https://127.0.0.1:${occupiedPort}`;
+
+    await expect(coordinator.startProjectAfterCloudToLanTargetRecovery({
+      expectedEndpoint,
+      operationIntentId: 'intent-target-host-recovery',
+      projectId: PROJECT_ID,
+      transferId: 'transfer-target-host-recovery',
+    })).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
+    });
+
+    expect(coordinator.isProjectRunning(PROJECT_ID)).toBe(false);
+    await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { endpoint: null },
+    });
   }, 30_000);
 
   it('traverses bounded activity pages larger than one LAN response', async () => {

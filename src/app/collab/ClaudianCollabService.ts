@@ -352,7 +352,11 @@ export class ClaudianCollabService {
         this.#runWithLanHostStartGuards(
           projectId,
           operation,
-          guarded => this.authorityTransfers.runWithAuthorityStartGuard(projectId, guarded),
+          guarded => this.authorityTransfers.runWithAuthorityStartGuard(
+            projectId,
+            guarded,
+            record => this.#authorityTransferModule?.assertLanHostStartReady(record),
+          ),
         )
       ),
       runWithAuthorityTransferCancellationRestartGuard: (input, operation) => (
@@ -360,6 +364,16 @@ export class ClaudianCollabService {
           input.projectId,
           operation,
           guarded => this.authorityTransfers.runWithLanToCloudCancellationRestartGuard(
+            input,
+            guarded,
+          ),
+        )
+      ),
+      runWithCloudToLanTargetRecoveryStartGuard: (input, operation) => (
+        this.#runWithLanHostStartGuards(
+          input.projectId,
+          operation,
+          guarded => this.authorityTransfers.runWithCloudToLanTargetRecoveryStartGuard(
             input,
             guarded,
           ),
