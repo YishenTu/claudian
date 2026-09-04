@@ -185,6 +185,17 @@ describe('PendingLeaveAuthorityService', () => {
     expect(client.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts the protocol-hidden self binding when recovering a rejected Cloud Member Leave', async () => {
+    const client = cloudClientPort();
+    const service = new PendingLeaveAuthorityService({
+      createCloudClient: async () => client,
+    });
+
+    await expect(service.recoverRejected({
+      pending: submittedCloudRecord(),
+    })).resolves.toEqual({ memberRole: 'member' });
+  });
+
   it('replays a submitted Cloud Leave without active snapshot, member list, or Git', async () => {
     const client = cloudClientPort();
     client.readSnapshot.mockRejectedValue(new Error('membership is already gone'));
@@ -468,7 +479,7 @@ function cloudClientPort(
   role: 'manager' | 'member' = 'member',
 ): jest.Mocked<CloudPendingLeaveAuthorityClientPort & { dispose(): void }> {
   const member = {
-    bindingState: 'bound' as const,
+    bindingState: role === 'manager' ? 'bound' as const : 'hidden' as const,
     displayName: 'Alice',
     importedClaimGeneration: null,
     importedClaimState: 'not-applicable' as const,

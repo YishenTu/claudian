@@ -30,6 +30,10 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
 
+function expectedSelfBindingState(role: 'manager' | 'member'): 'bound' | 'hidden' {
+  return role === 'manager' ? 'bound' : 'hidden';
+}
+
 export interface PendingLeaveAuthorityClientPort {
   leaveProject(input: LeaveProjectInput): Promise<MembershipTerminationResponse>;
   readSnapshot(
@@ -174,7 +178,7 @@ export class PendingLeaveAuthorityService {
         : [];
       if (
         matching.length !== 1
-        || matching[0]?.bindingState !== 'bound'
+        || matching[0]?.bindingState !== expectedSelfBindingState(snapshot.currentMember.role)
         || matching[0].role !== snapshot.currentMember.role
       ) {
         throw integrityError('cloud-pending-leave-recovery-member-mismatch');
@@ -278,7 +282,7 @@ export class PendingLeaveAuthorityService {
       const matching = listed.members.filter(member => member.memberId === pending.memberId);
       if (
         matching.length !== 1
-        || matching[0]?.bindingState !== 'bound'
+        || matching[0]?.bindingState !== expectedSelfBindingState(snapshot.currentMember.role)
         || matching[0].role !== snapshot.currentMember.role
       ) {
         throw integrityError('cloud-pending-leave-member-identity-mismatch');
