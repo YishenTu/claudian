@@ -447,6 +447,7 @@ describe('CollabProjectLifecycleSubsystem', () => {
 
   it('admits imported-claim management only behind its validated authority-transfer predecessor', async () => {
     let cloudManagementPending = false;
+    let authorityTransferPending = true;
     const subsystem = new CollabProjectLifecycleSubsystem({
       ...ports(),
       durableOwners: [
@@ -454,7 +455,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
           inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
           name: 'cloud-management',
         },
-        { inspect: async () => 'nonterminal', name: 'authority-transfer' },
+        {
+          inspect: async () => authorityTransferPending ? 'nonterminal' : 'absent',
+          name: 'authority-transfer',
+        },
       ],
       recoveryStages: [],
     });
@@ -501,6 +505,17 @@ describe('CollabProjectLifecycleSubsystem', () => {
       rejected,
     )).rejects.toBe(predecessorError);
     expect(rejected).not.toHaveBeenCalled();
+
+    authorityTransferPending = false;
+    const absent = jest.fn().mockResolvedValue('must-not-start');
+    const assertAbsentPredecessor = jest.fn().mockRejectedValue(predecessorError);
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertAbsentPredecessor,
+      absent,
+    )).rejects.toBe(predecessorError);
+    expect(assertAbsentPredecessor).toHaveBeenCalledTimes(1);
+    expect(absent).not.toHaveBeenCalled();
   });
 
   it('admits only Manager continuation beside an authority-transfer claimant', async () => {

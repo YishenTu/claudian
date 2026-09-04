@@ -154,6 +154,11 @@ describe('Cloud membership management', () => {
     const client = fixture.client();
     try {
       await fixture.seed(client.foundation);
+      await seedCompletedLanToCloudClaimOwner(
+        client.foundation,
+        fixture.serverUrl,
+        fixture.createdAt,
+      );
       const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
       await client.feature.reissueMemberClaim(request);
       if (state === 'retained') await client.feature.reissueMemberClaim(request);
@@ -190,6 +195,11 @@ describe('Cloud membership management', () => {
     const client = fixture.client();
     try {
       await fixture.seed(client.foundation);
+      await seedCompletedLanToCloudClaimOwner(
+        client.foundation,
+        fixture.serverUrl,
+        fixture.createdAt,
+      );
       await expect(client.feature.listMembers(PROJECT_ID)).resolves.toMatchObject({ status: 'success', value: expect.arrayContaining([{
         memberId: 'member-imported', displayName: 'Dana', role: 'member', importedClaim: { state: 'hidden', bindingState: 'hidden' },
       }]) });
@@ -200,11 +210,48 @@ describe('Cloud membership management', () => {
     } finally { await client.close(); await fixture.close(); }
   });
 
+  it('blocks imported-claim management when the LAN-to-Cloud source predecessor is absent', async () => {
+    const fixture = await createFixture();
+    const client = fixture.client();
+    try {
+      await fixture.seed(client.foundation);
+      const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
+
+      await expect(client.feature.reissueMemberClaim(request)).resolves.toMatchObject({
+        error: {
+          code: 'durable-progress-recovery-required',
+          safeContext: {
+            reason: 'authority-transfer-imported-claim-predecessor-invalid',
+          },
+        },
+        status: 'failure',
+      });
+      await expect(client.feature.revokeMemberClaim(request)).resolves.toMatchObject({
+        error: {
+          code: 'durable-progress-recovery-required',
+          safeContext: {
+            reason: 'authority-transfer-imported-claim-predecessor-invalid',
+          },
+        },
+        status: 'failure',
+      });
+      await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(fixture.claimReissues).toEqual([]);
+      expect(fixture.claimRevocations).toEqual([]);
+      expect(fixture.failures).toEqual([]);
+    } finally { await client.close(); await fixture.close(); }
+  });
+
   it('revokes the selected imported claim with the same membership, claim and Manager-set tuple after loss', async () => {
     const fixture = await createFixture();
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
+      await seedCompletedLanToCloudClaimOwner(
+        client.foundation,
+        fixture.serverUrl,
+        fixture.createdAt,
+      );
       const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
       await expect(client.feature.revokeMemberClaim(request)).resolves.toMatchObject({ status: 'recovery-required' });
       const saved = JSON.parse(await readFile(fixture.intentPath, 'utf8'));
@@ -225,6 +272,11 @@ describe('Cloud membership management', () => {
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
+      await seedCompletedLanToCloudClaimOwner(
+        client.foundation,
+        fixture.serverUrl,
+        fixture.createdAt,
+      );
       const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
       await expect(client.feature.reissueMemberClaim(request)).resolves.toMatchObject({ status: 'recovery-required' });
       const saved = JSON.parse(await readFile(fixture.intentPath, 'utf8'));

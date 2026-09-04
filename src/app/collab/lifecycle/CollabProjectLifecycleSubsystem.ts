@@ -401,8 +401,7 @@ export class CollabProjectLifecycleSubsystem {
         });
       }
       if (
-        pendingOwners.includes('authority-transfer')
-        && ownerName === 'cloud-management'
+        ownerName === 'cloud-management'
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'authority-transfer'
       ) {
