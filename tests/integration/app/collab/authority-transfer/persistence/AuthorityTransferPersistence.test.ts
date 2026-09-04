@@ -311,6 +311,120 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
   });
 
+  it('proves imported-claim management only for the matching completed LAN-to-Cloud source custody', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    }));
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    }));
+    await persistence.retainClaimBatch({
+      batch: claimBatch(),
+      operationIntentId: OPERATION_INTENT_ID,
+      purpose: 'source-terminal',
+    });
+    await persistence.acknowledgeClaimBatch({
+      batchRevision: 1,
+      batchSha256: claimBatch().batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:03:00.000Z',
+      custodyAuthority: { generation: 1, kind: 'lan' },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-imported-management',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    });
+
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).resolves.toBeUndefined();
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: 'member-not-imported',
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_BOB,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_ALICE,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 3,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: cloudToLanStatus('completed'),
+    }));
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+  });
+
   it('persists coexisting target and Manager entries and recovers a physical-first target handoff', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
