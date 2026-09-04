@@ -114,6 +114,14 @@ interface CompleteTerminalCleanupInput {
   readonly transferId: string;
 }
 
+interface CloudToLanCompletedTargetIdentity {
+  readonly memberId: CollabMemberId;
+  readonly operationIntentId: string;
+  readonly personalRef: string;
+  readonly projectId: CollabProjectId;
+  readonly transferId: string;
+}
+
 function transferError(
   code:
     | 'authority-transfer-cancellation-forbidden'
@@ -437,6 +445,43 @@ export class AuthorityTransferPersistence {
         await this.#reconcileTargetEntrySuccessor(target, record);
       }
       return target;
+    });
+  }
+
+  assertCloudToLanCompletedTargetIdentity(
+    input: CloudToLanCompletedTargetIdentity,
+  ): Promise<void> {
+    return this.runProject(input.projectId, async () => {
+      const [document, record] = await Promise.all([
+        this.stores.authorityTransferEntries.load(input.projectId),
+        this.stores.authorityTransferRecords.load(input.projectId),
+      ]);
+      const target = document?.target;
+      if (
+        !target
+        || !record
+        || !this.#isLocalTargetEntry(target)
+        || target.phase !== 'handed-off'
+        || target.selectedTargetMemberId !== input.memberId
+        || target.selectedTargetPersonalRef !== input.personalRef
+        || target.successor?.operationIntentId !== input.operationIntentId
+        || target.successor.ownerInstallationKey !== record.ownerInstallationKey
+        || target.successor.transferId !== input.transferId
+        || record.localRole !== 'target'
+        || record.lifecycleOwnership !== 'owned'
+        || record.status.direction !== 'cloud-to-lan'
+        || record.status.state !== 'completed'
+        || record.status.relinquishmentProof === null
+        || record.operationIntentId !== input.operationIntentId
+        || record.transferId !== input.transferId
+        || record.terminalCleanupCompleted
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-identity-mismatch',
+        );
+      }
+      await this.#reconcileTargetEntrySuccessor(target, record);
     });
   }
 
@@ -2018,15 +2063,19 @@ export class AuthorityTransferPersistence {
   }
 
   assertAuthorityRestartAllowed(projectId: CollabProjectId): Promise<void> {
-    return this.runProject(projectId, () => this.#assertAuthorityRestartAllowedUnlocked(projectId));
+    return this.runProject(projectId, async () => {
+      await this.#assertAuthorityRestartAllowedUnlocked(projectId);
+    });
   }
 
   runWithAuthorityStartGuard<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
+    assertRuntimeReady?: (record: AuthorityTransferRecord | null) => Promise<void> | void,
   ): Promise<T> {
     return this.runProject(projectId, async () => {
-      await this.#assertAuthorityRestartAllowedUnlocked(projectId);
+      const record = await this.#assertAuthorityRestartAllowedUnlocked(projectId);
+      await assertRuntimeReady?.(record);
       return operation();
     });
   }
@@ -2083,6 +2132,39 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  runWithCloudToLanTargetRecoveryStartGuard<T>(
+    input: Readonly<{
+      expectedEndpoint: string;
+      operationIntentId: string;
+      projectId: CollabProjectId;
+      transferId: string;
+    }>,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runProject(input.projectId, async () => {
+      const record = await this.stores.authorityTransferRecords.load(input.projectId);
+      if (
+        !record
+        || !this.#isRecoveryOwner(record.ownerInstallationKey)
+        || record.localRole !== 'target'
+        || record.status.direction !== 'cloud-to-lan'
+        || record.status.state !== 'completed'
+        || record.status.relinquishmentProof === null
+        || record.status.targetUrl !== input.expectedEndpoint
+        || record.operationIntentId !== input.operationIntentId
+        || record.transferId !== input.transferId
+        || record.restartFence !== 'open'
+        || record.terminalCleanupCompleted
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-target-recovery-start-stale',
+        );
+      }
+      return operation();
+    });
+  }
+
   expireClaims(
     projectId: CollabProjectId,
     transferId: string,
@@ -2125,7 +2207,7 @@ export class AuthorityTransferPersistence {
 
   async #assertAuthorityRestartAllowedUnlocked(
     projectId: CollabProjectId,
-  ): Promise<void> {
+  ): Promise<AuthorityTransferRecord | null> {
     const [loadedEntry, record, custody, commitment] = await Promise.all([
       this.stores.authorityTransferEntries.load(projectId),
       this.stores.authorityTransferRecords.load(projectId),
@@ -2152,7 +2234,7 @@ export class AuthorityTransferPersistence {
         'authority-transfer-entry-successor-owner-mismatch',
       );
     }
-    if (record && this.#isForeignPhysical(record)) return;
+    if (record && this.#isForeignPhysical(record)) return null;
     if (localSource && record && source.phase !== 'cancelled') {
       await this.#reconcileEntrySuccessor(source, record);
     }
@@ -2165,7 +2247,7 @@ export class AuthorityTransferPersistence {
         'authority-transfer-legacy-owner-missing',
       );
     }
-    if (record && !this.#isRecoveryOwner(record.ownerInstallationKey)) return;
+    if (record && !this.#isRecoveryOwner(record.ownerInstallationKey)) return null;
     if (!record && (custody || commitment)) {
       throw transferError(
         'durable-progress-recovery-required',
@@ -2191,7 +2273,7 @@ export class AuthorityTransferPersistence {
       );
     }
     if (record && custody) await this.#assertClaimBatchOwner(custody, record);
-    if (!record || record.restartFence === 'open') return;
+    if (!record || record.restartFence === 'open') return record;
     throw transferError(
       'durable-progress-recovery-required',
       record.restartFence === 'permanent'

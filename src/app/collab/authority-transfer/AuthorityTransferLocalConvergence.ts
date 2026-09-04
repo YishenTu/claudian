@@ -381,8 +381,9 @@ export class AuthorityTransferLocalConvergence {
       || membership.authority.hostCaCertificatePem !== input.hostCaCertificatePem
       || membership.authority.hostCaFingerprint !== input.hostCaFingerprint
       || membership.member.credential !== input.memberCredential
-      || membership.hostOwnership.autoStart !== targetOwnsAuthority
       || membership.hostOwnership.ownsAuthority !== targetOwnsAuthority
+      || typeof membership.hostOwnership.autoStart !== 'boolean'
+      || (!targetOwnsAuthority && membership.hostOwnership.autoStart !== false)
     ) {
       throw convergenceError('authority-transfer-lan-membership-conflict');
     }

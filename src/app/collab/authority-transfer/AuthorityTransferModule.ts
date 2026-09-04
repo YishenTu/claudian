@@ -408,6 +408,7 @@ export class AuthorityTransferModule {
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly runtimes: AuthorityTransferRuntimeRegistry;
   private readonly claimantRecovery: AuthorityTransferClaimantRecovery;
+  private readonly readyCloudToLanTargets = new Map<CollabProjectId, string>();
   private readonly recoveredCloudSessions = new Map<CollabProjectId, CloudAuthorityConnection>();
   private readonly sourceProposals: LanToCloudSourceProposalCoordinator;
   private readonly sourceBindings = new Map<CollabProjectId, SourceBinding>();
@@ -699,6 +700,20 @@ export class AuthorityTransferModule {
     expectedAuthorityGeneration: number,
   ): Promise<void> {
     return this.assertLanToCloudSourceOwner(projectId, expectedAuthorityGeneration);
+  }
+
+  assertLanHostStartReady(record: AuthorityTransferRecord | null): void {
+    if (
+      !record
+      || record.ownerInstallationKey !== this.options.installationKey
+      || record.localRole !== 'target'
+      || record.status.direction !== 'cloud-to-lan'
+      || record.status.state !== 'completed'
+      || record.terminalCleanupCompleted
+    ) return;
+    if (this.readyCloudToLanTargets.get(record.projectId) !== record.transferId) {
+      throw moduleError('authority-transfer-target-recovery-required');
+    }
   }
 
   cancelLanToCloudTransfer(
@@ -1209,6 +1224,9 @@ export class AuthorityTransferModule {
             'authority-transfer-manager-status-incomplete',
           );
         }
+        if (status.state === 'completed') {
+          this.readyCloudToLanTargets.set(handle.projectId, status.transferId);
+        }
         return status;
       },
     );
@@ -1594,6 +1612,14 @@ export class AuthorityTransferModule {
       && current.status.direction === 'cloud-to-lan'
       && (current.status.state === 'cancelled' || current.status.state === 'completed')
     ) await this.settleRecoveredCloudToLanManager(current);
+    if (
+      current
+      && current.ownerInstallationKey === this.options.installationKey
+      && current.localRole === 'target'
+      && current.status.direction === 'cloud-to-lan'
+      && current.status.state === 'completed'
+      && !current.terminalCleanupCompleted
+    ) this.readyCloudToLanTargets.set(current.projectId, current.transferId);
   }
 
   private async settleRecoveredCloudToLanManager(
