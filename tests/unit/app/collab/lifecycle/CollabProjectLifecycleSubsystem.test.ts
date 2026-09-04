@@ -2,6 +2,7 @@ import {
   type CollabProjectLifecycleRecoveryStage,
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 function ports() {
   return {
@@ -442,6 +443,64 @@ describe('CollabProjectLifecycleSubsystem', () => {
       safeContext: { reason: 'lifecycle-owner-pending' },
     });
     expect(startCloudManagement).not.toHaveBeenCalled();
+  });
+
+  it('admits imported-claim management only behind its validated authority-transfer predecessor', async () => {
+    let cloudManagementPending = false;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        { inspect: async () => 'nonterminal', name: 'authority-transfer' },
+      ],
+      recoveryStages: [],
+    });
+    const assertPredecessor = jest.fn().mockResolvedValue(undefined);
+    const start = jest.fn().mockResolvedValue('started');
+
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertPredecessor,
+      start,
+    )).resolves.toBe('started');
+    expect(assertPredecessor).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(1);
+
+    cloudManagementPending = true;
+    const resume = jest.fn().mockResolvedValue('resumed');
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertPredecessor,
+      resume,
+    )).resolves.toBe('resumed');
+    expect(assertPredecessor).toHaveBeenCalledTimes(2);
+    expect(resume).toHaveBeenCalledTimes(1);
+
+    const generic = jest.fn().mockResolvedValue('must-not-start');
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      generic,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-ambiguous' },
+    });
+    expect(generic).not.toHaveBeenCalled();
+
+    const rejected = jest.fn().mockResolvedValue('must-not-start');
+    const predecessorError = new CollabError({
+      code: 'durable-progress-recovery-required',
+      recoveryActions: ['resume'],
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      jest.fn().mockRejectedValue(predecessorError),
+      rejected,
+    )).rejects.toBe(predecessorError);
+    expect(rejected).not.toHaveBeenCalled();
   });
 
   it('admits only Manager continuation beside an authority-transfer claimant', async () => {

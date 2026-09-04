@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs, { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -7,6 +8,7 @@ import path from 'node:path';
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_LIMITS,
+  type CollabAuthorityTransferStatus,
   collabCloudCapabilitiesRoute,
   collabCloudCapabilityDocument,
   collabCloudErrorEnvelope,
@@ -15,11 +17,15 @@ import {
   collabControlOperationCodec,
   CollabError as ProtocolError,
   type CollabManagerResponsibilityOffer,
+  type CollabTransferredMembershipClaimBatch,
   decodeCollabProtocolEnvelope,
+  encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
+import { createAuthorityTransferEntryRecord } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
@@ -239,6 +245,38 @@ describe('Cloud membership management', () => {
       expect(await client.feature.readManagementOperation(PROJECT_ID)).toMatchObject({ status: 'success', value: {
         action: 'reissue-member-claim', status: 'result-retained', invitation: result.value,
       } });
+      expect(fixture.failures).toEqual([]);
+    } finally { await client.close(); await fixture.close(); }
+  });
+
+  it('recovers a reissued claim beside the exact completed LAN-to-Cloud source owner', async () => {
+    const fixture = await createFixture();
+    let client = fixture.client();
+    try {
+      await fixture.seed(client.foundation);
+      await seedCompletedLanToCloudClaimOwner(
+        client.foundation,
+        fixture.serverUrl,
+        fixture.createdAt,
+      );
+      await expect(client.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID))
+        .resolves.toBe('nonterminal');
+      const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
+
+      await expect(client.feature.reissueMemberClaim(request)).resolves.toMatchObject({
+        status: 'recovery-required',
+      });
+      await client.close();
+      client = fixture.client();
+      const resumed = await client.feature.reissueMemberClaim(request);
+
+      expect(resumed).toMatchObject({ status: 'success', value: expect.anything() });
+      expect(fixture.claimReissues).toHaveLength(2);
+      expect(JSON.parse(await readFile(fixture.intentPath, 'utf8'))).toMatchObject({
+        operation: 'reissueTransferredMembershipClaim',
+        phase: 'result-retained',
+        request: { memberId: 'member-imported', projectId: PROJECT_ID },
+      });
       expect(fixture.failures).toEqual([]);
     } finally { await client.close(); await fixture.close(); }
   });
@@ -1095,6 +1133,123 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
   throw new Error('Timed out waiting for fixture state');
+}
+
+async function seedCompletedLanToCloudClaimOwner(
+  foundation: ClaudianCollabService,
+  serverUrl: string,
+  createdAt: string,
+): Promise<void> {
+  const transferId = 'transfer-source-claim-recovery';
+  const operationIntentId = 'intent-source-claim-recovery';
+  const checkpointSha256 = 'c'.repeat(64);
+  const expiresAt = new Date(Date.parse(createdAt) + 2_592_000_000).toISOString();
+  const unsignedBatch: CollabTransferredMembershipClaimBatch = {
+    batchRevision: 1,
+    batchSha256: '0'.repeat(64),
+    checkpointSha256,
+    claims: [{ claim: 'A'.repeat(43), memberId: 'member-imported' }],
+    expiresAt,
+    projectId: PROJECT_ID,
+    targetAuthorityGeneration: 7,
+    transferId,
+  };
+  const batch: CollabTransferredMembershipClaimBatch = {
+    ...unsignedBatch,
+    batchSha256: createHash('sha256')
+      .update(encodeCollabTransferredMembershipClaimBatchDigestInput(unsignedBatch), 'utf8')
+      .digest('hex'),
+  };
+  const collectingStatus: CollabAuthorityTransferStatus = {
+    batchRevision: null,
+    batchSha256: null,
+    checkpointSha256: null,
+    createdAt,
+    direction: 'lan-to-cloud',
+    expiresAt,
+    phase: 'collecting-readiness',
+    projectId: PROJECT_ID,
+    relinquishmentProof: null,
+    sourceAuthority: { generation: 6, kind: 'lan' },
+    state: 'active',
+    targetAuthority: { generation: 7, kind: 'cloud' },
+    targetUrl: serverUrl,
+    transferId,
+    updatedAt: createdAt,
+  };
+  const entry = createAuthorityTransferEntryRecord({
+    ownerInstallationKey: TEST_INSTALLATION_A,
+    proposedByMemberId: 'member-imported',
+    request: {
+      expectedAuthorityGeneration: 6,
+      idempotencyKey: operationIntentId,
+      projectId: PROJECT_ID,
+      targetUrl: serverUrl,
+    },
+    status: collectingStatus,
+  });
+  await foundation.authorityTransfers.proposeEntry(entry);
+  await foundation.authorityTransfers.handoffEntry(entry, createAuthorityTransferRecord({
+    lifecycleOwnership: 'owned',
+    localRole: 'source',
+    operationIntentId,
+    ownerInstallationKey: TEST_INSTALLATION_A,
+    sourceLanEndpoint: 'https://127.0.0.1:54545',
+    stagingDirectoryName: `.claudian-authority-transfer-${transferId}`,
+    status: collectingStatus,
+  }));
+  const completedAt = new Date(Date.parse(createdAt) + 10_000).toISOString();
+  const completedStatus: CollabAuthorityTransferStatus = {
+    ...collectingStatus,
+    batchRevision: batch.batchRevision,
+    batchSha256: batch.batchSha256,
+    checkpointSha256,
+    phase: 'completed',
+    relinquishmentProof: {
+      batchRevision: batch.batchRevision,
+      batchSha256: batch.batchSha256,
+      certificate: 'A'.repeat(86),
+      certificateAlgorithm: 'ed25519',
+      checkpointSha256,
+      committedAt: completedAt,
+      operationIntentId,
+      projectId: PROJECT_ID,
+      sourceAuthority: { generation: 6, kind: 'lan' },
+      sourceHostMemberId: MEMBER_ID,
+      targetAuthority: { generation: 7, kind: 'cloud' },
+      transferId,
+    },
+    state: 'completed',
+    updatedAt: completedAt,
+  };
+  await foundation.local.projects.authorityTransferRecords.save(
+    createAuthorityTransferRecord({
+      localRole: 'source',
+      operationIntentId,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${transferId}`,
+      status: completedStatus,
+    }),
+  );
+  await foundation.authorityTransfers.retainClaimBatch({
+    batch,
+    operationIntentId,
+    purpose: 'source-terminal',
+  });
+  await foundation.authorityTransfers.acknowledgeClaimBatch({
+    batchRevision: batch.batchRevision,
+    batchSha256: batch.batchSha256,
+    checkpointSha256,
+    committedAt: completedAt,
+    custodyAuthority: { generation: 6, kind: 'lan' },
+    operationIntentId,
+    projectId: PROJECT_ID,
+    receiptId: 'receipt-source-claim-recovery',
+    submittedByMemberId: MEMBER_ID,
+    targetAuthorityGeneration: 7,
+    transferId,
+  });
 }
 
 async function waitForDocument(

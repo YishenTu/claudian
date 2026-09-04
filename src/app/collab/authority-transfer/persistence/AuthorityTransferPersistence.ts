@@ -288,6 +288,57 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  assertCloudImportedClaimManagementPredecessor(
+    projectId: CollabProjectId,
+    identity: Readonly<{
+      readonly actorMemberId: CollabMemberId;
+      readonly authorityGeneration: number;
+      readonly importedMemberId: CollabMemberId;
+    }>,
+  ): Promise<void> {
+    return this.runProject(projectId, async () => {
+      const [entry, record, custody] = await Promise.all([
+        this.stores.authorityTransferEntries.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId),
+        this.stores.authorityTransferClaims.load(projectId),
+      ]);
+      const source = entry?.source;
+      const retained = custody?.claims.find(
+        claim => claim.memberId === identity.importedMemberId,
+      );
+      if (
+        !source
+        || !this.#isLocalSourceEntry(source)
+        || source.phase !== 'handed-off'
+        || !record
+        || this.#isForeignPhysical(record)
+        || record.localRole !== 'source'
+        || record.lifecycleOwnership !== 'owned'
+        || record.status.direction !== 'lan-to-cloud'
+        || record.status.state !== 'completed'
+        || record.status.relinquishmentProof === null
+        || record.status.relinquishmentProof.sourceHostMemberId
+          !== identity.actorMemberId
+        || record.status.targetAuthority.generation !== identity.authorityGeneration
+        || record.restartFence !== 'permanent'
+        || record.terminalResponder?.state !== 'active'
+        || record.terminalCleanupCompleted
+        || !custody
+        || custody.purpose !== 'source-terminal'
+        || !claimCustodyMatchesStatus(custody, record.status)
+        || retained?.disposition !== 'retained'
+        || retained.claim === null
+      ) {
+        throw transferError(
+          'durable-progress-recovery-required',
+          'authority-transfer-imported-claim-predecessor-invalid',
+        );
+      }
+      await this.#reconcileEntrySuccessor(source, record);
+      await this.#assertClaimBatchOwner(custody, record);
+    });
+  }
+
   loadRecoveryOwnerRecord(
     projectId: CollabProjectId,
   ): Promise<AuthorityTransferRecord | null> {
