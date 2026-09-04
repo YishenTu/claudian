@@ -824,6 +824,34 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.handoffCloudToLanTargetEntry(published, physical);
 
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_BOB,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_BOB}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).resolves.toBeUndefined();
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_ALICE,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_BOB}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-identity-mismatch' },
+    });
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_BOB,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-identity-mismatch' },
+    });
+
     await persistence.completeTerminalCleanup({
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -2434,6 +2462,49 @@ describe('AuthorityTransferPersistence', () => {
       code: 'durable-progress-recovery-required',
       safeContext: { reason: 'authority-transfer-legacy-owner-missing' },
     });
+  });
+
+  it('admits only the exact completed Cloud-to-LAN target recovery Host start', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
+    });
+    const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: cloudToLanStatus('completed'),
+    });
+    await repository.authorityTransferRecords.save(record);
+    const start = jest.fn(async () => 'running');
+
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      expectedEndpoint: record.status.targetUrl,
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    }, start)).resolves.toBe('running');
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      expectedEndpoint: record.status.targetUrl,
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: 'transfer-stale',
+    }, start)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-recovery-start-stale' },
+    });
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      expectedEndpoint: 'https://192.168.1.30:27001',
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    }, start)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-recovery-start-stale' },
+    });
+
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
   it('isolates Project guards and closes new persistence admission while draining', async () => {

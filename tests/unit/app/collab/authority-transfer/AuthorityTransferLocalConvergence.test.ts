@@ -304,7 +304,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     });
     const memberCredential = Buffer.alloc(32, 9).toString('base64url');
 
-    await convergence.cloudToLanHost({
+    const input = {
       endpoint: 'https://192.168.1.20:54545',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'e'.repeat(64),
@@ -316,7 +316,9 @@ describe('AuthorityTransferLocalConvergence', () => {
       },
       memberCredential,
       status: completed('cloud-to-lan'),
-    });
+    };
+
+    await convergence.cloudToLanHost(input);
 
     expect(membership).toMatchObject({
       authority: {
@@ -329,6 +331,23 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(rotate).toHaveBeenCalledWith(expect.objectContaining({
       newRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
     }));
+
+    membership = {
+      ...membership,
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+    } as CollabLocalMembershipRecord;
+    await expect(convergence.cloudToLanHost(input)).resolves.toBeUndefined();
+    expect(membership).toMatchObject({
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+    });
+
+    membership = {
+      ...membership,
+      hostOwnership: { ownsAuthority: true },
+    } as CollabLocalMembershipRecord;
+    await expect(convergence.cloudToLanHost(input)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
+    });
   });
 
   it('converges an offline LAN Member to Cloud without granting Host ownership', async () => {

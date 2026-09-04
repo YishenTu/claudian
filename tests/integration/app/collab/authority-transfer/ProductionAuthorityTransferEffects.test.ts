@@ -52,10 +52,16 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { AuthorityTransferCheckpointRepository } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointRepository';
+import {
+  createCloudToLanTargetEntry,
+  handoffCloudToLanTargetEntry,
+  publishCloudToLanTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
 import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
 import {
   type CollabLocalLanMembershipRecord,
+  type CollabLocalMembershipRecord,
   isCollabLocalCloudMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
@@ -1712,7 +1718,7 @@ describe('production authority-transfer effects', () => {
       Buffer.from(encodeCollabProjectCheckpointManifestCanonicalJson(targetManifest), 'utf8'),
     );
 
-    const targetFoundation = foundation(targetRoot);
+    let targetFoundation = foundation(targetRoot);
     await targetFoundation.local.workspace.claimProjectsFolder('workspace');
     const cloudServerUrl = 'https://cloud.example.test/';
     git(targetRoot, [
@@ -1756,8 +1762,8 @@ describe('production authority-transfer effects', () => {
       }),
       serverUrl: cloudServerUrl,
     } as unknown as CloudAuthorityConnection;
-    const gitFoundation = await targetFoundation.requireGitFoundation();
-    await gitFoundation.repositories.configureLocalRepository(
+    const initialGitFoundation = await targetFoundation.requireGitFoundation();
+    await initialGitFoundation.repositories.configureLocalRepository(
       path.join(targetRoot, 'workspace', 'portable'),
       {
         memberId: 'member-production-peer',
@@ -1766,20 +1772,24 @@ describe('production authority-transfer effects', () => {
         userDisplayName: 'Bob',
       },
     );
-    const convergence = new AuthorityTransferLocalConvergence({
-      activity: { transitionProject: (_projectId, operation) => operation() },
-      authorityProjectionTransitions: {
-        run: (projectId, operation) => targetFoundation.runAuthorityProjectionTransition(
-          projectId,
-          operation,
-        ),
-      },
-      git: {
-        rotate: input => rotateAuthorityTransferOrigin(gitFoundation.repositories, input),
-      },
-      projects: targetFoundation.local.projects,
-      workspace: targetFoundation.local.workspace,
-    });
+    const createRecoveryConvergence = async () => {
+      const gitFoundation = await targetFoundation.requireGitFoundation();
+      return new AuthorityTransferLocalConvergence({
+        activity: { transitionProject: (_projectId, operation) => operation() },
+        authorityProjectionTransitions: {
+          run: (projectId, operation) => targetFoundation.runAuthorityProjectionTransition(
+            projectId,
+            operation,
+          ),
+        },
+        git: {
+          rotate: input => rotateAuthorityTransferOrigin(gitFoundation.repositories, input),
+        },
+        projects: targetFoundation.local.projects,
+        workspace: targetFoundation.local.workspace,
+      });
+    };
+    const convergence = await createRecoveryConvergence();
     let targetNow = new Date('2026-08-28T00:03:00.000Z');
     const activeRouteTransition = jest.spyOn(
       targetFoundation.lanHost,
@@ -1980,6 +1990,25 @@ describe('production authority-transfer effects', () => {
       status: completedStatus,
     });
     await targetFoundation.local.projects.authorityTransferRecords.save(completedRecord);
+    const targetEntry = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-28T00:00:00.000Z',
+      expiresAt: completedStatus.expiresAt,
+      operationIntentId: 'intent-production-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: 'member-production-peer',
+      selectedTargetPersonalRef: 'refs/heads/members/member-production-peer',
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: cloudServerUrl,
+    }), {
+      caCertificatePem: prepared.caCertificatePem,
+      caFingerprint: prepared.caFingerprint,
+      publishedAt: '2026-08-28T00:00:30.000Z',
+      targetUrl: prepared.targetUrl,
+    });
+    await targetFoundation.local.projects.authorityTransferEntries.saveTarget(
+      handoffCloudToLanTargetEntry(targetEntry, completedRecord),
+    );
     const stagedTargetStatePath = path.join(targetStaging.absolutePath, 'target-private.json');
     const exactStagedTargetState = await readFile(stagedTargetStatePath, 'utf8');
     const invalidClaimState = JSON.parse(exactStagedTargetState) as {
@@ -2055,9 +2084,10 @@ describe('production authority-transfer effects', () => {
       projectId: PROJECT_ID,
       schemaVersion: 2,
     });
+    let recoveryConvergence = convergence;
     const recoveringEffects = () => new ProductionCloudToLanTargetEffects({
       cloudSession: null,
-      convergence,
+      convergence: recoveryConvergence,
       foundation: targetFoundation,
       now: () => targetNow,
       persistence: targetFoundation.authorityTransfers,
@@ -2093,6 +2123,19 @@ describe('production authority-transfer effects', () => {
     expect(expireClaims).not.toHaveBeenCalled();
     expireClaims.mockRestore();
     targetNow = new Date('2026-08-28T00:03:00.000Z');
+    await targetFoundation.lanHost.stopAuthorityTransferRoute(PROJECT_ID, 'target-active');
+    const recoveryRouteMemberships: CollabLocalMembershipRecord[] = [];
+    const originalStartAuthorityTransferRoute = targetFoundation.lanHost
+      .startAuthorityTransferRoute.bind(targetFoundation.lanHost);
+    const recoveryRouteStart = jest.spyOn(
+      targetFoundation.lanHost,
+      'startAuthorityTransferRoute',
+    ).mockImplementation(async registration => {
+      const membership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+      if (!membership) throw new Error('Missing target membership at route publication');
+      recoveryRouteMemberships.push(membership);
+      return originalStartAuthorityTransferRoute(registration);
+    });
 
     const tamperedTargetState = JSON.parse(exactTargetState) as {
       targetProof: string;
@@ -2123,11 +2166,29 @@ describe('production authority-transfer effects', () => {
 
     await expect(recoveringEffects().restoreCompleted(completedRecord))
       .rejects.toThrow('simulated post-membership crash');
+    expect(recoveryRouteStart).not.toHaveBeenCalled();
     const convertedMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
     if (!convertedMembership || convertedMembership.authority.kind !== 'lan') {
       throw new Error('Missing converted target membership');
     }
     const exactConvertedMembership = convertedMembership as CollabLocalLanMembershipRecord;
+    await targetAuthority.database.mutate(connection => {
+      connection.run(
+        "UPDATE members SET role = 'manager' WHERE member_id = ?",
+        [exactConvertedMembership.member.id],
+      );
+    });
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-convergence-incomplete' },
+    });
+    expect(recoveryRouteStart).not.toHaveBeenCalled();
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await targetAuthority.database.mutate(connection => {
+      connection.run(
+        "UPDATE members SET role = 'member' WHERE member_id = ?",
+        [exactConvertedMembership.member.id],
+      );
+    });
     await targetFoundation.local.projects.saveMembership({
       ...exactConvertedMembership,
       authority: {
@@ -2138,12 +2199,50 @@ describe('production authority-transfer effects', () => {
     await expect(recoveringEffects().restoreCompleted(completedRecord)).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
     });
-    expect(repairIndex).toHaveBeenCalledTimes(1);
+    expect(repairIndex).toHaveBeenCalledTimes(2);
     await targetFoundation.local.projects.saveMembership(exactConvertedMembership);
+    expect(await targetAuthority.database.read(connection => connection.get(`
+      SELECT
+        m.access_state,
+        m.display_name,
+        m.personal_ref,
+        m.role,
+        p.name AS project_name,
+        p.state AS project_state,
+        (SELECT COALESCE(MAX(sequence), 0) FROM events) AS event_sequence
+      FROM project p
+      JOIN members m ON m.member_id = p.host_member_id
+      WHERE p.singleton = 1
+    `))).toEqual({
+      access_state: 'bound',
+      display_name: exactConvertedMembership.member.displayName,
+      event_sequence: exactConvertedMembership.lastEventSequence,
+      personal_ref: exactConvertedMembership.member.personalRef,
+      project_name: exactConvertedMembership.project.name,
+      project_state: 'active',
+      role: exactConvertedMembership.member.role,
+    });
     await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    expect(recoveryRouteStart).toHaveBeenCalledTimes(1);
+    expect(recoveryRouteMemberships).toEqual([
+      expect.objectContaining({
+        authority: expect.objectContaining({ kind: 'lan' }),
+        member: expect.objectContaining({
+          displayName: exactConvertedMembership.member.displayName,
+          id: exactConvertedMembership.member.id,
+          role: exactConvertedMembership.member.role,
+        }),
+      }),
+    ]);
     expect(snapshotReadsBeforeRecovery).toHaveBeenCalledTimes(snapshotReadCount);
 
     expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
+    const repeatedRecoveryStart = jest.spyOn(
+      targetFoundation.lanHost,
+      'startProjectAfterCloudToLanTargetRecovery',
+    );
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    expect(repeatedRecoveryStart).not.toHaveBeenCalled();
     await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
       authority: { kind: 'lan' },
       hostOwnership: { autoStart: true, ownsAuthority: true },
@@ -2164,6 +2263,119 @@ describe('production authority-transfer effects', () => {
         .update(exactConvertedMembership.member.credential, 'utf8')
         .digest(),
     });
+
+    await targetFoundation.close();
+    targetFoundation = foundation(targetRoot);
+    const autoStartRecoveryRoute = jest.spyOn(
+      targetFoundation.lanHost,
+      'startAuthorityTransferRoute',
+    );
+    const autoStartRecoveryComposition = createCollabFeatureSubcomposition({
+      foundation: targetFoundation,
+      projectSetup: new CollabProjectSetupService(targetFoundation, {
+        installationKey: TEST_INSTALLATION_A,
+        vaultRoot: targetRoot,
+      }),
+      vaultRoot: targetRoot,
+    });
+    await autoStartRecoveryComposition.feature.initialize();
+    await expect(autoStartRecoveryComposition.feature.restoreLifecycle())
+      .resolves.toBeUndefined();
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
+    expect(autoStartRecoveryRoute.mock.calls.some(
+      ([registration]) => registration.state === 'target-active',
+    )).toBe(true);
+    targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
+    if (!targetAuthority) throw new Error('Missing auto-start recovered target authority');
+    await targetFoundation.lanHost.stopProject(PROJECT_ID);
+    await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID))
+      .resolves.toMatchObject({
+        authority: { kind: 'lan' },
+        hostOwnership: { autoStart: false, ownsAuthority: true },
+      });
+
+    await autoStartRecoveryComposition.feature.close();
+    await targetFoundation.close();
+    targetFoundation = foundation(targetRoot);
+    const invalidMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!invalidMembership || invalidMembership.authority.kind !== 'lan') {
+      throw new Error('Missing invalid-recovery target membership');
+    }
+    await targetFoundation.local.projects.saveMembership({
+      ...invalidMembership,
+      hostOwnership: { ownsAuthority: true },
+    });
+    const invalidRecoveryRouteStart = jest.spyOn(
+      targetFoundation.lanHost,
+      'startAuthorityTransferRoute',
+    );
+    const invalidRecoveryComposition = createCollabFeatureSubcomposition({
+      foundation: targetFoundation,
+      projectSetup: new CollabProjectSetupService(targetFoundation, {
+        installationKey: TEST_INSTALLATION_A,
+        vaultRoot: targetRoot,
+      }),
+      vaultRoot: targetRoot,
+    });
+    await invalidRecoveryComposition.feature.initialize();
+    await expect(invalidRecoveryComposition.feature.restoreLifecycle()).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+    await expect(invalidRecoveryComposition.feature.restoreHosts()).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+    expect(invalidRecoveryRouteStart).not.toHaveBeenCalled();
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await invalidRecoveryComposition.feature.close();
+    await targetFoundation.close();
+
+    targetFoundation = foundation(targetRoot);
+    const recoverableMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!recoverableMembership || recoverableMembership.authority.kind !== 'lan') {
+      throw new Error('Missing recoverable target membership');
+    }
+    await targetFoundation.local.projects.saveMembership({
+      ...recoverableMembership,
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+    });
+    const preRecoveryMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!preRecoveryMembership || preRecoveryMembership.authority.kind !== 'lan') {
+      throw new Error('Missing pre-recovery target membership');
+    }
+    await expect(targetFoundation.lanHost.hostCaSigner()).resolves.toMatchObject({
+      caCertificatePem: preRecoveryMembership.authority.hostCaCertificatePem,
+      caFingerprint: preRecoveryMembership.authority.hostCaFingerprint,
+    });
+    await expect(readFile(targetStatePath, 'utf8')).resolves.toBe(exactTargetState);
+    const recoveredRouteStart = jest.spyOn(
+      targetFoundation.lanHost,
+      'startAuthorityTransferRoute',
+    );
+    const restartedComposition = createCollabFeatureSubcomposition({
+      foundation: targetFoundation,
+      projectSetup: new CollabProjectSetupService(targetFoundation, {
+        installationKey: TEST_INSTALLATION_A,
+        vaultRoot: targetRoot,
+      }),
+      vaultRoot: targetRoot,
+    });
+    await restartedComposition.feature.initialize();
+    await expect(restartedComposition.feature.restoreLifecycle()).resolves.toBeUndefined();
+    recoveryConvergence = await createRecoveryConvergence();
+    targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
+    if (!targetAuthority) throw new Error('Missing recovered target authority');
+    const recoveredRegistration = recoveredRouteStart.mock.calls.find(
+      ([registration]) => registration.state === 'target-active',
+    )?.[0];
+    if (recoveredRegistration?.state !== 'target-active') {
+      throw new Error('Missing recovered Cloud-to-LAN target route');
+    }
+
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID))
+      .resolves.toMatchObject({
+        hostOwnership: { autoStart: false, ownsAuthority: true },
+      });
     const claimantCredential = Buffer.alloc(32, 9).toString('base64url');
     const claim = staged.claimBatch.claims[0];
     if (!claim) throw new Error('Missing transferred Member claim');
@@ -2196,11 +2408,45 @@ describe('production authority-transfer effects', () => {
         .update(claimantCredential, 'utf8')
         .digest(),
     });
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await expect(targetFoundation.lanHost.startProject(PROJECT_ID)).resolves.toMatchObject({
+      projectId: PROJECT_ID,
+      status: 'running',
+    });
+    const recoveredMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
+    if (!recoveredMembership || recoveredMembership.authority.kind !== 'lan') {
+      throw new Error('Missing recovered target membership');
+    }
+    await targetAuthority.database.mutate(connection => {
+      targetAuthority!.events.append(connection, {
+        actorMemberId: recoveredMembership.member.id,
+        createdAt: '2026-08-28T00:04:00.000Z',
+        kind: 'membership.updated',
+        payload: { projectId: PROJECT_ID },
+      });
+    });
     await targetFoundation.local.projects.saveMembership({
-      ...targetMembership,
-      lastEventSequence: targetMembership.lastEventSequence + 1,
+      ...recoveredMembership,
+      lastEventSequence: recoveredMembership.lastEventSequence + 1,
       updatedAt: '2026-08-28T00:04:00.000Z',
     });
+    await targetFoundation.lanHost.stopProject(PROJECT_ID);
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await restartedComposition.feature.close();
+    await targetFoundation.close();
+    targetFoundation = foundation(targetRoot);
+    recoveryConvergence = await createRecoveryConvergence();
+    const expiryRouteStart = jest.spyOn(
+      targetFoundation.lanHost,
+      'startAuthorityTransferRoute',
+    );
+    await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    const expiryRegistration = expiryRouteStart.mock.calls.find(
+      ([registration]) => registration.state === 'target-active',
+    )?.[0];
+    if (expiryRegistration?.state !== 'target-active') {
+      throw new Error('Missing expiry recovery Cloud-to-LAN target route');
+    }
     jest.spyOn(targetFoundation.authorityTransfers, 'expireClaims').mockResolvedValue();
     const completeTerminalCleanup = jest.spyOn(
       targetFoundation.authorityTransfers,
@@ -2208,16 +2454,46 @@ describe('production authority-transfer effects', () => {
     ).mockRejectedValueOnce(new Error('simulated crash after target-private unlink'));
     targetNow = new Date('2026-10-01T00:00:00.000Z');
 
-    await expect(activeRegistration.service.expire())
+    await expect(expiryRegistration.service.expire())
       .rejects.toThrow('simulated crash after target-private unlink');
     await expect(access(targetStatePath)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(targetFoundation.authorityTransfers.load(PROJECT_ID)).resolves.toMatchObject({
       terminalCleanupCompleted: false,
     });
+    const stopExpiredRoute = jest.spyOn(
+      targetFoundation.lanHost,
+      'stopAuthorityTransferRoute',
+    );
+    const assertTargetIdentity = jest.spyOn(
+      targetFoundation.authorityTransfers,
+      'assertCloudToLanCompletedTargetIdentity',
+    );
     await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    expect(stopExpiredRoute).toHaveBeenCalledWith(PROJECT_ID, 'target-active');
+    expect(assertTargetIdentity).toHaveBeenCalledWith({
+      memberId: 'member-production-peer',
+      operationIntentId: OPERATION_ID,
+      personalRef: 'refs/heads/members/member-production-peer',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    });
     expect(completeTerminalCleanup).toHaveBeenCalledTimes(2);
     await expect(targetFoundation.authorityTransfers.load(PROJECT_ID)).resolves.toMatchObject({
       terminalCleanupCompleted: true,
+    });
+    await targetFoundation.local.projects.authorityTransferEntries.saveTarget(
+      handoffCloudToLanTargetEntry(targetEntry, completedRecord),
+    );
+    await expect(targetFoundation.local.projects.authorityTransferEntries.load(PROJECT_ID))
+      .resolves.toMatchObject({ target: { phase: 'handed-off' } });
+    await expect(expiryRegistration.service.expire()).resolves.toBeUndefined();
+    expect(completeTerminalCleanup).toHaveBeenCalledTimes(3);
+    await expect(targetFoundation.local.projects.authorityTransferEntries.load(PROJECT_ID))
+      .resolves.toBeNull();
+    expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+    await expect(targetFoundation.lanHost.startProject(PROJECT_ID)).resolves.toMatchObject({
+      projectId: PROJECT_ID,
+      status: 'running',
     });
     await expect(access(path.join(
       targetRoot,
