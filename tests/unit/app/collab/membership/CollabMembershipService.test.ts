@@ -2,7 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
+import {
+  CollabLocalProjectRepository,
+  isCollabLocalCloudMembership,
+} from '@/app/collab/CollabLocalProjectRepository';
 import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import {
   type CollabMembershipSafetyContext,
@@ -129,6 +132,9 @@ function safetyContext(
 ): CollabMembershipSafetyContext {
   return {
     cloudManagementAdmission: async (_projectId, operation) => operation(),
+    importedClaimCloudManagementAdmission: async (_projectId, _identity, operation) => (
+      operation()
+    ),
     managerLeaveCloudManagementAdmission: async (_projectId, operation) => operation(),
     projects,
     managerResponsibilityAdmission: async (_projectId, operation) => operation(),
@@ -365,6 +371,268 @@ describe('CollabMembershipService', () => {
       .toEqual(['project-alpha', 'project-alpha']);
     expect(genericAdmission).not.toHaveBeenCalled();
     await expect(service.readManagementOperation('project-alpha')).resolves.toBeNull();
+  });
+
+  it('uses only imported-claim admission for reissue creation, recovery, and completion', async () => {
+    await projects.saveMembership({
+      authority: {
+        authorityGeneration: 7,
+        bindingVersion: 4,
+        gitRemoteUrl: 'https://cloud.example/v4/projects/project-alpha/repository.git',
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example',
+        wireVersion: 8,
+      },
+      createdAt: CREATED_AT,
+      lastEventSequence: 7,
+      lifecycle: 'active',
+      member: {
+        displayName: 'Manager',
+        id: 'member-manager',
+        personalRef: 'refs/heads/members/member-manager',
+        role: 'manager',
+      },
+      project: {
+        id: 'project-alpha',
+        name: 'Alpha',
+        workspacePath: 'Projects/alpha',
+      },
+      schemaVersion: 3,
+      updatedAt: CREATED_AT,
+    });
+    const currentMember = {
+      activatedAt: CREATED_AT,
+      createdAt: CREATED_AT,
+      displayName: 'Manager',
+      id: 'member-manager',
+      personalRef: 'refs/heads/members/member-manager',
+      role: 'manager' as const,
+      status: 'active' as const,
+    };
+    const projection: CollabCoordinationSnapshot = {
+      snapshot: {
+        currentMember,
+        eventSequence: 7,
+        members: [currentMember],
+        openRequests: [],
+        openTicketCount: 0,
+        project: {
+          authorityGeneration: 7,
+          authorityKind: 'cloud',
+          createdAt: CREATED_AT,
+          id: 'project-alpha',
+          mainOid: 'a'.repeat(40),
+          mainRef: 'refs/heads/main',
+          name: 'Alpha',
+        },
+        ticketHighlights: [],
+      },
+      source: 'online',
+      stale: false,
+      syncState: {
+        eventSequence: 7,
+        generation: 1,
+        projectId: 'project-alpha',
+        status: 'synchronized',
+      },
+    };
+    const control = client();
+    (control.cloudMembership as jest.Mock).mockImplementation(async (operation, _request, binding) => {
+      if (operation === 'listProjectMembers') {
+        return {
+          managerSetGeneration: 4,
+          members: [{
+            bindingState: 'bound',
+            displayName: 'Manager',
+            importedClaimGeneration: null,
+            importedClaimState: 'not-applicable',
+            memberId: 'member-manager',
+            membershipRevision: 3,
+            role: 'manager',
+          }, {
+            bindingState: 'unbound',
+            displayName: 'Imported member',
+            importedClaimGeneration: 1,
+            importedClaimState: 'unclaimed',
+            memberId: 'member-imported',
+            membershipRevision: 1,
+            role: 'member',
+          }],
+          projectId: 'project-alpha',
+        };
+      }
+      if (operation === 'reissueTransferredMembershipClaim') {
+        return {
+          claim: `${'B'.repeat(42)}A`,
+          claimGeneration: 2,
+          createdAt: CREATED_AT,
+          expiresAt: '2026-09-07T00:00:00.000Z',
+          memberId: 'member-imported',
+          projectId: 'project-alpha',
+          secretReplayExpiresAt: '2026-09-07T00:00:00.000Z',
+          targetAuthorityGeneration: binding.authorityGeneration,
+          transferId: 'transfer-imported',
+        };
+      }
+      if (operation === 'revokeTransferredMembershipClaim') {
+        return {
+          claimGeneration: 2,
+          memberId: 'member-imported',
+          projectId: 'project-alpha',
+          revokedAt: CREATED_AT,
+          state: 'revoked',
+        };
+      }
+      throw new Error(`Unexpected ${String(operation)}`);
+    });
+    const genericAdmission = jest.fn().mockRejectedValue(
+      new Error('generic admission must remain blocked'),
+    );
+    const importedClaimAdmission = jest.fn(
+      async (_projectId, _identity, operation) => operation(),
+    );
+    const snapshots: jest.Mocked<CollabMembershipSnapshotPort> = {
+      readAuthoritySnapshot: jest.fn().mockResolvedValue(projection),
+      readCoordinationSnapshot: jest.fn().mockResolvedValue(projection),
+    };
+    const service = new CollabMembershipService(
+      control,
+      snapshots,
+      { createIdempotencyKey: () => 'reissue-imported-private' },
+      safetyContext({
+        cloudManagementAdmission: genericAdmission,
+        importedClaimCloudManagementAdmission: importedClaimAdmission,
+      }),
+    );
+
+    await expect(service.reissueMemberClaim({
+      memberId: 'member-imported',
+      projectId: 'project-alpha',
+    })).resolves.toMatchObject({ expiresAt: '2026-09-07T00:00:00.000Z' });
+    const retained = await service.readManagementOperation('project-alpha');
+    expect(retained).toMatchObject({
+      action: 'reissue-member-claim',
+      status: 'result-retained',
+    });
+    await service.completeManagementOperation({
+      completionId: retained!.completionId,
+      projectId: 'project-alpha',
+    });
+
+    await projects.saveProjectDocument(
+      'project-alpha',
+      'cloud-management-intent',
+      decodeCloudManagementIntent({
+        authorityGeneration: 7,
+        completionId: 'completion-reissue-recovery',
+        createdAt: CREATED_AT,
+        kind: 'cloud-management-intent',
+        memberId: 'member-manager',
+        operation: 'reissueTransferredMembershipClaim',
+        phase: 'submitted',
+        projectId: 'project-alpha',
+        request: {
+          expectedClaimGeneration: 1,
+          expectedManagerSetGeneration: 4,
+          expectedMembershipRevision: 1,
+          idempotencyKey: 'reissue-imported-recovery',
+          memberId: 'member-imported',
+          projectId: 'project-alpha',
+        },
+        response: null,
+        schemaVersion: 1,
+        serverUrl: 'https://cloud.example',
+        updatedAt: CREATED_AT,
+      }),
+    );
+    await expect(service.resumeManagementOperation('project-alpha')).resolves.toMatchObject({
+      action: 'reissue-member-claim',
+      status: 'result-retained',
+    });
+    await service.completeManagementOperation({
+      completionId: 'completion-reissue-recovery',
+      projectId: 'project-alpha',
+    });
+    await expect(service.revokeMemberClaim({
+      memberId: 'member-imported',
+      projectId: 'project-alpha',
+    })).resolves.toBeUndefined();
+
+    importedClaimAdmission.mockImplementationOnce(async (_projectId, _identity, operation) => {
+      const membership = await projects.loadMembership('project-alpha');
+      if (!membership || !isCollabLocalCloudMembership(membership)) {
+        throw new Error('Expected Cloud membership');
+      }
+      await projects.saveMembership({
+        ...membership,
+        authority: {
+          ...membership.authority,
+          authorityGeneration: 8,
+        },
+        updatedAt: '2026-08-08T00:01:00.000Z',
+      });
+      const cloudSnapshot = projection.snapshot as CollabCloudProjectSnapshot;
+      snapshots.readAuthoritySnapshot.mockResolvedValue({
+        ...projection,
+        snapshot: {
+          ...cloudSnapshot,
+          project: {
+            ...cloudSnapshot.project,
+            authorityGeneration: 8,
+          },
+        },
+      });
+      return operation();
+    });
+    const reissueCallsBeforeBindingChange = control.cloudMembership.mock.calls.filter(
+      ([operation]) => operation === 'reissueTransferredMembershipClaim',
+    ).length;
+    await expect(service.reissueMemberClaim({
+      memberId: 'member-imported',
+      projectId: 'project-alpha',
+    })).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-imported-claim-binding-changed' },
+    });
+    expect(control.cloudMembership.mock.calls.filter(
+      ([operation]) => operation === 'reissueTransferredMembershipClaim',
+    )).toHaveLength(reissueCallsBeforeBindingChange);
+
+    expect(importedClaimAdmission.mock.calls.map(([projectId, identity]) => (
+      [projectId, identity]
+    ))).toEqual([
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+      ['project-alpha', {
+        actorMemberId: 'member-manager',
+        authorityGeneration: 7,
+        importedMemberId: 'member-imported',
+      }],
+    ]);
+    expect(genericAdmission).not.toHaveBeenCalled();
   });
 
   it('revalidates a retained Manager successor offer inside its dedicated admission', async () => {

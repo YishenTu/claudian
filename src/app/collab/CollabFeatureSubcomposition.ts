@@ -458,6 +458,14 @@ export function createCollabFeatureSubcomposition(
           operation,
         )
       ),
+      importedClaimCloudManagementAdmission: (projectId, identity, operation) => (
+        requireLifecycle().runCloudImportedClaimManagement(
+          projectId,
+          () => foundation.authorityTransfers
+            .assertCloudImportedClaimManagementPredecessor(projectId, identity),
+          operation,
+        )
+      ),
       managerLeaveCloudManagementAdmission: (projectId, operation) => (
         requireLifecycle().runCloudManagerLeaveManagement(
           projectId,

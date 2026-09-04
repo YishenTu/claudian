@@ -205,6 +205,21 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runCloudImportedClaimManagement<T>(
+    projectId: CollabProjectId,
+    assertAuthorityTransferPredecessor: () => Promise<void>,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.runExclusiveWithPredecessor(
+      projectId,
+      'cloud-management',
+      ['authority-transfer'],
+      'continuation',
+      operation,
+      assertAuthorityTransferPredecessor,
+    );
+  }
+
   runCloudManagerLeaveManagement<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
@@ -251,6 +266,7 @@ export class CollabProjectLifecycleSubsystem {
     predecessorOwnerNames: readonly string[],
     mode: CollabProjectLifecycleAdmissionMode,
     operation: () => Promise<T>,
+    assertAuthorityTransferPredecessor?: () => Promise<void>,
   ): Promise<T> {
     if (this.closed) {
       return Promise.reject(new CollabError({
@@ -319,12 +335,21 @@ export class CollabProjectLifecycleSubsystem {
         && mode === 'continuation'
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'authority-transfer-claimant';
+      const permitsCloudImportedClaimTransferPair = pendingOwners.length === 2
+        && pendingOwners.includes('cloud-management')
+        && pendingOwners.includes('authority-transfer')
+        && ownerName === 'cloud-management'
+        && mode === 'continuation'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'authority-transfer'
+        && assertAuthorityTransferPredecessor !== undefined;
       if (
         pendingOwners.length > 1
         && !permitsCloudManagementResponsibilityPair
         && !permitsCloudManagerLeaveContinuation
         && !permitsManagerLeaveOfferRetry
         && !permitsAuthorityTransferManagerClaimantPair
+        && !permitsCloudImportedClaimTransferPair
       ) {
         throw new CollabError({
           code: 'durable-progress-recovery-required',
@@ -374,6 +399,20 @@ export class CollabProjectLifecycleSubsystem {
           recoveryActions: ['resume'],
           safeContext: { reason: 'lifecycle-owner-recovery-required' },
         });
+      }
+      if (
+        ownerName === 'cloud-management'
+        && predecessorOwnerNames.length === 1
+        && predecessorOwnerNames[0] === 'authority-transfer'
+      ) {
+        if (!assertAuthorityTransferPredecessor) {
+          throw new CollabError({
+            code: 'durable-progress-recovery-required',
+            recoveryActions: ['resume'],
+            safeContext: { reason: 'lifecycle-owner-pending' },
+          });
+        }
+        await assertAuthorityTransferPredecessor();
       }
       return operation();
     });
