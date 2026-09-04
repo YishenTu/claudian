@@ -121,6 +121,8 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Treat documented owning-module and public interfaces as pre-agreed test seams. If behavior cannot be verified without reaching past a seam, resolve the ownership or interface decision before writing the test; do not add a test-only facade or public method.
 - Build vertical tracer bullets: exercise one observable behavior at one seam with the minimum implementation needed to prove it. Do not batch a horizontal layer of tests around imagined types, collaborators, or future behavior.
 - Derive expected results independently from the implementation, using a specification literal, accepted fixture, or worked example. Do not reproduce the production algorithm in the assertion, assert internal call counts, or bypass the owning interface to inspect storage unless that storage contract is the declared seam under test.
+- Do not test statically defined values whose correctness is already established by their source or type declaration. Test the observable behavior that consumes them only when that behavior has meaningful regression risk.
+- When logic is deleted, do not add negative tests that merely prove the removed path no longer exists. Cover only the observable replacement behavior or contract that could realistically regress.
 - Mock only true external boundaries, through narrow operation-specific ports rather than a generic conditional transport. Keep owned modules real.
 - After a tracer bullet is green, review and refactor its structure separately under the passing seam-level tests. Do not mix speculative architecture work into the behavior cycle.
 
