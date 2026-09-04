@@ -1834,6 +1834,57 @@ describe('LanHostCoordinator production transport', () => {
     expect(expire).toHaveBeenCalledTimes(1);
   });
 
+  it('retains the target endpoint while stopping a Host during expired cleanup', async () => {
+    const callbacks: Array<() => void> = [];
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 14_000 + callbacks.length;
+    };
+    let markCleanupStarted!: () => void;
+    const cleanupStarted = new Promise<void>(resolve => {
+      markCleanupStarted = resolve;
+    });
+    let releaseCleanup!: () => void;
+    const cleanupReleased = new Promise<void>(resolve => {
+      releaseCleanup = resolve;
+    });
+    const expire = jest.fn(async () => {
+      markCleanupStarted();
+      await cleanupReleased;
+    });
+    await coordinator.startProject(PROJECT_ID);
+    await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(),
+        expire,
+        expiresAt: startedAt.toISOString(),
+      },
+      state: 'target-active',
+      transferId: 'transfer-target-cleanup-stop',
+    });
+
+    callbacks[0]?.();
+    await cleanupStarted;
+    await coordinator.stopProject(PROJECT_ID);
+    privateAddresses = ['192.168.50.50'];
+    let addressError: unknown;
+    try {
+      await checkHostAddress();
+    } catch (error) {
+      addressError = error;
+    }
+    releaseCleanup();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    expect(addressError).toMatchObject({
+      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
+    });
+    expect(expire).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a terminal authority-transfer route through a chunked long expiry timer', async () => {
     const startedAt = new Date('2026-08-27T00:00:00.000Z');
     const expiresAt = new Date(startedAt.getTime() + 30 * 24 * 60 * 60 * 1_000);

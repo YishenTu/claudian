@@ -1589,24 +1589,9 @@ export class LanHostCoordinator {
     await this.#closeProjectResources(projectId).catch(error => {
       firstError ??= error;
     });
-    if (
-      this.#hostedProjects.size === 0
-      && this.terminalProjects.size === 0
-      && this.#authorityTransferRoutes.size === 0
-    ) {
-      this.#stopAddressMonitor();
-    }
-    if (
-      this.#hostedProjects.size === 0
-      && this.terminalProjects.size === 0
-      && this.provisionalTransfers.size === 0
-      && this.#authorityTransferRoutes.size === 0
-    ) {
-      this.#stopAddressMonitor();
-      await this.#closeListenerAndLock().catch(error => {
-        firstError ??= error;
-      });
-    }
+    await this.#closeUnusedListener().catch(error => {
+      firstError ??= error;
+    });
     if (firstError instanceof Error) throw firstError;
     if (firstError) throw hostError('operation-failed', 'host-project-stop-failed');
     return { projectId, status: 'stopped' };
