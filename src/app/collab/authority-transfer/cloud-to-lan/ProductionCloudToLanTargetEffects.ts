@@ -71,6 +71,7 @@ import type {
   CollabAuthorityFoundation,
 } from '@/app/collab/ClaudianCollabService';
 import {
+  type CollabLocalLanMembershipRecord,
   isCollabLocalCloudMembership,
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
@@ -799,21 +800,28 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       );
       if (!state) {
         if (expired) {
-          await this.#assertExpiredRecordCurrent(record);
-          await this.#assertCompletedTargetConvergence(record, authority, null, null, false);
-          await this.options.foundation.lanHost.startProject(record.projectId);
-          if (!this.options.foundation.lanHost.isProjectRunning(record.projectId)) {
-            throw targetError('authority-transfer-target-convergence-incomplete');
-          }
-          await this.#completeExpiredTargetCleanup(record, authority);
+          await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+            record.projectId,
+            'target-active',
+          );
+          this.#activeRegistration = null;
+          await this.#expireActiveRouteUnlocked(record);
           return;
         }
         throw targetError('authority-transfer-target-state-owner-mismatch');
       }
       const targetProof = await this.#assertActiveState(record, proof, state, authority);
-      if (!expired) await this.#startActiveRoute(record, state);
-      await this.#convergePersistedState(record, state, targetProof);
-      if (expired) await this.#expireActiveRouteUnlocked(record);
+      await this.#convergePersistedState(record, state, targetProof, authority);
+      if (expired) {
+        await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+          record.projectId,
+          'target-active',
+        );
+        this.#activeRegistration = null;
+        await this.#expireActiveRouteUnlocked(record);
+      } else {
+        await this.#startActiveRoute(record, state);
+      }
     });
   }
 
@@ -981,27 +989,56 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   }
 
    async #expireActiveRouteUnlocked(record: AuthorityTransferRecord): Promise<void> {
-    await this.#assertExpiredRecordCurrent(record);
-    const proof = record.status.relinquishmentProof;
+    const current = await this.#assertExpiredRecordCurrent(record);
+    if (current.terminalCleanupCompleted) {
+      await this.options.persistence.completeTerminalCleanup({
+        operationIntentId: current.operationIntentId,
+        projectId: current.projectId,
+        stagingDirectoryName: current.stagingDirectoryName,
+        transferId: current.transferId,
+      });
+      return;
+    }
+    const proof = current.status.relinquishmentProof;
     if (!proof) throw targetError('authority-transfer-target-completion-missing');
-    const authority = await this.options.foundation.inspectAuthority(record.projectId);
+    const authority = await this.options.foundation.inspectAuthority(current.projectId);
     if (!authority) throw targetError('authority-transfer-target-authority-missing');
     const state = await readState(
       path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
     );
-    if (!state) throw targetError('authority-transfer-target-state-owner-mismatch');
-    const targetProof = await this.#assertActiveState(record, proof, state, authority);
+    if (!state) {
+      const membership = await this.#assertCompletedTargetConvergence(
+        current,
+        authority,
+        null,
+        null,
+        false,
+      );
+      await this.options.persistence.assertCloudToLanCompletedTargetIdentity({
+        memberId: membership.member.id,
+        operationIntentId: current.operationIntentId,
+        personalRef: membership.member.personalRef,
+        projectId: current.projectId,
+        transferId: current.transferId,
+      });
+      await this.#startConfiguredHost(current);
+      await this.#completeExpiredTargetCleanup(current, authority);
+      return;
+    }
+    const targetProof = await this.#assertActiveState(current, proof, state, authority);
     await this.#assertCompletedTargetConvergence(
-      record,
+      current,
       authority,
       state,
       targetProof,
       true,
     );
-    await this.#completeExpiredTargetCleanup(record, authority);
+    await this.#completeExpiredTargetCleanup(current, authority);
   }
 
-   async #assertExpiredRecordCurrent(record: AuthorityTransferRecord): Promise<void> {
+   async #assertExpiredRecordCurrent(
+    record: AuthorityTransferRecord,
+  ): Promise<AuthorityTransferRecord> {
     if (this.now().getTime() < Date.parse(record.status.expiresAt)) {
       throw targetError('authority-transfer-target-expiry-early');
     }
@@ -1009,9 +1046,11 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (
       !current
       || current.transferId !== record.transferId
+      || current.operationIntentId !== record.operationIntentId
       || current.localRole !== 'target'
       || current.status.state !== 'completed'
     ) throw targetError('authority-transfer-target-expiry-owner-mismatch');
+    return current;
   }
 
    async #assertCompletedTargetConvergence(
@@ -1020,14 +1059,51 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     state: TargetPrivateState | null,
     targetProof: TargetProofEnvelope | null,
     requireRunningHost: boolean,
-  ): Promise<void> {
-    const [membership, index, project, signer] = await Promise.all([
-      this.options.foundation.local.projects.loadMembership(record.projectId),
+  ): Promise<CollabLocalLanMembershipRecord> {
+    const [membership, index] = await Promise.all([
+      this.#assertCompletedTargetMembership(record, authority, state, targetProof),
       this.options.foundation.local.projects.loadIndex(),
-      authority.database.read(connection => authority.projects.get(connection)),
-      this.options.foundation.lanHost.hostCaSigner(),
     ]);
     const indexed = index.projects.find(candidate => candidate.id === record.projectId);
+    if (
+      !indexed
+      || indexed.authorityKind !== 'lan'
+      || indexed.name !== membership.project.name
+      || indexed.workspacePath !== membership.project.workspacePath
+      || (
+        requireRunningHost
+        && membership.hostOwnership.autoStart
+        && !this.options.foundation.lanHost.isProjectRunning(record.projectId)
+      )
+    ) throw targetError('authority-transfer-target-convergence-incomplete');
+    return membership;
+  }
+
+   async #assertCompletedTargetMembership(
+    record: AuthorityTransferRecord,
+    authority: CollabAuthorityFoundation,
+    state: TargetPrivateState | null,
+    targetProof: TargetProofEnvelope | null,
+  ): Promise<CollabLocalLanMembershipRecord> {
+    const [membership, facts, signer] = await Promise.all([
+      this.options.foundation.local.projects.loadMembership(record.projectId),
+      authority.database.read(connection => {
+        const members = new PendingMembershipRepository();
+        return {
+          members: members.listCredentialRecords(connection, ['active']),
+          project: authority.projects.get(connection),
+        };
+      }),
+      this.options.foundation.lanHost.hostCaSigner(),
+    ]);
+    const project = facts.project;
+    const targetMembers = facts.members.filter(candidate => (
+      candidate.member.id === membership?.member.id
+    ));
+    const targetMember = targetMembers[0];
+    const credentialHash = membership && isCollabLocalLanMembership(membership)
+      ? createHash('sha256').update(membership.member.credential, 'utf8').digest()
+      : null;
     const targetEndpoint = new URL(record.status.targetUrl).origin;
     if (
       !membership
@@ -1040,19 +1116,23 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         !== `${targetEndpoint}/v1/git/${record.projectId}/repository.git`
       || membership.authority.hostCaCertificatePem !== signer.caCertificatePem
       || membership.authority.hostCaFingerprint !== signer.caFingerprint
-      || membership.hostOwnership.autoStart !== true
       || membership.hostOwnership.ownsAuthority !== true
+      || typeof membership.hostOwnership.autoStart !== 'boolean'
       || !project
+      || project.projectId !== membership.project.id
+      || project.name !== membership.project.name
+      || project.state !== 'active'
       || project.authorityGeneration !== record.status.targetAuthority.generation
       || project.hostMemberId !== membership.member.id
-      || !indexed
-      || indexed.authorityKind !== 'lan'
-      || indexed.name !== membership.project.name
-      || indexed.workspacePath !== membership.project.workspacePath
-      || (
-        requireRunningHost
-        && !this.options.foundation.lanHost.isProjectRunning(record.projectId)
-      )
+      || targetMembers.length !== 1
+      || targetMember?.accessState !== 'bound'
+      || targetMember.member.displayName !== membership.member.displayName
+      || targetMember.member.personalRef !== membership.member.personalRef
+      || targetMember.member.role !== membership.member.role
+      || targetMember.credentialHash === null
+      || credentialHash === null
+      || targetMember.credentialHash.byteLength !== credentialHash.byteLength
+      || !timingSafeEqual(targetMember.credentialHash, credentialHash)
       || (state === null) !== (targetProof === null)
       || (state !== null && (
         !state.importedIdentity
@@ -1065,6 +1145,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         || targetProof!.caFingerprint !== membership.authority.hostCaFingerprint
       ))
     ) throw targetError('authority-transfer-target-convergence-incomplete');
+    return membership;
   }
 
    async #completeExpiredTargetCleanup(
@@ -1101,10 +1182,11 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!state.claimBatch) throw targetError('authority-transfer-target-claims-missing');
   }
 
-   async #activateLocal(
+  async #activateLocal(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<Readonly<{
+    readonly authority: CollabAuthorityFoundation;
     readonly state: TargetPrivateState;
     readonly targetProof: TargetProofEnvelope;
   }>> {
@@ -1145,7 +1227,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     }
     const targetProof = await this.#assertActiveState(record, proof, state, authority);
     await this.#activateRoute(record, proof, state);
-    return { state, targetProof };
+    return { authority, state, targetProof };
   }
 
    async #assertActiveState(
@@ -1543,18 +1625,19 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return this.options.cloudSession;
   }
 
-   async #convergeLocal(
+  async #convergeLocal(
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<void> {
-    const { state, targetProof } = await this.#activateLocal(record, proof);
-    await this.#convergePersistedState(record, state, targetProof);
+    const { authority, state, targetProof } = await this.#activateLocal(record, proof);
+    await this.#convergePersistedState(record, state, targetProof, authority);
   }
 
    async #convergePersistedState(
     record: AuthorityTransferRecord,
     state: TargetPrivateState,
     targetProof: TargetProofEnvelope,
+    authority: CollabAuthorityFoundation,
   ): Promise<void> {
     if (!state.importedIdentity) throw targetError('authority-transfer-target-stage-incomplete');
     const preparation = this.#preparation;
@@ -1568,7 +1651,30 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       identity: state.importedIdentity,
       status: record.status,
     });
-    await this.options.foundation.lanHost.startProject(record.projectId);
+    await this.#assertCompletedTargetMembership(record, authority, state, targetProof);
+    await this.#startConfiguredHost(record);
     await this.#cleanupStaging(record);
+  }
+
+   async #startConfiguredHost(record: AuthorityTransferRecord): Promise<void> {
+    const projectId = record.projectId;
+    const membership = await this.options.foundation.local.projects.loadMembership(projectId);
+    if (
+      !membership
+      || !isCollabLocalLanMembership(membership)
+      || !membership.hostOwnership.ownsAuthority
+      || typeof membership.hostOwnership.autoStart !== 'boolean'
+    ) throw targetError('authority-transfer-target-convergence-incomplete');
+    if (membership.hostOwnership.autoStart === false) return;
+    if (this.options.foundation.lanHost.isProjectRunning(projectId)) return;
+    await this.options.foundation.lanHost.startProjectAfterCloudToLanTargetRecovery({
+      expectedEndpoint: record.status.targetUrl,
+      operationIntentId: record.operationIntentId,
+      projectId,
+      transferId: record.transferId,
+    });
+    if (!this.options.foundation.lanHost.isProjectRunning(projectId)) {
+      throw targetError('authority-transfer-target-convergence-incomplete');
+    }
   }
 }
