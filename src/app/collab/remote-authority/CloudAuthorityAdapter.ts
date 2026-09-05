@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import * as timers from 'node:timers';
 
 import {
+  COLLAB_CLOUD_BINDING_LIMITS,
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_PROTOCOL_VERSION,
@@ -235,9 +237,27 @@ export interface CloudAuthorityConnection {
 }
 
 class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
-  constructor(private readonly socket: WebSocket) {}
+  private heartbeat: ReturnType<typeof timers.setTimeout> | undefined;
 
-  close(code: number, reason: string): void { this.socket.close(code, reason); }
+  constructor(private readonly socket: WebSocket) {
+    socket.on('open', () => this.resetHeartbeat());
+    socket.on('ping', () => this.resetHeartbeat());
+    socket.once('close', () => timers.clearTimeout(this.heartbeat));
+  }
+
+  private resetHeartbeat(): void {
+    timers.clearTimeout(this.heartbeat);
+    this.heartbeat = timers.setTimeout(() => this.socket.terminate(), (
+      COLLAB_CLOUD_BINDING_LIMITS.eventHeartbeatMs
+      * COLLAB_CLOUD_BINDING_LIMITS.eventMissedHeartbeatLimit
+    ));
+    this.heartbeat.unref();
+  }
+
+  close(code: number, reason: string): void {
+    timers.clearTimeout(this.heartbeat);
+    this.socket.close(code, reason);
+  }
   onClose(listener: (code: number) => void): void {
     this.socket.on('close', code => listener(code));
   }
@@ -250,6 +270,7 @@ class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
 
 function createDefaultEventSocket(input: CloudProjectEventSocketInput): CloudProjectEventSocket {
   return new NodeCloudProjectEventSocket(new WebSocket(input.url, {
+    handshakeTimeout: 30_000,
     headers: input.headers,
     perMessageDeflate: false,
   }));
@@ -770,7 +791,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
       assertResponseRequestId(envelope.requestId, requestId);
-      throw new CloudAuthorityRejection(envelope.error);
+      throw new CloudAuthorityRejection(envelope.error, envelope.mutationOutcome);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
     assertResponseRequestId(envelope.requestId, requestId);

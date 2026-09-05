@@ -1,8 +1,8 @@
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir, readFile, rename, rm } from 'node:fs/promises';
+import { lstat, open, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
+import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import {
   type AuthorityTransferEntryComponent,
@@ -2353,24 +2353,6 @@ export class CollabLocalProjectRepository {
     });
   }
 
-  assertOwnedAuthorityRetirement(
-    projectId: CollabProjectId,
-    attemptId: string,
-  ): Promise<OwnedAuthorityDirectoryCapability> {
-    this.#requireProjectId(projectId);
-    if (!isCollabOpaqueId(attemptId)) {
-      return Promise.reject(localRecordError(
-        'authority-directory-boundary-invalid',
-        'index',
-        projectId,
-      ));
-    }
-    return this.#operationQueue.run(async () => {
-      const { source } = await this.#inspectOwnedAuthorityRetirement(projectId, attemptId);
-      return this.#issueOwnedAuthorityCapability(projectId, source);
-    });
-  }
-
   claimLegacyAuthorityDirectory(
     projectId: CollabProjectId,
   ): Promise<OwnedAuthorityDirectoryCapability> {
@@ -2446,100 +2428,6 @@ export class CollabLocalProjectRepository {
       });
       return true;
     });
-  }
-
-  retireOwnedAuthorityDirectory(
-    capability: OwnedAuthorityDirectoryCapability,
-    attemptId: string,
-  ): Promise<string | null> {
-    this.#assertIssuedAuthorityCapability(capability);
-    const projectId = capability.projectId;
-    if (!isCollabOpaqueId(attemptId)) {
-      return Promise.reject(localRecordError(
-        'authority-directory-boundary-invalid',
-        'index',
-        projectId,
-      ));
-    }
-    return this.#operationQueue.run(async () => {
-      const {
-        retired,
-        retiredExists,
-        retiredParentRelative,
-        source,
-        sourceExists,
-      } = await this.#inspectOwnedAuthorityRetirement(projectId, attemptId);
-      if (retiredExists) return retired;
-      if (!sourceExists) return null;
-      await ensureCollabVaultDirectory(this.vaultRoot, retiredParentRelative, {
-        durable: true,
-        mode: 0o700,
-        onDiagnostic: this.#onDiagnostic,
-      });
-      await rename(source, retired).catch(() => {
-        throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
-      });
-      await syncCollabVaultDirectoryDurably(
-        this.vaultRoot,
-        `${PRIVATE_STATE_DIRECTORY}/authorities`,
-      );
-      await syncCollabVaultDirectoryDurably(this.vaultRoot, retiredParentRelative);
-      return retired;
-    });
-  }
-
-  async #inspectOwnedAuthorityRetirement(
-    projectId: CollabProjectId,
-    attemptId: string,
-  ): Promise<{
-    readonly retired: string;
-    readonly retiredExists: boolean;
-    readonly retiredParentRelative: string;
-    readonly source: string;
-    readonly sourceExists: boolean;
-  }> {
-    const installationKey = this.#requireInstallationKey();
-    const sourceRelative = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
-    const retiredParentRelative = `${PRIVATE_STATE_DIRECTORY}/retired-lan-authorities/${projectId}`;
-    const retiredRelative = `${retiredParentRelative}/${attemptId}`;
-    const source = await resolveCollabVaultPath(this.vaultRoot, sourceRelative);
-    const retired = await resolveCollabVaultPath(this.vaultRoot, retiredRelative);
-    const inspect = async (absolutePath: string, relativePath: string) => {
-      const info = await lstat(absolutePath).catch(error => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-        throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
-      });
-      if (info && (!info.isDirectory() || info.isSymbolicLink())) {
-        throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
-      }
-      if (info) {
-        const marker = await this.#loadAuthorityOwnershipMarker(
-          `${relativePath}/${AUTHORITY_OWNERSHIP_MARKER}`,
-        );
-        if (
-          marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
-          || marker.projectId !== projectId
-          || marker.ownerInstallationKey !== installationKey
-        ) {
-          throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
-        }
-      }
-      return info !== null;
-    };
-    const [sourceExists, retiredExists] = await Promise.all([
-      inspect(source, sourceRelative),
-      inspect(retired, retiredRelative),
-    ]);
-    if (sourceExists && retiredExists) {
-      throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
-    }
-    return {
-      retired,
-      retiredExists,
-      retiredParentRelative,
-      source,
-      sourceExists,
-    };
   }
 
   async ensureGitEmptyConfig(): Promise<string> {

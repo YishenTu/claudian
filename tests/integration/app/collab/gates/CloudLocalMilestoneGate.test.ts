@@ -4,7 +4,6 @@ import {
   mkdtemp,
   readFile,
   rm,
-  stat,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,43 +11,20 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import {
-  type DevelopmentBootstrapAttemptStatus,
+  COLLAB_CLOUD_BINDING_VERSION,
+  COLLAB_PROTOCOL_VERSION,
   type DevelopmentBootstrapManifest,
 } from '@claudian-collab/protocol';
 import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
-  CloudBootstrapBindingFinalizer,
-} from '@/app/collab/bootstrap/CloudBootstrapBindingFinalizer';
-import {
-  CloudBootstrapReadinessCollector,
-  type CloudBootstrapReadinessObservation,
-} from '@/app/collab/bootstrap/CloudBootstrapReadiness';
-import {
-  type CloudBootstrapTransitionRecord,
-  createCloudBootstrapTransitionRecord,
-  developmentBootstrapManifestSha256,
-  markCloudBootstrapHostStopped,
-  markCloudBootstrapTerminalCleanupCompleted,
-  observeCloudBootstrapAttemptStatus,
-} from '@/app/collab/bootstrap/CloudBootstrapTransitionRecord';
-import { CloudBootstrapTransitionStore } from '@/app/collab/bootstrap/CloudBootstrapTransitionStore';
-import {
-  LocalCloudBootstrapBindingEffects,
-} from '@/app/collab/bootstrap/LocalCloudBootstrapBindingEffects';
-import {
   type CollabLocalCloudMembershipRecord,
-  type CollabLocalLanMembershipRecord,
   CollabLocalProjectRepository,
   isCollabLocalCloudMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
-import {
-  ensureTrustedCollabOrigin,
-  rotateCloudBootstrapOrigin,
-} from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import {
@@ -86,10 +62,8 @@ const execFileAsync = promisify(execFile);
 const GIT_EXECUTABLE = '/usr/bin/git';
 const HOST_MEMBER_ID = 'member-alice';
 const OTHER_MEMBER_ID = 'member-bob';
-const OLD_ENDPOINT = 'https://192.168.1.20:54545/';
 
 interface GateDescriptor {
-  readonly activationStatus: DevelopmentBootstrapAttemptStatus;
   readonly manifest: DevelopmentBootstrapManifest;
   readonly origin: string;
   readonly resultPath: string;
@@ -115,92 +89,46 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
   return result.stdout.trim();
 }
 
-function sourceMembership(
+async function cloudMembership(
   descriptor: GateDescriptor,
   memberId: string,
-): CollabLocalLanMembershipRecord {
-  const member = descriptor.manifest.comparison.members.find(candidate => (
-    candidate.memberId === memberId
-  ));
-  if (!member) throw new Error('Gate Member is absent from the bootstrap manifest');
+): Promise<CollabLocalCloudMembershipRecord> {
   const projectId = descriptor.manifest.comparison.projectId;
-  const ownsAuthority = memberId === descriptor.manifest.comparison.sourceHostMemberId;
-  return {
-    authority: {
-      authorityGeneration: 1,
-      endpoint: OLD_ENDPOINT,
-      gitRemoteUrl: `${OLD_ENDPOINT}v1/git/${projectId}/repository.git`,
-      hostCaCertificatePem: [
-        '-----BEGIN CERTIFICATE-----',
-        'LOCALMILESTONE',
-        '-----END CERTIFICATE-----',
-      ].join('\n'),
-      hostCaFingerprint: descriptor.manifest.comparison.sourceCaFingerprint,
-      kind: 'lan',
-    },
-    createdAt: member.createdAt,
-    hostOwnership: { autoStart: false, ownsAuthority },
-    lastEventSequence: descriptor.manifest.comparison.sourceEventSequence,
-    lifecycle: 'active',
-    member: {
-      credential: 'A'.repeat(43),
-      displayName: member.displayName,
-      id: member.memberId,
-      personalRef: member.personalRef,
-      role: member.role,
-    },
-    project: {
-      id: projectId,
-      name: descriptor.manifest.comparison.projectName,
-      workspacePath: `workspace/${projectId}`,
-    },
-    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: member.activatedAt,
-  };
-}
-
-function readiness(
-  descriptor: GateDescriptor,
-  memberId: string,
-): CloudBootstrapReadinessObservation {
-  const member = descriptor.manifest.comparison.members.find(candidate => (
-    candidate.memberId === memberId
-  ));
-  const personal = descriptor.manifest.git.refs.find(candidate => (
-    candidate.name === member?.personalRef
-  ));
-  if (!member || !personal) throw new Error('Gate readiness identity is incomplete');
-  return {
-    collabGitChildCount: 0,
-    operations: {
-      cleanup: 'settled',
-      conflictRecovery: 'settled',
-      hostTransfer: 'settled',
-      join: 'settled',
-      leave: 'settled',
-      managerResponsibility: 'settled',
-      projectSetup: 'settled',
-      publish: 'settled',
-      reconciliation: 'settled',
-      reconnect: 'settled',
-      retirement: 'settled',
-    },
-    preservedWork: {
-      hasLocalOnlyCommits: false,
-      hasPrivateDraft: memberId === HOST_MEMBER_ID,
-      hasUnpublishedFiles: memberId === HOST_MEMBER_ID,
-    },
-    projectOperationQueue: { activeCount: 0, queuedCount: 0 },
-    projectWorkSession: 'closed',
-    repository: {
-      mainOid: descriptor.manifest.comparison.mainOid,
-      memberId,
-      objectFormat: descriptor.manifest.git.objectFormat,
-      personalRef: member.personalRef,
-      personalRefOid: personal.oid,
-      projectId: descriptor.manifest.comparison.projectId,
-    },
-  };
+  const connection = await createDevelopmentCloudAuthorityAdapter(memberId).connect({
+    projectId,
+    serverUrl: descriptor.origin,
+  });
+  try {
+    const snapshot = await connection.readSnapshot(projectId);
+    return {
+      authority: {
+        authorityGeneration: snapshot.project.authorityGeneration,
+        bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+        gitRemoteUrl: connection.git.remoteUrl,
+        kind: 'cloud',
+        serverUrl: descriptor.origin,
+        wireVersion: COLLAB_PROTOCOL_VERSION,
+      },
+      createdAt: snapshot.project.createdAt,
+      lastEventSequence: snapshot.eventSequence,
+      lifecycle: 'active',
+      member: {
+        displayName: snapshot.currentMember.displayName,
+        id: snapshot.currentMember.id,
+        personalRef: snapshot.currentMember.personalRef,
+        role: snapshot.currentMember.role,
+      },
+      project: {
+        id: projectId,
+        name: snapshot.project.name,
+        workspacePath: `workspace/${projectId}`,
+      },
+      schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+      updatedAt: snapshot.project.createdAt,
+    };
+  } finally {
+    connection.dispose();
+  }
 }
 
 async function createClient(
@@ -209,7 +137,7 @@ async function createClient(
   memberId: string,
 ): Promise<ClientFixture> {
   const projectId = descriptor.manifest.comparison.projectId;
-  const source = sourceMembership(descriptor, memberId);
+  const source = await cloudMembership(descriptor, memberId);
   const vaultRoot = path.join(root, memberId);
   await mkdir(vaultRoot);
   const projects = new CollabLocalProjectRepository(vaultRoot, {
@@ -237,7 +165,7 @@ async function createClient(
   });
   await git(repositoryPath, ['remote', 'set-url', 'origin', source.authority.gitRemoteUrl!]);
   await projects.upsertProject({
-    authorityKind: 'lan',
+    authorityKind: 'cloud',
     createdAt: source.createdAt,
     id: projectId,
     name: source.project.name,
@@ -245,11 +173,7 @@ async function createClient(
     workspacePath: source.project.workspacePath,
   });
   await projects.saveMembership(source);
-  if (source.hostOwnership.ownsAuthority) {
-    const authorityDirectory = (
-      await projects.createOwnedAuthorityDirectory(projectId)
-    ).authorityDirectory;
-    await writeFile(path.join(authorityDirectory, 'collab.db'), 'must remain retired');
+  if (memberId === HOST_MEMBER_ID) {
     await writeFile(path.join(repositoryPath, 'unpublished.md'), 'Alice local unpublished work\n');
     await new CollabRequestDraftStore(projects).save({
       createdAt: '2026-08-23T00:00:00.000Z',
@@ -269,84 +193,10 @@ async function createClient(
     updatedAt: '2026-08-23T00:00:00.000Z',
   });
 
-  const transitions = new CloudBootstrapTransitionStore(vaultRoot, { isRecoveryOwner: () => true });
-  let transition: CloudBootstrapTransitionRecord = await transitions.create(
-    createCloudBootstrapTransitionRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      developmentActorId: memberId,
-      ...(source.hostOwnership.ownsAuthority ? { fenceId: 'local-milestone-fence' } : {}),
-      manifest: descriptor.manifest,
-      manifestSha256: developmentBootstrapManifestSha256(descriptor.manifest),
-      memberId,
-      oldEndpoint: OLD_ENDPOINT,
-      oldGitRemoteUrl: source.authority.gitRemoteUrl!,
-      serverUrl: descriptor.origin,
-      timestamp: '2026-08-23T00:00:01.000Z',
-    }),
-  );
-  if (source.hostOwnership.ownsAuthority) {
-    transition = markCloudBootstrapHostStopped(
-      transition,
-      '2026-08-23T00:00:02.000Z',
-      '2026-08-23T00:00:02.000Z',
-    );
-    await transitions.save(transition);
-  }
-  transition = observeCloudBootstrapAttemptStatus(
-    transition,
-    descriptor.activationStatus,
-    '2026-08-23T00:00:03.000Z',
-  );
-  await transitions.save(transition);
-
-  const network = new CollabAuthorityGitNetworkEnvironment(vaultRoot);
-  const finalizer = new CloudBootstrapBindingFinalizer({
-    effects: new LocalCloudBootstrapBindingEffects({
-      activation: { get: async () => descriptor.activationStatus },
-      authorityAdapter: createDevelopmentCloudAuthorityAdapter(source.member.id),
-      authorityLifecycle: { closeAuthority: async () => undefined },
-      git: {
-        assertOrigin: (record, localPath) => ensureTrustedCollabOrigin(repositories, {
-          projectId: record.projectId,
-          remoteUrl: record.newAuthority.gitRemoteUrl,
-          repositoryPath: localPath,
-        }, 'cloud-local-milestone-origin-mismatch'),
-        fetchFromUrl: (...input) => repositories.fetchFromUrl(...input),
-        network: (resolvedProjectId, facts) => network.resolve(resolvedProjectId, developmentCloudGitNetwork(facts, source.member.id)),
-        resolveRefs: (...input) => repositories.resolveRefs(...input),
-        rotateOrigin: (record, localPath) => rotateCloudBootstrapOrigin(repositories, {
-          newRemoteUrl: record.newAuthority.gitRemoteUrl,
-          newServerUrl: record.newAuthority.serverUrl,
-          oldRemoteUrl: record.oldAuthority.gitRemoteUrl,
-          projectId: record.projectId,
-          repositoryPath: localPath,
-        }),
-      },
-      projects,
-      readiness: new CloudBootstrapReadinessCollector({
-        inspect: async () => readiness(descriptor, memberId),
-      }),
-      retireLanAuthorityDirectory: async (retiredProjectId, attemptId) => (
-        projects.retireOwnedAuthorityDirectory(
-          await projects.assertOwnedAuthorityRetirement(retiredProjectId, attemptId),
-          attemptId,
-        )
-      ),
-      workspace,
-    }),
-    now: () => new Date('2026-08-23T00:01:00.000Z'),
-    transitions,
-  });
-  const completed = await finalizer.finalize(transition);
-  expect(completed).toMatchObject({ attemptState: 'activated', phase: 'fence-terminal' });
-  await transitions.save(markCloudBootstrapTerminalCleanupCompleted(
-    completed,
-    '2026-08-23T00:01:01.000Z',
-  ));
   const stored = await projects.loadMembership(projectId);
   expect(stored && isCollabLocalCloudMembership(stored)).toBe(true);
   expect(await git(repositoryPath, ['remote', 'get-url', 'origin']))
-    .toBe(`${descriptor.origin}/v4/projects/${projectId}/repository.git`);
+    .toBe(`${descriptor.origin}/v5/projects/${projectId}/repository.git`);
   return {
     git: repositories,
     memberId,
@@ -419,7 +269,7 @@ const descriptorPath = process.env.CLAUDIAN_CLOUD_LOCAL_GATE_DESCRIPTOR;
 const describeWithServer = descriptorPath === undefined ? describe.skip : describe;
 
 describeWithServer('Cloud localhost client milestone gate', () => {
-  it('binds, restarts, collaborates, accepts, and reconciles two independent clients', async () => {
+  it('restarts, collaborates, accepts, and reconciles two independent Cloud clients', async () => {
     if (descriptorPath === undefined) throw new Error('Missing Cloud gate descriptor');
     const descriptor = JSON.parse(await readFile(descriptorPath, 'utf8')) as GateDescriptor;
     const projectId = descriptor.manifest.comparison.projectId;
@@ -434,13 +284,6 @@ describeWithServer('Cloud localhost client milestone gate', () => {
       const clientByMember = new Map(clients.map(client => [client.memberId, client]));
       const initialSessions = await Promise.all(clients.map(async client => {
         const restartedProjects = new CollabLocalProjectRepository(client.vaultRoot);
-        const transition = await new CloudBootstrapTransitionStore(client.vaultRoot, { isRecoveryOwner: () => true })
-          .load(projectId);
-        expect(transition).toMatchObject({
-          attemptState: 'activated',
-          phase: 'fence-terminal',
-          terminalCleanupCompleted: true,
-        });
         const membership = await restartedProjects.loadMembership(projectId);
         if (!membership || !isCollabLocalCloudMembership(membership)) {
           throw new Error('Cloud membership was not durably bound');
@@ -609,23 +452,6 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         workingTreeClean: false,
       });
 
-      const retiredAuthority = path.join(
-        alice.vaultRoot,
-        '.claudian',
-        'collab',
-        'retired-lan-authorities',
-        projectId,
-        descriptor.manifest.attemptId,
-        'collab.db',
-      );
-      await expect(stat(path.join(
-        alice.vaultRoot,
-        '.claudian',
-        'collab',
-        'authorities',
-        projectId,
-      ))).rejects.toMatchObject({ code: 'ENOENT' });
-      await expect(readFile(retiredAuthority, 'utf8')).resolves.toBe('must remain retired');
       await expect(readFile(path.join(alice.repositoryPath, 'unpublished.md'), 'utf8'))
         .resolves.toBe('Alice local unpublished work\n');
       await expect(new CollabRequestDraftStore(alice.projects).load(projectId))
@@ -633,7 +459,6 @@ describeWithServer('Cloud localhost client milestone gate', () => {
 
       await writeFile(descriptor.resultPath, JSON.stringify({
         acceptedMainOid: accepted.mainOid,
-        formerHostRetired: true,
         localWorkPreserved: true,
         requestId: request!.id,
       }), { mode: 0o600 });

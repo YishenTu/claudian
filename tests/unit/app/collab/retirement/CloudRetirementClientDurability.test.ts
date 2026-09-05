@@ -21,11 +21,11 @@ function membership(role: 'manager' | 'member' = 'manager'): CollabLocalCloudMem
   return {
     authority: {
       authorityGeneration: 3,
-      bindingVersion: 4,
-      gitRemoteUrl: `https://cloud.example.test/operator/v4/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 5,
+      gitRemoteUrl: `https://cloud.example.test/operator/v5/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/operator',
-      wireVersion: 8,
+      wireVersion: 9,
     },
     createdAt: '2026-08-27T00:00:00.000Z',
     lastEventSequence: 4,
