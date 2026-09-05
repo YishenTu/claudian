@@ -8,9 +8,14 @@ export function confirmDelete(app: App, message: string): Promise<boolean> {
   });
 }
 
-export function confirm(app: App, message: string, confirmText: string): Promise<boolean> {
+export function confirm(
+  app: App,
+  message: string,
+  confirmText: string,
+  modalClass?: string,
+): Promise<boolean> {
   return new Promise(resolve => {
-    new ConfirmModal(app, message, resolve, confirmText).open();
+    new ConfirmModal(app, message, resolve, confirmText, modalClass).open();
   });
 }
 
@@ -20,7 +25,7 @@ class ConfirmModal extends Modal {
   private resolved = false;
   private confirmText: string;
 
-  constructor(app: App, message: string, resolve: (confirmed: boolean) => void, confirmText?: string) {
+  constructor(app: App, message: string, resolve: (confirmed: boolean) => void, confirmText?: string, private readonly modalClass?: string) {
     super(app);
     this.message = message;
     this.resolve = resolve;
@@ -30,6 +35,7 @@ class ConfirmModal extends Modal {
   onOpen() {
     this.setTitle(t('common.confirm'));
     this.modalEl.addClass('claudian-confirm-modal');
+    if (this.modalClass) this.modalEl.addClass(this.modalClass);
 
     this.contentEl.createEl('p', { text: this.message });
 

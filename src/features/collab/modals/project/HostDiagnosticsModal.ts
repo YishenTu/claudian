@@ -23,7 +23,10 @@ export class HostDiagnosticsModal extends Modal {
   onOpen(): void {
     this.opened = true;
     this.setTitle(t('collab.host.diagnostics'));
-    this.modalEl.classList.add('claudian-collab-host-diagnostics-modal');
+    this.modalEl.classList.add(
+      'claudian-collab-host-diagnostics-modal',
+      'claudian-collab-modal--filled-actions',
+    );
     const serialized = this.serialize();
     this.contentEl.replaceChildren();
     this.contentEl.createEl('pre', { text: serialized });
