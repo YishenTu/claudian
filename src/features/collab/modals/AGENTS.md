@@ -1,31 +1,10 @@
-# Collab Modals
+# Modal constraints
 
-## Transient Lifetime
-
-- `CollabTransientSurfaceRegistry.ts` is the composition-owned plugin-lifetime registry for Create, Join, Reconnect, and Project-management surfaces. Live disable or unload closes and aborts every registered modal before Collab service teardown.
-- Asynchronous modal launch revalidates the captured Collab lifecycle after every await before opening UI. Each modal retains its presentation lifetime, AbortController, close behavior, and stale-completion fence; durable mutation admission and intent remain application-owned. No operation may update or reopen a closed surface.
-
-## Project Management
-
-- `project/ProjectManagementModal.ts` opens without an online coordination preflight and always exposes local LAN Host controls for a Host-owned Project. It owns the later snapshot for Member identity/list presentation, confirmation focus, and access-operation retry. LAN Host status and authority movement share the Hosting section so current placement and movement stay in one context; Invite follows the Member list, while Leave and Retire remain in a separate Project actions footer. Successful Host start retries the snapshot in place.
-- LAN Manager promotion, demotion, removal, and responsibility-offer actions retain one application-owned transient mutation intent across the modal's explicit Retry. The modal sends only the selected entities and choices; it requests project-scoped abandonment after user cancellation, identity change, or modal close. Promotion confirmation freezes whether the operation creates an offer or completes one, including the exact offer ID; a snapshot refresh must not change that operation while Retry remains available.
-- Cloud management is an explicit exception to LAN modal-owned retry lifetime: the application retains the frozen request/key and any bounded private result across close, reopen and restart. Modals issue user choices and observe/retry that intent, never construct authority revisions, generations or mutation keys. Closing a surface cannot cancel an already possible mutation or discard its recovery record.
-- `project/ProjectInvitationModal.ts` owns invitation presentation, explicit create, copy, revoke, and retry controls. LAN invitation state retains its transient semantics; Cloud creation never runs merely on modal open and its durable intent/result remains application-owned. `project/HostDiagnosticsModal.ts` owns redacted Host diagnostics presentation and copy. Project Management closes either child surface on close; closed child presentation cannot publish late results, while durable Cloud recovery outlives the surface.
-- Manager invitation/administration permission is independent from Host capability. Removal copy must not imply remote deletion. Leave copy must distinguish visible-file retention from removal of collaboration Git history.
-- Project Management owns the only Leave and Retire actions. Leave offers Keep local files by default and Delete local files as the destructive alternative for every role. Responsibility requirements come from the authority projection, never a cached member-list inference.
-- Manager responsibility offers are visible only to source and target. The target acknowledges Manager responsibility through synchronization, so do not add Accept Manager. Accept Host appears only on the selected target's own row; acceptance is progress, not completion. Retire is available only to a synchronized Manager and explains that collaboration and Git-only history end for everyone.
-
-## LAN Host Controls
-
-- `project/LanHostSection.ts` renders only local Host capability inside Project Management and owns its in-flight start/stop presentation fence. It must not infer Manager permission or expose invitation or membership actions.
-- Host creation persists auto-start intent and starts LAN hosting immediately. Listener startup failure never rolls back the durable Project; Project Management remains available for retry and redacted diagnostics.
-
-## Create, Join, and Reconnect
-
-- Project creation is empty-only. `project/CreateProjectModal.ts` collects Project name and initial Member display name, defaults to LAN, and shows a complete Server URL field only for Cloud. It never discovers, previews, selects, copies, or summarizes Vault files. Existing Create/Join/Management/Reconnect surfaces own Cloud entry; do not add a Cloud-only product or login/token/certificate form.
-- Join distinguishes ordinary LAN/Cloud invitations from imported-Member recovery material; an imported claim restores an existing identity rather than creating membership. Reconnect distinguishes same-authority endpoint relocation from claim convergence. Authority movement stays in Project Management and may expose only the selected Member's permitted preparation/acceptance or Manager/Host actions, not caller proofs or listener ownership.
-- Create, Join, and Reconnect prevent duplicate submission, abort only their caller-local wait on close, ignore stale completion, and preserve retry input. LAN transient work may honor that cancellation; an externally possible or durable Cloud operation remains application-owned and recoverable. Durable-progress results expose the existing Resume setup operation instead of rotating operation intent.
-
-## Verification
-
-- Test through fake ports for duplicate admission, cancellation on close, stale completion, recovery-required Resume, local Host start/stop fencing, snapshot retry, responsibility visibility, Leave cleanup choice, and Retire synchronization gating.
+- Surface close/disable/unload cancels presentation waits, not possible durable Cloud effects. Reopen observes the same application-owned intent; stale completions cannot reopen UI.
+- Project Management opens without online preflight so local recovery remains available. Host controls depend on installation status, never Host membership alone; a foreign synchronized Host is status-only. Legacy claim requires explicit confirmation.
+- LAN management retry retains its transient exact intent until cancellation/close. Freeze whether promotion creates or completes an offer; refreshed snapshots cannot change an operation awaiting Retry.
+- Cloud management/invitation intent survives close/restart and requires explicit completion. Opening an invitation modal cannot create an invitation.
+- Manager authority and Host capability are independent. Manager acknowledgement is synchronization, not an Accept Manager action. Accept Host requires the selected target installation and is progress, not completion.
+- Leave defaults to Keep; Delete is a separate destructive choice. Removal must not imply remote deletion, and Retire must explain loss of collaboration/Git-only history.
+- Create is empty-only. Do not add Vault-file selection/import or separate Cloud login/token/certificate UI; existing entry surfaces accept the complete Server URL.
+- Imported claims recover existing identity, not Join. Resumable setup must reuse its application operation rather than rotate intent on Retry.
