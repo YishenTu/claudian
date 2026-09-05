@@ -319,6 +319,11 @@
   text-align: start;
 }
 
+body.mod-windows .claudian-message-assistant {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
 .claudian-message-content {
   line-height: 1.5;
   user-select: text;

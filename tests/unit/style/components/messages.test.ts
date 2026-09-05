@@ -1,20 +1,55 @@
+/** @jest-environment jsdom */
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 describe('Long conversation message styles', () => {
   const css = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
 
-  it('isolates assistant layout without containing user message actions', () => {
-    const messageRule = css.match(/\.claudian-message\s*{[^}]*}/)?.[0];
-    expect(messageRule).not.toContain('content-visibility: auto;');
+  afterEach(() => {
+    document.head.querySelector('[data-testid="messages-styles"]')?.remove();
+    document.body.replaceChildren();
+    document.body.removeAttribute('class');
+  });
 
-    const userRule = css.match(/\.claudian-message-user\s*{[^}]*}/)?.[0];
-    expect(userRule).not.toContain('content-visibility: auto;');
-    expect(userRule).not.toContain('contain-intrinsic-size:');
+  function getAssistantStyle(platformClass: string): CSSStyleDeclaration {
+    const style = document.createElement('style');
+    style.dataset.testid = 'messages-styles';
+    style.textContent = css;
+    document.head.appendChild(style);
 
-    const assistantRule = css.match(/\.claudian-message-assistant\s*{[^}]*}/)?.[0];
-    expect(assistantRule).toContain('flex-shrink: 0;');
-    expect(assistantRule).toContain('content-visibility: auto;');
-    expect(assistantRule).toContain('contain-intrinsic-size: auto 23.5rem;');
+    document.body.classList.add(platformClass);
+    const assistantMessage = document.createElement('div');
+    assistantMessage.className = 'claudian-message-assistant';
+    document.body.appendChild(assistantMessage);
+
+    return window.getComputedStyle(assistantMessage);
+  }
+
+  it('disables assistant layout isolation on Windows', () => {
+    const assistantStyle = getAssistantStyle('mod-windows');
+
+    expect({
+      contentVisibility: assistantStyle.getPropertyValue('content-visibility'),
+      containIntrinsicSize: assistantStyle.getPropertyValue('contain-intrinsic-size'),
+    }).toEqual({
+      contentVisibility: 'visible',
+      containIntrinsicSize: 'none',
+    });
+  });
+
+  it.each([
+    ['macOS', 'mod-macos'],
+    ['Linux', 'mod-linux'],
+  ])('keeps assistant layout isolation on %s', (_platform, platformClass) => {
+    const assistantStyle = getAssistantStyle(platformClass);
+
+    expect({
+      contentVisibility: assistantStyle.getPropertyValue('content-visibility'),
+      containIntrinsicSize: assistantStyle.getPropertyValue('contain-intrinsic-size'),
+    }).toEqual({
+      contentVisibility: 'auto',
+      containIntrinsicSize: 'auto 23.5rem',
+    });
   });
 });
