@@ -29,7 +29,6 @@ import {
   type CollabAuthorityRelinquishmentProof,
   type CollabCloudAuthorityTransferArtifact,
   type CollabCloudToLanTargetCleanupProof,
-  type CollabMemberId,
   type CollabProjectCheckpointManifest,
   type CollabTransferredMembershipClaimBatch,
   type CollabTransferredMembershipRedemptionReceipt,
@@ -1243,38 +1242,20 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     }
     await authority.database.mutate(connection => {
       const checkpoint = new AuthorityTransferCheckpointRepository();
-      checkpoint.repairImportedTargetCredentialEncoding(
-        connection,
-        this.#credentialRepairInput(
-          record,
-          state,
-          targetProof.payload.targetHostMemberId,
-        ),
-      );
+      checkpoint.assertImportedTargetCredential(connection, {
+        canonicalCredentialHash: createHash('sha256')
+          .update(state.hostCredential, 'utf8')
+          .digest(),
+        projectId: record.projectId,
+        targetAuthorityGeneration: record.status.targetAuthority.generation,
+        targetHostMemberId: targetProof.payload.targetHostMemberId,
+      });
       checkpoint.activateImportedAuthority(connection, {
         projectId: record.projectId,
         targetAuthorityGeneration: record.status.targetAuthority.generation,
       });
     });
     return targetProof;
-  }
-
-  #credentialRepairInput(
-    record: AuthorityTransferRecord,
-    state: TargetPrivateState,
-    targetHostMemberId: CollabMemberId,
-  ) {
-    return {
-      canonicalCredentialHash: createHash('sha256')
-        .update(state.hostCredential, 'utf8')
-        .digest(),
-      decodedCredentialHash: createHash('sha256')
-        .update(Buffer.from(state.hostCredential, 'base64url'))
-        .digest(),
-      projectId: record.projectId,
-      targetAuthorityGeneration: record.status.targetAuthority.generation,
-      targetHostMemberId,
-    };
   }
 
   async #validateStateBindings(
@@ -1334,9 +1315,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const canonicalCredentialHash = createHash('sha256')
       .update(state.hostCredential, 'utf8')
       .digest();
-    const decodedCredentialHash = createHash('sha256')
-      .update(Buffer.from(state.hostCredential, 'base64url'))
-      .digest();
     const actualCredentialHash = targetMembers[0]?.credentialHash;
     if (
       !facts.project
@@ -1345,8 +1323,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || targetMembers[0]?.accessState !== 'bound'
       || !actualCredentialHash
       || actualCredentialHash.byteLength !== canonicalCredentialHash.byteLength
-      || (!timingSafeEqual(actualCredentialHash, canonicalCredentialHash)
-        && !timingSafeEqual(actualCredentialHash, decodedCredentialHash))
+      || !timingSafeEqual(actualCredentialHash, canonicalCredentialHash)
     ) throw targetError('authority-transfer-target-state-owner-mismatch');
   }
 

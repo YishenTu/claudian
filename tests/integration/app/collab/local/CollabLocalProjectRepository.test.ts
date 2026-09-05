@@ -247,6 +247,47 @@ describe('CollabLocalProjectRepository', () => {
     expect(await readdir(workspace)).toEqual(['note.md']);
   });
 
+  it.each([1, 2])('rejects schema %s Cloud membership without rewriting it', async schemaVersion => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record: Record<string, unknown> = { ...cloudMembershipRecord(), schemaVersion };
+    if (schemaVersion === 1) delete record.lifecycle;
+    const membershipPath = path.join(vaultRoot, repository.getProjectPaths(PROJECT_ID).membership);
+    await mkdir(path.dirname(membershipPath), { recursive: true });
+    const bytes = JSON.stringify(record);
+    await writeFile(membershipPath, bytes);
+
+    await expect(repository.loadMembership(PROJECT_ID)).rejects.toMatchObject({
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+    await expect(readFile(membershipPath, 'utf8')).resolves.toBe(bytes);
+  });
+
+  it.each([1, 2])('rejects a schema %s index containing Cloud without rewriting it', async schemaVersion => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const cloudProject: Record<string, unknown> = { ...indexEntry({ authorityKind: 'cloud' }) };
+    const lanProject: Record<string, unknown> = { ...indexEntry({
+      id: 'project-lan',
+      workspacePath: 'workspace/project-lan',
+    }) };
+    if (schemaVersion === 1) {
+      delete cloudProject.lifecycle;
+      delete lanProject.lifecycle;
+    }
+    const indexPath = path.join(vaultRoot, '.claudian', 'collab', 'index.json');
+    await mkdir(path.dirname(indexPath), { recursive: true });
+    const bytes = JSON.stringify({
+      projects: [lanProject, cloudProject],
+      schemaVersion,
+      selectedProjectId: PROJECT_ID,
+    });
+    await writeFile(indexPath, bytes);
+
+    await expect(repository.loadIndex()).rejects.toMatchObject({
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+    await expect(readFile(indexPath, 'utf8')).resolves.toBe(bytes);
+  });
+
   it('adds LAN authority generation 1 to an existing local membership', async () => {
     const projectState = path.join(
       vaultRoot,

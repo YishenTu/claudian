@@ -399,6 +399,14 @@ test('Collab modal and shared code do not depend on detail or sidebar surfaces',
   ), []);
 });
 
+test('Collab detail sessions do not depend on the detail view router', () => {
+  const detailRoot = path.join(featuresRoot, 'collab', 'detail');
+  assert.deepEqual(findResolvedImportViolations(
+    [path.join(detailRoot, 'sessions')],
+    target => normalizeModuleTarget(target) === path.join(detailRoot, 'CollabDetailView'),
+  ), []);
+});
+
 test('active Collab code has no singular Manager or transfer compatibility surface', () => {
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /\bmanager_member_id\b/,

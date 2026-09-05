@@ -382,20 +382,18 @@ function importedTargetIdentity(
 }
 
 export class AuthorityTransferCheckpointRepository {
-  repairImportedTargetCredentialEncoding(
+  assertImportedTargetCredential(
     connection: AuthorityDatabaseConnection,
     input: Readonly<{
       canonicalCredentialHash: Uint8Array;
-      decodedCredentialHash: Uint8Array;
       projectId: string;
       targetAuthorityGeneration: number;
       targetHostMemberId: CollabMemberId;
     }>,
   ): void {
-    if (
-      input.canonicalCredentialHash.byteLength !== 32
-      || input.decodedCredentialHash.byteLength !== 32
-    ) throw checkpointError('checkpoint-target-credential-invalid');
+    if (input.canonicalCredentialHash.byteLength !== 32) {
+      throw checkpointError('checkpoint-target-credential-invalid');
+    }
     const project = connection.get(`
       SELECT project_id, state, host_member_id
       FROM project
@@ -425,19 +423,9 @@ export class AuthorityTransferCheckpointRepository {
       || !(credentialHash instanceof Uint8Array)
       || credentialHash.byteLength !== 32
     ) throw checkpointError('checkpoint-target-authority-identity-invalid');
-    if (timingSafeEqual(credentialHash, input.canonicalCredentialHash)) return;
-    if (!timingSafeEqual(credentialHash, input.decodedCredentialHash)) {
+    if (!timingSafeEqual(credentialHash, input.canonicalCredentialHash)) {
       throw checkpointError('checkpoint-target-credential-conflict');
     }
-    const changes = runCheckpointSql(connection, `
-      UPDATE members
-      SET credential_hash = ?
-      WHERE member_id = ?
-        AND status = 'active'
-        AND access_state = 'bound'
-    `, [input.canonicalCredentialHash, input.targetHostMemberId],
-    'checkpoint-target-credential-repair-failed');
-    if (changes !== 1) throw checkpointError('checkpoint-target-credential-repair-stale');
   }
 
   activateImportedAuthority(

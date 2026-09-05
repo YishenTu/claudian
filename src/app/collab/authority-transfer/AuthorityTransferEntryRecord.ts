@@ -490,7 +490,6 @@ export function handoffAuthorityTransferEntry(
     || entry.status.targetUrl !== record.status.targetUrl
     || record.localRole !== 'source'
     || record.lifecycleOwnership !== 'owned'
-    || record.ownerInstallationKey === undefined
     || entry.ownerInstallationKey !== record.ownerInstallationKey
     || record.sourceLanEndpoint === null
   ) throw new TypeError('Invalid authority transfer entry handoff');

@@ -1,6 +1,5 @@
 import {
   assertHostTransferTransition,
-  isTerminalHostTransferPhase,
 } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
 
 describe('HostTransferPhaseMachine', () => {
@@ -18,7 +17,6 @@ describe('HostTransferPhaseMachine', () => {
       expect(() => assertHostTransferTransition(phases[index - 1], phases[index])).not.toThrow();
       expect(() => assertHostTransferTransition(phases[index], phases[index])).not.toThrow();
     }
-    expect(isTerminalHostTransferPhase('completed')).toBe(true);
   });
 
   it('rejects rollback and all cancellation after authority relinquishment', () => {

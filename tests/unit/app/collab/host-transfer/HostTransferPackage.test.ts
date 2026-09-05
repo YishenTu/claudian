@@ -6,11 +6,9 @@ import path from 'node:path';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   createHostTransferPackageManifest,
-  decodeHostTransferPackageManifest,
   digestHostTransferPackageManifest,
   HostTransferArtifactStore,
   HostTransferGitBundleBuilder,
-  parseHostTransferPackageManifest,
   parseHostTransferRecoveryPackageManifest,
   serializeHostTransferPackageManifest,
 } from '@/app/collab/host-transfer/HostTransferPackage';
@@ -51,51 +49,58 @@ describe('HostTransferPackage', () => {
       authoritySchemaVersion: COLLAB_AUTHORITY_SCHEMA_VERSION,
       protocolVersion: COLLAB_HOST_TRANSFER_PROTOCOL_VERSION,
     });
-    expect(parseHostTransferPackageManifest(serialized)).toEqual(value);
+    expect(parseHostTransferRecoveryPackageManifest(serialized)).toEqual(value);
     expect(digestHostTransferPackageManifest(value)).toMatch(/^[0-9a-f]{64}$/);
-    expect(() => decodeHostTransferPackageManifest({
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       receiverCredential: 'secret',
-    })).toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       gitBundle: { ...value.gitBundle, path: '/private/bundle' },
-    })).toThrow();
+    }))).toThrow();
   });
 
   it('applies Project, Member, transfer, and Git OID boundaries by semantic field', () => {
     const value = manifest();
-    expect(() => decodeHostTransferPackageManifest({
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       projectId: `p${'a'.repeat(63)}`,
       targetHostMemberId: `m${'a'.repeat(63)}`,
       transferId: `t${'a'.repeat(127)}`,
-    })).not.toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).not.toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       projectId: `p${'a'.repeat(64)}`,
-    })).toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       targetHostMemberId: `m${'a'.repeat(64)}`,
-    })).toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       transferId: `t${'a'.repeat(128)}`,
-    })).toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       authorityMainOid: 'a'.repeat(64),
       gitObjectFormat: 'sha256',
-    })).not.toThrow();
-    expect(() => decodeHostTransferPackageManifest({
+    }))).not.toThrow();
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...value,
       authorityMainOid: 'A'.repeat(40),
-    })).toThrow();
+    }))).toThrow();
+  });
+
+  it.each([7, 13])('rejects unsupported recovery authority schema %s', authoritySchemaVersion => {
+    expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
+      ...manifest(),
+      authoritySchemaVersion,
+    }))).toThrow();
   });
 
   it.each([8, 9, 10, 11] as const)(
-    'accepts schema %s only through the explicit incoming recovery decoder',
+    'accepts schema %s during incoming recovery',
     authoritySchemaVersion => {
     const legacy = {
       ...manifest(),
@@ -103,7 +108,6 @@ describe('HostTransferPackage', () => {
     };
     const serialized = JSON.stringify(legacy);
 
-    expect(() => parseHostTransferPackageManifest(serialized)).toThrow();
     expect(parseHostTransferRecoveryPackageManifest(serialized)).toEqual(legacy);
     expect(digestHostTransferPackageManifest(
       parseHostTransferRecoveryPackageManifest(serialized),

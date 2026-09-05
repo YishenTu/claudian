@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -19,7 +19,6 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import {
   createAuthorityTransferRecord,
-  decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   createCloudToLanTargetEntry,
@@ -279,7 +278,7 @@ describe('AuthorityTransferRecovery', () => {
     expect(resume).not.toHaveBeenCalled();
   });
 
-  it('surfaces an ownerless legacy transfer instead of treating it as foreign', async () => {
+  it('rejects an ownerless legacy transfer without rewriting it or resuming effects', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const current = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -290,10 +289,10 @@ describe('AuthorityTransferRecovery', () => {
       status: status('collecting-readiness'),
     });
     const { ownerInstallationKey: _ownerInstallationKey, ...withoutOwner } = current;
-    await repository.authorityTransferRecords.save(decodeAuthorityTransferRecord({
-      ...withoutOwner,
-      schemaVersion: 1,
-    }));
+    const legacyPath = path.join(vaultRoot, repository.getProjectPaths(PROJECT_ID).authorityTransfer);
+    await mkdir(path.dirname(legacyPath), { recursive: true });
+    const bytes = JSON.stringify({ ...withoutOwner, schemaVersion: 1 });
+    await writeFile(legacyPath, bytes, { mode: 0o600 });
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
     });
@@ -301,22 +300,19 @@ describe('AuthorityTransferRecovery', () => {
     const recovery = new AuthorityTransferRecovery(
       persistence,
       recoveryHandler({ resume }),
-      ownerInstallationKey => {
-      if (ownerInstallationKey === undefined) {
-        throw new CollabError({
-          code: 'durable-progress-recovery-required',
-          safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
-        });
-      }
-      },
+      () => undefined,
     );
     const subsystem = lifecycle();
     recovery.register(subsystem);
 
     await expect(subsystem.lifecycleRecovery.resume()).rejects.toMatchObject({
       code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-inspection-failed' },
     });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).rejects.toMatchObject({
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+    await expect(readFile(legacyPath, 'utf8')).resolves.toBe(bytes);
     expect(resume).not.toHaveBeenCalled();
   });
 

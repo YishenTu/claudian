@@ -2436,8 +2436,12 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('keeps an ownerless legacy authority fence visible and blocks Host restart', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
+  it.each([
+    { missingKeys: [] },
+    { missingKeys: ['receiptVerifier'] },
+    { missingKeys: ['sourceLanEndpoint'] },
+    { missingKeys: ['receiptVerifier', 'sourceLanEndpoint'] },
+  ])('rejects legacy authority records missing $missingKeys', ({ missingKeys }) => {
     const current = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'target',
@@ -2445,23 +2449,13 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: cloudToLanStatus('cloud-quiesced'),
     });
-    const { ownerInstallationKey: _ownerInstallationKey, ...withoutOwner } = current;
-    await repository.authorityTransferRecords.save(decodeAuthorityTransferRecord({
-      ...withoutOwner,
-      schemaVersion: 1,
-    }));
-    const persistence = new AuthorityTransferPersistence(repository, {
-      isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
-    });
-
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
-    await expect(persistence.runWithAuthorityStartGuard(
-      PROJECT_ID,
-      async () => 'unexpected',
-    )).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'authority-transfer-legacy-owner-missing' },
-    });
+    const legacy: Record<string, unknown> = { ...current, schemaVersion: 1 };
+    delete legacy.ownerInstallationKey;
+    for (const key of missingKeys) delete legacy[key];
+    expect(() => decodeAuthorityTransferRecord(legacy)).toThrow('Invalid authority transfer record');
+    const ownerless: Record<string, unknown> = { ...current };
+    delete ownerless.ownerInstallationKey;
+    expect(() => decodeAuthorityTransferRecord(ownerless)).toThrow('Invalid authority transfer record');
   });
 
   it('admits only the exact completed Cloud-to-LAN target recovery Host start', async () => {
