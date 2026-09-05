@@ -687,6 +687,10 @@
       "name": "Adiar renderização matemática durante streaming",
       "desc": "Mostrar LaTeX bruto enquanto a resposta é transmitida e renderizar a matemática uma vez quando cada bloco de texto terminar."
     },
+    "renderDiagramsInChat": {
+      "name": "Renderizar diagramas Mermaid no chat",
+      "desc": "Desativado por padrão. Renderiza os blocos de código mermaid das respostas como diagramas assim que cada bloco termina de ser transmitido. Apenas o código mermaid é entregue ao renderizador mermaid do Obsidian, portanto qualquer plugin instalado que processe blocos mermaid pode executar sobre a saída do modelo. Os demais blocos de código continuam como código-fonte inerte."
+    },
     "expandFileEditsByDefault": {
       "name": "Expandir edições de arquivo por padrão",
       "desc": "Mostrar os diffs de Write e Edit expandidos quando aparecerem pela primeira vez."

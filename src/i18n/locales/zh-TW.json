@@ -687,6 +687,10 @@
       "name": "串流傳輸時延遲渲染數學公式",
       "desc": "回應串流傳輸時顯示原始 LaTeX，並在每個文字區塊完成後只渲染一次數學公式。"
     },
+    "renderDiagramsInChat": {
+      "name": "在對話中算繪 Mermaid 圖表",
+      "desc": "預設關閉。每個區塊串流結束後，把回覆中的 mermaid 程式碼區塊算繪成圖表。只有 mermaid 原始碼會交給 Obsidian 的 mermaid 算繪器，因此任何處理 mermaid 區塊的已安裝外掛都可能在模型輸出上執行。其他程式碼區塊仍維持為不會執行的原始碼。"
+    },
     "expandFileEditsByDefault": {
       "name": "預設展開檔案編輯",
       "desc": "Write 和 Edit diff 首次出現時以展開狀態顯示。"

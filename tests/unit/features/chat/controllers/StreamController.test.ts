@@ -389,6 +389,80 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should defer diagram rendering during streaming and render it once text finalizes', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = true;
+      const msg = createTestMessage();
+      const textEl = createMockEl();
+      deps.state.currentTextEl = textEl;
+
+      await controller.appendText('```mermaid\nflowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        textEl,
+        '```mermaid\nflowchart TB\n',
+        { deferDiagrams: true }
+      );
+
+      await controller.appendText('```');
+      await controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+        textEl,
+        '```mermaid\nflowchart TB\n```'
+      );
+    });
+
+    it('should defer diagram rendering for nested and attributed diagram fences', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = true;
+      const textEl = createMockEl();
+      deps.state.currentTextEl = textEl;
+
+      await controller.appendText('> ```mermaid title="sample"\n> flowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        textEl,
+        '> ```mermaid title="sample"\n> flowchart TB\n',
+        { deferDiagrams: true }
+      );
+    });
+
+    it('should not defer rendering for a mermaid fence nested inside another code block', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = true;
+      const textEl = createMockEl();
+      deps.state.currentTextEl = textEl;
+
+      await controller.appendText('````markdown\n```mermaid\nflowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        textEl,
+        '````markdown\n```mermaid\nflowchart TB\n'
+      );
+    });
+
+    it('should not defer diagram rendering when the setting is disabled', async () => {
+      (deps.plugin.settings as any).renderDiagramsInChat = false;
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('```mermaid\nflowchart TB\n');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        deps.state.currentTextEl,
+        '```mermaid\nflowchart TB\n'
+      );
+    });
+
     it('should flush a pending text render before finalizing text', async () => {
       const msg = createTestMessage();
 

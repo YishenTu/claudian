@@ -125,6 +125,7 @@ Tab activation and conversation hydration do not themselves authorize creation o
 
 ## Gotchas
 
+- Every code fence in rendered chat content is neutralized before `MarkdownRenderer.render`, so model output never reaches a registered code-block processor. Diagram fences (`DIAGRAM_FENCE_LANGUAGES`) are the sole exception and only through `MessageRenderer`'s own second pass, which feeds just the fence body to the diagram renderer after streaming settles. `renderDiagramsInChat` is off by default because that pass still executes whatever plugin handles mermaid blocks.
 - `ClaudianView.onClose()` must abort active tabs and dispose execution coordinators.
 - Bang-bash mode bypasses provider execution and runs a local shell command directly. It is available only when the enabled provider exposes it in `ProviderChatUIConfig`.
 - Forking is provider-owned under the hood. Use execution and provider history contracts instead of reconstructing provider session IDs in feature code.
