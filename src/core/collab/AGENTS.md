@@ -1,8 +1,7 @@
-# Collab core contracts
+# Collab contract constraints
 
-- `CollabAuthorityKind` is exactly `'lan' | 'cloud'`. `CollabProject` is a discriminated union over one common Project base; only the LAN variant has `hostMemberId` and `managerSetGeneration`. Never fabricate Cloud values or weaken LAN-only fields into meaningless optionals.
-- `CollabProjectSnapshot` has one common base, a LAN extension for Host transfer and Manager-responsibility state, and a Cloud variant composed from the package-owned Cloud snapshot plus local authority metadata.
-- Core owns authority-neutral client and feature contracts, not transport construction, retained sessions, route registries, compatibility policy, or server domain semantics. Consumers import package-owned wire symbols from `@claudian-collab/protocol`; core does not re-export or duplicate them.
-- Core may name authority-neutral transfer intent and result capabilities needed by features, but it never owns checkpoint representation, transfer phases, claim semantics, LAN/Cloud route versions, protocol operation names, or lifecycle persistence.
-- Entry, membership-management, Retire and authority-movement intents carry user choices and stable entity IDs, never caller-supplied authoritative roles, membership revisions, authority generations or Host/actor identities. Application owners obtain and freeze those facts from authenticated authority reads; LAN wire expectations remain inside LAN adaptation. This does not replace the explicit content/OID expectations used by Publish, review, Accept and Ticket editing.
-- Feature contracts expose authority kind and negotiated capability support so callers must narrow before invoking LAN-only lifecycle or administration behavior. Absence of a Cloud capability is unsupported behavior, not permission to use a LAN route.
+- Preserve the discriminated LAN/Cloud model. Do not fabricate Cloud Host/Manager-generation fields or weaken LAN-only required fields into shared optionals.
+- Feature intents carry user choices and stable entity IDs, not caller-supplied roles, membership revisions, authority generations, or actor identities. Application owners derive those facts from authenticated reads. Explicit content/OID expectations for editing, Publish, and Accept remain valid.
+- Unsupported Cloud capability never permits a LAN fallback. Core must not adopt transport construction, transfer phases, checkpoint/claim semantics, or server policy.
+- Complete presentation detail and bounded Runtime paging are separate contracts. Do not add cursor aliases to the general feature facade or treat incomplete pages as complete cached detail.
+- Conflict descriptors are immutable evidence. Per-file resolution choices are not a core state machine; users/agents edit the real Project and Publish validates the result.
