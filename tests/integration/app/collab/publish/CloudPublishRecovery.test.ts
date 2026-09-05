@@ -30,6 +30,7 @@ import {
 import {
   CloudAuthorityAdapter,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import type {
   CloudAuthorityHttpRequest,
   CloudAuthorityHttpResponse,
@@ -105,7 +106,8 @@ describe('Cloud Publish recovery integration', () => {
     await writeFile(path.join(repositoryPath, 'note.md'), 'Cloud contribution\n');
 
     const transport = new LostResponseCloudTransport(mainOid);
-    const authority = await new CloudAuthorityAdapter({
+    await new CloudProjectCredentialStore(root).getOrCreate(PROJECT_ID);
+    const authority = await new CloudAuthorityAdapter(root, {
       request: input => transport.request(input),
     }).create(membership());
     const context: PublishProjectContext = {

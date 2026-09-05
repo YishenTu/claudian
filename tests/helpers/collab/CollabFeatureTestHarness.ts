@@ -414,7 +414,7 @@ export function completeCollabPublicationOptions(
   overrides: PublicationOptionsOverrides,
 ): CollabPublicationServiceOptions {
   return {
-    cloudAuthority: overrides.cloudAuthority ?? new CloudAuthorityAdapter(),
+    cloudAuthority: overrides.cloudAuthority ?? new CloudAuthorityAdapter(overrides.vaultRoot),
     discovery: {
       discoverProjectCandidates: () => Promise.resolve([]),
       ...overrides.discovery,

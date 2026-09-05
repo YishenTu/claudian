@@ -6,7 +6,8 @@ import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/C
 import { type CollabCloudProjectSnapshot, parseCollabProjectsFolder } from '@/core/collab';
 
 interface CloudProjectEntryBase {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  readonly principalId: string;
   readonly operationId: string;
   readonly projectId: string;
   readonly serverUrl: string;
@@ -62,10 +63,11 @@ function timestamp(value: unknown): string {
 
 export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntryRecord {
   const source = record(value, [
-    'schemaVersion', 'operationKind', 'operationId', 'projectId', 'serverUrl', 'projectsFolder',
+    'schemaVersion', 'principalId', 'operationKind', 'operationId', 'projectId', 'serverUrl', 'projectsFolder',
     'slug', 'stagingDirectoryName', 'phase', 'request', 'admission', 'createdAt', 'updatedAt',
   ]);
-  if (source.schemaVersion !== 1 || (source.operationKind !== 'cloud-create-project' && source.operationKind !== 'cloud-join-project' && source.operationKind !== 'cloud-existing-project')
+  if (source.schemaVersion !== 2 || (source.operationKind !== 'cloud-create-project' && source.operationKind !== 'cloud-join-project' && source.operationKind !== 'cloud-existing-project')
+    || typeof source.principalId !== 'string' || !/^vault-[0-9a-f]{64}$/u.test(source.principalId)
     || !isCollabOpaqueId(source.operationId) || !isCollabProjectId(source.projectId)
     || typeof source.serverUrl !== 'string' || typeof source.projectsFolder !== 'string'
     || !parseCollabProjectsFolder(source.projectsFolder).ok
@@ -79,7 +81,7 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
   const base: CloudProjectEntryBase = {
     createdAt: timestamp(source.createdAt), operationId: source.operationId,
     phase: source.phase, projectId: source.projectId,
-    projectsFolder: source.projectsFolder, schemaVersion: 1,
+    projectsFolder: source.projectsFolder, schemaVersion: 2, principalId: source.principalId,
     serverUrl: validateCloudServerUrl(source.serverUrl, 'serverUrl'), slug: source.slug,
     stagingDirectoryName: source.stagingDirectoryName, updatedAt: timestamp(source.updatedAt),
   };

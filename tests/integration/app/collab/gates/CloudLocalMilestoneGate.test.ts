@@ -48,6 +48,7 @@ import { NativeGitAcceptedStateIntegrator } from '@/app/collab/reconciliation/Na
 import { ReconciliationCoordinator } from '@/app/collab/reconciliation/ReconciliationCoordinator';
 import { ReconciliationMutationSafety } from '@/app/collab/reconciliation/ReconciliationMutationSafety';
 import { ReconciliationRepository } from '@/app/collab/reconciliation/ReconciliationRepository';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
   CollabAuthorityGitNetworkEnvironment,
 } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
@@ -90,11 +91,13 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 }
 
 async function cloudMembership(
+  vaultRoot: string,
   descriptor: GateDescriptor,
   memberId: string,
 ): Promise<CollabLocalCloudMembershipRecord> {
   const projectId = descriptor.manifest.comparison.projectId;
-  const connection = await createDevelopmentCloudAuthorityAdapter(memberId).connect({
+  await new CloudProjectCredentialStore(vaultRoot).getOrCreate(projectId);
+  const connection = await createDevelopmentCloudAuthorityAdapter(vaultRoot, memberId).connect({
     projectId,
     serverUrl: descriptor.origin,
   });
@@ -137,9 +140,9 @@ async function createClient(
   memberId: string,
 ): Promise<ClientFixture> {
   const projectId = descriptor.manifest.comparison.projectId;
-  const source = await cloudMembership(descriptor, memberId);
   const vaultRoot = path.join(root, memberId);
   await mkdir(vaultRoot);
+  const source = await cloudMembership(vaultRoot, descriptor, memberId);
   const projects = new CollabLocalProjectRepository(vaultRoot, {
     installationKey: TEST_INSTALLATION_A,
   });
@@ -288,7 +291,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         if (!membership || !isCollabLocalCloudMembership(membership)) {
           throw new Error('Cloud membership was not durably bound');
         }
-        return createDevelopmentCloudAuthorityAdapter(membership.member.id).create(membership);
+        return createDevelopmentCloudAuthorityAdapter(client.vaultRoot, membership.member.id).create(membership);
       }));
       sessions.push(...initialSessions);
       const events: CollabAuthorityEventInvalidation[][] = [[], []];
@@ -402,7 +405,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         if (!membership || !isCollabLocalCloudMembership(membership)) {
           throw new Error('Restart did not retain Cloud authority binding');
         }
-        return createDevelopmentCloudAuthorityAdapter(membership.member.id).create(membership);
+        return createDevelopmentCloudAuthorityAdapter(client.vaultRoot, membership.member.id).create(membership);
       }));
       sessions.push(...restartedSessions);
       await expect(Promise.all(restartedSessions.map(session => (

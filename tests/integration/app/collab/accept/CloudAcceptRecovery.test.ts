@@ -39,6 +39,7 @@ import { ReconciliationRepository } from '@/app/collab/reconciliation/Reconcilia
 import {
   CloudAuthorityAdapter,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type {
@@ -164,7 +165,8 @@ describe('Cloud Accept recovery integration', () => {
     );
     const firstSessions = new CollabProjectWorkSessionRegistry();
     registries.add(firstSessions);
-    const firstAuthoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
+    await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
+    const firstAuthoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter(vaultRoot, {
       request: input => transport.request(input),
     })]);
     const firstProjection = new CollabClientProjection(
@@ -189,7 +191,7 @@ describe('Cloud Accept recovery integration', () => {
 
     const sessions = new CollabProjectWorkSessionRegistry();
     registries.add(sessions);
-    const authoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
+    const authoritySessions = new CollabAuthoritySessionFactory([new CloudAuthorityAdapter(vaultRoot, {
       request: input => transport.request(input),
     })]);
     const restartedProjects = new CollabLocalProjectRepository(vaultRoot);

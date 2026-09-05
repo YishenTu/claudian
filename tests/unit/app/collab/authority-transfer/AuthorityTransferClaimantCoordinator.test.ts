@@ -206,7 +206,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-10-01T00:00:10.000Z'),
       source,
       store,
-      target: { claimTransferredMembership: claimTarget, confirmTargetBinding },
+      target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: claimTarget, confirmTargetBinding },
     });
 
     await coordinator.startManagerReissued({
@@ -245,6 +245,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-09-30T23:59:00.000Z'),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: jest.fn(async () => ({
           ...receipt(),
           redeemedAt: '2026-10-01T00:01:00.000Z',
@@ -296,7 +297,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       convergence: { converge },
       now: () => new Date(reissuedClaim().expiresAt),
       store,
-      target: { claimTransferredMembership: claimTarget, confirmTargetBinding },
+      target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: claimTarget, confirmTargetBinding },
     });
 
     await coordinator.startManagerReissued({
@@ -315,6 +316,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   it('finishes a target-confirmed Manager reissue locally without a target confirmation port', async () => {
     const store = new MemoryStore();
     const prepared = createManagerReissuedAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
       descriptor: reissuedClaim(),
       memberPersonalRef: 'refs/heads/members/member-offline',
       operationIntentId: INTENT_ID,
@@ -339,7 +341,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       convergence: { converge },
       now: () => new Date('2026-10-01T00:03:00.000Z'),
       store,
-      target: { claimTransferredMembership: jest.fn() },
+      target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: jest.fn() },
     });
 
     await coordinator.resume(PROJECT_ID);
@@ -358,6 +360,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date(reissuedClaim().expiresAt),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: jest.fn(),
         confirmTargetBinding: async () => {
           throw new CollabError({
@@ -390,6 +393,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-10-01T00:00:10.000Z'),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: async () => ({
           ...receipt(),
           redeemedAt: '2026-10-01T00:01:00.000Z',
@@ -413,6 +417,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date(reissuedClaim().expiresAt),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: jest.fn(),
         confirmTargetBinding: async (_record, proof) => {
           expect(proof).toBe('receipt');
@@ -424,6 +429,41 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     await afterExpiry.resume(PROJECT_ID);
 
     expect(converge).toHaveBeenCalledTimes(1);
+    expect(store.record).toBeNull();
+  });
+
+  it.each(['source-issued', 'manager-reissued'] as const)('keeps the original Cloud principal during ambiguous %s redemption', async variant => {
+    const store = new MemoryStore();
+    const requests: ClaimTransferredMembershipRequest[] = [];
+    let loseReply = true;
+    const create = (cloudPrincipalId: string) => new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: async () => undefined },
+      now: () => new Date(variant === 'source-issued' ? '2026-08-27T00:02:00.000Z' : '2026-10-01T00:02:00.000Z'),
+      source: { getClaim: async () => claim(), acknowledgeRedemption: async () => undefined },
+      store,
+      target: {
+        cloudPrincipalId,
+        claimTransferredMembership: async (_record, request) => {
+          requests.push(request);
+          if (loseReply) throw new Error('simulated lost response');
+          return { ...receipt(request.idempotencyKey), redeemedAt: variant === 'source-issued' ? '2026-08-27T00:01:00.000Z' : '2026-10-01T00:01:00.000Z' };
+        },
+        confirmTargetBinding: async () => completed('lan-to-cloud'),
+      },
+    });
+    const original = 'vault-' + 'a'.repeat(64);
+    const first = create(original);
+    const started = variant === 'source-issued'
+      ? first.start({ memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed('lan-to-cloud') })
+      : first.startManagerReissued({ descriptor: reissuedClaim(), memberPersonalRef: `refs/heads/members/${MEMBER_ID}`, operationIntentId: INTENT_ID, serverUrl: 'https://cloud.example.test/' });
+    await expect(started).rejects.toThrow('simulated lost response');
+    const retained = store.record;
+    loseReply = false;
+    await expect(create('vault-' + 'b'.repeat(64)).resume(PROJECT_ID)).rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
+    expect(store.record).toEqual(retained);
+    expect(requests).toHaveLength(1);
+    await create(original).resume(PROJECT_ID);
+    expect(requests).toEqual([requests[0], requests[0]]);
     expect(store.record).toBeNull();
   });
 
@@ -441,6 +481,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-10-01T00:00:10.000Z'),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: async (_record, request) => {
           requests.push(request);
           throw new Error('simulated lost response');
@@ -457,6 +498,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-10-01T00:00:20.000Z'),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: async (_record, request) => {
           requests.push(request);
           return {
@@ -496,6 +538,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-10-01T00:00:10.000Z'),
       store,
       target: {
+        cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: async () => {
           throw new CollabError({ code: 'invitation-revoked' });
         },
@@ -520,6 +563,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const value = {
       claim: claim(),
       createdAt: CREATED_AT,
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
       kind: 'authority-transfer-claimant',
       lanTarget: null,
       managerPredecessor: null,
@@ -584,7 +628,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         now: () => new Date('2026-08-27T00:02:00.000Z'),
         source: { acknowledgeRedemption: acknowledge, getClaim },
         store,
-        target: { claimTransferredMembership: claimTarget },
+        target: { cloudPrincipalId: expectsCredential ? null : 'vault-' + 'a'.repeat(64), claimTransferredMembership: claimTarget },
       });
 
       await coordinator.start({
@@ -636,7 +680,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
           getClaim: async () => claim(),
         },
         store,
-        target: { claimTransferredMembership: async () => receipt(operationIntentId) },
+        target: { cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null, claimTransferredMembership: async () => receipt(operationIntentId) },
       });
 
       await expect(first.start({
@@ -659,7 +703,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         lanTarget: direction === 'cloud-to-lan' ? LAN_TARGET : null,
         source: { acknowledgeRedemption: unavailable, getClaim: unavailable },
         store,
-        target: { claimTransferredMembership: unavailable },
+        target: { cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null, claimTransferredMembership: unavailable },
       });
 
       await restarted.resume(PROJECT_ID);
@@ -680,7 +724,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         getClaim: jest.fn(async () => { throw new Error('simulated source outage'); }),
       },
       store,
-      target: { claimTransferredMembership: jest.fn() },
+      target: { cloudPrincipalId: null, claimTransferredMembership: jest.fn() },
     });
 
     await expect(coordinator.start({
@@ -710,7 +754,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         getClaim,
       },
       store,
-      target: { claimTransferredMembership: target },
+      target: { cloudPrincipalId: null, claimTransferredMembership: target },
     });
     store.failNextRemove = true;
     await expect(coordinator.start({
@@ -734,6 +778,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     async (phase) => {
       const store = new MemoryStore();
       let record = createAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         createdAt: CREATED_AT,
         memberId: MEMBER_ID,
         operationIntentId: INTENT_ID,
@@ -763,7 +808,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         now: () => new Date('2026-09-26T00:00:00.000Z'),
         source: { acknowledgeRedemption: acknowledge, getClaim },
         store,
-        target: { claimTransferredMembership: target },
+        target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: target },
       });
 
       await coordinator.resume(PROJECT_ID);
@@ -779,6 +824,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   it('recovers forward after target claim expiry without replaying source acknowledgement', async () => {
     const store = new MemoryStore();
     let record = createAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
       createdAt: CREATED_AT,
       memberId: MEMBER_ID,
       operationIntentId: INTENT_ID,
@@ -807,7 +853,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       now: () => new Date('2026-09-26T00:00:00.000Z'),
       source: { acknowledgeRedemption: acknowledge, getClaim: jest.fn() },
       store,
-      target: { claimTransferredMembership: jest.fn() },
+      target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: jest.fn() },
     });
 
     await coordinator.resume(PROJECT_ID);

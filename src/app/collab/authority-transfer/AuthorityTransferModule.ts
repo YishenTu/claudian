@@ -123,7 +123,7 @@ export interface AuthorityTransferModuleOptions {
   ) => Promise<void> | void;
   readonly claimantStore: AuthorityTransferClaimantCoordinatorOptions['store'];
   readonly createManagerReissuedClaimConnection?: (
-    input: Readonly<{ readonly projectId: CollabProjectId; readonly serverUrl: string }>,
+    input: Readonly<{ readonly projectId: CollabProjectId; readonly serverUrl: string; readonly allowCredentialCreation: boolean }>,
     options: CollabOperationOptions,
   ) => Promise<CloudAuthorityConnection>;
   readonly convergence: AuthorityTransferLocalConvergence;
@@ -199,6 +199,7 @@ export interface CreateLanToCloudRequesterInput {
 }
 
 export interface LanToCloudSourceProposalView {
+  readonly beginSubmission: 'cloud-absent' | 'not-sent' | 'possibly-sent';
   readonly proposedByMemberId: LanAuthorityTransferActor['memberId'];
   readonly request: Readonly<RequestLanToCloudTransferRequest>;
   readonly status: CollabAuthorityTransferStatus;
@@ -568,6 +569,7 @@ export class AuthorityTransferModule {
         || record.operationIntentId !== entry.request.idempotencyKey)
     ) throw moduleError('authority-transfer-source-successor-mismatch');
     return Object.freeze({
+      beginSubmission: entry.beginSubmission,
       proposedByMemberId: entry.proposedByMemberId,
       request: entry.request,
       status: record?.status ?? entry.status,
@@ -1997,6 +1999,7 @@ export class AuthorityTransferModule {
               },
             },
             target: {
+              cloudPrincipalId: null,
               claimTransferredMembership: () => {
                 throw moduleError('authority-transfer-claimant-target-replay-invalid');
               },
@@ -2159,6 +2162,7 @@ export class AuthorityTransferModule {
         ),
       },
       target: {
+        cloudPrincipalId: input.cloudSession.principalId,
         claimTransferredMembership: (record, request, options) => {
           if ('credentialHash' in request && request.credentialHash !== undefined) {
             throw moduleError('authority-transfer-cloud-claim-credential-unexpected');
@@ -2197,6 +2201,7 @@ export class AuthorityTransferModule {
       projectId: input.projectId,
       lanTarget: null,
       target: {
+        cloudPrincipalId: input.cloudSession.principalId,
         claimTransferredMembership: (record, request, options) => {
           if (record.variant !== 'manager-reissued') {
             throw moduleError('authority-transfer-claimant-variant-invalid');
@@ -2259,6 +2264,7 @@ export class AuthorityTransferModule {
       || membership.member.id !== invitation.claim.memberId
     ) throw moduleError('authority-transfer-claimant-membership-invalid');
     const cloudSession = await createConnection({
+      allowCredentialCreation: await this.options.claimantStore.load(invitation.claim.projectId) === null,
       projectId: invitation.claim.projectId,
       serverUrl: invitation.serverUrl,
     }, options);
@@ -2342,6 +2348,7 @@ export class AuthorityTransferModule {
         ),
       },
       target: {
+        cloudPrincipalId: null,
         claimTransferredMembership: (_record, request, options) => {
           if (!('credentialHash' in request) || request.credentialHash === undefined) {
             throw moduleError('authority-transfer-lan-claim-credential-missing');
@@ -2381,6 +2388,7 @@ export class AuthorityTransferModule {
         },
       },
       target: {
+        cloudPrincipalId: input.cloudSession.principalId,
         claimTransferredMembership: () => {
           throw moduleError('authority-transfer-claimant-target-replay-invalid');
         },
@@ -2431,6 +2439,7 @@ export class AuthorityTransferModule {
         },
       },
       target: {
+        cloudPrincipalId: null,
         claimTransferredMembership: () => {
           throw moduleError('authority-transfer-claimant-target-replay-invalid');
         },
@@ -2456,6 +2465,7 @@ export class AuthorityTransferModule {
         },
       },
       target: {
+        cloudPrincipalId: null,
         claimTransferredMembership: () => {
           throw moduleError('authority-transfer-claimant-target-replay-invalid');
         },

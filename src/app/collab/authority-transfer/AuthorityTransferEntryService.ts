@@ -54,7 +54,7 @@ interface PendingLanToCloudAcceptance {
 
 export interface AuthorityTransferEntryServiceOptions {
   readonly connectCloud: (
-    input: CloudAuthorityConnectionInput,
+    input: CloudAuthorityConnectionInput & { readonly allowCredentialCreation: boolean },
     options?: CollabOperationOptions,
   ) => Promise<CloudAuthorityConnection>;
   readonly createIdempotencyKey?: () => string;
@@ -394,6 +394,7 @@ export class AuthorityTransferEntryService {
     options: CollabOperationOptions,
   ): Promise<RetainedLanToCloudSource> {
     const connection = await this.#connectCloud({
+      allowCredentialCreation: proposal.beginSubmission !== 'possibly-sent',
       projectId: proposal.request.projectId,
       serverUrl: proposal.request.targetUrl,
     }, options);

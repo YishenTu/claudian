@@ -9,14 +9,14 @@ import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authori
 import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 
 /** Explicit test ingress assertions; never part of a persisted Cloud binding or production adapter. */
-export function createDevelopmentCloudAuthorityAdapter(actor: string): CloudAuthorityAdapter {
+export function createDevelopmentCloudAuthorityAdapter(vaultRoot: string, actor: string): CloudAuthorityAdapter {
   const http = new NodeCloudAuthorityHttpTransport();
   const artifacts = new NodeCloudAuthorityArtifactTransport();
   const headers = (input: Readonly<Record<string, string>>) => ({
     ...input,
     'x-claudian-development-actor': actor,
   });
-  return new CloudAuthorityAdapter({
+  return new CloudAuthorityAdapter(vaultRoot, {
     artifacts: {
       download: input => artifacts.download({ ...input, headers: headers(input.headers) }),
       upload: input => artifacts.upload({ ...input, headers: headers(input.headers) }),

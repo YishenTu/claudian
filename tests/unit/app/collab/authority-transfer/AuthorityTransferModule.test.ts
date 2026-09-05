@@ -194,6 +194,7 @@ function recoverableClaimantRecord(input: Readonly<{
     updatedAt: '2026-08-27T00:00:10.000Z',
   };
   return decodeAuthorityTransferClaimantRecord({
+    cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null,
     claim: phaseIndex >= 1
       ? {
           claim: claimValue,
@@ -849,12 +850,13 @@ describe('AuthorityTransferModule', () => {
   it('reconstructs a Manager-reissued claimant with only its frozen Cloud target', async () => {
     const descriptor = managerReissuedDescriptor();
     const record = createManagerReissuedAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
       descriptor,
       memberPersonalRef: 'refs/heads/members/member-host',
       operationIntentId: 'intent-manager-reissued',
       serverUrl: 'https://cloud.example.test/',
     });
-    const cloudSession = { projectId: PROJECT_ID } as CloudAuthorityConnection;
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64), projectId: PROJECT_ID } as CloudAuthorityConnection;
     const createCloudConnection = jest.fn(async () => cloudSession);
     const createLanClient = jest.fn();
     const resolver = new AuthorityTransferClaimantBindingResolver({
@@ -895,6 +897,7 @@ describe('AuthorityTransferModule', () => {
       mode: 'manager-reissued',
     });
     expect(createCloudConnection).toHaveBeenCalledWith({
+      allowCredentialCreation: false,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test/',
     });
@@ -968,7 +971,7 @@ describe('AuthorityTransferModule', () => {
       lifecycle,
       persistence,
     });
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       developmentActorId: 'member-host',
       dispose: jest.fn(),
       lifecycle: {
@@ -1007,6 +1010,7 @@ describe('AuthorityTransferModule', () => {
     );
     expect(proposed).toMatchObject({ phase: 'collecting-readiness' });
     await expect(module.readLanToCloudSourceProposal(PROJECT_ID)).resolves.toEqual({
+      beginSubmission: 'not-sent',
       proposedByMemberId: 'member-any',
       request: {
         expectedAuthorityGeneration: 1,
@@ -1137,7 +1141,7 @@ describe('AuthorityTransferModule', () => {
         loadSourceEntry: jest.fn(async () => sourceEntry),
       } as unknown as AuthorityTransferPersistence,
     });
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: {},
       projectId: PROJECT_ID,
@@ -1216,7 +1220,7 @@ describe('AuthorityTransferModule', () => {
         loadSourceEntry: jest.fn(async projectId => sourceEntry(projectId)),
       } as unknown as AuthorityTransferPersistence,
     });
-    const cloudSession = (projectId: string) => ({
+    const cloudSession = (projectId: string) => ({ principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: {},
       projectId,
@@ -1279,7 +1283,7 @@ describe('AuthorityTransferModule', () => {
       lifecycle,
       persistence: {} as AuthorityTransferPersistence,
     });
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       projectId: PROJECT_ID,
       supports: (capability: CollabCloudCapability) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
@@ -4965,7 +4969,7 @@ describe('AuthorityTransferModule', () => {
 
   it('reconstructs an accepted source runtime behind the existing LAN Host route', async () => {
     const sourceEndpoint = jest.fn(async () => 'https://127.0.0.1:54545');
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       developmentActorId: 'member-host',
       dispose: jest.fn(),
       lifecycle: { authorityTransfer: jest.fn() },
@@ -5087,7 +5091,7 @@ describe('AuthorityTransferModule', () => {
     let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord();
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const convergence = { lanToCloudMember: jest.fn(async () => undefined) };
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       developmentActorId: 'member-host',
       dispose: jest.fn(),
       lifecycle: { authorityTransfer: jest.fn() },
@@ -5176,7 +5180,7 @@ describe('AuthorityTransferModule', () => {
       ) => {
         sourceAck.idempotencyKey = request.idempotencyKey;
       });
-      const cloudSession = {
+      const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
         dispose: jest.fn(),
         lifecycle: { authorityTransfer: cloudRequest },
         projectId: PROJECT_ID,
@@ -5290,7 +5294,7 @@ describe('AuthorityTransferModule', () => {
       },
     };
     const readSnapshot = jest.fn(async () => snapshot);
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: { authorityTransfer },
       projectId: PROJECT_ID,
@@ -5383,6 +5387,7 @@ describe('AuthorityTransferModule', () => {
     expect(readSnapshot).toHaveBeenCalledTimes(2);
     expect(lanToCloudMember).toHaveBeenCalledWith({ snapshot, status });
     expect(createManagerReissuedClaimConnection).toHaveBeenCalledWith({
+      allowCredentialCreation: true,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test/',
     }, { signal: controller.signal });
@@ -5455,7 +5460,7 @@ describe('AuthorityTransferModule', () => {
     });
     const saved: AuthorityTransferClaimantRecord[] = [];
     const loadClaimantMembership = jest.fn(async () => managerClaimantMembership());
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: {
         authorityTransfer: jest.fn(async () => {
@@ -5523,6 +5528,7 @@ describe('AuthorityTransferModule', () => {
     const descriptor = managerReissuedDescriptor();
     let record: AuthorityTransferClaimantRecord | null =
       createManagerReissuedAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         descriptor,
         memberPersonalRef: 'refs/heads/members/member-host',
         operationIntentId: 'intent-manager-reissued-expired',
@@ -5531,7 +5537,7 @@ describe('AuthorityTransferModule', () => {
     const status = recoverableClaimantRecord().status;
     const authorityTransfer = jest.fn(async () => status);
     const readSnapshot = jest.fn(async () => managerClaimantSnapshot());
-    const cloudSession = {
+    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: { authorityTransfer },
       projectId: PROJECT_ID,
@@ -5604,6 +5610,7 @@ describe('AuthorityTransferModule', () => {
       const descriptor = managerReissuedDescriptor();
       let record: AuthorityTransferClaimantRecord | null =
         createManagerReissuedAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
           descriptor,
           memberPersonalRef: 'refs/heads/members/member-host',
           operationIntentId: 'intent-manager-reissued-expired',
@@ -5611,7 +5618,7 @@ describe('AuthorityTransferModule', () => {
         });
       const status = recoverableClaimantRecord().status;
       const snapshot = managerClaimantSnapshot();
-      const cloudSession = {
+      const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
         dispose: jest.fn(),
         lifecycle: { authorityTransfer: jest.fn(async () => status) },
         projectId: PROJECT_ID,
@@ -5829,6 +5836,7 @@ describe('AuthorityTransferModule', () => {
     const descriptor = managerReissuedDescriptor();
     const status = recoverableClaimantRecord().status;
     const prepared = createManagerReissuedAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64),
       descriptor,
       memberPersonalRef: 'refs/heads/members/member-host',
       operationIntentId: 'intent-manager-local-only',

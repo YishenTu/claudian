@@ -17,6 +17,7 @@ import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopyS
 import { type CloudAuthorityAdapter, type CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import { cloudProjectGitRemoteUrl, validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabCreateProjectRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
@@ -50,6 +51,7 @@ function entryError(reason: string): CollabError {
 }
 
 export class CloudProjectEntryCoordinator {
+  readonly #credentials: CloudProjectCredentialStore;
   readonly #queue = new SerialTaskQueue();
   readonly #lifetime = new AbortController();
   readonly #setup: CollabWorkingCopySetup;
@@ -58,6 +60,7 @@ export class CloudProjectEntryCoordinator {
   readonly #createId: (kind: 'operation' | 'project') => string;
 
   constructor(private readonly foundation: CloudProjectEntryFoundation, private readonly options: CloudProjectEntryOptions) {
+    this.#credentials = new CloudProjectCredentialStore(options.vaultRoot);
     this.#setup = new CollabWorkingCopySetup(foundation, options.vaultRoot);
     this.#network = new CollabAuthorityGitNetworkEnvironment(options.vaultRoot);
     this.#now = options.now ?? (() => new Date());
@@ -83,12 +86,14 @@ export class CloudProjectEntryCoordinator {
           throw entryError('entry-project-already-owned');
         }
         const slug = await this.#claimSlug(parsedFolder.value, captured.name, projectId);
+        const credential = await this.#credentials.getOrCreate(projectId);
         const timestamp = this.#now().toISOString();
         const record = decodeCloudProjectEntryRecord({
+          principalId: credential.principalId,
           admission: null, createdAt: timestamp, operationId, operationKind: 'cloud-create-project',
           phase: 'intent', projectId, projectsFolder: parsedFolder.value,
           request: { idempotencyKey: operationId, managerDisplayName: captured.memberDisplayName.trim(), projectId, projectName: captured.name.trim() },
-          schemaVersion: 1, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
+          schemaVersion: 2, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
         });
         return await this.#begin(record, signal);
       } catch (error) {
@@ -114,6 +119,7 @@ export class CloudProjectEntryCoordinator {
         if (!serverUrl || (existing && existing.authority.serverUrl !== serverUrl)) {
           throw entryError('entry-existing-binding-mismatch');
         }
+        const credential = await (existing ? this.#credentials.require(projectId) : this.#credentials.getOrCreate(projectId));
         const connection = await this.options.cloudAuthority.connect({ projectId, serverUrl }, { signal });
         let existingSnapshot;
         try {
@@ -145,6 +151,7 @@ export class CloudProjectEntryCoordinator {
         const operationId = this.#createId('operation');
         const timestamp = this.#now().toISOString();
         const record = decodeCloudProjectEntryRecord({
+          principalId: credential.principalId,
           admission: existingSnapshot ? { response: null, snapshot: existingSnapshot } : null,
           createdAt: timestamp, operationId, operationKind: existingSnapshot ? 'cloud-existing-project' : 'cloud-join-project',
           phase: existingSnapshot ? 'admitted' : 'intent', projectId, projectsFolder: parsedFolder.value,
@@ -152,7 +159,7 @@ export class CloudProjectEntryCoordinator {
             displayName: invitationInput.memberDisplayName.trim(), idempotencyKey: operationId,
             invitationId: invitationInput.invitation.invitation.invitationId, projectId, secret: invitationInput.invitation.invitation.secret,
           },
-          schemaVersion: 1, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
+          schemaVersion: 2, serverUrl, slug, stagingDirectoryName: `.claudian-clone-${projectId}`, updatedAt: timestamp,
         });
         return await this.#begin(record, signal);
       } catch (error) {
@@ -213,6 +220,7 @@ export class CloudProjectEntryCoordinator {
     try {
       signal?.throwIfAborted();
       connection = await this.options.cloudAuthority.connect({ projectId: record.projectId, serverUrl: record.serverUrl }, { signal });
+      if (connection.principalId !== record.principalId) throw entryError('cloud-entry-principal-mismatch');
       if (record.phase === 'intent') {
         signal?.throwIfAborted();
         preserveRecovery = true;

@@ -104,6 +104,8 @@ function cloudCapabilityImplemented(
     && collabCloudCapabilitySupported(document, capability);
 }
 
+import { type CloudProjectCredential,CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+
 export interface CloudProjectEventSocket {
   close(code: number, reason: string): void;
   onClose(listener: (code: number) => void): void;
@@ -125,6 +127,7 @@ export interface CloudProjectEventClientOptions {
 }
 
 export interface CloudProjectEventClientInput {
+  readonly headers: Readonly<Record<string, string>>;
   readonly afterSequence: number;
   readonly projectId: string;
   readonly serverUrl: string;
@@ -216,6 +219,7 @@ export interface CloudPendingRetirementConnection {
 }
 
 export interface CloudAuthorityConnection {
+  readonly principalId: string;
   joinProject(
     input: CollabControlOperationMap['joinCloudProject']['request'],
     options?: { readonly signal?: AbortSignal },
@@ -326,6 +330,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     private readonly projectId: string,
     private readonly transport: CloudAuthorityHttpTransport,
     private readonly requestId: () => string,
+    private readonly headers: Readonly<Record<string, string>>,
   ) {}
 
   dispose(): void {
@@ -432,7 +437,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     const response = await this.artifacts.upload({
       body: input.body,
       byteCount: input.byteCount,
-      headers: {},
+      headers: this.headers,
       maximumBytes: this.#artifactLimit(input.artifact),
       signal,
       url: resolveCloudRoute(this.origin, route.target),
@@ -456,7 +461,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     );
     const signal = this.signal(options.signal);
     const response = await this.artifacts.download({
-      headers: {},
+      headers: this.headers,
       maximumBytes: this.#artifactLimit(input.artifact),
       signal,
       url: resolveCloudRoute(this.origin, route.target),
@@ -487,7 +492,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
         protocolVersion: COLLAB_PROTOCOL_VERSION,
         requestId,
       },
-      headers: {},
+      headers: this.headers,
       method: route.method,
       ...(options.signal ? { signal: options.signal } : {}),
       url: resolveCloudRoute(this.origin, route.target),
@@ -782,7 +787,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
         protocolVersion: COLLAB_PROTOCOL_VERSION,
         requestId,
       },
-      headers: {},
+      headers: this.headers,
       method: route.method,
       ...(options.signal ? { signal: options.signal } : {}),
       url: resolveCloudRoute(this.origin, route.target),
@@ -901,7 +906,7 @@ export class CloudProjectEventClient {
     const url = new URL(resolveCloudRoute(this.origin, route.target));
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = this.#createSocket({
-      headers: {},
+      headers: this.input.headers,
       url: url.toString(),
     });
     this.#socket = socket;
@@ -1068,7 +1073,10 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
   private readonly request: CloudAuthorityHttpTransport;
   private readonly requestId: () => string;
 
-  constructor(options: CloudAuthorityAdapterOptions = {}) {
+  private readonly credentials: CloudProjectCredentialStore;
+
+  constructor(vaultRoot: string, options: CloudAuthorityAdapterOptions = {}) {
+    this.credentials = new CloudProjectCredentialStore(vaultRoot);
     this.artifacts = options.artifacts ?? new NodeCloudAuthorityArtifactTransport();
     this.#createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation));
@@ -1101,6 +1109,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       || gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)
     ) throw new TypeError('Invalid Cloud authority binding');
     const { document, origin } = await this.#negotiate(serverUrl, options);
+    const credential = await this.credentials.require(projectId);
+    const headers = credentialHeaders(credential);
     const capabilities = new Set(document.capabilities);
     const control = new CloudAuthorityControl(
       this.artifacts,
@@ -1115,6 +1125,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       projectId,
       this.request,
       this.requestId,
+      headers,
     );
     try {
       await control.readSnapshot(projectId, options);
@@ -1138,6 +1149,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
           }
           const client = this.#createEventClient({
             afterSequence,
+            headers,
             projectId,
             serverUrl: origin,
           }, onInvalidation);
@@ -1160,7 +1172,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
         },
       },
       git: {
-        headers: [],
+        headers: gitCredentialHeaders(headers),
         remoteUrl: gitRemoteUrl,
       },
       lifecycle: control,
@@ -1181,6 +1193,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       || binding.authorityGeneration < 1
     ) throw new TypeError('Invalid Cloud pending Leave binding');
     const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
     const capabilities = new Set(document.capabilities);
     const control = new CloudAuthorityControl(
       this.artifacts,
@@ -1195,6 +1209,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       binding.projectId,
       this.request,
       this.requestId,
+      headers,
     );
     const membershipBinding: CloudMembershipBinding = {
       authorityGeneration: binding.authorityGeneration,
@@ -1241,6 +1256,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
           || !cloudCapabilityImplemented(document, 'git-upload-pack')
         ) throw controlIntegrityError('cloud-pending-leave-personal-ref-mismatch');
         return this.readPersonalRef({
+          headers,
           personalRef,
           projectId: binding.projectId,
           serverUrl: origin,
@@ -1266,6 +1282,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       || binding.authorityGeneration < 1
     ) throw new TypeError('Invalid Cloud pending Retirement binding');
     const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
     const control = new CloudAuthorityControl(
       this.artifacts,
       new Set(document.capabilities),
@@ -1279,6 +1297,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       binding.projectId,
       this.request,
       this.requestId,
+      headers,
     );
     const membershipBinding: CloudMembershipBinding = {
       authorityGeneration: binding.authorityGeneration,
@@ -1318,6 +1337,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       || binding.authorityGeneration < 1
     ) throw new TypeError('Invalid Cloud authority-transfer binding');
     const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
     const control = new CloudAuthorityControl(
       this.artifacts,
       new Set(document.capabilities),
@@ -1331,6 +1352,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       binding.projectId,
       this.request,
       this.requestId,
+      headers,
     );
     const membershipBinding: CloudMembershipBinding = {
       authorityGeneration: binding.authorityGeneration,
@@ -1367,6 +1389,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     const { projectId, serverUrl } = binding;
     const remoteUrl = cloudProjectGitRemoteUrl(serverUrl, projectId);
     const { document, origin } = await this.#negotiate(serverUrl, options);
+    const credential = await this.credentials.require(projectId);
+    const headers = credentialHeaders(credential);
     const capabilities = new Set(document.capabilities);
     const lifecycle = new CloudAuthorityControl(
       this.artifacts,
@@ -1377,12 +1401,14 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       projectId,
       this.request,
       this.requestId,
+      headers,
     );
     return {
       createProject: (input, options) => lifecycle.createProject(input, options),
       joinProject: (input, options) => lifecycle.joinProject(input, options),
       dispose: () => lifecycle.dispose(),
-      git: { headers: [], remoteUrl },
+      git: { headers: gitCredentialHeaders(headers), remoteUrl },
+      principalId: credential.principalId,
       lifecycle,
       projectId,
       readSnapshot: (projectId, options) => lifecycle.readSnapshot(projectId, options),
@@ -1426,4 +1452,15 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     }
     return { document, origin };
   }
+}
+
+function credentialHeaders(credential: CloudProjectCredential): Readonly<Record<string, string>> {
+  return Object.freeze({
+    authorization: `Bearer ${credential.credential}`,
+    'x-claudian-ingress-principal': credential.principalId,
+  });
+}
+
+function gitCredentialHeaders(headers: Readonly<Record<string, string>>) {
+  return Object.entries(headers).map(([name, value]) => ({ name, value, sensitive: true }));
 }

@@ -26,6 +26,7 @@ import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVe
 import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
   decodeCloudRetirementIntent,
 } from '@/app/collab/retirement/CloudRetirementIntent';
@@ -993,8 +994,9 @@ describe('CollabLocalProjectRepository', () => {
     await expect(repository.purgeProjectPrivateState(PROJECT_ID)).resolves.toBe(false);
   });
 
-  it('moves a pending retirement acknowledgement outside a finalized Project', async () => {
+  it.each(['lan', 'cloud'] as const)('preserves pending %s acknowledgement identity outside a finalized Project', async authorityKind => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
+    const credential = await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
     const retirement = decodeRetirementRecord({
       acknowledgedAt: null,
       acknowledgementStatus: 'pending',
@@ -1011,9 +1013,14 @@ describe('CollabLocalProjectRepository', () => {
       retiredAt: '2026-08-13T00:00:00.000Z',
       schemaVersion: 1,
       updatedAt: '2026-08-13T00:00:00.000Z',
+      cloudRetirementId: authorityKind === 'cloud' ? 'retire-cloud-one' : null,
+      cloudServerUrl: authorityKind === 'cloud' ? 'https://cloud.example.test' : null,
+      ...(authorityKind === 'cloud' ? {
+        hostCaCertificatePem: null, hostCaFingerprint: null, hostEndpoint: null, memberCredential: null,
+      } : {}),
     });
     await repository.transitionProjectToRetired(retirement, {
-      authorityKind: 'lan',
+      authorityKind,
       createdAt: '2026-08-08T00:00:00.000Z',
       name: 'Project Alpha',
       workspacePath: 'workspace/project-alpha',
@@ -1041,6 +1048,7 @@ describe('CollabLocalProjectRepository', () => {
     ))).rejects.toMatchObject({ code: 'ENOENT' });
 
     const restarted = new CollabLocalProjectRepository(vaultRoot);
+    expect(await new CloudProjectCredentialStore(vaultRoot).require(PROJECT_ID)).toEqual(credential);
     await expect(restarted.loadRetirementRecord(PROJECT_ID)).resolves.toEqual(retirement);
     await expect(restarted.removeRetirementAcknowledgement(PROJECT_ID)).resolves.toBe(true);
     await expect(restarted.loadRetirementRecord(PROJECT_ID)).resolves.toBeNull();
