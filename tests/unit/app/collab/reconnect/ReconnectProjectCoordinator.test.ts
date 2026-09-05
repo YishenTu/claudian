@@ -77,7 +77,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
     authority: {
       authorityGeneration: 4,
       bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-      gitRemoteUrl: 'https://old.example.test/operator/v4/projects/project-a/repository.git',
+      gitRemoteUrl: 'https://old.example.test/operator/v5/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://old.example.test/operator',
       wireVersion: COLLAB_PROTOCOL_VERSION,
@@ -364,7 +364,7 @@ describe('ReconnectProjectCoordinator', () => {
         dispose,
         git: {
           headers: [],
-          remoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+          remoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
         },
         projectId: 'project-a',
         readSnapshot,
@@ -404,7 +404,7 @@ describe('ReconnectProjectCoordinator', () => {
     expect(currentMembership).toMatchObject({
       authority: {
         authorityGeneration: 4,
-        gitRemoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+        gitRemoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
         kind: 'cloud',
         serverUrl: 'http://new.example.test/proxy/cloud',
       },
@@ -439,7 +439,7 @@ describe('ReconnectProjectCoordinator', () => {
           dispose,
           git: {
             headers: [],
-            remoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+            remoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
           },
           projectId: 'project-a',
           readSnapshot: jest.fn(async () => cloudSnapshot(snapshotChanges)),
@@ -483,7 +483,7 @@ describe('ReconnectProjectCoordinator', () => {
           dispose: jest.fn(),
           git: {
             headers: [],
-            remoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+            remoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
           },
           projectId: 'project-a',
           readSnapshot: jest.fn(async () => cloudSnapshot()),
@@ -528,7 +528,7 @@ describe('ReconnectProjectCoordinator', () => {
           dispose: jest.fn(),
           git: {
             headers: [],
-            remoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+            remoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
           },
           projectId: 'project-a',
           readSnapshot: jest.fn(async () => cloudSnapshot()),
@@ -559,7 +559,7 @@ describe('ReconnectProjectCoordinator', () => {
     const original = cloudMembership();
     const newAuthority = {
       bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
       serverUrl: 'http://new.example.test/proxy/cloud',
       wireVersion: COLLAB_PROTOCOL_VERSION,
     };
@@ -621,7 +621,7 @@ describe('ReconnectProjectCoordinator', () => {
 
   it('retains a prepared relocation and fails closed on an unexpected existing origin', async () => {
     currentMembership = cloudMembership();
-    originUrls = ['https://unexpected.example.test/v4/projects/project-a/repository.git'];
+    originUrls = ['https://unexpected.example.test/v5/projects/project-a/repository.git'];
     let pending: unknown = null;
     const activity = {
       activate: jest.fn(async () => undefined),
@@ -644,7 +644,7 @@ describe('ReconnectProjectCoordinator', () => {
           dispose: jest.fn(),
           git: {
             headers: [],
-            remoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+            remoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
           },
           projectId: 'project-a',
           readSnapshot: jest.fn(async () => cloudSnapshot()),
@@ -671,7 +671,7 @@ describe('ReconnectProjectCoordinator', () => {
     const old = cloudMembership();
     const newBinding = {
       bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v4/projects/project-a/repository.git',
+      gitRemoteUrl: 'http://new.example.test/proxy/cloud/v5/projects/project-a/repository.git',
       serverUrl: 'http://new.example.test/proxy/cloud',
       wireVersion: COLLAB_PROTOCOL_VERSION,
     };

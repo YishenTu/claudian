@@ -786,11 +786,11 @@ function cloudMembership(): CollabLocalMembershipRecord {
     ...local,
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 4,
-      gitRemoteUrl: 'https://cloud.example.test/v4/projects/project-a/repository.git',
+      bindingVersion: 5,
+      gitRemoteUrl: 'https://cloud.example.test/v5/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',
-      wireVersion: 8,
+      wireVersion: 9,
     },
     member: {
       displayName: local.member.displayName,

@@ -15,6 +15,7 @@ import type { CloudProjectInvitation } from '@/app/collab/project/CloudProjectIn
 import { type CollabWorkingCopyFoundation, type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
 import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { type CloudAuthorityAdapter, type CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import { cloudProjectGitRemoteUrl, validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
@@ -221,7 +222,21 @@ export class CloudProjectEntryCoordinator {
           const snapshot = await connection.readSnapshot(record.projectId, { signal });
           record = await this.#update(record, { admission: { response, snapshot }, phase: 'admitted' });
         } else if (record.operationKind === 'cloud-join-project') {
-          const response = await connection.joinProject(record.request, { signal });
+          let response;
+          try {
+            response = await connection.joinProject(record.request, { signal });
+          } catch (error) {
+            if (!(error instanceof CloudAuthorityRejection) || error.mutationOutcome !== 'rejected') throw error;
+            const projects = this.foundation.local.projects;
+            const pending = await projects.loadProjectDocument(record.projectId, 'pending-operation', decodeCloudProjectEntryRecord);
+            if (!isDeepStrictEqual(pending, record)) throw entryError('entry-recovery-record-changed');
+            try {
+              await projects.removeProjectDocument(record.projectId, 'pending-operation');
+            } catch (removalError) {
+              if (await projects.loadProjectDocument(record.projectId, 'pending-operation', decodeCloudProjectEntryRecord)) throw removalError;
+            }
+            return { error, status: 'failure' };
+          }
           const snapshot = await connection.readSnapshot(record.projectId, { signal });
           record = await this.#update(record, { admission: { response, snapshot }, phase: 'admitted', request: null });
         }

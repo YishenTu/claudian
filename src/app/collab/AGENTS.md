@@ -19,6 +19,7 @@
 - Validate repository identity, branch, checkout, portable tree, and integrity before atomic placement under the captured root. Cancellation or later remote failure never deletes an already placed working copy. Preserve validated legacy Join staging provenance without weakening current ownership checks.
 - LAN Join and Cloud entry reuse working-copy mechanics without sharing admission/credentials. Membership, publication state, and index must agree before ordinary sessions; entry recovery cannot reset surviving publication work.
 - Completed rejection is not proof that a mutation did not commit. Owners freeze ambiguous requests and use operation-specific authenticated evidence before allowing replacement intent.
+- Native Cloud Join may release its unchanged intent only on an exact package-proved rejection returned directly by Join. A subsequent snapshot, clone, or local failure remains recoverable after successful admission. Negative settlement permits a fresh explicit invitation/key, never an automatic replacement mutation.
 - Relocation must not carry endpoint-bound Cloud management intent across bindings. Drain the selected Project, then check for that intent before journaling movement; recovery replays the exact captured bindings.
 
 ## Session and lifecycle interaction

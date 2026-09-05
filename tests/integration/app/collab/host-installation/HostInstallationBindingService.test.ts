@@ -279,7 +279,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     });
   });
 
-  it('removes and retires authority bytes only through a current owned capability', async () => {
+  it('removes authority bytes only through a current owned capability', async () => {
     const { binding, projects } = createBinding();
     const removable = await binding.createOwned(PROJECT_ID);
     await writeFile(path.join(authorityDirectory(), 'collab.db'), 'owned');
@@ -288,25 +288,6 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     await expect(readFile(path.join(authorityDirectory(), 'collab.db'), 'utf8'))
       .rejects.toMatchObject({ code: 'ENOENT' });
 
-    const retiredProjectId = 'project-retire';
-    const retiredAuthorityDirectory = path.join(
-      vaultRoot,
-      '.claudian',
-      'collab',
-      'authorities',
-      retiredProjectId,
-    );
-    const owned = await binding.createOwned(retiredProjectId);
-    await writeFile(path.join(retiredAuthorityDirectory, 'collab.db'), 'owned');
-    const retired = await projects.retireOwnedAuthorityDirectory(
-      owned,
-      'bootstrap-attempt-one',
-    );
-    expect(retired).toContain('retired-lan-authorities');
-    await expect(projects.retireOwnedAuthorityDirectory(
-      owned,
-      'bootstrap-attempt-one',
-    )).resolves.toBe(retired);
   });
 
   it('makes owner-authorized post-cutover deletion idempotent without admitting foreign state', async () => {

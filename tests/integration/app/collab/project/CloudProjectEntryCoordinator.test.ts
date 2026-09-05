@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, fork } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import fs, { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -29,7 +29,7 @@ import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSub
 import { decodeManagerResponsibilityReceiptRecord } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
 import { decodeCloudProjectEntryRecord } from '@/app/collab/project/CloudProjectEntryRecord';
-import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
+import { decodeCloudProjectInvitation, encodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { decodeCollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -206,8 +206,8 @@ describe('CloudProjectEntryCoordinator', () => {
     const projects = fixture.foundation.local.projects;
     const membership = {
       schemaVersion: 3 as const, createdAt: CREATED_AT, updatedAt: CREATED_AT, lastEventSequence: 7,
-      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 4 as const, wireVersion: 8 as const,
-        serverUrl: fixture.serverUrl, gitRemoteUrl: `${fixture.serverUrl}/v4/projects/${PROJECT_ID}/repository.git` },
+      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 5 as const, wireVersion: 9 as const,
+        serverUrl: fixture.serverUrl, gitRemoteUrl: `${fixture.serverUrl}/v5/projects/${PROJECT_ID}/repository.git` },
       member: { id: MEMBER_ID, displayName: 'Bob', role: 'member' as const, personalRef: `refs/heads/members/${MEMBER_ID}` },
       project: { id: PROJECT_ID, name: 'Cloud Notes', workspacePath: 'Original/Projects/recovered-notes' },
     };
@@ -306,6 +306,83 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord)).toMatchObject({ phase: 'intent', operationKind: 'cloud-join-project' });
       expect((await fixture.foundation.local.projects.loadIndex()).projects).toEqual([]);
       expect(fixture.joinRequests).toHaveLength(1);
+      expect(fixture.failures).toEqual([]);
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it.each(['expired', 'revoked', 'wrong-secret'] as const)('allows a fresh invitation after a proved %s Join rejection and client restart', async joinFailure => {
+    const options: Parameters<typeof createFixture>[0] = { join: true, joinFailure };
+    const fixture = await createFixture(options);
+    let feature = createFeatureFixture(fixture);
+    let restartedFoundation: ClaudianCollabService | undefined;
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' }))
+        .resolves.toMatchObject({ status: 'failure', error: { code: 'authorization-denied' } });
+      expect(await fixture.foundation.local.projects.listPendingOperationProjectIds()).toEqual([]);
+      await feature.close();
+      await fixture.foundation.close();
+      restartedFoundation = new ClaudianCollabService({
+        getConfiguredGitPath: () => '', installationKey: TEST_INSTALLATION_A,
+        obsidianConfigDirectory: '.obsidian', vaultRoot: fixture.vaultRoot,
+      });
+      feature = createFeatureFixture({ ...fixture, foundation: restartedFoundation });
+      delete options.joinFailure;
+      const invitation = decodeCloudProjectInvitation(fixture.encodedInvitation);
+      const fresh = encodeCloudProjectInvitation({ serverUrl: invitation.serverUrl, invitation: { ...invitation.invitation, invitationId: 'invitation-fresh' } });
+      await expect(feature.joinProject({ encodedInvitation: fresh, memberDisplayName: 'Bob' }))
+        .resolves.toMatchObject({ status: 'success' });
+      expect(fixture.joinRequests).toHaveLength(2);
+      const [rejected, admitted] = fixture.joinRequests as { idempotencyKey: string; invitationId: string }[];
+      expect(admitted.invitationId).toBe('invitation-fresh');
+      expect(admitted.idempotencyKey).not.toBe(rejected.idempotencyKey);
+      expect(fixture.failures).toEqual([]);
+    } finally { await feature.close(); await restartedFoundation?.close(); await fixture.close(); }
+  });
+
+  it.each(['before', 'after'] as const)('settles a proved Join rejection when its local removal fails %s commit', async point => {
+    const fixture = await createFixture({ join: true, joinFailure: 'revoked' });
+    const feature = createFeatureFixture(fixture);
+    const projects = fixture.foundation.local.projects;
+    const documentPath = path.join(fixture.vaultRoot, `.claudian/collab/projects/${PROJECT_ID}/pending-operation.json`);
+    const unlink = fs.unlink;
+    let injectFailure = true;
+    const cut = jest.spyOn(fs, 'unlink').mockImplementation(async target => {
+      if (target !== documentPath || !injectFailure) return unlink(target);
+      injectFailure = false;
+      if (point === 'after') await unlink(target);
+      throw Object.assign(new Error('Injected document removal failure'), { code: 'EIO' });
+    });
+    try {
+      const result = await feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' });
+      cut.mockRestore();
+      expect(result).toMatchObject({ status: point === 'before' ? 'recovery-required' : 'failure' });
+      const settled = point === 'before' && result.status === 'recovery-required'
+        ? await feature.resumeSetup({ operationId: result.operationId }) : result;
+      expect(settled).toMatchObject({ status: 'failure', error: { code: 'authorization-denied' } });
+      const requests = fixture.joinRequests as { idempotencyKey: string }[];
+      expect(requests).toHaveLength(point === 'before' ? 2 : 1);
+      expect(requests.at(-1)!.idempotencyKey).toBe(requests[0].idempotencyKey);
+      expect(await projects.listPendingOperationProjectIds()).toEqual([]);
+      expect(await projects.loadMembership(PROJECT_ID)).toBeNull();
+      expect(fixture.failures).toEqual([]);
+    } finally { cut.mockRestore(); await feature.close(); await fixture.close(); }
+  });
+
+  it('keeps an admitted Join recoverable when its following snapshot is rejected', async () => {
+    const options: Parameters<typeof createFixture>[0] = { join: true };
+    const fixture = await createFixture(options);
+    const feature = createFeatureFixture(fixture);
+    let snapshotReads = 0;
+    fixture.onSnapshot(() => { if (++snapshotReads === 2) options.snapshotFailure = 'settled'; });
+    try {
+      const result = await feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' });
+      expect(result).toMatchObject({ status: 'recovery-required' });
+      if (result.status !== 'recovery-required') throw result;
+      expect(await fixture.foundation.local.projects.listPendingOperationProjectIds()).toEqual([PROJECT_ID]);
+      delete options.snapshotFailure;
+      await expect(feature.resumeSetup({ operationId: result.operationId })).resolves.toMatchObject({ status: 'success' });
+      const requests = fixture.joinRequests as { idempotencyKey: string }[];
+      expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey);
       expect(fixture.failures).toEqual([]);
     } finally { await feature.close(); await fixture.close(); }
   });
@@ -713,7 +790,7 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(await foundation.local.projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord))
         .toMatchObject({ baseMainOid: mainOid, operation: null });
       expect(await foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({
-        authority: { authorityGeneration: 7, bindingVersion: 4, kind: 'cloud', serverUrl, wireVersion: 8 },
+        authority: { authorityGeneration: 7, bindingVersion: 5, kind: 'cloud', serverUrl, wireVersion: 9 },
         member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}`, role: 'manager' },
       });
       const workingCopy = path.join(vaultRoot, 'Shared', 'Projects', 'cloud-notes');
@@ -848,7 +925,7 @@ function createFeatureFixture(fixture: Awaited<ReturnType<typeof createFixture>>
 async function createFixture(options: {
   projectName?: string;
   nonempty?: boolean; generatedProjectId?: boolean; join?: boolean; alreadyBound?: boolean; remoteContribution?: boolean;
-  snapshotFailure?: 'authorization' | 'transport' | 'malformed'; joinFailure?: 'rejected' | 'wrong-member';
+  snapshotFailure?: 'authorization' | 'transport' | 'malformed' | 'settled'; joinFailure?: 'rejected' | 'wrong-member' | 'expired' | 'revoked' | 'wrong-secret';
 } = {}) {
   let projectId = PROJECT_ID;
   let projectsFolder = 'Shared/Projects';
@@ -929,7 +1006,7 @@ async function createFixture(options: {
           barePath,
           executablePath: 'git',
           remoteUser: MEMBER_ID,
-        }, new URL(routeTarget, 'http://localhost').pathname.slice(`/v4/projects/${projectId}/repository.git`.length));
+        }, new URL(routeTarget, 'http://localhost').pathname.slice(`/v5/projects/${projectId}/repository.git`.length));
       }
       response.setHeader('content-type', 'application/json');
       if (route?.kind === 'capabilities') {
@@ -963,6 +1040,13 @@ async function createFixture(options: {
           response.writeHead(403).end(JSON.stringify(collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'authorization-denied' }))));
           return;
         }
+        if (options.snapshotFailure === 'settled') {
+          response.writeHead(403).end(JSON.stringify({
+            ...collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'authorization-denied' })),
+            mutationOutcome: 'rejected',
+          }));
+          return;
+        }
         if (!bound) {
           response.writeHead(404).end(JSON.stringify(collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'project-not-found' }))));
           return;
@@ -980,6 +1064,13 @@ async function createFixture(options: {
         joinRequests.push(decoded.value);
         if (options.joinFailure === 'rejected') {
           response.writeHead(403).end(JSON.stringify(collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'authorization-denied' }))));
+          return;
+        }
+        if (options.joinFailure === 'expired' || options.joinFailure === 'revoked' || options.joinFailure === 'wrong-secret') {
+          response.writeHead(403).end(JSON.stringify({
+            ...collabCloudErrorEnvelope(envelope.value.requestId, new CollabError({ code: 'authorization-denied' })),
+            mutationOutcome: 'rejected',
+          }));
           return;
         }
         bound = true;

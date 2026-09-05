@@ -66,11 +66,11 @@ function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 4,
-      gitRemoteUrl: `${serverUrl}/v4/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      bindingVersion: 5,
+      gitRemoteUrl: `${serverUrl}/v5/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 8,
+      wireVersion: 9,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -485,10 +485,10 @@ describe('CollabPublicationService reconnect', () => {
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v4/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v5/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         '/collab/capabilities',
-        `/v4/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
-        `/v4/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v5/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v5/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
       fetchMock.mockRestore();

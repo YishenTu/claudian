@@ -4,7 +4,7 @@
 - Transfer recovery connections use durable identity and cancellation without ordinary snapshot preflight: the source may have closed that endpoint. Fresh transition begin still validates current membership.
 - Negotiate only the intersection of server and actually implemented capabilities. A package addition cannot advertise an absent application port; unsupported Cloud operations never use LAN-shaped placeholders.
 - Keep LAN wire expectations inside LAN adaptation. Cloud owners freeze exact package request/response facts for replay; adapters must not invent actor identity or retain user mutation intent.
-- Completed Cloud rejection is transport provenance, not proof of no effect. Preserve it for operation-specific settlement.
+- Completed Cloud rejection is transport provenance, not proof of no effect. Preserve its optional canonical mutation outcome only after exact request-ID correlation; adapters never derive it from status, diagnostics, or later reads. The operation owner alone may settle a package-proved negative outcome.
 - Complete paged reads stay bound to the authority captured for the first page; bounded Runtime reads bypass complete assembly.
 - Desktop Cloud transport cannot depend on renderer fetch/CORS. Accept the user's complete HTTP or HTTPS URL and deployment prefix, including non-loopback HTTP; never guess/upgrade its scheme or rewrite its stored spelling.
 - Reject credentials, queries, fragments, and malformed URL input. Do not follow redirects or disable native TLS verification.

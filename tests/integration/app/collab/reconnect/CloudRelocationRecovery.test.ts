@@ -33,8 +33,8 @@ const MEMBER_ID = 'member-alice';
 const PERSONAL_REF = 'refs/heads/members/member-alice';
 const OLD_SERVER_URL = 'https://old.example.test/operator';
 const NEW_SERVER_URL = 'http://new.example.test/proxy/cloud';
-const OLD_REMOTE = `${OLD_SERVER_URL}/v4/projects/${PROJECT_ID}/repository.git`;
-const NEW_REMOTE = `${NEW_SERVER_URL}/v4/projects/${PROJECT_ID}/repository.git`;
+const OLD_REMOTE = `${OLD_SERVER_URL}/v5/projects/${PROJECT_ID}/repository.git`;
+const NEW_REMOTE = `${NEW_SERVER_URL}/v5/projects/${PROJECT_ID}/repository.git`;
 
 describe('Cloud relocation recovery', () => {
   let vaultRoot: string;

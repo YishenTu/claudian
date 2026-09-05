@@ -170,7 +170,7 @@ describe('LanAuthorityTransferClient', () => {
 
   it.each([
     { bindingVersion: 1, protocolVersion: 6, receivedVersion: 1, supportedVersion: 2 },
-    { bindingVersion: 2, protocolVersion: 6, receivedVersion: 6, supportedVersion: 8 },
+    { bindingVersion: 2, protocolVersion: 6, receivedVersion: 6, supportedVersion: 9 },
   ])('rejects response binding $bindingVersion / wire $protocolVersion', async versions => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-version-'));
     const identity = await new LanTlsIdentity(directory, {

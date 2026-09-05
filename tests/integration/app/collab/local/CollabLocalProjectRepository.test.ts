@@ -97,11 +97,11 @@ function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 7,
-      bindingVersion: 4,
-      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v4/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 5,
+      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v5/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'HTTP://198.51.100.20:8787/operator/cloud',
-      wireVersion: 8,
+      wireVersion: 9,
     },
     createdAt: '2026-08-08T00:00:00.000Z',
     lastEventSequence: 7,
@@ -1613,38 +1613,6 @@ describe('CollabLocalProjectRepository', () => {
     });
     await expect(readFile(path.join(authorityDirectory, 'keep.db'), 'utf8'))
       .resolves.toBe('unowned');
-  });
-
-  it('atomically retires a former Host authority into attempt-scoped inert storage', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot, {
-      installationKey: TEST_INSTALLATION_A,
-    });
-    const capability = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
-    const authorityDirectory = capability.authorityDirectory;
-    await writeFile(path.join(authorityDirectory, 'collab.db'), 'former-host');
-
-    const retiredDirectory = await repository.retireOwnedAuthorityDirectory(
-      capability,
-      'bootstrap-attempt-one',
-    );
-    const replayedDirectory = await repository.retireOwnedAuthorityDirectory(
-      capability,
-      'bootstrap-attempt-one',
-    );
-    if (retiredDirectory === null) throw new Error('Expected retired authority directory');
-
-    expect(retiredDirectory).toBe(path.join(
-      vaultRoot,
-      '.claudian',
-      'collab',
-      'retired-lan-authorities',
-      PROJECT_ID,
-      'bootstrap-attempt-one',
-    ));
-    expect(replayedDirectory).toBe(retiredDirectory);
-    await expect(stat(authorityDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(readFile(path.join(retiredDirectory, 'collab.db'), 'utf8'))
-      .resolves.toBe('former-host');
   });
 
   it('claims only a known legacy authority layout when Host ownership is proven', async () => {

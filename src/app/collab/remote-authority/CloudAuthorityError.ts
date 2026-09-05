@@ -1,7 +1,16 @@
+import type { CollabCloudErrorEnvelope } from '@claudian-collab/protocol';
+
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-/** A decoded, completed HTTP rejection; not proof that a mutation had no effect. */
+/** A decoded, request-correlated HTTP rejection; only an explicit outcome settles a mutation. */
 export class CloudAuthorityRejection extends CollabError {
+  constructor(
+    error: ConstructorParameters<typeof CollabError>[0],
+    readonly mutationOutcome?: CollabCloudErrorEnvelope['mutationOutcome'],
+  ) {
+    super(error);
+  }
+
   // CollabError deliberately recognizes shared protocol errors. This narrower
   // provenance marker must recognize only errors constructed by this adapter.
   static override [Symbol.hasInstance](value: unknown): boolean {
