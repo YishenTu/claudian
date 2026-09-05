@@ -72,12 +72,14 @@ export const COLLAB_CONTROL_OPERATION_BINDINGS = {
 
 function binding<
   Method extends CollabControlOperationBinding['method'],
+  Authentication extends CollabControlAuthentication,
+  Admission extends CollabControlAdmission,
 >(
   method: Method,
   route: string,
   family: CollabControlOperationBinding['family'],
-  authentication: CollabControlOperationBinding['authentication'],
-  admission: CollabControlOperationBinding['admission'],
+  authentication: Authentication,
+  admission: Admission,
   requestSource: CollabControlOperationBinding['requestSource'],
   successStatus: 200 | 201,
 ) {

@@ -1,5 +1,17 @@
-import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian-collab/protocol';
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
+import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian-collab/protocol';
+import initSqlJs from 'sql.js';
+
+import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
+import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
+import { HostTransferAuthorityService } from '@/app/collab/authority/HostTransferAuthorityService';
+import { ManagerResponsibilityService } from '@/app/collab/authority/ManagerResponsibilityService';
+import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
+import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
   type HostedLifecycleControlPort,
   type HostedMembershipAdminPort,
@@ -8,6 +20,8 @@ import {
   type HostedRequestControlPort,
   type HostedTicketControlPort,
 } from '@/app/collab/lan/HostedProjectControlService';
+import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
+import { PendingMembershipService } from '@/app/collab/lan/PendingMembershipService';
 
 function createHostedService(
   membership: HostedMembershipControlPort,
@@ -106,33 +120,92 @@ describe('HostedProjectControlService', () => {
     );
   });
 
-  it('retries when membership changes while lifecycle summaries are read', async () => {
-    const before = {
-      currentMember: { id: 'member-target', role: 'member' as const },
-      eventSequence: 4,
-      project: { id: 'project-a', managerSetGeneration: 0 },
-    };
-    const after = {
-      currentMember: { id: 'member-target', role: 'manager' as const },
-      eventSequence: 5,
-      project: { id: 'project-a', managerSetGeneration: 1 },
-    };
-    const membership = {
-      readSnapshot: jest.fn()
-        .mockResolvedValueOnce(before)
-        .mockResolvedValueOnce(after)
-        .mockResolvedValueOnce(after)
-        .mockResolvedValueOnce(after),
-    } as unknown as HostedMembershipControlPort;
-    const lifecycle = {
-      getCurrentHostTransfer: jest.fn().mockResolvedValue(null),
-      getCurrentManagerResponsibilityOffer: jest.fn().mockResolvedValue(null),
-    };
-    const service = createHostedService(membership, { lifecycle });
-
-    await expect(service.readSnapshot('credential')).resolves.toEqual(after);
-    expect(membership.readSnapshot).toHaveBeenCalledTimes(4);
-    expect(lifecycle.getCurrentManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
+  it('returns current lifecycle data when an offer changes during a snapshot read', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'claudian-hosted-snapshot-'));
+    const database = new SqlJsProjectDatabase(root, { loadSqlJs: () => initSqlJs() });
+    try {
+      await database.open();
+      const credential = Buffer.alloc(32, 1).toString('base64url');
+      const projects = new ProjectAuthorityRepository();
+      const authority = {
+        database,
+        events: new AuthorityEventRepository(),
+        idempotency: new AuthorityIdempotencyRepository(),
+        projects,
+      };
+      const now = () => new Date('2026-08-08T00:00:00.000Z');
+      await database.mutate(connection => projects.initialize(connection, {
+        createdAt: now().toISOString(),
+        hostCredentialHash: createHash('sha256').update(credential).digest(),
+        hostDisplayName: 'Host',
+        hostMemberId: 'member-host',
+        name: 'Alpha',
+        projectId: 'project-a',
+      }));
+      let beforeGitRead = async () => {};
+      const membership = new PendingMembershipService(authority, {
+        invitationCodec: new InvitationCodec({ now }),
+        getHostEndpoint: () => ({
+          caFingerprint: 'ab'.repeat(32),
+          endpoint: 'https://192.168.1.20:54545',
+        }),
+        now,
+        readMainOid: async () => {
+          await beforeGitRead();
+          return 'a'.repeat(40);
+        },
+      });
+      const invitation = await membership.createInvitation(credential, {
+        idempotencyKey: 'invite', projectId: 'project-a',
+      });
+      const joined = await membership.createJoinAttempt(invitation.invitationSecret, {
+        displayName: 'Target', joinAttemptId: 'join-target', projectId: 'project-a',
+      }, { remoteAddress: '192.168.1.21' });
+      await membership.activateJoinAttempt(joined.memberCredential, {
+        idempotencyKey: 'activate', joinAttemptId: joined.id, projectId: 'project-a',
+      });
+      const responsibilities = new ManagerResponsibilityService({
+        ...authority,
+        presence: { hasAuthenticatedPresence: () => true },
+      }, { now });
+      const transfers = new HostTransferAuthorityService(authority, { now });
+      const offerRequest = {
+        projectId: 'project-a', purpose: 'manager-promotion' as const,
+        targetMemberId: joined.member.id,
+      };
+      const staleOffer = await responsibilities.create('member-host', {
+        ...offerRequest, idempotencyKey: 'offer-first',
+      });
+      // Replace the offer at the Git boundary of the second snapshot, after
+      // lifecycle summaries were collected against the first snapshot.
+      beforeGitRead = async () => {
+        beforeGitRead = async () => {
+          beforeGitRead = async () => {};
+          await responsibilities.cancel('member-host', {
+            idempotencyKey: 'cancel-first', offerId: staleOffer.offerId, projectId: 'project-a',
+          });
+          await responsibilities.create('member-host', {
+            ...offerRequest, idempotencyKey: 'offer-current',
+          });
+        };
+      };
+      const service = createHostedService(membership, {
+        lifecycle: {
+          getCurrentHostTransfer: (actor, projectId) => transfers.getCurrent(actor, projectId),
+          getCurrentManagerResponsibilityOffer: (actor, request) => (
+            responsibilities.getCurrent(actor, request.projectId)
+          ),
+        },
+      });
+      const snapshot = await service.readSnapshot(credential);
+      const currentOffer = await responsibilities.getCurrent('member-host', 'project-a');
+      expect(currentOffer).not.toBeNull();
+      expect(currentOffer?.offerId).not.toBe(staleOffer.offerId);
+      expect(snapshot.managerResponsibilityOffer).toEqual(currentOffer);
+    } finally {
+      await database.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('authenticates an active Member before request ensure', async () => {

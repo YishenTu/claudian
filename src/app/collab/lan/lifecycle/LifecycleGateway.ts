@@ -2,7 +2,6 @@ import { type CollabMemberStatus } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
-  type CollabControlAdmission,
   type CollabControlAuthentication,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
@@ -13,7 +12,6 @@ import type {
   HostedMembershipAdminPort,
 } from '@/app/collab/lan/HostedProjectControlService';
 import {
-  LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS as COLLAB_LIFECYCLE_CONTROL_OPERATIONS,
   type LanCollabControlOperationMap as CollabControlOperationMap,
   type LanCollabLifecycleControlOperation as CollabLifecycleControlOperation,
 } from '@/app/collab/lan/LanCollabControlOperations';
@@ -48,33 +46,14 @@ export interface LifecycleGatewayPort {
 }
 
 type LifecycleAuthentication = Exclude<CollabControlAuthentication, 'invitation'>;
-type LifecycleAdmission = CollabControlAdmission;
-
-interface LifecycleOperationPolicy {
-  readonly admission: LifecycleAdmission;
-  readonly authentication: LifecycleAuthentication;
-}
-
-export const LIFECYCLE_OPERATION_POLICIES: Readonly<
-  Record<CollabLifecycleControlOperation, LifecycleOperationPolicy>
-> = Object.freeze(Object.fromEntries(
-  COLLAB_LIFECYCLE_CONTROL_OPERATIONS.map(operation => {
-    const binding = COLLAB_CONTROL_OPERATION_BINDINGS[operation];
-    return [operation, {
-      admission: binding.admission,
-      authentication: binding.authentication,
-    }];
-  }),
-) as Record<CollabLifecycleControlOperation, LifecycleOperationPolicy>);
-
 export interface ActiveLifecycleGatewayOptions {
   readonly admission?: CollabControlAdmissionPort;
-  readonly administration?: HostedMembershipAdminPort;
+  readonly administration: HostedMembershipAdminPort;
   readonly authenticateMemberCredential: (
     credential: string,
     statuses: readonly CollabMemberStatus[],
   ) => Promise<{ readonly member: { readonly id: string } }>;
-  readonly lifecycle?: HostedLifecycleControlPort;
+  readonly lifecycle: HostedLifecycleControlPort;
 }
 
 function gatewayError(reason: string): CollabError {
@@ -121,7 +100,7 @@ export class ActiveLifecycleGateway implements LifecycleGatewayPort {
   }
 
   private executeKnown(input: LifecycleGatewayInputUnion): Promise<CollabControlRouteResult> {
-    const policy = LIFECYCLE_OPERATION_POLICIES[input.operation];
+    const policy = COLLAB_CONTROL_OPERATION_BINDINGS[input.operation];
     if (policy.admission === 'terminal') {
       return Promise.reject(gatewayError('lifecycle-service-unavailable'));
     }
@@ -139,7 +118,7 @@ export class ActiveLifecycleGateway implements LifecycleGatewayPort {
     const actorMemberId = await this.authenticate(authentication, input.credential);
     if (actorMemberId === null) {
       if (input.operation === 'getHostTransitions') {
-        return { data: await this.requireLifecycle().getHostTransitions(input.request) };
+        return { data: await this.options.lifecycle.getHostTransitions(input.request) };
       }
       throw gatewayError('lifecycle-policy-operation-mismatch');
     }
@@ -150,78 +129,78 @@ export class ActiveLifecycleGateway implements LifecycleGatewayPort {
     switch (input.operation) {
       case 'leaveProject':
         return {
-          data: await this.requireAdministration().leaveProject(actorMemberId, input.request),
+          data: await this.options.administration.leaveProject(actorMemberId, input.request),
         };
       case 'promoteManager':
         return {
-          data: await this.requireAdministration().promoteManager(actorMemberId, input.request),
+          data: await this.options.administration.promoteManager(actorMemberId, input.request),
         };
       case 'demoteManager':
         return {
-          data: await this.requireAdministration().demoteManager(actorMemberId, input.request),
+          data: await this.options.administration.demoteManager(actorMemberId, input.request),
         };
       case 'createManagerResponsibilityOffer':
         return {
-          data: await this.requireLifecycle().createManagerResponsibilityOffer(
+          data: await this.options.lifecycle.createManagerResponsibilityOffer(
             actorMemberId,
             input.request,
           ),
         };
       case 'getCurrentManagerResponsibilityOffer':
         return {
-          data: await this.requireLifecycle().getCurrentManagerResponsibilityOffer(
+          data: await this.options.lifecycle.getCurrentManagerResponsibilityOffer(
             actorMemberId,
             input.request,
           ),
         };
       case 'getManagerResponsibilityOffer':
         return {
-          data: await this.requireLifecycle().getManagerResponsibilityOffer(
+          data: await this.options.lifecycle.getManagerResponsibilityOffer(
             actorMemberId,
             input.request,
           ),
         };
       case 'acknowledgeManagerResponsibility':
         return {
-          data: await this.requireLifecycle().acknowledgeManagerResponsibility(
+          data: await this.options.lifecycle.acknowledgeManagerResponsibility(
             actorMemberId,
             input.request,
           ),
         };
       case 'declineManagerResponsibility':
         return {
-          data: await this.requireLifecycle().declineManagerResponsibility(
+          data: await this.options.lifecycle.declineManagerResponsibility(
             actorMemberId,
             input.request,
           ),
         };
       case 'cancelManagerResponsibilityOffer':
         return {
-          data: await this.requireLifecycle().cancelManagerResponsibilityOffer(
+          data: await this.options.lifecycle.cancelManagerResponsibilityOffer(
             actorMemberId,
             input.request,
           ),
         };
       case 'createHostTransfer':
         return {
-          data: await this.requireLifecycle().createHostTransfer(actorMemberId, input.request),
+          data: await this.options.lifecycle.createHostTransfer(actorMemberId, input.request),
         };
       case 'acceptHostTransfer':
-        return normalizeDeferred(await this.requireLifecycle().acceptHostTransfer(
+        return normalizeDeferred(await this.options.lifecycle.acceptHostTransfer(
           actorMemberId,
           input.request,
         ));
       case 'declineHostTransfer':
         return {
-          data: await this.requireLifecycle().declineHostTransfer(actorMemberId, input.request),
+          data: await this.options.lifecycle.declineHostTransfer(actorMemberId, input.request),
         };
       case 'cancelHostTransfer':
         return {
-          data: await this.requireLifecycle().cancelHostTransfer(actorMemberId, input.request),
+          data: await this.options.lifecycle.cancelHostTransfer(actorMemberId, input.request),
         };
       case 'retireProject':
         return {
-          data: await this.requireLifecycle().retireProject(actorMemberId, input.request),
+          data: await this.options.lifecycle.retireProject(actorMemberId, input.request),
         };
     }
     throw gatewayError('lifecycle-policy-operation-mismatch');
@@ -249,16 +228,6 @@ export class ActiveLifecycleGateway implements LifecycleGatewayPort {
       }
     }
   }
-
-  private requireAdministration(): HostedMembershipAdminPort {
-    if (this.options.administration) return this.options.administration;
-    throw gatewayError('membership-admin-service-unavailable');
-  }
-
-  private requireLifecycle(): HostedLifecycleControlPort {
-    if (this.options.lifecycle) return this.options.lifecycle;
-    throw gatewayError('lifecycle-service-unavailable');
-  }
 }
 
 export class TerminalLifecycleGateway implements LifecycleGatewayPort {
@@ -273,7 +242,7 @@ export class TerminalLifecycleGateway implements LifecycleGatewayPort {
   private async executeKnown(
     input: LifecycleGatewayInputUnion,
   ): Promise<CollabControlRouteResult> {
-    const policy = LIFECYCLE_OPERATION_POLICIES[input.operation];
+    const policy = COLLAB_CONTROL_OPERATION_BINDINGS[input.operation];
     if (policy.authentication === 'public' && input.operation === 'getHostTransitions') {
       return { data: await this.terminal.getHostTransitions(input.request) };
     }
