@@ -1,6 +1,6 @@
 # Authority-transfer constraints
 
-- Production LAN/Cloud authority movement must not reuse private bootstrap or physical Host-transfer packages. Reuse the existing lifecycle/persistence owners, never another catalog, index, or phase engine.
+- Production LAN/Cloud authority movement must not reuse physical Host-transfer packages. Reuse the existing lifecycle/persistence owners, never another catalog, index, or phase engine.
 - Acquire the lifecycle arbiter before quiescence and during recovery. Consult `../lifecycle/AGENTS.md` for coexistence policy; local flags cannot bypass another durable owner.
 - Any active LAN Member may propose a target, but only the admitted local Host installation can accept/quiesce it. Proposal alone cannot open Cloud connections or suspend work. Presence is neither consent nor identity proof; all-online participation is not required.
 - Keep requester components and physical responsibility in separately atomic files. Synchronized installations cannot rewrite each other's components; foreign observations do not grant local lifecycle admission.

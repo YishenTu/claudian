@@ -584,6 +584,64 @@ describe('Cloud membership management', () => {
     } finally { await client.close(); await fixture.close(); }
   });
 
+  it.each(['none', 'before', 'after'] as const)('settles a proved stale demotion with local removal failure %s and confirms a fresh request after restart', async removalFailure => {
+    const options = { provedStaleDemotion: true, blockReadsAfterRejection: true };
+    const fixture = await createFixture(options);
+    let client = fixture.client();
+    const request = { projectId: PROJECT_ID, targetMemberId: 'member-bob' };
+    const unlink = fs.unlink;
+    let injectFailure = removalFailure !== 'none';
+    const cut = jest.spyOn(fs, 'unlink').mockImplementation(async target => {
+      if (target !== fixture.intentPath || !injectFailure) return unlink(target);
+      injectFailure = false;
+      if (removalFailure === 'after') await unlink(target);
+      throw Object.assign(new Error('Injected document removal failure'), { code: 'EIO' });
+    });
+    try {
+      await fixture.seed(client.foundation);
+      const rejected = await client.feature.demoteManager(request);
+      expect(rejected).toMatchObject({ status: removalFailure === 'none' ? 'stale' : removalFailure === 'before' ? 'recovery-required' : 'failure' });
+      cut.mockRestore();
+      options.blockReadsAfterRejection = false;
+      await client.close();
+      client = fixture.client();
+      const settled = removalFailure === 'before' ? await client.feature.resumeManagementOperation(PROJECT_ID) : rejected;
+      expect(settled).toMatchObject({ status: removalFailure === 'after' ? 'failure' : 'stale' });
+      await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toEqual({ status: 'success', value: null });
+      await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(client.feature.demoteManager(request)).resolves.toMatchObject({ status: 'success' });
+      const sent = fixture.demotions as { idempotencyKey: string; expectedManagerSetGeneration: number }[];
+      const original = sent[0];
+      const accepted = sent.at(-1)!;
+      expect(original.expectedManagerSetGeneration).toBe(9);
+      expect(sent.slice(0, -1).map(value => value.idempotencyKey)).toEqual(removalFailure === 'before' ? [original.idempotencyKey, original.idempotencyKey] : [original.idempotencyKey]);
+      expect(accepted.expectedManagerSetGeneration).toBe(10);
+      expect(accepted.idempotencyKey).not.toBe(original.idempotencyKey);
+      await expect(access(fixture.intentPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(fixture.failures).toEqual([]);
+    } finally { cut.mockRestore(); await client.close(); await fixture.close(); }
+  });
+
+  it('preserves a replacement intent when an older demotion is proved rejected', async () => {
+    const fixture = await createFixture({
+      provedStaleDemotion: true,
+      onDemotionRejection: async intentPath => {
+        const submitted = JSON.parse(await readFile(intentPath, 'utf8'));
+        await fs.writeFile(intentPath, JSON.stringify({ ...submitted, completionId: 'replacement-completion' }));
+      },
+    });
+    const client = fixture.client();
+    try {
+      await fixture.seed(client.foundation);
+      await expect(client.feature.demoteManager({ projectId: PROJECT_ID, targetMemberId: 'member-bob' }))
+        .resolves.toMatchObject({ status: 'recovery-required' });
+      await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({
+        status: 'success', value: { status: 'pending', completionId: 'replacement-completion' },
+      });
+      expect(fixture.failures).toEqual([]);
+    } finally { await client.close(); await fixture.close(); }
+  });
+
   it('preserves a rejected request when the recovery barrier is unavailable', async () => {
     const fixture = await createFixture({ staleInvitation: true, blockBarrier: true });
     const client = fixture.client();
@@ -752,7 +810,7 @@ describe('Cloud membership management', () => {
       const serverUrl = drift === 'endpoint' ? `${fixture.serverUrl}/new` : fixture.serverUrl;
       await projects.saveMembership({
         ...membership,
-        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v4/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
+        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v5/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
         member: drift === 'member' ? { ...membership.member, id: 'member-other', personalRef: 'refs/heads/members/member-other' } : membership.member,
       });
       await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({ status: 'failure', error: { code: 'authority-integrity-error' } });
@@ -859,7 +917,7 @@ describe('Cloud membership management', () => {
   });
 });
 
-async function createFixture(options: { onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean; managerLeaveOffer?: boolean } = {}) {
+async function createFixture(options: { provedStaleDemotion?: boolean; blockReadsAfterRejection?: boolean; onDemotionRejection?: (intentPath: string) => Promise<void>; onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean; managerLeaveOffer?: boolean } = {}) {
   const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-management-'));
   const createdAt = new Date().toISOString();
   const invitation = {
@@ -929,6 +987,9 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
       const envelope = decodeCollabProtocolEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       assert.equal(envelope.status, 'ok');
       if (envelope.status !== 'ok') throw new Error('Invalid fixture request');
+      if (options.blockReadsAfterRejection && demotions.length > 0
+        && (target === collabCloudProjectOperationRoute(PROJECT_ID, 'getProjectSnapshot').target
+          || target === collabCloudProjectOperationRoute(PROJECT_ID, 'listProjectMembers').target)) { request.socket.destroy(); return; }
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'getProjectSnapshot').target) {
         response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
           ...snapshot,
@@ -1093,9 +1154,18 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
         assert.equal(saved.phase, 'submitted');
         assert.deepEqual(saved.request, decoded.value);
         demotions.push(decoded.value);
+        if (options.provedStaleDemotion && decoded.value.expectedManagerSetGeneration === 9) {
+          managerSetGeneration = 10;
+          await options.onDemotionRejection?.(intentPath);
+          response.writeHead(409).end(JSON.stringify({
+            ...collabCloudErrorEnvelope(envelope.value.requestId, new ProtocolError({ code: 'authority-not-synchronized' })),
+            mutationOutcome: 'rejected',
+          }));
+          return;
+        }
         if (demotions.length === 1) { request.socket.destroy(); return; }
         response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
-          demotedMemberId: 'member-bob', managerSetGeneration: 10, membershipRevision: 13, projectId: PROJECT_ID,
+          demotedMemberId: 'member-bob', managerSetGeneration: options.provedStaleDemotion ? 11 : 10, membershipRevision: 13, projectId: PROJECT_ID,
         })));
         return;
       }
@@ -1163,7 +1233,7 @@ async function createFixture(options: { onInvitationRequest?: () => void; onInvi
     seed: async (foundation: ClaudianCollabService) => {
       await foundation.local.projects.saveMembership({
         schemaVersion: 3, createdAt, updatedAt: createdAt, lastEventSequence: options.receiptTarget ? 0 : 7,
-        authority: { authorityGeneration: 7, bindingVersion: 4, gitRemoteUrl: `${serverUrl}/v4/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 8 },
+        authority: { authorityGeneration: 7, bindingVersion: 5, gitRemoteUrl: `${serverUrl}/v5/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 9 },
         member: { id: MEMBER_ID, displayName: 'Alice', role: 'manager', personalRef: member.personalRef },
         project: { id: PROJECT_ID, name: 'Management', workspacePath: 'Projects/management' },
       });

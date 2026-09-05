@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import { type CollabManagerResponsibilityOffer, type CollabMemberId, type CollabProjectId, type CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
@@ -136,16 +137,11 @@ export class CollabMembershipService {
       try {
         response = await this.control.cloudMembership(intent.operation, intent.request, intent, options);
       } catch (error) {
-        if (error instanceof CloudAuthorityRejection) {
-          // A completed rejection cannot prove whether the exact idempotent
-          // mutation committed. Keep the frozen request until replay recovers
-          // its result. These authenticated reads classify a synchronized
-          // stale outcome but are not operation-specific negative proof.
-          await this.readCloudBinding(intent.projectId, options);
-          const members = await this.control.cloudMembership('listProjectMembers', { projectId: intent.projectId }, intent, options);
-          if (members.projectId !== intent.projectId || !members.members.some(member => member.memberId === intent.memberId)) {
-            throw new CollabError({ code: 'authority-integrity-error' });
+        if (error instanceof CloudAuthorityRejection && error.mutationOutcome === 'rejected') {
+          if (!isDeepStrictEqual(await this.loadCloudIntent(intent.projectId), intent)) {
+            throw managementPending('cloud-management-intent-changed');
           }
+          await this.safety.projects.removeProjectDocument(intent.projectId, 'cloud-management-intent');
           if (error.code === 'authority-not-synchronized') {
             throw new CollabMembershipOutcomeError({
               status: 'stale',

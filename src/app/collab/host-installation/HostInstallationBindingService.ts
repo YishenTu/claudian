@@ -213,13 +213,6 @@ export class HostInstallationBindingService {
     await this.options.projects.removeProvisionalAuthorityDirectory(provisional);
   }
 
-  assertOwnedRetirement(
-    projectId: CollabProjectId,
-    attemptId: string,
-  ): Promise<OwnedAuthorityDirectoryCapability> {
-    return this.options.projects.assertOwnedAuthorityRetirement(projectId, attemptId);
-  }
-
   assertRecoveryOwner(
     recordOwnerInstallationKey: unknown,
     _projectId: CollabProjectId,
