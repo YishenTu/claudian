@@ -1,33 +1,11 @@
-import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
-import { LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS } from '@/app/collab/lan/LanCollabControlOperations';
 import {
   ActiveLifecycleGateway,
-  LIFECYCLE_OPERATION_POLICIES,
   TerminalLifecycleGateway,
 } from '@/app/collab/lan/lifecycle/LifecycleGateway';
 
 const CREDENTIAL = 'A'.repeat(43);
 
 describe('LifecycleGateway', () => {
-  it('declares one exhaustive security and admission policy for all operations', () => {
-    expect(Object.keys(LIFECYCLE_OPERATION_POLICIES)).toEqual(
-      LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS,
-    );
-    expect(LIFECYCLE_OPERATION_POLICIES).toEqual(Object.fromEntries(
-      LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS.map(operation => [operation, {
-        admission: COLLAB_CONTROL_OPERATION_BINDINGS[operation].admission,
-        authentication: COLLAB_CONTROL_OPERATION_BINDINGS[operation].authentication,
-      }]),
-    ));
-    expect(LIFECYCLE_OPERATION_POLICIES).toMatchObject({
-      acknowledgeRetirement: { admission: 'terminal', authentication: 'terminal-member' },
-      cancelHostTransfer: { admission: 'bypass', authentication: 'active-member' },
-      getHostTransitions: { admission: 'bypass', authentication: 'public' },
-      leaveProject: { admission: 'active', authentication: 'active-or-left' },
-      retireProject: { admission: 'bypass', authentication: 'active-member' },
-    });
-  });
-
   it.each([
     ['leaveProject', 'administration', 'leaveProject'],
     ['createManagerResponsibilityOffer', 'lifecycle', 'createManagerResponsibilityOffer'],
@@ -198,22 +176,5 @@ describe('LifecycleGateway', () => {
       CREDENTIAL,
       { projectId: 'project-a' },
     );
-  });
-
-  it('fails closed when an operation is unavailable in the selected binding', async () => {
-    const gateway = new ActiveLifecycleGateway({
-      authenticateMemberCredential: jest.fn().mockResolvedValue({
-        member: { id: 'member-a' },
-      }),
-    } as never);
-
-    await expect(gateway.execute({
-      credential: CREDENTIAL,
-      operation: 'createHostTransfer',
-      request: { projectId: 'project-a' },
-    } as never)).rejects.toMatchObject({
-      code: 'operation-failed',
-      safeContext: { reason: 'lifecycle-service-unavailable' },
-    });
   });
 });

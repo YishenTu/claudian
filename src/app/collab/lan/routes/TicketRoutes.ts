@@ -1,9 +1,6 @@
 import { type CollabRequestTicketOperation, type ListTicketsRequest } from '@claudian-collab/protocol';
 
-import {
-  COLLAB_CONTROL_OPERATION_BINDINGS,
-  matchCollabControlOperation,
-} from '@/app/collab/lan/CollabControlOperationBindings';
+import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import { decodeRoutePageQuery } from '@/app/collab/lan/routes/RoutePageQuery';
@@ -77,11 +74,9 @@ function listRequest(request: CollabControlRouteRequest): ListTicketsRequest {
 }
 
 export const handleTicketRoute: CollabControlRouteHandler = async request => {
-  const match = request.operationMatch
-    ?? matchCollabControlOperation(request.method, request.segments);
+  const match = request.operationMatch;
   if (
-    !match
-    || COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'ticket'
+    COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'ticket'
   ) return null;
   const memberCredential = requireOperationCredential(request.authorization, match.operation);
   const ticketId = match.parameters.ticketId;
