@@ -708,6 +708,69 @@ describe('CloudAuthorityAdapter', () => {
     connection.dispose();
   });
 
+  describe.each(['connectPendingRetirement', 'connectAuthorityTransfer'] as const)(
+    '%s cancellation',
+    connect => {
+      it.each(['dispose', 'caller'] as const)(
+        'rejects late recovery reads after %s cancellation',
+        async cancellation => {
+          const response = deferred<void>();
+          const started = deferred<CloudAuthorityHttpRequest>();
+          const adapter = new CloudAuthorityAdapter({
+            request: async input => {
+              if (input.method === 'GET') {
+                return {
+                  body: collabCloudCapabilityDocument([
+                    'cloud-project-membership',
+                    'project-snapshot',
+                  ], limits),
+                  contentType: 'application/json',
+                  status: 200,
+                };
+              }
+              started.resolve(input);
+              await response.promise;
+              return cloudSnapshotResponse(input);
+            },
+          });
+          const connection = await adapter[connect]({
+            authorityGeneration: 1,
+            memberId: ACTOR_ID,
+            personalRef: 'refs/heads/members/member-alice',
+            projectId: PROJECT_ID,
+            serverUrl: 'https://cloud.example.test',
+          });
+          const controller = new AbortController();
+          const options = { signal: controller.signal };
+          try {
+            const pending = connection.readSnapshot(PROJECT_ID, options);
+            const request = await started.promise;
+            if (cancellation === 'dispose') connection.dispose();
+            else controller.abort();
+            expect(request.signal?.aborted).toBe(true);
+            response.resolve();
+            await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+            await expect(connection.readSnapshot(PROJECT_ID, options))
+              .rejects.toMatchObject({ code: 'cancelled' });
+            const nextRead = connection.readSnapshot(PROJECT_ID).then(
+              () => 'active',
+              (error: { readonly code: string }) => error.code,
+            );
+            await expect(nextRead).resolves.toBe(
+              cancellation === 'dispose' ? 'cancelled' : 'active',
+            );
+            connection.dispose();
+            await expect(connection.listProjectMembers({ projectId: PROJECT_ID }))
+              .rejects.toMatchObject({ code: 'cancelled' });
+          } finally {
+            response.resolve();
+            connection.dispose();
+          }
+        },
+      );
+    },
+  );
+
   it('opens one exact bound Cloud Retirement recovery connection', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
       if (input.method === 'GET') {

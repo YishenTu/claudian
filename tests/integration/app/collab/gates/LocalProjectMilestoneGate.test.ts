@@ -479,6 +479,12 @@ describe('G3 local Project milestone gate', () => {
           connectionSignals.push(options.signal);
           return cloudSession;
         }),
+        connectPendingLeave: async () => {
+          throw new Error('This recovery must not open a Cloud Leave connection');
+        },
+        connectPendingRetirement: async () => {
+          throw new Error('This recovery must not open a Cloud Retirement connection');
+        },
         connectAuthorityTransfer: jest.fn() as never,
       },
       foundation: reopenedFoundation,
@@ -699,6 +705,12 @@ describe('G3 local Project milestone gate', () => {
           authorityKind: 'cloud',
           create: jest.fn() as never,
           connect,
+          connectPendingLeave: async () => {
+            throw new Error('This recovery must not open a Cloud Leave connection');
+          },
+          connectPendingRetirement: async () => {
+            throw new Error('This recovery must not open a Cloud Retirement connection');
+          },
           connectAuthorityTransfer: jest.fn() as never,
         },
         foundation: reopenedFoundation,
@@ -833,6 +845,12 @@ describe('G3 local Project milestone gate', () => {
         authorityKind: 'cloud',
         create: jest.fn() as never,
         connect: jest.fn(async () => cloudSession),
+        connectPendingLeave: async () => {
+          throw new Error('This recovery must not open a Cloud Leave connection');
+        },
+        connectPendingRetirement: async () => {
+          throw new Error('This recovery must not open a Cloud Retirement connection');
+        },
         connectAuthorityTransfer: jest.fn() as never,
       },
       foundation,

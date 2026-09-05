@@ -47,7 +47,7 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
     private readonly persistence: AuthorityTransferPersistence,
     private readonly handler: AuthorityTransferRecoveryHandler,
     private readonly assertRecoveryOwner: (
-      ownerInstallationKey: string | undefined,
+      ownerInstallationKey: string,
       projectId: CollabProjectId,
     ) => Promise<void> | void,
   ) {

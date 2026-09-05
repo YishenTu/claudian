@@ -228,7 +228,6 @@ export function serializeHostTransferPackageManifest(
 
 function decodeManifest(
   value: unknown,
-  allowLegacyAuthority: boolean,
 ): HostTransferPackageManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw packageError('host-transfer-manifest-invalid');
@@ -245,39 +244,18 @@ function decodeManifest(
     }
   }
   const manifest = record as unknown as HostTransferPackageManifest;
-  assertManifest(manifest, allowLegacyAuthority);
+  assertManifest(manifest, true);
   return canonicalManifest(manifest);
-}
-
-export function decodeHostTransferPackageManifest(value: unknown): HostTransferPackageManifest {
-  return decodeManifest(value, false);
-}
-
-export function decodeHostTransferRecoveryPackageManifest(
-  value: unknown,
-): HostTransferPackageManifest {
-  return decodeManifest(value, true);
-}
-
-export function parseHostTransferPackageManifest(serialized: string): HostTransferPackageManifest {
-  return parseManifest(serialized, false);
 }
 
 export function parseHostTransferRecoveryPackageManifest(
   serialized: string,
 ): HostTransferPackageManifest {
-  return parseManifest(serialized, true);
-}
-
-function parseManifest(
-  serialized: string,
-  allowLegacyAuthority: boolean,
-): HostTransferPackageManifest {
   if (Buffer.byteLength(serialized, 'utf8') > HOST_TRANSFER_MAX_MANIFEST_BYTES) {
     throw packageError('host-transfer-manifest-too-large', 'quota-exceeded');
   }
   try {
-    return decodeManifest(JSON.parse(serialized), allowLegacyAuthority);
+    return decodeManifest(JSON.parse(serialized));
   } catch (error) {
     if (error instanceof CollabError) throw error;
     throw packageError('host-transfer-manifest-invalid');

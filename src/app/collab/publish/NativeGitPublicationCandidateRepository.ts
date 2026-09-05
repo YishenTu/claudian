@@ -6,7 +6,6 @@ import type {
   GitCommitTreeInput,
   GitMergeTreeResult,
   GitRefUpdateResult,
-  GitRepositoryService,
   GitStatusEntry,
 } from '@/app/collab/git/GitRepositoryService';
 import type {
@@ -293,11 +292,4 @@ export class NativeGitPublicationCandidateRepository {
     });
     return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : null;
   }
-}
-
-export function createNativeGitPublicationCandidateRepository(
-  git: GitRepositoryService,
-  runner: GitCommandRunner,
-): NativeGitPublicationCandidateRepository {
-  return new NativeGitPublicationCandidateRepository(git, runner);
 }

@@ -2,7 +2,6 @@ import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
-  bindLegacyAuthorityTransferSourceOwner,
   createAuthorityTransferRecord,
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
@@ -31,7 +30,7 @@ function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
 }
 
 describe('AuthorityTransferRuntimeRegistry', () => {
-  it('decodes exact owner-bound current records and ownerless legacy records', () => {
+  it('requires exact owner-bound current records', () => {
     const current = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
@@ -46,10 +45,10 @@ describe('AuthorityTransferRuntimeRegistry', () => {
     });
 
     const { ownerInstallationKey: _, ...withoutOwner } = current;
-    expect(decodeAuthorityTransferRecord({
+    expect(() => decodeAuthorityTransferRecord({
       ...withoutOwner,
       schemaVersion: 1,
-    })).toMatchObject({ schemaVersion: 1 });
+    })).toThrow(TypeError);
     expect(() => decodeAuthorityTransferRecord(withoutOwner)).toThrow(TypeError);
     expect(() => decodeAuthorityTransferRecord({
       ...current,
@@ -59,43 +58,6 @@ describe('AuthorityTransferRuntimeRegistry', () => {
       ...current,
       schemaVersion: 1,
     })).toThrow(TypeError);
-  });
-
-  it('binds only a source-side legacy checkpoint after explicit Host claim', () => {
-    const current = createAuthorityTransferRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      lifecycleOwnership: 'owned',
-      localRole: 'source',
-      operationIntentId: 'intent-runtime',
-      stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime',
-      status: status(),
-    });
-    const { ownerInstallationKey: _, ...withoutOwner } = current;
-    const source = decodeAuthorityTransferRecord({ ...withoutOwner, schemaVersion: 1 });
-    const currentTarget = createAuthorityTransferRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      lifecycleOwnership: 'owned',
-      localRole: 'target',
-      operationIntentId: 'intent-runtime',
-      stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime',
-      status: {
-        ...status(),
-        direction: 'cloud-to-lan',
-        phase: 'collecting-readiness',
-        sourceAuthority: { generation: 1, kind: 'cloud' },
-        targetAuthority: { generation: 2, kind: 'lan' },
-        targetUrl: 'https://192.168.1.20:27001/',
-      },
-    });
-    const { ownerInstallationKey: _targetOwner, ...targetWithoutOwner } = currentTarget;
-    const target = decodeAuthorityTransferRecord({ ...targetWithoutOwner, schemaVersion: 1 });
-
-    expect(bindLegacyAuthorityTransferSourceOwner(source, TEST_INSTALLATION_A)).toMatchObject({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      schemaVersion: 2,
-    });
-    expect(() => bindLegacyAuthorityTransferSourceOwner(target, TEST_INSTALLATION_A))
-      .toThrow('Authority transfer target owner is ambiguous');
   });
 
   it('reconstructs and retains a durable runtime on first startup recovery', async () => {

@@ -1353,9 +1353,6 @@ export class ClaudianCollabService {
         bindLegacyHostTransferRecoveryOwner(outgoingHostTransfer, installationKey),
       );
     }
-
-    await this.authorityTransfers.bindLegacySourceOwner(projectId, installationKey);
-
   }
 
    async #requireTrustedMembership(projectId: CollabProjectId): Promise<{

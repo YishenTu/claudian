@@ -51,7 +51,6 @@ import {
   expireAuthorityTransferTerminalResponder,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
-import { AuthorityTransferCheckpointRepository } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointRepository';
 import {
   createCloudToLanTargetEntry,
   handoffCloudToLanTargetEntry,
@@ -1235,7 +1234,20 @@ describe('production authority-transfer effects', () => {
     });
     const reopenedFoundation = foundation(targetRoot);
     const reopenedComposition = createCollabFeatureSubcomposition({
-      cloudAuthority: { authorityKind: 'cloud', connect, create } as never,
+      cloudAuthority: {
+        authorityKind: 'cloud',
+        connect,
+        create,
+        connectPendingLeave: async () => {
+          throw new Error('This recovery must not open a Cloud Leave connection');
+        },
+        connectPendingRetirement: async () => {
+          throw new Error('This recovery must not open a Cloud Retirement connection');
+        },
+        connectAuthorityTransfer: async () => {
+          throw new Error('Cancelled target recovery must not connect Cloud authority transfer');
+        },
+      },
       foundation: reopenedFoundation,
       projectSetup: new CollabProjectSetupService(reopenedFoundation, {
         installationKey: TEST_INSTALLATION_A,
@@ -1889,32 +1901,7 @@ describe('production authority-transfer effects', () => {
       safeContext: { reason: 'authority-transfer-target-imported-identity-mismatch' },
     });
     await targetFoundation.local.projects.saveMembership(exactPreparedMembership);
-    const legacyPreparedState = JSON.parse(exactPreparedState) as {
-      hostCredential: string;
-    };
-    const originalImport = AuthorityTransferCheckpointRepository.prototype.importCoordination;
-    const legacyImport = jest.spyOn(
-      AuthorityTransferCheckpointRepository.prototype,
-      'importCoordination',
-    ).mockImplementation((connection, input) => {
-      const imported = originalImport(connection, input);
-      connection.run(
-        'UPDATE members SET credential_hash = ? WHERE member_id = ?',
-        [
-          createHash('sha256')
-            .update(Buffer.from(legacyPreparedState.hostCredential, 'base64url'))
-            .digest(),
-          input.targetHostMemberId,
-        ],
-      );
-      return imported;
-    });
-    let staged;
-    try {
-      staged = await targetEffects.stage(stagedRecord, stageArtifacts());
-    } finally {
-      legacyImport.mockRestore();
-    }
+    const staged = await targetEffects.stage(stagedRecord, stageArtifacts());
 
     expect(staged.checkpointSha256).toBe(targetManifest.manifestSha256);
     expect(staged.claimBatch.claims).toEqual([
@@ -2070,6 +2057,33 @@ describe('production authority-transfer effects', () => {
       '.claudian-authority.json',
     ))).rejects.toMatchObject({ code: 'ENOENT' });
     await writeFile(stagedTargetStatePath, exactStagedTargetState);
+    const stagedCredential = (JSON.parse(exactStagedTargetState) as {
+      hostCredential: string;
+    }).hostCredential;
+    const writeStagedCredential = async (credentialHash: Uint8Array) => {
+      const authority = await targetFoundation.openAuthorityTransferTarget(
+        PROJECT_ID,
+        TEST_INSTALLATION_A,
+      );
+      try {
+        await authority.database.mutate(connection => connection.run(
+          'UPDATE members SET credential_hash = ? WHERE member_id = ?',
+          [credentialHash, 'member-production-peer'],
+        ));
+        // Preserve the imported directory shape while injecting credential corruption.
+        await rm(path.join(authority.authorityDirectory, 'collab.db.bak'));
+      } finally {
+        await authority.database.close();
+      }
+    };
+    await writeStagedCredential(createHash('sha256')
+      .update(Buffer.from(stagedCredential, 'base64url'))
+      .digest());
+    await expect(targetEffects.activate(completedRecord, relinquishmentProof)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-state-owner-mismatch' },
+    });
+    await expect(targetFoundation.inspectAuthority(PROJECT_ID)).resolves.toBeNull();
+    await writeStagedCredential(createHash('sha256').update(stagedCredential, 'utf8').digest());
     await targetEffects.activate(completedRecord, relinquishmentProof);
     targetAuthority = await targetFoundation.inspectAuthority(PROJECT_ID);
     expect(JSON.parse(await readFile(path.join(
@@ -2738,6 +2752,12 @@ describe('production authority-transfer effects', () => {
       connect: jest.fn(async () => {
         throw new Error('Fresh composed flow must use its bound membership');
       }),
+      connectPendingLeave: async () => {
+        throw new Error('This flow must not open a Cloud Leave connection');
+      },
+      connectPendingRetirement: async () => {
+        throw new Error('This flow must not open a Cloud Retirement connection');
+      },
       connectAuthorityTransfer: jest.fn(async (binding: {
         readonly authorityGeneration: number;
         readonly memberId: string;
