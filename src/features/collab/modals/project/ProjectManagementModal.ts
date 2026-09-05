@@ -120,6 +120,7 @@ export class ProjectManagementModal extends Modal {
   #abortController = new AbortController();
   #confirmation: AccessConfirmation | null = null;
   #capabilities: CollabProjectCapabilities | null = null;
+  #cloudLanDestination: 'this-device' | 'another-device' = 'this-device';
   #cloudTargetDescriptor: CollabCloudToLanTargetPreparationDescriptor | null = null;
   #cloudTransferHandle: CollabCloudToLanTransferHandle | null = null;
   #cloudTransferStatus: CollabAuthorityTransferStatus | null = null;
@@ -146,6 +147,7 @@ export class ProjectManagementModal extends Modal {
   #retainedInvitation: CollabInvitationView | null = null;
   #secretExpiryTimer: number | null = null;
   #snapshot: CollabProjectSnapshot | null = null;
+  #transferExpanded: boolean | null = null;
   #status: AccessStatus | null = null;
   readonly #port: ProjectManagementModalPort;
   readonly #options: ProjectManagementModalOptions;
@@ -166,7 +168,9 @@ export class ProjectManagementModal extends Modal {
     this.#clearSecretExpiryTimer();
     this.#abortController = new AbortController();
     this.#confirmation = null;
+    this.#transferExpanded = null;
     this.#capabilities = null;
+    this.#cloudLanDestination = 'this-device';
     this.#cloudTargetDescriptor = null;
     this.#cloudTransferHandle = null;
     this.#cloudTransferStatus = null;
@@ -185,7 +189,10 @@ export class ProjectManagementModal extends Modal {
     this.#snapshot = null;
     this.#status = null;
     this.setTitle(t('collab.projectManagement.title'));
-    this.modalEl.classList.add('claudian-collab-project-management-modal');
+    this.modalEl.classList.add(
+      'claudian-collab-project-management-modal',
+      'claudian-collab-modal--filled-actions',
+    );
     this.#renderShell();
     const featureSubscription = this.#port.subscribe(state => {
       if (state.selectedProjectId !== this.#options.project.id) {
@@ -245,6 +252,12 @@ export class ProjectManagementModal extends Modal {
     this.#hostSection?.destroy();
     this.#hostSection = null;
     this.contentEl.replaceChildren();
+    const overview = this.contentEl.createDiv({ cls: 'claudian-collab-management-overview' });
+    overview.createEl('h2', { text: this.#hostProject.name });
+    overview.createDiv({
+      cls: 'claudian-collab-management-location',
+      text: this.#hostProject.workspacePath,
+    });
     this.#accessContentEl = this.contentEl.createDiv({
       cls: 'claudian-collab-project-management-access',
     });
@@ -262,6 +275,7 @@ export class ProjectManagementModal extends Modal {
           this.#appInstance,
           t('collab.host.legacyClaimConfirmation'),
           t('collab.host.legacyClaimAction'),
+          'claudian-collab-modal--filled-actions',
         ),
         onOpenDiagnostics: diagnostics => this.#openHostDiagnostics(diagnostics),
         onStatusChanged: status => {
@@ -276,6 +290,7 @@ export class ProjectManagementModal extends Modal {
       this.#hostActionEl = null;
     }
     this.#projectActionsEl = this.contentEl.createDiv({
+      attr: { 'aria-label': t('collab.access.projectActions'), role: 'region' },
       cls: 'claudian-collab-project-actions',
     });
     this.#projectActionsEl.createEl('h3', { text: t('collab.access.projectActions') });
@@ -446,6 +461,7 @@ export class ProjectManagementModal extends Modal {
 
   #applyCloudTransferView(view: CollabCloudToLanTransferView | null): void {
     this.#cloudTransferView = view;
+    if (view) this.#cloudLanDestination = view.target ? 'this-device' : 'another-device';
     this.#cloudTargetDescriptor = view?.target?.descriptor ?? view?.manager?.descriptor ?? null;
     this.#cloudTransferHandle = view?.manager?.handle ?? view?.target?.handle ?? null;
     this.#cloudTransferStatus = view?.manager?.status ?? view?.target?.status ?? null;
@@ -516,7 +532,9 @@ export class ProjectManagementModal extends Modal {
     this.#renderPendingManagementOperation();
     this.#renderStatus();
     this.#renderRetainedInvitation();
-    if (this.#confirmation) this.#renderConfirmation(this.#confirmation);
+    if (this.#confirmation && this.#confirmation.kind !== 'leave' && this.#confirmation.kind !== 'retire') {
+      this.#renderConfirmation(this.#confirmation);
+    }
   }
 
   #renderMembers(
@@ -524,13 +542,20 @@ export class ProjectManagementModal extends Modal {
     isManager: boolean,
   ): void {
     const section = this.#requireAccessContent().createDiv({
+      attr: { 'aria-label': t('collab.access.members'), role: 'region' },
       cls: 'claudian-collab-access-members',
     });
-    section.createEl('h3', { text: t('collab.access.members') });
-    const summary = section.createDiv({ cls: 'claudian-collab-access-summary' });
+    const header = section.createDiv({ cls: 'claudian-collab-management-section-header' });
+    const title = header.createDiv();
+    title.createEl('h3', { text: t('collab.access.members') });
+    const summary = title.createDiv({ cls: 'claudian-collab-access-summary' });
     summary.createSpan({
       cls: 'claudian-collab-access-member-count',
-      text: t('collab.access.memberCount', { count: this.#members.length }),
+      text: t(
+        this.#members.length === 1
+          ? 'collab.access.memberCountSingle' : 'collab.access.memberCount',
+        { count: this.#members.length },
+      ),
     });
     summary.createSpan({
       cls: 'claudian-collab-access-manager-count',
@@ -540,7 +565,7 @@ export class ProjectManagementModal extends Modal {
         )).length,
       }),
     });
-    this.#invitationActionsEl = section.createDiv({
+    this.#invitationActionsEl = header.createDiv({
       cls: 'claudian-collab-project-invitation-action',
     });
     if (this.#members.length === 0) {
@@ -551,7 +576,6 @@ export class ProjectManagementModal extends Modal {
     for (const member of this.#members) {
       this.#renderMember(list, member, current, isManager);
     }
-    section.appendChild(this.#invitationActionsEl);
   }
 
   #renderMember(
@@ -751,7 +775,12 @@ export class ProjectManagementModal extends Modal {
   }
 
   #renderLeaveAction(container: HTMLElement): void {
-    const leave = container.createEl('button', {
+    const row = container.createDiv({ cls: 'claudian-collab-management-action-row' });
+    row.createDiv({
+      cls: 'claudian-collab-management-description',
+      text: t('collab.access.leaveProjectDescription'),
+    });
+    const leave = row.createEl('button', {
       attr: { 'data-action': 'leave-project', type: 'button' },
       cls: 'mod-cta',
       text: t('collab.access.leaveProject'),
@@ -847,7 +876,12 @@ export class ProjectManagementModal extends Modal {
       }
       if (this.#capabilities?.leave) this.#renderLeaveAction(lifecycleActions);
       if (isManager && this.#capabilities?.retirement) {
-        const retire = lifecycleActions.createEl('button', {
+        const row = lifecycleActions.createDiv({ cls: 'claudian-collab-management-action-row' });
+        row.createDiv({
+          cls: 'claudian-collab-management-description',
+          text: t('collab.access.retireProjectDescription'),
+        });
+        const retire = row.createEl('button', {
           attr: { 'data-action': 'retire-project', type: 'button' },
           cls: 'mod-warning',
           text: t('collab.access.retireProject'),
@@ -859,6 +893,9 @@ export class ProjectManagementModal extends Modal {
       }
     }
     this.#syncProjectActionsVisibility();
+    if (this.#confirmation?.kind === 'leave' || this.#confirmation?.kind === 'retire') {
+      this.#renderConfirmation(this.#confirmation);
+    }
   }
 
   #openInvitationModal(): void {
@@ -1041,7 +1078,10 @@ export class ProjectManagementModal extends Modal {
   }
 
   #renderConfirmation(confirmation: AccessConfirmation): void {
-    const region = this.#requireAccessContent().createDiv({
+    const container = confirmation.kind === 'leave' || confirmation.kind === 'retire'
+      ? this.#requireLifecycleActions()
+      : this.#requireAccessContent();
+    const region = container.createDiv({
       attr: { 'aria-live': 'polite' },
       cls: 'claudian-collab-access-confirmation',
     });
@@ -1073,7 +1113,9 @@ export class ProjectManagementModal extends Modal {
     });
     const confirm = actions.createEl('button', {
       attr: { 'data-action': 'confirm-access-action', type: 'button' },
-      cls: confirmation.kind === 'promote' ? 'mod-cta' : 'mod-warning',
+      cls: confirmation.kind === 'retire'
+        ? 'mod-warning claudian-collab-retire-confirm'
+        : confirmation.kind === 'promote' ? 'mod-cta' : 'mod-warning',
       text: this.#status?.kind === 'error'
         ? t('collab.access.retry')
         : t('collab.access.confirm'),
@@ -1268,7 +1310,10 @@ export class ProjectManagementModal extends Modal {
     const hostAvailable = (this.#hostActionEl?.childElementCount ?? 0) > 0;
     if (!hostAvailable && !transferAvailable) return;
 
-    const hosting = container.createDiv({ cls: 'claudian-collab-hosting' });
+    const hosting = container.createDiv({
+      attr: { 'aria-label': t('collab.access.hosting'), role: 'region' },
+      cls: 'claudian-collab-hosting',
+    });
     hosting.createEl('h3', { text: t('collab.access.hosting') });
     if (hostAvailable && this.#hostActionEl) {
       const currentHosting = hosting.createDiv({
@@ -1281,21 +1326,47 @@ export class ProjectManagementModal extends Modal {
     const section = hosting.createDiv({
       cls: 'claudian-collab-authority-transfer',
     });
-    section.createEl('h4', {
+    const transferHeader = section.createDiv({ cls: 'claudian-collab-management-section-header' });
+    const description = transferHeader.createDiv({ cls: 'claudian-collab-management-hosting-description' });
+    if (!hostAvailable) {
+      description.createDiv({
+        cls: 'claudian-collab-management-hosting-kind',
+        text: this.#hostProject.authorityKind === 'cloud'
+          ? t('collab.createProject.authorityCloud') : t('collab.panel.lanHost'),
+      });
+    }
+    description.createDiv({
+      cls: 'claudian-collab-management-description',
+      text: this.#hostProject.authorityKind === 'cloud'
+        ? t('collab.access.cloudHostingDescription') : t('collab.access.lanHostingDescription'),
+    });
+    const toggle = transferHeader.createEl('button', {
+      attr: {
+        'aria-controls': 'claudian-collab-transfer-form',
+        'aria-expanded': String(this.#transferExpanded ?? transferPresent),
+        type: 'button',
+      },
+      cls: 'claudian-collab-authority-transfer-toggle',
       text: this.#hostProject.authorityKind === 'lan'
         ? t('collab.access.moveToCloud')
         : t('collab.access.moveToLan'),
     });
+    const form = section.createDiv({
+      attr: { id: 'claudian-collab-transfer-form' },
+      cls: 'claudian-collab-authority-transfer-form',
+    });
+    form.hidden = !(this.#transferExpanded ?? transferPresent);
+    toggle.addEventListener('click', () => {
+      this.#transferExpanded = form.hidden === true;
+      form.hidden = !this.#transferExpanded;
+      toggle.setAttribute('aria-expanded', String(this.#transferExpanded));
+    });
     if (this.#hostProject.authorityKind === 'lan') {
-      this.#renderLanToCloudTransfer(section, recovery || actionsAvailable);
+      this.#renderLanToCloudTransfer(form, recovery || actionsAvailable);
       return;
     }
-    const currentMemberId = current?.id
-      ?? this.#cloudTransferView?.target?.descriptor?.selectedTargetMemberId
-      ?? '';
     this.#renderCloudToLanTransfer(
-      section,
-      currentMemberId,
+      form,
       recovery ? Boolean(this.#cloudTransferView?.manager) : isManager,
       recovery || actionsAvailable,
     );
@@ -1403,13 +1474,10 @@ export class ProjectManagementModal extends Modal {
 
   #renderCloudToLanTransfer(
     section: HTMLElement,
-    currentMemberId: CollabMemberId,
     isManager: boolean,
     actionsAvailable = true,
   ): void {
-    const managerView = this.#cloudTransferView?.manager ?? null;
-    const targetSelectedElsewhere = managerView !== null
-      && managerView.descriptor.selectedTargetMemberId !== currentMemberId;
+    const targetView = this.#cloudTransferView?.target ?? null;
     if (!actionsAvailable) {
       const recovery = section.createDiv({ cls: 'claudian-collab-authority-transfer-target' });
       if (this.#cloudTargetDescriptor) {
@@ -1428,12 +1496,33 @@ export class ProjectManagementModal extends Modal {
       recovery.createDiv({ text: t('collab.access.transferConnectionRequired') });
       return;
     }
-    if (!targetSelectedElsewhere) {
-      const targetView = this.#cloudTransferView?.target ?? null;
-      const target = section.createDiv({ cls: 'claudian-collab-authority-transfer-target' });
-      target.createEl('h4', { text: t('collab.access.cloudToLanTarget') });
+    const hasPreparation = this.#cloudTargetDescriptor !== null || this.#cloudTransferView !== null;
+    if (isManager && !hasPreparation && !this.#cloudTransferHandle) {
+      const row = section.createDiv({ cls: 'claudian-collab-join-field' });
+      const id = 'claudian-collab-lan-destination';
+      row.createEl('label', { attr: { for: id }, text: t('collab.access.lanHost') });
+      const select = row.createEl('select', { attr: { id } });
+      select.createEl('option', {
+        attr: { value: 'this-device' }, text: t('collab.access.thisDevice'),
+      });
+      select.createEl('option', {
+        attr: { value: 'another-device' }, text: t('collab.access.anotherDevice'),
+      });
+      select.value = this.#cloudLanDestination;
+      select.disabled = this.#managementActionBlocked();
+      select.addEventListener('change', () => {
+        this.#cloudLanDestination = select.value === 'another-device'
+          ? 'another-device' : 'this-device';
+        this.#renderCurrentView();
+        this.contentEl.querySelector<HTMLSelectElement>(`#${id}`)?.focus();
+      });
+    }
+
+    const thisDevice = this.#cloudLanDestination === 'this-device';
+    if (thisDevice) {
       if (!this.#cloudTargetDescriptor) {
-        this.#createTransferButton(target, 'prepare-cloud-to-lan',
+        section.createDiv({ text: t('collab.access.prepareLanHelp') });
+        this.#createTransferButton(section, 'prepare-cloud-to-lan',
           t('collab.access.prepareCloudToLan'), async () => {
             const result = await this.#port.prepareCloudToLanTarget(
               { projectId: this.#options.project.id },
@@ -1441,90 +1530,78 @@ export class ProjectManagementModal extends Modal {
             if (result.status === 'success') this.#cloudTargetDescriptor = result.value;
             return result;
           });
-      } else {
-        this.#renderJsonValue(target, this.#cloudTargetDescriptor,
+        return;
+      }
+      section.createDiv({ text: t('collab.access.lanTargetReady') });
+      if (!isManager && !this.#cloudTransferHandle) {
+        section.createDiv({ text: t('collab.access.shareLanTargetHelp') });
+        this.#renderJsonValue(section, this.#cloudTargetDescriptor,
           t('collab.access.cloudToLanDescriptor'), 'copy-cloud-to-lan-descriptor');
-        if (!targetView || targetView.canWithdraw) {
-          this.#createTransferButton(target, 'withdraw-cloud-to-lan-target',
-            t('collab.access.withdrawCloudToLan'), async () => {
-              const result = await this.#port.withdrawCloudToLanTarget({
-                preparationId: this.#cloudTargetDescriptor!.preparationId,
-                projectId: this.#options.project.id,
-              });
-              if (result.status === 'success') this.#applyCloudTransferView(null);
-              return result;
-            });
-        }
       }
-
-      const acceptField = this.#renderJsonInput(
-        section,
-        'cloud-to-lan-handle',
-        t('collab.access.cloudToLanHandle'),
-      );
-      const accept = this.#createTransferButton(section, 'accept-cloud-to-lan',
-        t('collab.access.acceptCloudToLan'), async () => {
-          try {
-            const result = await this.#port.acceptCloudToLanTransfer(
-              JSON.parse(acceptField.value) as CollabCloudToLanTransferHandle,
-            );
-            if (result.status === 'success') {
-              this.#cloudTransferStatus = result.value;
-              this.#finishTerminalTransfer(result.value);
-            }
-            return result;
-          } catch {
-            return Promise.resolve({ status: 'failure' as const, error: new Error() as never });
-          }
-      });
-      if (targetView?.handle) acceptField.value = JSON.stringify(targetView.handle);
-      if (!isManager && (this.#cloudTransferStatus ?? targetView?.status)) {
-        target.createDiv({
-          text: this.#transferStatusLabel(this.#cloudTransferStatus ?? targetView!.status),
-        });
+      if (this.#cloudTransferHandle || !isManager) {
+        this.#renderCloudToLanAcceptance(section);
       }
-      accept.disabled = this.#managementActionBlocked() || !acceptField.value.trim();
-      acceptField.addEventListener('input', () => {
-        accept.disabled = this.#managementActionBlocked() || !acceptField.value.trim();
-      });
     }
 
-    if (!isManager) return;
-    const manager = section.createDiv({ cls: 'claudian-collab-authority-transfer-manager' });
-    manager.createEl('h4', { text: t('collab.access.cloudToLanManager') });
-    const descriptor = this.#renderJsonInput(
-      manager,
-      'cloud-to-lan-descriptor',
-      t('collab.access.cloudToLanDescriptor'),
-    );
-    if (managerView) descriptor.value = JSON.stringify(managerView.descriptor);
-    if (!this.#cloudTransferHandle) {
-      const begin = this.#createTransferButton(manager, 'begin-cloud-to-lan',
+    if (isManager && !this.#cloudTransferHandle) {
+      let descriptorInput: HTMLTextAreaElement | null = null;
+      if (!thisDevice) {
+        section.createDiv({ text: t('collab.access.otherLanTargetHelp') });
+        descriptorInput = this.#renderJsonInput(
+          section, 'cloud-to-lan-descriptor', t('collab.access.cloudToLanDescriptor'),
+        );
+        if (this.#cloudTargetDescriptor) {
+          descriptorInput.value = JSON.stringify(this.#cloudTargetDescriptor);
+          descriptorInput.readOnly = true;
+        }
+      }
+      const begin = this.#createTransferButton(section, 'begin-cloud-to-lan',
         t('collab.access.beginCloudToLan'), async () => {
           try {
-            const result = await this.#port.beginCloudToLanTransfer({
-              descriptor: JSON.parse(
-                descriptor.value,
-              ) as CollabCloudToLanTargetPreparationDescriptor,
-            });
-            if (result.status === 'success') this.#cloudTransferHandle = result.value;
+            const descriptor = thisDevice ? this.#cloudTargetDescriptor!
+              : JSON.parse(descriptorInput!.value) as CollabCloudToLanTargetPreparationDescriptor;
+            const result = await this.#port.beginCloudToLanTransfer({ descriptor });
+            if (result.status === 'success') {
+              this.#cloudTargetDescriptor = descriptor;
+              this.#cloudTransferHandle = result.value;
+            }
             return result;
           } catch {
             return { status: 'failure' as const, error: new Error() as never };
           }
         });
-      begin.disabled = this.#managementActionBlocked() || !descriptor.value.trim();
-      descriptor.addEventListener('input', () => {
-        begin.disabled = this.#managementActionBlocked() || !descriptor.value.trim();
+      begin.disabled = this.#managementActionBlocked()
+        || (descriptorInput !== null && !descriptorInput.value.trim());
+      descriptorInput?.addEventListener('input', () => {
+        begin.disabled = this.#managementActionBlocked() || !descriptorInput.value.trim();
       });
     }
-    if (!this.#cloudTransferHandle) return;
-    this.#renderJsonValue(manager, this.#cloudTransferHandle,
-      t('collab.access.cloudToLanHandle'), 'copy-cloud-to-lan-handle');
-    if (this.#cloudTransferStatus) {
-      manager.createDiv({ text: this.#transferStatusLabel(this.#cloudTransferStatus) });
+
+    if (thisDevice && this.#cloudTargetDescriptor && (!targetView || targetView.canWithdraw)) {
+      this.#createTransferButton(section, 'withdraw-cloud-to-lan-target',
+        t('collab.access.withdrawCloudToLan'), async () => {
+          const result = await this.#port.withdrawCloudToLanTarget({
+            preparationId: this.#cloudTargetDescriptor!.preparationId,
+            projectId: this.#options.project.id,
+          });
+          if (result.status === 'success') this.#applyCloudTransferView(null);
+          return result;
+        });
     }
-    this.#createTransferButton(manager, 'observe-cloud-to-lan',
+    if (!this.#cloudTransferHandle) return;
+    if (!isManager) {
+      section.createDiv({ text: this.#transferStatusLabel(this.#cloudTransferStatus) });
+      return;
+    }
+    if (!thisDevice) {
+      section.createDiv({ text: t('collab.access.shareLanHandleHelp') });
+      this.#renderJsonValue(section, this.#cloudTransferHandle,
+        t('collab.access.cloudToLanHandle'), 'copy-cloud-to-lan-handle');
+    }
+    if (this.#cloudTransferStatus) {
+      section.createDiv({ text: this.#transferStatusLabel(this.#cloudTransferStatus) });
+    }
+    this.#createTransferButton(section, 'observe-cloud-to-lan',
       t('collab.access.observeTransfer'), async () => {
         const result = await this.#port.observeCloudToLanTransfer(
           this.#options.project.id,
@@ -1536,7 +1613,7 @@ export class ProjectManagementModal extends Modal {
         return result;
       });
     if (this.#cloudTransferStatus && this.#isTransferCancellable(this.#cloudTransferStatus)) {
-      this.#createTransferButton(manager, 'cancel-cloud-to-lan',
+      this.#createTransferButton(section, 'cancel-cloud-to-lan',
         t('collab.access.cancelTransfer'), async () => {
           const result = await this.#port.cancelCloudToLanTransfer(
             this.#cloudTransferHandle!,
@@ -1548,6 +1625,32 @@ export class ProjectManagementModal extends Modal {
           return result;
         });
     }
+  }
+
+  #renderCloudToLanAcceptance(section: HTMLElement): void {
+    const handle = this.#cloudTransferHandle;
+    const input = handle ? null : this.#renderJsonInput(
+      section, 'cloud-to-lan-handle', t('collab.access.cloudToLanHandle'),
+    );
+    const accept = this.#createTransferButton(section, 'accept-cloud-to-lan',
+      t('collab.access.acceptCloudToLan'), async () => {
+        try {
+          const result = await this.#port.acceptCloudToLanTransfer(
+            handle ?? JSON.parse(input!.value) as CollabCloudToLanTransferHandle,
+          );
+          if (result.status === 'success') {
+            this.#cloudTransferStatus = result.value;
+            this.#finishTerminalTransfer(result.value);
+          }
+          return result;
+        } catch {
+          return { status: 'failure' as const, error: new Error() as never };
+        }
+      });
+    accept.disabled = this.#managementActionBlocked() || (input !== null && !input.value.trim());
+    input?.addEventListener('input', () => {
+      accept.disabled = this.#managementActionBlocked() || !input.value.trim();
+    });
   }
 
   #transferStatusLabel(status: CollabAuthorityTransferStatus | null): string {

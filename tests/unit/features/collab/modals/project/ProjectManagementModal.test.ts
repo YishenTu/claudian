@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 
 import { type CollabMember } from '@claudian-collab/protocol';
-import { within } from '@testing-library/dom';
+import { fireEvent, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
@@ -161,6 +161,76 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  it('identifies the Project and groups management into named sections', async () => {
+    const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    expect(ui.getByRole('heading', { level: 2, name: 'Alpha' })).not.toBeNull();
+    expect(ui.getByText('workspace/alpha')).not.toBeNull();
+    expect(ui.getByText('1 member')).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Members' }))
+      .getByRole('button', { name: 'Create invitation' })).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Hosting' }))
+      .getByRole('button', { name: 'Move to Cloud' })).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Project actions' }))
+      .getByRole('button', { name: 'Leave project' })).not.toBeNull();
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it.each(['Leave project', 'Retire project'])(
+    'shows the %s confirmation below the Project actions controls', async action => {
+      const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+      const modal = new ProjectManagementModal({} as never, port, { project: project() });
+      document.body.appendChild(modal.contentEl);
+      modal.onOpen();
+      await flush();
+      const ui = within(modal.contentEl);
+      fireEvent.click(ui.getByRole('button', { name: action }));
+      const actions = within(ui.getByRole('region', { name: 'Project actions' }));
+      const confirm = actions.getByRole('button', { name: 'Confirm' });
+      const retire = actions.getByRole('button', { name: 'Retire project' });
+      expect(retire.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING)
+        .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(await axe(modal.contentEl)).toHaveNoViolations();
+      fireEvent.click(actions.getByRole('button', { name: 'Cancel' }));
+      expect(ui.queryByRole('button', { name: 'Confirm' })).toBeNull();
+      expect(port.leaveProject).not.toHaveBeenCalled();
+      expect(port.retireProject).not.toHaveBeenCalled();
+      modal.onClose();
+      modal.contentEl.remove();
+    },
+  );
+
+  it('expands the Cloud move form on request and preserves its draft when collapsed', async () => {
+    const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    modal.onOpen();
+    await flush();
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    const toggle = ui.getByRole('button', { name: 'Move to Cloud' });
+    expect(toggle.getAttribute('type')).toBe('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(ui.queryByRole('textbox', { name: 'Cloud server URL' })).toBeNull();
+    fireEvent.click(toggle);
+    const input = ui.getByRole('textbox', { name: 'Cloud server URL' });
+    fireEvent.input(input, { target: { value: 'https://cloud.example.test/' } });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(ui.queryByRole('textbox', { name: 'Cloud server URL' })).toBeNull();
+    fireEvent.click(toggle);
+    expect((ui.getByRole('textbox', { name: 'Cloud server URL' }) as HTMLInputElement).value)
+      .toBe('https://cloud.example.test/');
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
   it('keeps ordinary-member Cloud Leave reachable while the authority is offline', async () => {
     const port = createPort([], {
       readProjectCapabilities: jest.fn().mockResolvedValue({
@@ -1171,14 +1241,16 @@ describe('ProjectManagementModal', () => {
     modal.onOpen();
     await flush();
 
+    document.body.appendChild(modal.contentEl);
     const hosting = modal.contentEl.querySelector<HTMLElement>(
       '.claudian-collab-hosting',
     )!;
-    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to Cloud' }))
+    expect(within(hosting).getByRole('button', { name: 'Move to Cloud' }))
       .not.toBeNull();
     expect(hosting.textContent).not.toContain('Cloud target:');
     expect(hosting.textContent).not.toContain('Cancelled');
     expect(hosting.querySelector('[data-field="lan-to-cloud-server-url"]')).not.toBeNull();
+    fireEvent.click(within(hosting).getByRole('button', { name: 'Move to Cloud' }));
     const requestMove = within(hosting).getByRole('button', {
       name: 'Request move to Cloud',
     });
@@ -1187,6 +1259,8 @@ describe('ProjectManagementModal', () => {
       'claudian-collab-authority-transfer-submit',
     )).toBe(true);
     expect(requestMove).toHaveProperty('disabled', true);
+    modal.onClose();
+    modal.contentEl.remove();
   });
 
   it('shows persisted Cloud-to-LAN progress to the selected non-Manager target', async () => {
@@ -1307,12 +1381,17 @@ describe('ProjectManagementModal', () => {
     await flush();
     await flush();
 
-    const hosting = modal.contentEl.querySelector<HTMLElement>(
-      '.claudian-collab-hosting',
-    )!;
-    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to LAN' }))
-      .not.toBeNull();
-    expect(hosting.textContent).not.toContain('authority');
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    const toggle = ui.getByRole('button', { name: 'Move to LAN' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(ui.queryByRole('button', { name: 'Prepare LAN target' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(ui.getByRole('combobox', { name: 'LAN host' })).not.toBeNull();
+    expect(ui.queryByRole('textbox')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Begin move to LAN' })).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Accept transfer on this device' })).toBeNull();
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
 
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="prepare-cloud-to-lan"]',
@@ -1321,33 +1400,17 @@ describe('ProjectManagementModal', () => {
     expect(port.prepareCloudToLanTarget).toHaveBeenCalledWith({
       projectId: 'project-alpha',
     });
-    expect(modal.contentEl.textContent).toContain('preparation-one');
+    expect(ui.queryByRole('textbox')).toBeNull();
+    expect(ui.getByRole('button', { name: 'Begin move to LAN' })).not.toBeNull();
 
-    const descriptorInput = modal.contentEl.querySelector<HTMLTextAreaElement>(
-      '[data-field="cloud-to-lan-descriptor"]',
-    )!;
-    descriptorInput.value = JSON.stringify(descriptor);
-    descriptorInput.dispatchEvent(new Event('input'));
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="begin-cloud-to-lan"]',
     )?.click();
     await flush();
     expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ descriptor });
-    expect(modal.contentEl.textContent).toContain('intent-one');
-    expect(modal.contentEl.querySelector(
-      '[data-action="copy-cloud-to-lan-descriptor"]',
-    )?.getAttribute('aria-label')).toBe('Copy transfer data: LAN target descriptor');
-    expect(modal.contentEl.querySelector(
-      '[data-action="copy-cloud-to-lan-handle"]',
-    )?.getAttribute('aria-label')).toBe('Copy transfer data: Transfer handle');
-
-    for (const action of [
-      'accept-cloud-to-lan',
-      'observe-cloud-to-lan',
-      'withdraw-cloud-to-lan-target',
-    ]) {
-      expect(modal.contentEl.querySelector(`[data-action="${action}"]`)).not.toBeNull();
-    }
+    expect(ui.queryByRole('textbox')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Begin move to LAN' })).toBeNull();
+    expect(ui.getByRole('button', { name: 'Accept transfer on this device' })).not.toBeNull();
     expect(modal.contentEl.querySelector('[data-action="cancel-cloud-to-lan"]')).toBeNull();
 
     modal.contentEl.querySelector<HTMLButtonElement>(
@@ -1358,18 +1421,108 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.textContent).not.toContain('source-quiesced');
     expect(modal.contentEl.querySelector('[data-action="cancel-cloud-to-lan"]')).not.toBeNull();
 
-    const handleInput = modal.contentEl.querySelector<HTMLTextAreaElement>(
-      '[data-field="cloud-to-lan-handle"]',
-    )!;
-    handleInput.value = JSON.stringify(handle);
-    handleInput.dispatchEvent(new Event('input'));
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="accept-cloud-to-lan"]',
     )?.click();
     await flush();
 
+    expect(port.acceptCloudToLanTransfer).toHaveBeenCalledWith(handle);
+    modal.contentEl.remove();
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(modal.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows only the target input and returned handle when moving to another device', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      expiresAt: '2026-09-10T00:00:00.000Z',
+      preparationId: 'preparation-one',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'http://cloud.example:8787',
+      targetUrl: 'https://192.168.1.30:54545',
+      transferId: 'transfer-one',
+    } as never;
+    const handle = {
+      operationIntentId: 'intent-one',
+      projectId: 'project-alpha',
+      transferId: 'transfer-one',
+    } as never;
+    const activeStatus = {
+      phase: 'source-quiesced',
+      state: 'active',
+    } as never;
+    const completedStatus = {
+      phase: 'completed',
+      state: 'completed',
+    } as never;
+    const port = createPort(members, {
+      acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success(completedStatus)),
+      beginCloudToLanTransfer: jest.fn().mockResolvedValue(success(handle)),
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([{
+        displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager',
+      }])),
+      prepareCloudToLanTarget: jest.fn().mockResolvedValue(success(descriptor)),
+      observeCloudToLanTransfer: jest.fn().mockResolvedValue(success(activeStatus)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: false,
+        leave: false,
+        managerResponsibility: true,
+        membershipManagement: true,
+        retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const onChanged = jest.fn();
+    const copyText = jest.fn().mockResolvedValue(undefined);
+    const modal = new ProjectManagementModal({} as never, port, {
+      copyText,
+      onChanged,
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to LAN' }));
+    fireEvent.change(ui.getByRole('combobox', { name: 'LAN host' }), {
+      target: { value: 'another-device' },
+    });
+    expect(ui.queryByRole('button', { name: 'Prepare LAN target' })).toBeNull();
+    expect(ui.queryByRole('textbox', { name: 'Transfer handle' })).toBeNull();
+    fireEvent.input(ui.getByRole('textbox', { name: 'LAN target descriptor' }), {
+      target: { value: JSON.stringify(descriptor) },
+    });
+    fireEvent.click(ui.getByRole('button', { name: 'Begin move to LAN' }));
+    await flush();
+    expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ descriptor });
+    expect(ui.queryByRole('textbox', { name: 'LAN target descriptor' })).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Accept transfer on this device' })).toBeNull();
+    expect((ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement).value)
+      .toBe(JSON.stringify(handle));
+    fireEvent.click(ui.getByRole('button', { name: 'Copy transfer data: Transfer handle' }));
+    await flush();
+    expect(copyText).toHaveBeenCalledWith(JSON.stringify(handle));
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
   });
 
   it('hides target-device controls when a Manager selected another Member installation', async () => {
@@ -2313,7 +2466,7 @@ describe('ProjectManagementModal', () => {
     expect(within(hosting).getByRole('heading', { level: 3, name: 'Hosting' }))
       .not.toBeNull();
     expect(within(hosting).getByText('LAN Host (on this device)')).not.toBeNull();
-    expect(within(hosting).getByRole('heading', { level: 4, name: 'Move to Cloud' }))
+    expect(within(hosting).getByRole('button', { name: 'Move to Cloud' }))
       .not.toBeNull();
     expect(hosting.textContent).not.toContain('authority');
 
