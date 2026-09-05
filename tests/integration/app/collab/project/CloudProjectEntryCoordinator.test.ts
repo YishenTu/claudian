@@ -33,6 +33,7 @@ import { decodeCloudProjectInvitation, encodeCloudProjectInvitation } from '@/ap
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { decodeCollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 
 const PROJECT_ID = 'project-cloud-entry';
@@ -64,7 +65,7 @@ describe('CloudProjectEntryCoordinator', () => {
         admission: null, createdAt: CREATED_AT, operationId: 'entry-other', operationKind: 'cloud-create-project', phase: 'intent',
         projectId: 'project-other-entry', projectsFolder: 'Shared/Projects',
         request: { idempotencyKey: 'entry-other', managerDisplayName: 'Other', projectId: 'project-other-entry', projectName: 'Other' },
-        schemaVersion: 1, serverUrl: fixture.serverUrl, slug: 'cloud-notes', stagingDirectoryName: '.claudian-clone-project-other-entry', updatedAt: CREATED_AT,
+        schemaVersion: 2, principalId: `vault-${'a'.repeat(64)}`, serverUrl: fixture.serverUrl, slug: 'cloud-notes', stagingDirectoryName: '.claudian-clone-project-other-entry', updatedAt: CREATED_AT,
       }));
     } else if (collision === 'symlink') {
       await symlink(preserved, destination, process.platform === 'win32' ? 'junction' : 'dir');
@@ -202,6 +203,7 @@ describe('CloudProjectEntryCoordinator', () => {
 
   it.each([false, true])('resumes missing-copy setup from a synchronized binding (retained publication: %s)', async retainPublication => {
     const fixture = await createFixture({ join: true, alreadyBound: true, remoteContribution: true });
+    await new CloudProjectCredentialStore(fixture.vaultRoot).getOrCreate(PROJECT_ID);
     const feature = createFeatureFixture(fixture);
     const projects = fixture.foundation.local.projects;
     const membership = {
@@ -403,6 +405,27 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(await fixture.foundation.local.projects.listPendingOperationProjectIds()).toEqual([]);
       expect(await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord)).toEqual(drift === 'missing-publication' ? null : publication);
     } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it.each(['missing', 'replaced'] as const)('requires the original credential when pending Join identity is %s', async state => {
+    const fixture = await createFixture({ join: true });
+    try {
+      fixture.loseNextReply();
+      await expect(fixture.coordinator.joinProject({
+        invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob', projectSlug: 'cloud-notes',
+      })).resolves.toMatchObject({ status: 'recovery-required', operationId: OPERATION_ID });
+      const file = path.join(fixture.vaultRoot, `.claudian/collab/cloud-credentials/${PROJECT_ID}.json`);
+      const credential = await readFile(file);
+      const pending = await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord);
+      await rm(file);
+      if (state === 'replaced') await writeFile(file, JSON.stringify({ schemaVersion: 1, projectId: PROJECT_ID, credential: '1'.repeat(64) }));
+      await expect(fixture.createCoordinator().resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({ status: 'recovery-required' });
+      expect(fixture.joinRequests).toEqual([pending?.request]);
+      expect(await lstat(file).then(() => true, () => false)).toBe(state === 'replaced');
+      await writeFile(file, credential);
+      await expect(fixture.createCoordinator().resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({ status: 'success' });
+      expect(fixture.joinRequests).toEqual([pending?.request, pending?.request]);
+    } finally { await fixture.close(); }
   });
 
   it('replays a possibly submitted Join exactly after reply loss even when the principal is now bound', async () => {
@@ -1141,7 +1164,7 @@ async function createFixture(options: {
     createdAt: CREATED_AT, expiresAt: '2026-09-02T00:00:00.000Z', invitationId: 'invitation-entry',
     issuedState: 'active', projectId, secret: 'A'.repeat(43), secretReplayExpiresAt: '2026-10-01T00:00:00.000Z',
   } })).toString('base64url')}`;
-  const adapter = new CloudAuthorityAdapter();
+  const adapter = new CloudAuthorityAdapter(vaultRoot);
   const createCoordinator = () => new CloudProjectEntryCoordinator(foundation, {
     activateProject: async membership => {
       if (failActivation) { failActivation = false; throw new Error('Injected activation cut'); }

@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_LIMITS,
@@ -22,6 +26,7 @@ import type {
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventClientOptions } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -32,6 +37,13 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 const HEAD = 'a'.repeat(40);
+let cloudVaultRoot: string;
+beforeEach(async () => {
+  cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-projection-vault-'));
+  await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate('project-a');
+});
+afterEach(async () => { await rm(cloudVaultRoot, { recursive: true, force: true }); });
+
 const registries = new Set<CollabProjectWorkSessionRegistry>();
 
 function admitProjectRetirement(
@@ -949,7 +961,7 @@ function cloudEventSessions(
     input.method === 'GET' ? cloudCapabilities() : cloudSnapshotResponse(input)
   ),
 ): CollabAuthoritySessionFactory {
-  return new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({
+  return new CollabAuthoritySessionFactory([new CloudAuthorityAdapter(cloudVaultRoot, {
     createEventClient: (input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation, { createSocket }),
     request,
   })]);

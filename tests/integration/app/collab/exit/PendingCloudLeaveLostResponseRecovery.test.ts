@@ -19,6 +19,7 @@ import {
 } from '@/app/collab/exit/LocalProjectExitCoordinator';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { ManagerResponsibilityOperationCoordinator } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const NOW = '2026-08-26T00:00:00.000Z';
@@ -37,6 +38,7 @@ describe('Pending Cloud Leave lost-response recovery', () => {
   it.each(['keep-files', 'delete-files'] as const)(
     'replays the submitted %s Leave after real cleanup removed local Project state',
     async cleanupChoice => {
+      const credential = await new CloudProjectCredentialStore(vaultRoot).getOrCreate('project-cloud');
       const workspace = new CollabWorkspaceService(vaultRoot);
       await workspace.claimProjectsFolder('workspace');
       const projectRoot = path.join(vaultRoot, 'workspace', 'project-cloud');
@@ -91,7 +93,8 @@ describe('Pending Cloud Leave lost-response recovery', () => {
       );
       const firstJournal = new CollabLifecycleJournalStore(vaultRoot).pendingLeaves;
       let settleAttempts = 0;
-      const authority = authorityPort(() => {
+      const authority = authorityPort(async () => {
+        expect(await new CloudProjectCredentialStore(vaultRoot).require('project-cloud')).toEqual(credential);
         settleAttempts += 1;
         if (settleAttempts === 1) {
           throw new CollabError({ code: 'endpoint-unreachable' });
@@ -156,7 +159,7 @@ describe('Pending Cloud Leave lost-response recovery', () => {
 });
 
 function authorityPort(
-  settle: () => LeaveProjectResponse,
+  settle: () => LeaveProjectResponse | Promise<LeaveProjectResponse>,
 ): jest.Mocked<LocalExitAuthorityPort> {
   return {
     prepareLeave: jest.fn(async (_input) => ({

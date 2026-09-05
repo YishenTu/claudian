@@ -33,6 +33,7 @@ import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecy
 import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 
 const PROJECT_ID = 'project-cloud-management';
 const MEMBER_ID = 'member-manager';
@@ -919,6 +920,7 @@ describe('Cloud membership management', () => {
 
 async function createFixture(options: { provedStaleDemotion?: boolean; blockReadsAfterRejection?: boolean; onDemotionRejection?: (intentPath: string) => Promise<void>; onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean; managerLeaveOffer?: boolean } = {}) {
   const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-management-'));
+  await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
   const createdAt = new Date().toISOString();
   const invitation = {
     createdAt, expiresAt: new Date(Date.parse(createdAt) + 86_400_000).toISOString(),
@@ -1227,7 +1229,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
     client: () => {
       const foundation = new ClaudianCollabService({ getConfiguredGitPath: () => '', installationKey: TEST_INSTALLATION_A, obsidianConfigDirectory: '.obsidian', vaultRoot });
       const projectSetup = new CollabProjectSetupService(foundation, { installationKey: TEST_INSTALLATION_A, vaultRoot });
-      const feature = createCollabFeatureSubcomposition({ cloudAuthority: new CloudAuthorityAdapter(), foundation, projectSetup, vaultRoot }).feature;
+      const feature = createCollabFeatureSubcomposition({ cloudAuthority: new CloudAuthorityAdapter(vaultRoot), foundation, projectSetup, vaultRoot }).feature;
       return { foundation, feature, close: async () => { await feature.close(); await foundation.close(); } };
     },
     seed: async (foundation: ClaudianCollabService) => {

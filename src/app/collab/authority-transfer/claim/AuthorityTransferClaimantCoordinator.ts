@@ -36,6 +36,7 @@ export interface AuthorityTransferClaimantSource {
 }
 
 export interface AuthorityTransferClaimantTarget {
+  readonly cloudPrincipalId: string | null;
   claimTransferredMembership(
     record: AuthorityTransferClaimantRecord,
     request: ClaimTransferredMembershipRequest,
@@ -167,6 +168,7 @@ export class AuthorityTransferClaimantCoordinator {
       }
     } else {
       await this.options.store.save(createAuthorityTransferClaimantRecord({
+        cloudPrincipalId: this.options.target.cloudPrincipalId,
         createdAt: this.now().toISOString(),
         lanTarget,
         managerPredecessor: input.managerPredecessor ?? null,
@@ -189,7 +191,10 @@ export class AuthorityTransferClaimantCoordinator {
         throw claimantError('authority-transfer-claimant-attempt-conflict');
       }
     } else {
+      const cloudPrincipalId = this.options.target.cloudPrincipalId;
+      if (cloudPrincipalId === null) throw claimantError('authority-transfer-claimant-cloud-principal-missing');
       const candidate = createManagerReissuedAuthorityTransferClaimantRecord({
+        cloudPrincipalId,
         ...input,
         operationIntentId: input.operationIntentId
           ?? `manager-reissued-${randomBytes(16).toString('hex')}`,
@@ -252,6 +257,7 @@ export class AuthorityTransferClaimantCoordinator {
           break;
         }
         case 'credential-persisted': {
+          this.assertTargetPrincipal(record);
           if (!record.claim) throw claimantError('authority-transfer-claimant-claim-missing');
           const request: ClaimTransferredMembershipRequest = record.targetCredential === null
             ? {
@@ -302,6 +308,7 @@ export class AuthorityTransferClaimantCoordinator {
       assertNotCancelled(options);
       switch (record.phase) {
         case 'redemption-prepared': {
+          this.assertTargetPrincipal(record);
           if (this.now().getTime() >= Date.parse(record.descriptor.expiresAt)) {
             const targetStatus = await this.confirmManagerTargetBinding(
               record,
@@ -325,6 +332,7 @@ export class AuthorityTransferClaimantCoordinator {
           break;
         }
         case 'target-claimed': {
+          this.assertTargetPrincipal(record);
           const targetStatus = await this.confirmManagerTargetBinding(
             record,
             'receipt',
@@ -357,6 +365,12 @@ export class AuthorityTransferClaimantCoordinator {
       return;
     }
     await this.options.store.remove(record.projectId);
+  }
+
+  private assertTargetPrincipal(record: AuthorityTransferClaimantRecord): void {
+    if (record.cloudPrincipalId !== this.options.target.cloudPrincipalId) {
+      throw claimantError('authority-transfer-claimant-cloud-principal-mismatch');
+    }
   }
 
   private confirmManagerTargetBinding(

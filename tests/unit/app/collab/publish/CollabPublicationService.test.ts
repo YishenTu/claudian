@@ -28,6 +28,7 @@ import {
 } from '@/app/collab/publish/CollabPublicationService';
 import type { CollabRequestDraftRecord } from '@/app/collab/publish/CollabRequestDraftRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { type CollabUpdateRequestMetadataRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -435,7 +436,9 @@ describe('CollabPublicationService reconnect', () => {
     if (!address || typeof address === 'string') throw new Error('server address missing');
     const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
     const transport = new NodeCloudAuthorityHttpTransport();
-    const cloudAuthority = new CloudAuthorityAdapter({
+    const cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-publication-vault-'));
+    await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate(membership.project.id);
+    const cloudAuthority = new CloudAuthorityAdapter(cloudVaultRoot, {
       request: input => transport.request({
         ...input,
         headers: { ...input.headers, 'x-test-ingress': 'private-fixture' },
@@ -491,6 +494,7 @@ describe('CollabPublicationService reconnect', () => {
         `/v5/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
+      await rm(cloudVaultRoot, { recursive: true, force: true });
       fetchMock.mockRestore();
       await service.close();
       server.closeAllConnections();

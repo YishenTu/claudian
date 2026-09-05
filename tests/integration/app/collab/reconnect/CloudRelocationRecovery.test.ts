@@ -261,6 +261,7 @@ function coordinator(input: {
 function connection(): CloudAuthorityConnection {
   const local = membership();
   return {
+    principalId: 'vault-test',
     createProject: async () => { throw new Error('not expected'); },
     dispose: jest.fn(),
     git: { headers: [], remoteUrl: NEW_REMOTE },

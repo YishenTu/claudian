@@ -24,7 +24,8 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantBindingResolverOptions {
   readonly createCloudConnection: (input: Readonly<{
-        readonly projectId: CollabProjectId;
+    readonly allowCredentialCreation: boolean;
+    readonly projectId: CollabProjectId;
     readonly serverUrl: string;
   }>) => Promise<CloudAuthorityConnection>;
   readonly createLanClient?: (
@@ -86,6 +87,7 @@ export class AuthorityTransferClaimantBindingResolver {
       }
       return {
         cloudSession: await this.options.createCloudConnection({
+          allowCredentialCreation: false,
           projectId: record.projectId,
           serverUrl: record.serverUrl,
         }),
@@ -105,6 +107,7 @@ export class AuthorityTransferClaimantBindingResolver {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
       const cloudSession = await this.options.createCloudConnection({
+        allowCredentialCreation: false,
         projectId: record.projectId,
         serverUrl: record.status.targetUrl,
       });
@@ -154,6 +157,7 @@ export class AuthorityTransferClaimantBindingResolver {
       };
     }
     const cloudSession = await this.options.createCloudConnection({
+      allowCredentialCreation: false,
       projectId: record.projectId,
       serverUrl: membership.authority.serverUrl,
     });

@@ -51,6 +51,7 @@ describe('Cloud event default transport liveness', () => {
     const server = await eventServer('stalled');
     const invalidations: number[] = [];
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 7,
       projectId: 'project-events',
       serverUrl: server.serverUrl,
@@ -75,6 +76,7 @@ describe('Cloud event default transport liveness', () => {
   it.concurrent('reconnects a silently lost established socket from the applied cursor', async () => {
     const server = await eventServer('silent');
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: 'project-events',
       serverUrl: server.serverUrl,
@@ -95,6 +97,7 @@ describe('Cloud event default transport liveness', () => {
   it.concurrent('keeps a heartbeat-responsive idle socket connected and stops on disposal', async () => {
     const server = await eventServer('healthy');
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: 'project-events',
       serverUrl: server.serverUrl,

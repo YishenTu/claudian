@@ -982,7 +982,7 @@ describe('production authority-transfer effects', () => {
         status: 'active' as const,
       };
       const cloudSession = {
-        developmentActorId: MEMBER_ID,
+        principalId: 'vault-source-credential',
         dispose: jest.fn(),
         lifecycle: {
           authorityTransfer,
@@ -1324,6 +1324,7 @@ describe('production authority-transfer effects', () => {
       status: status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
     });
     const noopSession = {
+      principalId: 'vault-source-credential',
       projectId: PROJECT_ID,
     } as unknown as CloudAuthorityConnection;
     const sourceEffects = new ProductionLanToCloudSourceEffects({
@@ -1367,7 +1368,7 @@ describe('production authority-transfer effects', () => {
       readonly schemaVersion: number;
     };
     expect(sourceProofEnvelope).toMatchObject({
-      payload: { sourcePrincipalId: TEST_INSTALLATION_A },
+      payload: { sourcePrincipalId: 'vault-source-credential' },
       schemaVersion: 2,
     });
     const { caCertificatePem, certificate, ...sourceProofSigningPayload } = sourceProofEnvelope;

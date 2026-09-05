@@ -27,6 +27,7 @@ import {
   LocalPublishProjectPort,
 } from '@/app/collab/publish/LocalPublishProjectPort';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
 import type { CloudAuthorityHttpRequest } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
@@ -179,7 +180,8 @@ describe('Local Publish adapters', () => {
     expect(operation).not.toHaveBeenCalled();
   });
 
-  it('uses a headerless Cloud Git route authenticated by trusted ingress', async () => {
+  it('uses Vault credential headers on the Cloud Git route', async () => {
+    const credential = await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
     const record = cloudMembership();
     await projects.saveMembership(record);
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
@@ -202,7 +204,7 @@ describe('Local Publish adapters', () => {
       vaultRoot,
       projects,
       sessions,
-      new CollabAuthoritySessionFactory([new CloudAuthorityAdapter({ request })]),
+      new CollabAuthoritySessionFactory([new CloudAuthorityAdapter(vaultRoot, { request })]),
       probe,
     );
     const context = {
@@ -214,7 +216,10 @@ describe('Local Publish adapters', () => {
     };
 
     await expect(networkPort.withNetwork(context, async (network, remoteUrl) => {
-      expect(network).toEqual({ headers: [] });
+      expect(network).toEqual({ headers: [
+        { name: 'authorization', sensitive: true, value: `Bearer ${credential.credential}` },
+        { name: 'x-claudian-ingress-principal', sensitive: true, value: credential.principalId },
+      ] });
       expect(remoteUrl).toBe(record.authority.gitRemoteUrl);
       return 'completed';
     })).resolves.toBe('completed');
