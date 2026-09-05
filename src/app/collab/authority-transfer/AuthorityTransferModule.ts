@@ -118,7 +118,7 @@ export interface AuthorityTransferModuleOptions {
     expectedAuthorityGeneration: number,
   ) => Promise<void> | void;
   readonly assertRecoveryOwner: (
-    ownerInstallationKey: string | undefined,
+    ownerInstallationKey: string,
     projectId: CollabProjectId,
   ) => Promise<void> | void;
   readonly claimantStore: AuthorityTransferClaimantCoordinatorOptions['store'];
@@ -866,7 +866,7 @@ export class AuthorityTransferModule {
     let existing = await this.options.persistence.loadCloudToLanTargetEntry(
       input.projectId,
     );
-    if (existing?.ownerInstallationKey !== undefined
+    if (existing
       && existing.ownerInstallationKey !== this.options.installationKey) {
       throw moduleError('host-installation-recovery-owner-mismatch');
     }
@@ -1517,9 +1517,6 @@ export class AuthorityTransferModule {
       return;
     }
     const physical = await this.options.persistence.load(projectId);
-    if (physical && physical.ownerInstallationKey === undefined) {
-      throw moduleError('host-installation-recovery-owner-mismatch');
-    }
     if (physical?.ownerInstallationKey === this.options.installationKey) {
       if (!this.cloudToLanManagerMatchesPhysical(entry, physical)) {
         throw moduleError('authority-transfer-manager-physical-mismatch');

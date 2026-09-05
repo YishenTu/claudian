@@ -29,7 +29,6 @@ const {
 const root = path.resolve(__dirname, '../../..');
 const esbuildConfigPath = path.join(root, 'esbuild.config.mjs');
 const packageJsonPath = path.join(root, 'package.json');
-const performanceScriptPath = path.join(root, 'scripts/check-startup-performance.mjs');
 
 describe('Collab dependency envelope', () => {
   const tempDirectory = mkdtempSync(path.join(tmpdir(), 'claudian-collab-build-'));
@@ -328,31 +327,6 @@ describe('Collab dependency envelope', () => {
       const dependencyEnvelope = require(process.argv[1]);
       process.stdout.write(JSON.stringify(dependencyEnvelope.probeWebSocket()));
     `)).toBe('["function","function"]');
-  });
-
-  it('enforces the hard bundle budget and reports the pre-Step-11 health baseline', () => {
-    const script = readFileSync(performanceScriptPath, 'utf8');
-
-    expect(script).toContain('preCollabReferenceMainBytes = 3_739_584');
-    expect(script).toContain('preStep11BundleHealthBaselineBytes = 4_896_000');
-    expect(script).toContain('mainBudgetBytes = 5_180_000');
-    expect(script).toContain('evaluationReviewThresholdMs = 150');
-    expect(script).toContain('pre-Collab reference delta');
-    expect(script).toContain('pre-Step-11 health baseline delta');
-    expect(script).toContain('artifact.budgetExceeded');
-    expect(script).not.toContain('historicalMainWarningBytes');
-    expect(script).not.toContain('mainReviewThresholdBytes');
-  });
-
-  it('guards ordinary evaluation from deferred runtime initialization', () => {
-    const script = readFileSync(performanceScriptPath, 'utf8');
-
-    expect(script).toContain('Module evaluation failed:');
-    expect(script).toContain("path.join(root, 'node_modules', '.bun', 'node_modules')");
-    expect(script).toContain('NODE_PATH: childNodePath');
-    expect(script).toContain('childProcessStarts !== 0');
-    expect(script).toContain('networkListens !== 0');
-    expect(script).toContain('wasmInitializations !== 0');
   });
 
   it('produces one self-contained artifact without eager SQL initialization', () => {

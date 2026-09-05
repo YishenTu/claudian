@@ -85,8 +85,9 @@ import { toError } from '@/utils/error';
 export interface CollabFeatureSubcompositionOptions {
   readonly cloudAuthority?: Pick<
   CloudAuthorityAdapter,
-  'authorityKind' | 'connect' | 'connectAuthorityTransfer' | 'create'
-  > & Partial<Pick<CloudAuthorityAdapter, 'connectPendingLeave' | 'connectPendingRetirement'>>;
+  'authorityKind' | 'connect' | 'connectAuthorityTransfer' | 'connectPendingLeave'
+  | 'connectPendingRetirement' | 'create'
+  >;
   readonly foundation: ClaudianCollabService;
   readonly getProjectsFolder?: () => string;
   readonly projectSetup: CollabProjectSetupService;
@@ -118,17 +119,14 @@ export function createCollabFeatureSubcomposition(
   const pendingLeaves = journals.pendingLeaves;
   const operationAdmission = new ProjectOperationAdmission();
   const cloudAuthority = options.cloudAuthority ?? new CloudAuthorityAdapter();
-  const connectPendingLeave = cloudAuthority.connectPendingLeave?.bind(cloudAuthority);
   const pendingLeaveAuthority = new PendingLeaveAuthorityService({
-    ...(connectPendingLeave ? {
-      createCloudClient: (record, requestOptions) => connectPendingLeave({
-        authorityGeneration: record.authorityGeneration,
-        memberId: record.memberId,
-        personalRef: record.personalRef,
-        projectId: record.projectId,
-        serverUrl: record.serverUrl,
-      }, requestOptions),
-    } : {}),
+    createCloudClient: (record, requestOptions) => cloudAuthority.connectPendingLeave({
+      authorityGeneration: record.authorityGeneration,
+      memberId: record.memberId,
+      personalRef: record.personalRef,
+      projectId: record.projectId,
+      serverUrl: record.serverUrl,
+    }, requestOptions),
     hostTransitionCandidates: foundation.hostTransitionCandidates,
   });
   const managerReceipts = new ManagerResponsibilityReceiptStore(
@@ -338,19 +336,12 @@ export function createCollabFeatureSubcomposition(
       )
     ),
   };
-  const connectPendingRetirement = cloudAuthority.connectPendingRetirement?.bind(cloudAuthority);
   const cloudRetirement = new CloudRetirementClient({
     activity: cloudRetirementActivity,
     connect: binding => cloudAuthority.connect(binding),
-    connectRetirement: (binding, requestOptions) => {
-      if (!connectPendingRetirement) {
-        throw new CollabError({
-          code: 'not-initialized',
-          safeContext: { reason: 'cloud-retirement-connection-unavailable' },
-        });
-      }
-      return connectPendingRetirement(binding, requestOptions);
-    },
+    connectRetirement: (binding, requestOptions) => (
+      cloudAuthority.connectPendingRetirement(binding, requestOptions)
+    ),
     intents: retirementIntents,
     terminal: {
       handle: (result, source) => {

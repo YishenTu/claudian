@@ -41,7 +41,6 @@ import {
 import {
   assertAuthorityTransferTransition,
   type AuthorityTransferRecord,
-  bindLegacyAuthorityTransferSourceOwner,
   createAuthorityTransferRecord,
   decodeAuthorityTransferRecord,
   expireAuthorityTransferTerminalResponder,
@@ -87,7 +86,7 @@ import type { InstallationKey } from '@/core/device/InstallationKey';
 export type LanToCloudCancellationIntent = AuthorityTransferSourceCancellationIntent;
 
 export interface AuthorityTransferPersistenceOptions {
-  readonly isRecoveryOwner: (ownerInstallationKey: string | undefined) => boolean;
+  readonly isRecoveryOwner: (ownerInstallationKey: string) => boolean;
   readonly now?: () => Date;
 }
 
@@ -1436,18 +1435,6 @@ export class AuthorityTransferPersistence {
     });
   }
 
-  bindLegacySourceOwner(
-    projectId: CollabProjectId,
-    ownerInstallationKey: InstallationKey,
-  ): Promise<void> {
-    return this.runProject(projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(projectId);
-      if (!record || record.localRole !== 'source') return;
-      const bound = bindLegacyAuthorityTransferSourceOwner(record, ownerInstallationKey);
-      if (bound !== record) await this.stores.authorityTransferRecords.save(bound);
-    });
-  }
-
   recoverInterruptedClaimCommitment(projectId: CollabProjectId): Promise<void> {
     return this.runProject(projectId, async () => {
       const [record, custody, commitment] = await Promise.all([
@@ -1714,7 +1701,6 @@ export class AuthorityTransferPersistence {
         if (
           previous.lifecycleOwnership !== 'owned'
           || previous.localRole !== 'source'
-          || previous.ownerInstallationKey === undefined
           || previous.status.direction !== 'lan-to-cloud'
           || previous.status.phase !== 'collecting-readiness'
           || previous.status.state !== 'active'
@@ -2241,12 +2227,6 @@ export class AuthorityTransferPersistence {
     if (localTarget && record && target.phase !== 'withdrawn') {
       await this.#reconcileTargetEntrySuccessor(target, record);
     }
-    if (record && record.ownerInstallationKey === undefined) {
-      throw transferError(
-        'durable-progress-recovery-required',
-        'authority-transfer-legacy-owner-missing',
-      );
-    }
     if (record && !this.#isRecoveryOwner(record.ownerInstallationKey)) return null;
     if (!record && (custody || commitment)) {
       throw transferError(
@@ -2415,8 +2395,7 @@ export class AuthorityTransferPersistence {
   }
 
   #isForeignPhysical(record: AuthorityTransferRecord): boolean {
-    return record.ownerInstallationKey !== undefined
-      && !this.#isRecoveryOwner(record.ownerInstallationKey);
+    return !this.#isRecoveryOwner(record.ownerInstallationKey);
   }
 
   #requesterMatchesPhysical(

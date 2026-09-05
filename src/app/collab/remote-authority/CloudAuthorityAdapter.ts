@@ -1286,33 +1286,22 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       projectId: binding.projectId,
       serverUrl: origin,
     };
-    const lifetime = new AbortController();
-    const requestOptions = (
-      caller: { readonly signal?: AbortSignal } = {},
-    ): { readonly signal: AbortSignal } => ({
-      signal: caller.signal
-        ? AbortSignal.any([lifetime.signal, caller.signal])
-        : lifetime.signal,
-    });
     return {
-      dispose: () => {
-        lifetime.abort();
-        control.dispose();
-      },
+      dispose: () => control.dispose(),
       listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
         'listProjectMembers',
         request,
         membershipBinding,
-        requestOptions(requestOptionsInput),
+        requestOptionsInput,
       ),
       readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
         projectId,
-        requestOptions(requestOptionsInput),
+        requestOptionsInput,
       ),
       retireProject: (request, requestOptionsInput) => control.retirement(
         'retireProject',
         request,
-        requestOptions(requestOptionsInput),
+        requestOptionsInput,
       ),
     };
   }
@@ -1349,33 +1338,22 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       projectId: binding.projectId,
       serverUrl: origin,
     };
-    const lifetime = new AbortController();
-    const requestOptions = (
-      caller: { readonly signal?: AbortSignal } = {},
-    ): { readonly signal: AbortSignal } => ({
-      signal: caller.signal
-        ? AbortSignal.any([lifetime.signal, caller.signal])
-        : lifetime.signal,
-    });
     return {
       authorityGeneration: binding.authorityGeneration,
-      dispose: () => {
-        lifetime.abort();
-        control.dispose();
-      },
+      dispose: () => control.dispose(),
       lifecycle: control,
       listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
         'listProjectMembers',
         request,
         membershipBinding,
-        requestOptions(requestOptionsInput),
+        requestOptionsInput,
       ),
       memberId: binding.memberId,
       personalRef: binding.personalRef,
       projectId: binding.projectId,
       readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
         projectId,
-        requestOptions(requestOptionsInput),
+        requestOptionsInput,
       ),
       serverUrl: binding.serverUrl,
       supports: capability => cloudCapabilityImplemented(document, capability),

@@ -509,6 +509,9 @@ function migrateIndex(value: unknown, now: CollabIsoTimestamp): CollabLocalProje
     !isRecord(value)
     || ![0, 1, 2].includes(value.schemaVersion as number)
     || !Array.isArray(value.projects)
+    || (value.schemaVersion !== 0 && value.projects.some(project => (
+      !isRecord(project) || project.authorityKind !== 'lan'
+    )))
   ) {
     throw new TypeError('Invalid legacy Project index');
   }
@@ -717,7 +720,12 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
 }
 
 function migrateMembership(value: unknown): CollabLocalMembershipRecord {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
+  if (
+    !isRecord(value)
+    || (value.schemaVersion !== 1 && value.schemaVersion !== 2)
+    || !isRecord(value.authority)
+    || value.authority.kind !== 'lan'
+  ) {
     throw new TypeError('Invalid legacy membership');
   }
   return normalizeMembership({
