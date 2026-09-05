@@ -1,5 +1,4 @@
 import { randomUUID, X509Certificate } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
 import { connect as connectTls, type DetailedPeerCertificate } from 'node:tls';
 
 import { isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
@@ -9,6 +8,7 @@ import {
   type CollabControlOperationBinding,
   matchCollabControlOperation,
 } from '@/app/collab/lan/CollabControlOperationBindings';
+import { HttpsRequestError, isTlsValidationError, requestHttpsBytes } from '@/app/collab/lan/httpsRequest';
 import {
   InvitationCodec,
   type LanCollabInvitation,
@@ -152,16 +152,6 @@ function readPresentedRoot(peer: DetailedPeerCertificate): Buffer {
     throw transportError('tls-untrusted', 'tls-presented-root-invalid');
   }
   return Buffer.from(current.raw);
-}
-
-function isTlsValidationError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException)?.code ?? '';
-  return code.includes('CERT')
-    || code.includes('TLS')
-    || code === 'DEPTH_ZERO_SELF_SIGNED_CERT'
-    || code === 'SELF_SIGNED_CERT_IN_CHAIN'
-    || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
-    || code === 'ERR_TLS_CERT_ALTNAME_INVALID';
 }
 
 function validateTimeout(timeoutMs: number): number {
@@ -458,111 +448,60 @@ export class PinnedCollabHttpClient {
       throw transportError('protocol-payload-invalid', 'control-request-too-large');
     }
     const endpoint = new URL(this.trust.endpoint);
-    const responseValue = await new Promise<unknown>((resolve, reject) => {
-      let settled = false;
-      const finish = (operation: () => void) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        options.signal?.removeEventListener('abort', onAbort);
-        operation();
-      };
-      const nodeRequest = httpsRequest({
-        ca: this.trust.caCertificatePem,
-        headers: {
-          accept: 'application/json',
-          ...(authorization ? { authorization } : {}),
-          ...(body ? {
-            'content-length': String(body.length),
-            'content-type': 'application/json',
-          } : {}),
-          ...(request.idempotencyKey
-            ? { 'idempotency-key': request.idempotencyKey }
-            : {}),
-          'x-request-id': randomUUID(),
-        },
-        hostname: endpoint.hostname,
-        method: request.method,
-        minVersion: 'TLSv1.2',
-        path: request.path,
-        port: Number(endpoint.port),
-        rejectUnauthorized: true,
-      }, response => {
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        response.on('data', (chunk: Buffer | string) => {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          bytes += buffer.length;
-          if (bytes > COLLAB_CONTROL_MAX_BODY_BYTES) {
-            response.destroy();
-            finish(() => reject(transportError(
-              'protocol-payload-invalid',
-              'control-response-too-large',
-            )));
-            return;
-          }
-          chunks.push(buffer);
-        });
-        response.once('error', () => {
-          finish(() => reject(transportError(
-            'endpoint-unreachable',
-            'control-response-failed',
-          )));
-        });
-        response.once('end', () => {
-          if (settled) return;
-          const statusCode = response.statusCode ?? 0;
-          try {
-            const contents = Buffer.concat(chunks).toString('utf8');
-            const parsed: unknown = contents.length === 0
-              ? null
-              : JSON.parse(contents) as unknown;
-            if (statusCode < 200 || statusCode >= 300) {
-              const stateError = statusCode === 409 || statusCode === 410
-                ? protocolStructuredError(parsed)
-                : null;
-              finish(() => reject(
-                stateError ?? responseStatusError(statusCode, authenticationKind),
-              ));
-              return;
-            }
-            finish(() => resolve(parsed));
-          } catch {
-            finish(() => reject(
-              statusCode < 200 || statusCode >= 300
-                ? responseStatusError(statusCode, authenticationKind)
-                : transportError(
-                  'protocol-payload-invalid',
-                  'control-response-json-invalid',
-                ),
-            ));
-          }
-        });
-      });
-      const onAbort = () => {
-        finish(() => {
-          nodeRequest.destroy();
-          reject(transportError('cancelled', 'transport-aborted'));
-        });
-      };
-      const timer = window.setTimeout(() => {
-        finish(() => {
-          nodeRequest.destroy();
-          reject(transportError('operation-timeout', 'control-request-timeout'));
-        });
-      }, timeoutMs);
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-      nodeRequest.once('error', error => {
-        finish(() => reject(transportError(
-          isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
-          isTlsValidationError(error)
-            ? 'control-tls-validation-failed'
-            : 'control-connection-failed',
-        )));
-      });
-      if (body) nodeRequest.write(body);
-      nodeRequest.end();
+    const response = await requestHttpsBytes({
+      ca: this.trust.caCertificatePem,
+      headers: {
+        accept: 'application/json',
+        ...(authorization ? { authorization } : {}),
+        ...(body ? {
+          'content-length': String(body.length),
+          'content-type': 'application/json',
+        } : {}),
+        ...(request.idempotencyKey
+          ? { 'idempotency-key': request.idempotencyKey }
+          : {}),
+        'x-request-id': randomUUID(),
+      },
+      hostname: endpoint.hostname,
+      method: request.method,
+      path: request.path,
+      port: Number(endpoint.port),
+    }, {
+      body,
+      maxResponseBytes: COLLAB_CONTROL_MAX_BODY_BYTES,
+      signal: options.signal,
+      timeoutMs,
+    }).catch((error: unknown) => {
+      if (!(error instanceof HttpsRequestError)) throw error;
+      switch (error.reason) {
+        case 'cancelled': throw transportError('cancelled', 'transport-aborted');
+        case 'timeout': throw transportError('operation-timeout', 'control-request-timeout');
+        case 'response-too-large':
+          throw transportError('protocol-payload-invalid', 'control-response-too-large');
+        case 'response-failed':
+          throw transportError('endpoint-unreachable', 'control-response-failed');
+        case 'tls-untrusted':
+          throw transportError('tls-untrusted', 'control-tls-validation-failed');
+        case 'connection-failed':
+          throw transportError('endpoint-unreachable', 'control-connection-failed');
+      }
     });
+    const { statusCode } = response;
+    let responseValue: unknown;
+    try {
+      const contents = response.body.toString('utf8');
+      responseValue = contents.length === 0 ? null : JSON.parse(contents) as unknown;
+    } catch {
+      throw statusCode < 200 || statusCode >= 300
+        ? responseStatusError(statusCode, authenticationKind)
+        : transportError('protocol-payload-invalid', 'control-response-json-invalid');
+    }
+    if (statusCode < 200 || statusCode >= 300) {
+      const stateError = statusCode === 409 || statusCode === 410
+        ? protocolStructuredError(responseValue)
+        : null;
+      throw stateError ?? responseStatusError(statusCode, authenticationKind);
+    }
     try {
       return request.decode(responseValue);
     } catch {

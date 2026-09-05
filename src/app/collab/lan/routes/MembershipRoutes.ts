@@ -1,9 +1,6 @@
 import { isCollabMemberId } from '@claudian-collab/protocol';
 
-import {
-  COLLAB_CONTROL_OPERATION_BINDINGS,
-  matchCollabControlOperation,
-} from '@/app/collab/lan/CollabControlOperationBindings';
+import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
@@ -34,11 +31,9 @@ function parseRemoval(request: CollabControlRouteRequest, memberId: string) {
 }
 
 export const handleMembershipRoute: CollabControlRouteHandler = async request => {
-  const match = request.operationMatch
-    ?? matchCollabControlOperation(request.method, request.segments);
+  const match = request.operationMatch;
   if (
-    match
-    && COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family === 'membership'
+    COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family === 'membership'
     && match.operation === 'removeMember'
   ) {
     const memberId = match.parameters.memberId ?? '';

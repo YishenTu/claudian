@@ -1,7 +1,4 @@
-import {
-  COLLAB_CONTROL_OPERATION_BINDINGS,
-  matchCollabControlOperation,
-} from '@/app/collab/lan/CollabControlOperationBindings';
+import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
@@ -44,11 +41,9 @@ function parseRefreshInvitation(request: CollabControlRouteRequest) {
 }
 
 export const handleProjectRoute: CollabControlRouteHandler = async request => {
-  const match = request.operationMatch
-    ?? matchCollabControlOperation(request.method, request.segments);
+  const match = request.operationMatch;
   if (
-    !match
-    || COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'project'
+    COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'project'
   ) return null;
 
   if (match.operation === 'getSnapshot') {

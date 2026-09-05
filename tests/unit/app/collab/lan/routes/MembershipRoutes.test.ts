@@ -1,3 +1,4 @@
+import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import { handleMembershipRoute } from '@/app/collab/lan/routes/MembershipRoutes';
 import type {
   CollabControlProjectService,
@@ -7,9 +8,9 @@ import type {
 const CREDENTIAL = 'A'.repeat(43);
 
 function route(
-  overrides: Partial<CollabControlRouteRequest> = {},
+  overrides: Partial<CollabControlRouteRequest> & { method?: string; segments?: readonly string[] } = {},
 ): CollabControlRouteRequest {
-  return {
+  const { method, segments, ...request } = {
     authorization: `Bearer ${CREDENTIAL}`,
     body: {
       idempotencyKey: 'promote-key',
@@ -27,6 +28,9 @@ function route(
     service: {} as CollabControlProjectService,
     ...overrides,
   };
+  const operationMatch = matchCollabControlOperation(method, segments);
+  if (!operationMatch) throw new Error('Invalid route fixture');
+  return { ...request, operationMatch };
 }
 
 describe('handleMembershipRoute', () => {
@@ -93,12 +97,5 @@ describe('handleMembershipRoute', () => {
       service: { removeMember: jest.fn() } as unknown as CollabControlProjectService,
       ...override,
     }))).rejects.toMatchObject({ code: 'protocol-payload-invalid' });
-  });
-
-  it('returns null outside membership administration endpoints', async () => {
-    await expect(handleMembershipRoute(route({
-      method: 'GET',
-      segments: ['members'],
-    }))).resolves.toBeNull();
   });
 });
