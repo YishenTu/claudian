@@ -144,26 +144,24 @@ interface CollabControlRouteRequestBase {
   readonly authorization: string | null;
   readonly body: unknown;
   readonly idempotencyKey: string | null;
-  readonly method: string;
-  readonly operationMatch?: CollabControlOperationMatch;
   readonly projectId: string;
   readonly query: Readonly<Record<string, string>>;
   readonly remoteAddress: string;
-  readonly segments: readonly string[];
 }
 
-export interface CollabControlRouteRequest extends CollabControlRouteRequestBase {
+export interface CollabLifecycleRouteRequest extends CollabControlRouteRequestBase {
+  readonly operationMatch: CollabControlOperationMatch;
   readonly lifecycle: LifecycleGatewayPort;
+}
+
+export interface CollabControlRouteRequest extends CollabLifecycleRouteRequest {
   readonly service: CollabControlProjectService;
 }
 
 export interface CollabTerminalControlRouteRequest extends CollabControlRouteRequestBase {
+  readonly operationMatch: CollabControlOperationMatch | null;
   readonly lifecycle: LifecycleGatewayPort;
 }
-
-export type CollabLifecycleRouteRequest =
-  | CollabControlRouteRequest
-  | CollabTerminalControlRouteRequest;
 
 export interface CollabControlRouteResult {
   readonly afterResponseFlushed?: () => void;

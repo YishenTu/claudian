@@ -1,11 +1,9 @@
+import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import {
   LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS,
   type LanCollabLifecycleControlOperation as CollabLifecycleControlOperation,
 } from '@/app/collab/lan/LanCollabControlOperations';
-import {
-  handleLifecycleRoute,
-  isLifecycleControlRoute,
-} from '@/app/collab/lan/routes/LifecycleRoutes';
+import { handleLifecycleRoute } from '@/app/collab/lan/routes/LifecycleRoutes';
 import type {
   CollabControlRouteRequest,
 } from '@/app/collab/lan/routes/RouteTypes';
@@ -158,12 +156,12 @@ const cases: readonly RouteCase[] = [
 
 function route(
   testCase: RouteCase,
-  overrides: Partial<CollabControlRouteRequest> = {},
+  overrides: Partial<CollabControlRouteRequest> & { method?: string; segments?: readonly string[] } = {},
 ): CollabControlRouteRequest {
   const lifecycle = {
     execute: jest.fn().mockResolvedValue({ data: { operation: testCase.operation } }),
   };
-  return {
+  const { method, segments, ...request } = {
     authorization: `Bearer ${CREDENTIAL}`,
     body: testCase.body,
     idempotencyKey: testCase.method === 'GET' ? null : IDEMPOTENCY_KEY,
@@ -176,17 +174,20 @@ function route(
     service: {} as never,
     ...overrides,
   };
+  const operationMatch = matchCollabControlOperation(method, segments);
+  if (!operationMatch) throw new Error('Invalid route fixture');
+  return { ...request, operationMatch };
 }
 
 describe('handleLifecycleRoute', () => {
-  it('covers the complete v7 lifecycle operation inventory', () => {
+  it('covers the complete v9 lifecycle operation inventory', () => {
     expect([
       ...cases.map(testCase => testCase.operation),
       'getHostTransitions',
     ]).toEqual(LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS);
   });
 
-  it.each(cases)('dispatches $operation with the exact v7 contract', async testCase => {
+  it.each(cases)('dispatches $operation with the exact v9 contract', async testCase => {
     const request = route(testCase);
 
     await expect(handleLifecycleRoute(request)).resolves.toEqual({
@@ -310,15 +311,5 @@ describe('handleLifecycleRoute', () => {
       code: 'protocol-payload-invalid',
     });
     expect(request.lifecycle?.execute).not.toHaveBeenCalled();
-  });
-
-  it('exposes exact lifecycle classification so the Router can reject old versions', () => {
-    for (const testCase of cases) {
-      expect(isLifecycleControlRoute(testCase.method, testCase.segments)).toBe(true);
-    }
-    expect(isLifecycleControlRoute('GET', ['host-transitions'])).toBe(true);
-    expect(isLifecycleControlRoute('POST', ['leave', 'extra'])).toBe(false);
-    expect(isLifecycleControlRoute('POST', ['manager-transfer'])).toBe(false);
-    expect(isLifecycleControlRoute('DELETE', ['retire'])).toBe(false);
   });
 });

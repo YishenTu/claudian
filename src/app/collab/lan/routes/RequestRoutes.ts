@@ -1,9 +1,6 @@
 import { type CollabRequestTicketOperation } from '@claudian-collab/protocol';
 
-import {
-  COLLAB_CONTROL_OPERATION_BINDINGS,
-  matchCollabControlOperation,
-} from '@/app/collab/lan/CollabControlOperationBindings';
+import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import { decodeRoutePageQuery } from '@/app/collab/lan/routes/RoutePageQuery';
@@ -85,11 +82,9 @@ function parseMetadataRequest(request: CollabControlRouteRequest, requestId: str
 }
 
 export const handleRequestRoute: CollabControlRouteHandler = async request => {
-  const match = request.operationMatch
-    ?? matchCollabControlOperation(request.method, request.segments);
+  const match = request.operationMatch;
   if (
-    !match
-    || COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'request'
+    COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family !== 'request'
   ) return null;
   const requestId = match.parameters.requestId;
 
