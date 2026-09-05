@@ -141,6 +141,26 @@ export class MessageRenderer {
     return msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
   }
 
+  private shouldShowMessageTimestamps(): boolean {
+    return this.plugin.settings?.showMessageTimestamps === true;
+  }
+
+  private appendMessageTimestamp(msgEl: HTMLElement, msg: ChatMessage): void {
+    if (!this.shouldShowMessageTimestamps()) {
+      return;
+    }
+
+    msgEl.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
+    const timestampEl = msgEl.createDiv({ cls: 'claudian-message-timestamp' });
+    const timestamp = new Date(msg.timestamp);
+    const label = timestamp.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    timestampEl.setText(label);
+    timestampEl.setAttribute('aria-label', timestamp.toLocaleString());
+  }
+
   private applyTocTitle(msgEl: HTMLElement, text: string): void {
     const tocTitle = formatConversationDirectoryTitle(text);
     if (tocTitle) {
@@ -197,6 +217,7 @@ export class MessageRenderer {
       }
     }
 
+    this.appendMessageTimestamp(msgEl, msg);
     this.scrollToBottom();
     return msgEl;
   }
@@ -236,6 +257,7 @@ export class MessageRenderer {
     if (textToShow) {
       this.addUserCopyButton(msgEl, textToShow);
     }
+    this.appendMessageTimestamp(msgEl, msg);
   }
 
   removeMessage(messageId: string): void {
@@ -340,6 +362,8 @@ export class MessageRenderer {
         this.appendInterruptIndicator(contentEl);
       }
     }
+
+    this.appendMessageTimestamp(msgEl, msg);
   }
 
   private hasVisibleContent(msg: ChatMessage): boolean {

@@ -465,6 +465,20 @@ button.claudian-text-copy-btn.copied {
   background: var(--background-modifier-border-hover);
 }
 
+/* Message timestamps */
+.claudian-message-timestamp {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.2;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.claudian-message-user .claudian-message-timestamp {
+  text-align: end;
+}
+
 /* Response duration footer - styled as another line of content */
 .claudian-response-footer {
   margin-top: 8px;
