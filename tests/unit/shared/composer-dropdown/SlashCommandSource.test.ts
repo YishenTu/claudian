@@ -78,6 +78,53 @@ describe('SlashCommandSource', () => {
     source.destroy();
   });
 
+  it('keeps slash commands and dollar-prefixed skills in separate trigger menus', async () => {
+    const compactEntry: ProviderCommandEntry = {
+      ...ENTRY,
+      description: 'Compact the current conversation',
+      displayPrefix: '/',
+      id: 'codex:command:compact',
+      insertPrefix: '/',
+      kind: 'command',
+      name: 'compact',
+    };
+    const source = new SlashCommandSource({
+      providerConfig: {
+        builtInPrefix: '/',
+        commandPrefix: '/',
+        providerId: 'codex',
+        skillPrefix: '$',
+        triggerChars: ['/', '$'],
+      },
+      providerDiscovery: discovery({ status: 'ready', items: [ENTRY, compactEntry] }),
+      providerId: 'codex',
+    });
+
+    const slashItems = await source.load(match('/'), new AbortController().signal);
+    const slashLabels = slashItems.map(item => item.label);
+    expect(slashLabels).toEqual(expect.arrayContaining(['/clear', '/compact']));
+    expect(slashLabels).not.toContain('$review');
+
+    const skillItems = await source.load(match('$'), new AbortController().signal);
+    const skillLabels = skillItems.map(item => item.label);
+    expect(skillLabels).toContain('$review');
+    expect(skillLabels).not.toContain('/clear');
+    expect(skillLabels).not.toContain('/compact');
+    source.destroy();
+  });
+
+  it('filters hidden provider commands from a ready discovery result', async () => {
+    const source = new SlashCommandSource({
+      hiddenCommands: new Set(['review']),
+      includeBuiltIns: false,
+      providerDiscovery: discovery(),
+      providerId: 'codex',
+    });
+
+    expect(source.load(match('$'), new AbortController().signal)).toEqual([]);
+    source.destroy();
+  });
+
   it('filters hidden provider commands and retries discovery only after explicit selection', async () => {
     const providerDiscovery = discovery({
       message: 'Could not load provider commands',

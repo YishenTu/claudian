@@ -1821,7 +1821,7 @@ export class TabManager implements TabManagerInterface {
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return { status: 'empty' };
     const entries = await catalog.listDropdownEntries({
-      includeBuiltIns: false,
+      includeBuiltIns: true,
       ...(signal ? { signal } : {}),
       allowCachedCommandSnapshot: discovery.commandSnapshot !== undefined,
       ...(discovery.commandSnapshot !== undefined
