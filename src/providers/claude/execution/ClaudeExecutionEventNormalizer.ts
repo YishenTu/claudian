@@ -148,6 +148,9 @@ export class ClaudeExecutionEventNormalizer {
       }
       if (isContextWindowEvent(event)) {
         const model = options.intendedModel ?? state.lastUsage?.model ?? 'sonnet';
+        const runtimeModel = typeof event.model === 'string' && event.model !== model
+          ? event.model
+          : undefined;
         const authoritativeContextWindow = isFinitePositiveNumber(
           options.authoritativeContextWindow,
         )
@@ -172,6 +175,19 @@ export class ClaudeExecutionEventNormalizer {
             event: {
               type: 'usage_updated',
               usage: correctedUsage,
+            },
+          });
+        }
+        // Streaming usage only knows the intended model; surface the actual
+        // model reported by the runtime for display, not for selection.
+        if (runtimeModel && state.lastUsage && state.lastUsage.runtimeModel !== runtimeModel) {
+          const labeledUsage = { ...state.lastUsage, runtimeModel };
+          state.lastUsage = labeledUsage;
+          normalized.push({
+            type: 'output',
+            event: {
+              type: 'usage_updated',
+              usage: labeledUsage,
             },
           });
         }
