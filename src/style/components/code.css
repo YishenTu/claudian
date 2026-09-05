@@ -37,6 +37,15 @@ body.theme-light .claudian-message-content pre {
   font-size: 13px;
 }
 
+.claudian-container .claudian-message-content :not(pre) > code {
+  background-color: var(--code-background, var(--background-secondary));
+  color: var(--code-normal, var(--text-normal));
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* Clickable language label - positioned outside scroll area */
 .claudian-code-wrapper .claudian-code-lang-label {
   position: absolute;
