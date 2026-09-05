@@ -29,6 +29,7 @@ import {
   type CloudProjectEventSocket,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
 import {
   type CloudAuthorityHttpRequest,
@@ -198,13 +199,58 @@ function cloudSnapshotResponse(input: CloudAuthorityHttpRequest | string) {
 
 describe('CloudAuthorityAdapter', () => {
   jest.setTimeout(30_000);
+  let cloudVaultRoot: string;
+  beforeEach(async () => {
+    cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-adapter-vault-'));
+    await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate(PROJECT_ID);
+  });
+  afterEach(async () => { await rm(cloudVaultRoot, { recursive: true, force: true }); });
+
+  it('uses the persisted Vault credential for native control requests and Git', async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), 'cloud-credential-transport-'));
+    const observed: Record<string, string | string[] | undefined>[] = [];
+    const server = createServer(async (request, response) => {
+      observed.push(request.headers);
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot'], limits)));
+      } else {
+        let body = '';
+        for await (const chunk of request) body += String(chunk);
+        const { requestId } = JSON.parse(body) as { requestId: string };
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(requestId, cloudSnapshot())));
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing listener');
+    try {
+      await new CloudProjectCredentialStore(vault).getOrCreate(PROJECT_ID);
+      const connection = await new CloudAuthorityAdapter(vault).connect({
+        projectId: PROJECT_ID, serverUrl: `http://127.0.0.1:${address.port}`,
+      });
+      await connection.readSnapshot(PROJECT_ID);
+      expect(observed[1].authorization).toMatch(/^Bearer [0-9a-f]{64}$/u);
+      expect(observed[1]['x-claudian-ingress-principal']).toMatch(/^vault-[0-9a-f]{64}$/u);
+      expect(connection.git.headers).toEqual([
+        { name: 'authorization', sensitive: true, value: observed[1].authorization },
+        { name: 'x-claudian-ingress-principal', sensitive: true, value: observed[1]['x-claudian-ingress-principal'] },
+      ]);
+      connection.dispose();
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vault, { recursive: true, force: true });
+    }
+  });
 
   it('preserves the HTTPS prefix with native certificate verification for JSON, artifacts, and WebSockets', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-tls-'));
     const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A })
       .issueServerIdentity('127.0.0.1');
+    const authenticatedHeaders: Array<Record<string, string | string[] | undefined>> = [];
     const observed: Array<{ actor: unknown; path: string }> = [];
     const server = createHttpsServer({ cert: identity.certificateChainPem, key: identity.privateKeyPem }, (request, response) => {
+      if (!request.url?.endsWith('/collab/capabilities')) authenticatedHeaders.push(request.headers);
       observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
       if (request.url?.endsWith('/checkpoint/checkpoint.json')) {
         response.setHeader('content-type', 'application/octet-stream');
@@ -221,6 +267,7 @@ describe('CloudAuthorityAdapter', () => {
     let connected!: () => void;
     const opened = new Promise<void>(resolve => { connected = resolve; });
     server.on('upgrade', (request, socket, head) => {
+      if (!request.url?.endsWith('/collab/capabilities')) authenticatedHeaders.push(request.headers);
       observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
       sockets.handleUpgrade(request, socket, head, connected);
     });
@@ -231,12 +278,12 @@ describe('CloudAuthorityAdapter', () => {
     const trustedCa = getCACertificates('default');
     let eventDeadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      await expect(new CloudAuthorityAdapter().connect({ projectId: PROJECT_ID, serverUrl }))
+      await expect(new CloudAuthorityAdapter(cloudVaultRoot).connect({ projectId: PROJECT_ID, serverUrl }))
         .rejects.toMatchObject({ code: 'endpoint-unreachable' });
       // Install only this fixture CA in the test process; production TLS options remain untouched.
       setDefaultCACertificates([...trustedCa, identity.caCertificatePem]);
       const bound = membership();
-      const session = await new CloudAuthorityAdapter({
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
         requestIdFactory: () => 'tls-snapshot',
       }).create({
         ...bound,
@@ -260,6 +307,12 @@ describe('CloudAuthorityAdapter', () => {
             eventDeadline = setTimeout(() => reject(new Error('TLS event connection did not open')), 5_000);
           }),
         ]);
+        const persisted = await new CloudProjectCredentialStore(cloudVaultRoot).require(PROJECT_ID);
+        expect(authenticatedHeaders).toHaveLength(3);
+        for (const headers of authenticatedHeaders) {
+          expect(headers.authorization).toBe(`Bearer ${persisted.credential}`);
+          expect(headers['x-claudian-ingress-principal']).toBe(persisted.principalId);
+        }
         expect(observed).toEqual([
           { actor: undefined, path: '/operator/cloud/collab/capabilities' },
           { actor: undefined, path: '/operator/cloud/v5/projects/project-cloud/operations/getProjectSnapshot' },
@@ -283,7 +336,7 @@ describe('CloudAuthorityAdapter', () => {
   it('captures an unbound connection target before asynchronous negotiation', async () => {
     let release!: () => void;
     const ready = new Promise<void>(resolve => { release = resolve; });
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       request: async input => {
         await ready;
         return {
@@ -318,7 +371,7 @@ describe('CloudAuthorityAdapter', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `http://127.0.0.1:${address.port}`;
-    const adapter = new CloudAuthorityAdapter({ request: new NodeCloudAuthorityHttpTransport(200).request });
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request: new NodeCloudAuthorityHttpTransport(200).request });
     const controller = new AbortController();
     const bound = membership();
     try {
@@ -346,7 +399,7 @@ describe('CloudAuthorityAdapter', () => {
     let release!: (response: Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>) => void;
     const response = new Promise<Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>>(resolve => { release = resolve; });
     let snapshotReads = 0;
-    const session = await new CloudAuthorityAdapter({
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
       request: async input => input.method === 'GET'
         ? { body: boundCapabilityDocument([]), contentType: 'application/json', status: 200 }
         : snapshotReads++ === 0
@@ -390,7 +443,7 @@ describe('CloudAuthorityAdapter', () => {
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
     const bound = membership();
-    const session = await new CloudAuthorityAdapter({
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
       requestIdFactory: () => 'response-bound-snapshot',
     }).create({
       ...bound,
@@ -445,7 +498,7 @@ describe('CloudAuthorityAdapter', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
-    const connection = await new CloudAuthorityAdapter({
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
       artifacts: new NodeCloudAuthorityArtifactTransport(200, 400),
     }).connect({
       projectId: PROJECT_ID,
@@ -492,7 +545,7 @@ describe('CloudAuthorityAdapter', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `http://127.0.0.1:${address.port}`;
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       request: new NodeCloudAuthorityHttpTransport(200).request,
       requestIdFactory: () => 'response-bound-snapshot',
     });
@@ -533,7 +586,7 @@ describe('CloudAuthorityAdapter', () => {
   ])('rejects invalid bound authority facts before connecting: %j', async authority => {
     const bound = membership();
     const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
-    await expect(new CloudAuthorityAdapter({ request }).create({
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
       ...bound,
       authority: { ...bound.authority, ...authority } as CollabLocalCloudMembershipRecord['authority'],
     })).rejects.toThrow('Invalid Cloud authority binding');
@@ -542,7 +595,7 @@ describe('CloudAuthorityAdapter', () => {
   it('rejects a bound personal ref for another Member before connecting', async () => {
     const bound = membership();
     const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
-    await expect(new CloudAuthorityAdapter({ request }).create({
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
       ...bound,
       member: { ...bound.member, personalRef: 'refs/heads/members/member-bob' },
     })).rejects.toThrow('Invalid Cloud authority binding');
@@ -572,14 +625,14 @@ describe('CloudAuthorityAdapter', () => {
     const serverUrl = `HTTP://127.0.0.1:${address.port}/operator/cloud`;
     const gitRemoteUrl = `http://127.0.0.1:${address.port}/operator/cloud/v5/projects/project-cloud/repository.git`;
     const bound = membership();
-    const adapter = new CloudAuthorityAdapter({ requestIdFactory: () => 'prefixed-snapshot' });
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { requestIdFactory: () => 'prefixed-snapshot' });
     try {
       const session = await adapter.create({
         ...bound,
         authority: { ...bound.authority, authorityGeneration: 7, gitRemoteUrl, serverUrl },
       });
       try {
-        expect(session.git).toEqual({ headers: [], remoteUrl: gitRemoteUrl });
+        expect(session.git).toEqual({ headers: expect.any(Array), remoteUrl: gitRemoteUrl });
         expect(observed).toEqual([
           { actor: undefined, path: '/operator/cloud/collab/capabilities' },
           { actor: undefined, path: '/operator/cloud/v5/projects/project-cloud/operations/getProjectSnapshot' },
@@ -600,7 +653,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       }
       : cloudSnapshotResponse(input));
-    const adapter = new CloudAuthorityAdapter({ request });
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request });
     const [session, lifecycle] = await Promise.all([
       adapter.create(membership()),
       adapter.connect({
@@ -671,7 +724,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const connection = await new CloudAuthorityAdapter({
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
       readPersonalRef,
       request,
     }).connectPendingLeave({
@@ -716,7 +769,7 @@ describe('CloudAuthorityAdapter', () => {
         async cancellation => {
           const response = deferred<void>();
           const started = deferred<CloudAuthorityHttpRequest>();
-          const adapter = new CloudAuthorityAdapter({
+          const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
             request: async input => {
               if (input.method === 'GET') {
                 return {
@@ -815,7 +868,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const connection = await new CloudAuthorityAdapter({ request })
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, { request })
       .connectPendingRetirement({
         authorityGeneration: 1,
         memberId: ACTOR_ID,
@@ -871,7 +924,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const connection = await new CloudAuthorityAdapter({ request })
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, { request })
       .connectAuthorityTransfer({
         authorityGeneration: 1,
         memberId: ACTOR_ID,
@@ -903,7 +956,7 @@ describe('CloudAuthorityAdapter', () => {
       contentType: 'application/json',
       status: 200,
     }));
-    const lifecycle = await new CloudAuthorityAdapter({ request }).connect({
+    const lifecycle = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).connect({
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     });
@@ -934,7 +987,7 @@ describe('CloudAuthorityAdapter', () => {
       };
     });
     const bound = membership();
-    const pending = new CloudAuthorityAdapter({ request }).create({
+    const pending = new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
       ...bound,
       authority: { ...bound.authority, authorityGeneration: 7 },
     });
@@ -958,7 +1011,7 @@ describe('CloudAuthorityAdapter', () => {
       status: 200,
     }));
 
-    await expect(new CloudAuthorityAdapter({
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, {
       request,
       requestIdFactory: () => 'snapshot-request',
     }).create(membership())).rejects.toMatchObject({
@@ -995,7 +1048,7 @@ describe('CloudAuthorityAdapter', () => {
           status: outcome === 'success' ? 200 : 403,
         };
       });
-      const session = await new CloudAuthorityAdapter({
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
         request,
         requestIdFactory: () => 'operation-request',
       }).create(membership());
@@ -1048,7 +1101,7 @@ describe('CloudAuthorityAdapter', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     try {
-      const connection = await new CloudAuthorityAdapter({
+      const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
         requestIdFactory: () => 'request-entry',
       }).connect({
         projectId: PROJECT_ID,
@@ -1114,7 +1167,7 @@ describe('CloudAuthorityAdapter', () => {
     } satisfies CollabAuthorityTransferStatus;
     const jsonRequests: CloudAuthorityHttpRequest[] = [];
     const uploaded: Buffer[] = [];
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       artifacts: {
         download: input => Promise.resolve({
           body: Readable.from(['checkpoint']),
@@ -1195,7 +1248,7 @@ describe('CloudAuthorityAdapter', () => {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing server address');
       const operation = async () => {
-        const connection = await new CloudAuthorityAdapter().connect({
+        const connection = await new CloudAuthorityAdapter(cloudVaultRoot).connect({
           projectId: PROJECT_ID,
           serverUrl: `http://127.0.0.1:${address.port}`,
         });
@@ -1226,7 +1279,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       }
       : cloudSnapshotResponse(input));
-    const session = await new CloudAuthorityAdapter({ request }).create(membership());
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
     await expect(session.lifecycle!.authorityTransfer(
       'getProjectAuthorityTransfer',
       { projectId: PROJECT_ID, transferId: 'transfer-unavailable' },
@@ -1244,7 +1297,7 @@ describe('CloudAuthorityAdapter', () => {
       contentType: 'application/json',
       status: 200,
     });
-    await expect(new CloudAuthorityAdapter({ request }).create(membership()))
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership()))
       .rejects.toMatchObject({ code: 'protocol-version-unsupported' });
   });
 
@@ -1285,7 +1338,7 @@ describe('CloudAuthorityAdapter', () => {
     } satisfies CollabLocalCloudMembershipRecord;
 
     try {
-      const session = await new CloudAuthorityAdapter({
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
         requestIdFactory: () => 'request-snapshot',
       }).create(localMembership);
       expect(requests).toEqual([
@@ -1334,11 +1387,11 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const session = await new CloudAuthorityAdapter({ request }).create(membership());
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
     expect(session.supports('project-snapshot')).toBe(true);
     expect(session.supports('requests')).toBe(false);
     expect(session.git).toEqual({
-      headers: [],
+      headers: expect.any(Array),
       remoteUrl: `https://cloud.example.test/v5/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
@@ -1349,7 +1402,7 @@ describe('CloudAuthorityAdapter', () => {
       }),
       expect.objectContaining({
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
-        headers: {},
+        headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
         method: 'POST',
         url: `https://cloud.example.test/v5/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
@@ -1377,7 +1430,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const session = await new CloudAuthorityAdapter({
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
       request,
       requestIdFactory: () => 'request-ensure',
     }).create(membership());
@@ -1403,7 +1456,7 @@ describe('CloudAuthorityAdapter', () => {
         protocolVersion: 9,
         requestId: 'request-ensure',
       },
-      headers: {},
+      headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
       method: 'POST',
       signal: expect.any(AbortSignal),
       url: `https://cloud.example.test/v5/projects/${PROJECT_ID}/operations/ensureMyRequest`,
@@ -1433,7 +1486,7 @@ describe('CloudAuthorityAdapter', () => {
           contentType: 'application/json; charset=utf-8',
           status: 200,
         });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
     const controller = new AbortController();
 
     await expect(control.acceptRequest({
@@ -1463,7 +1516,7 @@ describe('CloudAuthorityAdapter', () => {
         protocolVersion: 9,
         requestId: expect.any(String),
       },
-      headers: {},
+      headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
       method: 'POST',
       signal: expect.any(AbortSignal),
       url: `https://cloud.example.test/v5/projects/${PROJECT_ID}/operations/acceptRequest`,
@@ -1488,7 +1541,7 @@ describe('CloudAuthorityAdapter', () => {
       contentType: 'application/json',
       status: 200,
     }));
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.acceptRequest({
       expectedHeadOid: HEAD_OID,
@@ -1545,7 +1598,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       request: { id: 'request-one' },
@@ -1628,7 +1681,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.listTickets({ projectId: PROJECT_ID, status: 'open' })).resolves
       .toMatchObject({ tickets: [{ id: 'ticket-one' }] });
@@ -1751,7 +1804,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       comments: { comments: [{ id: 'request-comment-one' }], nextCursor: 'request-next' },
@@ -1799,7 +1852,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readTicket(PROJECT_ID, 'ticket-one')).rejects.toMatchObject({
       code: 'authority-integrity-error',
@@ -1834,7 +1887,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.listRequestComments(PROJECT_ID, 'request-one', {})).rejects
       .toMatchObject({ code: 'authority-integrity-error' });
@@ -1844,7 +1897,7 @@ describe('CloudAuthorityAdapter', () => {
 
   it('fails closed on unsupported binding or wire versions', async () => {
     const document = collabCloudCapabilityDocument(['project-snapshot'], limits);
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       request: async () => ({
         body: { ...document, bindingVersions: [2] },
         contentType: 'application/json',
@@ -1868,7 +1921,7 @@ describe('CloudAuthorityAdapter', () => {
       contentType: 'application/json',
       status: 200,
     }));
-    await expect(new CloudAuthorityAdapter({ request }).create(membership())).rejects
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).rejects
       .toMatchObject({
       code: 'authority-integrity-error',
       safeContext: { reason: 'cloud-control-snapshot-response-mismatch' },
@@ -1882,6 +1935,7 @@ describe('CloudProjectEventClient', () => {
     const socket = new FakeSocket();
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
@@ -1919,6 +1973,7 @@ describe('CloudProjectEventClient', () => {
     const scheduled: Array<() => void> = [];
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
@@ -1967,6 +2022,7 @@ describe('CloudProjectEventClient', () => {
       .mockImplementationOnce(() => firstApplication.promise)
       .mockImplementation(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
@@ -2017,6 +2073,7 @@ describe('CloudProjectEventClient', () => {
       .mockImplementationOnce(() => firstApplication.promise)
       .mockImplementation(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
@@ -2053,6 +2110,7 @@ describe('CloudProjectEventClient', () => {
     const firstApplication = deferred<number>();
     const onInvalidation = jest.fn(() => firstApplication.promise);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
@@ -2088,6 +2146,7 @@ describe('CloudProjectEventClient', () => {
     const scheduled: Array<() => void> = [];
     const clearTimeout = jest.fn();
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',

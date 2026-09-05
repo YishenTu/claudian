@@ -54,6 +54,7 @@ describe('CloudPersonalRefReader', () => {
     }));
 
     await expect(new CloudPersonalRefReader().read({
+      headers: { authorization: 'Bearer fixture-vault-credential' },
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,
@@ -63,6 +64,7 @@ describe('CloudPersonalRefReader', () => {
       '/operator-prefix/v5/projects/project-alpha/repository.git/info/refs?service=git-upload-pack',
     );
     expect(seenHeaders).toMatchObject({
+      authorization: 'Bearer fixture-vault-credential',
       'cache-control': 'no-cache',
       pragma: 'no-cache',
     });
@@ -85,6 +87,7 @@ describe('CloudPersonalRefReader', () => {
     }));
 
     await expect(new CloudPersonalRefReader().read({
+        headers: {},
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,
@@ -169,6 +172,7 @@ describe('CloudPersonalRefReader', () => {
     }));
 
     await expect(new CloudPersonalRefReader().read({
+        headers: {},
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,
@@ -179,6 +183,7 @@ describe('CloudPersonalRefReader', () => {
     const origin = await listen(createServer(() => undefined));
 
     await expect(new CloudPersonalRefReader(20).read({
+        headers: {},
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,
@@ -193,6 +198,7 @@ describe('CloudPersonalRefReader', () => {
     }));
 
     await expect(new CloudPersonalRefReader().read({
+        headers: {},
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,
@@ -207,6 +213,7 @@ describe('CloudPersonalRefReader', () => {
     }));
 
     await expect(new CloudPersonalRefReader().read({
+        headers: {},
       personalRef: 'refs/heads/members/member-alpha',
       projectId: 'project-alpha',
       serverUrl: origin,

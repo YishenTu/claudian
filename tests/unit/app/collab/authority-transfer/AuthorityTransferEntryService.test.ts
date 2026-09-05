@@ -92,6 +92,7 @@ function createSubject(options: Readonly<{
       status: status(),
     })),
     readLanToCloudSourceProposal: jest.fn(async () => ({
+      beginSubmission: 'not-sent',
       proposedByMemberId: 'member-host',
       request: {
         expectedAuthorityGeneration: 7,
@@ -429,6 +430,7 @@ describe('AuthorityTransferEntryService', () => {
   it('rejects an accept when the displayed proposal was replaced before the click', async () => {
     const subject = createSubject();
     subject.module.readLanToCloudSourceProposal.mockResolvedValue({
+      beginSubmission: 'possibly-sent',
       proposedByMemberId: 'member-other',
       request: {
         expectedAuthorityGeneration: 7,

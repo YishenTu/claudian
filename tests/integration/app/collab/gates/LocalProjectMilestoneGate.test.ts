@@ -409,6 +409,7 @@ describe('G3 local Project milestone gate', () => {
       return snapshot();
     });
     const cloudSession = {
+      principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: {
         authorityTransfer: jest.fn(async (operation: string) => {
@@ -596,6 +597,7 @@ describe('G3 local Project milestone gate', () => {
         updatedAt: '2026-08-27T00:00:10.000Z',
       };
       let claimant = createAuthorityTransferClaimantRecord({
+        cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null,
         createdAt: '2026-08-27T00:00:00.000Z',
         lanTarget,
         managerPredecessor: direction === 'cloud-to-lan'
@@ -831,6 +833,7 @@ describe('G3 local Project milestone gate', () => {
         }
       : status);
     const cloudSession = {
+      principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: { authorityTransfer },
       projectId: PROJECT_ID,

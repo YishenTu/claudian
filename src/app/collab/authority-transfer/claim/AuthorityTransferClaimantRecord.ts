@@ -28,7 +28,7 @@ import {
   parseInstallationKey,
 } from '@/core/device/InstallationKey';
 
-export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 2 as const;
+export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 3 as const;
 
 export const SOURCE_ISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES = [
   'prepared',
@@ -72,6 +72,7 @@ export interface CloudToLanManagerClaimantPredecessor {
 }
 
 interface AuthorityTransferClaimantRecordBase {
+  readonly cloudPrincipalId: string | null;
   readonly createdAt: CollabIsoTimestamp;
   readonly kind: 'authority-transfer-claimant';
   readonly memberId: CollabMemberId;
@@ -112,12 +113,12 @@ export type AuthorityTransferClaimantRecord =
   | ManagerReissuedAuthorityTransferClaimantRecord;
 
 const SOURCE_KEYS = new Set([
-  'claim', 'createdAt', 'kind', 'lanTarget', 'managerPredecessor', 'memberId',
+  'cloudPrincipalId', 'claim', 'createdAt', 'kind', 'lanTarget', 'managerPredecessor', 'memberId',
   'operationIntentId', 'phase', 'projectId', 'redemptionReceipt', 'schemaVersion',
   'status', 'targetCredential', 'transferId', 'updatedAt', 'variant',
 ]);
 const MANAGER_KEYS = new Set([
-  'convergenceProof', 'createdAt', 'descriptor', 'kind', 'memberId',
+  'cloudPrincipalId', 'convergenceProof', 'createdAt', 'descriptor', 'kind', 'memberId',
   'memberPersonalRef', 'operationIntentId', 'phase', 'projectId', 'redemptionReceipt',
   'redemptionRequest', 'schemaVersion', 'serverUrl', 'targetStatus', 'transferId',
   'updatedAt', 'variant',
@@ -168,6 +169,14 @@ function assertBase(source: Readonly<Record<string, unknown>>): void {
     || !timestamp(source.updatedAt)
     || Date.parse(source.updatedAt) < Date.parse(source.createdAt)
   ) throw new TypeError('Invalid authority-transfer claimant identity');
+}
+
+function decodeCloudPrincipal(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !/^vault-[0-9a-f]{64}$/u.test(value)) {
+    throw new TypeError('Invalid authority-transfer claimant Cloud principal');
+  }
+  return value;
 }
 
 function decodeLanTarget(
@@ -293,6 +302,10 @@ function decodeSourceIssuedRecord(
   const claim = source.claim === null
     ? null
     : decodeCollabTransferredMembershipClaim(source.claim);
+  const cloudPrincipalId = decodeCloudPrincipal(source.cloudPrincipalId);
+  if ((status.targetAuthority.kind === 'cloud') !== (cloudPrincipalId !== null)) {
+    throw new TypeError('Invalid authority-transfer claimant Cloud principal');
+  }
   const targetCredential = decodeCredential(source.targetCredential);
   const redemptionReceipt = decodeReceipt(source.redemptionReceipt);
   const managerPredecessor = decodeManagerPredecessor(
@@ -329,6 +342,7 @@ function decodeSourceIssuedRecord(
     ))
   ) throw new TypeError('Invalid authority-transfer claimant progress');
   return Object.freeze({
+    cloudPrincipalId,
     claim,
     createdAt: source.createdAt as CollabIsoTimestamp,
     kind: 'authority-transfer-claimant',
@@ -358,6 +372,10 @@ function decodeManagerReissuedRecord(
     typeof phase !== 'string'
     || !MANAGER_REISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES.includes(phase as never)
   ) throw new TypeError('Invalid authority-transfer claimant phase');
+  const cloudPrincipalId = decodeCloudPrincipal(source.cloudPrincipalId);
+  if (cloudPrincipalId === null) {
+    throw new TypeError('Invalid authority-transfer claimant Cloud principal');
+  }
   const descriptor = collabControlOperationCodec(
     'reissueTransferredMembershipClaim',
   ).decodeResponse(source.descriptor);
@@ -423,6 +441,7 @@ function decodeManagerReissuedRecord(
     ))
   ) throw new TypeError('Invalid Manager-reissued authority-transfer claimant progress');
   return Object.freeze({
+    cloudPrincipalId,
     convergenceProof,
     createdAt: source.createdAt,
     descriptor,
@@ -456,6 +475,7 @@ export function decodeAuthorityTransferClaimantRecord(
 }
 
 export function createAuthorityTransferClaimantRecord(input: {
+  readonly cloudPrincipalId: string | null;
   readonly createdAt: CollabIsoTimestamp;
   readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
   readonly managerPredecessor?: CloudToLanManagerClaimantPredecessor | null;
@@ -464,6 +484,7 @@ export function createAuthorityTransferClaimantRecord(input: {
   readonly status: CollabAuthorityTransferStatus;
 }): SourceIssuedAuthorityTransferClaimantRecord {
   return decodeAuthorityTransferClaimantRecord({
+    cloudPrincipalId: input.cloudPrincipalId,
     claim: null,
     createdAt: input.createdAt,
     kind: 'authority-transfer-claimant',
@@ -484,12 +505,14 @@ export function createAuthorityTransferClaimantRecord(input: {
 }
 
 export function createManagerReissuedAuthorityTransferClaimantRecord(input: {
+  readonly cloudPrincipalId: string;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
   readonly memberPersonalRef: string;
   readonly operationIntentId: string;
   readonly serverUrl: string;
 }): ManagerReissuedAuthorityTransferClaimantRecord {
   return decodeAuthorityTransferClaimantRecord({
+    cloudPrincipalId: input.cloudPrincipalId,
     convergenceProof: null,
     createdAt: input.descriptor.createdAt,
     descriptor: input.descriptor,

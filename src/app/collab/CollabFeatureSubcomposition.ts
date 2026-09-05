@@ -73,6 +73,7 @@ import {
 } from '@/app/collab/ProjectOperationAdmission';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CloudRetirementClient } from '@/app/collab/retirement/CloudRetirementClient';
 import { decodeCloudRetirementIntent } from '@/app/collab/retirement/CloudRetirementIntent';
 import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
@@ -118,7 +119,8 @@ export function createCollabFeatureSubcomposition(
   const journals = new CollabLifecycleJournalStore(vaultRoot);
   const pendingLeaves = journals.pendingLeaves;
   const operationAdmission = new ProjectOperationAdmission();
-  const cloudAuthority = options.cloudAuthority ?? new CloudAuthorityAdapter();
+  const cloudCredentials = new CloudProjectCredentialStore(vaultRoot);
+  const cloudAuthority = options.cloudAuthority ?? new CloudAuthorityAdapter(vaultRoot);
   const pendingLeaveAuthority = new PendingLeaveAuthorityService({
     createCloudClient: (record, requestOptions) => cloudAuthority.connectPendingLeave({
       authorityGeneration: record.authorityGeneration,
@@ -803,7 +805,10 @@ export function createCollabFeatureSubcomposition(
     workspace: foundation.local.workspace,
   });
   const claimantBindingResolver = new AuthorityTransferClaimantBindingResolver({
-    createCloudConnection: binding => cloudAuthority.connect(binding),
+    createCloudConnection: async ({ allowCredentialCreation, ...binding }) => {
+      if (allowCredentialCreation) await cloudCredentials.getOrCreate(binding.projectId);
+      return cloudAuthority.connect(binding);
+    },
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
   });
   const authorityTransfer = new AuthorityTransferModule({
@@ -825,9 +830,10 @@ export function createCollabFeatureSubcomposition(
       )
     ),
     claimantStore: foundation.local.projects.authorityTransferClaimants,
-    createManagerReissuedClaimConnection: (binding, operationOptions) => (
-      cloudAuthority.connect(binding, operationOptions)
-    ),
+    createManagerReissuedClaimConnection: async ({ allowCredentialCreation, ...binding }, operationOptions) => {
+      if (allowCredentialCreation) await cloudCredentials.getOrCreate(binding.projectId);
+      return cloudAuthority.connect(binding, operationOptions);
+    },
     convergence: authorityTransferConvergence,
     createCloudToLanConnection: async (projectId, operationOptions) => {
       const membership = await foundation.local.projects.loadMembership(projectId);
@@ -1019,7 +1025,10 @@ export function createCollabFeatureSubcomposition(
   });
   foundation.bindAuthorityTransferModule(authorityTransfer);
   const authorityTransferEntry = new AuthorityTransferEntryService({
-    connectCloud: (input, operationOptions) => cloudAuthority.connect(input, operationOptions),
+    connectCloud: async ({ allowCredentialCreation, ...input }, operationOptions) => {
+      if (allowCredentialCreation) await cloudCredentials.getOrCreate(input.projectId);
+      return cloudAuthority.connect(input, operationOptions);
+    },
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
     module: authorityTransfer,
   });

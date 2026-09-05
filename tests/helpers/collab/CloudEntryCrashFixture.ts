@@ -32,7 +32,7 @@ async function run(input: CrashInput): Promise<void> {
     obsidianConfigDirectory: '.obsidian', vaultRoot: input.vaultRoot,
   });
   const sessions = new CollabProjectWorkSessionRegistry();
-  const adapter = new CloudAuthorityAdapter();
+  const adapter = new CloudAuthorityAdapter(input.vaultRoot);
   const release = foundation.local.workspace.releaseReservedProjectsFolderChild.bind(foundation.local.workspace);
   foundation.local.workspace.releaseReservedProjectsFolderChild = async (...args) => {
     const released = await release(...args);

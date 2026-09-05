@@ -37,6 +37,7 @@ import {
   PublishCoordinator,
   type PublishProjectContext,
 } from '@/app/collab/publish/PublishCoordinator';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 
@@ -428,7 +429,8 @@ describe('Cloud Publish gate', () => {
         ]);
         await writeFile(path.join(repositoryPath, `${actor}.md`), `${actor}\n`);
 
-        const session = await createDevelopmentCloudAuthorityAdapter(actor).create(
+        await new CloudProjectCredentialStore(clientRoot).getOrCreate(PROJECT_ID);
+        const session = await createDevelopmentCloudAuthorityAdapter(clientRoot, actor).create(
           membership(actor, server.origin),
         );
         sessions.push(session);

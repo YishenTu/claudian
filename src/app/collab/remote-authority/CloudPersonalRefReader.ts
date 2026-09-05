@@ -19,6 +19,7 @@ const REF_NAME = /^refs\/(?:heads|tags)\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u;
 const OID = /^[0-9a-f]{40}$/u;
 
 export interface CloudPersonalRefReadInput {
+  readonly headers: Readonly<Record<string, string>>;
   readonly personalRef: string;
   readonly projectId: string;
   readonly serverUrl: string;
@@ -47,6 +48,7 @@ export class CloudPersonalRefReader {
     );
     const response = await requestCloudAuthorityBytes({
       headers: {
+        ...input.headers,
         'cache-control': 'no-cache',
         pragma: 'no-cache',
       },

@@ -675,7 +675,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       projectId: record.projectId,
       sourceAuthorityGeneration: record.status.sourceAuthority.generation,
       sourceHostMemberId: membership.member.id,
-      sourcePrincipalId: this.options.foundation.installationKey,
+      sourcePrincipalId: this.requireCloudSession().principalId,
       targetAuthorityGeneration: record.status.targetAuthority.generation,
       targetUrl: record.status.targetUrl,
       transferId: record.transferId,
