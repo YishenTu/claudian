@@ -1,43 +1,16 @@
-# Core Infrastructure
+# Core constraints
 
-`src/core/` is provider-neutral infrastructure. Features depend on core contracts; providers implement those contracts behind the registry boundary.
+- Provider lifecycle leases fence provider-wide transitions; they must not acquire tab turn state or execution-capacity policy. Registries must not absorb registered-service lifecycle/storage.
+- All providers receive the same default Main Agent prompt for the same settings/dynamic sections. Adapters may change transport/replacement mechanics, not omit sections or select provider-specific prompt profiles.
+- Dynamic sections are ephemeral execution configuration and affect effective prompt identity; they never become user input or accepted-input ledger data.
+- Inline Edit has a separate shared explicit prompt with host-provided date/Vault path. Do not append Main Chat dynamic sections or Custom Instructions; keep tool guidance capability-based.
+- New Linked content references use normalized path-only shape, excluding the Vault root. Legacy Note forms are decode-only. A directory reference changes neither CWD nor recursive ingestion.
 
-## Dependency Rules
+## Persistence and model resolution
 
-- `bootstrap/` defines provider-neutral persistence contracts and normalization, including recovery-only native locators. It must not interpret provider-native session formats or make those locators resumable.
-- `execution/` defines leases, sessions, requests, events, interactions, and lifecycle coordination. It must not construct concrete providers.
-- `providers/` defines registries, capabilities, routing, workspace-service contracts, and provider-state boundaries. Registrations supply the concrete implementations.
-- `process/` and `rpc/` provide mechanics only. Provider launch arguments, protocol extensions, retry policy, and message semantics stay provider-owned.
-- `auxiliary/` may orchestrate provider-neutral executions through core contracts but must not special-case a concrete provider.
-
-Core must consume provider data through explicit contracts. Do not branch on provider IDs when a capability can express the distinction or promote provider-native state into a shared type.
-
-## State Ownership
-
-- `ProviderExecutionLifecycleRegistry` is the source of truth for provider generations, transition fencing, and live session leases. It does not own per-tab turn state or impose a global execution-capacity policy.
-- Provider execution sessions own native runtime interaction behind the `ProviderExecutionSession` contract.
-- The provider-default main-agent system prompt is one shared Claudian prompt across all providers for the same settings and dynamic sections. Provider adapters may differ in transport and replacement lifecycle, but must not select a provider-specific prompt profile or omit shared sections.
-- Provider-default dynamic system-prompt sections are ephemeral execution configuration. Providers include them in effective prompt identity, but Chat must not encode them as user input or persist them in the accepted-input ledger.
-- Inline Edit uses one provider-neutral explicit system prompt across all providers. Its runtime context receives the host-provided current date and Vault absolute path; keep tool guidance capability-based, and do not append Main Chat dynamic sections or Custom Instructions.
-- `ProviderExecutionRequest.context.linkedContent` is the canonical provider-neutral Linked content reference. New writes use one normalized path-only shape for Notes, folders, or missing content; the Vault root is not a valid target. Compatibility decoders may accept legacy current/linked-Note forms, but providers and features must not emit them. A directory reference is context metadata, not a CWD or recursive-ingestion request.
-- Bootstrap persistence stores Claudian metadata and input ledgers. Provider transcript files remain provider-owned and read-only. New session metadata is device-scoped by the same filesystem-safe opaque installation key used for host-scoped provider settings; device directories and assignment fences use that key directly without deriving a second identity, and construction fails closed unless its installation seed is durable. Unscoped `.claudian/sessions` metadata remains writable until explicit assignment writes a durable shared ownership fence and moves it into the current device namespace. Readers plus metadata and input-ledger writers must treat that fence as authoritative even when stale unscoped metadata remains. Deletion markers live in the authority they delete, so an unscoped deletion cannot hide assigned device metadata. Very old `.claude/sessions` metadata is only a compatibility input that migrates into the unscoped namespace. Never auto-assign metadata to a device or copy it between live authorities.
-- Registries own registration and lookup; they do not absorb the lifecycle or storage responsibilities of the registered service.
-- The decision-complete shared Collab wire contract is owned solely by the standalone `@claudian-collab/protocol` package and consumed as an exact registry dependency. `src/core/collab/` retains client-only feature/composer ports, Project selection, local review/conflict/operation projections, and the common discriminated LAN/Cloud Project model. Core must not re-export package symbols, maintain a parallel operation inventory, or copy shared codecs, routes, capabilities, events, limits, errors, or versions. LAN HTTP/event bindings remain application-owned; Cloud binding contracts remain package-owned.
-- `CollabFeaturePort` exposes complete presentation-facing review and Ticket detail reads. `CollabBoundedQueryPort` is the separate first-page and continuation-page capability for bounded Runtime consumers; do not add cursor-bearing aliases to the generic feature facade or cache incomplete detail as if it were complete.
-- `CollabConflictSession` is a read-only immutable conflict descriptor, optionally paired with a prepared publication review. Per-file resolution decisions are not a core state machine: Contributors and Agents edit the real Project, and Publish validates that committed result.
-
-## Routing Rules
-
-- Title generation routes by the global `titleGenerationModel`, independently of the active chat provider. Core owns its shared prompt, parsing, cancellation, and callback flow over ephemeral execution sessions.
-- For instruction refinement and inline edit, core owns multi-turn orchestration and response parsing; provider backends own native continuation, tools, and lifecycle behavior.
-- Resolve provider workspace services through `ProviderWorkspaceRegistry`, not concrete providers.
-- Chat model resolution distinguishes historical provider ownership from current enabled-option availability. Global future-tab fallback and conversation fallback may use only current provider options and a validated provider-owned default; opaque historical ownership alone is not availability.
-- For an unavailable durable conversation selection, `ConversationModelResolution.model` remains the readable stored value and `modelToPersist` carries the desired fallback. Readers must not project `modelToPersist`; the application repository publishes it only after persistence succeeds.
-- Provider alias canonicalization used during availability checks must not choose a fallback model. Fallback policy remains a separate ordered/default resolution step.
-- Provider fallback order is the registry's explicit blank-tab display order. Do not derive fallback from display-name sorting, registration insertion order, or the current settings projection.
-
-## Gotchas
-
-- Missing historical model selections are recovered through `ProviderConversationHistoryService`; core defines the contract, providers interpret native history, and the application repository coordinates persistence and race fencing.
-- Command discovery is provider-owned; do not normalize provider-specific discovery sources in feature code.
-- Provider command caches and live snapshots are resource-generation fenced; cache identities contain only provider-owned non-secret fingerprints and monotonic generations.
+- Device metadata and host-scoped provider settings use one durable filesystem-safe installation key. Do not derive another identity or initialize the namespace before the seed is durable.
+- Unscoped metadata remains writable until explicit assignment. The durable shared ownership fence is authoritative even if stale source files survive; never auto-assign or copy between live authorities. Deletion markers affect only their own authority. Very old Claude metadata migrates into unscoped state.
+- Historical provider ownership does not imply enabled-model availability. Readers expose the stored model until the repository durably adopts `modelToPersist`.
+- Alias canonicalization cannot choose a fallback. Fallback uses explicit registry blank-tab display order, not registration order, alphabetic order, or current settings projection.
+- Title generation uses the global title-model selection independently from chat. Auxiliary continuation remains provider-owned even when core owns orchestration/parsing.
+- Discovery caches contain non-secret fingerprints and generations; stale resource generations must not publish cached commands or metadata.
