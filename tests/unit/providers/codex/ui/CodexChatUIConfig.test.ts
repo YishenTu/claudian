@@ -514,6 +514,18 @@ describe('CodexChatUIConfig', () => {
     it('should return 200000 for all models', () => {
       expect(codexChatUIConfig.getContextWindowSize(TEST_CODEX_MODEL)).toBe(200_000);
     });
+
+    it('uses the configured context limit for the selected model', () => {
+      expect(codexChatUIConfig.getContextWindowSize(TEST_CODEX_MODEL, {
+        [TEST_CODEX_MODEL]: 1_050_000,
+      })).toBe(1_050_000);
+    });
+
+    it('uses a raw-keyed context limit for a namespaced custom model', () => {
+      expect(codexChatUIConfig.getContextWindowSize('openai-codex/my-custom-model', {
+        'my-custom-model': 1_000_000,
+      })).toBe(1_000_000);
+    });
   });
 
   describe('applyModelDefaults', () => {

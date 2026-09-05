@@ -511,6 +511,38 @@ describe('ConversationController', () => {
   });
 
   describe('loadActive with existing conversation', () => {
+    it('applies a custom context limit when restoring persisted usage', async () => {
+      const model = 'openai-codex/my-custom-model';
+      deps.state.currentConversationId = 'codex-conv';
+      deps.plugin.settings.customContextLimits = { 'my-custom-model': 1_000_000 };
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        id: 'codex-conv',
+        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
+        providerId: 'codex',
+        selectedModel: model,
+        sessionId: 'session-1',
+        usage: {
+          model,
+          inputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          contextWindow: 200_000,
+          contextWindowIsAuthoritative: true,
+          contextTokens: 200_000,
+          percentage: 98,
+        },
+      });
+
+      await controller.loadActive();
+
+      expect(deps.state.usage).toMatchObject({
+        model,
+        contextWindow: 1_000_000,
+        contextWindowIsAuthoritative: false,
+        percentage: 20,
+      });
+    });
+
     it('should restore linkedContentPath when conversation has one', async () => {
       const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'conv-with-note';

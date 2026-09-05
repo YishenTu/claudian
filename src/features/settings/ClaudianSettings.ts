@@ -146,6 +146,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
   private renderGeneration = 0;
+  private customContextLimitRefreshTimer: number | null = null;
+  private readonly pendingCustomContextLimitRefreshProviders = new Set<ProviderId>();
   private readonly agentSkillCoordinator: AgentSkillManagementCoordinator;
 
   constructor(app: App, plugin: FeatureHost & Plugin) {
@@ -325,6 +327,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
       this.renderGeneration += 1;
       this.agentSkillCoordinator.resetSubscriptions();
       this.refreshTitleModelOptions = null;
+      if (this.customContextLimitRefreshTimer !== null) {
+        window.clearTimeout(this.customContextLimitRefreshTimer);
+        this.customContextLimitRefreshTimer = null;
+      }
+      this.flushPendingCustomContextLimitRefreshes();
     };
   }
 
@@ -842,6 +849,41 @@ export class ClaudianSettingTab extends PluginSettingTab {
     this.refreshTitleModelOptions?.();
   }
 
+  private scheduleCustomContextLimitRefresh(providerId: ProviderId): void {
+    this.pendingCustomContextLimitRefreshProviders.add(providerId);
+    if (this.customContextLimitRefreshTimer !== null) {
+      window.clearTimeout(this.customContextLimitRefreshTimer);
+    }
+    this.customContextLimitRefreshTimer = window.setTimeout(() => {
+      this.customContextLimitRefreshTimer = null;
+      this.flushPendingCustomContextLimitRefreshes();
+    }, 150);
+  }
+
+  private flushPendingCustomContextLimitRefreshes(): void {
+    const providers = Array.from(this.pendingCustomContextLimitRefreshProviders);
+    this.pendingCustomContextLimitRefreshProviders.clear();
+    for (const providerId of providers) {
+      this.notifyProviderModelOptionsChanged(providerId);
+    }
+  }
+
+  private async updateCustomContextLimit(
+    providerId: ProviderId,
+    modelId: string,
+    limit: number | null,
+  ): Promise<void> {
+    await this.plugin.mutateSettings((settings) => {
+      settings.customContextLimits ??= {};
+      if (limit === null) {
+        delete settings.customContextLimits[modelId];
+      } else {
+        settings.customContextLimits[modelId] = limit;
+      }
+    });
+    this.scheduleCustomContextLimitRefresh(providerId);
+  }
+
   private refreshDualPaneLayouts(): void {
     for (const view of this.plugin.getAllViews()) {
       view.refreshDualPaneLayout();
@@ -965,14 +1007,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
           validationEl.toggleClass('claudian-hidden', true);
           inputEl.classList.remove('claudian-input-error');
         }
-        await this.plugin.mutateSettings((settings) => {
-          settings.customContextLimits ??= {};
-          if (!trimmed) {
-            delete settings.customContextLimits[modelId];
-          } else {
-            settings.customContextLimits[modelId] = parseContextLimit(trimmed)!;
-          }
-        });
+        await this.updateCustomContextLimit(
+          providerId,
+          modelId,
+          trimmed ? parseContextLimit(trimmed)! : null,
+        );
       };
 
       inputEl.addEventListener('input', () => {
