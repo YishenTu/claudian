@@ -216,6 +216,7 @@ export class ComposerContextTray {
     contentEl.createSpan({ cls: 'claudian-context-chip-label', text: item.label });
 
     if (item.onRemove) {
+      chipEl.addClass('claudian-context-chip--removable');
       const removeButton = chipEl.createEl('button', {
         cls: 'claudian-context-chip-remove',
         text: '\u00D7',

@@ -66,7 +66,7 @@ describe('Linked content styles', () => {
   });
 
   it('balances locked Linked content when the remove control is absent', () => {
-    expect(contextTrayCss).toMatch(/\.claudian-context-chip--content:not\(:has\(\.claudian-context-chip-remove\)\)\s*{[^}]*padding-right:\s*10px;/);
+    expect(contextTrayCss).toMatch(/\.claudian-context-chip--content:not\(\.claudian-context-chip--removable\)\s*{[^}]*padding-right:\s*10px;/);
   });
 
   it('keeps context removal controls muted and chromeless until interaction', () => {

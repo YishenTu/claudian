@@ -7,6 +7,19 @@ jest.mock('obsidian', () => ({
 }));
 
 describe('ComposerContextTray', () => {
+  it('updates the removable styling state when linked content becomes locked', () => {
+    const containerEl = createMockEl();
+    const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
+    const item = { id: 'linked-content', kind: 'content' as const, label: 'Draft.md' };
+
+    tray.setItems('linked-content', [{ ...item, onRemove: jest.fn() }]);
+    expect(containerEl.querySelector('.claudian-context-chip')?.hasClass('claudian-context-chip--removable')).toBe(true);
+
+    tray.setItems('linked-content', [item]);
+    expect(containerEl.querySelector('.claudian-context-chip')?.hasClass('claudian-context-chip--removable')).toBe(false);
+    tray.destroy();
+  });
+
   it('releases its observer when construction fails after observation starts', () => {
     const containerEl = createMockEl();
     const disconnect = jest.fn();
