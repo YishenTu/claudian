@@ -1457,7 +1457,6 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
 function credentialHeaders(credential: CloudProjectCredential): Readonly<Record<string, string>> {
   return Object.freeze({
     authorization: `Bearer ${credential.credential}`,
-    'x-claudian-ingress-principal': credential.principalId,
   });
 }
 

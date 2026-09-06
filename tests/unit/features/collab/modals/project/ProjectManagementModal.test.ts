@@ -3250,6 +3250,61 @@ describe('ProjectManagementModal', () => {
     expect(modal.close).toHaveBeenCalledTimes(1);
   });
 
+  it('restores Retire controls after a rejected invocation and permits an explicit retry', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      retireProject: jest.fn()
+        .mockRejectedValueOnce(new CollabError({ code: 'project-retired' }))
+        .mockResolvedValue(success(undefined)),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Retire project' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    await flush();
+
+    expect(within(modal.contentEl).getByRole('alert')).toBeTruthy();
+    const retry = within(modal.contentEl).getByRole<HTMLButtonElement>('button', { name: 'Retry' });
+    expect(retry.disabled).toBe(false);
+    expect(within(modal.contentEl).getByRole<HTMLButtonElement>('button', { name: 'Cancel' }).disabled)
+      .toBe(false);
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    fireEvent.click(retry);
+    await flush();
+
+    expect(modal.close).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('ignores a rejected Retire after the modal closes', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let reject!: (error: Error) => void;
+    const port = createPort(members, {
+      retireProject: jest.fn((_request, _options) => new Promise((_resolve, fail) => { reject = fail; })),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Retire project' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    modal.onClose();
+    reject(new CollabError({ code: 'project-retired' }));
+    await flush();
+
+    expect(modal.contentEl.childElementCount).toBe(0);
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it('ignores a completed Leave after the modal closes', async () => {
     const members = [member('member-maya', 'Maya')];
     let finish!: (result: ReturnType<typeof success<void>>) => void;

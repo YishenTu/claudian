@@ -149,7 +149,7 @@
       "addProject": "Adicionar projeto",
       "createProject": "Criar",
       "projectPicker": "Selecionar projeto",
-      "emptyDescription": "Crie um projeto local ou entre no projeto de outro usuário Claudian.",
+      "emptyDescription": "Crie um projeto ou entre em um projeto existente.",
       "joinProject": "Entrar",
       "reconnectProject": "Reconectar projeto...",
       "joinUnavailable": "A entrada ficará disponível com a colaboração LAN.",

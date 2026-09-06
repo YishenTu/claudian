@@ -218,7 +218,6 @@ describe('Local Publish adapters', () => {
     await expect(networkPort.withNetwork(context, async (network, remoteUrl) => {
       expect(network).toEqual({ headers: [
         { name: 'authorization', sensitive: true, value: `Bearer ${credential.credential}` },
-        { name: 'x-claudian-ingress-principal', sensitive: true, value: credential.principalId },
       ] });
       expect(remoteUrl).toBe(record.authority.gitRemoteUrl);
       return 'completed';

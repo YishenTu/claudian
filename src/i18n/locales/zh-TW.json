@@ -149,7 +149,7 @@
       "addProject": "新增專案",
       "createProject": "建立",
       "projectPicker": "選擇專案",
-      "emptyDescription": "建立本機專案，或加入其他 Claudian 使用者的專案。",
+      "emptyDescription": "建立專案，或加入現有專案。",
       "joinProject": "加入",
       "reconnectProject": "重新連線專案…",
       "joinUnavailable": "區域網路協作完成後即可加入專案。",

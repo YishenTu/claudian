@@ -231,10 +231,9 @@ describe('CloudAuthorityAdapter', () => {
       });
       await connection.readSnapshot(PROJECT_ID);
       expect(observed[1].authorization).toMatch(/^Bearer [0-9a-f]{64}$/u);
-      expect(observed[1]['x-claudian-ingress-principal']).toMatch(/^vault-[0-9a-f]{64}$/u);
+      expect(observed[1]['x-claudian-ingress-principal']).toBeUndefined();
       expect(connection.git.headers).toEqual([
         { name: 'authorization', sensitive: true, value: observed[1].authorization },
-        { name: 'x-claudian-ingress-principal', sensitive: true, value: observed[1]['x-claudian-ingress-principal'] },
       ]);
       connection.dispose();
     } finally {
@@ -311,7 +310,7 @@ describe('CloudAuthorityAdapter', () => {
         expect(authenticatedHeaders).toHaveLength(3);
         for (const headers of authenticatedHeaders) {
           expect(headers.authorization).toBe(`Bearer ${persisted.credential}`);
-          expect(headers['x-claudian-ingress-principal']).toBe(persisted.principalId);
+          expect(headers['x-claudian-ingress-principal']).toBeUndefined();
         }
         expect(observed).toEqual([
           { actor: undefined, path: '/operator/cloud/collab/capabilities' },
