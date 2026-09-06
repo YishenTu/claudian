@@ -149,7 +149,7 @@
       "addProject": "프로젝트 추가",
       "createProject": "만들기",
       "projectPicker": "프로젝트 선택",
-      "emptyDescription": "로컬 프로젝트를 만들거나 다른 Claudian 사용자의 프로젝트에 참여하세요.",
+      "emptyDescription": "프로젝트를 만들거나 기존 프로젝트에 참여하세요.",
       "joinProject": "참여",
       "reconnectProject": "프로젝트 다시 연결...",
       "joinUnavailable": "LAN 협업에서 사용할 수 있습니다.",

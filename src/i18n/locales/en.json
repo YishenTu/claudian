@@ -149,7 +149,7 @@
       "addProject": "Add project",
       "createProject": "Create",
       "projectPicker": "Select project",
-      "emptyDescription": "Create a local project or join one from another Claudian user.",
+      "emptyDescription": "Create a project or join an existing one.",
       "joinProject": "Join",
       "reconnectProject": "Reconnect project...",
       "joinUnavailable": "Joining becomes available with LAN collaboration.",

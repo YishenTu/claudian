@@ -733,7 +733,7 @@ export class CollabPublicationService {
 
   abortProjectBackgroundWork(projectId: CollabProjectId): void {
     if (this.disposed) return;
-    this.sessions.acquire(projectId).abortBackgroundSynchronization();
+    this.sessions.abortBackgroundSynchronization(projectId);
   }
 
   async publish(

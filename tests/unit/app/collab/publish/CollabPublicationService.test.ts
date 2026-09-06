@@ -899,6 +899,22 @@ describe('CollabPublicationService reconnect', () => {
     await expect(draftStore.load('project-a')).resolves.toEqual(newerDraft);
   });
 
+  it('allows retirement to abort background work after suspension and terminal closure', async () => {
+    const service = publicationServiceForClose();
+    try {
+      const suspension = await service.suspendProject('project-a');
+      expect(() => service.abortProjectBackgroundWork('project-a')).not.toThrow();
+
+      await service.completeProjectSuspension(suspension);
+      expect(() => service.abortProjectBackgroundWork('project-a')).not.toThrow();
+      expect(() => service.beginProjectInspection('project-a')).toThrow(
+        expect.objectContaining({ code: 'project-retired' }),
+      );
+    } finally {
+      await service.close();
+    }
+  });
+
   it('fails closed when a suspended work session was terminally drained', async () => {
     const service = publicationServiceForClose();
     const suspension = await service.suspendProject('project-a');

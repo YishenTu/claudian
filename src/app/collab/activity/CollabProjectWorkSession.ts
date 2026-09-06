@@ -395,6 +395,10 @@ export class CollabProjectWorkSessionRegistry {
     return this.closeProject(projectId);
   }
 
+  abortBackgroundSynchronization(projectId: CollabProjectId): void {
+    this.sessions.get(projectId)?.abortBackgroundSynchronization();
+  }
+
   resetProject(projectId: CollabProjectId): void {
     if (this.closed || this.#closedProjects.has(projectId) || this.#suspensions.has(projectId)) {
       return;

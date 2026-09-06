@@ -149,7 +149,7 @@
       "addProject": "添加项目",
       "createProject": "创建",
       "projectPicker": "选择项目",
-      "emptyDescription": "创建一个本地项目，或加入其他 Claudian 用户的项目。",
+      "emptyDescription": "创建项目，或加入已有项目。",
       "joinProject": "加入",
       "reconnectProject": "重新连接项目…",
       "joinUnavailable": "局域网协作完成后即可加入项目。",

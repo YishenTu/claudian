@@ -22,6 +22,7 @@ import {
   type CollabOperationOptions,
   type CollabProjectCapabilities,
   type CollabProjectSnapshot,
+  type CollabResult,
   isCollabLanProjectSnapshot,
 } from '@/core/collab';
 import { HostDiagnosticsModal } from '@/features/collab/modals/project/HostDiagnosticsModal';
@@ -1210,30 +1211,39 @@ export class ProjectManagementModal extends Modal {
     this.#operationPending = true;
     this.#status = null;
     this.#render();
-    const operation = confirmation.kind === 'leave'
-      ? this.#port.leaveProject({
-        cleanupChoice: confirmation.cleanupChoice,
-        ...(confirmation.managerResponsibilityOfferId === undefined ? {} : {
-          managerResponsibilityOfferId: confirmation.managerResponsibilityOfferId,
-        }),
-        projectId: this.#options.project.id,
-      }, ...this.#transientOperationOptions())
-      : confirmation.kind === 'remove'
-        ? this.#port.removeMember({
-          memberId: confirmation.member.id,
+    let result: CollabResult<unknown>;
+    try {
+      const operation = confirmation.kind === 'leave'
+        ? this.#port.leaveProject({
+          cleanupChoice: confirmation.cleanupChoice,
+          ...(confirmation.managerResponsibilityOfferId === undefined ? {} : {
+            managerResponsibilityOfferId: confirmation.managerResponsibilityOfferId,
+          }),
           projectId: this.#options.project.id,
         }, ...this.#transientOperationOptions())
-        : confirmation.kind === 'demote'
-          ? this.#port.demoteManager({
+        : confirmation.kind === 'remove'
+          ? this.#port.removeMember({
+            memberId: confirmation.member.id,
             projectId: this.#options.project.id,
-            targetMemberId: confirmation.member.id,
           }, ...this.#transientOperationOptions())
-          : confirmation.kind === 'promote'
-            ? this.#createManagerPromotion(confirmation)
-            : this.#port.retireProject({
+          : confirmation.kind === 'demote'
+            ? this.#port.demoteManager({
               projectId: this.#options.project.id,
-            }, ...this.#transientOperationOptions());
-    const result = await operation;
+              targetMemberId: confirmation.member.id,
+            }, ...this.#transientOperationOptions())
+            : confirmation.kind === 'promote'
+              ? this.#createManagerPromotion(confirmation)
+              : this.#port.retireProject({
+                projectId: this.#options.project.id,
+              }, ...this.#transientOperationOptions());
+      result = await operation;
+    } catch {
+      if (!this.#opened || this.#abortController.signal.aborted) return;
+      this.#operationPending = false;
+      this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
+      this.#render();
+      return;
+    }
     if (!this.#opened || this.#abortController.signal.aborted) return;
     this.#operationPending = false;
     if (result.status !== 'success') {
