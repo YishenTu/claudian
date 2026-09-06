@@ -589,7 +589,11 @@ describe('ProjectManagementModal', () => {
       member('member-host', 'Host', { role: 'manager' }),
       member('member-maya', 'Maya'),
     ];
-    const port = createPort(members, {}, {
+    const port = createPort(members, {
+      proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        phase: 'collecting-readiness', state: 'active', transferId: 'transfer-member-request',
+      } as never)),
+    }, {
       currentMemberId: 'member-maya',
       hostMemberId: 'member-host',
     });
@@ -614,6 +618,7 @@ describe('ProjectManagementModal', () => {
       serverUrl: ' HTTP://203.0.113.20:8787/operator/cloud ',
     });
     expect(modal.contentEl.querySelector('[data-action="accept-lan-to-cloud"]')).toBeNull();
+    expect(port.acceptLanToCloudTransfer).not.toHaveBeenCalled();
   });
 
   it('does not expose Host acceptance on an installation hosted elsewhere', async () => {
@@ -1183,20 +1188,26 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.querySelector('[data-action="retry-members"]')).not.toBeNull();
   });
 
-  it('keeps LAN-to-Cloud Host actions reachable after proposing in the same modal', async () => {
-    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+  it('moves directly to Cloud when the local Host requests the move', async () => {
+    const members = [member('member-host', 'Host')];
     const port = createPort(members, {
       proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({
         phase: 'collecting-readiness',
         state: 'active',
         transferId: 'transfer-proposed',
       } as never)),
-    });
+      acceptLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        phase: 'completed', state: 'completed', transferId: 'transfer-proposed',
+      } as never)),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const onChanged = jest.fn();
     const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
       project: project({
         connectionStatus: 'connected',
         hostInstallationStatus: 'hosted-here',
         hostStatus: 'running',
+        role: 'member',
       }),
     });
 
@@ -1212,8 +1223,72 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
 
-    expect(modal.contentEl.querySelector('[data-action="accept-lan-to-cloud"]')).not.toBeNull();
-    expect(modal.contentEl.querySelector('[data-action="cancel-lan-to-cloud"]')).not.toBeNull();
+    expect(port.acceptLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha', transferId: 'transfer-proposed',
+    });
+    expect(modal.close).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('keeps the exact Host move available for retry after automatic acceptance fails', async () => {
+    const port = createPort([member('member-host', 'Host')], {
+      proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        phase: 'collecting-readiness', state: 'active', transferId: 'transfer-host-retry',
+      } as never)),
+      acceptLanToCloudTransfer: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }), status: 'failure',
+      }),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' }),
+    });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
+      target: { value: 'https://cloud.example.test/' },
+    });
+    fireEvent.click(ui.getByRole('button', { name: 'Request move to Cloud' }));
+    await flush();
+    expect(port.acceptLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha', transferId: 'transfer-host-retry',
+    });
+    expect(ui.getByRole('alert').textContent).toContain('You can retry safely.');
+    expect(ui.getByRole('button', { name: 'Accept move to Cloud' })).toHaveProperty('disabled', false);
+    expect(modal.close).not.toHaveBeenCalled();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it('does not automatically accept a Host proposal after its initiating modal closes', async () => {
+    let finishProposal!: (value: ReturnType<typeof success<never>>) => void;
+    const port = createPort([member('member-host', 'Host')], {
+      proposeLanToCloudTransfer: jest.fn().mockImplementation(() => new Promise(resolve => {
+        finishProposal = resolve;
+      })),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' }),
+    });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
+      target: { value: 'https://cloud.example.test/' },
+    });
+    fireEvent.click(ui.getByRole('button', { name: 'Request move to Cloud' }));
+    modal.close();
+    finishProposal(success({
+      phase: 'collecting-readiness', state: 'active', transferId: 'transfer-after-close',
+    } as never));
+    await flush();
+    expect(port.acceptLanToCloudTransfer).not.toHaveBeenCalled();
+    expect(modal.contentEl.textContent).toBe('');
+    modal.contentEl.remove();
   });
 
   it('treats a persisted cancelled Cloud move as no current move', async () => {
