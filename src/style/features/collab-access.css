@@ -11,7 +11,7 @@
   height: auto;
   padding: var(--size-4-1) var(--size-4-3);
   border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
+  border-radius: var(--button-radius, var(--radius-s));
   background: var(--interactive-normal);
   box-shadow: none;
   color: var(--text-normal);

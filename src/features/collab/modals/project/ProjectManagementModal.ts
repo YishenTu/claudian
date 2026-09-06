@@ -1450,18 +1450,37 @@ export class ProjectManagementModal extends Modal {
     });
     propose.addEventListener('click', () => {
       const serverUrl = input.value;
+      const memberId = this.#currentMemberId;
+      const proposedByMemberId = proposal?.proposedByMemberId ?? this.#requireCurrentMemberId();
+      const sourceOwned = this.#hostProject.hostInstallationStatus === 'hosted-here';
+      const signal = this.#abortController.signal;
       void this.#runTransferAction(async () => {
         const result = await this.#port.proposeLanToCloudTransfer({
           projectId: this.#options.project.id,
           serverUrl,
         });
-        if (result.status === 'success') this.#lanToCloudProposal = {
-          proposedByMemberId: proposal?.proposedByMemberId ?? this.#requireCurrentMemberId(),
+        if (result.status !== 'success' || signal.aborted) return result;
+        const proposed = {
+          proposedByMemberId,
           serverUrl,
-          sourceOwned: this.#hostProject.hostInstallationStatus === 'hosted-here',
+          sourceOwned,
           status: result.value,
         };
-        return result;
+        this.#lanToCloudProposal = proposed;
+        if (!sourceOwned || proposedByMemberId !== memberId || result.value.state !== 'active') {
+          this.#finishTerminalTransfer(result.value);
+          return result;
+        }
+        const accepted = await this.#port.acceptLanToCloudTransfer({
+          projectId: this.#options.project.id,
+          transferId: result.value.transferId,
+        });
+        if (signal.aborted) return accepted;
+        if (accepted.status === 'success') {
+          this.#lanToCloudProposal = { ...proposed, status: accepted.value };
+          this.#finishTerminalTransfer(accepted.value);
+        }
+        return accepted;
       });
     });
   }
