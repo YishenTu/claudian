@@ -14,6 +14,7 @@ import {
   getProviderSettingsSnapshotWithModel,
   resolveConversationModel,
 } from '../../core/providers/conversationModel';
+import { resolveProviderCustomContextLimit } from '../../core/providers/modelSelection';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
@@ -266,7 +267,16 @@ export class ClaudianView extends ItemView {
       );
 
       if (tab.state.usage) {
-        tab.state.usage = recalculateUsageForModel(tab.state.usage, model, contextWindow);
+        tab.state.usage = recalculateUsageForModel(
+          tab.state.usage,
+          model,
+          contextWindow,
+          resolveProviderCustomContextLimit(
+            providerId,
+            model,
+            providerSettings.customContextLimits,
+          ),
+        );
       }
 
       tab.ui.modelSelector.updateDisplay();

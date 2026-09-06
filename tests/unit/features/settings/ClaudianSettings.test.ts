@@ -46,4 +46,31 @@ describe('ClaudianSettingTab model option updates', () => {
       expect.any(Function),
     );
   });
+
+  it('refreshes open provider views after a custom context limit changes', async () => {
+    jest.useFakeTimers();
+    const settings = { customContextLimits: {} as Record<string, number> };
+    const notifyProviderChatOptionsChanged = jest.fn();
+    const plugin = {
+      getAllViews: jest.fn(() => []),
+      notifyProviderChatOptionsChanged,
+      notifyAgentSkillsChanged: jest.fn(),
+      mutateSettings: jest.fn(async (mutation: (value: typeof settings) => void) => {
+        mutation(settings);
+      }),
+      settings,
+      storage: {
+        getAdapter: jest.fn(() => ({})),
+      },
+    };
+    const tab = new ClaudianSettingTab({} as any, plugin as any);
+
+    await (tab as any).updateCustomContextLimit('codex', 'my-custom-model', 1_000_000);
+
+    expect(settings.customContextLimits['my-custom-model']).toBe(1_000_000);
+    expect(notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(150);
+    expect(notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
+    jest.useRealTimers();
+  });
 });

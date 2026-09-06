@@ -5,6 +5,7 @@ import type {
   ProviderExecutionEvent,
 } from '../../../core/execution';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
+import { resolveProviderCustomContextLimit } from '../../../core/providers/modelSelection';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
@@ -78,6 +79,7 @@ import type { SubagentManager } from '../services/SubagentManager';
 import type { AsyncSubagentCompletion } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui/FileContext';
+import { recalculateUsageForModel } from '../utils/usageInfo';
 import { StreamingRenderCoordinator } from './StreamingRenderCoordinator';
 
 export interface StreamControllerDeps {
@@ -313,9 +315,24 @@ export class StreamController {
         }
         if (!state.ignoreUsageUpdates) {
           const activeModel = this.getActiveProviderModel();
-          state.usage = activeModel && !chunk.usage.model
+          const usage = activeModel && !chunk.usage.model
             ? { ...chunk.usage, model: activeModel }
             : chunk.usage;
+          const customContextLimit = activeModel
+            ? resolveProviderCustomContextLimit(
+                this.getActiveProviderId(),
+                activeModel,
+                this.deps.plugin.settings.customContextLimits,
+              )
+            : undefined;
+          state.usage = activeModel && customContextLimit
+            ? recalculateUsageForModel(
+                usage,
+                activeModel,
+                customContextLimit,
+                customContextLimit,
+              )
+            : usage;
         }
         break;
       }

@@ -1496,6 +1496,39 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.usage).toEqual(usage);
     });
 
+    it('applies a custom context limit to live usage chunks', async () => {
+      const msg = createTestMessage();
+      const model = 'opencode:kimi-for-coding/k3';
+      Object.assign(deps.plugin.settings, {
+        customContextLimits: { [model]: 1_048_576 },
+      });
+      deps.state.currentConversationId = 'opencode-conv';
+      deps.plugin.getConversationSync = jest.fn().mockReturnValue({
+        id: 'opencode-conv',
+        messages: [],
+        providerId: 'opencode',
+        selectedModel: model,
+        sessionId: 'session-1',
+      });
+      deps.getProviderId = () => 'opencode';
+      const usage = createMockUsage({
+        model,
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: true,
+        contextTokens: 195_654,
+        percentage: 98,
+      });
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toMatchObject({
+        model,
+        contextWindow: 1_048_576,
+        contextWindowIsAuthoritative: false,
+        percentage: 19,
+      });
+    });
+
     it('should not update usage when ignoreUsageUpdates is true', async () => {
       const msg = createTestMessage();
       deps.state.ignoreUsageUpdates = true;

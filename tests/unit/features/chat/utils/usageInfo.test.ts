@@ -53,5 +53,30 @@ describe('usageInfo', () => {
         percentage: 50,
       });
     });
+
+    it('lets an explicit custom limit override an authoritative runtime window', () => {
+      const usage = {
+        model: 'opencode:kimi-for-coding/k3',
+        inputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: true,
+        contextTokens: 195_654,
+        percentage: 98,
+      };
+
+      expect(recalculateUsageForModel(
+        usage,
+        'opencode:kimi-for-coding/k3',
+        1_048_576,
+        1_048_576,
+      )).toEqual({
+        ...usage,
+        contextWindow: 1_048_576,
+        contextWindowIsAuthoritative: false,
+        percentage: 19,
+      });
+    });
   });
 });

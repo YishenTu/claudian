@@ -71,3 +71,25 @@ export function toProviderRuntimeModelId(
   const decoded = decodeProviderModelSelectionId(value);
   return decoded && decoded.providerId === providerId ? decoded.modelId : value;
 }
+
+export function resolveProviderCustomContextLimit(
+  providerId: ProviderId,
+  model: string,
+  customLimits?: Record<string, number>,
+): number | undefined {
+  if (!customLimits) {
+    return undefined;
+  }
+
+  const normalizedModel = model.trim();
+  const runtimeModel = toProviderRuntimeModelId(providerId, normalizedModel).trim();
+  const namespacedModel = encodeProviderModelSelectionId(providerId, runtimeModel);
+  for (const candidate of new Set([normalizedModel, runtimeModel, namespacedModel])) {
+    const limit = customLimits[candidate];
+    if (Number.isFinite(limit) && limit > 0) {
+      return limit;
+    }
+  }
+
+  return undefined;
+}

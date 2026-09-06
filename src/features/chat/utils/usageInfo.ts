@@ -10,11 +10,18 @@ export function recalculateUsageForModel(
   usage: UsageInfo,
   model: string,
   fallbackContextWindow: number,
+  explicitContextWindow?: number,
 ): UsageInfo {
-  const preserveAuthoritativeWindow = usage.contextWindowIsAuthoritative === true
+  const validExplicitContextWindow = Number.isFinite(explicitContextWindow)
+    && explicitContextWindow! > 0
+    ? explicitContextWindow
+    : undefined;
+  const preserveAuthoritativeWindow = validExplicitContextWindow === undefined
+    && usage.contextWindowIsAuthoritative === true
     && usage.contextWindow > 0
     && usage.model === model;
-  const contextWindow = preserveAuthoritativeWindow ? usage.contextWindow : fallbackContextWindow;
+  const contextWindow = validExplicitContextWindow
+    ?? (preserveAuthoritativeWindow ? usage.contextWindow : fallbackContextWindow);
 
   return {
     ...usage,
