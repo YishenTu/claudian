@@ -73,7 +73,9 @@ export class CloudProjectCredentialStore {
     try {
       const file = await resolveCollabVaultPath(this.vaultRoot, relativePath);
       try {
-        handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+        // Windows also requires write access when flushing an existing credential.
+        const access = process.platform === 'win32' ? constants.O_RDWR : constants.O_RDONLY;
+        handle = await open(file, access | (constants.O_NOFOLLOW ?? 0));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;

@@ -22,6 +22,7 @@ const tests = [
   'tests/unit/app/collab/publish/NativeGitPublishRepository.test.ts',
   'tests/unit/app/collab/review/NativeGitReviewRepository.test.ts',
   'tests/unit/app/collab/review/NativeGitWorkingTreeReviewRepository.test.ts',
+  'tests/integration/app/collab/CollabFilesystemBoundary.test.ts',
   'tests/integration/app/collab/conflicts/ConflictScratchGitRepository.test.ts',
   'tests/integration/app/collab/git/GitRepositoryService.test.ts',
   'tests/integration/app/collab/git/GitRuntimeResolver.test.ts',
@@ -31,6 +32,7 @@ const tests = [
   'tests/integration/app/collab/join/JoinProjectCoordinator.test.ts',
   'tests/integration/app/collab/join/JoinProjectLanIntegration.test.ts',
   'tests/integration/app/collab/project/CloudProjectEntryCoordinator.test.ts',
+  'tests/integration/app/collab/remote-authority/CloudProjectCredentialStore.test.ts',
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
   'tests/integration/app/collab/review/NativeGitReviewRepository.test.ts',
 ];
