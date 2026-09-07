@@ -25,6 +25,8 @@ describe('GrokHistoryStore', () => {
     expect(parsed.messages[1]).toMatchObject({
       content: 'Done.',
       role: 'assistant',
+      durationSeconds: 5,
+      completedAt: 1_700_000_005_000,
       toolCalls: [{
         id: 'tool-1',
         input: { path: 'notes/sample.md' },
@@ -42,12 +44,33 @@ describe('GrokHistoryStore', () => {
     ]);
     expect(parsed.messages[2]).toMatchObject({ content: 'Stop now.', role: 'user' });
     expect(parsed.messages[3]).toMatchObject({ content: 'Stopping.', role: 'assistant' });
+    expect(parsed.messages[3].durationSeconds).toBeUndefined();
     expect(parsed.messages.some(message => message.content.includes('Incomplete'))).toBe(false);
     expect(parsed.lastUsage).toEqual(expect.objectContaining({
       inputTokens: 10,
       outputTokens: 4,
       totalTokens: 16,
     }));
+  });
+
+  it.each([
+    [1_700_000_000, 1_700_000_065.9, 65],
+    [1_700_000_000_000, 1_700_000_065_900, 65],
+    [1_700_000_000_000, 1_700_000_000_900, 0],
+    [undefined, 1_700_000_065_000, undefined],
+    [1_700_000_000_000, undefined, undefined],
+    ['invalid', 1_700_000_065_000, undefined],
+    [1_700_000_000_000, 1_699_999_999_000, undefined],
+  ])('restores duration only from valid start and completion times (%s, %s)', (start, end, expected) => {
+    const content = [
+      { timestamp: start, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Inspect' } } },
+      { timestamp: start, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } } },
+      { timestamp: end, update: { sessionUpdate: 'turn_completed', stop_reason: 'end_turn' } },
+    ].map(({ timestamp, update }) => JSON.stringify({
+      timestamp, method: 'session/update', params: { sessionId: 'timing', update },
+    })).join('\n');
+
+    expect(parseGrokHistoryContent(content, 'timing').messages[1].durationSeconds).toBe(expected);
   });
 
   it('rehydrates only the active branch after a native rewind marker', () => {
@@ -105,6 +128,8 @@ describe('GrokHistoryStore', () => {
       'Replacement answer',
     ]);
     expect(parsed.messages.map(message => message.id)).not.toContain('assistant-abandoned');
+    expect(parsed.messages.filter(message => message.role === 'assistant').map(message => message.durationSeconds))
+      .toEqual([2, 2]);
     expect(parsed.lastUsage).toEqual({ totalTokens: 15 });
   });
 

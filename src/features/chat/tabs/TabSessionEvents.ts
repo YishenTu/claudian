@@ -246,6 +246,7 @@ async function renderAutoTriggeredTurn(
     role: 'assistant',
     content: '',
     timestamp: Date.now(),
+    completedAt: Date.now(),
     toolCalls: [],
     contentBlocks: [],
     ...(metadata.assistantMessageId && { assistantMessageId: metadata.assistantMessageId }),
@@ -293,6 +294,7 @@ async function renderAutoTriggeredTurn(
       if (!isCurrent()) return false;
       await tab.controllers.streamController.finalizeCurrentTextBlock(assistantMessage);
       if (!isCurrent()) return false;
+      tab.renderer.finalizeResponse(assistantMessage, [assistantMessage]);
     }
   } finally {
     if (hasVisibleContent) {

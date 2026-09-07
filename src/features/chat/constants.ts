@@ -1,29 +1,3 @@
-/** Random flavor words shown when response completes (e.g., "Baked for 1:23"). */
-export const COMPLETION_FLAVOR_WORDS = [
-  'Baked',
-  'Cooked',
-  'Crunched',
-  'Brewed',
-  'Crafted',
-  'Forged',
-  'Conjured',
-  'Whipped up',
-  'Stirred',
-  'Simmered',
-  'Toasted',
-  'Sautéed',
-  'Finagled',
-  'Marinated',
-  'Distilled',
-  'Fermented',
-  'Percolated',
-  'Steeped',
-  'Roasted',
-  'Cured',
-  'Smoked',
-  'Cogitated',
-] as const;
-
 /** Random flavor texts shown while Claude is thinking. */
 export const FLAVOR_TEXTS = [
   // Classic

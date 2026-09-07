@@ -9,7 +9,6 @@ import {
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type { FeatureHost } from '../../FeatureHost';
-import { findRewindContext } from '../rewind';
 import { getTabProviderId } from './providerResolution';
 import {
   getTabCapabilities,
@@ -87,7 +86,7 @@ async function resolveForkSource(
 export async function handleForkRequest(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
-  userMessageId: string,
+  assistantMessageId: string,
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean,
 ): Promise<void> {
@@ -109,24 +108,19 @@ export async function handleForkRequest(
   }
 
   const msgs = state.messages;
-  const userIdx = msgs.findIndex(message => message.id === userMessageId);
-  if (userIdx === -1) {
+  const assistantIdx = msgs.findIndex(message => message.id === assistantMessageId && message.role === 'assistant');
+  if (assistantIdx === -1) {
     new Notice(t('chat.fork.failed', { error: t('chat.fork.errorMessageNotFound') }));
     return;
   }
 
-  if (!msgs[userIdx].userMessageId) {
+  const checkpoint = msgs[assistantIdx].assistantMessageId;
+  if (!checkpoint) {
     new Notice(t('chat.fork.unavailableNoUuid'));
     return;
   }
 
-  const rewindContext = findRewindContext(msgs, userIdx);
-  if (!rewindContext.hasResponse || !rewindContext.prevAssistantUuid) {
-    new Notice(t('chat.fork.unavailableNoResponse'));
-    return;
-  }
-
-  const source = await resolveForkSource(tab, plugin, rewindContext.prevAssistantUuid);
+  const source = await resolveForkSource(tab, plugin, checkpoint);
   if (
     !source
     || !isRuntimeLive(tab)
@@ -134,15 +128,15 @@ export async function handleForkRequest(
   ) return;
 
   await forkRequestCallback({
-    messages: deepCloneMessages(msgs.slice(0, userIdx)),
+    messages: deepCloneMessages(msgs.slice(0, assistantIdx + 1)),
     providerId: source.providerId,
     sourceConversationId,
     sourceSessionId: source.sourceSessionId,
     sourceProviderState: source.sourceProviderState,
     sourceSelectedModel: source.sourceSelectedModel,
-    resumeAt: rewindContext.prevAssistantUuid,
+    resumeAt: checkpoint,
     sourceTitle: source.sourceTitle,
-    forkAtUserMessage: msgs.slice(0, userIdx + 1).filter(isCanonicalUserMessage).length,
+    forkAtUserMessage: msgs.slice(0, assistantIdx + 1).filter(isCanonicalUserMessage).length + 1,
     linkedContentPath: source.linkedContentPath,
   });
 }

@@ -61,7 +61,7 @@
   color: var(--text-muted);
   max-height: 400px;
   overflow-y: auto;
-  border-inline-start: 2px solid var(--background-modifier-border);
+  border-inline-start: 1px solid var(--background-modifier-border);
   margin-inline-start: 7px;
 }
 

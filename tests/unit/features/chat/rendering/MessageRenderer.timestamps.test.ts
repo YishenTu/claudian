@@ -35,7 +35,7 @@ describe.each(providers)('%s message timestamps', (providerId) => {
     const { renderer, messagesEl } = createRenderer(providerId);
     const messages: ChatMessage[] = [
       { id: 'user', role: 'user', content: 'Hello', timestamp },
-      { id: 'assistant', role: 'assistant', content: 'Reply', timestamp },
+      { id: 'assistant', role: 'assistant', content: 'Reply', timestamp, completedAt: timestamp },
       {
         id: 'image', role: 'user', content: '', timestamp,
         images: [{ id: 'img', name: 'photo.png', mediaType: 'image/png', data: 'abc', size: 3, source: 'paste' }],
@@ -50,20 +50,28 @@ describe.each(providers)('%s message timestamps', (providerId) => {
 });
 
 describe('message timestamp refresh', () => {
-  it('updates existing messages without replacing streaming content or duplicating stamps', () => {
+  it.each(['addMessage', 'renderStoredMessage'] as const)('%s shows a timestamp only once a completion time exists', (method) => {
     const { renderer, messagesEl, settings } = createRenderer('claude', false);
-    const msg: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp };
-    const messageEl = renderer.addMessage(msg);
+    const msg: ChatMessage = { id: 'assistant', role: 'assistant', content: 'Final reply', timestamp };
+    renderer[method](msg);
+    const messageEl = messagesEl.querySelector<HTMLElement>('[data-message-id="assistant"]')!;
     const contentEl = messageEl.querySelector('.claudian-message-content')!;
-    contentEl.createDiv({ text: 'Partial reply' });
+    const partialReply = contentEl.createDiv({ text: 'Partial reply' });
     expect(messagesEl.querySelectorAll('.claudian-message-timestamp').length).toBe(0);
 
     settings.showMessageTimestamps = true;
     renderer.refreshMessageTimestamps();
     renderer.refreshMessageTimestamps();
-    expect(messagesEl.querySelectorAll('.claudian-message-timestamp').length).toBe(1);
+    expect(messagesEl.querySelectorAll('.claudian-message-timestamp').length).toBe(0);
     expect(messageEl.querySelector('.claudian-message-content')).toBe(contentEl);
-    expect(contentEl.children[0].textContent).toBe('Partial reply');
+    expect(partialReply.textContent).toBe('Partial reply');
+    expect(partialReply.parentElement).toBe(contentEl);
+
+    msg.completedAt = new Date(2026, 8, 7, 14, 35).getTime();
+    renderer.finalizeResponse(msg, [msg]);
+    renderer.refreshMessageTimestamps();
+    expect(messagesEl.querySelectorAll('.claudian-message-timestamp')).toHaveLength(1);
+    expect(messagesEl.querySelector('.claudian-message-timestamp')?.textContent).toBe('14:35');
 
     settings.showMessageTimestamps = false;
     renderer.refreshMessageTimestamps();
@@ -80,4 +88,17 @@ describe('message timestamp refresh', () => {
     expect(messagesEl.querySelectorAll('.claudian-message-timestamp').length).toBe(0);
     renderer.dispose();
   });
+});
+
+it.each([
+  [13, '13:05'],
+  [0, '00:05'],
+])('renders hour %s in 24-hour format', (hour, expected) => {
+  const { renderer, messagesEl } = createRenderer('claude');
+  renderer.addMessage({
+    id: 'clock', role: 'user', content: 'Hello',
+    timestamp: new Date(2026, 8, 7, hour, 5).getTime(),
+  });
+  expect(messagesEl.querySelector('.claudian-message-timestamp')?.textContent).toBe(expected);
+  renderer.dispose();
 });

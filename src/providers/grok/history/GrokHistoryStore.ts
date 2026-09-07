@@ -59,6 +59,8 @@ interface StoredTool {
 
 interface PendingTurn {
   assistantContent: string;
+  durationSeconds?: number;
+  completedAt?: number;
   assistantId?: string;
   blocks: ContentBlock[];
   images: ImageAttachment[];
@@ -236,6 +238,14 @@ export function parseGrokHistoryContent(
     }
 
     if (updateType === 'turn_completed') {
+      const completedAt = normalizeTimestamp(record.timestamp);
+      const stopReason = readString(update.stop_reason) ?? readString(update.stopReason);
+      if (stopReason !== 'cancelled' && stopReason !== 'error'
+        && Number.isFinite(pending.startedAt) && pending.startedAt > 0
+        && Number.isFinite(completedAt) && completedAt >= pending.startedAt) {
+        pending.completedAt = completedAt;
+        pending.durationSeconds = Math.floor((completedAt - pending.startedAt) / 1_000);
+      }
       const promptId = readString(update.prompt_id) ?? readString(update.promptId);
       const usage = normalizeUsage(update.usage);
       commitPending(pending, promptId, usage);
@@ -486,6 +496,8 @@ function finalizeTurn(
   const assistant: ChatMessage = {
     assistantMessageId: assistantId,
     content: turn.assistantContent,
+    completedAt: turn.completedAt,
+    ...(turn.durationSeconds !== undefined ? { durationSeconds: turn.durationSeconds } : {}),
     ...(turn.blocks.length > 0 ? { contentBlocks: turn.blocks } : {}),
     id: assistantId,
     role: 'assistant',

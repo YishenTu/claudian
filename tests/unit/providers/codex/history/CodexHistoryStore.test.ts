@@ -36,6 +36,17 @@ describe('CodexHistoryStore', () => {
     }
   });
 
+  it('restores completion time from legacy turn completion events', () => {
+    const content = [
+      { type: 'event', timestamp: '2026-09-07T10:00:00Z', event: { type: 'turn.started' } },
+      { type: 'event', timestamp: '2026-09-07T10:00:03Z', event: {
+        type: 'item.completed', item: { id: 'answer', type: 'agent_message', text: 'Done' },
+      } },
+      { type: 'event', timestamp: '2026-09-07T10:00:05Z', event: { type: 'turn.completed' } },
+    ].map(record => JSON.stringify(record)).join('\n');
+    expect(parseCodexSessionContent(content)[0].completedAt).toBe(Date.parse('2026-09-07T10:00:05Z'));
+  });
+
   describe('path helpers', () => {
     it('derives transcript and memories roots from POSIX session paths', () => {
       const sessionFilePath = '/home/user/.codex/sessions/2026/04/14/rollout-thread.jsonl';
@@ -2244,6 +2255,7 @@ describe('CodexHistoryStore', () => {
 
       expect(messages).toHaveLength(2);
       expect(messages[1].assistantMessageId).toBe('019d-uuid-turn-1');
+      expect(messages[1].completedAt).toBe(Date.parse('2026-03-27T00:00:02.000Z'));
     });
 
     it('does NOT set assistantMessageId on interrupted assistant bubbles', () => {

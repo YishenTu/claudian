@@ -1774,6 +1774,7 @@ describe('Tab provider execution ownership', () => {
     assistantEl.querySelector = jest.fn().mockReturnValue(createMockEl());
     tab.renderer = {
       addMessage: jest.fn().mockReturnValue(assistantEl),
+      finalizeResponse: jest.fn(),
       scrollToBottom: jest.fn(),
     } as any;
     tab.controllers.streamController = {
@@ -1838,6 +1839,7 @@ describe('Tab provider execution ownership', () => {
     assistantEl.querySelector = jest.fn().mockReturnValue(createMockEl());
     tab.renderer = {
       addMessage: jest.fn().mockReturnValue(assistantEl),
+      finalizeResponse: jest.fn(),
       scrollToBottom: jest.fn(),
     } as any;
     tab.controllers.streamController = {
@@ -1978,6 +1980,7 @@ describe('Tab provider execution ownership', () => {
     assistantEl.querySelector = jest.fn().mockReturnValue(createMockEl());
     tab.renderer = {
       addMessage: jest.fn().mockReturnValue(assistantEl),
+      finalizeResponse: jest.fn(),
       scrollToBottom: jest.fn(),
     } as any;
     const handleStreamChunk = jest.fn();
@@ -2101,6 +2104,7 @@ describe('Tab provider execution ownership', () => {
     assistantEl.querySelector = jest.fn().mockReturnValue(createMockEl());
     tab.renderer = {
       addMessage: jest.fn().mockReturnValue(assistantEl),
+      finalizeResponse: jest.fn(),
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
       scrollToBottom: jest.fn(),
     } as any;
@@ -2433,22 +2437,27 @@ describe('Tab provider execution ownership', () => {
       },
     ];
 
-    await (tab.renderer as any).forkCallback('user-b');
+    tab.state.messages.push({ id: 'user-c', role: 'user', content: 'Later question', timestamp: 7 });
+
+    await (tab.renderer as any).forkCallback('assistant-b');
 
     expect(coordinatorInstances[0].resolveForkSource).toHaveBeenCalledWith(
-      'assistant-a',
+      'assistant-b',
       expect.any(Function),
     );
     expect(forkRequest).toHaveBeenCalledWith(expect.objectContaining({
-      forkAtUserMessage: 2,
+      forkAtUserMessage: 3,
       messages: expect.arrayContaining([
         expect.objectContaining({ id: 'interrupt-a', isInterrupt: true }),
         expect.objectContaining({ id: 'rebuilt-a', isRebuiltContext: true }),
       ]),
-      resumeAt: 'assistant-a',
+      resumeAt: 'assistant-b',
       sourceConversationId: conversation.id,
       sourceSessionId: 'native-session',
     }));
+    expect(forkRequest.mock.calls[0][0].messages.map((message: { id: string }) => message.id)).toEqual([
+      'user-a', 'assistant-a', 'interrupt-a', 'rebuilt-a', 'user-b', 'assistant-b',
+    ]);
     globalThis.ResizeObserver = originalResizeObserver;
   });
 
@@ -2492,7 +2501,7 @@ describe('Tab provider execution ownership', () => {
       },
     ];
 
-    const fork = (tab.renderer as any).forkCallback('user-b');
+    const fork = (tab.renderer as any).forkCallback('assistant-a');
     for (let attempt = 0;
       attempt < 10 && coordinatorInstances[0].resolveForkSource.mock.calls.length === 0;
       attempt += 1) {
@@ -2542,7 +2551,7 @@ describe('Tab provider execution ownership', () => {
       },
     ];
 
-    const fork = (tab.renderer as any).forkCallback('user-b');
+    const fork = (tab.renderer as any).forkCallback('assistant-a');
     for (let attempt = 0;
       attempt < 10 && coordinatorInstances[0].resolveForkSource.mock.calls.length === 0;
       attempt += 1) {

@@ -23,7 +23,6 @@ import type {
 import { t } from '../../../i18n/i18n';
 import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
 import { extractUserDisplayContent } from '../../../utils/context';
-import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { stripLegacyInterruptIndicator } from '../../../utils/interrupt';
@@ -68,6 +67,7 @@ function runRendererAction(action: () => Promise<void>): void {
 }
 
 export class MessageRenderer {
+  private static nextHistoryId = 0;
   private app: App;
   private plugin: FeatureHost;
   private component: Component;
@@ -147,21 +147,24 @@ export class MessageRenderer {
     }
   }
 
-  private appendMessageTimestamp(msgEl: HTMLElement, timestampMs: number): void {
+  private appendMessageTimestamp(msgEl: HTMLElement, timestampMs: number | undefined): void {
+    if (timestampMs === undefined) return;
     msgEl.setAttribute('data-message-timestamp', String(timestampMs));
-    msgEl.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    toolbar.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
     if (this.plugin.settings?.showMessageTimestamps !== true) {
       return;
     }
 
-    const timestampEl = msgEl.createDiv({ cls: 'claudian-message-timestamp' });
+    const timestampEl = toolbar.createDiv({ cls: 'claudian-message-timestamp' });
     const timestamp = new Date(timestampMs);
     const label = timestamp.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
+      hourCycle: 'h23',
     });
     timestampEl.setText(label);
-    timestampEl.setAttribute('aria-label', timestamp.toLocaleString());
+    timestampEl.setAttribute('aria-label', timestamp.toLocaleString(undefined, { hourCycle: 'h23' }));
   }
 
   private applyTocTitle(msgEl: HTMLElement, text: string): void {
@@ -223,7 +226,7 @@ export class MessageRenderer {
       }
     }
 
-    this.appendMessageTimestamp(msgEl, msg.timestamp);
+    this.appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
     this.scrollToBottom();
     return msgEl;
   }
@@ -263,7 +266,7 @@ export class MessageRenderer {
     if (textToShow) {
       this.addUserCopyButton(msgEl, textToShow);
     }
-    this.appendMessageTimestamp(msgEl, msg.timestamp);
+    this.appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
   }
 
   removeMessage(messageId: string): void {
@@ -361,9 +364,6 @@ export class MessageRenderer {
         if (this.rewindCallback && this.isRewindEligible(allMessages, index)) {
           this.addRewindButton(msgEl, msg.id);
         }
-        if (this.forkCallback && this.isForkEligible(allMessages, index)) {
-          this.addForkButton(msgEl, msg.id);
-        }
       }
     } else if (msg.role === 'assistant') {
       const hadLegacyInterruptIndicator = this.renderAssistantContent(msg, contentEl);
@@ -372,7 +372,84 @@ export class MessageRenderer {
       }
     }
 
-    this.appendMessageTimestamp(msgEl, msg.timestamp);
+    this.appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
+    const next = index === undefined ? undefined : allMessages?.[index + 1];
+    if (msg.role === 'assistant' && (msg.durationSeconds !== undefined || next?.role !== 'assistant')) {
+      this.finalizeResponse(msg, allMessages ?? [msg], !next?.isInterrupt);
+    }
+  }
+
+  /** Reparents completed output without replacing live tool or Markdown elements. */
+  finalizeResponse(msg: ChatMessage, messages: ChatMessage[], collapse = true): void {
+    const msgEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
+    const contentEl = msgEl?.querySelector<HTMLElement>('.claudian-message-content');
+    if (!msgEl || !contentEl || msgEl.querySelector('.claudian-work-header')) return;
+
+    const blocks = msg.contentBlocks?.length
+      ? msg.contentBlocks
+      : [{ type: 'text' as const, content: msg.content }];
+    let finalStart = blocks.length;
+    while (finalStart > 0 && ['text', 'citations'].includes(blocks[finalStart - 1].type)) finalStart--;
+    const finalAnswer = stripLegacyInterruptIndicator(blocks.slice(finalStart)
+      .flatMap(block => block.type === 'text' ? [block.content] : []).join('\n\n'));
+    const finalText = finalAnswer.content;
+    const canCollapse = collapse && !msg.isInterrupt && !finalAnswer.interrupted && finalText.trim().length > 0
+      && !blocks.some(block => block.type === 'context_compacted');
+
+    if (canCollapse) {
+      const end = messages.indexOf(msg);
+      let start = end;
+      while (start > 0 && messages[start - 1].role === 'assistant'
+        && messages[start - 1].durationSeconds === undefined
+        && !messages[start - 1].isInterrupt
+        && !messages[start - 1].contentBlocks?.some(block => block.type === 'context_compacted')) start--;
+      const earlierEls = messages.slice(start, end).flatMap(message => {
+        const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
+        return el ? [el] : [];
+      });
+      const children = Array.from(contentEl.children) as HTMLElement[];
+      const finalBlockCount = blocks.slice(finalStart).filter(block => block.type === 'citations'
+        || (block.type === 'text' && stripLegacyInterruptIndicator(block.content).content.trim())).length;
+      const answerEls = new Set(children.filter(child => child.classList.contains('claudian-text-block')
+        || child.classList.contains('claudian-citations')).slice(-finalBlockCount));
+      // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
+      const workEls = children.filter(child => !answerEls.has(child));
+      if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
+        const seconds = Math.max(0, Math.floor(msg.durationSeconds ?? 0));
+        const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        const wrapper = contentEl.createDiv({ cls: 'claudian-work' });
+        contentEl.insertBefore(wrapper, contentEl.firstChild);
+        const historyId = `claudian-work-history-${MessageRenderer.nextHistoryId++}`;
+        const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${duration}`;
+        const header = wrapper.createEl('button', {
+          cls: 'claudian-work-header',
+          text: label,
+          attr: { type: 'button', 'aria-label': label, 'aria-expanded': 'false', 'aria-controls': historyId },
+        });
+        const history = wrapper.createDiv({ cls: 'claudian-work-history', attr: { id: historyId } });
+        history.hidden = true;
+        header.addEventListener('click', () => {
+          history.hidden = !history.hidden;
+          header.setAttribute('aria-expanded', String(!history.hidden));
+        });
+        for (const el of [...earlierEls, ...workEls]) history.appendChild(el);
+      }
+    }
+
+    // The response toolbar copies the final answer, leaving per-block copy inside history.
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    toolbar.empty();
+    for (const child of Array.from(contentEl.children)) {
+      if (child.classList.contains('claudian-text-block')) {
+        child.querySelector('.claudian-text-copy-btn')?.remove();
+      }
+    }
+    const copyText = canCollapse ? finalText : stripLegacyInterruptIndicator(
+      blocks.filter(block => block.type === 'text').map(block => block.content).join('\n\n') || msg.content,
+    ).content;
+    if (copyText.trim()) this.addTextCopyButton(toolbar, copyText);
+    if (this.forkCallback && msg.assistantMessageId) this.addForkButton(msgEl, msg.id);
+    this.appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
   }
 
   private hasVisibleContent(msg: ChatMessage): boolean {
@@ -398,12 +475,6 @@ export class MessageRenderer {
     if (!allMessages || index === undefined) return false;
     const ctx = findRewindContext(allMessages, index);
     return ctx.hasResponse;
-  }
-
-  private isForkEligible(allMessages?: ChatMessage[], index?: number): boolean {
-    if (!allMessages || index === undefined) return false;
-    const ctx = findRewindContext(allMessages, index);
-    return !!ctx.prevAssistantUuid && ctx.hasResponse;
   }
 
   private renderInterruptMessage(): void {
@@ -497,17 +568,6 @@ export class MessageRenderer {
           this.renderToolCall(contentEl, toolCall, msg);
         }
       }
-    }
-
-    // Render response duration footer (skip when message contains a compaction boundary)
-    const hasCompactBoundary = msg.contentBlocks?.some(b => b.type === 'context_compacted');
-    if (msg.durationSeconds && msg.durationSeconds > 0 && !hasCompactBoundary) {
-      const flavorWord = msg.durationFlavorWord || 'Baked';
-      const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
-      footerEl.createSpan({
-        text: `* ${flavorWord} for ${formatDurationMmSs(msg.durationSeconds)}`,
-        cls: 'claudian-baked-duration',
-      });
     }
 
     return hadLegacyInterruptIndicator;
@@ -856,42 +916,19 @@ export class MessageRenderer {
   }
 
   refreshActionButtons(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    if (!msg.userMessageId) return;
-    const canRewind = this.isRewindEligible(allMessages, index);
-    const canFork = this.isForkEligible(allMessages, index);
-    if (!canRewind && !canFork) return;
+    if (!msg.userMessageId || !this.isRewindEligible(allMessages, index)) return;
     const msgEl = this.liveMessageEls.get(msg.id);
     if (!msgEl) return;
-
-    if (canRewind && this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn')) {
+    if (this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn')) {
       this.addRewindButton(msgEl, msg.id);
     }
-    if (canFork && this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn')) {
-      this.addForkButton(msgEl, msg.id);
-    }
-    this.cleanupLiveMessageEl(msg.id, msgEl, { canRewind, canFork });
-  }
-
-  private cleanupLiveMessageEl(
-    msgId: string,
-    msgEl: HTMLElement,
-    expectedActions: { canRewind: boolean; canFork: boolean },
-  ): void {
-    const needsRewind = expectedActions.canRewind
-      && this.rewindCallback
-      && !msgEl.querySelector('.claudian-message-rewind-btn');
-    const needsFork = expectedActions.canFork
-      && this.forkCallback
-      && !msgEl.querySelector('.claudian-message-fork-btn');
-    if (!needsRewind && !needsFork) {
-      this.liveMessageEls.delete(msgId);
-    }
+    this.liveMessageEls.delete(msg.id);
   }
 
   private getOrCreateActionsToolbar(msgEl: HTMLElement): HTMLElement {
-    const existing = msgEl.querySelector<HTMLElement>('.claudian-user-msg-actions');
+    const existing = Array.from(msgEl.children).find(child => child.classList.contains('claudian-user-msg-actions')) as HTMLElement | undefined;
     if (existing) return existing;
-    return msgEl.createDiv({ cls: 'claudian-user-msg-actions' });
+    return msgEl.createDiv({ cls: 'claudian-user-msg-actions claudian-message-actions' });
   }
 
   private addUserCopyButton(msgEl: HTMLElement, content: string): void {
@@ -987,7 +1024,6 @@ export class MessageRenderer {
       cls: 'claudian-message-fork-btn',
       attr: { type: 'button' },
     });
-    if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     setIcon(btn, 'git-fork');
     btn.setAttribute('aria-label', t('chat.fork.ariaLabel'));
     btn.addEventListener('click', (e) => {

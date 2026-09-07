@@ -49,6 +49,65 @@ describe('PiHistoryStore', () => {
     });
   });
 
+  it('restores turn duration through tool calls using the final entry timestamp', () => {
+    const content = [
+      { type: 'message', id: 'u1', timestamp: '2026-09-07T10:00:00.010Z',
+        message: { role: 'user', timestamp: 1788775200000, content: 'Inspect' } },
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: '2026-09-07T10:00:04Z',
+        message: { role: 'assistant', timestamp: 1788775200010, stopReason: 'toolUse',
+          content: [{ type: 'toolCall', id: 'read', name: 'read', arguments: { path: 'README.md' } }] } },
+      { type: 'message', id: 'tr1', parentId: 'a1', timestamp: '2026-09-07T10:00:05Z',
+        message: { role: 'toolResult', toolCallId: 'read', content: [{ type: 'text', text: 'Details' }] } },
+      { type: 'message', id: 'a2', parentId: 'tr1', timestamp: '2026-09-07T10:01:05.900Z',
+        message: { role: 'assistant', timestamp: 1788775205000, stopReason: 'stop',
+          content: [{ type: 'text', text: 'Complete.' }] } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    expect(parsePiSessionContent(content)).toMatchObject([
+      { role: 'user', content: 'Inspect' },
+      { role: 'assistant', assistantMessageId: 'a2', content: 'Complete.', durationSeconds: 65, completedAt: Date.parse('2026-09-07T10:01:05.900Z') },
+    ]);
+    expect(parsePiSessionContent(content, { leafEntryId: 'a1' })[1].durationSeconds).toBeUndefined();
+  });
+
+  it.each([
+    ['stop', '2026-09-07T10:00:00.900Z', 0],
+    ['length', '2026-09-07T10:00:05Z', 5],
+    ['aborted', '2026-09-07T10:00:05Z', undefined],
+    ['error', '2026-09-07T10:00:05Z', undefined],
+    ['toolUse', '2026-09-07T10:00:05Z', undefined],
+    ['stop', undefined, undefined],
+    ['stop', 'invalid', undefined],
+    ['stop', '2026-09-07T09:59:59Z', undefined],
+  ])('restores only completed durations with valid timing (%s, %s)', (stopReason, timestamp, expected) => {
+    const content = [
+      { id: 'u1', type: 'message', timestamp: '2026-09-07T10:00:00Z',
+        message: { role: 'user', content: 'Inspect' } },
+      { id: 'a1', parentId: 'u1', type: 'message', timestamp,
+        message: { role: 'assistant', timestamp: 1788775200010, stopReason, content: 'Reply' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    expect(parsePiSessionContent(content)[1].durationSeconds).toBe(expected);
+  });
+
+  it('starts timing again at the next user prompt', () => {
+    const content = [
+      { id: 'u1', type: 'message', timestamp: '2026-09-07T10:00:00Z',
+        message: { role: 'user', content: 'First' } },
+      { id: 'a1', parentId: 'u1', type: 'message', timestamp: '2026-09-07T10:00:05Z',
+        message: { role: 'assistant', stopReason: 'stop', content: 'First reply' } },
+      { id: 'u2', parentId: 'a1', type: 'message', timestamp: '2026-09-07T12:00:00Z',
+        message: { role: 'user', content: 'Second' } },
+      { id: 'a2', parentId: 'u2', type: 'message', timestamp: '2026-09-07T12:00:03Z',
+        message: { role: 'assistant', stopReason: 'stop', content: 'Second reply' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    expect(parsePiSessionContent(content).filter(message => message.role === 'assistant')).toMatchObject([
+      { content: 'First reply', durationSeconds: 5 },
+      { content: 'Second reply', durationSeconds: 3 },
+    ]);
+  });
+
   it('preserves hidden XML context wrappers in raw user content', () => {
     const content = [
       JSON.stringify({

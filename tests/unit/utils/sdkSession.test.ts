@@ -1219,10 +1219,10 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages('/Users/test/vault', 'session-subsecond-duration');
 
-      expect(result.messages[1].durationSeconds).toBeUndefined();
+      expect(result.messages[1].durationSeconds).toBe(0);
     });
 
-    it('does not infer response duration when native metadata is absent', async () => {
+    it('infers response duration from transcript timestamps when native metadata is absent', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Inspect"}}',
@@ -1232,7 +1232,43 @@ describe('sdkSession', () => {
       const result = await loadSDKSessionMessages('/Users/test/vault', 'session-no-duration');
 
       expect(result.messages).toHaveLength(2);
-      expect(result.messages[1].durationSeconds).toBeUndefined();
+      expect(result.messages[1].durationSeconds).toBe(7);
+    });
+
+    it('infers each turn through its last assistant event without counting idle time between prompts', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Inspect"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:02Z","message":{"content":[{"type":"tool_use","id":"read","name":"Read","input":{"file_path":"README.md"}}]}}',
+        '{"type":"user","uuid":"tool-result","timestamp":"2024-01-15T10:00:03Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"read","content":"Details"}]}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:01:05Z","message":{"content":"Complete."}}',
+        '{"type":"user","uuid":"u2","timestamp":"2024-01-15T12:00:00Z","message":{"content":"Next"}}',
+        '{"type":"assistant","uuid":"a3","timestamp":"2024-01-15T12:00:09Z","message":{"content":"Done."}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-timing');
+
+      expect(result.messages.filter(message => message.role === 'assistant')).toMatchObject([
+        { content: 'Complete.', durationSeconds: 65, completedAt: Date.parse('2024-01-15T10:01:05Z') },
+        { content: 'Done.', durationSeconds: 9 },
+      ]);
+    });
+
+    it.each([
+      [undefined, '2024-01-15T10:00:07Z'],
+      ['2024-01-15T10:00:00Z', undefined],
+      ['invalid', '2024-01-15T10:00:07Z'],
+      ['2024-01-15T10:00:07Z', '2024-01-15T10:00:00Z'],
+    ])('leaves duration unknown for unusable transcript timestamps (%s, %s)', async (start, end) => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        JSON.stringify({ type: 'user', uuid: 'u1', timestamp: start, message: { content: 'Inspect' } }),
+        JSON.stringify({ type: 'assistant', uuid: 'a1', timestamp: end, message: { content: 'Complete.' } }),
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-invalid-timing');
+
+      expect(result.messages.find(message => message.role === 'assistant')?.durationSeconds).toBeUndefined();
     });
 
     it('does not add response duration to assistant output from an interrupted turn', async () => {

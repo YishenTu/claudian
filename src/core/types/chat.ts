@@ -104,6 +104,8 @@ export interface ChatMessage {
   /** Display-only content (e.g., "/tests" when content is the expanded prompt). */
   displayContent?: string;
   timestamp: number;
+  /** Assistant completion time; absent until the response finishes. */
+  completedAt?: number;
   toolCalls?: ToolCallInfo[];
   contentBlocks?: ContentBlock[];
   linkedContentPath?: string;

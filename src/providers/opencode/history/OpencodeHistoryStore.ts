@@ -200,6 +200,7 @@ function mapStoredMessage(
       .join(''),
     contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
     durationSeconds,
+    completedAt: durationSeconds !== undefined ? completedAt ?? undefined : undefined,
     id,
     role: 'assistant',
     timestamp: createdAt,
@@ -224,6 +225,7 @@ function mergeAdjacentAssistantMessages(messages: ChatMessage[]): ChatMessage[] 
       previous.assistantMessageId = message.assistantMessageId ?? previous.assistantMessageId;
       previous.durationFlavorWord = message.durationFlavorWord ?? previous.durationFlavorWord;
       previous.durationSeconds = mergeAssistantDurationSeconds(previous, message);
+      previous.completedAt = message.completedAt;
       previous.toolCalls = mergeOptionalArrays(previous.toolCalls, message.toolCalls);
       previous.contentBlocks = mergeOptionalArrays(previous.contentBlocks, message.contentBlocks);
       continue;

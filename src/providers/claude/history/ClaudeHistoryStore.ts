@@ -150,6 +150,8 @@ export async function loadSDKSessionMessages(
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
+  let turnStartedAt: number | undefined;
+  let lastAssistantAt: number | undefined;
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
   const flushPendingAssistant = (includeDuration: boolean): void => {
@@ -157,12 +159,19 @@ export async function loadSDKSessionMessages(
       const nativeDuration = pendingAssistant.assistantMessageId
         ? nativeTurnDurations.get(pendingAssistant.assistantMessageId)
         : undefined;
-      if (includeDuration && nativeDuration !== undefined && nativeDuration > 0) {
-        pendingAssistant.durationSeconds = nativeDuration;
+      const inferredDuration = turnStartedAt !== undefined && lastAssistantAt !== undefined
+        && lastAssistantAt >= turnStartedAt
+        ? Math.floor((lastAssistantAt - turnStartedAt) / 1_000)
+        : undefined;
+      if (includeDuration) {
+        pendingAssistant.durationSeconds = nativeDuration ?? inferredDuration;
+        pendingAssistant.completedAt = lastAssistantAt;
       }
       chatMessages.push(pendingAssistant);
     }
     pendingAssistant = null;
+    lastAssistantAt = undefined;
+    turnStartedAt = undefined;
   };
 
   // Merge consecutive assistant messages until an actual user message appears
@@ -182,13 +191,19 @@ export async function loadSDKSessionMessages(
       if (isCompactBoundary) {
         flushPendingAssistant(true);
         chatMessages.push(chatMsg);
-      } else if (pendingAssistant) {
-        mergeAssistantMessage(pendingAssistant, chatMsg);
       } else {
-        pendingAssistant = chatMsg;
+        if (pendingAssistant) {
+          mergeAssistantMessage(pendingAssistant, chatMsg);
+        } else {
+          pendingAssistant = chatMsg;
+        }
+        lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
       }
     } else {
       flushPendingAssistant(!chatMsg.isInterrupt);
+      if (!chatMsg.isInterrupt && !chatMsg.isRebuiltContext) {
+        turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
+      }
       chatMessages.push(chatMsg);
     }
   }
@@ -254,6 +269,12 @@ export async function loadSDKSessionMessages(
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
+}
+
+function parseNativeTimestamp(value: string | undefined): number | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 function collectNativeTurnDurations(

@@ -204,13 +204,14 @@ describe('MessageRenderer', () => {
     });
 
     const msgEl = messagesEl.children[0];
-    const timestampEl = msgEl.children.find((child: any) => child.hasClass('claudian-message-timestamp'));
+    const timestampEl = msgEl.querySelector('.claudian-message-timestamp');
     expect(timestampEl).toBeTruthy();
     expect(timestampEl.textContent).toBe(new Date(timestamp).toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
+      hourCycle: 'h23',
     }));
-    expect(timestampEl.getAttribute('aria-label')).toBe(new Date(timestamp).toLocaleString());
+    expect(timestampEl.getAttribute('aria-label')).toBe(new Date(timestamp).toLocaleString(undefined, { hourCycle: 'h23' }));
   });
 
   it('does not render timestamps when the setting is disabled', () => {
@@ -423,44 +424,6 @@ describe('MessageRenderer', () => {
     renderer.renderStoredMessage(msg);
 
     expect(renderImagesSpy).toHaveBeenCalledWith(messagesEl, images);
-  });
-
-  it('adds native action buttons for eligible stored user messages', async () => {
-    const messagesEl = createMockEl();
-    const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const forkCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, forkCallback, mockCapabilities());
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-    const allMessages: ChatMessage[] = [
-      { id: 'a1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
-      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, userMessageId: 'user-u' },
-      { id: 'a2', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'resp-a' },
-    ];
-
-    renderer.renderStoredMessage(allMessages[1], allMessages, 1);
-
-    const copyButton = messagesEl.querySelector('.claudian-user-msg-copy-btn')!;
-    const rewindButton = messagesEl.querySelector('.claudian-message-rewind-btn')!;
-    const forkButton = messagesEl.querySelector('.claudian-message-fork-btn')!;
-    const buttons = [copyButton, rewindButton, forkButton];
-
-    expect(buttons.map(button => button.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
-    expect(buttons.map(button => button.getAttribute('type'))).toEqual([
-      'button',
-      'button',
-      'button',
-    ]);
-    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
-      'Copy message',
-      'Rewind to here',
-      'Fork conversation',
-    ]);
-
-    forkButton.click();
-    await Promise.resolve();
-
-    expect(forkCallback).toHaveBeenCalledWith('u1');
   });
 
   it('adds rewind but not fork for a completed first user message', () => {
@@ -827,84 +790,6 @@ describe('MessageRenderer', () => {
       expect.objectContaining({ id: 'patch-1', name: TOOL_APPLY_PATCH }),
       { initiallyExpanded: true },
     );
-  });
-
-  it('renders response duration footer when durationSeconds is present', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-    const msg: ChatMessage = {
-      id: 'm1',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      contentBlocks: [
-        { type: 'text', content: 'Response text' } as any,
-      ],
-      durationSeconds: 65,
-      durationFlavorWord: 'Baked',
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    // Find the footer element
-    const msgEl = messagesEl.children[0];
-    const contentEl = msgEl.children[0]; // claudian-message-content
-    const footerEl = contentEl.children.find((c: any) => c.hasClass('claudian-response-footer'));
-    expect(footerEl).toBeDefined();
-    const durationSpan = footerEl!.children[0];
-    expect(durationSpan.textContent).toContain('Baked');
-    expect(durationSpan.textContent).toContain('1m 5s');
-  });
-
-  it('does not render footer when durationSeconds is 0', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-    const msg: ChatMessage = {
-      id: 'm1',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      contentBlocks: [
-        { type: 'text', content: 'Response' } as any,
-      ],
-      durationSeconds: 0,
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    const msgEl = messagesEl.children[0];
-    const contentEl = msgEl.children[0];
-    const footerEl = contentEl.children.find((c: any) => c.hasClass('claudian-response-footer'));
-    expect(footerEl).toBeUndefined();
-  });
-
-  it('uses default flavor word "Baked" when durationFlavorWord is not set', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-    const msg: ChatMessage = {
-      id: 'm1',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      contentBlocks: [
-        { type: 'text', content: 'Response' } as any,
-      ],
-      durationSeconds: 30,
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    const msgEl = messagesEl.children[0];
-    const contentEl = msgEl.children[0];
-    const footerEl = contentEl.children.find((c: any) => c.hasClass('claudian-response-footer'));
-    expect(footerEl).toBeDefined();
-    expect(footerEl!.children[0].textContent).toContain('Baked');
   });
 
   it('renders fallback content for old conversations without contentBlocks', () => {

@@ -435,6 +435,7 @@ function mapPiSessionEntries(
   syntheticIdNamespace?: string,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
+  let turnStartedAt: number | undefined;
 
   for (const entry of entries) {
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
@@ -444,6 +445,23 @@ function mapPiSessionEntries(
         mergeAssistantContinuation(previous, mapped);
       } else {
         messages.push(mapped);
+      }
+
+      const nativeMessage = entry.message ?? entry.raw;
+      if (mapped.role === 'user') {
+        turnStartedAt = parseTimestamp(nativeMessage.timestamp) ?? parseTimestamp(entry.raw.timestamp);
+      } else if (isBoundaryMessage(mapped)) {
+        turnStartedAt = undefined;
+      } else if (isAssistantMessageEntry(entry)) {
+        const stopReason = getString(nativeMessage.stopReason);
+        // Pi's inner assistant timestamp is generation start; the entry is written on completion.
+        const completedAt = parseTimestamp(entry.raw.timestamp);
+        if ((stopReason === 'stop' || stopReason === 'length')
+          && turnStartedAt !== undefined && completedAt !== undefined && completedAt >= turnStartedAt) {
+          messages[messages.length - 1].completedAt = completedAt;
+          messages[messages.length - 1].durationSeconds = Math.floor((completedAt - turnStartedAt) / 1_000);
+        }
+        if (stopReason && stopReason !== 'toolUse') turnStartedAt = undefined;
       }
     }
   }
@@ -837,6 +855,10 @@ function fileExists(filePath: string): boolean {
 }
 
 function getTimestamp(value: unknown): number {
+  return parseTimestamp(value) ?? Date.now();
+}
+
+function parseTimestamp(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
@@ -846,7 +868,7 @@ function getTimestamp(value: unknown): number {
       return parsed;
     }
   }
-  return Date.now();
+  return undefined;
 }
 
 function getRecord(value: unknown): Record<string, unknown> | null {

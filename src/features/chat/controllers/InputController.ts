@@ -30,11 +30,9 @@ import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { extractUserDisplayContent } from '../../../utils/context';
-import { formatDurationMmSs } from '../../../utils/date';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import type { FeatureHost } from '../../FeatureHost';
-import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -534,6 +532,18 @@ export class InputController {
         assistantMsg,
         dynamicSystemPromptSections,
       ));
+      if (result.status === 'completed') {
+        const checkpoint = result.nativeAssistantMessageId ?? result.nativeCheckpointId;
+        const finalAssistant = this.activeStreamingAssistantMessage ?? assistantMsg;
+        finalAssistant.completedAt = Date.now();
+        if (checkpoint) {
+          // The execution binding points to the original projection, before native message splits.
+          if (finalAssistant !== assistantMsg && assistantMsg.assistantMessageId === checkpoint) {
+            delete assistantMsg.assistantMessageId;
+          }
+          finalAssistant.assistantMessageId = checkpoint;
+        }
+      }
       didEnqueueToSdk = result.accepted;
       planCompleted = result.planCompleted;
       shouldReportReviewableSettlement = result.status === 'completed'
@@ -631,26 +641,14 @@ export class InputController {
             const durationSeconds = state.responseStartTime
               ? Math.floor((performance.now() - state.responseStartTime) / 1000)
               : 0;
-            if (durationSeconds > 0) {
-              const flavorWord =
-                COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
-              finalAssistantMsg.durationSeconds = durationSeconds;
-              finalAssistantMsg.durationFlavorWord = flavorWord;
-              // Add footer to live message in DOM
-              if (state.currentContentEl) {
-                const footerEl = state.currentContentEl.createDiv({ cls: 'claudian-response-footer' });
-                footerEl.createSpan({
-                  text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
-                  cls: 'claudian-baked-duration',
-                });
-              }
-            }
+            finalAssistantMsg.durationSeconds = durationSeconds;
           }
 
           state.currentContentEl = null;
 
           await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
           await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
+          renderer.finalizeResponse(finalAssistantMsg, state.messages, !didCancelThisTurn && !hadExecutionError);
           this.deps.getSubagentManager().resetStreamingState();
 
           // Auto-hide completed todo panel on response end

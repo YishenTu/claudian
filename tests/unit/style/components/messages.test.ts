@@ -53,3 +53,27 @@ describe('Long conversation message styles', () => {
     });
   });
 });
+
+
+describe('Message action row visibility', () => {
+  it.each(['user', 'assistant', 'images'])('keeps the %s row hidden in its hover area at rest', (kind) => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
+    document.head.appendChild(style);
+    const message = document.createElement('div');
+    message.className = kind === 'images' ? 'claudian-message-images' : `claudian-message claudian-message-${kind}`;
+    const actions = document.createElement('div');
+    actions.className = 'claudian-message-actions claudian-user-msg-actions';
+    actions.innerHTML = '<button type="button">Copy message</button>';
+    message.appendChild(actions);
+    document.body.appendChild(message);
+    try {
+      const computed = window.getComputedStyle(actions);
+      expect(computed.opacity).toBe('0');
+      expect(computed.display).toBe('flex');
+    } finally {
+      message.remove();
+      style.remove();
+    }
+  });
+});

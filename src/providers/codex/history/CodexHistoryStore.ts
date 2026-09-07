@@ -410,6 +410,7 @@ interface TurnAccumulator {
   contentBlocks: ContentBlock[];
   interrupted: boolean;
   timestamp: number;
+  completedAt?: number;
 }
 
 function newTurn(timestamp = 0): TurnAccumulator {
@@ -437,6 +438,7 @@ function flushTurn(turn: TurnAccumulator, messages: ChatMessage[], msgIndex: num
     role: 'assistant',
     content: turn.assistantText,
     timestamp: turn.timestamp || Date.now(),
+    completedAt: turn.completedAt,
     toolCalls: turn.toolCalls.length > 0 ? turn.toolCalls : undefined,
     contentBlocks: turn.contentBlocks.length > 0 ? turn.contentBlocks : undefined,
   };
@@ -1430,10 +1432,11 @@ function flushBubbleTurnMessages(
     lastMsg.durationSeconds = Math.round(durationMs / 1000);
   }
 
-  if (turn.serverTurnId && turn.completed && assistantMessages.length > 0) {
+  if (turn.completed && assistantMessages.length > 0) {
     const lastNonInterrupt = [...assistantMessages].reverse().find(m => !m.isInterrupt);
     if (lastNonInterrupt) {
-      lastNonInterrupt.assistantMessageId = turn.serverTurnId;
+      lastNonInterrupt.completedAt = turn.completedAt || undefined;
+      if (turn.serverTurnId) lastNonInterrupt.assistantMessageId = turn.serverTurnId;
     }
   }
 
@@ -1743,6 +1746,7 @@ function parseLegacySession(records: ParsedSessionRecord[]): ChatMessage[] {
           break;
 
         case 'turn.completed':
+          turn.completedAt = parsed.timestamp || undefined;
           msgIndex = flushTurn(turn, messages, msgIndex);
           turn = newTurn();
           break;
@@ -2018,7 +2022,11 @@ function processLegacyEventInModernContext(
     case 'turn.completed': {
       if (ctx.currentTurnId) {
         const turn = ctx.turns.get(ctx.currentTurnId);
-        if (turn) closeAssistantBubble(turn);
+        if (turn) {
+          turn.completed = true;
+          turn.completedAt = timestamp;
+          closeAssistantBubble(turn);
+        }
       }
       ctx.currentTurnId = null;
       break;
