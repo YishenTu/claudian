@@ -151,6 +151,29 @@ describe('ClaudianSettingTab display settings', () => {
     mockToggleChanges.clear();
   });
 
+  it('refreshes timestamps in every open view after the setting is saved', async () => {
+    const { tab, plugin } = createTab(true);
+    const firstView = { refreshMessageTimestamps: jest.fn() };
+    const secondView = { refreshMessageTimestamps: jest.fn() };
+    plugin.getAllViews.mockReturnValue([firstView, secondView]);
+    let finishSave!: () => void;
+    plugin.mutateSettings.mockImplementation(async (mutation: (settings: typeof plugin.settings) => void) => {
+      mutation(plugin.settings);
+      await new Promise<void>(resolve => { finishSave = resolve; });
+    });
+    (tab as any).renderGeneralTab(createContainer());
+
+    const change = mockToggleChanges.get(t('settings.showMessageTimestamps.name'))!(true);
+    expect(firstView.refreshMessageTimestamps).not.toHaveBeenCalled();
+    expect(secondView.refreshMessageTimestamps).not.toHaveBeenCalled();
+    finishSave();
+    await change;
+
+    expect(plugin.settings.showMessageTimestamps).toBe(true);
+    expect(firstView.refreshMessageTimestamps).toHaveBeenCalledWith();
+    expect(secondView.refreshMessageTimestamps).toHaveBeenCalledWith();
+  });
+
   it('renders the dual-pane position only while dual-pane mode is enabled', () => {
     const enabled = createTab(true);
     (enabled.tab as any).renderGeneralTab(createContainer());

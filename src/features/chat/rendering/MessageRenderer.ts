@@ -139,18 +139,21 @@ export class MessageRenderer {
     return msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
   }
 
-  private shouldShowMessageTimestamps(): boolean {
-    return this.plugin.settings?.showMessageTimestamps === true;
+  refreshMessageTimestamps(): void {
+    for (const msgEl of this.messagesEl.querySelectorAll<HTMLElement>('[data-message-timestamp]')) {
+      this.appendMessageTimestamp(msgEl, Number(msgEl.getAttribute('data-message-timestamp')));
+    }
   }
 
-  private appendMessageTimestamp(msgEl: HTMLElement, msg: ChatMessage): void {
-    if (!this.shouldShowMessageTimestamps()) {
+  private appendMessageTimestamp(msgEl: HTMLElement, timestampMs: number): void {
+    msgEl.setAttribute('data-message-timestamp', String(timestampMs));
+    msgEl.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
+    if (this.plugin.settings?.showMessageTimestamps !== true) {
       return;
     }
 
-    msgEl.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
     const timestampEl = msgEl.createDiv({ cls: 'claudian-message-timestamp' });
-    const timestamp = new Date(msg.timestamp);
+    const timestamp = new Date(timestampMs);
     const label = timestamp.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
@@ -179,7 +182,10 @@ export class MessageRenderer {
   addMessage(msg: ChatMessage): HTMLElement {
     // Render images above message bubble for user messages
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
-      this.renderMessageImages(this.messagesEl, msg.images);
+      const imagesEl = this.renderMessageImages(this.messagesEl, msg.images);
+      if (!this.getUserMessageTextToShow(msg)) {
+        this.appendMessageTimestamp(imagesEl, msg.timestamp);
+      }
     }
 
     // Skip empty bubble for image-only messages
@@ -215,7 +221,7 @@ export class MessageRenderer {
       }
     }
 
-    this.appendMessageTimestamp(msgEl, msg);
+    this.appendMessageTimestamp(msgEl, msg.timestamp);
     this.scrollToBottom();
     return msgEl;
   }
@@ -255,7 +261,7 @@ export class MessageRenderer {
     if (textToShow) {
       this.addUserCopyButton(msgEl, textToShow);
     }
-    this.appendMessageTimestamp(msgEl, msg);
+    this.appendMessageTimestamp(msgEl, msg.timestamp);
   }
 
   removeMessage(messageId: string): void {
@@ -314,7 +320,10 @@ export class MessageRenderer {
 
     // Render images above bubble for user messages
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
-      this.renderMessageImages(this.messagesEl, msg.images);
+      const imagesEl = this.renderMessageImages(this.messagesEl, msg.images);
+      if (!this.getUserMessageTextToShow(msg)) {
+        this.appendMessageTimestamp(imagesEl, msg.timestamp);
+      }
     }
 
     // Skip empty bubble for image-only messages
@@ -361,7 +370,7 @@ export class MessageRenderer {
       }
     }
 
-    this.appendMessageTimestamp(msgEl, msg);
+    this.appendMessageTimestamp(msgEl, msg.timestamp);
   }
 
   private hasVisibleContent(msg: ChatMessage): boolean {
@@ -695,7 +704,7 @@ export class MessageRenderer {
   /**
    * Renders image attachments above a message.
    */
-  renderMessageImages(containerEl: HTMLElement, images: ImageAttachment[]): void {
+  renderMessageImages(containerEl: HTMLElement, images: ImageAttachment[]): HTMLElement {
     const imagesEl = containerEl.createDiv({ cls: 'claudian-message-images' });
 
     for (const image of images) {
@@ -713,6 +722,7 @@ export class MessageRenderer {
         void this.showFullImage(image);
       });
     }
+    return imagesEl;
   }
 
   /**

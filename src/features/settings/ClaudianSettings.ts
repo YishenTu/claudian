@@ -371,6 +371,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.showMessageTimestamps = value;
             });
+            for (const view of this.plugin.getAllViews()) {
+              view.refreshMessageTimestamps();
+            }
           })
       );
 

@@ -381,7 +381,7 @@ describe('MessageRenderer', () => {
   it('skips empty user message bubble (image-only)', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    jest.spyOn(renderer, 'renderMessageImages');
 
     const msg: ChatMessage = {
       id: 'u1',
@@ -406,7 +406,7 @@ describe('MessageRenderer', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    const renderImagesSpy = jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    const renderImagesSpy = jest.spyOn(renderer, 'renderMessageImages');
 
     const images: ImageAttachment[] = [
       { id: 'img-1', name: 'photo.png', mediaType: 'image/png', data: 'base64data', size: 200, source: 'file' },
@@ -1198,7 +1198,7 @@ describe('MessageRenderer', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    const renderImagesSpy = jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    const renderImagesSpy = jest.spyOn(renderer, 'renderMessageImages');
 
     const images: ImageAttachment[] = [
       { id: 'img-1', name: 'photo.png', mediaType: 'image/png', data: 'base64data', size: 200, source: 'file' },
@@ -1220,7 +1220,7 @@ describe('MessageRenderer', () => {
   it('addMessage skips empty bubble for image-only user messages', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    jest.spyOn(renderer, 'renderMessageImages');
     const scrollSpy = jest.spyOn(renderer, 'scrollToBottom').mockImplementation(() => {});
 
     const msg: ChatMessage = {
@@ -1573,7 +1573,7 @@ describe('MessageRenderer', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    jest.spyOn(renderer, 'renderMessageImages');
 
     const messages: ChatMessage[] = [
       { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
@@ -1611,7 +1611,7 @@ describe('MessageRenderer', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+    jest.spyOn(renderer, 'renderMessageImages');
 
     const messages: ChatMessage[] = [
       { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },

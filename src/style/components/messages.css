@@ -206,6 +206,12 @@
   text-align: end;
 }
 
+.claudian-message-images .claudian-message-timestamp {
+  flex-basis: 100%;
+  margin-top: 0;
+  text-align: end;
+}
+
 /* Response duration footer - styled as another line of content */
 .claudian-response-footer {
   margin-top: 8px;
