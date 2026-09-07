@@ -10,6 +10,7 @@ async function minifyProductionBundle(source) {
       // A single compression pass preserves sql.js's live CommonJS UMD export
       // while allowing ordinary variable reduction across the application bundle.
       passes: 1,
+      hoist_funs: true,
       toplevel: true,
     },
     ecma: 2022,
