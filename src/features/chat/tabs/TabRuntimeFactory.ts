@@ -103,12 +103,12 @@ class RuntimeResourceOwner implements TabRuntimeResourceOwner {
   dispose(): Promise<readonly TabRuntimeCleanupFailure[]> {
     if (!this.disposal) {
       this.sealed = true;
-      this.disposal = this.disposeEntries();
+      this.disposal = this.#disposeEntries();
     }
     return this.disposal;
   }
 
-  private async disposeEntries(): Promise<readonly TabRuntimeCleanupFailure[]> {
+  async #disposeEntries(): Promise<readonly TabRuntimeCleanupFailure[]> {
     const failures: TabRuntimeCleanupFailure[] = [];
     const entries = this.entries.splice(0).reverse();
     for (const entry of entries) {

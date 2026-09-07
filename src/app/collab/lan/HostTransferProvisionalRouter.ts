@@ -218,7 +218,7 @@ export class HostTransferProvisionalRouter {
       }
       if (action === 'cancel') {
         const result = await receiver.coordinator.cancel(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -229,7 +229,7 @@ export class HostTransferProvisionalRouter {
       }
       if (action === 'complete') {
         const result = await receiver.coordinator.complete(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -240,7 +240,7 @@ export class HostTransferProvisionalRouter {
       }
       if (action === 'confirm') {
         const result = await receiver.coordinator.confirm(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -337,7 +337,7 @@ export class HostTransferProvisionalRouter {
     return this.receivers.delete(transferId);
   }
 
-  private writeTerminalResponse(
+  #writeTerminalResponse(
     response: ServerResponse,
     receiver: RegisteredReceiver,
     result: IncomingHostTransferTerminalResult,

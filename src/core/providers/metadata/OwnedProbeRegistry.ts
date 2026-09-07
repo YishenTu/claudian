@@ -43,7 +43,7 @@ export class OwnedProbeRegistry<TResource> {
     operation: OwnedProbeOperation<TResource, TResult>,
     callerSignal?: AbortSignal,
   ): Promise<TResult> {
-    if (this.disposed) throw this.createUnavailableError();
+    if (this.disposed) throw this.#createUnavailableError();
     throwIfAborted(callerSignal, this.abortMessage);
 
     let resolveCompletion!: () => void;
@@ -56,7 +56,7 @@ export class OwnedProbeRegistry<TResource> {
     };
     const onAbort = (): void => {
       entry.controller.abort(toAbortError(callerSignal!, this.abortMessage));
-      void this.cleanupProbe(entry);
+      void this.#cleanupProbe(entry);
     };
     callerSignal?.addEventListener('abort', onAbort, { once: true });
     this.activeProbes.add(entry);
@@ -82,7 +82,7 @@ export class OwnedProbeRegistry<TResource> {
       return result;
     } finally {
       callerSignal?.removeEventListener('abort', onAbort);
-      await this.cleanupProbe(entry);
+      await this.#cleanupProbe(entry);
       this.activeProbes.delete(entry);
       entry.resolveCompletion();
     }
@@ -91,7 +91,7 @@ export class OwnedProbeRegistry<TResource> {
   async quiesce(): Promise<void> {
     const active = [...this.activeProbes];
     for (const entry of active) entry.controller.abort();
-    await Promise.all(active.map(entry => this.cleanupProbe(entry)));
+    await Promise.all(active.map(entry => this.#cleanupProbe(entry)));
     await Promise.all(active.map(entry => entry.completion));
   }
 
@@ -102,7 +102,7 @@ export class OwnedProbeRegistry<TResource> {
     return this.disposeFlight;
   }
 
-  private cleanupProbe(entry: ActiveProbe<TResource>): Promise<void> {
+  #cleanupProbe(entry: ActiveProbe<TResource>): Promise<void> {
     if (entry.cleanupFlight) return entry.cleanupFlight;
     if (!entry.hasResource) return Promise.resolve();
     const resource = entry.resource as TResource;
@@ -114,7 +114,7 @@ export class OwnedProbeRegistry<TResource> {
     return entry.cleanupFlight;
   }
 
-  private createUnavailableError(): Error {
+  #createUnavailableError(): Error {
     return this.options.unavailableError?.()
       ?? new Error('Provider metadata probe registry is disposed.');
   }

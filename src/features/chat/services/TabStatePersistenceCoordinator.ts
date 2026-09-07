@@ -25,7 +25,7 @@ export class TabStatePersistenceCoordinator {
     const serialized = JSON.stringify(state);
     this.latestSerialized = serialized;
     this.latestState = JSON.parse(serialized) as AppTabManagerState;
-    this.cancelTimer();
+    this.#cancelTimer();
 
     if (serialized === this.acknowledgedSerialized) return;
     this.timer = this.timerHost.setTimeout(() => {
@@ -37,25 +37,25 @@ export class TabStatePersistenceCoordinator {
   }
 
   async flush(): Promise<void> {
-    this.cancelTimer();
+    this.#cancelTimer();
 
     while (
       this.latestState
       && this.latestSerialized
       && this.latestSerialized !== this.acknowledgedSerialized
     ) {
-      const activeWrite = this.writePromise ?? this.startWriteLoop();
+      const activeWrite = this.writePromise ?? this.#startWriteLoop();
       await activeWrite;
     }
   }
 
   dispose(): void {
     this.disposed = true;
-    this.cancelTimer();
+    this.#cancelTimer();
   }
 
-  private startWriteLoop(): Promise<void> {
-    const run = this.writeLatestUntilCurrent();
+  #startWriteLoop(): Promise<void> {
+    const run = this.#writeLatestUntilCurrent();
     this.writePromise = run;
     void run.then(
       () => {
@@ -68,7 +68,7 @@ export class TabStatePersistenceCoordinator {
     return run;
   }
 
-  private async writeLatestUntilCurrent(): Promise<void> {
+  async #writeLatestUntilCurrent(): Promise<void> {
     while (
       this.latestState
       && this.latestSerialized
@@ -81,7 +81,7 @@ export class TabStatePersistenceCoordinator {
     }
   }
 
-  private cancelTimer(): void {
+  #cancelTimer(): void {
     if (this.timer === null) return;
     this.timerHost.clearTimeout(this.timer);
     this.timer = null;

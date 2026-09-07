@@ -86,7 +86,7 @@ export class NativeGitPublicationCandidateRepository {
     input: PublicationCandidateInput,
     signal?: AbortSignal,
   ): Promise<string> {
-    this.assertContext(context);
+    this.#assertContext(context);
     const contributionHeadOid = requireOid(
       input.contributionHeadOid,
       'publication-contribution-head-invalid',
@@ -107,7 +107,7 @@ export class NativeGitPublicationCandidateRepository {
 
     const existingOid = await this.git.resolveRef(context.repositoryPath, candidateRef);
     if (existingOid) {
-      if (await this.matchesCandidate(
+      if (await this.#matchesCandidate(
         context.repositoryPath,
         existingOid,
         merge.treeOid,
@@ -168,7 +168,7 @@ export class NativeGitPublicationCandidateRepository {
     if (retained !== candidateOid) {
       throw candidateError('repository-invalid', 'publication-candidate-ref-mismatch');
     }
-    if (!await this.matchesCandidate(
+    if (!await this.#matchesCandidate(
       context.repositoryPath,
       candidateOid,
       null,
@@ -188,7 +188,7 @@ export class NativeGitPublicationCandidateRepository {
   ): Promise<void> {
     await this.assertRetained(context, input, signal);
     const [symbolicHead, personalOid, mainOid, status] = await Promise.all([
-      this.readSymbolicHead(context, signal),
+      this.#readSymbolicHead(context, signal),
       this.git.resolveRef(context.repositoryPath, context.personalRef),
       this.git.resolveRef(context.repositoryPath, COLLAB_ORIGIN_MAIN_REF),
       this.git.getWorkingTreeStatus(context.repositoryPath),
@@ -252,13 +252,13 @@ export class NativeGitPublicationCandidateRepository {
     }
   }
 
-  private assertContext(context: PublishProjectContext): void {
+  #assertContext(context: PublishProjectContext): void {
     if (context.personalRef !== collabMemberRef(context.memberId)) {
       throw candidateError('repository-invalid', 'publication-personal-ref-mismatch');
     }
   }
 
-  private async matchesCandidate(
+  async #matchesCandidate(
     repositoryPath: string,
     candidateOid: string,
     expectedTreeOid: string | null,
@@ -279,7 +279,7 @@ export class NativeGitPublicationCandidateRepository {
       && parents === `${contributionHeadOid} ${currentMainOid}`;
   }
 
-  private async readSymbolicHead(
+  async #readSymbolicHead(
     context: PublishProjectContext,
     signal?: AbortSignal,
   ): Promise<string | null> {

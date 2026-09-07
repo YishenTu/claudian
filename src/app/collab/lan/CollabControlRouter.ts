@@ -410,7 +410,7 @@ export class CollabControlRouter {
       if (!registered) {
         const terminal = this.terminalProjects.get(route.projectId);
         if (!terminal) throw routerError('project-not-found', 'host-project-not-running');
-        const result = await this.dispatchTerminal({
+        const result = await this.#dispatchTerminal({
           authorization: singleHeader(request.headers, 'authorization'),
           body,
           idempotencyKey: singleHeader(request.headers, 'idempotency-key'),
@@ -523,7 +523,7 @@ export class CollabControlRouter {
     }
   }
 
-  private async dispatchTerminal(
+  async #dispatchTerminal(
     request: CollabTerminalControlRouteRequest,
     terminal: CollabTerminalProjectService,
   ): Promise<CollabControlRouteResult> {

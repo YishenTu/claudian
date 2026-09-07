@@ -252,7 +252,7 @@ export class AgentSkillSettings {
     } catch {
       if (generation !== this.renderGeneration) return;
       this.rootEl.empty();
-      this.renderHeader();
+      this.#renderHeader();
       this.rootEl.createDiv({
         cls: 'claudian-agent-skills-error',
         text: t('settings.agentSkills.loadFailed'),
@@ -262,7 +262,7 @@ export class AgentSkillSettings {
     if (generation !== this.renderGeneration) return;
 
     this.rootEl.empty();
-    this.renderHeader();
+    this.#renderHeader();
 
     if (result.skills.length === 0) {
       this.rootEl.createDiv({
@@ -272,7 +272,7 @@ export class AgentSkillSettings {
     } else {
       const list = this.rootEl.createDiv({ cls: 'claudian-sp-list' });
       for (const skill of result.skills) {
-        this.renderSkill(list, skill);
+        this.#renderSkill(list, skill);
       }
     }
 
@@ -290,7 +290,7 @@ export class AgentSkillSettings {
     }
   }
 
-  private renderHeader(): void {
+  #renderHeader(): void {
     const header = this.rootEl.createDiv({
       cls: 'claudian-sp-header claudian-agent-skills-header',
     });
@@ -311,10 +311,10 @@ export class AgentSkillSettings {
       attr: { 'aria-label': t('common.add') },
     });
     setIcon(addButton, 'plus');
-    addButton.addEventListener('click', () => this.openEditModal(null));
+    addButton.addEventListener('click', () => this.#openEditModal(null));
   }
 
-  private renderSkill(list: HTMLElement, skill: AgentSkillDocument): void {
+  #renderSkill(list: HTMLElement, skill: AgentSkillDocument): void {
     const item = list.createDiv({ cls: 'claudian-sp-item' });
     const info = item.createDiv({ cls: 'claudian-sp-info' });
     const itemHeader = info.createDiv({ cls: 'claudian-sp-item-header' });
@@ -331,16 +331,16 @@ export class AgentSkillSettings {
       attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editButton, 'pencil');
-    editButton.addEventListener('click', () => this.openEditModal(skill));
+    editButton.addEventListener('click', () => this.#openEditModal(skill));
     const deleteButton = actions.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
       attr: { 'aria-label': t('common.delete') },
     });
     setIcon(deleteButton, 'trash-2');
-    deleteButton.addEventListener('click', () => this.openDeleteModal(skill));
+    deleteButton.addEventListener('click', () => this.#openDeleteModal(skill));
   }
 
-  private openEditModal(existing: AgentSkillDocument | null): void {
+  #openEditModal(existing: AgentSkillDocument | null): void {
     const modal = new AgentSkillModal(this.app, existing, input => (
       existing
         ? this.coordinator.update(existing.name, existing.revision, input)
@@ -349,7 +349,7 @@ export class AgentSkillSettings {
     modal.open();
   }
 
-  private openDeleteModal(skill: AgentSkillDocument): void {
+  #openDeleteModal(skill: AgentSkillDocument): void {
     const modal = new AgentSkillDeleteModal(
       this.app,
       skill,

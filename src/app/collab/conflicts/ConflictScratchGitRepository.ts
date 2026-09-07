@@ -91,7 +91,7 @@ export class ConflictScratchGitRepository {
     signal?: AbortSignal,
   ): Promise<ConflictScratchInspection> {
     throwIfCancelled(signal);
-    await this.assertSource(context, descriptor);
+    await this.#assertSource(context, descriptor);
     const scratchParent = path.dirname(scratchPath);
     const scratchName = path.basename(scratchPath);
     const relativeSource = path.relative(scratchParent, context.repositoryPath);
@@ -164,8 +164,8 @@ export class ConflictScratchGitRepository {
   ): Promise<ConflictScratchInspection> {
     const [personalOid, acceptedMainOid, stages] = await Promise.all([
       this.git.resolveRef(scratchPath, SCRATCH_BRANCH),
-      this.readMergeHead(scratchPath),
-      this.listStages(scratchPath),
+      this.#readMergeHead(scratchPath),
+      this.#listStages(scratchPath),
     ]);
     if (
       personalOid !== descriptor.startingPersonalOid
@@ -189,7 +189,7 @@ export class ConflictScratchGitRepository {
     const resolved = new Set(resolvedPaths);
     const representedPaths = new Set<string>();
     for (const conflict of descriptor.conflicts) {
-      const paths = this.conflictPaths(conflict);
+      const paths = this.#conflictPaths(conflict);
       paths.forEach(conflictPath => representedPaths.add(conflictPath));
       const hasStage = paths.some(conflictPath => stagePaths.has(conflictPath));
       if (resolved.has(conflict.path) ? hasStage : !hasStage) {
@@ -324,7 +324,7 @@ export class ConflictScratchGitRepository {
         throw scratchError('content-conflict', 'conflict-working-tree-resolution-blocked');
       }
       const inspection = await this.inspect(scratchPath, descriptor, resolvedPaths);
-      const paths = this.conflictPaths(conflict);
+      const paths = this.#conflictPaths(conflict);
       const selectedPath = conflict.personalPath ?? conflict.path;
       let contents: Buffer | null;
       let mode: ConflictIndexStage['mode'] = '100644';
@@ -348,10 +348,10 @@ export class ConflictScratchGitRepository {
       }
 
       for (const conflictPath of paths) {
-        await this.removeScratchFile(scratchPath, conflictPath);
+        await this.#removeScratchFile(scratchPath, conflictPath);
       }
       if (contents !== null) {
-        await this.writeScratchFile(scratchPath, selectedPath, contents, mode);
+        await this.#writeScratchFile(scratchPath, selectedPath, contents, mode);
       }
       const stageTargets = [...new Set([
         ...inspection.stages
@@ -397,8 +397,8 @@ export class ConflictScratchGitRepository {
     }
     const existing = await this.git.resolveRef(scratchPath, RESULT_REF);
     if (existing !== null) {
-      await this.assertResultParents(scratchPath, descriptor, existing);
-      const existingTree = await this.readCommitTree(scratchPath, existing);
+      await this.#assertResultParents(scratchPath, descriptor, existing);
+      const existingTree = await this.#readCommitTree(scratchPath, existing);
       if (existingTree !== treeOid) {
         throw scratchError('repository-invalid', 'conflict-result-tree-changed');
       }
@@ -430,9 +430,9 @@ export class ConflictScratchGitRepository {
     if (scratchResult !== resultOid) {
       throw scratchError('repository-invalid', 'conflict-result-ref-invalid');
     }
-    await this.assertResultParents(scratchPath, descriptor, resultOid);
+    await this.#assertResultParents(scratchPath, descriptor, resultOid);
     const transferRef = publicationCandidateRef(descriptor.operationId);
-    const current = await this.inspectRealProject(context, descriptor, resultOid);
+    const current = await this.#inspectRealProject(context, descriptor, resultOid);
     if (current === 'applied') {
       throw scratchError('working-tree-busy', 'conflict-result-already-visible');
     }
@@ -442,7 +442,7 @@ export class ConflictScratchGitRepository {
       if (existing !== resultOid) {
         throw scratchError('repository-invalid', 'conflict-transfer-ref-changed');
       }
-      await this.assertResultParents(context.repositoryPath, descriptor, resultOid);
+      await this.#assertResultParents(context.repositoryPath, descriptor, resultOid);
       return;
     }
 
@@ -466,16 +466,16 @@ export class ConflictScratchGitRepository {
     if (transferred !== resultOid) {
       throw scratchError('repository-invalid', 'conflict-result-transfer-invalid');
     }
-    await this.assertResultParents(context.repositoryPath, descriptor, resultOid);
+    await this.#assertResultParents(context.repositoryPath, descriptor, resultOid);
     throwIfCancelled(signal);
     await beforeMutation?.();
     throwIfCancelled(signal);
-    if (await this.inspectRealProject(context, descriptor, resultOid) !== 'starting') {
+    if (await this.#inspectRealProject(context, descriptor, resultOid) !== 'starting') {
       throw scratchError('working-tree-busy', 'conflict-project-state-changed');
     }
   }
 
-  private async assertSource(
+  async #assertSource(
     context: PublishProjectContext,
     descriptor: CollabConflictDescriptor,
   ): Promise<void> {
@@ -513,7 +513,7 @@ export class ConflictScratchGitRepository {
     }
   }
 
-  private async readMergeHead(scratchPath: string): Promise<string> {
+  async #readMergeHead(scratchPath: string): Promise<string> {
     const result = await this.runner.run({
       args: ['rev-parse', '--verify', '--end-of-options', 'MERGE_HEAD^{commit}'],
       cwd: scratchPath,
@@ -526,7 +526,7 @@ export class ConflictScratchGitRepository {
     return oid;
   }
 
-  private async listStages(scratchPath: string): Promise<readonly ConflictIndexStage[]> {
+  async #listStages(scratchPath: string): Promise<readonly ConflictIndexStage[]> {
     const result = await this.runner.run({
       args: ['ls-files', '--unmerged', '-z'],
       cwd: scratchPath,
@@ -561,7 +561,7 @@ export class ConflictScratchGitRepository {
     return stages;
   }
 
-  private async inspectRealProject(
+  async #inspectRealProject(
     context: PublishProjectContext,
     descriptor: CollabConflictDescriptor,
     resultOid: string,
@@ -600,7 +600,7 @@ export class ConflictScratchGitRepository {
     return 'starting';
   }
 
-  private async assertResultParents(
+  async #assertResultParents(
     repositoryPath: string,
     descriptor: CollabConflictDescriptor,
     resultOid: string,
@@ -621,7 +621,7 @@ export class ConflictScratchGitRepository {
     }
   }
 
-  private async readCommitTree(repositoryPath: string, commitOid: string): Promise<string> {
+  async #readCommitTree(repositoryPath: string, commitOid: string): Promise<string> {
     const result = await this.runner.run({
       args: ['rev-parse', '--verify', '--end-of-options', `${commitOid}^{tree}`],
       cwd: repositoryPath,
@@ -634,7 +634,7 @@ export class ConflictScratchGitRepository {
     return treeOid;
   }
 
-  private conflictPaths(conflict: CollabConflictEntry): readonly string[] {
+  #conflictPaths(conflict: CollabConflictEntry): readonly string[] {
     return [...new Set([
       conflict.path,
       ...(conflict.personalPath ? [conflict.personalPath] : []),
@@ -642,7 +642,7 @@ export class ConflictScratchGitRepository {
     ])].sort();
   }
 
-  private async removeScratchFile(
+  async #removeScratchFile(
     scratchPath: string,
     repositoryPath: string,
   ): Promise<void> {
@@ -660,7 +660,7 @@ export class ConflictScratchGitRepository {
     await rm(absolutePath);
   }
 
-  private async writeScratchFile(
+  async #writeScratchFile(
     scratchPath: string,
     repositoryPath: string,
     contents: Uint8Array,

@@ -317,7 +317,7 @@ export class CodexSubagentSettings {
       attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
-    addBtn.addEventListener('click', () => this.openModal(null));
+    addBtn.addEventListener('click', () => this.#openModal(null));
 
     if (this.agents.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
@@ -327,11 +327,11 @@ export class CodexSubagentSettings {
 
     const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
     for (const agent of this.agents) {
-      this.renderItem(listEl, agent);
+      this.#renderItem(listEl, agent);
     }
   }
 
-  private renderItem(listEl: HTMLElement, agent: CodexSubagentDefinition): void {
+  #renderItem(listEl: HTMLElement, agent: CodexSubagentDefinition): void {
     const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
     const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
 
@@ -355,7 +355,7 @@ export class CodexSubagentSettings {
       attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
-    editBtn.addEventListener('click', () => this.openModal(agent));
+    editBtn.addEventListener('click', () => this.#openModal(agent));
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
@@ -382,7 +382,7 @@ export class CodexSubagentSettings {
     });
   }
 
-  private openModal(existing: CodexSubagentDefinition | null): void {
+  #openModal(existing: CodexSubagentDefinition | null): void {
     if (!this.app) return;
 
     const modal = new CodexSubagentModal(

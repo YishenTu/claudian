@@ -54,7 +54,7 @@ export class AuxiliarySessionController {
   async startRoot(): Promise<void> {
     const generation = ++this.generation;
     this.cancelled = false;
-    await this.releaseCurrent();
+    await this.#releaseCurrent();
     if (generation !== this.generation) {
       throw new Error('Cancelled');
     }
@@ -126,7 +126,7 @@ export class AuxiliarySessionController {
     this.activeRun?.cancel();
     this.abortController = null;
     this.activeRun = null;
-    const release = this.releaseCurrent();
+    const release = this.#releaseCurrent();
     // Observe fire-and-forget cleanup without replacing the promise awaited by
     // startRoot() or dispose(), which must still surface lifecycle failures.
     void release.catch(() => undefined);
@@ -144,10 +144,10 @@ export class AuxiliarySessionController {
     this.activeRun?.cancel();
     this.abortController = null;
     this.activeRun = null;
-    await this.releaseCurrent();
+    await this.#releaseCurrent();
   }
 
-  private releaseCurrent(): Promise<void> {
+  #releaseCurrent(): Promise<void> {
     if (this.releasePromise) return this.releasePromise;
     const lease = this.lease;
     this.lease = null;

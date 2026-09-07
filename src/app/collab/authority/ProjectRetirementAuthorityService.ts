@@ -73,7 +73,7 @@ export class ProjectRetirementAuthorityService {
 
     const existingTombstone = await this.tombstones.load(prepared.projectId);
     const retiredAt = existingTombstone?.retiredAt ?? this.now().toISOString();
-    const tombstone = existingTombstone ?? this.createTombstone(prepared, retiredAt);
+    const tombstone = existingTombstone ?? this.#createTombstone(prepared, retiredAt);
     try {
       await this.tombstones.savePrepared(tombstone);
       this.onTombstoneCommitted?.();
@@ -109,7 +109,7 @@ export class ProjectRetirementAuthorityService {
     };
   }
 
-  private createTombstone(
+  #createTombstone(
     prepared: PreparedProjectRetirement,
     retiredAt: string,
   ): RetirementTombstoneRecord {

@@ -130,7 +130,7 @@ export class RetirementTombstoneRepository {
       ));
     }
     return this.queue.run(async () => {
-      const tombstone = await this.loadUnlocked(projectId);
+      const tombstone = await this.#loadUnlocked(projectId);
       const actual = credentialDigest(memberCredential);
       let matchedMemberId: CollabMemberId | null = null;
       for (const member of tombstone.formerMembers) {
@@ -158,7 +158,7 @@ export class RetirementTombstoneRepository {
       ));
     }
     return this.queue.run(async () => {
-      const tombstone = await this.loadUnlocked(projectId);
+      const tombstone = await this.#loadUnlocked(projectId);
       if (
         expectedRetiredAt !== undefined
         && tombstone.result.retiredAt !== expectedRetiredAt
@@ -217,7 +217,7 @@ export class RetirementTombstoneRepository {
     return this.queue.run(() => this.store.removeRetirementTombstone(projectId));
   }
 
-  private async loadUnlocked(projectId: CollabProjectId): Promise<RetirementTombstoneRecord> {
+  async #loadUnlocked(projectId: CollabProjectId): Promise<RetirementTombstoneRecord> {
     const tombstone = await this.store.loadRetirementTombstone(projectId);
     if (!tombstone) {
       throw retirementError('project-not-found', 'retirement-tombstone-missing');

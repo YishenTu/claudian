@@ -42,7 +42,7 @@ export class TicketListPanel {
     private readonly options: TicketListPanelOptions,
   ) {
     this.focusSubscription = options.focus?.subscribe(() => {
-      if (!this.destroyed) this.syncFocusedTicket();
+      if (!this.destroyed) this.#syncFocusedTicket();
     }) ?? null;
     this.subscription = options.port.subscribe(() => {
       if (this.destroyed) return;
@@ -79,7 +79,7 @@ export class TicketListPanel {
     const revision = this.listRevision;
     const task = this.readTasks.start();
     try {
-      this.renderShell(this.options.project.connectionStatus !== 'connected');
+      this.#renderShell(this.options.project.connectionStatus !== 'connected');
       this.rootEl.createDiv({
         cls: 'claudian-collab-ticket-list-status',
         text: t('collab.tickets.loading'),
@@ -99,10 +99,10 @@ export class TicketListPanel {
       const readOnly = ticketReadOnly || (snapshotResult?.status === 'success'
         ? snapshotResult.value.source === 'cache' || snapshotResult.value.stale
         : this.options.project.connectionStatus !== 'connected');
-      this.renderShell(readOnly);
+      this.#renderShell(readOnly);
       const content = this.rootEl.createDiv({ cls: 'claudian-collab-ticket-list-content' });
       if (result.status !== 'success') {
-        const knownEmpty = this.hasFreshEmptyOpenSnapshot(snapshotResult);
+        const knownEmpty = this.#hasFreshEmptyOpenSnapshot(snapshotResult);
         if (knownEmpty) {
           content.setText(t('collab.tickets.empty'));
           return;
@@ -124,16 +124,16 @@ export class TicketListPanel {
         return;
       }
       const items = content.createDiv({ cls: 'claudian-collab-ticket-list' });
-      this.appendRows(items, result.value.page.tickets);
+      this.#appendRows(items, result.value.page.tickets);
       if (result.value.page.nextCursor) {
-        this.renderLoadMore(items, result.value.page.nextCursor, revision);
+        this.#renderLoadMore(items, result.value.page.nextCursor, revision);
       }
     } finally {
       task.complete();
     }
   }
 
-  private hasFreshEmptyOpenSnapshot(
+  #hasFreshEmptyOpenSnapshot(
     result: Awaited<ReturnType<CollabFeaturePort['readSnapshot']>> | null,
   ): boolean {
     if (this.status !== 'open') return false;
@@ -144,7 +144,7 @@ export class TicketListPanel {
       && result.value.snapshot.openTicketCount === 0;
   }
 
-  private appendRows(
+  #appendRows(
     items: HTMLElement,
     tickets: readonly CollabTicketSummary[],
   ): void {
@@ -168,18 +168,18 @@ export class TicketListPanel {
         const opening = this.options.onOpen(ticket);
         if (opening) {
           void opening.then(
-            () => this.syncFocusedTicket(),
-            () => this.syncFocusedTicket(),
+            () => this.#syncFocusedTicket(),
+            () => this.#syncFocusedTicket(),
           );
         } else {
-          this.syncFocusedTicket();
+          this.#syncFocusedTicket();
         }
       });
     }
-    this.syncFocusedTicket();
+    this.#syncFocusedTicket();
   }
 
-  private syncFocusedTicket(): void {
+  #syncFocusedTicket(): void {
     const focus = this.options.focus?.read() ?? null;
     const focusedTicketId = focus?.projectId === this.options.project.id
       ? focus.ticketId
@@ -193,7 +193,7 @@ export class TicketListPanel {
     }
   }
 
-  private renderLoadMore(
+  #renderLoadMore(
     items: HTMLElement,
     cursor: string,
     revision: number,
@@ -204,11 +204,11 @@ export class TicketListPanel {
       text: t('collab.tickets.loadMore'),
     });
     button.addEventListener('click', () => {
-      void this.loadMore(items, cursor, revision, button);
+      void this.#loadMore(items, cursor, revision, button);
     });
   }
 
-  private async loadMore(
+  async #loadMore(
     items: HTMLElement,
     cursor: string,
     revision: number,
@@ -238,10 +238,10 @@ export class TicketListPanel {
       }
       button.remove();
       this.rootEl.querySelector('[data-state="ticket-page-error"]')?.remove();
-      if (result.value.stale) this.enterReadOnly();
-      this.appendRows(items, result.value.page.tickets);
+      if (result.value.stale) this.#enterReadOnly();
+      this.#appendRows(items, result.value.page.tickets);
       if (result.value.page.nextCursor) {
-        this.renderLoadMore(items, result.value.page.nextCursor, revision);
+        this.#renderLoadMore(items, result.value.page.nextCursor, revision);
       }
     } finally {
       task.complete();
@@ -255,7 +255,7 @@ export class TicketListPanel {
       && task.isCurrent();
   }
 
-  private renderShell(readOnly = false): void {
+  #renderShell(readOnly = false): void {
     this.readOnly = readOnly;
     this.rootEl.replaceChildren();
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-ticket-list-header' });
@@ -296,7 +296,7 @@ export class TicketListPanel {
     }
   }
 
-  private enterReadOnly(): void {
+  #enterReadOnly(): void {
     if (this.readOnly) return;
     this.readOnly = true;
     const add = this.rootEl.querySelector<HTMLButtonElement>('[data-action="add-ticket"]');

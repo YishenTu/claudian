@@ -96,10 +96,10 @@ export class ActiveLifecycleGateway implements LifecycleGatewayPort {
   execute<Operation extends CollabLifecycleControlOperation>(
     input: LifecycleGatewayInput<Operation>,
   ): Promise<CollabControlRouteResult> {
-    return this.executeKnown(input as LifecycleGatewayInputUnion);
+    return this.#executeKnown(input as LifecycleGatewayInputUnion);
   }
 
-  private executeKnown(input: LifecycleGatewayInputUnion): Promise<CollabControlRouteResult> {
+  #executeKnown(input: LifecycleGatewayInputUnion): Promise<CollabControlRouteResult> {
     const policy = COLLAB_CONTROL_OPERATION_BINDINGS[input.operation];
     if (policy.admission === 'terminal') {
       return Promise.reject(gatewayError('lifecycle-service-unavailable'));
@@ -236,10 +236,10 @@ export class TerminalLifecycleGateway implements LifecycleGatewayPort {
   execute<Operation extends CollabLifecycleControlOperation>(
     input: LifecycleGatewayInput<Operation>,
   ): Promise<CollabControlRouteResult> {
-    return this.executeKnown(input as LifecycleGatewayInputUnion);
+    return this.#executeKnown(input as LifecycleGatewayInputUnion);
   }
 
-  private async executeKnown(
+  async #executeKnown(
     input: LifecycleGatewayInputUnion,
   ): Promise<CollabControlRouteResult> {
     const policy = COLLAB_CONTROL_OPERATION_BINDINGS[input.operation];

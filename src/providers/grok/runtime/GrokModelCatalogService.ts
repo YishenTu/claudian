@@ -157,8 +157,8 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     signal?: AbortSignal,
     ownerContext?: ProviderTransitionOwnerContext,
   ): Promise<string> {
-    const context = await this.resolveCommandContext(ownerContext);
-    return this.resolveFingerprint(context, signal);
+    const context = await this.#resolveCommandContext(ownerContext);
+    return this.#resolveFingerprint(context, signal);
   }
 
   async discoverCatalog(
@@ -170,8 +170,8 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     }
 
     try {
-      const context = await this.resolveCommandContext(ownerContext);
-      const fingerprint = await this.resolveFingerprint(context, signal);
+      const context = await this.#resolveCommandContext(ownerContext);
+      const fingerprint = await this.#resolveFingerprint(context, signal);
       const commandResult = await this.runner.run({
         args: ['models'],
         command: context.command,
@@ -216,7 +216,7 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     }
   }
 
-  private async resolveCommandContext(
+  async #resolveCommandContext(
     ownerContext?: ProviderTransitionOwnerContext,
   ): Promise<GrokResolvedCatalogCommandContext> {
     const command = await this.plugin.getResolvedProviderCliPath(
@@ -232,7 +232,7 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     };
   }
 
-  private async resolveFingerprint(
+  async #resolveFingerprint(
     context: GrokResolvedCatalogCommandContext,
     signal?: AbortSignal,
   ): Promise<string> {

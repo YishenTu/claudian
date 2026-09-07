@@ -60,10 +60,10 @@ export class ConflictScratchStore {
 
   async save(record: ConflictResolutionRecord): Promise<void> {
     const normalized = decodeConflictResolutionRecord(record);
-    await this.ensureOperationDirectory(normalized.operationId);
+    await this.#ensureOperationDirectory(normalized.operationId);
     await writeCollabFileAtomically(
       this.vaultRoot,
-      this.stateRelativePath(normalized.operationId),
+      this.#stateRelativePath(normalized.operationId),
       `${JSON.stringify(normalized, null, 2)}\n`,
       { mode: 0o600 },
     );
@@ -73,7 +73,7 @@ export class ConflictScratchStore {
     requireOperationId(operationId);
     const statePath = await resolveCollabVaultPath(
       this.vaultRoot,
-      this.stateRelativePath(operationId),
+      this.#stateRelativePath(operationId),
     );
     let contents: string;
     try {
@@ -92,7 +92,7 @@ export class ConflictScratchStore {
   async list(): Promise<readonly ConflictResolutionRecord[]> {
     const conflictDirectory = await resolveCollabVaultPath(
       this.vaultRoot,
-      this.conflictDirectory(),
+      this.#conflictDirectory(),
     );
     let entries: Dirent<string>[];
     try {
@@ -125,8 +125,8 @@ export class ConflictScratchStore {
   }
 
   async recreateRepository(operationId: CollabOperationId): Promise<string> {
-    await this.ensureOperationDirectory(operationId);
-    const repositoryRelativePath = this.repositoryRelativePath(operationId);
+    await this.#ensureOperationDirectory(operationId);
+    const repositoryRelativePath = this.#repositoryRelativePath(operationId);
     const repositoryPath = await resolveCollabVaultPath(
       this.vaultRoot,
       repositoryRelativePath,
@@ -160,7 +160,7 @@ export class ConflictScratchStore {
     requireOperationId(operationId);
     return resolveCollabVaultPath(
       this.vaultRoot,
-      this.repositoryRelativePath(operationId),
+      this.#repositoryRelativePath(operationId),
       { mustExist: true },
     );
   }
@@ -169,7 +169,7 @@ export class ConflictScratchStore {
     requireOperationId(operationId);
     const operationPath = await resolveCollabVaultPath(
       this.vaultRoot,
-      this.operationRelativePath(operationId),
+      this.#operationRelativePath(operationId),
     );
     const existing = await lstat(operationPath).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -190,29 +190,29 @@ export class ConflictScratchStore {
     }
   }
 
-  private async ensureOperationDirectory(operationId: CollabOperationId): Promise<string> {
+  async #ensureOperationDirectory(operationId: CollabOperationId): Promise<string> {
     requireOperationId(operationId);
     await this.ensureContainer();
     return ensureCollabVaultDirectory(
       this.vaultRoot,
-      this.operationRelativePath(operationId),
+      this.#operationRelativePath(operationId),
       { mode: 0o700 },
     );
   }
 
-  private conflictDirectory(): string {
+  #conflictDirectory(): string {
     return this.paths.getConflictDirectoryPath();
   }
 
-  private operationRelativePath(operationId: CollabOperationId): string {
-    return `${this.conflictDirectory()}/${operationId}`;
+  #operationRelativePath(operationId: CollabOperationId): string {
+    return `${this.#conflictDirectory()}/${operationId}`;
   }
 
-  private repositoryRelativePath(operationId: CollabOperationId): string {
-    return `${this.operationRelativePath(operationId)}/repository`;
+  #repositoryRelativePath(operationId: CollabOperationId): string {
+    return `${this.#operationRelativePath(operationId)}/repository`;
   }
 
-  private stateRelativePath(operationId: CollabOperationId): string {
-    return `${this.operationRelativePath(operationId)}/state.json`;
+  #stateRelativePath(operationId: CollabOperationId): string {
+    return `${this.#operationRelativePath(operationId)}/state.json`;
   }
 }

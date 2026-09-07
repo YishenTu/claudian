@@ -14,21 +14,15 @@ import { build,stop } from 'esbuild';
 
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
-import * as pierreShikiBundleHelpers from '../../../scripts/pierreShikiBundle.js';
 import * as terserProductionBundleHelpers from '../../../scripts/terserProductionBundle.js';
 
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 const { minifyProductionBundle } = terserProductionBundleHelpers;
-const {
-  createPierreShikiBundlePlugin,
-  inspectPierreThemeContract,
-  inspectPierreShikiContract,
-} = pierreShikiBundleHelpers;
+
 
 const root = path.resolve(__dirname, '../../..');
 const esbuildConfigPath = path.join(root, 'esbuild.config.mjs');
-const packageJsonPath = path.join(root, 'package.json');
 
 describe('Collab dependency envelope', () => {
   const tempDirectory = mkdtempSync(path.join(tmpdir(), 'claudian-collab-build-'));
@@ -44,6 +38,8 @@ describe('Collab dependency envelope', () => {
       },
       bundle: true,
       external: [
+        '@codemirror/state', '@codemirror/view', '@codemirror/language', '@codemirror/commands',
+        '@lezer/common', '@lezer/highlight',
         ...builtinModules,
         ...builtinModules.map(moduleName => `node:${moduleName}`),
       ],
@@ -56,7 +52,6 @@ describe('Collab dependency envelope', () => {
       platform: 'browser',
       plugins: [
         createCompressedStaticAssetsPlugin(),
-        createPierreShikiBundlePlugin({ root }),
       ],
       stdin: {
         contents: `
@@ -65,7 +60,6 @@ describe('Collab dependency envelope', () => {
           import { scanCollabTicketReferences } from '@claudian-collab/protocol';
           import * as english from './src/i18n/locales/en.json';
           import * as german from './src/i18n/locales/de.json';
-          import { pierreThemes, shikiThemes } from '@pierre/theming/themes';
           import { LanTlsIdentity } from './src/app/collab/lan/LanTlsIdentity';
           import {
             CollabDiffRenderer,
@@ -92,7 +86,7 @@ describe('Collab dependency envelope', () => {
 
           export async function probeDiffs() {
             const diffs = await preloadCollabDiffRenderer();
-            return typeof diffs.FileDiff;
+            return typeof diffs.createDiffView;
           }
 
           export function probeLocale() {
@@ -107,10 +101,6 @@ describe('Collab dependency envelope', () => {
               markdownParser.parse('# heading').length,
               scanCollabTicketReferences('References #12').length,
             ];
-          }
-
-          export function probeThemes() {
-            return [pierreThemes.getThemeNames(), shikiThemes.getThemeNames()];
           }
 
           export function probeTlsIdentity() {
@@ -152,78 +142,6 @@ describe('Collab dependency envelope', () => {
     rmSync(tempDirectory, { force: true, recursive: true });
   });
 
-  it('pins Pierre to its verified fine-grained Shiki import contract', () => {
-    const config = readFileSync(esbuildConfigPath, 'utf8');
-
-    expect(inspectPierreShikiContract({ root })).toEqual({
-      imports: [
-        'bundledLanguages',
-        'codeToHtml',
-        'createCssVariablesTheme',
-        'createHighlighter',
-        'createJavaScriptRegexEngine',
-        'createOnigurumaEngine',
-        'getTokenStyleObject',
-        'stringifyTokenStyle',
-      ],
-      transformerImports: ['transformerStyleToClass'],
-      version: '1.3.5',
-    });
-    expect(inspectPierreThemeContract({ root })).toEqual([
-      'createTheme',
-      'pierreThemes',
-      'shikiThemes',
-    ]);
-    expect(config).toContain('createPierreShikiBundlePlugin()');
-  });
-
-  it('excludes syntax grammars, theme catalogs, and Oniguruma Wasm', () => {
-    const normalizedInputs = bundleInputs.map(input => input.replaceAll('\\\\', '/'));
-    const languageInputs = normalizedInputs.filter(input => (
-      input.includes('/@shikijs/langs/dist/') && input.endsWith('.mjs')
-    ));
-    const themeCatalogInputs = normalizedInputs.filter(input => (
-      input.includes('/@shikijs/themes/dist/')
-      || input.includes('/@pierre/theme/dist/pierre-')
-    ));
-    const inlinedOnigurumaInputs = normalizedInputs.filter(input => (
-      input.includes('/@shikijs/engine-oniguruma/dist/wasm-inlined')
-      || input.includes('/shiki/dist/wasm')
-    ));
-
-    expect(languageInputs).toEqual([]);
-    expect(themeCatalogInputs).toEqual([]);
-    expect(inlinedOnigurumaInputs).toEqual([]);
-  });
-
-  it('uses Pierre without bundling a syntax-highlighting runtime', () => {
-    const normalizedContributors = bundleContributors.map(input => input.replaceAll('\\\\', '/'));
-    const syntaxRuntimeInputs = normalizedContributors.filter(input => (
-      input.includes('/@shikijs/')
-      || input.includes('/oniguruma-parser/')
-      || input.includes('/oniguruma-to-es/')
-    ));
-
-    expect(syntaxRuntimeInputs).toEqual([]);
-  });
-
-  it('does not bundle Pierre filename language detection for text-only diffs', () => {
-    const bundle = readFileSync(bundlePath, 'utf8');
-
-    expect(bundle).not.toContain('actionscript-3');
-    expect(bundle).not.toContain('fortran-fixed-form');
-  });
-
-  it('does not declare or bundle the unsupported Oniguruma engine', () => {
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-    const normalizedInputs = bundleInputs.map(input => input.replaceAll('\\\\', '/'));
-
-    expect(packageJson.dependencies?.['@shikijs/engine-oniguruma']).toBeUndefined();
-    expect(normalizedInputs.filter(input => (
-      input.includes('/@shikijs/engine-oniguruma/dist/')
-    ))).toEqual([]);
-  });
-
   it('keeps the Collab draft editor inside the strict CommonMark language envelope', async () => {
     const result = await build({
       absWorkingDir: root,
@@ -257,17 +175,6 @@ describe('Collab dependency envelope', () => {
       ].some(fragment => input.includes(fragment)));
 
     expect(forbiddenInputs).toEqual([]);
-  });
-
-  it('retains only the Pierre component surface used by Collab', () => {
-    const normalizedInputs = bundleContributors.map(input => input.replaceAll('\\\\', '/'));
-    const unusedComponentInputs = normalizedInputs.filter(input => (
-      input.endsWith('/@pierre/diffs/dist/components/CodeView.js')
-      || input.endsWith('/@pierre/diffs/dist/components/FileStream.js')
-      || input.endsWith('/@pierre/diffs/dist/components/UnresolvedFile.js')
-    ));
-
-    expect(unusedComponentInputs).toEqual([]);
   });
 
   it('bundles one shared Markdown parser implementation', () => {
@@ -342,25 +249,12 @@ describe('Collab dependency envelope', () => {
         'probeLocale',
         'probeMarkdownDependencies',
         'probeSql',
-        'probeThemes',
         'probeTlsIdentity',
         'probeWebSocket',
         'renderCollabTextDiff',
       ],
       wasmInitializations: 0,
     });
-  });
-
-  it('registers exactly the local dark and light Pierre themes', () => {
-    const result = runBundle(`
-      const dependencyEnvelope = require(process.argv[1]);
-      process.stdout.write(JSON.stringify(dependencyEnvelope.probeThemes()));
-    `);
-
-    expect(JSON.parse(result)).toEqual([
-      ['pierre-dark', 'pierre-light'],
-      [],
-    ]);
   });
 
   it('Brotli-compresses static SQL and locale payloads without changing them', () => {
@@ -376,13 +270,6 @@ describe('Collab dependency envelope', () => {
       'Create Collab project',
       'Speichern',
     ]);
-  });
-
-  it('Brotli-compresses Pierre static CSS and SVG payloads', () => {
-    const bundle = readFileSync(bundlePath, 'utf8');
-
-    expect(bundle).not.toContain('--diffs-font-fallback');
-    expect(bundle).not.toContain('diffs-icon-brand-github');
   });
 
   it('shares one compressed catalog across all locales', () => {
@@ -430,94 +317,52 @@ describe('Collab dependency envelope', () => {
     )));
   });
 
-  it('mounts Collab review through the styled Pierre custom element', () => {
+  it('renders a production-minified diff using external host editor modules', () => {
     const result = JSON.parse(runBundle(`
-      const { JSDOM } = require(require.resolve('jsdom', { paths: [process.argv[2]] }));
+      const { JSDOM } = require('jsdom');
       const dom = new JSDOM('<!doctype html><body></body>', { pretendToBeVisual: true });
-      const sheets = new WeakMap();
-      class TestStyleSheet {
-        replaceSync(value) { this.text = value; }
+      for (const key of ['document', 'Element', 'HTMLElement', 'MutationObserver', 'Node', 'window']) {
+        Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
       }
-      class TestResizeObserver {
-        disconnect() {}
-        observe() {}
-        unobserve() {}
+      for (const [method, tag] of [['createDiv', 'div'], ['createSpan', 'span'], ['createEl', null]]) {
+        dom.window.HTMLElement.prototype[method] = function(value) {
+          const element = this.ownerDocument.createElement(tag || value);
+          if (value && value.cls) element.className = value.cls;
+          this.appendChild(element);
+          return element;
+        };
       }
-      Object.defineProperty(dom.window.ShadowRoot.prototype, 'adoptedStyleSheets', {
-        configurable: true,
-        get() { return sheets.get(this) || []; },
-        set(value) { sheets.set(this, value); },
-      });
-      for (const key of [
-        'customElements',
-        'document',
-        'Element',
-        'HTMLElement',
-        'MutationObserver',
-        'Node',
-        'ShadowRoot',
-        'SVGElement',
-        'window',
-      ]) {
-        Object.defineProperty(globalThis, key, {
-          configurable: true,
-          value: dom.window[key],
-        });
-      }
-      Object.defineProperties(globalThis, {
-        CSSStyleSheet: { configurable: true, value: TestStyleSheet },
-        ResizeObserver: { configurable: true, value: TestResizeObserver },
-        cancelAnimationFrame: {
-          configurable: true,
-          value: dom.window.cancelAnimationFrame.bind(dom.window),
-        },
-        getComputedStyle: {
-          configurable: true,
-          value: dom.window.getComputedStyle.bind(dom.window),
-        },
-        navigator: { configurable: true, value: dom.window.navigator },
-        requestAnimationFrame: {
-          configurable: true,
-          value: dom.window.requestAnimationFrame.bind(dom.window),
-        },
+      Object.defineProperty(globalThis, 'getComputedStyle', {
+        configurable: true, value: dom.window.getComputedStyle.bind(dom.window),
       });
       const dependencyEnvelope = require(process.argv[1]);
       const wrapper = document.createElement('div');
       document.body.appendChild(wrapper);
-      dependencyEnvelope.renderCollabTextDiff(wrapper)
-        .then(renderer => setTimeout(() => {
-          const container = wrapper.querySelector('diffs-container');
-          const root = container && container.shadowRoot;
-          const coreSheet = root && root.adoptedStyleSheets[0];
-          const heading = root && Array.from(root.querySelectorAll('[data-line]'))
-            .find(line => line.textContent.includes('Collab heading after'));
-          const output = {
-            blankLine: Boolean(root && Array.from(root.querySelectorAll('[data-line]'))
-              .find(line => line.textContent.trim() === '')),
-            coreCss: Boolean(coreSheet && coreSheet.text.includes('[data-line]')),
-            customElement: container && container.tagName,
-            diffSpan: Boolean(root && root.querySelector('[data-diff-span]')),
-            lineText: heading && heading.textContent.trim(),
-            sprite: Boolean(root && root.querySelector('#diffs-icon-file-code')),
-            unified: Boolean(root && root.querySelector('[data-unified]')),
-          };
-          renderer.destroy();
-          process.stdout.write(JSON.stringify(output));
-        }, 250))
-        .catch(error => {
-          process.stderr.write(String(error && error.stack || error));
-          process.exitCode = 1;
-        });
+      dependencyEnvelope.renderCollabTextDiff(wrapper).then(renderer => {
+        const { EditorView } = require('@codemirror/view');
+        const content = wrapper.querySelector('[role="textbox"]');
+        const editor = EditorView.findFromDOM(content);
+        const output = {
+          dark: editor.state.facet(EditorView.darkTheme),
+          readOnly: content.getAttribute('contenteditable'),
+          text: editor.state.doc.toString(),
+          deletion: wrapper.querySelector('del').textContent,
+        };
+        renderer.destroy();
+        output.cleaned = wrapper.childElementCount === 0;
+        dom.window.close();
+        process.stdout.write(JSON.stringify(output));
+      }).catch(error => {
+        process.stderr.write(String(error && error.stack || error));
+        process.exitCode = 1;
+      });
     `));
-
     expect(result).toEqual({
-      blankLine: true,
-      coreCss: true,
-      customElement: 'DIFFS-CONTAINER',
-      diffSpan: true,
-      lineText: '# Collab heading after',
-      sprite: true,
-      unified: true,
+      cleaned: true,
+      dark: true,
+      deletion: '# Collab heading before',
+      readOnly: 'false',
+      text: '# Collab heading after\n\n',
     });
   });
 
@@ -549,6 +394,7 @@ describe('Collab dependency envelope', () => {
     const result = spawnSync(process.execPath, ['-e', script, bundlePath, root], {
       cwd: tempDirectory,
       encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: path.join(root, 'node_modules') },
       timeout: 30_000,
     });
     if (result.status !== 0) {

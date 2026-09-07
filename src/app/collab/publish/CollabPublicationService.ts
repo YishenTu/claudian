@@ -280,7 +280,7 @@ export class CollabPublicationService {
   ): Promise<CollabCoordinationSnapshot> {
     const snapshot = await this.projection.readSnapshot(projectId, options);
     this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
-    if (!snapshot.stale) await this.ensureEventSubscription(projectId);
+    if (!snapshot.stale) await this.#ensureEventSubscription(projectId);
     return snapshot;
   }
 
@@ -354,7 +354,7 @@ export class CollabPublicationService {
     operationId: CollabOperationId,
     options: CollabOperationOptions = {},
   ): Promise<CollabPublicationReview> {
-    return this.enqueueProjectMutation(projectId, async () => (
+    return this.#enqueueProjectMutation(projectId, async () => (
       (await this.runtime()).coordinator.prepareReview(projectId, operationId, options)
     ));
   }
@@ -363,7 +363,7 @@ export class CollabPublicationService {
     request: CollabPublicationReviewFileRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabReviewFileContent> {
-    return this.enqueueProjectMutation(request.projectId, async () => {
+    return this.#enqueueProjectMutation(request.projectId, async () => {
       const runtime = await this.runtime();
       const review = await runtime.coordinator.prepareReview(
         request.projectId,
@@ -401,7 +401,7 @@ export class CollabPublicationService {
     coordination: CollabCoordinationSnapshot | undefined,
     options: CollabOperationOptions = {},
   ): Promise<CollabPersonalChangesInspection> {
-    return this.enqueueProjectMutation(projectId, async () => {
+    return this.#enqueueProjectMutation(projectId, async () => {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       const runtime = await this.runtime();
       const currentMemberId = coordination?.snapshot.currentMember.id;
@@ -617,10 +617,10 @@ export class CollabPublicationService {
     options: CollabOperationOptions = {},
     idempotencyKey = `request-metadata-${randomUUID().replaceAll('-', '')}`,
   ): Promise<CollabChangeRequest> {
-    return this.enqueueProjectMutation(request.projectId, async () => {
+    return this.#enqueueProjectMutation(request.projectId, async () => {
       const runtime = await this.runtime();
       const description = normalizeCollabPublishDescription(request.description);
-      const draft = await this.saveRequestDraft(runtime, {
+      const draft = await this.#saveRequestDraft(runtime, {
         baseRequestRevision: request.expectedRequestRevision,
         description,
         projectId: request.projectId,
@@ -639,11 +639,11 @@ export class CollabPublicationService {
           && updated.latestHeadOid === request.expectedHeadOid
           && updated.description === description
         ) {
-          await this.removeRequestDraftIfUnchanged(runtime, draft);
+          await this.#removeRequestDraftIfUnchanged(runtime, draft);
         }
         return updated;
       } catch (error) {
-        await this.markRequestDraftNeedsAttention(runtime, draft);
+        await this.#markRequestDraftNeedsAttention(runtime, draft);
         throw error;
       }
     });
@@ -748,10 +748,10 @@ export class CollabPublicationService {
     request: CollabPublishRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.enqueueProjectMutation(request.projectId, async () => {
+    return this.#enqueueProjectMutation(request.projectId, async () => {
       const runtime = await this.runtime();
       const description = normalizeCollabPublishDescription(request.description);
-      const draft = await this.saveRequestDraft(runtime, {
+      const draft = await this.#saveRequestDraft(runtime, {
         description,
         projectId: request.projectId,
         syncState: 'local',
@@ -792,7 +792,7 @@ export class CollabPublicationService {
       } else {
         result = await runtime.coordinator.publish({ ...request, description }, options);
       }
-      await this.reconcileRequestDraft(runtime, draft, result);
+      await this.#reconcileRequestDraft(runtime, draft, result);
       if (result.status !== 'conflict') return result;
       const started = await runtime.conflicts.start(result.conflict, options);
       return started.status === 'success' ? result : started;
@@ -803,16 +803,16 @@ export class CollabPublicationService {
     request: CollabConfirmPublishRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.enqueueProjectMutation(request.projectId, async () => {
+    return this.#enqueueProjectMutation(request.projectId, async () => {
       const runtime = await this.runtime();
       const description = normalizeCollabPublishDescription(request.description);
-      const draft = await this.saveRequestDraft(runtime, {
+      const draft = await this.#saveRequestDraft(runtime, {
         description,
         projectId: request.projectId,
         syncState: 'local',
       });
       const result = await runtime.coordinator.confirm({ ...request, description }, options);
-      await this.reconcileRequestDraft(runtime, draft, result);
+      await this.#reconcileRequestDraft(runtime, draft, result);
       if (result.status !== 'conflict') return result;
       const started = await runtime.conflicts.start(result.conflict, options);
       return started.status === 'success' ? result : started;
@@ -831,7 +831,7 @@ export class CollabPublicationService {
       return result;
     };
     return 'encodedInvitation' in request
-      ? this.enqueueProjectMutation(request.projectId, reconnect)
+      ? this.#enqueueProjectMutation(request.projectId, reconnect)
       : reconnect();
   }
 
@@ -883,13 +883,13 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabReconciliationOutcome>> {
-    return this.enqueueProjectMutation(
+    return this.#enqueueProjectMutation(
       projectId,
-      () => this.synchronizeAcceptedMainUnlocked(projectId, options),
+      () => this.#synchronizeAcceptedMainUnlocked(projectId, options),
     );
   }
 
-  private async synchronizeAcceptedMainUnlocked(
+  async #synchronizeAcceptedMainUnlocked(
     projectId: CollabProjectId,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabReconciliationOutcome>> {
@@ -927,7 +927,7 @@ export class CollabPublicationService {
 
   private runtime(): Promise<PublicationRuntime> {
     if (this.runtimePromise) return this.runtimePromise;
-    const pending = this.createRuntime();
+    const pending = this.#createRuntime();
     this.runtimePromise = pending;
     void pending.catch(() => {
       if (this.runtimePromise === pending) this.runtimePromise = null;
@@ -935,7 +935,7 @@ export class CollabPublicationService {
     return pending;
   }
 
-  private ensureEventSubscription(
+  #ensureEventSubscription(
     projectId: CollabProjectId,
   ): Promise<{ dispose(): void }> {
     const session = this.sessions.acquire(projectId);
@@ -947,7 +947,7 @@ export class CollabPublicationService {
       session.observedAcceptedMainOid = currentMainOid;
       const acceptedMainChanged = previousMainOid !== null
         && previousMainOid !== currentMainOid;
-      this.notifyCoordination(
+      this.#notifyCoordination(
         projectId,
         acceptedMainChanged ? 'accepted-main-changed' : 'coordination-changed',
       );
@@ -955,7 +955,7 @@ export class CollabPublicationService {
     ));
   }
 
-  private async createRuntime(): Promise<PublicationRuntime> {
+  async #createRuntime(): Promise<PublicationRuntime> {
     const git = await this.foundation.requireGitFoundation();
     const projects = new LocalPublishProjectPort(
       this.foundation.local.projects,
@@ -1058,7 +1058,7 @@ export class CollabPublicationService {
     };
   }
 
-  private async saveRequestDraft(
+  async #saveRequestDraft(
     runtime: PublicationRuntime,
     input: Pick<CollabRequestDraftRecord, 'description' | 'projectId' | 'syncState'>
       & Partial<Pick<
@@ -1091,12 +1091,12 @@ export class CollabPublicationService {
     return record;
   }
 
-  private async markRequestDraftNeedsAttention(
+  async #markRequestDraftNeedsAttention(
     runtime: PublicationRuntime,
     expected: CollabRequestDraftRecord,
   ): Promise<void> {
     const draft = await runtime.requestDrafts.load(expected.projectId);
-    if (!draft || !this.sameRequestDraft(draft, expected)) return;
+    if (!draft || !this.#sameRequestDraft(draft, expected)) return;
     await runtime.requestDrafts.save({
       ...draft,
       syncState: 'needs-attention',
@@ -1104,7 +1104,7 @@ export class CollabPublicationService {
     });
   }
 
-  private async reconcileRequestDraft(
+  async #reconcileRequestDraft(
     runtime: PublicationRuntime,
     draft: CollabRequestDraftRecord,
     result: CollabResult<CollabPublishOutcome>,
@@ -1115,13 +1115,13 @@ export class CollabPublicationService {
       && result.value.request.description === draft.description
       && result.value.request.latestHeadOid === result.value.localHeadOid
     ) {
-      await this.removeRequestDraftIfUnchanged(runtime, draft);
+      await this.#removeRequestDraftIfUnchanged(runtime, draft);
       return;
     }
     if (result.status === 'success') {
       const current = await runtime.requestDrafts.load(draft.projectId);
-      if (!current || !this.sameRequestDraft(current, draft)) return;
-      await this.saveRequestDraft(runtime, {
+      if (!current || !this.#sameRequestDraft(current, draft)) return;
+      await this.#saveRequestDraft(runtime, {
         description: draft.description,
         projectId: draft.projectId,
         syncState: 'local',
@@ -1129,20 +1129,20 @@ export class CollabPublicationService {
       });
       return;
     }
-    await this.markRequestDraftNeedsAttention(runtime, draft);
+    await this.#markRequestDraftNeedsAttention(runtime, draft);
   }
 
-  private async removeRequestDraftIfUnchanged(
+  async #removeRequestDraftIfUnchanged(
     runtime: PublicationRuntime,
     expected: CollabRequestDraftRecord,
   ): Promise<void> {
     const current = await runtime.requestDrafts.load(expected.projectId);
-    if (current && this.sameRequestDraft(current, expected)) {
+    if (current && this.#sameRequestDraft(current, expected)) {
       await runtime.requestDrafts.remove(expected.projectId);
     }
   }
 
-  private sameRequestDraft(
+  #sameRequestDraft(
     left: CollabRequestDraftRecord,
     right: CollabRequestDraftRecord,
   ): boolean {
@@ -1157,7 +1157,7 @@ export class CollabPublicationService {
       && left.targetHeadOid === right.targetHeadOid;
   }
 
-  private notifyCoordination(
+  #notifyCoordination(
     projectId: CollabProjectId,
     reason: 'accepted-main-changed' | 'coordination-changed',
   ): void {
@@ -1170,7 +1170,7 @@ export class CollabPublicationService {
     }
   }
 
-  private enqueueProjectMutation<T>(
+  #enqueueProjectMutation<T>(
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {

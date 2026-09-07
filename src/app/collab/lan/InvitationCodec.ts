@@ -154,17 +154,17 @@ export class InvitationCodec {
   }
 
   decode(encodedInvitation: string): LanCollabInvitation {
-    const { payload, prefixVersion } = this.decodeEncodedPayload(encodedInvitation);
+    const { payload, prefixVersion } = this.#decodeEncodedPayload(encodedInvitation);
     if (prefixVersion !== COLLAB_CONTROL_PROTOCOL_VERSION) {
-      throw this.unsupportedVersion(prefixVersion);
+      throw this.#unsupportedVersion(prefixVersion);
     }
-    return this.decodeCurrentPayload(payload);
+    return this.#decodeCurrentPayload(payload);
   }
 
   decodePendingJoinRecovery(encodedInvitation: string): LanCollabInvitation {
-    const { payload, prefixVersion } = this.decodeEncodedPayload(encodedInvitation);
+    const { payload, prefixVersion } = this.#decodeEncodedPayload(encodedInvitation);
     if (prefixVersion === COLLAB_CONTROL_PROTOCOL_VERSION) {
-      return this.decodeCurrentPayload(payload);
+      return this.#decodeCurrentPayload(payload);
     }
     if (
       prefixVersion !== LEGACY_PENDING_JOIN_PROTOCOL_VERSION
@@ -174,15 +174,15 @@ export class InvitationCodec {
       || (payload as Readonly<Record<string, unknown>>).protocolVersion
         !== LEGACY_PENDING_JOIN_PROTOCOL_VERSION
     ) {
-      throw this.unsupportedVersion(prefixVersion);
+      throw this.#unsupportedVersion(prefixVersion);
     }
-    return this.decodeCurrentPayload({
+    return this.#decodeCurrentPayload({
       ...(payload as Readonly<Record<string, unknown>>),
       protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
     });
   }
 
-  private decodeEncodedPayload(encodedInvitation: string): {
+  #decodeEncodedPayload(encodedInvitation: string): {
     readonly payload: unknown;
     readonly prefixVersion: number;
   } {
@@ -208,13 +208,13 @@ export class InvitationCodec {
     return { payload, prefixVersion };
   }
 
-  private decodeCurrentPayload(payload: unknown): LanCollabInvitation {
+  #decodeCurrentPayload(payload: unknown): LanCollabInvitation {
     const decoded = decodeLanCollabInvitation(payload);
     if (decoded.status !== 'ok') throw decoded.error;
     return this.validateInvitation(decoded.value);
   }
 
-  private unsupportedVersion(receivedVersion: number): CollabError {
+  #unsupportedVersion(receivedVersion: number): CollabError {
     return new CollabError({
       code: 'protocol-version-unsupported',
       recoveryActions: ['refresh-invitation'],

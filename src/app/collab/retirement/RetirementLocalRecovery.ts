@@ -83,7 +83,7 @@ export class RetirementLocalRecovery {
         continue;
       }
       if (retirement === null && (pendingLeave || project.lifecycle !== 'retired')) continue;
-      await this.resumeRetirement(project.id).catch(error => {
+      await this.#resumeRetirement(project.id).catch(error => {
         firstError ??= error;
       });
     }
@@ -100,7 +100,7 @@ export class RetirementLocalRecovery {
         return [null, null, null] as const;
       });
       if (retirement && !acknowledgementOnly.has(projectId)) {
-        await this.resumeRetirement(projectId).catch(error => {
+        await this.#resumeRetirement(projectId).catch(error => {
           firstError ??= error;
         });
         continue;
@@ -144,7 +144,7 @@ export class RetirementLocalRecovery {
     );
   }
 
-  private resumeRetirement(projectId: CollabProjectId): Promise<void> {
+  #resumeRetirement(projectId: CollabProjectId): Promise<void> {
     return this.projectRecoveryAdmission(
       projectId,
       () => this.handler.resume(projectId),

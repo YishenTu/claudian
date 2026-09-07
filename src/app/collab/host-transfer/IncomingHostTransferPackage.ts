@@ -218,20 +218,20 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
   stageAndValidate(
     input: Parameters<IncomingHostTransferPackagePort['stageAndValidate']>[0],
   ): Promise<{ readonly manifestDigest: string }> {
-    return this.operationQueue.run(() => this.stageUnlocked(input));
+    return this.operationQueue.run(() => this.#stageUnlocked(input));
   }
 
   installAndActivate(
     input: Parameters<IncomingHostTransferPackagePort['installAndActivate']>[0],
   ): Promise<{ readonly eventSequence: number }> {
-    return this.operationQueue.run(() => this.installUnlocked(input));
+    return this.operationQueue.run(() => this.#installUnlocked(input));
   }
 
-  private async stageUnlocked(
+  async #stageUnlocked(
     input: Parameters<IncomingHostTransferPackagePort['stageAndValidate']>[0],
   ): Promise<{ readonly manifestDigest: string }> {
-    this.assertStageRecordManifest(input.record, input.manifest);
-    const directory = await this.requireStaging(input.record);
+    this.#assertStageRecordManifest(input.record, input.manifest);
+    const directory = await this.#requireStaging(input.record);
     const store = new HostTransferArtifactStore(directory);
     const gitBundlePath = await store.receive(
       'git-bundle',
@@ -264,7 +264,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       signal: input.signal,
       suppressHooks: true,
     });
-    await this.assertBundleRefs(
+    await this.#assertBundleRefs(
       gitBundlePath,
       workingRepository,
       inspected.expectedRefs,
@@ -306,12 +306,12 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     });
   }
 
-  private async installUnlocked(
+  async #installUnlocked(
     input: Parameters<IncomingHostTransferPackagePort['installAndActivate']>[0],
   ): Promise<{ readonly eventSequence: number }> {
-    const directory = await this.requireStaging(input.record);
-    const manifest = await this.loadManifest(directory);
-    this.assertInstallRecordManifest(input.record, manifest, input.manifestDigest);
+    const directory = await this.#requireStaging(input.record);
+    const manifest = await this.#loadManifest(directory);
+    this.#assertInstallRecordManifest(input.record, manifest, input.manifestDigest);
     if (
       !DIGEST_PATTERN.test(input.manifestDigest)
       || digestHostTransferPackageManifest(manifest) !== input.manifestDigest
@@ -353,7 +353,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       signal: input.signal,
       suppressHooks: true,
     });
-    await this.assertBundleRefs(
+    await this.#assertBundleRefs(
       bundlePath,
       workingRepository,
       inspected.expectedRefs,
@@ -394,7 +394,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       sourceHostMemberId: input.record.sourceHostMemberId,
     });
     const authorityDirectory = await this.options.ensureAuthorityDirectory(input.record.projectId);
-    await this.requireDirectory(authorityDirectory, 'host-transfer-target-authority-directory-invalid');
+    await this.#requireDirectory(authorityDirectory, 'host-transfer-target-authority-directory-invalid');
     const owner: InstallOwner = Object.freeze({
       activatedSnapshotDigest: sha256(activated.bytes),
       manifestDigest: input.manifestDigest,
@@ -403,8 +403,8 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       schemaVersion: 1,
       transferId: input.record.transferId,
     });
-    await this.installDatabase(authorityDirectory, activated, owner);
-    await this.installRepository({
+    await this.#installDatabase(authorityDirectory, activated, owner);
+    await this.#installRepository({
       authorityDirectory,
       bundlePath,
       expectedRefs: inspected.expectedRefs,
@@ -419,7 +419,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     return Object.freeze({ eventSequence: activated.eventSequence });
   }
 
-  private async installDatabase(
+  async #installDatabase(
     authorityDirectory: string,
     activated: {
       readonly bytes: Uint8Array;
@@ -489,7 +489,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     await store.syncDirectory();
   }
 
-  private async installRepository(input: {
+  async #installRepository(input: {
     readonly authorityDirectory: string;
     readonly bundlePath: string;
     readonly expectedRefs: readonly string[];
@@ -521,10 +521,10 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     }
     await this.options.repositories.configureHostedRepository(repositoryPath);
     await this.options.repositories.assertHealthy(repositoryPath);
-    await this.assertInstalledRefs(repositoryPath, input.expectedRefs, input.manifest, input.signal);
+    await this.#assertInstalledRefs(repositoryPath, input.expectedRefs, input.manifest, input.signal);
   }
 
-  private async assertBundleRefs(
+  async #assertBundleRefs(
     bundlePath: string,
     cwd: string,
     expectedRefs: readonly string[],
@@ -538,11 +538,11 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       signal,
       suppressHooks: true,
     });
-    const refs = this.parseRefLines(result.stdout.toString('utf8'), true);
-    this.assertExactRefs(refs, expectedRefs, manifest);
+    const refs = this.#parseRefLines(result.stdout.toString('utf8'), true);
+    this.#assertExactRefs(refs, expectedRefs, manifest);
   }
 
-  private async assertInstalledRefs(
+  async #assertInstalledRefs(
     repositoryPath: string,
     expectedRefs: readonly string[],
     manifest: HostTransferPackageManifest,
@@ -564,14 +564,14 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       formatResult.stdout.toString('utf8').trim() !== manifest.gitObjectFormat
       || mainOid !== manifest.authorityMainOid
     ) throw packageError('host-transfer-target-git-identity-mismatch');
-    this.assertExactRefs(
-      this.parseRefLines(refsResult.stdout.toString('utf8'), false),
+    this.#assertExactRefs(
+      this.#parseRefLines(refsResult.stdout.toString('utf8'), false),
       expectedRefs,
       manifest,
     );
   }
 
-  private parseRefLines(output: string, allowHead: boolean): ReadonlyMap<string, string> {
+  #parseRefLines(output: string, allowHead: boolean): ReadonlyMap<string, string> {
     const refs = new Map<string, string>();
     for (const line of output.trim().split(/\r?\n/).filter(Boolean)) {
       const match = /^(\S+) (HEAD|refs\/heads\/[A-Za-z0-9._/-]+)$/.exec(line);
@@ -583,7 +583,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     return refs;
   }
 
-  private assertExactRefs(
+  #assertExactRefs(
     refs: ReadonlyMap<string, string>,
     expectedRefs: readonly string[],
     manifest: HostTransferPackageManifest,
@@ -599,7 +599,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     }
   }
 
-  private async requireStaging(record: HostTransferRecoveryRecord): Promise<string> {
+  async #requireStaging(record: HostTransferRecoveryRecord): Promise<string> {
     const expectedName = `.claudian-host-transfer-${record.transferId}`;
     if (record.stagingDirectoryName !== expectedName) {
       throw packageError('host-transfer-target-staging-name-invalid');
@@ -613,18 +613,18 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
         purpose: 'host-transfer-staging',
       },
     );
-    await this.requireDirectory(reserved.absolutePath, 'host-transfer-target-staging-invalid');
+    await this.#requireDirectory(reserved.absolutePath, 'host-transfer-target-staging-invalid');
     return reserved.absolutePath;
   }
 
-  private async requireDirectory(directory: string, reason: string): Promise<void> {
+  async #requireDirectory(directory: string, reason: string): Promise<void> {
     const info = await lstat(directory).catch(() => null);
     if (!path.isAbsolute(directory) || !info?.isDirectory() || info.isSymbolicLink()) {
       throw packageError(reason);
     }
   }
 
-  private async loadManifest(directory: string): Promise<HostTransferPackageManifest> {
+  async #loadManifest(directory: string): Promise<HostTransferPackageManifest> {
     try {
       return parseHostTransferRecoveryPackageManifest(await readFile(
         path.join(directory, HOST_TRANSFER_MANIFEST_FILE),
@@ -636,7 +636,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     }
   }
 
-  private assertRecordManifestIdentity(
+  #assertRecordManifestIdentity(
     record: HostTransferRecoveryRecord,
     manifest: HostTransferPackageManifest,
   ): void {
@@ -648,11 +648,11 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     ) throw packageError('host-transfer-target-manifest-binding-invalid');
   }
 
-  private assertStageRecordManifest(
+  #assertStageRecordManifest(
     record: HostTransferRecoveryRecord,
     manifest: HostTransferPackageManifest,
   ): void {
-    this.assertRecordManifestIdentity(record, manifest);
+    this.#assertRecordManifestIdentity(record, manifest);
     if (
       record.direction !== 'incoming'
       || (record.phase !== 'accepted' && record.phase !== 'quiescing')
@@ -663,12 +663,12 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     ) throw packageError('host-transfer-target-recovery-record-invalid');
   }
 
-  private assertInstallRecordManifest(
+  #assertInstallRecordManifest(
     record: HostTransferRecoveryRecord,
     manifest: HostTransferPackageManifest,
     manifestDigest: string,
   ): void {
-    this.assertRecordManifestIdentity(record, manifest);
+    this.#assertRecordManifestIdentity(record, manifest);
     if (
       record.direction !== 'incoming'
       || ![

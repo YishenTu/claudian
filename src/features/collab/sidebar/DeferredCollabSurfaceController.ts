@@ -26,7 +26,7 @@ export class DeferredCollabSurfaceController implements CollabSidebarSurfaceCont
       this.controller.setActive(active);
       return;
     }
-    if (active && !this.loadPromise) this.startLoading();
+    if (active && !this.loadPromise) this.#startLoading();
   }
 
   preload(): void {
@@ -36,7 +36,7 @@ export class DeferredCollabSurfaceController implements CollabSidebarSurfaceCont
       this.controller.preload?.();
       return;
     }
-    if (!this.loadPromise) this.startLoading();
+    if (!this.loadPromise) this.#startLoading();
   }
 
   destroy(): void {
@@ -49,7 +49,7 @@ export class DeferredCollabSurfaceController implements CollabSidebarSurfaceCont
     this.controller = null;
   }
 
-  private startLoading(): void {
+  #startLoading(): void {
     this.statusEl = this.hostEl.createDiv({
       cls: 'claudian-collab-panel-status',
       text: this.options.loadingText,

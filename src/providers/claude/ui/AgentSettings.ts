@@ -246,7 +246,7 @@ export class AgentSettings {
       attr: { 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
-    refreshBtn.addEventListener('click', () => { void this.refreshAgents(); });
+    refreshBtn.addEventListener('click', () => { void this.#refreshAgents(); });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
@@ -267,11 +267,11 @@ export class AgentSettings {
     const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
 
     for (const agent of vaultAgents) {
-      this.renderAgentItem(listEl, agent);
+      this.#renderAgentItem(listEl, agent);
     }
   }
 
-  private renderAgentItem(listEl: HTMLElement, agent: AgentDefinition): void {
+  #renderAgentItem(listEl: HTMLElement, agent: AgentDefinition): void {
     const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
 
     const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
@@ -308,7 +308,7 @@ export class AgentSettings {
       );
       if (!confirmed) return;
       try {
-        await this.deleteAgent(agent);
+        await this.#deleteAgent(agent);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         new Notice(t('settings.subagents.deleteFailed', { message }));
@@ -317,7 +317,7 @@ export class AgentSettings {
     });
   }
 
-  private async refreshAgents(): Promise<void> {
+  async #refreshAgents(): Promise<void> {
     try {
       await this.agentManager.loadAgents();
       this.render();
@@ -375,7 +375,7 @@ export class AgentSettings {
     );
   }
 
-  private async deleteAgent(agent: AgentDefinition): Promise<void> {
+  async #deleteAgent(agent: AgentDefinition): Promise<void> {
     await this.agentStorage.delete(agent);
 
     try {

@@ -44,7 +44,7 @@ export class OutgoingHostTransferRuntime {
   ) {}
 
   run(projectId: CollabProjectId, transferId: CollabOperationId): Promise<void> {
-    return this.track(() => this.coordinator(transferId).run(
+    return this.#track(() => this.coordinator(transferId).run(
       projectId,
       transferId,
       this.abortController.signal,
@@ -55,7 +55,7 @@ export class OutgoingHostTransferRuntime {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    return this.track(() => (
+    return this.#track(() => (
       this.coordinator(transferId).prepareAccepted(projectId, transferId)
     ));
   }
@@ -64,7 +64,7 @@ export class OutgoingHostTransferRuntime {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    return this.track(() => (
+    return this.#track(() => (
       this.coordinator(transferId).prepareCancellation(projectId, transferId)
     ));
   }
@@ -73,7 +73,7 @@ export class OutgoingHostTransferRuntime {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    return this.track(() => (
+    return this.#track(() => (
       this.coordinator(transferId).cancelBeforeRelinquishment(projectId, transferId)
     ));
   }
@@ -84,7 +84,7 @@ export class OutgoingHostTransferRuntime {
     | 'pre-relinquishment'
     | 'pre-relinquishment-cleanup'
   > {
-    return this.track(async () => {
+    return this.#track(async () => {
       const record = await this.recovery.load(this.projectId, 'outgoing');
       if (!record) return 'none';
       return this.coordinator(record.transferId).inspectStartupRecovery(
@@ -95,7 +95,7 @@ export class OutgoingHostTransferRuntime {
   }
 
   prepareTerminalRecoveryBeforeStartup(): Promise<void> {
-    return this.track(async () => {
+    return this.#track(async () => {
       const record = await this.recovery.load(this.projectId, 'outgoing');
       if (!record) return;
       await this.coordinator(record.transferId).prepareTerminalRecoveryBeforeStartup(
@@ -106,7 +106,7 @@ export class OutgoingHostTransferRuntime {
   }
 
   resume(): Promise<void> {
-    return this.track(async () => {
+    return this.#track(async () => {
       const record = await this.recovery.load(this.projectId, 'outgoing');
       if (!record) return;
       await this.coordinator(record.transferId).run(
@@ -126,7 +126,7 @@ export class OutgoingHostTransferRuntime {
     return this.closePromise;
   }
 
-  private track<T>(operation: () => Promise<T>): Promise<T> {
+  #track<T>(operation: () => Promise<T>): Promise<T> {
     if (this.closed) {
       return Promise.reject(new CollabError({
         code: 'cancelled',

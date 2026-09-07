@@ -200,7 +200,7 @@ class CodexExecutionRun implements ProviderExecutionRun {
   finish(event: ProviderExecutionEvent): void {
     if (this.terminal) return;
     this.terminal = true;
-    this.detachAbortSignal();
+    this.#detachAbortSignal();
     this.queue.push(event);
     this.queue.close();
   }
@@ -218,7 +218,7 @@ class CodexExecutionRun implements ProviderExecutionRun {
     if (signal.aborted) this.cancel();
   }
 
-  private detachAbortSignal(): void {
+  #detachAbortSignal(): void {
     this.abortListener?.();
     this.abortListener = null;
   }
@@ -332,11 +332,11 @@ export class CodexExecutionSession
       ?? null;
     this.workspaceDependencyToolVersion =
       codexState.workspaceDependencyToolVersion ?? null;
-    this.snapshot = this.buildSnapshot('idle', 0);
+    this.snapshot = this.#buildSnapshot('idle', 0);
     this.serverRequestRouter = new CodexExecutionServerRequestRouter(
       this.sessionInstanceId,
       config.interactionPort,
-      (threadId, turnId) => this.observeNativeTurn(threadId, turnId),
+      (threadId, turnId) => this.#observeNativeTurn(threadId, turnId),
     );
   }
 
@@ -350,12 +350,12 @@ export class CodexExecutionSession
 
     const run = new CodexExecutionRun(
       this.sessionInstanceId,
-      current => this.cancelRun(current),
+      current => this.#cancelRun(current),
     );
     this.activeRun = run;
     run.attachAbortSignal(request.signal);
     if (!run.isCancellationRequested) {
-      void this.executeRun(run, request);
+      void this.#executeRun(run, request);
     }
     return run;
   }
@@ -397,7 +397,7 @@ export class CodexExecutionSession
       return false;
     }
 
-    const bundle = this.buildInputBundle(request);
+    const bundle = this.#buildInputBundle(request);
     this.activeInputBundles.add(bundle);
     try {
       const result = await transport.request<TurnSteerResult>('turn/steer', {
@@ -422,7 +422,7 @@ export class CodexExecutionSession
       }
       throw error;
     } finally {
-      this.disposeInputBundle(bundle);
+      this.#disposeInputBundle(bundle);
     }
   }
 
@@ -432,41 +432,41 @@ export class CodexExecutionSession
     this.lifecycleGeneration += 1;
     this.activeRun?.cancel();
     this.serverRequestRouter.abortAll('session-disposed');
-    this.disposePromise = this.disposeInternal();
+    this.disposePromise = this.#disposeInternal();
     return this.disposePromise;
   }
 
-  private async disposeInternal(): Promise<void> {
-    this.cleanupInputBundles();
+  async #disposeInternal(): Promise<void> {
+    this.#cleanupInputBundles();
     this.notificationRouter?.endTurn();
     this.notificationRouter = null;
     this.pendingTurnNotifications = [];
     try {
-      const processDisposal = this.disposeOwnedProcessAfterForkIdentity();
+      const processDisposal = this.#disposeOwnedProcessAfterForkIdentity();
       const [processResult] = await Promise.allSettled([
         processDisposal,
-        this.settleForkSetup(),
+        this.#settleForkSetup(),
       ]);
       if (processResult.status === 'rejected') {
         throw processResult.reason;
       }
     } finally {
-      this.updateSnapshot('disposed');
-      this.emitSessionState();
+      this.#updateSnapshot('disposed');
+      this.#emitSessionState();
       this.sessionEventListeners.clear();
     }
   }
 
-  private async executeRun(
+  async #executeRun(
     run: CodexExecutionRun,
     request: ProviderExecutionRequest,
   ): Promise<void> {
     const generation = this.lifecycleGeneration;
     try {
-      const settings = this.resolveProviderSettings();
-      const model = this.resolveModel(request, settings);
+      const settings = this.#resolveProviderSettings();
+      const model = this.#resolveModel(request, settings);
       if (!model) {
-        this.finishError(
+        this.#finishError(
           run,
           'configuration',
           'No Codex model is selected. Enable a model in Claudian settings.',
@@ -474,13 +474,13 @@ export class CodexExecutionSession
         );
         return;
       }
-      const effort = this.resolveReasoningEffort(request, settings, model);
+      const effort = this.#resolveReasoningEffort(request, settings, model);
 
       if (
         request.toolPolicy.kind === 'allow-list'
         && !CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST
       ) {
-        this.finishError(
+        this.#finishError(
           run,
           'configuration',
           'Codex app-server does not support exact allow-list enforcement for provider built-in tools.',
@@ -493,7 +493,7 @@ export class CodexExecutionSession
         isCompactRequest(request)
         && !this.nativeConversationContextEstablished
       ) {
-        this.finishError(
+        this.#finishError(
           run,
           'configuration',
           'Codex cannot compact before its native context is restored. Send a normal prompt first.',
@@ -502,14 +502,14 @@ export class CodexExecutionSession
         return;
       }
 
-      await this.ensureProcess(generation);
-      if (!this.isRunCurrent(run, generation)) return;
+      await this.#ensureProcess(generation);
+      if (!this.#isRunCurrent(run, generation)) return;
 
-      const policy = this.resolvePolicy(request, settings);
-      const baseInstructions = this.resolveBaseInstructions(request);
-      const nativePersistence = this.resolveNativePersistence();
+      const policy = this.#resolvePolicy(request, settings);
+      const baseInstructions = this.#resolveBaseInstructions(request);
+      const nativePersistence = this.#resolveNativePersistence();
       const replayConversationHistory = !this.nativeConversationContextEstablished;
-      const thread = await this.ensureThread(
+      const thread = await this.#ensureThread(
         run,
         request,
         model,
@@ -519,7 +519,7 @@ export class CodexExecutionSession
         nativePersistence,
         generation,
       );
-      if (!this.isRunCurrent(run, generation)) return;
+      if (!this.#isRunCurrent(run, generation)) return;
       if (thread.forkCheckpoint) {
         this.nativeConversationContextEstablished = true;
       }
@@ -535,14 +535,14 @@ export class CodexExecutionSession
         this.sessionFilePath = thread.sessionFilePath;
       }
       if (threadIdentityChanged || this.snapshot.status !== 'executing') {
-        this.updateSnapshot('executing');
-        this.emitSnapshot(run);
+        this.#updateSnapshot('executing');
+        this.#emitSnapshot(run);
       }
 
       this.notificationRouter = new CodexNotificationRouter(
         chunk => this.handleStreamChunk(run, chunk),
         undefined,
-        this.resolveTargetWorkingDirectory(),
+        this.#resolveTargetWorkingDirectory(),
       );
       this.notificationRouter.beginTurn();
       this.pendingTurnNotifications = [];
@@ -555,7 +555,7 @@ export class CodexExecutionSession
         return;
       }
       if (startsWithCompactCommand(request)) {
-        this.finishError(
+        this.#finishError(
           run,
           'configuration',
           '/compact does not accept arguments',
@@ -564,12 +564,12 @@ export class CodexExecutionSession
         return;
       }
 
-      const turnInput = this.buildTurnPrompt(
+      const turnInput = this.#buildTurnPrompt(
         request,
         thread.forkCheckpoint,
         replayConversationHistory,
       );
-      const bundle = this.buildInputBundle(request, turnInput);
+      const bundle = this.#buildInputBundle(request, turnInput);
       this.activeInputBundles.add(bundle);
       const serviceTier = resolveCodexServiceTier(
         request.configuration.serviceTier ?? settings.serviceTier,
@@ -596,18 +596,18 @@ export class CodexExecutionSession
         sandboxPolicy: policy.sandboxPolicy,
         collaborationMode,
       });
-      this.markNativeConversationContextEstablished(run);
-      if (!this.isRunCurrent(run, generation)) return;
-      this.observeNativeTurn(thread.threadId, result.turn.id);
+      this.#markNativeConversationContextEstablished(run);
+      if (!this.#isRunCurrent(run, generation)) return;
+      this.#observeNativeTurn(thread.threadId, result.turn.id);
     } catch (error) {
-      if (!this.isRunCurrent(run, generation) || run.isCancellationRequested) {
+      if (!this.#isRunCurrent(run, generation) || run.isCancellationRequested) {
         return;
       }
-      this.handleExecutionFailure(run, error);
+      this.#handleExecutionFailure(run, error);
     }
   }
 
-  private async ensureProcess(generation: number): Promise<void> {
+  async #ensureProcess(generation: number): Promise<void> {
     await this.processDisposalPromise;
     if (this.disposed || generation !== this.lifecycleGeneration) {
       throw new Error('Codex execution session has been disposed.');
@@ -620,7 +620,7 @@ export class CodexExecutionSession
       return;
     }
 
-    await this.shutdownDeadProcess();
+    await this.#shutdownDeadProcess();
     if (this.disposed || generation !== this.lifecycleGeneration) {
       throw new Error('Codex execution session has been disposed.');
     }
@@ -632,7 +632,7 @@ export class CodexExecutionSession
     const process = new CodexAppServerProcess(launchSpec);
     this.launchSpec = launchSpec;
     this.process = process;
-    const exitHandler = () => this.handleProcessExit(process);
+    const exitHandler = () => this.#handleProcessExit(process);
     this.processExitHandler = exitHandler;
     process.onExit(exitHandler);
 
@@ -658,10 +658,10 @@ export class CodexExecutionSession
         createCodexWorkspaceDependencyTool(this.runtimeContext),
       );
       this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
-      this.wireTransportHandlers(transport, generation);
+      this.#wireTransportHandlers(transport, generation);
     } catch (error) {
       try {
-        await this.disposeOwnedProcess();
+        await this.#disposeOwnedProcess();
       } catch {
         // Preserve the startup failure that caused cleanup.
       }
@@ -669,11 +669,11 @@ export class CodexExecutionSession
     }
   }
 
-  private async shutdownDeadProcess(): Promise<void> {
-    await this.disposeOwnedProcess();
+  async #shutdownDeadProcess(): Promise<void> {
+    await this.#disposeOwnedProcess();
   }
 
-  private wireTransportHandlers(
+  #wireTransportHandlers(
     transport: CodexRpcTransport,
     generation: number,
   ): void {
@@ -703,7 +703,7 @@ export class CodexExecutionSession
       transport.onNotification(
         method,
         (params) => {
-          if (!this.isTransportCurrent(transport, generation)) return;
+          if (!this.#isTransportCurrent(transport, generation)) return;
           this.handleNotification(method, params);
         },
       );
@@ -720,7 +720,7 @@ export class CodexExecutionSession
       transport.onServerRequest(
         method,
         (requestId, params) => {
-          if (!this.isTransportCurrent(transport, generation)) {
+          if (!this.#isTransportCurrent(transport, generation)) {
             return Promise.reject(new Error('Stale Codex app-server transport.'));
           }
           return this.serverRequestRouter.handleServerRequest(
@@ -733,7 +733,7 @@ export class CodexExecutionSession
     }
   }
 
-  private isTransportCurrent(
+  #isTransportCurrent(
     transport: CodexRpcTransport,
     generation: number,
   ): boolean {
@@ -759,7 +759,7 @@ export class CodexExecutionSession
     if (!run || run.isTerminal || run.isCancellationRequested) return;
     if (method === 'turn/started') {
       const started = params as TurnStartedNotification;
-      this.observeNativeTurn(started.threadId, started.turn.id);
+      this.#observeNativeTurn(started.threadId, started.turn.id);
       return;
     }
 
@@ -767,9 +767,9 @@ export class CodexExecutionSession
       const changed = params as ThreadStatusChangedNotification;
       if (changed.threadId !== run.nativeThreadId) return;
       if (changed.status.type === 'idle') {
-        this.observeThreadIdle(run);
+        this.#observeThreadIdle(run);
       } else {
-        this.cancelMissedTurnCompletionRecovery();
+        this.#cancelMissedTurnCompletionRecovery();
       }
       return;
     }
@@ -780,7 +780,7 @@ export class CodexExecutionSession
         this.pendingTurnNotifications.push({ method, params });
         return;
       }
-      if (!this.observeNativeTurn(scope.threadId, scope.turnId)) return;
+      if (!this.#observeNativeTurn(scope.threadId, scope.turnId)) return;
       if (
         scope.threadId !== run.nativeThreadId
         || scope.turnId !== run.nativeTurnId
@@ -793,7 +793,7 @@ export class CodexExecutionSession
     }
 
     if (method === 'turn/completed') {
-      this.cancelMissedTurnCompletionRecovery();
+      this.#cancelMissedTurnCompletionRecovery();
       const completed = params as TurnCompletedNotification;
       run.completion = {
         status: completed.turn.status === 'inProgress'
@@ -808,14 +808,14 @@ export class CodexExecutionSession
     this.notificationRouter?.handleNotification(method, params);
   }
 
-  private observeThreadIdle(run: CodexExecutionRun): void {
+  #observeThreadIdle(run: CodexExecutionRun): void {
     let recovery = this.completionRecovery;
     if (
       !recovery
       || recovery.run !== run
       || recovery.generation !== this.lifecycleGeneration
     ) {
-      this.cancelMissedTurnCompletionRecovery();
+      this.#cancelMissedTurnCompletionRecovery();
       recovery = {
         run,
         generation: this.lifecycleGeneration,
@@ -825,13 +825,13 @@ export class CodexExecutionSession
       };
       this.completionRecovery = recovery;
     }
-    this.scheduleMissedTurnCompletionRecovery(
+    this.#scheduleMissedTurnCompletionRecovery(
       recovery,
       MISSED_TURN_COMPLETION_GRACE_MS,
     );
   }
 
-  private scheduleMissedTurnCompletionRecovery(
+  #scheduleMissedTurnCompletionRecovery(
     recovery: CompletionRecovery,
     delayMs: number,
   ): void {
@@ -839,18 +839,18 @@ export class CodexExecutionSession
       this.completionRecovery !== recovery
       || recovery.timer !== null
       || recovery.inFlight
-      || !this.isCompletionRecoveryCurrent(recovery)
+      || !this.#isCompletionRecoveryCurrent(recovery)
       || !recovery.run.nativeTurnId
     ) {
       return;
     }
     recovery.timer = window.setTimeout(() => {
       recovery.timer = null;
-      void this.recoverMissedTurnCompletion(recovery);
+      void this.#recoverMissedTurnCompletion(recovery);
     }, delayMs);
   }
 
-  private cancelMissedTurnCompletionRecovery(): void {
+  #cancelMissedTurnCompletionRecovery(): void {
     const recovery = this.completionRecovery;
     if (recovery && recovery.timer !== null) {
       window.clearTimeout(recovery.timer);
@@ -858,7 +858,7 @@ export class CodexExecutionSession
     this.completionRecovery = null;
   }
 
-  private async recoverMissedTurnCompletion(
+  async #recoverMissedTurnCompletion(
     recovery: CompletionRecovery,
   ): Promise<void> {
     const { run } = recovery;
@@ -869,7 +869,7 @@ export class CodexExecutionSession
       !transport
       || !threadId
       || !turnId
-      || !this.isCompletionRecoveryCurrent(recovery)
+      || !this.#isCompletionRecoveryCurrent(recovery)
     ) {
       return;
     }
@@ -885,10 +885,10 @@ export class CodexExecutionSession
       );
     } catch {
       recovery.inFlight = false;
-      this.retryOrFailMissedTurnCompletion(recovery);
+      this.#retryOrFailMissedTurnCompletion(recovery);
       return;
     }
-    if (!this.isCompletionRecoveryCurrent(recovery)) return;
+    if (!this.#isCompletionRecoveryCurrent(recovery)) return;
     recovery.inFlight = false;
     const turn = result.thread.turns.find(candidate => candidate.id === turnId);
     if (
@@ -896,26 +896,26 @@ export class CodexExecutionSession
       || !turn
       || turn.status === 'inProgress'
     ) {
-      this.retryOrFailMissedTurnCompletion(recovery);
+      this.#retryOrFailMissedTurnCompletion(recovery);
       return;
     }
-    this.replayRecoveredTurnItems(threadId, turn);
+    this.#replayRecoveredTurnItems(threadId, turn);
     this.handleNotification('turn/completed', { threadId, turn });
   }
 
-  private retryOrFailMissedTurnCompletion(
+  #retryOrFailMissedTurnCompletion(
     recovery: CompletionRecovery,
   ): void {
-    if (!this.isCompletionRecoveryCurrent(recovery)) return;
+    if (!this.#isCompletionRecoveryCurrent(recovery)) return;
     if (recovery.attempt < MISSED_TURN_COMPLETION_MAX_ATTEMPTS) {
       const retryDelay = MISSED_TURN_COMPLETION_RETRY_BASE_MS
         * (2 ** (recovery.attempt - 1));
-      this.scheduleMissedTurnCompletionRecovery(recovery, retryDelay);
+      this.#scheduleMissedTurnCompletionRecovery(recovery, retryDelay);
       return;
     }
 
-    this.cancelMissedTurnCompletionRecovery();
-    this.finishError(
+    this.#cancelMissedTurnCompletionRecovery();
+    this.#finishError(
       recovery.run,
       'provider',
       'Codex became idle, but its completed turn could not be recovered.',
@@ -923,7 +923,7 @@ export class CodexExecutionSession
     );
   }
 
-  private isCompletionRecoveryCurrent(
+  #isCompletionRecoveryCurrent(
     recovery: CompletionRecovery,
   ): boolean {
     const { run, generation } = recovery;
@@ -936,7 +936,7 @@ export class CodexExecutionSession
     );
   }
 
-  private replayRecoveredTurnItems(
+  #replayRecoveredTurnItems(
     threadId: string,
     turn: ThreadReadResult['thread']['turns'][number],
   ): void {
@@ -949,7 +949,7 @@ export class CodexExecutionSession
     }
   }
 
-  private observeNativeTurn(threadId: string, nativeTurnId: string): boolean {
+  #observeNativeTurn(threadId: string, nativeTurnId: string): boolean {
     const run = this.activeRun;
     if (
       !run
@@ -962,7 +962,7 @@ export class CodexExecutionSession
     if (run.nativeTurnId && run.nativeTurnId !== nativeTurnId) {
       return false;
     }
-    this.markNativeConversationContextEstablished(run);
+    this.#markNativeConversationContextEstablished(run);
     if (!run.nativeTurnId) {
       run.nativeTurnId = nativeTurnId;
       this.serverRequestRouter.setActiveTurn({
@@ -977,10 +977,10 @@ export class CodexExecutionSession
         accepted: true,
         nativeTurnId,
       });
-      this.flushPendingTurnNotifications(run);
+      this.#flushPendingTurnNotifications(run);
       const recovery = this.completionRecovery;
       if (recovery?.run === run) {
-        this.scheduleMissedTurnCompletionRecovery(
+        this.#scheduleMissedTurnCompletionRecovery(
           recovery,
           MISSED_TURN_COMPLETION_GRACE_MS,
         );
@@ -989,17 +989,17 @@ export class CodexExecutionSession
     return true;
   }
 
-  private markNativeConversationContextEstablished(
+  #markNativeConversationContextEstablished(
     run: CodexExecutionRun,
   ): void {
     if (this.nativeConversationContextEstablished) return;
     this.nativeConversationContextEstablished = true;
-    this.publishNativeOwnershipSnapshot(run);
+    this.#publishNativeOwnershipSnapshot(run);
   }
 
   private currentRunToolPolicy: ProviderToolPolicy | null = null;
 
-  private flushPendingTurnNotifications(run: CodexExecutionRun): void {
+  #flushPendingTurnNotifications(run: CodexExecutionRun): void {
     const pending = this.pendingTurnNotifications;
     this.pendingTurnNotifications = [];
     for (const notification of pending) {
@@ -1038,7 +1038,7 @@ export class CodexExecutionSession
   private handleStreamChunk(run: CodexExecutionRun, chunk: StreamChunk): void {
     if (this.activeRun !== run || run.isTerminal) return;
     if (chunk.type === 'error') {
-      this.finishError(
+      this.#finishError(
         run,
         chunk.code === 'provider_session_missing'
           ? 'provider-session-missing'
@@ -1052,7 +1052,7 @@ export class CodexExecutionSession
     if (chunk.type === 'done') {
       const completion = run.completion;
       if (completion?.status === 'failed') {
-        this.finishError(
+        this.#finishError(
           run,
           'provider',
           completion.errorMessage ?? 'Codex turn failed.',
@@ -1062,9 +1062,9 @@ export class CodexExecutionSession
         completion?.status === 'interrupted'
         || run.isCancellationRequested
       ) {
-        this.finishCancelled(run);
+        this.#finishCancelled(run);
       } else {
-        this.finishCompleted(run, completion?.nativeTurnId);
+        this.#finishCompleted(run, completion?.nativeTurnId);
       }
       return;
     }
@@ -1073,7 +1073,7 @@ export class CodexExecutionSession
     if (event) run.emit(event);
   }
 
-  private async ensureThread(
+  async #ensureThread(
     run: CodexExecutionRun,
     request: ProviderExecutionRequest,
     model: string,
@@ -1088,7 +1088,7 @@ export class CodexExecutionSession
       this.pendingFork
       && (this.pendingForkTarget !== undefined || !this.threadId)
     ) {
-      return this.ensureForkThread(
+      return this.#ensureForkThread(
         run,
         request,
         model,
@@ -1132,7 +1132,7 @@ export class CodexExecutionSession
       this.loadedThreadBaseInstructions = baseInstructions;
       return {
         threadId: result.thread.id,
-        sessionFilePath: this.toHostSessionPath(result.thread.path),
+        sessionFilePath: this.#toHostSessionPath(result.thread.path),
       };
     }
 
@@ -1152,7 +1152,7 @@ export class CodexExecutionSession
       'thread/start',
       {
         model,
-        cwd: this.resolveTargetWorkingDirectory(),
+        cwd: this.#resolveTargetWorkingDirectory(),
         approvalPolicy: policy.approvalPolicy,
         sandbox: policy.sandbox,
         serviceTier: resolveCodexServiceTier(
@@ -1176,17 +1176,17 @@ export class CodexExecutionSession
     )
       ? CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
       : null;
-    const sessionFilePath = this.toHostSessionPath(result.thread.path);
+    const sessionFilePath = this.#toHostSessionPath(result.thread.path);
     this.threadId = result.thread.id;
     this.sessionFilePath = sessionFilePath;
-    this.publishNativeOwnershipSnapshot(run);
+    this.#publishNativeOwnershipSnapshot(run);
     return {
       threadId: result.thread.id,
       sessionFilePath,
     };
   }
 
-  private ensureForkThread(
+  #ensureForkThread(
     run: CodexExecutionRun,
     request: ProviderExecutionRequest,
     model: string,
@@ -1202,7 +1202,7 @@ export class CodexExecutionSession
       return Promise.reject(new Error('Codex fork setup is not available.'));
     }
 
-    const setup = this.materializeForkThread(
+    const setup = this.#materializeForkThread(
       run,
       request,
       model,
@@ -1215,13 +1215,13 @@ export class CodexExecutionSession
     );
     this.forkSetupPromise = setup;
     void setup.then(
-      () => this.clearForkSetup(setup),
-      () => this.clearForkSetup(setup),
+      () => this.#clearForkSetup(setup),
+      () => this.#clearForkSetup(setup),
     );
     return setup;
   }
 
-  private async materializeForkThread(
+  async #materializeForkThread(
     run: CodexExecutionRun,
     request: ProviderExecutionRequest,
     model: string,
@@ -1237,10 +1237,10 @@ export class CodexExecutionSession
 
     let target = this.pendingForkTarget;
     if (!target) {
-      target = await this.resolveForkIdentity(run, fork, transport);
+      target = await this.#resolveForkIdentity(run, fork, transport);
     }
 
-    if (!this.isRunCurrent(run, generation)) {
+    if (!this.#isRunCurrent(run, generation)) {
       throw new Error('Codex fork setup was interrupted after child adoption.');
     }
 
@@ -1263,7 +1263,7 @@ export class CodexExecutionSession
           : {}),
       },
     );
-    if (!this.isRunCurrent(run, generation)) {
+    if (!this.#isRunCurrent(run, generation)) {
       throw new Error('Codex fork setup was interrupted while resuming the child.');
     }
     if (resumeResult.thread.id !== target.threadId) {
@@ -1287,7 +1287,7 @@ export class CodexExecutionSession
           numTurns: rollbackCount,
         },
       );
-      if (!this.isRunCurrent(run, generation)) {
+      if (!this.#isRunCurrent(run, generation)) {
         throw new Error('Codex fork setup was interrupted while rolling back the child.');
       }
       if (rollbackResult.thread.id !== target.threadId) {
@@ -1295,9 +1295,9 @@ export class CodexExecutionSession
       }
     }
 
-    this.consumePendingForkState();
-    this.updateSnapshot('idle');
-    this.emitSnapshot(run);
+    this.#consumePendingForkState();
+    this.#updateSnapshot('idle');
+    this.#emitSnapshot(run);
     return {
       threadId: target.threadId,
       sessionFilePath: target.sessionFilePath ?? null,
@@ -1305,7 +1305,7 @@ export class CodexExecutionSession
     };
   }
 
-  private resolveForkIdentity(
+  #resolveForkIdentity(
     run: CodexExecutionRun,
     fork: NonNullable<CodexProviderState['forkSource']>,
     transport: CodexRpcTransport,
@@ -1330,35 +1330,35 @@ export class CodexExecutionSession
           ? { sessionFilePath }
           : {}),
       };
-      this.adoptPendingForkTarget(run, target);
+      this.#adoptPendingForkTarget(run, target);
       return target;
     });
     this.forkIdentityPromise = identity;
     void identity.then(
-      () => this.clearForkIdentity(identity),
-      () => this.clearForkIdentity(identity),
+      () => this.#clearForkIdentity(identity),
+      () => this.#clearForkIdentity(identity),
     );
     return identity;
   }
 
-  private adoptPendingForkTarget(
+  #adoptPendingForkTarget(
     run: CodexExecutionRun,
     target: CodexPendingForkTarget,
   ): void {
     this.pendingForkTarget = target;
     this.threadId = target.threadId;
     this.sessionFilePath = target.sessionFilePath ?? null;
-    this.updateSnapshot('idle');
-    this.emitSnapshot(run);
+    this.#updateSnapshot('idle');
+    this.#emitSnapshot(run);
   }
 
-  private clearForkSetup(setup: Promise<CodexEnsuredThread>): void {
+  #clearForkSetup(setup: Promise<CodexEnsuredThread>): void {
     if (this.forkSetupPromise === setup) {
       this.forkSetupPromise = null;
     }
   }
 
-  private clearForkIdentity(
+  #clearForkIdentity(
     identity: Promise<CodexPendingForkTarget>,
   ): void {
     if (this.forkIdentityPromise === identity) {
@@ -1366,7 +1366,7 @@ export class CodexExecutionSession
     }
   }
 
-  private async settleForkIdentity(): Promise<void> {
+  async #settleForkIdentity(): Promise<void> {
     const identity = this.forkIdentityPromise;
     if (!identity) return;
     try {
@@ -1376,7 +1376,7 @@ export class CodexExecutionSession
     }
   }
 
-  private async settleForkSetup(): Promise<void> {
+  async #settleForkSetup(): Promise<void> {
     const setup = this.forkSetupPromise;
     if (!setup) return;
     try {
@@ -1386,9 +1386,9 @@ export class CodexExecutionSession
     }
   }
 
-  private cancelRun(run: CodexExecutionRun): void {
+  #cancelRun(run: CodexExecutionRun): void {
     if (this.activeRun !== run || run.isTerminal) return;
-    this.cancelMissedTurnCompletionRecovery();
+    this.#cancelMissedTurnCompletionRecovery();
     this.lifecycleGeneration += 1;
     this.serverRequestRouter.abortAll('cancelled');
     const transport = this.transport;
@@ -1398,40 +1398,40 @@ export class CodexExecutionSession
         turnId: run.nativeTurnId,
       }).catch(() => undefined);
     }
-    const processDisposal = this.disposeOwnedProcessAfterForkIdentity();
+    const processDisposal = this.#disposeOwnedProcessAfterForkIdentity();
     void Promise.allSettled([
       processDisposal,
-      this.settleForkSetup(),
-    ]).then(() => this.finishCancelled(run));
+      this.#settleForkSetup(),
+    ]).then(() => this.#finishCancelled(run));
   }
 
-  private finishCompleted(
+  #finishCompleted(
     run: CodexExecutionRun,
     nativeCheckpointId?: string,
   ): void {
     if (this.activeRun !== run || run.isTerminal) return;
-    this.finishRunState(run);
+    this.#finishRunState(run);
     run.finish({
       type: 'turn_completed',
       scope: run.createScope(),
       reason: 'completed',
       ...(nativeCheckpointId ? { nativeCheckpointId } : {}),
     });
-    this.releaseRun(run);
+    this.#releaseRun(run);
   }
 
-  private finishCancelled(run: CodexExecutionRun): void {
+  #finishCancelled(run: CodexExecutionRun): void {
     if (this.activeRun !== run || run.isTerminal) return;
-    this.finishRunState(run);
+    this.#finishRunState(run);
     run.finish({
       type: 'cancelled',
       scope: run.createScope(),
       reason: 'cancelled',
     });
-    this.releaseRun(run);
+    this.#releaseRun(run);
   }
 
-  private finishError(
+  #finishError(
     run: CodexExecutionRun,
     category: ProviderExecutionErrorCategory,
     message: string,
@@ -1450,15 +1450,15 @@ export class CodexExecutionSession
           : category === 'process-exited'
             ? 'process-exited'
             : 'transport-closed';
-      this.updateSnapshot('invalidated', {
+      this.#updateSnapshot('invalidated', {
         reason,
         recoverable,
         message,
       });
     } else {
-      this.updateSnapshot('idle');
+      this.#updateSnapshot('idle');
     }
-    this.emitSnapshot(run);
+    this.#emitSnapshot(run);
     run.finish({
       type: 'execution_error',
       scope: run.createScope(),
@@ -1467,31 +1467,31 @@ export class CodexExecutionSession
       recoverable,
       ...(missingProviderSessionId ? { missingProviderSessionId } : {}),
     });
-    this.releaseRun(run);
+    this.#releaseRun(run);
   }
 
-  private finishRunState(run: CodexExecutionRun): void {
-    this.updateSnapshot('idle');
-    this.emitSnapshot(run);
+  #finishRunState(run: CodexExecutionRun): void {
+    this.#updateSnapshot('idle');
+    this.#emitSnapshot(run);
   }
 
-  private releaseRun(run: CodexExecutionRun): void {
-    this.cancelMissedTurnCompletionRecovery();
+  #releaseRun(run: CodexExecutionRun): void {
+    this.#cancelMissedTurnCompletionRecovery();
     this.notificationRouter?.endTurn();
     this.notificationRouter = null;
     this.pendingTurnNotifications = [];
     this.serverRequestRouter.abortAll(
       run.isCancellationRequested ? 'cancelled' : 'resolved',
     );
-    this.cleanupInputBundles();
+    this.#cleanupInputBundles();
     this.currentRunToolPolicy = null;
     if (this.activeRun === run) {
       this.activeRun = null;
     }
-    this.discoverSessionFile();
+    this.#discoverSessionFile();
   }
 
-  private handleExecutionFailure(
+  #handleExecutionFailure(
     run: CodexExecutionRun,
     error: unknown,
   ): void {
@@ -1499,7 +1499,7 @@ export class CodexExecutionSession
       ? error.message
       : 'Unknown Codex error';
     if (isMissingThreadError(message)) {
-      this.finishError(
+      this.#finishError(
         run,
         'provider-session-missing',
         message,
@@ -1509,23 +1509,23 @@ export class CodexExecutionSession
       return;
     }
     const category = isTransportError(message) ? 'transport' : 'provider';
-    this.finishError(run, category, message, category === 'transport');
+    this.#finishError(run, category, message, category === 'transport');
   }
 
-  private handleProcessExit(process: CodexAppServerProcess): void {
+  #handleProcessExit(process: CodexAppServerProcess): void {
     if (this.process !== process || this.disposed) return;
     this.lifecycleGeneration += 1;
     const run = this.activeRun;
     // The dead transport cannot deliver an unresolved fork identity.
-    const processDisposal = this.disposeOwnedProcess();
+    const processDisposal = this.#disposeOwnedProcess();
     if (run && !run.isTerminal && !run.isCancellationRequested) {
       const forkSetup = this.forkSetupPromise;
       if (forkSetup) {
         void Promise.allSettled([
           processDisposal,
-          this.settleForkSetup(),
+          this.#settleForkSetup(),
         ]).then(() => {
-          this.finishError(
+          this.#finishError(
             run,
             'process-exited',
             'Codex app-server process exited unexpectedly.',
@@ -1533,7 +1533,7 @@ export class CodexExecutionSession
           );
         });
       } else {
-        this.finishError(
+        this.#finishError(
           run,
           'process-exited',
           'Codex app-server process exited unexpectedly.',
@@ -1541,22 +1541,22 @@ export class CodexExecutionSession
         );
       }
     } else {
-      this.updateSnapshot('invalidated', {
+      this.#updateSnapshot('invalidated', {
         reason: 'process-exited',
         recoverable: true,
         message: 'Codex app-server process exited unexpectedly.',
       });
-      this.emitSessionState();
+      this.#emitSessionState();
     }
     void processDisposal.catch(() => undefined);
   }
 
-  private async disposeOwnedProcessAfterForkIdentity(): Promise<void> {
-    await this.settleForkIdentity();
-    await this.disposeOwnedProcess();
+  async #disposeOwnedProcessAfterForkIdentity(): Promise<void> {
+    await this.#settleForkIdentity();
+    await this.#disposeOwnedProcess();
   }
 
-  private disposeOwnedProcess(): Promise<void> {
+  #disposeOwnedProcess(): Promise<void> {
     if (this.processDisposalPromise) return this.processDisposalPromise;
 
     const transport = this.transport;
@@ -1595,19 +1595,19 @@ export class CodexExecutionSession
     })();
     this.processDisposalPromise = pending;
     void pending.then(
-      () => this.clearProcessDisposal(pending),
-      () => this.clearProcessDisposal(pending),
+      () => this.#clearProcessDisposal(pending),
+      () => this.#clearProcessDisposal(pending),
     );
     return pending;
   }
 
-  private clearProcessDisposal(pending: Promise<void>): void {
+  #clearProcessDisposal(pending: Promise<void>): void {
     if (this.processDisposalPromise === pending) {
       this.processDisposalPromise = null;
     }
   }
 
-  private emitSnapshot(run: CodexExecutionRun): void {
+  #emitSnapshot(run: CodexExecutionRun): void {
     run.emit({
       type: 'session_state_changed',
       scope: run.createScope(),
@@ -1615,7 +1615,7 @@ export class CodexExecutionSession
     });
   }
 
-  private emitSessionState(): void {
+  #emitSessionState(): void {
     const event: ProviderSessionEvent = {
       type: 'session_state_changed',
       scope: {
@@ -1634,7 +1634,7 @@ export class CodexExecutionSession
     }
   }
 
-  private publishNativeOwnershipSnapshot(run: CodexExecutionRun): void {
+  #publishNativeOwnershipSnapshot(run: CodexExecutionRun): void {
     const currentSnapshot = this.snapshot;
     const isCurrentExecution = (
       this.activeRun === run
@@ -1646,29 +1646,29 @@ export class CodexExecutionSession
       && currentSnapshot.status !== 'cancelling'
     );
     if (isCurrentExecution) {
-      this.updateSnapshot('executing');
+      this.#updateSnapshot('executing');
     } else if (currentSnapshot.status === 'invalidated') {
-      this.updateSnapshot('invalidated', currentSnapshot.invalidation);
+      this.#updateSnapshot('invalidated', currentSnapshot.invalidation);
     } else {
-      this.updateSnapshot(currentSnapshot.status);
+      this.#updateSnapshot(currentSnapshot.status);
     }
     if (this.activeRun === run && !run.isTerminal) {
-      this.emitSnapshot(run);
+      this.#emitSnapshot(run);
     } else {
-      this.emitSessionState();
+      this.#emitSessionState();
     }
   }
 
-  private updateSnapshot(
+  #updateSnapshot(
     status: ProviderSessionStatus,
     invalidation?: ProviderSessionInvalidation,
   ): void {
     this.snapshot = status === 'invalidated'
-      ? this.buildSnapshot(status, this.snapshot.revision + 1, invalidation)
-      : this.buildSnapshot(status, this.snapshot.revision + 1);
+      ? this.#buildSnapshot(status, this.snapshot.revision + 1, invalidation)
+      : this.#buildSnapshot(status, this.snapshot.revision + 1);
   }
 
-  private buildSnapshot(
+  #buildSnapshot(
     status: ProviderSessionStatus,
     revision: number,
     invalidation?: ProviderSessionInvalidation,
@@ -1685,8 +1685,8 @@ export class CodexExecutionSession
       ...(this.sessionFilePath
         ? { sessionFilePath: this.sessionFilePath }
         : {}),
-      ...(this.resolveTranscriptRootHost()
-        ? { transcriptRootPath: this.resolveTranscriptRootHost()! }
+      ...(this.#resolveTranscriptRootHost()
+        ? { transcriptRootPath: this.#resolveTranscriptRootHost()! }
         : {}),
       ...(this.workspaceDependencyToolVersion !== null
         ? {
@@ -1725,7 +1725,7 @@ export class CodexExecutionSession
     return Object.freeze({ ...base, status });
   }
 
-  private consumePendingForkState(): void {
+  #consumePendingForkState(): void {
     this.pendingFork = undefined;
     this.pendingForkTarget = undefined;
     for (const key of CODEX_CONSUMED_FORK_STATE_KEYS) {
@@ -1733,7 +1733,7 @@ export class CodexExecutionSession
     }
   }
 
-  private resolveProviderSettings(): Record<string, unknown> {
+  #resolveProviderSettings(): Record<string, unknown> {
     const settings = this.plugin.settings as Record<string, unknown>;
     return {
       ...settings,
@@ -1750,7 +1750,7 @@ export class CodexExecutionSession
     };
   }
 
-  private resolveModel(
+  #resolveModel(
     request: ProviderExecutionRequest,
     settings: Record<string, unknown>,
   ): string | null {
@@ -1764,7 +1764,7 @@ export class CodexExecutionSession
     return enabled ? runtimeModel : null;
   }
 
-  private resolveReasoningEffort(
+  #resolveReasoningEffort(
     request: ProviderExecutionRequest,
     settings: Record<string, unknown>,
     model: string,
@@ -1783,10 +1783,10 @@ export class CodexExecutionSession
     return effort;
   }
 
-  private resolveBaseInstructions(request: ProviderExecutionRequest): string {
+  #resolveBaseInstructions(request: ProviderExecutionRequest): string {
     const base = request.configuration.systemInstructions.kind === 'explicit'
       ? request.configuration.systemInstructions.instructions
-      : buildSystemPrompt(this.getSystemPromptSettings(), {
+      : buildSystemPrompt(this.#getSystemPromptSettings(), {
           dynamicSections: request.configuration.systemInstructions.dynamicSections
             ? [...request.configuration.systemInstructions.dynamicSections]
             : undefined,
@@ -1796,7 +1796,7 @@ export class CodexExecutionSession
       : base;
   }
 
-  private getSystemPromptSettings(): SystemPromptSettings {
+  #getSystemPromptSettings(): SystemPromptSettings {
     return {
       mediaFolder: this.plugin.settings.mediaFolder,
       customPrompt: this.plugin.settings.systemPrompt,
@@ -1805,13 +1805,13 @@ export class CodexExecutionSession
     };
   }
 
-  private resolveNativePersistence(): boolean | undefined {
+  #resolveNativePersistence(): boolean | undefined {
     if (this.config.nativePersistence === 'enabled') return true;
     if (this.config.nativePersistence === 'disabled-if-supported') return false;
     return this.config.lifecycle === 'persistent';
   }
 
-  private resolvePolicy(
+  #resolvePolicy(
     request: ProviderExecutionRequest,
     settings: Record<string, unknown>,
   ): CodexPolicy {
@@ -1850,19 +1850,19 @@ export class CodexExecutionSession
         ? { type: 'dangerFullAccess' }
         : sandboxConfig.sandbox === 'read-only'
           ? strictReadOnlySandbox()
-          : this.buildWorkspaceWriteSandboxPolicy(),
+          : this.#buildWorkspaceWriteSandboxPolicy(),
     };
   }
 
-  private buildWorkspaceWriteSandboxPolicy(): SandboxPolicy {
-    const transcriptRoot = this.resolveTranscriptRootTarget();
+  #buildWorkspaceWriteSandboxPolicy(): SandboxPolicy {
+    const transcriptRoot = this.#resolveTranscriptRootTarget();
     const memoriesDir = deriveCodexMemoriesDirFromSessionsRoot(transcriptRoot)
       ?? this.runtimeContext?.memoriesDirTarget
       ?? null;
     const roots = [
-      this.resolveTargetWorkingDirectory(),
+      this.#resolveTargetWorkingDirectory(),
       memoriesDir,
-      this.mapHostPathToTarget(os.tmpdir()),
+      this.#mapHostPathToTarget(os.tmpdir()),
       this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,
     ].filter((value): value is string => Boolean(value?.trim()));
     return {
@@ -1875,7 +1875,7 @@ export class CodexExecutionSession
     };
   }
 
-  private buildTurnPrompt(
+  #buildTurnPrompt(
     request: ProviderExecutionRequest,
     forkCheckpoint?: string,
     replayConversationHistory = false,
@@ -1930,7 +1930,7 @@ export class CodexExecutionSession
     return prompt;
   }
 
-  private buildInputBundle(
+  #buildInputBundle(
     request: ProviderExecutionRequest,
     promptOverride?: string,
   ): CodexInputBundle {
@@ -1963,7 +1963,7 @@ export class CodexExecutionSession
           fs.writeFileSync(filePath, Buffer.from(image.data, 'base64'));
           input.push({
             type: 'localImage',
-            path: this.mapRequiredHostPath(filePath),
+            path: this.#mapRequiredHostPath(filePath),
           });
         });
       }
@@ -1983,17 +1983,17 @@ export class CodexExecutionSession
     }
   }
 
-  private disposeInputBundle(bundle: CodexInputBundle): void {
+  #disposeInputBundle(bundle: CodexInputBundle): void {
     this.activeInputBundles.delete(bundle);
     bundle.cleanup();
   }
 
-  private cleanupInputBundles(): void {
+  #cleanupInputBundles(): void {
     for (const bundle of this.activeInputBundles) bundle.cleanup();
     this.activeInputBundles.clear();
   }
 
-  private resolveTargetWorkingDirectory(): string {
+  #resolveTargetWorkingDirectory(): string {
     if (!this.launchSpec) return this.config.vaultWorkingDirectory;
     const mapped = this.launchSpec.pathMapper.toTargetPath(
       this.config.vaultWorkingDirectory,
@@ -2001,8 +2001,8 @@ export class CodexExecutionSession
     return mapped ?? this.launchSpec.targetCwd;
   }
 
-  private mapRequiredHostPath(hostPath: string): string {
-    const targetPath = this.mapHostPathToTarget(hostPath);
+  #mapRequiredHostPath(hostPath: string): string {
+    const targetPath = this.#mapHostPathToTarget(hostPath);
     if (!targetPath) {
       throw new Error(
         `Codex cannot access path from the selected target: ${hostPath}`,
@@ -2011,43 +2011,43 @@ export class CodexExecutionSession
     return targetPath;
   }
 
-  private mapHostPathToTarget(hostPath: string | null): string | null {
+  #mapHostPathToTarget(hostPath: string | null): string | null {
     if (!hostPath) return null;
     return this.launchSpec?.pathMapper.toTargetPath(hostPath) ?? hostPath;
   }
 
-  private toHostSessionPath(targetPath: string | null | undefined): string | null {
+  #toHostSessionPath(targetPath: string | null | undefined): string | null {
     if (!targetPath) return null;
     return this.launchSpec?.pathMapper.toHostPath(targetPath) ?? targetPath;
   }
 
-  private resolveTranscriptRootHost(): string | null {
+  #resolveTranscriptRootHost(): string | null {
     return this.runtimeContext?.sessionsDirHost
       ?? deriveCodexSessionsRootFromSessionPath(this.sessionFilePath);
   }
 
-  private resolveTranscriptRootTarget(): string | null {
+  #resolveTranscriptRootTarget(): string | null {
     if (this.runtimeContext?.sessionsDirTarget) {
       return this.runtimeContext.sessionsDirTarget;
     }
     if (!this.sessionFilePath) return null;
-    const targetPath = this.mapHostPathToTarget(this.sessionFilePath);
+    const targetPath = this.#mapHostPathToTarget(this.sessionFilePath);
     return deriveCodexSessionsRootFromSessionPath(targetPath);
   }
 
-  private discoverSessionFile(): void {
+  #discoverSessionFile(): void {
     if (this.sessionFilePath || !this.threadId) return;
     const found = findCodexSessionFile(
       this.threadId,
-      this.resolveTranscriptRootHost() ?? undefined,
+      this.#resolveTranscriptRootHost() ?? undefined,
     );
     if (found) {
       this.sessionFilePath = found;
-      this.updateSnapshot(this.snapshot.status);
+      this.#updateSnapshot(this.snapshot.status);
     }
   }
 
-  private isRunCurrent(
+  #isRunCurrent(
     run: CodexExecutionRun,
     generation: number,
   ): boolean {

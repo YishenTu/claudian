@@ -47,7 +47,7 @@ export class ConflictPublicationReviewPreparer implements ConflictPublicationPor
     if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
     let state = await this.state.load(context.projectId);
     const operation = state.operation;
-    this.assertOperation(operation, input);
+    this.#assertOperation(operation, input);
     await this.candidates.assertRetained(context, input, signal);
     if (operation.phase === 'captured') {
       const updatedAt = this.now().toISOString();
@@ -71,7 +71,7 @@ export class ConflictPublicationReviewPreparer implements ConflictPublicationPor
     );
   }
 
-  private assertOperation(
+  #assertOperation(
     operation: CollabPublicationOperationRecord | null,
     input: {
       readonly candidateOid: string;

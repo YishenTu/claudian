@@ -245,12 +245,12 @@ class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
   private heartbeat: ReturnType<typeof timers.setTimeout> | undefined;
 
   constructor(private readonly socket: WebSocket) {
-    socket.on('open', () => this.resetHeartbeat());
-    socket.on('ping', () => this.resetHeartbeat());
+    socket.on('open', () => this.#resetHeartbeat());
+    socket.on('ping', () => this.#resetHeartbeat());
     socket.once('close', () => timers.clearTimeout(this.heartbeat));
   }
 
-  private resetHeartbeat(): void {
+  #resetHeartbeat(): void {
     timers.clearTimeout(this.heartbeat);
     this.heartbeat = timers.setTimeout(() => this.socket.terminate(), (
       COLLAB_CLOUD_BINDING_LIMITS.eventHeartbeatMs

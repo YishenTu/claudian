@@ -319,7 +319,7 @@ export class ProjectControlClient {
   updateTicketContent(
     input: UpdateProjectTicketContentInput,
   ): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'content', {
+    return this.#ticketMutation(input, 'content', {
       body: input.body,
       title: input.title,
     });
@@ -345,14 +345,14 @@ export class ProjectControlClient {
   }
 
   closeTicket(input: ChangeProjectTicketStatusInput): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'close');
+    return this.#ticketMutation(input, 'close');
   }
 
   reopenTicket(input: ChangeProjectTicketStatusInput): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'reopen');
+    return this.#ticketMutation(input, 'reopen');
   }
 
-  private ticketMutation(
+  #ticketMutation(
     input: UpdateProjectTicketContentInput
       | ChangeProjectTicketStatusInput,
     action: 'close' | 'content' | 'reopen',

@@ -55,12 +55,12 @@ export class HostTransferLifecycleOrchestrator {
     return this.operationQueue.run(
       () => this.options.projectLifecycleAdmission(
         request.projectId,
-        () => this.acceptHostTransferUnlocked(actorMemberId, request),
+        () => this.#acceptHostTransferUnlocked(actorMemberId, request),
       ),
     );
   }
 
-  private async acceptHostTransferUnlocked(
+  async #acceptHostTransferUnlocked(
     actorMemberId: Parameters<HostedLifecycleControlPort['acceptHostTransfer']>[0],
     request: Parameters<HostedLifecycleControlPort['acceptHostTransfer']>[1],
   ): Promise<CollabControlDeferredResult<CollabHostTransferSummary>> {
@@ -93,12 +93,12 @@ export class HostTransferLifecycleOrchestrator {
     return this.operationQueue.run(
       () => this.options.projectLifecycleAdmission(
         request.projectId,
-        () => this.cancelHostTransferUnlocked(actorMemberId, request),
+        () => this.#cancelHostTransferUnlocked(actorMemberId, request),
       ),
     );
   }
 
-  private async cancelHostTransferUnlocked(
+  async #cancelHostTransferUnlocked(
     actorMemberId: Parameters<HostedLifecycleControlPort['cancelHostTransfer']>[0],
     request: Parameters<HostedLifecycleControlPort['cancelHostTransfer']>[1],
   ): Promise<CollabHostTransferSummary> {

@@ -211,13 +211,13 @@ export class AuthorityTransferClaimantCoordinator {
     const record = await this.options.store.load(projectId);
     if (!record) throw claimantError('authority-transfer-claimant-record-missing');
     if (record.variant === 'manager-reissued') {
-      await this.resumeManagerReissued(record, options);
+      await this.#resumeManagerReissued(record, options);
       return;
     }
-    await this.resumeSourceIssued(record, options);
+    await this.#resumeSourceIssued(record, options);
   }
 
-  private async resumeSourceIssued(
+  async #resumeSourceIssued(
     initial: SourceIssuedAuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
@@ -234,7 +234,7 @@ export class AuthorityTransferClaimantCoordinator {
             await this.complete(record, options);
             return;
           case 'target-claimed':
-            record = await this.advanceSource(record, 'source-acknowledged');
+            record = await this.#advanceSource(record, 'source-acknowledged');
             continue;
           case 'source-acknowledged':
           case 'membership-converged':
@@ -244,20 +244,20 @@ export class AuthorityTransferClaimantCoordinator {
       switch (record.phase) {
         case 'prepared': {
           const claim = await source.getClaim(record, options);
-          record = await this.advanceSource(record, 'claim-retained', { claim });
+          record = await this.#advanceSource(record, 'claim-retained', { claim });
           break;
         }
         case 'claim-retained': {
           const targetCredential = record.status.targetAuthority.kind === 'lan'
             ? this.createCredential()
             : null;
-          record = await this.advanceSource(record, 'credential-persisted', {
+          record = await this.#advanceSource(record, 'credential-persisted', {
             targetCredential,
           });
           break;
         }
         case 'credential-persisted': {
-          this.assertTargetPrincipal(record);
+          this.#assertTargetPrincipal(record);
           if (!record.claim) throw claimantError('authority-transfer-claimant-claim-missing');
           const request: ClaimTransferredMembershipRequest = record.targetCredential === null
             ? {
@@ -280,26 +280,26 @@ export class AuthorityTransferClaimantCoordinator {
             request,
             options,
           );
-          record = await this.advanceSource(record, 'target-claimed', { redemptionReceipt });
+          record = await this.#advanceSource(record, 'target-claimed', { redemptionReceipt });
           break;
         }
         case 'target-claimed':
           await source.acknowledgeRedemption(record, options);
-          record = await this.advanceSource(record, 'source-acknowledged');
+          record = await this.#advanceSource(record, 'source-acknowledged');
           break;
         case 'source-acknowledged':
           await this.options.convergence.converge(record, options);
-          record = await this.advanceSource(record, 'membership-converged');
+          record = await this.#advanceSource(record, 'membership-converged');
           break;
         case 'membership-converged':
-          record = await this.advanceSource(record, 'completed');
+          record = await this.#advanceSource(record, 'completed');
           break;
       }
     }
     await this.complete(record, options);
   }
 
-  private async resumeManagerReissued(
+  async #resumeManagerReissued(
     initial: ManagerReissuedAuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
@@ -308,14 +308,14 @@ export class AuthorityTransferClaimantCoordinator {
       assertNotCancelled(options);
       switch (record.phase) {
         case 'redemption-prepared': {
-          this.assertTargetPrincipal(record);
+          this.#assertTargetPrincipal(record);
           if (this.now().getTime() >= Date.parse(record.descriptor.expiresAt)) {
-            const targetStatus = await this.confirmManagerTargetBinding(
+            const targetStatus = await this.#confirmManagerTargetBinding(
               record,
               'existing-binding',
               options,
             );
-            record = await this.advanceManager(record, 'target-confirmed', {
+            record = await this.#advanceManager(record, 'target-confirmed', {
               convergenceProof: 'existing-binding',
               targetStatus,
             });
@@ -326,19 +326,19 @@ export class AuthorityTransferClaimantCoordinator {
             record.redemptionRequest,
             options,
           );
-          record = await this.advanceManager(record, 'target-claimed', {
+          record = await this.#advanceManager(record, 'target-claimed', {
             redemptionReceipt,
           });
           break;
         }
         case 'target-claimed': {
-          this.assertTargetPrincipal(record);
-          const targetStatus = await this.confirmManagerTargetBinding(
+          this.#assertTargetPrincipal(record);
+          const targetStatus = await this.#confirmManagerTargetBinding(
             record,
             'receipt',
             options,
           );
-          record = await this.advanceManager(record, 'target-confirmed', {
+          record = await this.#advanceManager(record, 'target-confirmed', {
             convergenceProof: 'receipt',
             targetStatus,
           });
@@ -346,10 +346,10 @@ export class AuthorityTransferClaimantCoordinator {
         }
         case 'target-confirmed':
           await this.options.convergence.converge(record, options);
-          record = await this.advanceManager(record, 'membership-converged');
+          record = await this.#advanceManager(record, 'membership-converged');
           break;
         case 'membership-converged':
-          record = await this.advanceManager(record, 'completed');
+          record = await this.#advanceManager(record, 'completed');
           break;
       }
     }
@@ -367,13 +367,13 @@ export class AuthorityTransferClaimantCoordinator {
     await this.options.store.remove(record.projectId);
   }
 
-  private assertTargetPrincipal(record: AuthorityTransferClaimantRecord): void {
+  #assertTargetPrincipal(record: AuthorityTransferClaimantRecord): void {
     if (record.cloudPrincipalId !== this.options.target.cloudPrincipalId) {
       throw claimantError('authority-transfer-claimant-cloud-principal-mismatch');
     }
   }
 
-  private confirmManagerTargetBinding(
+  #confirmManagerTargetBinding(
     record: ManagerReissuedAuthorityTransferClaimantRecord,
     proof: 'receipt' | 'existing-binding',
     options: CollabOperationOptions,
@@ -385,7 +385,7 @@ export class AuthorityTransferClaimantCoordinator {
     return confirm(record, proof, options);
   }
 
-  private async advanceSource(
+  async #advanceSource(
     previous: SourceIssuedAuthorityTransferClaimantRecord,
     phase: SourceIssuedAuthorityTransferClaimantRecord['phase'],
     update: Readonly<{
@@ -397,7 +397,7 @@ export class AuthorityTransferClaimantCoordinator {
     const record = advanceAuthorityTransferClaimantRecord(previous, {
       ...update,
       phase,
-      updatedAt: this.monotonicTimestamp(previous.updatedAt),
+      updatedAt: this.#monotonicTimestamp(previous.updatedAt),
     });
     await this.options.store.save(record);
     if (record.variant !== 'source-issued') {
@@ -406,7 +406,7 @@ export class AuthorityTransferClaimantCoordinator {
     return record;
   }
 
-  private async advanceManager(
+  async #advanceManager(
     previous: ManagerReissuedAuthorityTransferClaimantRecord,
     phase: ManagerReissuedAuthorityTransferClaimantRecord['phase'],
     update: Readonly<{
@@ -418,7 +418,7 @@ export class AuthorityTransferClaimantCoordinator {
     const record = advanceAuthorityTransferClaimantRecord(previous, {
       ...update,
       phase,
-      updatedAt: this.monotonicTimestamp(previous.updatedAt),
+      updatedAt: this.#monotonicTimestamp(previous.updatedAt),
     });
     await this.options.store.save(record);
     if (record.variant !== 'manager-reissued') {
@@ -427,7 +427,7 @@ export class AuthorityTransferClaimantCoordinator {
     return record;
   }
 
-  private monotonicTimestamp(previous: string): string {
+  #monotonicTimestamp(previous: string): string {
     const current = this.now();
     return current.getTime() < Date.parse(previous) ? previous : current.toISOString();
   }

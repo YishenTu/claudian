@@ -57,7 +57,7 @@ export class ProjectRetirementCoordinator {
     if (existing) return existing;
     const pending = this.projectLifecycleAdmission(
       request.projectId,
-      () => this.retireUnlocked(actorMemberId, request),
+      () => this.#retireUnlocked(actorMemberId, request),
     );
     this.operations.set(request.projectId, pending);
     const clear = () => {
@@ -69,7 +69,7 @@ export class ProjectRetirementCoordinator {
     return pending;
   }
 
-  private async retireUnlocked(
+  async #retireUnlocked(
     actorMemberId: CollabMemberId,
     request: ProjectRetirementAuthorityRequest,
   ): Promise<CollabRetirementResult> {
@@ -83,14 +83,14 @@ export class ProjectRetirementCoordinator {
         await this.admission.resume(request.projectId).catch(() => undefined);
         throw error;
       }
-      await this.finishRetirement(durable.result);
+      await this.#finishRetirement(durable.result);
       if (!durable.matchesRequest) throw error;
       return durable.result;
     }
-    return this.finishRetirement(result);
+    return this.#finishRetirement(result);
   }
 
-  private async finishRetirement(
+  async #finishRetirement(
     result: CollabRetirementResult,
   ): Promise<CollabRetirementResult> {
     await this.terminal.activate(result);

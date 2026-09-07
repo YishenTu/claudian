@@ -242,7 +242,7 @@ export class RequestEnsureService {
         firstBaseOid: validated.mainOid,
         headOid: request.headOid,
         memberId: actorMemberId,
-        relations: this.resolveRelations(
+        relations: this.#resolveRelations(
           connection,
           parsed.references,
         ),
@@ -316,7 +316,7 @@ export class RequestEnsureService {
         description,
         expectedHeadOid: request.expectedHeadOid,
         expectedRequestRevision: request.expectedRequestRevision,
-        relations: this.resolveRelations(
+        relations: this.#resolveRelations(
           connection,
           parsed.references,
         ),
@@ -344,7 +344,7 @@ export class RequestEnsureService {
     return mutation.value;
   }
 
-  private resolveRelations(
+  #resolveRelations(
     connection: AuthorityDatabaseConnection,
     references: readonly CollabParsedTicketReference[],
   ) {

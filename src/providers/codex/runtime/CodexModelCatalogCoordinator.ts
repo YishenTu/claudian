@@ -186,7 +186,7 @@ export class CodexModelCatalogCoordinator {
     const generation = ++this.refreshGeneration;
     const flight = {
       generation,
-      promise: this.runRefresh(generation, context),
+      promise: this.#runRefresh(generation, context),
       transitionOwner,
     };
     this.inFlightRefresh = flight;
@@ -271,7 +271,7 @@ export class CodexModelCatalogCoordinator {
     return this.disposePromise;
   }
 
-  private async runRefresh(
+  async #runRefresh(
     generation: number,
     context?: ProviderTransitionOwnerContext,
   ): Promise<CodexCatalogResult> {
@@ -289,8 +289,8 @@ export class CodexModelCatalogCoordinator {
       } catch (error) {
         catalogFingerprintError = error;
       }
-      if (!this.isCurrentRefresh(generation)) {
-        return this.supersededResult();
+      if (!this.#isCurrentRefresh(generation)) {
+        return this.#supersededResult();
       }
 
       const discoveryResult = await this.discovery.discoverModels(
@@ -298,8 +298,8 @@ export class CodexModelCatalogCoordinator {
         context,
       );
 
-      if (!this.isCurrentRefresh(generation)) {
-        return this.supersededResult();
+      if (!this.#isCurrentRefresh(generation)) {
+        return this.#supersededResult();
       }
 
       if (discoveryResult.kind === 'skipped') {
@@ -323,15 +323,15 @@ export class CodexModelCatalogCoordinator {
           ? catalogFingerprintError
           : new Error('Codex catalog fingerprint resolution failed');
       }
-      const persistedResult = await this.persistCatalog(
+      const persistedResult = await this.#persistCatalog(
         discoveryResult.models,
         catalogFingerprint,
         generation,
         context,
       );
       if (!persistedResult.accepted) {
-        if (!this.isCurrentRefresh(generation)) {
-          return this.supersededResult();
+        if (!this.#isCurrentRefresh(generation)) {
+          return this.#supersededResult();
         }
         this.state = this.getCachedCatalog().length > 0 ? 'ready' : 'idle';
         return {
@@ -352,8 +352,8 @@ export class CodexModelCatalogCoordinator {
         refreshed: persistedResult.changed,
       };
     } catch (error) {
-      if (!this.isCurrentRefresh(generation)) {
-        return this.supersededResult();
+      if (!this.#isCurrentRefresh(generation)) {
+        return this.#supersededResult();
       }
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
       this.state = 'failed';
@@ -371,7 +371,7 @@ export class CodexModelCatalogCoordinator {
     }
   }
 
-  private async persistCatalog(
+  async #persistCatalog(
     models: CodexDiscoveredModel[],
     fingerprint: string,
     generation: number,
@@ -389,7 +389,7 @@ export class CodexModelCatalogCoordinator {
       persistedSettingsChanged: false,
     };
     await this.plugin.mutateSettingsConditionally(async (settings) => {
-      if (!this.isCurrentRefresh(generation)) {
+      if (!this.#isCurrentRefresh(generation)) {
         return false;
       }
       let currentFingerprint: string;
@@ -399,7 +399,7 @@ export class CodexModelCatalogCoordinator {
         return false;
       }
       if (
-        !this.isCurrentRefresh(generation)
+        !this.#isCurrentRefresh(generation)
         || currentFingerprint !== fingerprint
       ) {
         return false;
@@ -441,11 +441,11 @@ export class CodexModelCatalogCoordinator {
     return refreshResult;
   }
 
-  private isCurrentRefresh(generation: number): boolean {
+  #isCurrentRefresh(generation: number): boolean {
     return !this.disposed && generation === this.refreshGeneration;
   }
 
-  private supersededResult(): CodexCatalogResult {
+  #supersededResult(): CodexCatalogResult {
     if (this.disposed) {
       this.state = 'idle';
     }

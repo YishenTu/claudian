@@ -168,7 +168,7 @@ export class ManagerResponsibilityService {
       if (replay) return decodeSummary(replay.response);
       this.repository.expireDue(connection, offeredAt);
       this.managerSet.requireActiveManager(connection, actorMemberId);
-      this.requirePresence(request.projectId, request.targetMemberId);
+      this.#requirePresence(request.projectId, request.targetMemberId);
       const summary = this.repository.create(connection, {
         expiresAt,
         offeredAt,
@@ -177,7 +177,7 @@ export class ManagerResponsibilityService {
         sourceManagerMemberId: actorMemberId,
         targetMemberId: request.targetMemberId,
       });
-      this.appendInvalidation(connection, actorMemberId, request.projectId, offeredAt);
+      this.#appendInvalidation(connection, actorMemberId, request.projectId, offeredAt);
       return this.authority.idempotency.store(connection, {
         ...idempotencyInput,
         createdAt: offeredAt,
@@ -218,7 +218,7 @@ export class ManagerResponsibilityService {
           'manager-responsibility-offer-not-found',
         );
       }
-      this.requireReader(found, actorMemberId);
+      this.#requireReader(found, actorMemberId);
       return found;
     });
     if (
@@ -235,7 +235,7 @@ export class ManagerResponsibilityService {
             'manager-responsibility-offer-not-found',
           );
         }
-        this.requireReader(expired, actorMemberId);
+        this.#requireReader(expired, actorMemberId);
         return expired;
       })).value;
     }
@@ -285,7 +285,7 @@ export class ManagerResponsibilityService {
         cancelledAt,
         offerId: request.offerId,
       });
-      this.appendInvalidation(connection, actorMemberId, request.projectId, cancelledAt);
+      this.#appendInvalidation(connection, actorMemberId, request.projectId, cancelledAt);
       return this.authority.idempotency.store(connection, {
         ...idempotencyInput,
         createdAt: cancelledAt,
@@ -294,7 +294,7 @@ export class ManagerResponsibilityService {
     })).value;
   }
 
-  private appendInvalidation(
+  #appendInvalidation(
     connection: AuthorityDatabaseConnection,
     actorMemberId: CollabMemberId,
     projectId: CollabProjectId,
@@ -308,7 +308,7 @@ export class ManagerResponsibilityService {
     });
   }
 
-  private requirePresence(projectId: CollabProjectId, memberId: CollabMemberId): void {
+  #requirePresence(projectId: CollabProjectId, memberId: CollabMemberId): void {
     if (!this.authority.presence.hasAuthenticatedPresence(projectId, memberId)) {
       throw responsibilityError(
         'manager-responsibility-pending',
@@ -317,7 +317,7 @@ export class ManagerResponsibilityService {
     }
   }
 
-  private requireReader(
+  #requireReader(
     summary: CollabManagerResponsibilityOfferSummary,
     actorMemberId: CollabMemberId,
   ): void {
@@ -367,7 +367,7 @@ export class ManagerResponsibilityService {
           ...common,
           declinedAt: transitionedAt,
         });
-      this.appendInvalidation(connection, actorMemberId, request.projectId, transitionedAt);
+      this.#appendInvalidation(connection, actorMemberId, request.projectId, transitionedAt);
       return this.authority.idempotency.store(connection, {
         ...idempotencyInput,
         createdAt: transitionedAt,

@@ -57,7 +57,7 @@ implements ManagerResponsibilityOperationPort {
     return pending;
   }
 
-  private async acknowledgeManagerResponsibilityUnlocked(
+  async #acknowledgeManagerResponsibilityUnlocked(
     request: ManagerResponsibilityReconciliationRequest,
     context: ManagerResponsibilityContext,
     options: CollabOperationOptions,
@@ -101,17 +101,17 @@ implements ManagerResponsibilityOperationPort {
     options: CollabOperationOptions = {},
   ): Promise<CollabManagerResponsibilityOfferSummary | null> {
     return this.run(snapshot.project.id, () => (
-      this.reconcileManagerResponsibilitySnapshotUnlocked(snapshot, context, options)
+      this.#reconcileManagerResponsibilitySnapshotUnlocked(snapshot, context, options)
     ));
   }
 
-  private async reconcileManagerResponsibilitySnapshotUnlocked(
+  async #reconcileManagerResponsibilitySnapshotUnlocked(
     snapshot: CollabProjectSnapshot,
     context: ManagerResponsibilityContext,
     options: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary | null> {
     if (!isCollabLanProjectSnapshot(snapshot)) {
-      await this.reconcileCloudSnapshot(snapshot, context, options);
+      await this.#reconcileCloudSnapshot(snapshot, context, options);
       return null;
     }
     const lanSnapshot: CollabLanProjectSnapshot = snapshot;
@@ -134,7 +134,7 @@ implements ManagerResponsibilityOperationPort {
       return offer;
     }
     if (await context.pendingLeaves.load(snapshot.project.id)) {
-      const declined = await this.declineManagerResponsibilityUnlocked({
+      const declined = await this.#declineManagerResponsibilityUnlocked({
         memberId: snapshot.currentMember.id,
         offerId: offer.offerId,
         projectId: snapshot.project.id,
@@ -142,14 +142,14 @@ implements ManagerResponsibilityOperationPort {
       await context.managerReceipts.remove(snapshot.project.id);
       return declined;
     }
-    return this.acknowledgeManagerResponsibilityUnlocked({
+    return this.#acknowledgeManagerResponsibilityUnlocked({
       memberId: snapshot.currentMember.id,
       offerId: offer.offerId,
       projectId: snapshot.project.id,
     }, context, options);
   }
 
-  private async declineManagerResponsibilityUnlocked(
+  async #declineManagerResponsibilityUnlocked(
     request: ManagerResponsibilityReconciliationRequest,
     context: ManagerResponsibilityContext,
     options: CollabOperationOptions = {},
@@ -163,7 +163,7 @@ implements ManagerResponsibilityOperationPort {
     return summary;
   }
 
-  private async reconcileCloudSnapshot(snapshot: CollabCloudProjectSnapshot, context: ManagerResponsibilityContext, options: CollabOperationOptions): Promise<void> {
+  async #reconcileCloudSnapshot(snapshot: CollabCloudProjectSnapshot, context: ManagerResponsibilityContext, options: CollabOperationOptions): Promise<void> {
     const projectId = snapshot.project.id;
     const membership = await context.projects.loadMembership(projectId);
     if (!membership || !isCollabLocalCloudMembership(membership) || membership.member.id !== snapshot.currentMember.id

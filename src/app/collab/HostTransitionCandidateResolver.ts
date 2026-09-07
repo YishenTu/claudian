@@ -58,7 +58,7 @@ export class HostTransitionCandidateResolver {
       input.signal ? { signal: input.signal } : {},
     );
     const verified = (await Promise.all(candidates.map(candidate => (
-      this.verifyCandidate(candidate, input)
+      this.#verifyCandidate(candidate, input)
     )))).flatMap(candidate => candidate ? [candidate] : []);
     if (verified.length !== 1) {
       throw new CollabError({
@@ -74,7 +74,7 @@ export class HostTransitionCandidateResolver {
     return verified[0];
   }
 
-  private async verifyCandidate(
+  async #verifyCandidate(
     candidate: CollabTrustedEndpointCandidate,
     input: ResolveHostTransitionCandidateInput,
   ): Promise<CollabTrustedHost | null> {

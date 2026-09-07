@@ -139,7 +139,7 @@ export class HostTransferAuthoritySnapshot {
     readonly transferId: CollabOperationId;
   }): Promise<Uint8Array> {
     exactTimestamp(input.createdAt, 'host-transfer-authority-time-invalid');
-    const database = await this.openCurrent(input.bytes);
+    const database = await this.#openCurrent(input.bytes);
     try {
       const project = one(database, `
         SELECT project_id, host_member_id, state FROM project WHERE singleton = 1
@@ -229,7 +229,7 @@ export class HostTransferAuthoritySnapshot {
     readonly pinnedSourceCaCertificatePem: string;
     readonly sourceHostMemberId: CollabMemberId;
   }): Promise<InspectHostTransferAuthoritySnapshotResult> {
-    const database = await this.openRaw(
+    const database = await this.#openRaw(
       input.bytes,
       input.manifest.authoritySchemaVersion,
     );
@@ -237,7 +237,7 @@ export class HostTransferAuthoritySnapshot {
       if (input.manifest.authoritySchemaVersion === COLLAB_AUTHORITY_SCHEMA_VERSION) {
         assertAuthorityDatabaseIntegrity(database, { full: true, requireProject: true });
       }
-      return this.inspectOpenInert(database, input);
+      return this.#inspectOpenInert(database, input);
     } catch (error) {
       if (error instanceof CollabError) throw error;
       throw snapshotError('host-transfer-authority-inspection-failed');
@@ -253,9 +253,9 @@ export class HostTransferAuthoritySnapshot {
     readonly sourceHostMemberId: CollabMemberId;
   }): Promise<void> {
     if (input.manifest.authoritySchemaVersion === COLLAB_AUTHORITY_SCHEMA_VERSION) return;
-    const database = await this.openRaw(input.bytes, input.manifest.authoritySchemaVersion);
+    const database = await this.#openRaw(input.bytes, input.manifest.authoritySchemaVersion);
     try {
-      this.inspectOpenInert(database, input);
+      this.#inspectOpenInert(database, input);
       migrateLegacyAuthorityDatabaseToCurrent(database);
     } catch (error) {
       if (error instanceof CollabError) throw error;
@@ -285,7 +285,7 @@ export class HostTransferAuthoritySnapshot {
       || certificate.manifestDigest !== digestHostTransferPackageManifest(input.manifest)
     ) throw snapshotError('host-transfer-authority-activation-binding-invalid');
     exactTimestamp(certificate.cutoverAt, 'host-transfer-authority-activation-time-invalid');
-    const database = await this.openRaw(
+    const database = await this.#openRaw(
       input.bytes,
       input.manifest.authoritySchemaVersion,
     );
@@ -293,23 +293,23 @@ export class HostTransferAuthoritySnapshot {
       if (input.manifest.authoritySchemaVersion === COLLAB_AUTHORITY_SCHEMA_VERSION) {
         assertAuthorityDatabaseIntegrity(database, { full: true, requireProject: true });
       }
-      this.inspectOpenInert(database, input);
+      this.#inspectOpenInert(database, input);
       const legacy = input.manifest.authoritySchemaVersion !== COLLAB_AUTHORITY_SCHEMA_VERSION;
       let legacyActivatedBytes: Uint8Array | undefined;
       if (legacy) {
-        const legacyDatabase = await this.openRaw(
+        const legacyDatabase = await this.#openRaw(
           input.bytes,
           input.manifest.authoritySchemaVersion,
         );
         try {
-          this.applyActivation(legacyDatabase, certificate, false);
+          this.#applyActivation(legacyDatabase, certificate, false);
           legacyActivatedBytes = Uint8Array.from(legacyDatabase.export());
         } finally {
           legacyDatabase.close();
         }
         migrateLegacyAuthorityDatabaseToCurrent(database);
       }
-      this.applyActivation(database, certificate, true);
+      this.#applyActivation(database, certificate, true);
       return {
         bytes: Uint8Array.from(database.export()),
         eventSequence: latestEventSequence(database),
@@ -323,7 +323,7 @@ export class HostTransferAuthoritySnapshot {
     }
   }
 
-  private applyActivation(
+  #applyActivation(
     database: Database,
     certificate: HostTransferActivationCertificate,
     auditCurrentSchema: boolean,
@@ -369,8 +369,8 @@ export class HostTransferAuthoritySnapshot {
     }
   }
 
-  private async openCurrent(bytes: Uint8Array): Promise<Database> {
-    const database = await this.openRaw(bytes, COLLAB_AUTHORITY_SCHEMA_VERSION);
+  async #openCurrent(bytes: Uint8Array): Promise<Database> {
+    const database = await this.#openRaw(bytes, COLLAB_AUTHORITY_SCHEMA_VERSION);
     try {
       assertAuthorityDatabaseIntegrity(database, { full: true, requireProject: true });
       return database;
@@ -381,7 +381,7 @@ export class HostTransferAuthoritySnapshot {
     }
   }
 
-  private async openRaw(
+  async #openRaw(
     bytes: Uint8Array,
     expectedSchemaVersion: 8 | 9 | 10 | 11 | 12,
   ): Promise<Database> {
@@ -404,7 +404,7 @@ export class HostTransferAuthoritySnapshot {
     }
   }
 
-  private inspectOpenInert(
+  #inspectOpenInert(
     database: Database,
     input: {
       readonly manifest: HostTransferPackageManifest;

@@ -52,22 +52,22 @@ export class ClaudeTaskToolNormalizer {
   ): NormalizedClaudeTaskToolCall | null {
     if (!isClaudeTaskToolName(rawName)) return null;
 
-    const call = this.getOrCreateCall(toolCallId, rawName);
+    const call = this.#getOrCreateCall(toolCallId, rawName);
     call.rawInput = { ...rawInput };
 
     switch (rawName) {
       case 'TaskCreate':
-        this.applyCreate(toolCallId, call, rawInput);
+        this.#applyCreate(toolCallId, call, rawInput);
         break;
       case 'TaskUpdate':
-        this.applyUpdate(call, rawInput);
+        this.#applyUpdate(call, rawInput);
         break;
       case 'TaskGet':
       case 'TaskList':
         break;
     }
 
-    return this.buildNormalizedCall(call);
+    return this.#buildNormalizedCall(call);
   }
 
   normalizeToolResult(
@@ -87,25 +87,25 @@ export class ClaudeTaskToolNormalizer {
         if (failed) {
           if (call.taskKey) this.tasks.delete(call.taskKey);
         } else {
-          this.bindCreatedTask(call, effectiveOutput, options.fallbackContent);
+          this.#bindCreatedTask(call, effectiveOutput, options.fallbackContent);
         }
         break;
       case 'TaskUpdate':
         if (failed) {
-          this.restoreUpdate(call);
+          this.#restoreUpdate(call);
         } else {
-          this.applyAuthoritativeUpdate(call, outputRecord);
+          this.#applyAuthoritativeUpdate(call, outputRecord);
         }
         break;
       case 'TaskList':
-        if (!failed) this.applyTaskList(outputRecord);
+        if (!failed) this.#applyTaskList(outputRecord);
         break;
       case 'TaskGet':
-        if (!failed) this.applyTaskGet(call, outputRecord);
+        if (!failed) this.#applyTaskGet(call, outputRecord);
         break;
     }
 
-    return this.buildNormalizedCall(call, effectiveOutput);
+    return this.#buildNormalizedCall(call, effectiveOutput);
   }
 
   reset(): void {
@@ -113,7 +113,7 @@ export class ClaudeTaskToolNormalizer {
     this.tasks.clear();
   }
 
-  private getOrCreateCall(toolCallId: string, rawName: ClaudeTaskToolName): TaskCallState {
+  #getOrCreateCall(toolCallId: string, rawName: ClaudeTaskToolName): TaskCallState {
     const existing = this.calls.get(toolCallId);
     if (existing?.rawName === rawName) return existing;
 
@@ -125,7 +125,7 @@ export class ClaudeTaskToolNormalizer {
     return call;
   }
 
-  private applyCreate(
+  #applyCreate(
     toolCallId: string,
     call: TaskCallState,
     input: Record<string, unknown>,
@@ -144,7 +144,7 @@ export class ClaudeTaskToolNormalizer {
     });
   }
 
-  private applyUpdate(call: TaskCallState, input: Record<string, unknown>): void {
+  #applyUpdate(call: TaskCallState, input: Record<string, unknown>): void {
     const taskId = readNonEmptyString(input.taskId);
     if (!taskId) return;
 
@@ -172,7 +172,7 @@ export class ClaudeTaskToolNormalizer {
     });
   }
 
-  private bindCreatedTask(
+  #bindCreatedTask(
     call: TaskCallState,
     output: unknown,
     fallbackContent?: string,
@@ -194,11 +194,11 @@ export class ClaudeTaskToolNormalizer {
       id: taskId,
       ...(subject ? { content: subject } : {}),
     };
-    this.replaceTaskKey(call.taskKey, taskId, createdTask);
+    this.#replaceTaskKey(call.taskKey, taskId, createdTask);
     call.taskKey = taskId;
   }
 
-  private restoreUpdate(call: TaskCallState): void {
+  #restoreUpdate(call: TaskCallState): void {
     if (!call.updateTaskId) return;
     if (call.updateTaskBefore) {
       this.tasks.set(call.updateTaskId, cloneTask(call.updateTaskBefore)!);
@@ -207,7 +207,7 @@ export class ClaudeTaskToolNormalizer {
     }
   }
 
-  private applyAuthoritativeUpdate(
+  #applyAuthoritativeUpdate(
     call: TaskCallState,
     output: Record<string, unknown> | null,
   ): void {
@@ -224,7 +224,7 @@ export class ClaudeTaskToolNormalizer {
     }
   }
 
-  private applyTaskList(output: Record<string, unknown> | null): void {
+  #applyTaskList(output: Record<string, unknown> | null): void {
     if (!Array.isArray(output?.tasks)) return;
 
     const nextTasks = new Map<string, StoredTask>();
@@ -248,7 +248,7 @@ export class ClaudeTaskToolNormalizer {
     for (const [taskId, task] of nextTasks) this.tasks.set(taskId, task);
   }
 
-  private applyTaskGet(
+  #applyTaskGet(
     call: TaskCallState,
     output: Record<string, unknown> | null,
   ): void {
@@ -275,7 +275,7 @@ export class ClaudeTaskToolNormalizer {
     });
   }
 
-  private replaceTaskKey(oldKey: string, newKey: string, task: StoredTask): void {
+  #replaceTaskKey(oldKey: string, newKey: string, task: StoredTask): void {
     const entries = [...this.tasks.entries()];
     this.tasks.clear();
     for (const [key, value] of entries) {
@@ -283,7 +283,7 @@ export class ClaudeTaskToolNormalizer {
     }
   }
 
-  private buildNormalizedCall(
+  #buildNormalizedCall(
     call: TaskCallState,
     rawOutput?: unknown,
   ): NormalizedClaudeTaskToolCall {

@@ -97,7 +97,7 @@ export class RetirementClientHandler {
   }
 
   handle(result: CollabRetirementResult, source: RetirementDeliverySource): Promise<void> {
-    return this.enqueue(result.projectId, () => this.handleUnlocked(result, source));
+    return this.enqueue(result.projectId, () => this.#handleUnlocked(result, source));
   }
 
   async resume(projectId: CollabProjectId): Promise<void> {
@@ -105,15 +105,15 @@ export class RetirementClientHandler {
       const record = await this.store.loadRetirementRecord(projectId);
       if (!record) throw new CollabError({ code: 'project-not-found' });
       const pendingLeave = await this.pendingLeaves?.load(projectId) ?? null;
-      if (pendingLeave && await this.adoptPendingLeaveCleanup(pendingLeave)) {
-        await this.seedCompletedRetirementCleanup(
+      if (pendingLeave && await this.#adoptPendingLeaveCleanup(pendingLeave)) {
+        await this.#seedCompletedRetirementCleanup(
           pendingLeave,
           record.createdAt,
         );
       }
       await this.store.transitionProjectToRetired(
         record,
-        pendingLeave ? this.projectionSeedFromPendingLeave(pendingLeave) : undefined,
+        pendingLeave ? this.#projectionSeedFromPendingLeave(pendingLeave) : undefined,
       );
       await this.pendingLeaves?.remove(projectId);
       await this.converge(record);
@@ -127,7 +127,7 @@ export class RetirementClientHandler {
     return this.closePromise;
   }
 
-  private async handleUnlocked(
+  async #handleUnlocked(
     result: CollabRetirementResult,
     source: RetirementDeliverySource,
   ): Promise<void> {
@@ -143,15 +143,15 @@ export class RetirementClientHandler {
         });
       }
       const pendingLeave = await this.pendingLeaves?.load(result.projectId) ?? null;
-      if (pendingLeave && await this.adoptPendingLeaveCleanup(pendingLeave)) {
-        await this.seedCompletedRetirementCleanup(
+      if (pendingLeave && await this.#adoptPendingLeaveCleanup(pendingLeave)) {
+        await this.#seedCompletedRetirementCleanup(
           pendingLeave,
           existing.createdAt,
         );
       }
       await this.store.transitionProjectToRetired(
         existing,
-        pendingLeave ? this.projectionSeedFromPendingLeave(pendingLeave) : undefined,
+        pendingLeave ? this.#projectionSeedFromPendingLeave(pendingLeave) : undefined,
       );
       await this.pendingLeaves?.remove(result.projectId);
       await this.converge(existing);
@@ -190,7 +190,7 @@ export class RetirementClientHandler {
     }
     const createdAt = maxTimestamp(this.now().toISOString(), result.retiredAt);
     const pendingLeaveCleanupComplete = pendingLeave
-      ? await this.adoptPendingLeaveCleanup(pendingLeave)
+      ? await this.#adoptPendingLeaveCleanup(pendingLeave)
       : false;
     const record = decodeRetirementRecord({
       acknowledgedAt: null,
@@ -223,17 +223,17 @@ export class RetirementClientHandler {
           workspacePath: membership.project.workspacePath,
         }
       : {
-          ...this.projectionSeedFromPendingLeave(pendingLeave!),
+          ...this.#projectionSeedFromPendingLeave(pendingLeave!),
         };
     if (pendingLeave && pendingLeaveCleanupComplete) {
-      await this.seedCompletedRetirementCleanup(pendingLeave, createdAt);
+      await this.#seedCompletedRetirementCleanup(pendingLeave, createdAt);
     }
     await this.store.transitionProjectToRetired(record, projectionSeed);
     await this.pendingLeaves?.remove(result.projectId);
     await this.converge(record);
   }
 
-  private async adoptPendingLeaveCleanup(
+  async #adoptPendingLeaveCleanup(
     pendingLeave: PendingLeaveRecord,
   ): Promise<boolean> {
     if (pendingLeave.localCleanupComplete) return true;
@@ -267,7 +267,7 @@ export class RetirementClientHandler {
     return true;
   }
 
-  private async seedCompletedRetirementCleanup(
+  async #seedCompletedRetirementCleanup(
     pendingLeave: PendingLeaveRecord,
     timestamp: string,
   ): Promise<void> {
@@ -310,7 +310,7 @@ export class RetirementClientHandler {
     }));
   }
 
-  private projectionSeedFromPendingLeave(
+  #projectionSeedFromPendingLeave(
     record: PendingLeaveRecord,
   ): CollabRetiredProjectProjectionSeed {
     return {

@@ -155,7 +155,7 @@ export class HostTransferModule {
       remove: (projectId, direction) => durableRecovery.remove(projectId, direction),
       save: record => durableRecovery.save(record),
     };
-    const target = this.createTargetTransport();
+    const target = this.#createTargetTransport();
     const catalogRecovery: Pick<HostTransferRecoveryStorePort, 'load'> = {
       load: async (projectId, direction) => {
         try {
@@ -170,8 +170,8 @@ export class HostTransferModule {
       },
     };
     this.clientService = new CollabHostTransferService({
-      createControlClient: membership => this.createControlClient(membership),
-      createIncomingCoordinator: membership => this.createIncomingCoordinator(membership),
+      createControlClient: membership => this.#createControlClient(membership),
+      createIncomingCoordinator: membership => this.#createIncomingCoordinator(membership),
       projects: this.options.projects,
       projectRecoveryAdmission: this.options.projectRecoveryAdmission,
       recovery: catalogRecovery,
@@ -228,9 +228,9 @@ export class HostTransferModule {
             repositoryPath: input.repositoryPath,
             runner: input.git.runner,
           }),
-          this.createTargetTransport(),
+          this.#createTargetTransport(),
           new LanHostTransferSourceIdentity(this.options.lanHost, this.options.projects),
-          this.createProjection(input.git),
+          this.#createProjection(input.git),
           this.recovery,
           {
             installationKey: this.options.installationKey,
@@ -242,7 +242,7 @@ export class HostTransferModule {
     );
   }
 
-  private async createIncomingCoordinator(
+  async #createIncomingCoordinator(
     membership: CollabLocalLanMembershipRecord,
   ): Promise<IncomingHostTransferCoordinator> {
     const git = await this.options.requireGitFoundation();
@@ -254,7 +254,7 @@ export class HostTransferModule {
       repositories: git.repositories,
       workspace: this.options.workspace,
     });
-    const control = this.createControlClient(membership);
+    const control = this.#createControlClient(membership);
     const coordinator = new IncomingHostTransferCoordinator(
       {
         accept: request => control.accept({
@@ -269,15 +269,15 @@ export class HostTransferModule {
         ),
         projectsFolder: folder,
         readPinnedSourceCa: projectId => (
-          this.createProjection(git).readPinnedSourceCa(projectId)
+          this.#createProjection(git).readPinnedSourceCa(projectId)
         ),
         repositories: git.repositories,
-        resolveWorkingRepository: projectId => this.resolveWorkingRepository(projectId),
+        resolveWorkingRepository: projectId => this.#resolveWorkingRepository(projectId),
         runner: git.runner,
         workspace: this.options.workspace,
       }),
       { activate: input => this.options.activateTransferredAuthority(input) },
-      this.createProjection(git),
+      this.#createProjection(git),
       this.recovery,
       {
         installationKey: this.options.installationKey,
@@ -288,7 +288,7 @@ export class HostTransferModule {
     return coordinator;
   }
 
-  private createControlClient(membership: CollabLocalLanMembershipRecord): HostTransferControlPort {
+  #createControlClient(membership: CollabLocalLanMembershipRecord): HostTransferControlPort {
     if (this.options.createControlClient) return this.options.createControlClient(membership);
     const endpoint = membership.authority.endpoint;
     const caCertificatePem = membership.authority.hostCaCertificatePem;
@@ -304,7 +304,7 @@ export class HostTransferModule {
     }, 10_000));
   }
 
-  private createProjection(
+  #createProjection(
     git: HostTransferModuleGitFoundation,
   ): LocalHostTransferProjection {
     return new LocalHostTransferProjection({
@@ -334,11 +334,11 @@ export class HostTransferModule {
     };
   }
 
-  private createTargetTransport(): HostTransferTargetTransportPort {
+  #createTargetTransport(): HostTransferTargetTransportPort {
     return this.options.createTargetTransport?.() ?? new HostTransferTargetTransport();
   }
 
-  private async resolveWorkingRepository(projectId: CollabProjectId): Promise<string> {
+  async #resolveWorkingRepository(projectId: CollabProjectId): Promise<string> {
     const membership = await this.options.projects.loadMembership(projectId);
     if (!membership || membership.project.id !== projectId) {
       throw compositionError('host-transfer-membership-missing');

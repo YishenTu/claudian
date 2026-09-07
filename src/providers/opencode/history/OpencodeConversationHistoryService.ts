@@ -65,7 +65,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       conversation.messages.length > 0
       && this.hydratedKeys.get(conversation.id) === hydrationKey
     ) {
-      this.markNativeConversationContextEstablished(conversation);
+      this.#markNativeConversationContextEstablished(conversation);
       return;
     }
 
@@ -89,7 +89,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     }
 
     this.hydratedKeys.set(conversation.id, hydrationKey);
-    this.markNativeConversationContextEstablished(conversation);
+    this.#markNativeConversationContextEstablished(conversation);
   }
 
   async resolveMissingConversationSession(
@@ -151,7 +151,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     );
   }
 
-  private markNativeConversationContextEstablished(
+  #markNativeConversationContextEstablished(
     conversation: Conversation,
   ): void {
     const state = getOpencodeState(conversation.providerState);

@@ -56,7 +56,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
       throw new Error('MessageChannel is closed');
     }
 
-    const hasAttachments = this.messageHasAttachments(message);
+    const hasAttachments = this.#messageHasAttachments(message);
 
     if (!this.turnActive) {
       if (this.resolveNext) {
@@ -75,7 +75,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
         if (hasAttachments) {
           this.queue.push({ type: 'attachment', message });
         } else {
-          this.queue.push({ type: 'text', content: this.extractTextContent(message) });
+          this.queue.push({ type: 'text', content: this.#extractTextContent(message) });
         }
       }
       return;
@@ -97,7 +97,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
     }
 
     // Text-only - merge with existing text in queue
-    const textContent = this.extractTextContent(message);
+    const textContent = this.#extractTextContent(message);
     const existingTextIdx = this.queue.findIndex(m => m.type === 'text');
 
     if (existingTextIdx >= 0) {
@@ -129,7 +129,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
       this.turnActive = true;
       const resolve = this.resolveNext;
       this.resolveNext = null;
-      resolve({ value: this.pendingToMessage(pending), done: false });
+      resolve({ value: this.#pendingToMessage(pending), done: false });
     }
   }
 
@@ -165,7 +165,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
         if (this.queue.length > 0 && !this.turnActive) {
           const pending = this.queue.shift()!;
           this.turnActive = true;
-          return Promise.resolve({ value: this.pendingToMessage(pending), done: false });
+          return Promise.resolve({ value: this.#pendingToMessage(pending), done: false });
         }
 
         // Wait for next message
@@ -176,13 +176,13 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
     };
   }
 
-  private messageHasAttachments(message: SDKUserMessage): boolean {
+  #messageHasAttachments(message: SDKUserMessage): boolean {
     if (!message.message?.content) return false;
     if (typeof message.message.content === 'string') return false;
     return message.message.content.some((block: { type: string }) => block.type === 'image');
   }
 
-  private extractTextContent(message: SDKUserMessage): string {
+  #extractTextContent(message: SDKUserMessage): string {
     if (!message.message?.content) return '';
     if (typeof message.message.content === 'string') return message.message.content;
     return message.message.content
@@ -191,7 +191,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
       .join('\n\n');
   }
 
-  private pendingToMessage(pending: PendingMessage): SDKUserMessage {
+  #pendingToMessage(pending: PendingMessage): SDKUserMessage {
     if (pending.type === 'attachment') {
       return pending.message;
     }

@@ -95,7 +95,7 @@ export class VaultFileAdapter {
     return this.app.vault.adapter;
   }
 
-  private getDesktopAdapter(): DesktopDataAdapter | null {
+  #getDesktopAdapter(): DesktopDataAdapter | null {
     const candidate = this.adapter as Partial<DesktopDataAdapter>;
     return typeof candidate.getBasePath === 'function' ? candidate as DesktopDataAdapter : null;
   }
@@ -109,12 +109,12 @@ export class VaultFileAdapter {
   }
 
   async write(path: string, content: string): Promise<void> {
-    await this.ensureParentFolder(path);
+    await this.#ensureParentFolder(path);
     await this.app.vault.adapter.write(path, content);
   }
 
   async append(path: string, content: string): Promise<void> {
-    await this.ensureParentFolder(path);
+    await this.#ensureParentFolder(path);
     this.writeQueue = this.writeQueue.then(async () => {
       if (await this.exists(path)) {
         const existing = await this.read(path);
@@ -181,7 +181,7 @@ export class VaultFileAdapter {
     return allFiles;
   }
 
-  private async ensureParentFolder(filePath: string): Promise<void> {
+  async #ensureParentFolder(filePath: string): Promise<void> {
     const folder = filePath.substring(0, filePath.lastIndexOf('/'));
     if (folder && !(await this.exists(folder))) {
       await this.ensureFolder(folder);
@@ -194,11 +194,11 @@ export class VaultFileAdapter {
     let current = '';
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
-      await this.ensureSingleFolder(current);
+      await this.#ensureSingleFolder(current);
     }
   }
 
-  private async ensureSingleFolder(path: string): Promise<void> {
+  async #ensureSingleFolder(path: string): Promise<void> {
     const existing = this.folderCreationPromises.get(path);
     if (existing) {
       await existing;
@@ -241,14 +241,14 @@ export class VaultFileAdapter {
     options: ManagedPathVerificationOptions,
   ): Promise<boolean> {
     const normalized = normalizeManagedPath(resourcePath);
-    const desktopAdapter = this.getDesktopAdapter();
+    const desktopAdapter = this.#getDesktopAdapter();
     if (desktopAdapter) {
-      return this.verifyDesktopManagedPath(desktopAdapter, normalized, options);
+      return this.#verifyDesktopManagedPath(desktopAdapter, normalized, options);
     }
-    return this.verifyAdapterManagedPath(normalized, options);
+    return this.#verifyAdapterManagedPath(normalized, options);
   }
 
-  private async verifyDesktopManagedPath(
+  async #verifyDesktopManagedPath(
     adapter: DesktopDataAdapter,
     normalized: string,
     options: ManagedPathVerificationOptions,
@@ -314,7 +314,7 @@ export class VaultFileAdapter {
     return true;
   }
 
-  private async verifyAdapterManagedPath(
+  async #verifyAdapterManagedPath(
     normalized: string,
     options: ManagedPathVerificationOptions,
   ): Promise<boolean> {
@@ -376,13 +376,13 @@ export class VaultFileAdapter {
     if (parent) {
       await this.verifyManagedPath(parent, { expectedType: 'folder' });
     }
-    if (await this.verifyManagedCollisionTarget(normalized)) {
+    if (await this.#verifyManagedCollisionTarget(normalized)) {
       throw new ManagedResourceCollisionError(normalized);
     }
     try {
       await this.adapter.mkdir(normalized);
     } catch (error) {
-      if (await this.verifyManagedCollisionTarget(normalized)) {
+      if (await this.#verifyManagedCollisionTarget(normalized)) {
         throw new ManagedResourceCollisionError(normalized, { cause: error });
       }
       throw new ManagedResourcePathError(
@@ -393,7 +393,7 @@ export class VaultFileAdapter {
     await this.verifyManagedPath(normalized, { expectedType: 'folder' });
   }
 
-  private async verifyManagedCollisionTarget(resourcePath: string): Promise<boolean> {
+  async #verifyManagedCollisionTarget(resourcePath: string): Promise<boolean> {
     try {
       return await this.verifyManagedPath(resourcePath, {
         expectedType: 'folder',
@@ -534,7 +534,7 @@ export class VaultFileAdapter {
   private async moveManagedEntryNoReplace(sourcePath: string, targetPath: string): Promise<void> {
     const source = normalizeManagedPath(sourcePath);
     const target = normalizeManagedPath(targetPath);
-    const desktopAdapter = this.getDesktopAdapter();
+    const desktopAdapter = this.#getDesktopAdapter();
     if (!desktopAdapter) {
       throw new ManagedResourcePathError(
         'Exclusive managed relocation requires a filesystem-backed vault adapter',
@@ -542,8 +542,8 @@ export class VaultFileAdapter {
     }
 
     const basePath = path.resolve(desktopAdapter.getBasePath());
-    const sourceAbsolute = this.resolveManagedDesktopPath(basePath, source);
-    const targetAbsolute = this.resolveManagedDesktopPath(basePath, target);
+    const sourceAbsolute = this.#resolveManagedDesktopPath(basePath, source);
+    const targetAbsolute = this.#resolveManagedDesktopPath(basePath, target);
     let stat: Awaited<ReturnType<typeof fs.lstat>>;
     try {
       stat = await fs.lstat(sourceAbsolute);
@@ -567,7 +567,7 @@ export class VaultFileAdapter {
           `Managed resource must be a regular file or folder: ${source}`,
         );
       }
-      await this.moveManagedDirectoryNoReplace(
+      await this.#moveManagedDirectoryNoReplace(
         source,
         target,
         sourceAbsolute,
@@ -581,7 +581,7 @@ export class VaultFileAdapter {
     }
   }
 
-  private async moveManagedDirectoryNoReplace(
+  async #moveManagedDirectoryNoReplace(
     source: string,
     target: string,
     sourceAbsolute: string,
@@ -625,7 +625,7 @@ export class VaultFileAdapter {
 
   }
 
-  private resolveManagedDesktopPath(basePath: string, resourcePath: string): string {
+  #resolveManagedDesktopPath(basePath: string, resourcePath: string): string {
     const candidate = path.resolve(basePath, ...resourcePath.split('/'));
     const relative = path.relative(basePath, candidate);
     if (

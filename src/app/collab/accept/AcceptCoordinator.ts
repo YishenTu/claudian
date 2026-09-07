@@ -183,26 +183,26 @@ export class AcceptCoordinator {
     actorMemberId: CollabMemberId,
     request: AcceptRequest,
   ): Promise<AcceptResponse> {
-    return this.operationQueue.run(() => this.acceptUnlocked(actorMemberId, request));
+    return this.operationQueue.run(() => this.#acceptUnlocked(actorMemberId, request));
   }
 
   recover(): Promise<void> {
     return this.operationQueue.run(async () => {
-      this.assertAvailable();
+      this.#assertAvailable();
       const operation = await this.database.read(connection => (
         this.operations.findIncomplete(connection)
       ));
       if (operation) {
-        await this.recoverOperation(operation);
+        await this.#recoverOperation(operation);
       }
     });
   }
 
-  private async acceptUnlocked(
+  async #acceptUnlocked(
     actorMemberId: CollabMemberId,
     request: AcceptRequest,
   ): Promise<AcceptResponse> {
-    this.assertAvailable();
+    this.#assertAvailable();
     const idempotencyInput = {
       actorMemberId,
       key: request.idempotencyKey,
@@ -221,7 +221,7 @@ export class AcceptCoordinator {
     });
     if (initial.replay) return decodeResponse(initial.replay.response);
     if (initial.incomplete) {
-      await this.recoverOperation(initial.incomplete);
+      await this.#recoverOperation(initial.incomplete);
       const replay = await this.database.read(connection => {
         this.operations.requireActiveMember(connection, request.projectId, actorMemberId);
         const recoveredReplay = this.idempotency.find<unknown>(connection, idempotencyInput);
@@ -277,7 +277,7 @@ export class AcceptCoordinator {
       if (revalidatedPersonalOid !== request.expectedHeadOid) {
         throw acceptError('stale-request-head', 'accept-contained-personal-ref-raced');
       }
-      return this.completeContained(actorMemberId, request, mainOid, idempotencyInput);
+      return this.#completeContained(actorMemberId, request, mainOid, idempotencyInput);
     }
     const merge = await this.git.mergeTree(mainOid, request.expectedHeadOid);
     if (merge.kind === 'conflicting') {
@@ -339,14 +339,14 @@ export class AcceptCoordinator {
       )
     ))).value;
     this.failAfter?.('after-result-persisted');
-    await this.updateMainOrBlock(persisted);
+    await this.#updateMainOrBlock(persisted);
     this.failAfter?.('after-ref-updated');
     const response = await this.finalize(persisted);
     this.failAfter?.('after-completed');
     return response;
   }
 
-  private async completeContained(
+  async #completeContained(
     actorMemberId: CollabMemberId,
     request: AcceptRequest,
     mainOid: string,
@@ -375,7 +375,7 @@ export class AcceptCoordinator {
         requestId: request.requestId,
         resultCommitOid: mainOid,
       });
-      return this.finalizeInConnection(
+      return this.#finalizeInConnection(
         connection,
         operation,
         idempotencyInput,
@@ -383,7 +383,7 @@ export class AcceptCoordinator {
     })).value;
   }
 
-  private async recoverOperation(
+  async #recoverOperation(
     initial: AuthorityAcceptOperation,
   ): Promise<AcceptResponse> {
     let operation = initial;
@@ -455,11 +455,11 @@ export class AcceptCoordinator {
         )
       ))).value;
     }
-    await this.updateMainOrBlock(operation);
+    await this.#updateMainOrBlock(operation);
     return this.finalize(operation);
   }
 
-  private async updateMainOrBlock(operation: AuthorityAcceptOperation): Promise<void> {
+  async #updateMainOrBlock(operation: AuthorityAcceptOperation): Promise<void> {
     const resultCommitOid = operation.resultCommitOid;
     if (!resultCommitOid) throw this.block('accept-recovery-result-missing');
     try {
@@ -507,7 +507,7 @@ export class AcceptCoordinator {
           requestId: operation.requestId,
         }),
       };
-      return (await this.database.mutate(connection => this.finalizeInConnection(
+      return (await this.database.mutate(connection => this.#finalizeInConnection(
         connection,
         operation,
         idempotencyInput,
@@ -532,7 +532,7 @@ export class AcceptCoordinator {
     }
   }
 
-  private finalizeInConnection(
+  #finalizeInConnection(
     connection: Parameters<Parameters<RequestEnsureDatabasePort['mutate']>[0]>[0],
     operation: AuthorityAcceptOperation,
     idempotencyInput: {
@@ -587,7 +587,7 @@ export class AcceptCoordinator {
     return error;
   }
 
-  private assertAvailable(): void {
+  #assertAvailable(): void {
     if (this.blockedError) throw this.blockedError;
   }
 

@@ -143,25 +143,25 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
   prepare(
     input: Parameters<HostTransferPackagePreparationPort['prepare']>[0],
   ): Promise<PreparedHostTransferPackage> {
-    return this.operationQueue.run(() => this.prepareUnlocked(input));
+    return this.operationQueue.run(() => this.#prepareUnlocked(input));
   }
 
   restore(
     input: Parameters<HostTransferPackagePreparationPort['restore']>[0],
   ): Promise<PreparedHostTransferPackage> {
-    return this.operationQueue.run(() => this.restoreUnlocked(input));
+    return this.operationQueue.run(() => this.#restoreUnlocked(input));
   }
 
-  private async prepareUnlocked(
+  async #prepareUnlocked(
     input: Parameters<HostTransferPackagePreparationPort['prepare']>[0],
   ): Promise<PreparedHostTransferPackage> {
     if (input.signal?.aborted) throw new CollabError({ code: 'cancelled' });
-    this.assertIdentity(input.projectId, input.transferId);
-    const directory = await this.ensureOperationDirectory(input.projectId, input.transferId);
+    this.#assertIdentity(input.projectId, input.transferId);
+    const directory = await this.#ensureOperationDirectory(input.projectId, input.transferId);
     const manifestPath = path.join(directory, HOST_TRANSFER_MANIFEST_FILE);
     const serializedManifest = await readRegularUtf8FileIfPresent(manifestPath);
     if (serializedManifest !== null) {
-      const restored = await this.restoreUnlocked({
+      const restored = await this.#restoreUnlocked({
         manifestDigest: digestHostTransferPackageManifest(
           parseHostTransferRecoveryPackageManifest(serializedManifest),
         ),
@@ -237,14 +237,14 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     return this.loaded(directory, manifest, input.proof, input.signal);
   }
 
-  private async restoreUnlocked(
+  async #restoreUnlocked(
     input: Parameters<HostTransferPackagePreparationPort['restore']>[0],
   ): Promise<PreparedHostTransferPackage> {
-    this.assertIdentity(input.projectId, input.transferId);
+    this.#assertIdentity(input.projectId, input.transferId);
     if (!DIGEST_PATTERN.test(input.manifestDigest)) {
       throw preparationError('host-transfer-package-manifest-digest-invalid');
     }
-    const directory = await this.requireOperationDirectory(input.projectId, input.transferId);
+    const directory = await this.#requireOperationDirectory(input.projectId, input.transferId);
     let manifest: HostTransferPackageManifest;
     let proof: CollabHostTrustTransitionProof;
     try {
@@ -303,8 +303,8 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     });
   }
 
-  private async ensureOperationDirectory(projectId: string, transferId: string): Promise<string> {
-    const root = await this.requireAuthorityDirectory();
+  async #ensureOperationDirectory(projectId: string, transferId: string): Promise<string> {
+    const root = await this.#requireAuthorityDirectory();
     const packages = path.join(root, 'host-transfers');
     await mkdir(packages, { mode: 0o700 }).catch(() => undefined);
     const packagesStat = await lstat(packages).catch(() => null);
@@ -322,22 +322,22 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     if (!ownerStat) {
       await writePrivateFile(ownerPath, JSON.stringify(this.owner(projectId, transferId)));
     }
-    await this.assertOwner(directory, projectId, transferId);
+    await this.#assertOwner(directory, projectId, transferId);
     return directory;
   }
 
-  private async requireOperationDirectory(projectId: string, transferId: string): Promise<string> {
-    const root = await this.requireAuthorityDirectory();
+  async #requireOperationDirectory(projectId: string, transferId: string): Promise<string> {
+    const root = await this.#requireAuthorityDirectory();
     const directory = path.join(root, 'host-transfers', transferId);
     const info = await lstat(directory).catch(() => null);
     if (!info?.isDirectory() || info.isSymbolicLink()) {
       throw preparationError('host-transfer-package-directory-invalid');
     }
-    await this.assertOwner(directory, projectId, transferId);
+    await this.#assertOwner(directory, projectId, transferId);
     return directory;
   }
 
-  private async assertOwner(directory: string, projectId: string, transferId: string): Promise<void> {
+  async #assertOwner(directory: string, projectId: string, transferId: string): Promise<void> {
     try {
       const value = JSON.parse(await readFile(path.join(directory, OWNER_FILE), 'utf8')) as unknown;
       const expected = this.owner(projectId, transferId);
@@ -357,7 +357,7 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     return { owner: 'claudian-host-transfer-package', projectId, schemaVersion: 1, transferId };
   }
 
-  private async requireAuthorityDirectory(): Promise<string> {
+  async #requireAuthorityDirectory(): Promise<string> {
     if (!path.isAbsolute(this.options.authorityDirectory)) {
       throw preparationError('host-transfer-authority-directory-invalid');
     }
@@ -369,7 +369,7 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     return canonical;
   }
 
-  private assertIdentity(projectId: string, transferId: string): void {
+  #assertIdentity(projectId: string, transferId: string): void {
     if (!isCollabProjectId(projectId) || !isCollabOpaqueId(transferId)) {
       throw preparationError('host-transfer-package-identity-invalid');
     }
