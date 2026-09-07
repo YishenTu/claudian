@@ -14,13 +14,13 @@ export class ResponsiveCollabRouter {
 
   async open(): Promise<boolean> {
     for (const target of this.options.listExistingTargets()) {
-      if (await this.selectAndReveal(target, false)) return true;
+      if (await this.#selectAndReveal(target, false)) return true;
     }
     const fallback = await this.options.createMainTabTarget().catch(() => null);
-    return fallback ? this.selectAndReveal(fallback, true) : false;
+    return fallback ? this.#selectAndReveal(fallback, true) : false;
   }
 
-  private async selectAndReveal(
+  async #selectAndReveal(
     target: ResponsiveCollabTarget,
     prepare: boolean,
   ): Promise<boolean> {

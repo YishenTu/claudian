@@ -43,14 +43,14 @@ export class SettingsCoordinator<T extends object> {
     mutation: SettingsMutation<T>,
     onCommitted?: SettingsCommit<T>,
   ): Promise<void> {
-    return this.enqueueTransactional(async () => {
+    return this.#enqueueTransactional(async () => {
       await mutation(this.settings);
       await this.persist(this.settings);
     }, onCommitted);
   }
 
   mutateConditionally(mutation: ConditionalSettingsMutation<T>): Promise<void> {
-    return this.enqueueTransactional(async () => {
+    return this.#enqueueTransactional(async () => {
       if (await mutation(this.settings)) {
         await this.persist(this.settings);
       }
@@ -67,7 +67,7 @@ export class SettingsCoordinator<T extends object> {
     return result;
   }
 
-  private enqueueTransactional(
+  #enqueueTransactional(
     operation: () => Promise<void>,
     onCommitted?: SettingsCommit<T>,
   ): Promise<void> {

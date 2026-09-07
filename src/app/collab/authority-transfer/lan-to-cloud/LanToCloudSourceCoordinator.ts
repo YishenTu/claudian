@@ -109,7 +109,7 @@ function stagingDirectory(transferId: string): string {
 export class LanToCloudSourceCoordinator {
   constructor(private readonly options: LanToCloudSourceCoordinatorOptions) {}
 
-  private assertOwnedRecord(record: AuthorityTransferRecord): void {
+  #assertOwnedRecord(record: AuthorityTransferRecord): void {
     if (record.ownerInstallationKey !== this.options.installationKey) {
       throw transferError('host-installation-recovery-owner-mismatch');
     }
@@ -138,14 +138,14 @@ export class LanToCloudSourceCoordinator {
     ) throw transferError('lan-to-cloud-host-acceptance-mismatch');
     const existing = await this.options.persistence.load(request.projectId);
     if (existing) {
-      this.assertOwnedRecord(existing);
+      this.#assertOwnedRecord(existing);
       if (
         existing.localRole !== 'source'
         || existing.transferId !== entry.status.transferId
         || existing.operationIntentId !== entry.request.idempotencyKey
         || existing.status.targetUrl !== entry.request.targetUrl
       ) throw transferError('lan-to-cloud-entry-successor-mismatch');
-      return this.resumeRecord(existing, options);
+      return this.#resumeRecord(existing, options);
     }
     if (entry.phase === 'handed-off') {
       throw transferError('lan-to-cloud-entry-successor-missing');
@@ -178,7 +178,7 @@ export class LanToCloudSourceCoordinator {
       let durableReadSucceeded = false;
       try {
         durable = await this.options.persistence.load(entry.projectId);
-        if (durable) this.assertOwnedRecord(durable);
+        if (durable) this.#assertOwnedRecord(durable);
         durableReadSucceeded = true;
       } catch {
         // An ambiguous durable write must retain the runtime endpoint pin.
@@ -190,11 +190,11 @@ export class LanToCloudSourceCoordinator {
       }
       throw error;
     }
-    return this.resumeRecord(owned, options);
+    return this.#resumeRecord(owned, options);
   }
 
   async restoreSourceEndpoint(record: AuthorityTransferRecord): Promise<void> {
-    this.assertOwnedRecord(record);
+    this.#assertOwnedRecord(record);
     if (record.localRole !== 'source' || !record.sourceLanEndpoint) {
       throw transferError('lan-to-cloud-source-endpoint-missing');
     }
@@ -213,8 +213,8 @@ export class LanToCloudSourceCoordinator {
     if (!record || record.localRole !== 'source') {
       throw transferError('lan-to-cloud-record-missing');
     }
-    this.assertOwnedRecord(record);
-    return this.resumeRecord(record, options);
+    this.#assertOwnedRecord(record);
+    return this.#resumeRecord(record, options);
   }
 
   async cancel(
@@ -222,17 +222,17 @@ export class LanToCloudSourceCoordinator {
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
     const record = await this.options.persistence.prepareLanToCloudCancellation(request);
-    this.assertOwnedRecord(record);
+    this.#assertOwnedRecord(record);
     if (record.status.state === 'cancelled') {
       if (!record.terminalCleanupCompleted) {
-        await this.completeCancellation(record, options);
+        await this.#completeCancellation(record, options);
       }
       return record.status;
     }
-    return this.resumeCancellation(record, request, options);
+    return this.#resumeCancellation(record, request, options);
   }
 
-  private async resumeCancellation(
+  async #resumeCancellation(
     record: AuthorityTransferRecord,
     request: LanToCloudCancellationIntent,
     options: CollabOperationOptions,
@@ -254,7 +254,7 @@ export class LanToCloudSourceCoordinator {
       const prepared = record.status.phase === 'collecting-readiness'
         ? await this.options.persistence.cancelUnbegunLanToCloudSource(request)
         : await this.options.persistence.resumeUnbegunLanToCloudCancellation(record);
-      const settled = await this.completeLocalCancellation(prepared, options);
+      const settled = await this.#completeLocalCancellation(prepared, options);
       return settled.status;
     }
     let settled: AuthorityTransferRecord;
@@ -280,9 +280,9 @@ export class LanToCloudSourceCoordinator {
         error instanceof CollabError
         && error.code === 'authority-transfer-stale'
       ) {
-        const observed = await this.retainObservedClaimBatch(
+        const observed = await this.#retainObservedClaimBatch(
           record,
-          await this.readStatus(record, options),
+          await this.#readStatus(record, options),
           options,
         );
         const reconciled = await advanceThroughObservedAuthorityStatus(
@@ -291,7 +291,7 @@ export class LanToCloudSourceCoordinator {
           observed,
         );
         if (reconciled.status.state === 'cancelled') {
-          await this.completeCancellation(reconciled, options);
+          await this.#completeCancellation(reconciled, options);
           return reconciled.status;
         }
         if (reconciled.status.phase !== request.expectedPhase) {
@@ -308,15 +308,15 @@ export class LanToCloudSourceCoordinator {
         || error.code !== 'authority-transfer-not-found'
       ) throw error;
       const prepared = await this.options.persistence.cancelUnbegunLanToCloudSource(request, true);
-      return (await this.completeLocalCancellation(prepared, options)).status;
+      return (await this.#completeLocalCancellation(prepared, options)).status;
     }
     if (settled.status.state === 'cancelled') {
-      await this.completeCancellation(settled, options);
+      await this.#completeCancellation(settled, options);
     }
     return settled.status;
   }
 
-  private async resumeRecord(
+  async #resumeRecord(
     initial: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
@@ -332,13 +332,13 @@ export class LanToCloudSourceCoordinator {
           ...cancellationIntent
         } = sourceEntry.cancellation;
         if (record.status.state === 'cancelled') {
-          await this.completeCancellation(record, options);
+          await this.#completeCancellation(record, options);
           return record.status;
         }
-        return this.resumeCancellation(record, cancellationIntent, options);
+        return this.#resumeCancellation(record, cancellationIntent, options);
       }
       if (record.status.state === 'cancelled') {
-        await this.completeCancellation(record, options);
+        await this.#completeCancellation(record, options);
         return record.status;
       }
       if (
@@ -347,7 +347,7 @@ export class LanToCloudSourceCoordinator {
           record.status.phase as never,
         )
       ) {
-        record = await this.ensureReceiptVerifier(record, options);
+        record = await this.#ensureReceiptVerifier(record, options);
       }
       if (record.status.state === 'completed') {
         await this.options.source.activateTerminal(record, options);
@@ -361,7 +361,7 @@ export class LanToCloudSourceCoordinator {
           record = await this.options.persistence.resumeUnbegunLanToCloudCancellation(record);
           continue;
         }
-        record = await this.readAndAdvance(record, options);
+        record = await this.#readAndAdvance(record, options);
         continue;
       }
       switch (record.status.phase) {
@@ -408,11 +408,11 @@ export class LanToCloudSourceCoordinator {
           } finally {
             destroyAuthorityTransferArtifactBodies(captured.artifacts);
           }
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
           break;
         }
         case 'checkpoint-received':
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
           break;
         case 'checkpoint-validated': {
           const observed = record.status;
@@ -426,11 +426,11 @@ export class LanToCloudSourceCoordinator {
             record.transferId,
           );
           if (!batch) throw transferError('lan-to-cloud-claim-custody-missing');
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
           break;
         }
         case 'claims-retained':
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
           break;
         case 'repository-published': {
           const proof = await this.options.source.commitRelinquishmentFence(record, options);
@@ -455,7 +455,7 @@ export class LanToCloudSourceCoordinator {
         }
         case 'source-relinquished':
         case 'cloud-activated':
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
           break;
         default:
           throw transferError('lan-to-cloud-phase-unhandled');
@@ -464,7 +464,7 @@ export class LanToCloudSourceCoordinator {
     throw transferError('lan-to-cloud-recovery-did-not-converge');
   }
 
-  private readStatus(
+  #readStatus(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
@@ -474,7 +474,7 @@ export class LanToCloudSourceCoordinator {
     }, options);
   }
 
-  private async ensureReceiptVerifier(
+  async #ensureReceiptVerifier(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<AuthorityTransferRecord> {
@@ -491,13 +491,13 @@ export class LanToCloudSourceCoordinator {
     );
   }
 
-  private async readAndAdvance(
+  async #readAndAdvance(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<AuthorityTransferRecord> {
-    const observed = await this.retainObservedClaimBatch(
+    const observed = await this.#retainObservedClaimBatch(
       record,
-      await this.readStatus(record, options),
+      await this.#readStatus(record, options),
       options,
     );
     const next = await advanceThroughObservedAuthorityStatus(
@@ -511,7 +511,7 @@ export class LanToCloudSourceCoordinator {
     return next;
   }
 
-  private async retainObservedClaimBatch(
+  async #retainObservedClaimBatch(
     record: AuthorityTransferRecord,
     observed: CollabAuthorityTransferStatus,
     options: CollabOperationOptions,
@@ -580,10 +580,10 @@ export class LanToCloudSourceCoordinator {
       options,
     );
     await this.options.persistence.acknowledgeClaimBatch(receipt);
-    return this.readStatus(record, options);
+    return this.#readStatus(record, options);
   }
 
-  private async completeCancellation(
+  async #completeCancellation(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
@@ -596,7 +596,7 @@ export class LanToCloudSourceCoordinator {
     });
   }
 
-  private async completeLocalCancellation(
+  async #completeLocalCancellation(
     prepared: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<AuthorityTransferRecord> {

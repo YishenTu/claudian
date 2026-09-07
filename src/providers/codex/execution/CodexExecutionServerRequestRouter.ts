@@ -66,27 +66,27 @@ export class CodexExecutionServerRequestRouter {
   ): Promise<unknown> {
     switch (method) {
       case 'item/commandExecution/requestApproval':
-        return this.handleCommandApproval(
+        return this.#handleCommandApproval(
           requestId,
           params as CommandApprovalRequest,
         );
       case 'item/fileChange/requestApproval':
-        return this.handleFileChangeApproval(
+        return this.#handleFileChangeApproval(
           requestId,
           params as FileChangeApprovalRequest,
         );
       case 'item/permissions/requestApproval':
-        return this.handlePermissionsApproval(
+        return this.#handlePermissionsApproval(
           requestId,
           params as PermissionsApprovalRequest,
         );
       case 'item/tool/requestUserInput':
-        return this.handleUserInputRequest(
+        return this.#handleUserInputRequest(
           requestId,
           params as UserInputRequest,
         );
       case 'item/tool/call':
-        return this.handleDynamicToolCall(params as DynamicToolCallParams);
+        return this.#handleDynamicToolCall(params as DynamicToolCallParams);
       default:
         throw new Error(`Unsupported server request: ${method}`);
     }
@@ -101,7 +101,7 @@ export class CodexExecutionServerRequestRouter {
 
     this.interactionPort.dismissInteraction(pending.interactionId, 'resolved');
     pending.controller.abort();
-    this.removePending(pending);
+    this.#removePending(pending);
     return true;
   }
 
@@ -109,26 +109,26 @@ export class CodexExecutionServerRequestRouter {
     for (const pending of [...this.pendingByLocalId.values()]) {
       this.interactionPort.dismissInteraction(pending.interactionId, reason);
       pending.controller.abort();
-      this.removePending(pending);
+      this.#removePending(pending);
     }
     this.activeTurn = null;
   }
 
-  private async handleDynamicToolCall(
+  async #handleDynamicToolCall(
     params: DynamicToolCallParams,
   ): Promise<DynamicToolCallResponse> {
-    const turn = this.requireActiveTurn(params.threadId, params.turnId);
+    const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (!this.dynamicToolRegistry || !isDynamicToolAllowed(turn.toolPolicy, params)) {
       throw new Error(`Unsupported dynamic tool: ${qualifiedToolName(params)}`);
     }
     return this.dynamicToolRegistry.execute(params);
   }
 
-  private async handleCommandApproval(
+  async #handleCommandApproval(
     requestId: RequestId,
     params: CommandApprovalRequest,
   ): Promise<CommandExecutionApprovalResponse> {
-    const turn = this.requireActiveTurn(params.threadId, params.turnId);
+    const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (!shouldRouteApproval(turn.toolPolicy)) {
       return { decision: 'decline' };
     }
@@ -145,7 +145,7 @@ export class CodexExecutionServerRequestRouter {
       proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? null,
       proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments ?? null,
     };
-    const pending = this.createPending(requestId, params.threadId);
+    const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
         interactionId: pending.interactionId,
@@ -173,20 +173,20 @@ export class CodexExecutionServerRequestRouter {
           : 'decline',
       };
     } finally {
-      this.removePending(pending);
+      this.#removePending(pending);
     }
   }
 
-  private async handleFileChangeApproval(
+  async #handleFileChangeApproval(
     requestId: RequestId,
     params: FileChangeApprovalRequest,
   ): Promise<FileChangeApprovalResponse> {
-    const turn = this.requireActiveTurn(params.threadId, params.turnId);
+    const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (!shouldRouteApproval(turn.toolPolicy)) {
       return { decision: 'decline' };
     }
 
-    const pending = this.createPending(requestId, params.threadId);
+    const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
         interactionId: pending.interactionId,
@@ -212,20 +212,20 @@ export class CodexExecutionServerRequestRouter {
           : 'decline',
       };
     } finally {
-      this.removePending(pending);
+      this.#removePending(pending);
     }
   }
 
-  private async handlePermissionsApproval(
+  async #handlePermissionsApproval(
     requestId: RequestId,
     params: PermissionsApprovalRequest,
   ): Promise<PermissionsApprovalResponse> {
-    const turn = this.requireActiveTurn(params.threadId, params.turnId);
+    const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (!shouldRouteApproval(turn.toolPolicy)) {
       return { permissions: {}, scope: 'turn' };
     }
 
-    const pending = this.createPending(requestId, params.threadId);
+    const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
         interactionId: pending.interactionId,
@@ -256,19 +256,19 @@ export class CodexExecutionServerRequestRouter {
       }
       return { permissions: {}, scope: 'turn' };
     } finally {
-      this.removePending(pending);
+      this.#removePending(pending);
     }
   }
 
-  private async handleUserInputRequest(
+  async #handleUserInputRequest(
     requestId: RequestId,
     params: UserInputRequest,
   ): Promise<UserInputResponse> {
-    const turn = this.requireActiveTurn(params.threadId, params.turnId);
+    const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (!shouldRouteApproval(turn.toolPolicy)) {
       return { answers: {} };
     }
-    const pending = this.createPending(requestId, params.threadId);
+    const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.askUserQuestion({
         interactionId: pending.interactionId,
@@ -300,11 +300,11 @@ export class CodexExecutionServerRequestRouter {
       }
       return { answers };
     } finally {
-      this.removePending(pending);
+      this.#removePending(pending);
     }
   }
 
-  private requireActiveTurn(
+  #requireActiveTurn(
     threadId: string,
     nativeTurnId: string,
   ): ActiveInteractionTurn {
@@ -323,7 +323,7 @@ export class CodexExecutionServerRequestRouter {
     return turn;
   }
 
-  private createPending(
+  #createPending(
     requestId: RequestId,
     threadId: string,
   ): PendingInteraction {
@@ -345,7 +345,7 @@ export class CodexExecutionServerRequestRouter {
     return pending;
   }
 
-  private removePending(pending: PendingInteraction): void {
+  #removePending(pending: PendingInteraction): void {
     if (this.pendingByNativeKey.get(pending.nativeKey) === pending) {
       this.pendingByNativeKey.delete(pending.nativeKey);
     }

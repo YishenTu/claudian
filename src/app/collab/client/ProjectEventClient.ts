@@ -128,10 +128,10 @@ export class ProjectEventClient {
     socket.onOpen(() => {
       if (this.socket !== socket) return;
       this.reconnectAttempt = 0;
-      this.requestSnapshot(this.acknowledgedSequence);
+      this.#requestSnapshot(this.acknowledgedSequence);
     });
     socket.onMessage(data => {
-      if (this.socket === socket) this.handleMessage(data);
+      if (this.socket === socket) this.#handleMessage(data);
     });
     socket.onError(() => {
       if (this.socket === socket) socket.close(1011, 'Event connection failed');
@@ -139,7 +139,7 @@ export class ProjectEventClient {
     socket.onClose(code => {
       if (this.socket !== socket) return;
       this.socket = null;
-      if (code !== 1000 && code !== 1008) this.scheduleReconnect();
+      if (code !== 1000 && code !== 1008) this.#scheduleReconnect();
     });
   }
 
@@ -155,44 +155,44 @@ export class ProjectEventClient {
     socket?.close(1000, 'Client stopped');
   }
 
-  private handleMessage(data: string): void {
+  #handleMessage(data: string): void {
     let value: unknown;
     try {
       value = JSON.parse(data) as unknown;
     } catch {
-      this.requestSnapshot(this.observedSequence);
+      this.#requestSnapshot(this.observedSequence);
       return;
     }
     const decoded = decodeLanCollabEvent(value);
     if (decoded.status === 'invalid') {
-      this.requestSnapshot(this.observedSequence);
+      this.#requestSnapshot(this.observedSequence);
       return;
     }
     if (decoded.status === 'snapshot-required') {
       if (decoded.projectId !== this.input.projectId) {
-        this.requestSnapshot(this.observedSequence);
+        this.#requestSnapshot(this.observedSequence);
         return;
       }
       this.observedSequence = Math.max(this.observedSequence, decoded.sequence);
-      this.requestSnapshot(decoded.sequence);
+      this.#requestSnapshot(decoded.sequence);
       return;
     }
     const event = decoded.event;
     if (event.projectId !== this.input.projectId) {
-      this.requestSnapshot(this.observedSequence);
+      this.#requestSnapshot(this.observedSequence);
       return;
     }
     if (event.sequence <= this.observedSequence) return;
     if (event.sequence !== this.observedSequence + 1) {
       this.observedSequence = event.sequence;
-      this.requestSnapshot(event.sequence);
+      this.#requestSnapshot(event.sequence);
       return;
     }
     this.observedSequence = event.sequence;
-    this.requestInvalidation(this.toInvalidation(event));
+    this.#requestInvalidation(this.#toInvalidation(event));
   }
 
-  private toInvalidation(event: CollabEvent): ProjectEventInvalidation {
+  #toInvalidation(event: CollabEvent): ProjectEventInvalidation {
     if (event.kind === 'project-retired' && typeof event.payload.retiredAt === 'string') {
       return {
         kind: 'retired',
@@ -210,11 +210,11 @@ export class ProjectEventClient {
     return { kind: 'snapshot', sequence: event.sequence };
   }
 
-  private requestSnapshot(sequence: number): void {
-    this.requestInvalidation({ kind: 'snapshot', sequence });
+  #requestSnapshot(sequence: number): void {
+    this.#requestInvalidation({ kind: 'snapshot', sequence });
   }
 
-  private requestInvalidation(invalidation: ProjectEventInvalidation): void {
+  #requestInvalidation(invalidation: ProjectEventInvalidation): void {
     void this.onInvalidation(invalidation).then(sequence => {
       if (!Number.isSafeInteger(sequence) || sequence < invalidation.sequence) {
         throw new RangeError('Invalid authoritative event sequence');
@@ -228,7 +228,7 @@ export class ProjectEventClient {
     });
   }
 
-  private scheduleReconnect(): void {
+  #scheduleReconnect(): void {
     if (this.disposed || this.reconnectHandle !== null) return;
     const base = Math.min(
       MIN_RECONNECT_DELAY_MS * (2 ** this.reconnectAttempt),

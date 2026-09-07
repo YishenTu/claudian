@@ -26,13 +26,13 @@ export class TicketMentionRepository {
       readonly ticketId: CollabTicketId;
     },
   ): void {
-    this.assertSource(input.ticketId, input.ticketId, input.createdAt);
+    this.#assertSource(input.ticketId, input.ticketId, input.createdAt);
     connection.run(
       `DELETE FROM ticket_mentions
        WHERE ticket_id = ? AND source_kind = 'description'`,
       [input.ticketId],
     );
-    this.insertMentions(connection, {
+    this.#insertMentions(connection, {
       ...input,
       sourceId: input.ticketId,
       sourceKind: 'description',
@@ -48,8 +48,8 @@ export class TicketMentionRepository {
       readonly ticketId: CollabTicketId;
     },
   ): void {
-    this.assertSource(input.ticketId, input.commentId, input.createdAt);
-    this.insertMentions(connection, {
+    this.#assertSource(input.ticketId, input.commentId, input.createdAt);
+    this.#insertMentions(connection, {
       body: input.body,
       createdAt: input.createdAt,
       sourceId: input.commentId,
@@ -69,7 +69,7 @@ export class TicketMentionRepository {
     );
   }
 
-  private insertMentions(
+  #insertMentions(
     connection: AuthorityDatabaseConnection,
     input: {
       readonly body: string;
@@ -113,7 +113,7 @@ export class TicketMentionRepository {
     }
   }
 
-  private assertSource(ticketId: string, sourceId: string, createdAt: string): void {
+  #assertSource(ticketId: string, sourceId: string, createdAt: string): void {
     if (!isCollabOpaqueId(ticketId) || !isCollabOpaqueId(sourceId)) {
       throw mentionError('ticket-mention-source-id-invalid');
     }

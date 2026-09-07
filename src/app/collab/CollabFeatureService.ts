@@ -1034,7 +1034,7 @@ class CollabFeatureServiceCore {
       throwIfCancelled(controller.signal);
       const result = 'encodedInvitation' in request
         && request.encodedInvitation.startsWith('claudian-cloud-claim:')
-        ? await this.reconnectManagerReissuedClaim(request, { signal: controller.signal })
+        ? await this.#reconnectManagerReissuedClaim(request, { signal: controller.signal })
         : await this.options.publication.reconnectProject(request, {
             signal: controller.signal,
           });
@@ -1096,7 +1096,7 @@ class CollabFeatureServiceCore {
     }, options);
   }
 
-  private async reconnectManagerReissuedClaim(
+  async #reconnectManagerReissuedClaim(
     request: Extract<CollabReconnectProjectRequest, { encodedInvitation: string }>,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -2572,7 +2572,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.runGlobal(() => this.core.joinProject(...args))
   );
   reconnectProject: CollabFeaturePort['reconnectProject'] = (...args) => (
-    this.projectTransition(
+    this.#projectTransition(
       () => args[0].projectId,
       () => this.core.reconnectProject(...args),
     )
@@ -2715,43 +2715,43 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.project(() => args[0].projectId, 'active', () => this.core.removeMember(...args))
   );
   leaveProject: CollabFeaturePort['leaveProject'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.leaveProject(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.leaveProject(...args))
   );
   resumeLeave: CollabFeaturePort['resumeLeave'] = (...args) => (
-    this.projectTransition(() => args[0], () => this.core.resumeLeave(...args))
+    this.#projectTransition(() => args[0], () => this.core.resumeLeave(...args))
   );
   createManagerResponsibilityOffer: CollabFeaturePort[
     'createManagerResponsibilityOffer'
-  ] = (...args) => this.projectTransition(
+  ] = (...args) => this.#projectTransition(
     () => args[0].projectId,
     () => this.core.createManagerResponsibilityOffer(...args),
   );
   cancelManagerResponsibilityOffer: CollabFeaturePort[
     'cancelManagerResponsibilityOffer'
-  ] = (...args) => this.projectTransition(
+  ] = (...args) => this.#projectTransition(
     () => args[0].projectId,
     () => this.core.cancelManagerResponsibilityOffer(...args),
   );
   promoteManager: CollabFeaturePort['promoteManager'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.promoteManager(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.promoteManager(...args))
   );
   demoteManager: CollabFeaturePort['demoteManager'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.demoteManager(...args))
   );
   createHostTransfer: CollabFeaturePort['createHostTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.createHostTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.createHostTransfer(...args))
   );
   acceptHostTransfer: CollabFeaturePort['acceptHostTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.acceptHostTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.acceptHostTransfer(...args))
   );
   declineHostTransfer: CollabFeaturePort['declineHostTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.declineHostTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.declineHostTransfer(...args))
   );
   cancelHostTransfer: CollabFeaturePort['cancelHostTransfer'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.cancelHostTransfer(...args))
   );
   retireProject: CollabFeaturePort['retireProject'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.retireProject(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.retireProject(...args))
   );
   finalizeRetiredProject: CollabFeaturePort['finalizeRetiredProject'] = (...args) => (
     this.project(
@@ -2781,25 +2781,25 @@ export class CollabFeatureService implements CollabFeaturePort {
     this.runGlobal(() => this.core.readCloudToLanTransfer(...args))
   );
   acceptLanToCloudTransfer: CollabFeaturePort['acceptLanToCloudTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.acceptLanToCloudTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.acceptLanToCloudTransfer(...args))
   );
   cancelLanToCloudTransfer: CollabFeaturePort['cancelLanToCloudTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.cancelLanToCloudTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.cancelLanToCloudTransfer(...args))
   );
   prepareCloudToLanTarget: CollabFeaturePort['prepareCloudToLanTarget'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.prepareCloudToLanTarget(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.prepareCloudToLanTarget(...args))
   );
   beginCloudToLanTransfer: CollabFeaturePort['beginCloudToLanTransfer'] = (...args) => (
-    this.projectTransition(
+    this.#projectTransition(
       () => args[0].descriptor.projectId,
       () => this.core.beginCloudToLanTransfer(...args),
     )
   );
   acceptCloudToLanTransfer: CollabFeaturePort['acceptCloudToLanTransfer'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.acceptCloudToLanTransfer(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.acceptCloudToLanTransfer(...args))
   );
   withdrawCloudToLanTarget: CollabFeaturePort['withdrawCloudToLanTarget'] = (...args) => (
-    this.projectTransition(() => args[0].projectId, () => this.core.withdrawCloudToLanTarget(...args))
+    this.#projectTransition(() => args[0].projectId, () => this.core.withdrawCloudToLanTarget(...args))
   );
   observeCloudToLanTransfer: CollabFeaturePort['observeCloudToLanTransfer'] = (...args) => (
     this.runGlobal(() => this.core.observeCloudToLanTransfer(...args))
@@ -2868,7 +2868,7 @@ export class CollabFeatureService implements CollabFeaturePort {
     return this.#operationAdmission.runGlobal(operation);
   }
 
-  private projectTransition<T>(
+  #projectTransition<T>(
     resolveProjectId: () => CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {

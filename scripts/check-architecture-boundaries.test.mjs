@@ -483,7 +483,7 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
   const mainFile = path.join(sourceRoot, 'main.ts');
   const eagerGraph = listStaticSourceGraph(mainFile);
   const collabAppRoot = path.join(appRoot, 'collab');
-  const forbiddenPackages = ['@pierre/diffs', 'node-forge', 'sql.js', 'ws'];
+  const forbiddenPackages = ['@codemirror/merge', 'node-forge', 'sql.js', 'ws'];
   const heavyImports = eagerGraph.flatMap(file => (
     listSourceImports(file)
       .filter(sourceImport => (
@@ -511,14 +511,14 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
     listSourceImports(path.join(collabReviewRoot, 'CollabDiffRenderer.ts'))
       .some(sourceImport => (
         sourceImport.dynamic
-        && sourceImport.specifier === './CollabPierreDiffModule'
+        && sourceImport.specifier === './CollabCodeMirrorDiffModule'
       )),
   );
   assert.ok(
-    listSourceImports(path.join(collabReviewRoot, 'CollabPierreDiffModule.ts'))
+    listSourceImports(path.join(collabReviewRoot, 'CollabCodeMirrorDiffModule.ts'))
       .some(sourceImport => (
         !sourceImport.dynamic
-        && sourceImport.specifier === '@pierre/diffs'
+        && sourceImport.specifier === '@codemirror/merge'
       )),
   );
 });
@@ -950,11 +950,13 @@ test('performance policy enforces the main bundle budget and reports health delt
 test('bundle-critical runtime dependencies require exact manifest and lock agreement', () => {
   assert.deepEqual(bundleCriticalRuntimeDependencies, [
     '@anthropic-ai/claude-agent-sdk',
+    '@codemirror/merge',
     'smol-toml',
   ]);
   const packageJson = {
     dependencies: {
       '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
       'smol-toml': '1.7.1',
     },
   };
@@ -962,6 +964,7 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
     packages: {
       '': { dependencies: { ...packageJson.dependencies } },
       'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
+      'node_modules/@codemirror/merge': { version: '6.12.2' },
       'node_modules/smol-toml': { version: '1.7.1' },
     },
   };
@@ -971,6 +974,7 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
     },
     packages: {
       '@anthropic-ai/claude-agent-sdk': ['@anthropic-ai/claude-agent-sdk@0.3.226'],
+      '@codemirror/merge': ['@codemirror/merge@6.12.2'],
       'smol-toml': ['smol-toml@1.7.1'],
     },
   };
@@ -1036,6 +1040,7 @@ test('production artifact entry rejects dependency drift before emitting main.js
     fs.writeFileSync(path.join(fixtureRoot, 'package.json'), JSON.stringify({
       dependencies: {
         '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
         'smol-toml': '1.7.1',
       },
     }));
@@ -1044,10 +1049,12 @@ test('production artifact entry rejects dependency drift before emitting main.js
         '': {
           dependencies: {
             '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
             'smol-toml': '1.7.1',
           },
         },
         'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
+      'node_modules/@codemirror/merge': { version: '6.12.2' },
         'node_modules/smol-toml': { version: '1.6.1' },
       },
     }));

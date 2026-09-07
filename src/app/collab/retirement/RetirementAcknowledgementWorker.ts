@@ -104,7 +104,7 @@ implements RetirementAcknowledgementScheduler {
     if (this.closed) return Promise.resolve('cancelled');
     const existing = this.active.get(projectId);
     if (existing) return existing;
-    const pending = this.runAdmitted(projectId);
+    const pending = this.#runAdmitted(projectId);
     this.active.set(projectId, pending);
     const clear = () => {
       if (this.active.get(projectId) === pending) this.active.delete(projectId);
@@ -124,19 +124,19 @@ implements RetirementAcknowledgementScheduler {
     await Promise.allSettled(this.active.values());
   }
 
-  private async runUnlocked(
+  async #runUnlocked(
     projectId: CollabProjectId,
   ): Promise<RetirementAcknowledgementRunResult> {
     if (this.closed || this.controller.signal.aborted) return 'cancelled';
     const record = await this.store.loadRetirementRecord(projectId);
     if (this.closed || this.controller.signal.aborted) return 'cancelled';
     if (!record) {
-      this.clearRetry(projectId);
+      this.#clearRetry(projectId);
       return 'missing';
     }
     if (record.acknowledgementStatus === 'acknowledged') {
       await this.store.removeRetirementAcknowledgement(projectId);
-      this.clearRetry(projectId);
+      this.#clearRetry(projectId);
       return 'acknowledged';
     }
     if (
@@ -157,7 +157,7 @@ implements RetirementAcknowledgementScheduler {
         }));
       }
       await this.store.removeRetirementAcknowledgement(projectId);
-      this.clearRetry(projectId);
+      this.#clearRetry(projectId);
       return 'expired';
     }
     const {
@@ -201,7 +201,7 @@ implements RetirementAcknowledgementScheduler {
           });
     } catch (error) {
       if (error instanceof CollabError && RETRYABLE_CODES.has(error.code)) {
-        this.requestRetry(projectId);
+        this.#requestRetry(projectId);
         return 'retry-pending';
       }
       throw error;
@@ -233,16 +233,16 @@ implements RetirementAcknowledgementScheduler {
       ),
     }));
     await this.store.removeRetirementAcknowledgement(projectId);
-    this.clearRetry(projectId);
+    this.#clearRetry(projectId);
     return 'acknowledged';
   }
 
-  private async runAdmitted(
+  async #runAdmitted(
     projectId: CollabProjectId,
   ): Promise<RetirementAcknowledgementRunResult> {
     let result: RetirementAcknowledgementRunResult | null = null;
     await this.projectRecoveryAdmission(projectId, async () => {
-      result = await this.runUnlocked(projectId);
+      result = await this.#runUnlocked(projectId);
     });
     if (result !== null) return result;
     throw new CollabError({
@@ -252,7 +252,7 @@ implements RetirementAcknowledgementScheduler {
     });
   }
 
-  private requestRetry(projectId: CollabProjectId): void {
+  #requestRetry(projectId: CollabProjectId): void {
     if (this.closed || this.retryScheduled.has(projectId)) return;
     this.retryScheduled.add(projectId);
     const attempt = (this.retryAttempts.get(projectId) ?? 0) + 1;
@@ -267,7 +267,7 @@ implements RetirementAcknowledgementScheduler {
     if (cancellation) this.retryCancellations.set(projectId, cancellation);
   }
 
-  private clearRetry(projectId: CollabProjectId): void {
+  #clearRetry(projectId: CollabProjectId): void {
     this.retryCancellations.get(projectId)?.();
     this.retryCancellations.delete(projectId);
     this.retryScheduled.delete(projectId);

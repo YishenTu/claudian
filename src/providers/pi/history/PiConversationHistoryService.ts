@@ -84,7 +84,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   ): Promise<void> {
     const state = getPiState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
-      const sourceSessionFile = await this.resolvePreviousSessionFile(
+      const sourceSessionFile = await this.#resolvePreviousSessionFile(
         {
           leafEntryId: state.forkSource!.resumeAt,
           sessionFile: state.forkSourceSessionFile,
@@ -94,7 +94,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         pathContext,
         true,
       );
-      this.replaceResolvedPath(
+      this.#replaceResolvedPath(
         conversation,
         'forkSourceSessionFile',
         state.forkSourceSessionFile,
@@ -159,7 +159,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     }> = [];
     for (const item of sources) {
       const sessionFile = item.kind === 'previous'
-        ? await this.resolvePreviousSessionFile(
+        ? await this.#resolvePreviousSessionFile(
           item.source,
           vaultPath,
           pathContext,
@@ -171,7 +171,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
           pathContext,
         );
       if (item.kind === 'current') {
-        this.replaceResolvedPath(
+        this.#replaceResolvedPath(
           conversation,
           'sessionFile',
           item.source.sessionFile,
@@ -217,7 +217,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
           && source.index !== undefined
           && source.sessionFile !== source.persistedPath
         ) {
-          this.replacePreviousSessionPath(
+          this.#replacePreviousSessionPath(
             conversation,
             source.index,
             source.sessionFile,
@@ -340,7 +340,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       };
       addCandidate(
         pendingSource,
-        await this.resolvePreviousSessionFile(
+        await this.#resolvePreviousSessionFile(
           pendingSource,
           vaultPath,
           pathContext,
@@ -351,7 +351,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     for (const source of [...(sourceState.previousSessions ?? [])].reverse()) {
       addCandidate(
         source,
-        await this.resolvePreviousSessionFile(source, vaultPath, pathContext),
+        await this.#resolvePreviousSessionFile(source, vaultPath, pathContext),
       );
     }
     const dedupedCandidates = dedupeForkSources(candidates);
@@ -378,7 +378,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     );
   }
 
-  private replaceResolvedPath(
+  #replaceResolvedPath(
     conversation: Conversation,
     field: 'forkSourceSessionFile' | 'sessionFile',
     persistedPath: string | undefined,
@@ -401,7 +401,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     );
   }
 
-  private async resolvePreviousSessionFile(
+  async #resolvePreviousSessionFile(
     source: PiPreviousSession,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
@@ -435,7 +435,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     return null;
   }
 
-  private replacePreviousSessionPath(
+  #replacePreviousSessionPath(
     conversation: Conversation,
     index: number,
     sessionFile: string,

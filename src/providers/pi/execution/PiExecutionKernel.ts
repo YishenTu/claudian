@@ -97,20 +97,20 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
     timeoutMs?: number,
     signal?: AbortSignal,
   ): Promise<T> {
-    return this.requireTransport().request(type, payload, timeoutMs, signal);
+    return this.#requireTransport().request(type, payload, timeoutMs, signal);
   }
 
   send(record: PiRpcRecord): void {
-    this.requireTransport().send(record);
+    this.#requireTransport().send(record);
   }
 
   shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
-    this.shutdownPromise = this.shutdownInternal();
+    this.shutdownPromise = this.#shutdownInternal();
     return this.shutdownPromise;
   }
 
-  private async shutdownInternal(): Promise<void> {
+  async #shutdownInternal(): Promise<void> {
     this.extensionBridge?.cleanup();
     this.removeEventListener?.();
     this.removeEventListener = null;
@@ -122,7 +122,7 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
     await this.subprocess.shutdown();
   }
 
-  private requireTransport(): PiRpcTransport {
+  #requireTransport(): PiRpcTransport {
     if (!this.transport) {
       throw new Error('Pi execution kernel is not started');
     }

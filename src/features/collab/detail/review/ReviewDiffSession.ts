@@ -160,16 +160,16 @@ export class ReviewDiffSession {
       cls: 'claudian-collab-review-display-toggle',
     });
     this.scopeButton = scope;
-    this.syncScopeButton(scope);
+    this.#syncScopeButton(scope);
     scope.addEventListener('click', () => {
-      this.setScope(this.scope === 'file' ? 'continuous' : 'file');
+      this.#setScope(this.scope === 'file' ? 'continuous' : 'file');
     });
     const layout = controls.createEl('button', {
       attr: { 'data-collab-review-layout': this.layout, type: 'button' },
       cls: 'claudian-collab-review-display-toggle',
     });
     this.layoutButton = layout;
-    this.syncLayoutButton(layout);
+    this.#syncLayoutButton(layout);
     layout.addEventListener('click', () => {
       this.setLayout(this.layout === 'unified' ? 'split' : 'unified');
     });
@@ -181,10 +181,10 @@ export class ReviewDiffSession {
     review: CollabDisplayReview,
     selectedPath?: string,
   ): void {
-    this.assertOpen();
+    this.#assertOpen();
     if (this.review && !reviewsShareIdentity(this.review, review)) {
-      this.resetPresentation(true);
-      this.clearCache();
+      this.#resetPresentation(true);
+      this.#clearCache();
     }
     this.hostEl = host;
     this.review = review;
@@ -203,22 +203,22 @@ export class ReviewDiffSession {
   }
 
   start(): void {
-    this.assertOpen();
+    this.#assertOpen();
     const review = this.review;
     const host = this.hostEl;
     if (!review || !host) return;
     if (review.files.length === 0) {
-      this.resetPresentation(false);
+      this.#resetPresentation(false);
       host.replaceChildren();
       host.createDiv({ text: t('collab.review.noFiles') });
       return;
     }
     if (this.scope === 'continuous') {
-      this.startContinuousReview();
+      this.#startContinuousReview();
     } else {
       const selected = review.files.find(file => file.path === this.selectedPath)
         ?? review.files[0];
-      if (selected) void this.loadFile(selected);
+      if (selected) void this.#loadFile(selected);
     }
   }
 
@@ -228,17 +228,17 @@ export class ReviewDiffSession {
     this.selectedPath = path;
     this.onSelectedPath?.(path);
     if (this.scope === 'continuous') {
-      this.scrollToContinuousFile(path);
+      this.#scrollToContinuousFile(path);
       return;
     }
     const file = review.files.find(candidate => candidate.path === path);
-    if (file) void this.loadFile(file);
+    if (file) void this.#loadFile(file);
   }
 
   clear(): void {
     if (this.destroyed) return;
-    this.resetPresentation(false);
-    this.clearCache();
+    this.#resetPresentation(false);
+    this.#clearCache();
     this.review = null;
     this.hostEl = null;
     this.selectedPath = null;
@@ -246,8 +246,8 @@ export class ReviewDiffSession {
 
   detach(): void {
     if (this.destroyed) return;
-    this.resetPresentation(true);
-    this.clearCache();
+    this.#resetPresentation(true);
+    this.#clearCache();
     this.review = null;
     this.hostEl = null;
     this.selectedPath = null;
@@ -261,22 +261,22 @@ export class ReviewDiffSession {
     this.renderer.destroy();
   }
 
-  private setScope(scope: 'continuous' | 'file'): void {
+  #setScope(scope: 'continuous' | 'file'): void {
     if (this.scope === scope) return;
     this.scope = scope;
-    this.syncScopeButton();
+    this.#syncScopeButton();
     this.start();
   }
 
   private setLayout(layout: CollabDiffLayout): void {
     if (this.layout === layout) return;
     this.layout = layout;
-    this.syncLayoutButton();
+    this.#syncLayoutButton();
     this.renderer.setLayout(layout);
     for (const renderer of this.continuousRenderers.values()) renderer.setLayout(layout);
   }
 
-  private syncScopeButton(button?: HTMLButtonElement): void {
+  #syncScopeButton(button?: HTMLButtonElement): void {
     const target = button ?? this.scopeButton;
     if (!target) return;
     const currentFile = this.scope === 'file';
@@ -289,7 +289,7 @@ export class ReviewDiffSession {
     setIcon(target, currentFile ? 'files' : 'file');
   }
 
-  private syncLayoutButton(button?: HTMLButtonElement): void {
+  #syncLayoutButton(button?: HTMLButtonElement): void {
     const target = button ?? this.layoutButton;
     if (!target) return;
     const unified = this.layout === 'unified';
@@ -302,11 +302,11 @@ export class ReviewDiffSession {
     setIcon(target, unified ? 'columns-2' : 'rows-2');
   }
 
-  private async loadFile(file: CollabChangedFile): Promise<void> {
+  async #loadFile(file: CollabChangedFile): Promise<void> {
     const review = this.review;
     const host = this.hostEl;
     if (!review || !host) return;
-    this.resetPresentation(true);
+    this.#resetPresentation(true);
     const task = this.tasks.start();
     this.review = review;
     this.hostEl = host;
@@ -314,11 +314,11 @@ export class ReviewDiffSession {
     host.replaceChildren();
     host.createDiv({ text: t('collab.review.loadingFile') });
     try {
-      const content = await this.readReviewFileContent(review, file, task.signal);
+      const content = await this.#readReviewFileContent(review, file, task.signal);
       if (!this.isCurrent(task, review) || content.file.path !== file.path) return;
       host.replaceChildren();
       if (content.kind === 'text') {
-        const onOpenFile = this.fileOpenAction(review, content.file);
+        const onOpenFile = this.#fileOpenAction(review, content.file);
         await this.renderer.render({
           container: host,
           layout: this.layout,
@@ -331,10 +331,10 @@ export class ReviewDiffSession {
         return;
       }
       this.renderer.clear();
-      this.objectUrl = this.renderOpaqueFile(
+      this.objectUrl = this.#renderOpaqueFile(
         host,
         content,
-        this.fileOpenAction(review, content.file),
+        this.#fileOpenAction(review, content.file),
       );
     } catch {
       if (!this.isCurrent(task, review)) return;
@@ -346,11 +346,11 @@ export class ReviewDiffSession {
     }
   }
 
-  private startContinuousReview(): void {
+  #startContinuousReview(): void {
     const review = this.review;
     const host = this.hostEl;
     if (!review || !host) return;
-    this.resetPresentation(true);
+    this.#resetPresentation(true);
     const task = this.tasks.start();
     this.review = review;
     this.hostEl = host;
@@ -380,10 +380,10 @@ export class ReviewDiffSession {
         this.continuousObserver?.unobserve(section);
         this.continuousLoaders.delete(file.path);
         this.continuousQueue.push({
-          run: () => this.loadContinuousFile(review, file, section, task),
+          run: () => this.#loadContinuousFile(review, file, section, task),
           task,
         });
-        this.pumpContinuousQueue();
+        this.#pumpContinuousQueue();
       };
       this.continuousLoaders.set(file.path, start);
       this.continuousObserver?.observe(section);
@@ -393,17 +393,17 @@ export class ReviewDiffSession {
     if (!this.continuousObserver) {
       for (const file of review.files) this.continuousLoaders.get(file.path)?.();
     }
-    if (this.selectedPath) this.scrollToContinuousFile(this.selectedPath);
+    if (this.selectedPath) this.#scrollToContinuousFile(this.selectedPath);
   }
 
-  private async loadContinuousFile(
+  async #loadContinuousFile(
     review: CollabDisplayReview,
     file: CollabChangedFile,
     host: HTMLElement,
     task: LatestTaskHandle,
   ): Promise<void> {
     try {
-      const content = await this.readReviewFileContent(review, file, task.signal);
+      const content = await this.#readReviewFileContent(review, file, task.signal);
       if (!this.isCurrent(task, review) || this.scope !== 'continuous') return;
       if (content.file.path !== file.path) throw viewError('review-file-response-mismatch');
       host.replaceChildren();
@@ -413,7 +413,7 @@ export class ReviewDiffSession {
           : this.rendererFactory();
         renderer.setLayout(this.layout);
         this.continuousRenderers.set(file.path, renderer);
-        const onOpenFile = this.fileOpenAction(review, content.file);
+        const onOpenFile = this.#fileOpenAction(review, content.file);
         await renderer.render({
           container: host,
           layout: this.layout,
@@ -426,10 +426,10 @@ export class ReviewDiffSession {
         return;
       }
       if (file.path === this.continuousPrimaryPath) this.renderer.clear();
-      const objectUrl = this.renderOpaqueFile(
+      const objectUrl = this.#renderOpaqueFile(
         host,
         content,
-        this.fileOpenAction(review, content.file),
+        this.#fileOpenAction(review, content.file),
       );
       if (objectUrl) this.continuousObjectUrls.set(file.path, objectUrl);
     } catch {
@@ -446,22 +446,22 @@ export class ReviewDiffSession {
     }
   }
 
-  private pumpContinuousQueue(): void {
+  #pumpContinuousQueue(): void {
     if (this.activeContinuousLoad) return;
     const job = this.continuousQueue.shift();
     if (!job) return;
     if (!job.task.isCurrent()) {
-      this.pumpContinuousQueue();
+      this.#pumpContinuousQueue();
       return;
     }
     this.activeContinuousLoad = true;
     void job.run().catch(() => undefined).finally(() => {
       this.activeContinuousLoad = false;
-      this.pumpContinuousQueue();
+      this.#pumpContinuousQueue();
     });
   }
 
-  private scrollToContinuousFile(path: string): void {
+  #scrollToContinuousFile(path: string): void {
     this.continuousLoaders.get(path)?.();
     const section = this.continuousSections.get(path);
     if (!section) return;
@@ -471,7 +471,7 @@ export class ReviewDiffSession {
     section.scrollIntoView?.({ block: 'start' });
   }
 
-  private resetPresentation(retainPrimaryRenderer: boolean): void {
+  #resetPresentation(retainPrimaryRenderer: boolean): void {
     this.tasks.cancel();
     this.continuousObserver?.disconnect();
     this.continuousObserver = null;
@@ -490,11 +490,11 @@ export class ReviewDiffSession {
     this.continuousQueue = [];
     this.continuousLoaders.clear();
     this.continuousSections.clear();
-    this.revokeObjectUrl();
+    this.#revokeObjectUrl();
     if (!retainPrimaryRenderer) this.renderer.clear();
   }
 
-  private async readReviewFileContent(
+  async #readReviewFileContent(
     review: CollabDisplayReview,
     file: CollabChangedFile,
     signal: AbortSignal,
@@ -536,11 +536,11 @@ export class ReviewDiffSession {
         }, { signal });
     const content = requireSuccess(result);
     if (signal.aborted) throw new CollabError({ code: 'cancelled' });
-    this.storeReviewFileContent(key, content);
+    this.#storeReviewFileContent(key, content);
     return content;
   }
 
-  private storeReviewFileContent(key: string, content: CollabReviewFileContent): void {
+  #storeReviewFileContent(key: string, content: CollabReviewFileContent): void {
     const size = content.kind === 'text'
       ? ((content.oldText?.length ?? 0) + (content.newText?.length ?? 0)) * 2
       : content.kind === 'binary'
@@ -564,12 +564,12 @@ export class ReviewDiffSession {
     }
   }
 
-  private clearCache(): void {
+  #clearCache(): void {
     this.reviewFileCache.clear();
     this.reviewFileCacheBytes = 0;
   }
 
-  private fileOpenAction(
+  #fileOpenAction(
     review: CollabDisplayReview,
     file: CollabChangedFile,
   ): (() => void) | undefined {
@@ -583,7 +583,7 @@ export class ReviewDiffSession {
     };
   }
 
-  private renderOpaqueFile(
+  #renderOpaqueFile(
     host: HTMLElement,
     content: Exclude<CollabReviewFileContent, { kind: 'text' }>,
     onOpenFile?: () => void,
@@ -625,7 +625,7 @@ export class ReviewDiffSession {
     return null;
   }
 
-  private revokeObjectUrl(): void {
+  #revokeObjectUrl(): void {
     if (!this.objectUrl) return;
     this.objectUrls.revoke(this.objectUrl);
     this.objectUrl = null;
@@ -638,7 +638,7 @@ export class ReviewDiffSession {
       && reviewsShareIdentity(this.review, review);
   }
 
-  private assertOpen(): void {
+  #assertOpen(): void {
     if (this.destroyed) throw new Error('ReviewDiffSession is destroyed');
   }
 }

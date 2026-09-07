@@ -20,7 +20,7 @@ export class ClaudeSubagentHistoryService implements ProviderSubagentHistoryServ
       request.providerSessionId,
       request.subagentId,
       undefined,
-      this.buildPathContext(request.vaultPath),
+      this.#buildPathContext(request.vaultPath),
     );
   }
 
@@ -30,11 +30,11 @@ export class ClaudeSubagentHistoryService implements ProviderSubagentHistoryServ
       request.providerSessionId,
       request.subagentId,
       undefined,
-      this.buildPathContext(request.vaultPath),
+      this.#buildPathContext(request.vaultPath),
     );
   }
 
-  private buildPathContext(vaultPath: string): ProviderHistoryPathContext {
+  #buildPathContext(vaultPath: string): ProviderHistoryPathContext {
     const customEnvironment = parseEnvironmentVariables(
       this.host.getActiveEnvironmentVariables('claude'),
     );

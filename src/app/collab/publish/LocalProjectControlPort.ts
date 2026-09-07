@@ -164,7 +164,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     requestId: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabRequestDetail> {
-    const { detail, session } = await this.readRequestFirstPage(projectId, requestId, options);
+    const { detail, session } = await this.#readRequestFirstPage(projectId, requestId, options);
     return completeRequestDetail(detail, (cursor, limit) => session.client.listRequestComments({
       cursor,
       limit,
@@ -173,7 +173,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       requestId: detail.request.id,
       ...(options.signal ? { signal: options.signal } : {}),
     }), reason => controlError('authority-integrity-error', `control-${reason}`), () => (
-      this.readRequestDetail(session, projectId, requestId, options)
+      this.#readRequestDetail(session, projectId, requestId, options)
     ));
   }
 
@@ -182,20 +182,20 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     requestId: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabRequestDetail> {
-    return (await this.readRequestFirstPage(projectId, requestId, options)).detail;
+    return (await this.#readRequestFirstPage(projectId, requestId, options)).detail;
   }
 
-  private async readRequestFirstPage(
+  async #readRequestFirstPage(
     projectId: string,
     requestId: string,
     options: { readonly signal?: AbortSignal },
   ): Promise<{ readonly detail: CollabRequestDetail; readonly session: LocalProjectControlSession }> {
     const session = await this.loadSession(projectId);
-    const detail = await this.readRequestDetail(session, projectId, requestId, options);
+    const detail = await this.#readRequestDetail(session, projectId, requestId, options);
     return { detail, session };
   }
 
-  private async readRequestDetail(
+  async #readRequestDetail(
     session: LocalProjectControlSession,
     projectId: string,
     requestId: string,
@@ -264,7 +264,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     ticketId: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketDetail> {
-    const { detail, session } = await this.readTicketFirstPage(projectId, ticketId, options);
+    const { detail, session } = await this.#readTicketFirstPage(projectId, ticketId, options);
     return completeTicketDetail(
       detail,
       (cursor, limit) => session.client.listTicketComments({
@@ -284,7 +284,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
         ...(options.signal ? { signal: options.signal } : {}),
       }),
       reason => controlError('authority-integrity-error', `control-${reason}`),
-      () => this.readTicketDetail(session, projectId, ticketId, options),
+      () => this.#readTicketDetail(session, projectId, ticketId, options),
     );
   }
 
@@ -293,20 +293,20 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     ticketId: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketDetail> {
-    return (await this.readTicketFirstPage(projectId, ticketId, options)).detail;
+    return (await this.#readTicketFirstPage(projectId, ticketId, options)).detail;
   }
 
-  private async readTicketFirstPage(
+  async #readTicketFirstPage(
     projectId: string,
     ticketId: string,
     options: { readonly signal?: AbortSignal },
   ): Promise<{ readonly detail: CollabTicketDetail; readonly session: LocalProjectControlSession }> {
     const session = await this.loadSession(projectId);
-    const detail = await this.readTicketDetail(session, projectId, ticketId, options);
+    const detail = await this.#readTicketDetail(session, projectId, ticketId, options);
     return { detail, session };
   }
 
-  private async readTicketDetail(
+  async #readTicketDetail(
     session: LocalProjectControlSession,
     projectId: string,
     ticketId: string,
@@ -391,7 +391,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     idempotencyKey: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketSummary> {
-    return this.ticketMutation('updateTicketContent', request, idempotencyKey, options);
+    return this.#ticketMutation('updateTicketContent', request, idempotencyKey, options);
   }
 
   async addTicketComment(
@@ -421,7 +421,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     idempotencyKey: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketSummary> {
-    return this.ticketMutation('closeTicket', request, idempotencyKey, options);
+    return this.#ticketMutation('closeTicket', request, idempotencyKey, options);
   }
 
   reopenTicket(
@@ -429,7 +429,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     idempotencyKey: string,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabTicketSummary> {
-    return this.ticketMutation('reopenTicket', request, idempotencyKey, options);
+    return this.#ticketMutation('reopenTicket', request, idempotencyKey, options);
   }
 
   async updateRequestMetadata(
@@ -477,7 +477,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     return response;
   }
 
-  private async ticketMutation(
+  async #ticketMutation(
     method: 'closeTicket' | 'reopenTicket' | 'updateTicketContent',
     request: CollabChangeTicketStatusRequest
       | CollabUpdateTicketContentRequest,

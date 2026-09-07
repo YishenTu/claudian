@@ -121,13 +121,13 @@ export class PendingLeaveAuthorityService {
 
   async prepare(input: PreparePendingLeaveInput): Promise<PendingLeaveAuthorityPreparation> {
     if (isCloudPendingLeaveRecord(input.pending)) {
-      return this.prepareCloud({ ...input, pending: input.pending });
+      return this.#prepareCloud({ ...input, pending: input.pending });
     }
     const { pending } = input;
     if (pending.authorityReplay) {
       return { authorityReplay: pending.authorityReplay, memberRole: pending.localRole };
     }
-    return this.readCurrentLanPreparation(
+    return this.#readCurrentLanPreparation(
       pending,
       null,
       input.managerResponsibilityOfferId ?? null,
@@ -142,7 +142,7 @@ export class PendingLeaveAuthorityService {
         safeContext: { reason: 'cloud-pending-leave-recovery-barrier-required' },
       });
     }
-    return this.readCurrentLanPreparation(
+    return this.#readCurrentLanPreparation(
       input.pending,
       input.pending.authorityReplay?.idempotencyManagerMemberId ?? null,
       input.pending.authorityReplay?.managerResponsibilityOfferId ?? null,
@@ -160,7 +160,7 @@ export class PendingLeaveAuthorityService {
         safeContext: { reason: 'cloud-pending-leave-rejected-request-missing' },
       });
     }
-    return this.withCloudClient(pending, input.signal, async client => {
+    return this.#withCloudClient(pending, input.signal, async client => {
       const requestOptions = input.signal ? { signal: input.signal } : {};
       const snapshot = await client.readSnapshot(pending.projectId, requestOptions);
       if (
@@ -198,7 +198,7 @@ export class PendingLeaveAuthorityService {
           safeContext: { reason: 'cloud-pending-leave-request-missing' },
         });
       }
-      const result = await this.withCloudClient(pending, input.signal, client => (
+      const result = await this.#withCloudClient(pending, input.signal, client => (
         client.leaveProject(
           pending.request,
           input.signal ? { signal: input.signal } : {},
@@ -255,14 +255,14 @@ export class PendingLeaveAuthorityService {
     });
   }
 
-  private async prepareCloud(
+  async #prepareCloud(
     input: PreparePendingLeaveInput & { readonly pending: CloudPendingLeaveRecord },
   ): Promise<Extract<PendingLeaveAuthorityPreparation, { readonly request: unknown }>> {
     const { pending, signal } = input;
     if (pending.request !== null) {
       return { memberRole: pending.localRole, request: pending.request };
     }
-    return this.withCloudClient(pending, signal, async client => {
+    return this.#withCloudClient(pending, signal, async client => {
       const requestOptions = signal ? { signal } : {};
       const snapshot = await client.readSnapshot(pending.projectId, requestOptions);
       if (
@@ -342,7 +342,7 @@ export class PendingLeaveAuthorityService {
     });
   }
 
-  private async withCloudClient<T>(
+  async #withCloudClient<T>(
     pending: CloudPendingLeaveRecord,
     signal: AbortSignal | undefined,
     operation: (client: CloudPendingLeaveAuthorityClientPort) => Promise<T>,
@@ -362,7 +362,7 @@ export class PendingLeaveAuthorityService {
     }
   }
 
-  private async readCurrentLanPreparation(
+  async #readCurrentLanPreparation(
     pending: LanPendingLeaveRecord,
     idempotencyManagerMemberId: string | null,
     managerResponsibilityOfferId: string | null,

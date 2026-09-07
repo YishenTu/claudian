@@ -50,9 +50,9 @@ export class TabWorkspaceMigrationCoordinator {
     });
 
     if (workspace.layoutReady) {
-      this.refreshDeclarations();
+      this.#refreshDeclarations();
     } else {
-      workspace.onLayoutReady(() => this.refreshDeclarations());
+      workspace.onLayoutReady(() => this.#refreshDeclarations());
     }
   }
 
@@ -62,8 +62,8 @@ export class TabWorkspaceMigrationCoordinator {
   ): TabWorkspaceStateDeliveryRegistration {
     this.deliveredRuntimeViews.add(view);
     this.hasViewScopedState ||= hasViewScopedState;
-    this.retireLegacyStateWhenSuperseded();
-    this.refreshDeclarations();
+    this.#retireLegacyStateWhenSuperseded();
+    this.#refreshDeclarations();
 
     return {
       declarationsReady: this.declarationsReady,
@@ -85,7 +85,7 @@ export class TabWorkspaceMigrationCoordinator {
     await this.migrationCompletion;
   }
 
-  private refreshDeclarations(): void {
+  #refreshDeclarations(): void {
     if (this.declarationsReady || !this.workspace.layoutReady) return;
 
     const allRuntimeViewsDelivered = this.workspace
@@ -103,12 +103,12 @@ export class TabWorkspaceMigrationCoordinator {
       });
     if (!allRuntimeViewsDelivered) return;
 
-    this.retireLegacyStateWhenSuperseded();
+    this.#retireLegacyStateWhenSuperseded();
     this.declarationsReady = true;
     this.resolveDeclarationsReady();
   }
 
-  private retireLegacyStateWhenSuperseded(): void {
+  #retireLegacyStateWhenSuperseded(): void {
     if (!this.hasViewScopedState) return;
     void this.completeMigration().catch(() => undefined);
   }

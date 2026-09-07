@@ -99,7 +99,7 @@ export class LanToCloudRequesterCoordinator {
     if (submitted.entryRole !== 'requester') {
       throw requesterError('authority-transfer-requester-entry-role-invalid');
     }
-    const observed = await this.adoptObservedSource(submitted);
+    const observed = await this.#adoptObservedSource(submitted);
     if (observed) return observed;
     const status = await this.options.client.requestWithMember(
       'requestLanToCloudTransfer',
@@ -131,7 +131,7 @@ export class LanToCloudRequesterCoordinator {
     if (entry.entryRole !== 'requester') {
       throw requesterError('authority-transfer-requester-entry-role-invalid');
     }
-    const observed = await this.adoptObservedSource(entry);
+    const observed = await this.#adoptObservedSource(entry);
     if (observed) return observed;
     return this.propose(entry.request, operationOptions);
   }
@@ -169,7 +169,7 @@ export class LanToCloudRequesterCoordinator {
     return this.resume(operationOptions);
   }
 
-  private async adoptObservedSource(
+  async #adoptObservedSource(
     entry: AuthorityTransferRequesterEntryRecord,
   ): Promise<CollabAuthorityTransferStatus | null> {
     const source = await this.options.persistence.loadObservedSourceEntry(entry.projectId);

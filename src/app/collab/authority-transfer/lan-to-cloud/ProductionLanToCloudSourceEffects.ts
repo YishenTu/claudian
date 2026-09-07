@@ -358,17 +358,17 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
   ): Promise<void> {
     const proof = record.status.relinquishmentProof;
     if (!proof) throw effectsError('authority-transfer-relinquishment-proof-missing');
-    const service = await this.terminalService(record);
+    const service = await this.#terminalService(record);
     await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
     await this.options.foundation.lanHost.activateAuthorityTransferTerminalSource({
-      expectedEndpoint: this.requireSourceEndpoint(record),
+      expectedEndpoint: this.#requireSourceEndpoint(record),
       projectId: record.projectId,
       relinquishmentProof: proof,
       service,
       transferId: record.transferId,
     });
-    await this.convergeHost(record, options);
-    await this.settleEmptyClaimBatch(record, service);
+    await this.#convergeHost(record, options);
+    await this.#settleEmptyClaimBatch(record, service);
   }
 
   async restoreCompleted(
@@ -378,7 +378,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (!record.status.relinquishmentProof) {
       throw effectsError('authority-transfer-relinquishment-proof-missing');
     }
-    const service = await this.terminalService(record);
+    const service = await this.#terminalService(record);
     if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
       await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
       await service.expire();
@@ -389,17 +389,17 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       return;
     }
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
-      expectedEndpoint: this.requireSourceEndpoint(record),
+      expectedEndpoint: this.#requireSourceEndpoint(record),
       projectId: record.projectId,
       service,
       state: 'terminal-source',
       transferId: record.transferId,
     });
-    await this.convergeHost(record, options);
-    await this.settleEmptyClaimBatch(record, service);
+    await this.#convergeHost(record, options);
+    await this.#settleEmptyClaimBatch(record, service);
   }
 
-  private async settleEmptyClaimBatch(
+  async #settleEmptyClaimBatch(
     record: AuthorityTransferRecord,
     service: PersistentLanAuthorityTransferTerminalSourceService,
   ): Promise<void> {
@@ -415,7 +415,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     );
   }
 
-  private async terminalService(
+  async #terminalService(
     record: AuthorityTransferRecord,
   ): Promise<PersistentLanAuthorityTransferTerminalSourceService> {
     const authority = await this.options.foundation.inspectAuthority(record.projectId);
@@ -425,7 +425,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       authenticate: async credential => ({
         memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
       }),
-      cleanupStaging: current => this.cleanupStaging(current),
+      cleanupStaging: current => this.#cleanupStaging(current),
       expiresAt: record.status.expiresAt,
       persistence: this.options.persistence,
       prepareExpiry: () => this.options.convergence.lanToCloudHostOffline(record.status),
@@ -434,11 +434,11 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     });
   }
 
-  private async convergeHost(
+  async #convergeHost(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
-    const cloudSession = this.requireCloudSession();
+    const cloudSession = this.#requireCloudSession();
     const snapshot = await cloudSession.readSnapshot(record.projectId, options);
     await this.options.convergence.lanToCloudHost({
       snapshot,
@@ -446,7 +446,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     });
   }
 
-  private requireSourceEndpoint(record: AuthorityTransferRecord): string {
+  #requireSourceEndpoint(record: AuthorityTransferRecord): string {
     if (!record.sourceLanEndpoint) {
       throw effectsError('authority-transfer-source-endpoint-missing');
     }
@@ -476,7 +476,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (verifiedExisting && await stagedArtifactsMatch(stagingPath, verifiedExisting)) {
       manifest = verifiedExisting;
     } else {
-      await this.assertSourceReplayMutable(record, false);
+      await this.#assertSourceReplayMutable(record, false);
       await Promise.all([
         MANIFEST_FILE,
         COORDINATION_FILE,
@@ -552,7 +552,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (manifest.projectId !== record.projectId || manifest.operationId !== record.transferId) {
       throw effectsError('authority-transfer-checkpoint-owner-mismatch');
     }
-    const sourceProof = await this.createSourceProof(record, manifest, stagingPath);
+    const sourceProof = await this.#createSourceProof(record, manifest, stagingPath);
     return {
       artifacts: [
         { artifact: MANIFEST_FILE, body: createReadStream(path.join(stagingPath, MANIFEST_FILE)), byteCount: (await lstat(path.join(stagingPath, MANIFEST_FILE))).size },
@@ -637,17 +637,17 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         record.sourceLanEndpoint,
       );
     }
-    await this.cleanupStaging(record);
+    await this.#cleanupStaging(record);
   }
 
-  private requireCloudSession(): CloudAuthorityConnection {
+  #requireCloudSession(): CloudAuthorityConnection {
     if (!this.options.cloudSession) {
       throw effectsError('authority-transfer-cloud-session-unavailable');
     }
     return this.options.cloudSession;
   }
 
-  private async cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
+  async #cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
     const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
     if (!membership) throw effectsError('authority-transfer-membership-missing');
     await this.options.foundation.local.workspace.removeReservedProjectsFolderChild(
@@ -661,7 +661,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     );
   }
 
-  private async createSourceProof(
+  async #createSourceProof(
     record: AuthorityTransferRecord,
     manifest: CollabProjectCheckpointManifest,
     stagingPath: string,
@@ -675,7 +675,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       projectId: record.projectId,
       sourceAuthorityGeneration: record.status.sourceAuthority.generation,
       sourceHostMemberId: membership.member.id,
-      sourcePrincipalId: this.requireCloudSession().principalId,
+      sourcePrincipalId: this.#requireCloudSession().principalId,
       targetAuthorityGeneration: record.status.targetAuthority.generation,
       targetUrl: record.status.targetUrl,
       transferId: record.transferId,
@@ -683,7 +683,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     const existingRecord = exactRecord(existing, new Set(['proof']));
     const reusable = currentSourceProof(existingRecord?.proof, payload, key);
     if (reusable !== null) return reusable;
-    await this.assertSourceReplayMutable(record, existing !== null);
+    await this.#assertSourceReplayMutable(record, existing !== null);
     const signer = await this.options.foundation.lanHost.hostCaSigner();
     const envelope: SourceProofEnvelope = {
       caCertificatePem: signer.caCertificatePem,
@@ -707,7 +707,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     return proof;
   }
 
-  private async assertSourceReplayMutable(
+  async #assertSourceReplayMutable(
     record: AuthorityTransferRecord,
     requireEntry: boolean,
   ): Promise<void> {

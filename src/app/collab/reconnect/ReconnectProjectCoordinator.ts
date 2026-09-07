@@ -300,7 +300,7 @@ export class ReconnectProjectCoordinator {
           decodeCollabPendingProjectOperation,
         );
         if (pending?.kind !== 'cloud-relocation') continue;
-        const operation = () => this.continueCloudRelocation(pending.record, options);
+        const operation = () => this.#continueCloudRelocation(pending.record, options);
         const result = this.cloudRelocation?.admit
           ? await this.cloudRelocation.admit(projectId, 'recovery', operation)
           : await operation();
@@ -323,17 +323,17 @@ export class ReconnectProjectCoordinator {
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.reconnectProjectUnlocked(request, options);
+    return this.#reconnectProjectUnlocked(request, options);
   }
 
   reconnectDiscoveredProject(
     request: ReconnectDiscoveredProjectRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    return this.reconnectDiscoveredProjectUnlocked(request, options);
+    return this.#reconnectDiscoveredProjectUnlocked(request, options);
   }
 
-  private async reconnectProjectUnlocked(
+  async #reconnectProjectUnlocked(
     request: CollabReconnectProjectRequest,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -347,7 +347,7 @@ export class ReconnectProjectCoordinator {
         const mode = pending?.kind === 'cloud-relocation'
           ? 'continuation' as const
           : 'operation' as const;
-        const operation = () => this.reconnectCloudProjectUnlocked(request, options);
+        const operation = () => this.#reconnectCloudProjectUnlocked(request, options);
         return this.cloudRelocation?.admit
           ? await this.cloudRelocation.admit(request.projectId, mode, operation)
           : await operation();
@@ -361,7 +361,7 @@ export class ReconnectProjectCoordinator {
       if (invitation.projectId !== request.projectId) {
         throw reconnectError('project-not-found', 'reconnect-project-mismatch');
       }
-      const membership = await this.loadReconnectMembership(request.projectId, invitation);
+      const membership = await this.#loadReconnectMembership(request.projectId, invitation);
       if (membership.authority.hostCaFingerprint !== invitation.caFingerprint) {
         throw reconnectError('tls-ca-mismatch', 'reconnect-ca-mismatch');
       }
@@ -383,13 +383,13 @@ export class ReconnectProjectCoordinator {
       ) {
         throw reconnectError('operation-failed', 'reconnect-response-mismatch');
       }
-      return await this.commitReconnect(membership, membership, invitation, options);
+      return await this.#commitReconnect(membership, membership, invitation, options);
     } catch (error) {
       return this.failure(error);
     }
   }
 
-  private async reconnectDiscoveredProjectUnlocked(
+  async #reconnectDiscoveredProjectUnlocked(
     request: ReconnectDiscoveredProjectRequest,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -401,20 +401,20 @@ export class ReconnectProjectCoordinator {
       ) {
         throw reconnectError('operation-failed', 'reconnect-candidate-count-invalid');
       }
-      const candidates = this.normalizeDiscoveredCandidates(request);
-      const membership = await this.loadReconnectMembership(
+      const candidates = this.#normalizeDiscoveredCandidates(request);
+      const membership = await this.#loadReconnectMembership(
         request.projectId,
         candidates[0],
       );
       const validations = await Promise.all(candidates.map(candidate => (
-        this.validateDiscoveredCandidate(membership, candidate, options)
+        this.#validateDiscoveredCandidate(membership, candidate, options)
       )));
       throwIfCancelled(options.signal);
       const valid = validations.flatMap(result => (
         result.candidate ? [result.candidate] : []
       ));
       const authorityErrors = validations.flatMap(result => (
-        result.error && this.isAuthorityError(result.error) ? [result.error] : []
+        result.error && this.#isAuthorityError(result.error) ? [result.error] : []
       ));
       if (valid.length > 1 || (valid.length === 1 && authorityErrors.length > 0)) {
         throw reconnectError(
@@ -433,7 +433,7 @@ export class ReconnectProjectCoordinator {
       if (!selected.expectedMembership) {
         throw reconnectError('operation-failed', 'reconnect-projection-generation-missing');
       }
-      return await this.commitReconnect(
+      return await this.#commitReconnect(
         selected.expectedMembership,
         selected.membership,
         valid[0],
@@ -444,13 +444,13 @@ export class ReconnectProjectCoordinator {
     }
   }
 
-  private async reconnectCloudProjectUnlocked(
+  async #reconnectCloudProjectUnlocked(
     request: Extract<CollabReconnectProjectRequest, { readonly authority: unknown }>,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     try {
       throwIfCancelled(options.signal);
-      const relocation = this.requireCloudRelocation();
+      const relocation = this.#requireCloudRelocation();
       const pending = await this.foundation.local.projects.loadProjectDocument(
         request.projectId,
         'pending-operation',
@@ -461,7 +461,7 @@ export class ReconnectProjectCoordinator {
           pending.kind !== 'cloud-relocation'
           || pending.record.newAuthority.serverUrl !== request.authority.serverUrl
         ) throw reconnectError('operation-failed', 'cloud-relocation-pending-mismatch');
-        return this.continueCloudRelocation(pending.record, options);
+        return this.#continueCloudRelocation(pending.record, options);
       }
       const membership = await this.foundation.local.projects.loadMembership(request.projectId);
       if (!membership || !isCollabLocalCloudMembership(membership)) {
@@ -549,18 +549,18 @@ export class ReconnectProjectCoordinator {
         await relocation.activity.resume(record.projectId);
         throw error;
       }
-      return this.continueCloudRelocation(record, options, true);
+      return this.#continueCloudRelocation(record, options, true);
     } catch (error) {
       return this.failure(error);
     }
   }
 
-  private async continueCloudRelocation(
+  async #continueCloudRelocation(
     initial: CloudRelocationRecord,
     options: CollabOperationOptions,
     alreadySuspended = false,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    const relocation = this.requireCloudRelocation();
+    const relocation = this.#requireCloudRelocation();
     let record = initial;
     try {
       throwIfCancelled(options.signal);
@@ -568,7 +568,7 @@ export class ReconnectProjectCoordinator {
       return await this.options.authorityProjectionTransitions.run(
         record.projectId,
         async () => {
-          let membership = await this.requireCloudRelocationMembership(record);
+          let membership = await this.#requireCloudRelocationMembership(record);
           const git = await this.foundation.requireGitFoundation();
           const repositoryPath = await this.foundation.local.workspace.resolveManagedProjectPath(
             membership.project.workspacePath,
@@ -579,7 +579,7 @@ export class ReconnectProjectCoordinator {
             projectId: record.projectId,
           });
           if (record.phase === 'prepared') {
-            this.assertCloudRelocationBinding(membership, record.oldAuthority);
+            this.#assertCloudRelocationBinding(membership, record.oldAuthority);
             await rotateCloudRelocationOrigin(git.repositories, {
               newRemoteUrl: record.newAuthority.gitRemoteUrl,
               newServerUrl: record.newAuthority.serverUrl,
@@ -588,11 +588,11 @@ export class ReconnectProjectCoordinator {
               projectId: record.projectId,
               repositoryPath,
             });
-            record = await this.updateCloudRelocation(record, 'origin-updated');
+            record = await this.#updateCloudRelocation(record, 'origin-updated');
           }
-          membership = await this.requireCloudRelocationMembership(record);
+          membership = await this.#requireCloudRelocationMembership(record);
           if (record.phase === 'origin-updated') {
-            if (this.matchesCloudRelocationBinding(membership, record.oldAuthority)) {
+            if (this.#matchesCloudRelocationBinding(membership, record.oldAuthority)) {
               membership = {
                 ...membership,
                 authority: {
@@ -607,12 +607,12 @@ export class ReconnectProjectCoordinator {
               };
               await this.foundation.local.projects.saveMembership(membership);
             } else {
-              this.assertCloudRelocationBinding(membership, record.newAuthority);
+              this.#assertCloudRelocationBinding(membership, record.newAuthority);
             }
-            record = await this.updateCloudRelocation(record, 'membership-updated');
+            record = await this.#updateCloudRelocation(record, 'membership-updated');
           }
-          membership = await this.requireCloudRelocationMembership(record);
-          this.assertCloudRelocationBinding(membership, record.newAuthority);
+          membership = await this.#requireCloudRelocationMembership(record);
+          this.#assertCloudRelocationBinding(membership, record.newAuthority);
           await relocation.activity.activate(record.projectId, options);
           await relocation.activity.resume(record.projectId);
           await this.foundation.local.projects.removeProjectDocument(
@@ -635,14 +635,14 @@ export class ReconnectProjectCoordinator {
     }
   }
 
-  private requireCloudRelocation(): CloudRelocationOptions {
+  #requireCloudRelocation(): CloudRelocationOptions {
     if (!this.cloudRelocation) {
       throw reconnectError('operation-failed', 'cloud-relocation-unavailable');
     }
     return this.cloudRelocation;
   }
 
-  private async requireCloudRelocationMembership(
+  async #requireCloudRelocationMembership(
     record: CloudRelocationRecord,
   ): Promise<CollabLocalCloudMembershipRecord> {
     const membership = await this.foundation.local.projects.loadMembership(record.projectId);
@@ -660,7 +660,7 @@ export class ReconnectProjectCoordinator {
     return membership;
   }
 
-  private matchesCloudRelocationBinding(
+  #matchesCloudRelocationBinding(
     membership: CollabLocalCloudMembershipRecord,
     binding: CloudRelocationRecord['oldAuthority'],
   ): boolean {
@@ -671,11 +671,11 @@ export class ReconnectProjectCoordinator {
       && membership.authority.wireVersion === binding.wireVersion;
   }
 
-  private assertCloudRelocationBinding(
+  #assertCloudRelocationBinding(
     membership: CollabLocalCloudMembershipRecord,
     binding: CloudRelocationRecord['oldAuthority'],
   ): void {
-    if (!this.matchesCloudRelocationBinding(membership, binding)) {
+    if (!this.#matchesCloudRelocationBinding(membership, binding)) {
       throw reconnectError(
         'authority-integrity-error',
         'cloud-relocation-local-binding-mismatch',
@@ -683,7 +683,7 @@ export class ReconnectProjectCoordinator {
     }
   }
 
-  private async updateCloudRelocation(
+  async #updateCloudRelocation(
     record: CloudRelocationRecord,
     phase: CloudRelocationRecord['phase'],
   ): Promise<CloudRelocationRecord> {
@@ -700,7 +700,7 @@ export class ReconnectProjectCoordinator {
     return updated;
   }
 
-  private isAuthorityError(error: CollabError): boolean {
+  #isAuthorityError(error: CollabError): boolean {
     return error.code === 'authentication-failed'
       || error.code === 'authorization-denied'
       || error.code === 'membership-revoked'
@@ -708,7 +708,7 @@ export class ReconnectProjectCoordinator {
       || error.code === 'tls-untrusted';
   }
 
-  private normalizeDiscoveredCandidates(
+  #normalizeDiscoveredCandidates(
     request: ReconnectDiscoveredProjectRequest,
   ): readonly CollabTrustedEndpointCandidate[] {
     const candidates = new Map<string, CollabTrustedEndpointCandidate>();
@@ -722,13 +722,13 @@ export class ReconnectProjectCoordinator {
     return [...candidates.values()];
   }
 
-  private async validateDiscoveredCandidate(
+  async #validateDiscoveredCandidate(
     membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<DiscoveredCandidateValidation> {
     try {
-      const trustedMembership = await this.resolveCandidateTrust(
+      const trustedMembership = await this.#resolveCandidateTrust(
         membership,
         candidate,
         options,
@@ -767,7 +767,7 @@ export class ReconnectProjectCoordinator {
     }
   }
 
-  private async resolveCandidateTrust(
+  async #resolveCandidateTrust(
     membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
@@ -802,7 +802,7 @@ export class ReconnectProjectCoordinator {
     };
   }
 
-  private async loadReconnectMembership(
+  async #loadReconnectMembership(
     projectId: string,
     candidate: CollabTrustedEndpointCandidate,
   ): Promise<CollabLocalLanMembershipRecord> {
@@ -825,7 +825,7 @@ export class ReconnectProjectCoordinator {
     return membership;
   }
 
-  private async commitReconnect(
+  async #commitReconnect(
     expectedMembership: CollabLocalLanMembershipRecord,
     membership: CollabLocalLanMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,

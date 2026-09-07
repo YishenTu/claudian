@@ -36,7 +36,7 @@ export class TicketReferenceResolver {
     this.cancel();
     const controller = new AbortController();
     this.controller = controller;
-    const ticketId = await this.findTicketId(projectId, ticketNumber, controller.signal);
+    const ticketId = await this.#findTicketId(projectId, ticketNumber, controller.signal);
     if (
       ticketId === null
       || controller.signal.aborted
@@ -46,7 +46,7 @@ export class TicketReferenceResolver {
     await openTicketInNewTab(projectId, ticketId);
   }
 
-  private async findTicketId(
+  async #findTicketId(
     projectId: string,
     ticketNumber: number,
     signal: AbortSignal,

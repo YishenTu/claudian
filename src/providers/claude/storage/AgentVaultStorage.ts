@@ -37,7 +37,7 @@ export class AgentVaultStorage {
   }
 
   async load(agent: AgentDefinition): Promise<AgentDefinition | null> {
-    const filePath = this.resolvePath(agent);
+    const filePath = this.#resolvePath(agent);
     try {
       const content = await this.adapter.read(filePath);
       const parsed = parseAgentFile(content);
@@ -49,7 +49,7 @@ export class AgentVaultStorage {
         filePath,
       });
     } catch (error) {
-      if (this.isFileNotFoundError(error)) {
+      if (this.#isFileNotFoundError(error)) {
         return null;
       }
       throw error;
@@ -57,14 +57,14 @@ export class AgentVaultStorage {
   }
 
   async save(agent: AgentDefinition): Promise<void> {
-    await this.adapter.write(this.resolvePath(agent), serializeAgent(agent));
+    await this.adapter.write(this.#resolvePath(agent), serializeAgent(agent));
   }
 
   async delete(agent: AgentDefinition): Promise<void> {
-    await this.adapter.delete(this.resolvePath(agent));
+    await this.adapter.delete(this.#resolvePath(agent));
   }
 
-  private resolvePath(agent: AgentDefinition): string {
+  #resolvePath(agent: AgentDefinition): string {
     if (!agent.filePath) {
       return `${AGENTS_PATH}/${agent.name}.md`;
     }
@@ -77,7 +77,7 @@ export class AgentVaultStorage {
     return `${AGENTS_PATH}/${agent.name}.md`;
   }
 
-  private isFileNotFoundError(error: unknown): boolean {
+  #isFileNotFoundError(error: unknown): boolean {
     if (!error) return false;
 
     if (typeof error === 'string') {

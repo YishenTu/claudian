@@ -212,7 +212,7 @@ export class MembershipAdminService {
       const replay = this.authority.idempotency.find<unknown>(connection, idempotencyInput);
       if (replay) return decodePromote(replay.response, request);
       this.managerSet.requireActiveManager(connection, actorMemberId);
-      this.requirePresence(request.projectId, request.targetMemberId);
+      this.#requirePresence(request.projectId, request.targetMemberId);
       const createdAt = this.now().toISOString();
       const result = this.repository.promoteManager(connection, {
         actorMemberId,
@@ -284,7 +284,7 @@ export class MembershipAdminService {
     actorMemberId: CollabMemberId,
     request: RemoveMemberRequest,
   ): Promise<MembershipTerminationResponse> {
-    return this.terminateMember(actorMemberId, request, request.memberId);
+    return this.#terminateMember(actorMemberId, request, request.memberId);
   }
 
   async leaveProject(
@@ -321,7 +321,7 @@ export class MembershipAdminService {
             connection,
             request.managerResponsibilityOfferId,
           );
-          if (offer) this.requirePresence(request.projectId, offer.targetMemberId);
+          if (offer) this.#requirePresence(request.projectId, offer.targetMemberId);
         }
       }
       const terminatedAt = this.now().toISOString();
@@ -361,11 +361,11 @@ export class MembershipAdminService {
         response: leave.termination,
       }).response;
     })).value;
-    await this.notifyTermination(result);
+    await this.#notifyTermination(result);
     return result;
   }
 
-  private async terminateMember(
+  async #terminateMember(
     actorMemberId: CollabMemberId,
     request: RemoveMemberRequest,
     targetMemberId: CollabMemberId,
@@ -411,11 +411,11 @@ export class MembershipAdminService {
         response: termination,
       }).response;
     })).value;
-    await this.notifyTermination(result);
+    await this.#notifyTermination(result);
     return result;
   }
 
-  private async notifyTermination(result: MembershipTerminationResponse): Promise<void> {
+  async #notifyTermination(result: MembershipTerminationResponse): Promise<void> {
     try {
       await this.onMembershipTerminated?.(result);
     } catch (error) {
@@ -423,7 +423,7 @@ export class MembershipAdminService {
     }
   }
 
-  private requirePresence(projectId: string, memberId: CollabMemberId): void {
+  #requirePresence(projectId: string, memberId: CollabMemberId): void {
     if (!this.presence.hasAuthenticatedPresence(projectId, memberId)) {
       throw new CollabError({
         code: 'manager-responsibility-pending',

@@ -98,15 +98,15 @@ implements ClaudeExecutionStrategy {
     requestSignal?.throwIfAborted();
     this.preparingTurnToken = queryToken;
     try {
-      await this.ensureQuery(request, queryToken);
+      await this.#ensureQuery(request, queryToken);
       requestSignal?.throwIfAborted();
       if (!this.query || !this.messageChannel) {
         throw new Error('Claude persistent query is unavailable');
       }
 
-      await this.applyDynamicUpdates(request);
+      await this.#applyDynamicUpdates(request);
       requestSignal?.throwIfAborted();
-      void this.refreshAuthoritativeContextWindow(request.model);
+      void this.#refreshAuthoritativeContextWindow(request.model);
       const message = buildClaudeSDKUserMessage(
         request.prompt,
         this.sink.getProviderSessionId() ?? '',
@@ -136,7 +136,7 @@ implements ClaudeExecutionStrategy {
       && queryToken !== null
       && this.preparingTurnToken === queryToken
     ) {
-      void this.closeCurrentQuery().catch(() => undefined);
+      void this.#closeCurrentQuery().catch(() => undefined);
       return;
     }
     if (
@@ -158,7 +158,7 @@ implements ClaudeExecutionStrategy {
     request: ClaudeEncodedExecutionRequest,
     queryToken: number,
   ): Promise<Query | null> {
-    await this.ensureQuery(request, queryToken);
+    await this.#ensureQuery(request, queryToken);
     return this.query;
   }
 
@@ -175,7 +175,7 @@ implements ClaudeExecutionStrategy {
     this.contextWindowDiscovery = null;
     if (query) {
       this.sink.handleNativeQueryClosed(query);
-      this.finishNativeTurn(query, {
+      this.#finishNativeTurn(query, {
         type: 'failed',
         error: new Error('Claude persistent query was disposed.'),
       });
@@ -186,7 +186,7 @@ implements ClaudeExecutionStrategy {
     this.currentConfig = null;
   }
 
-  private async ensureQuery(
+  async #ensureQuery(
     request: ClaudeEncodedExecutionRequest,
     queryToken: number,
   ): Promise<void> {
@@ -200,7 +200,7 @@ implements ClaudeExecutionStrategy {
       && this.currentConfig
       && this.currentConfig.restartKey !== request.restartKey
     ) {
-      await this.closeCurrentQuery();
+      await this.#closeCurrentQuery();
       requestSignal?.throwIfAborted();
     }
     if (this.query) {
@@ -232,10 +232,10 @@ implements ClaudeExecutionStrategy {
     this.authoritativeContextWindow = null;
     this.contextWindowDiscovery = null;
     this.sink.handleNativeQueryOpened(query);
-    this.consumerPromise = this.consume(query, queryToken);
+    this.consumerPromise = this.#consume(query, queryToken);
   }
 
-  private async applyDynamicUpdates(
+  async #applyDynamicUpdates(
     request: ClaudeEncodedExecutionRequest,
   ): Promise<void> {
     const query = this.query;
@@ -257,7 +257,7 @@ implements ClaudeExecutionStrategy {
     this.currentConfig = request;
   }
 
-  private refreshAuthoritativeContextWindow(model: string): Promise<void> {
+  #refreshAuthoritativeContextWindow(model: string): Promise<void> {
     const query = this.query;
     if (!query || typeof query.getContextUsage !== 'function') {
       return Promise.resolve();
@@ -313,7 +313,7 @@ implements ClaudeExecutionStrategy {
     return promise;
   }
 
-  private async consume(query: Query, queryToken: number): Promise<void> {
+  async #consume(query: Query, queryToken: number): Promise<void> {
     try {
       for await (const message of query) {
         if (this.query !== query || this.disposed) {
@@ -322,7 +322,7 @@ implements ClaudeExecutionStrategy {
         if (message.type === 'system' && message.subtype === 'init') {
           this.sink.publishCommands(query, queryToken);
         }
-        const nativeTurn = this.getNativeTurn(query);
+        const nativeTurn = this.#getNativeTurn(query);
         await this.sink.handleNativeMessage(
           message,
           nativeTurn?.queryToken ?? queryToken,
@@ -336,33 +336,33 @@ implements ClaudeExecutionStrategy {
         }
         if (message.type === 'result') {
           this.messageChannel?.onTurnComplete();
-          this.finishNativeTurn(query, { type: 'completed' });
+          this.#finishNativeTurn(query, { type: 'completed' });
         }
       }
       if (this.query === query && !this.disposed) {
-        const nativeTurn = this.getNativeTurn(query);
+        const nativeTurn = this.#getNativeTurn(query);
         const nativeTurnToken = nativeTurn?.queryToken ?? queryToken;
         const error = new Error('Claude persistent query ended unexpectedly.');
-        this.detachCurrentQuery(query);
+        this.#detachCurrentQuery(query);
         this.sink.handleNativeEnd(nativeTurnToken);
-        this.finishNativeTurn(query, { type: 'failed', error });
+        this.#finishNativeTurn(query, { type: 'failed', error });
       }
     } catch (error) {
       if (this.query === query && !this.disposed) {
-        const nativeTurn = this.getNativeTurn(query);
+        const nativeTurn = this.#getNativeTurn(query);
         const nativeTurnToken = nativeTurn?.queryToken ?? queryToken;
-        this.detachCurrentQuery(query);
+        this.#detachCurrentQuery(query);
         this.sink.handleNativeFailure(error, nativeTurnToken);
-        this.finishNativeTurn(query, { type: 'failed', error });
+        this.#finishNativeTurn(query, { type: 'failed', error });
       }
     }
   }
 
-  private async closeCurrentQuery(): Promise<void> {
+  async #closeCurrentQuery(): Promise<void> {
     const query = this.query;
     if (query) {
-      this.detachCurrentQuery(query);
-      this.finishNativeTurn(query, {
+      this.#detachCurrentQuery(query);
+      this.#finishNativeTurn(query, {
         type: 'failed',
         error: new Error('Claude persistent query was replaced.'),
       });
@@ -372,23 +372,23 @@ implements ClaudeExecutionStrategy {
     }
   }
 
-  private getNativeTurn(query: Query): PersistentNativeTurn | null {
+  #getNativeTurn(query: Query): PersistentNativeTurn | null {
     return this.activeNativeTurn?.query === query
       ? this.activeNativeTurn
       : null;
   }
 
-  private finishNativeTurn(
+  #finishNativeTurn(
     query: Query,
     outcome: PersistentNativeTurnOutcome,
   ): void {
-    const nativeTurn = this.getNativeTurn(query);
+    const nativeTurn = this.#getNativeTurn(query);
     if (!nativeTurn) return;
     this.activeNativeTurn = null;
     nativeTurn.settle(outcome);
   }
 
-  private detachCurrentQuery(query: Query): void {
+  #detachCurrentQuery(query: Query): void {
     if (this.query !== query) return;
     this.messageChannel?.close();
     this.abortController?.abort();
@@ -417,12 +417,12 @@ implements ClaudeExecutionStrategy {
   ): Promise<void> {
     const turn = this.turnBarrier
       .catch(() => undefined)
-      .then(() => this.runTurn(request, queryToken));
+      .then(() => this.#runTurn(request, queryToken));
     this.turnBarrier = turn;
     await turn;
   }
 
-  private async runTurn(
+  async #runTurn(
     request: ClaudeEncodedExecutionRequest,
     queryToken: number,
   ): Promise<void> {

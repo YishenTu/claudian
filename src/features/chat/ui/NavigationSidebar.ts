@@ -36,28 +36,28 @@ export class NavigationSidebar {
 
     try {
       // Create buttons
-      this.topBtn = this.createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
-      this.prevBtn = this.createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
-      this.tocBtn = this.createButton('claudian-nav-btn-toc', 'list-tree', 'Conversation directory');
-      this.nextBtn = this.createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
-      this.bottomBtn = this.createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
+      this.topBtn = this.#createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
+      this.prevBtn = this.#createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
+      this.tocBtn = this.#createButton('claudian-nav-btn-toc', 'list-tree', 'Conversation directory');
+      this.nextBtn = this.#createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
+      this.bottomBtn = this.#createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
 
-      this.setupEventListeners();
-      this.applyVisibility();
+      this.#setupEventListeners();
+      this.#applyVisibility();
     } catch (error) {
       this.destroy();
       throw error;
     }
   }
 
-  private createButton(cls: string, icon: string, label: string): HTMLElement {
+  #createButton(cls: string, icon: string, label: string): HTMLElement {
     const btn = this.container.createDiv({ cls: `claudian-nav-btn ${cls}` });
     setIcon(btn, icon);
     btn.setAttribute('aria-label', label);
     return btn;
   }
 
-  private setupEventListeners(): void {
+  #setupEventListeners(): void {
     // Scroll handling to toggle visibility
     this.scrollHandler = () => this.updateVisibility();
     this.messagesEl.addEventListener('scroll', this.scrollHandler, { passive: true });
@@ -75,15 +75,15 @@ export class NavigationSidebar {
 
     this.prevBtn.addEventListener('click', () => {
       this.onScrollIntent?.('away');
-      this.scrollToMessage('prev');
+      this.#scrollToMessage('prev');
     });
     this.nextBtn.addEventListener('click', () => {
       this.onScrollIntent?.('away');
-      this.scrollToMessage('next');
+      this.#scrollToMessage('next');
     });
     this.tocBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      this.toggleDirectory();
+      this.#toggleDirectory();
     });
 
     this.outsideClickHandler = (event: MouseEvent) => {
@@ -94,7 +94,7 @@ export class NavigationSidebar {
       const popoverContainsTarget = typeof this.tocPopover?.contains === 'function'
         && this.tocPopover.contains(target);
       if (!containerContainsTarget && !popoverContainsTarget) {
-        this.closeDirectory();
+        this.#closeDirectory();
       }
     };
     this.parentEl.ownerDocument?.addEventListener?.('click', this.outsideClickHandler);
@@ -102,8 +102,8 @@ export class NavigationSidebar {
     if (typeof MutationObserver !== 'undefined') {
       this.mutationObserver = new MutationObserver((mutations) => {
         this.updateVisibility();
-        if (this.shouldRefreshDirectory(mutations)) {
-          this.refreshOpenDirectory();
+        if (this.#shouldRefreshDirectory(mutations)) {
+          this.#refreshOpenDirectory();
         }
       });
       this.mutationObserver.observe(this.messagesEl, {
@@ -123,11 +123,11 @@ export class NavigationSidebar {
     if (this.pendingVisibilityFrame !== null) return;
     this.pendingVisibilityFrame = scheduleAnimationFrame(() => {
       this.pendingVisibilityFrame = null;
-      this.applyVisibility();
+      this.#applyVisibility();
     }, this.messagesEl.ownerDocument.defaultView ?? null);
   }
 
-  private applyVisibility(): void {
+  #applyVisibility(): void {
     const { scrollHeight, clientHeight } = this.messagesEl;
     const isScrollable = scrollHeight > clientHeight + 50; // Small buffer
     this.tocBtn.classList.remove('claudian-hidden');
@@ -136,16 +136,16 @@ export class NavigationSidebar {
     this.container.classList.toggle('visible', isScrollable);
   }
 
-  private getDirectoryEntries(): Array<{ el: HTMLElement; title: string }> {
+  #getDirectoryEntries(): Array<{ el: HTMLElement; title: string }> {
     return Array.from(this.messagesEl.querySelectorAll<HTMLElement>('.claudian-message-user, [data-role="user"]'))
       .map(el => ({
         el,
-        title: this.getDirectoryTitle(el),
+        title: this.#getDirectoryTitle(el),
       }))
       .filter((entry): entry is { el: HTMLElement; title: string } => entry.title.length > 0);
   }
 
-  private getDirectoryTitle(el: HTMLElement): string {
+  #getDirectoryTitle(el: HTMLElement): string {
     const explicitTitle = (el.getAttribute('data-toc-title') ?? '').trim();
     if (explicitTitle) return explicitTitle;
 
@@ -153,27 +153,27 @@ export class NavigationSidebar {
     return formatConversationDirectoryTitle(contentEl?.textContent ?? el.textContent ?? '');
   }
 
-  private shouldRefreshDirectory(mutations: MutationRecord[]): boolean {
+  #shouldRefreshDirectory(mutations: MutationRecord[]): boolean {
     if (!this.tocPopover) return false;
     return mutations.some((mutation) => {
       if (mutation.type === 'attributes') {
         return mutation.attributeName === 'data-toc-title'
-          && this.isDirectoryMessageElement(mutation.target);
+          && this.#isDirectoryMessageElement(mutation.target);
       }
       if (mutation.type !== 'childList') return false;
-      return Array.from(mutation.addedNodes).some(node => this.nodeContainsDirectoryMessage(node))
-        || Array.from(mutation.removedNodes).some(node => this.nodeContainsDirectoryMessage(node));
+      return Array.from(mutation.addedNodes).some(node => this.#nodeContainsDirectoryMessage(node))
+        || Array.from(mutation.removedNodes).some(node => this.#nodeContainsDirectoryMessage(node));
     });
   }
 
-  private nodeContainsDirectoryMessage(node: Node): boolean {
-    if (this.isDirectoryMessageElement(node)) return true;
+  #nodeContainsDirectoryMessage(node: Node): boolean {
+    if (this.#isDirectoryMessageElement(node)) return true;
     const candidate = node as { querySelector?: (selector: string) => Element | null };
     return typeof candidate.querySelector === 'function'
       && candidate.querySelector('.claudian-message-user, [data-role="user"]') !== null;
   }
 
-  private isDirectoryMessageElement(node: Node): boolean {
+  #isDirectoryMessageElement(node: Node): boolean {
     const candidate = node as {
       matches?: (selector: string) => boolean;
       classList?: { contains?: (className: string) => boolean };
@@ -186,17 +186,17 @@ export class NavigationSidebar {
       || candidate.getAttribute?.('data-role') === 'user';
   }
 
-  private toggleDirectory(): void {
+  #toggleDirectory(): void {
     if (this.tocPopover) {
-      this.closeDirectory();
+      this.#closeDirectory();
       return;
     }
-    this.openDirectory();
+    this.#openDirectory();
   }
 
-  private openDirectory(): void {
-    const entries = this.getDirectoryEntries();
-    this.closeDirectory();
+  #openDirectory(): void {
+    const entries = this.#getDirectoryEntries();
+    this.#closeDirectory();
     this.tocPopover = this.parentEl.createDiv({ cls: 'claudian-nav-toc-popover' });
     this.tocPopover.createDiv({ cls: 'claudian-nav-toc-title', text: 'Conversation directory' });
     const listEl = this.tocPopover.createDiv({ cls: 'claudian-nav-toc-list' });
@@ -220,8 +220,8 @@ export class NavigationSidebar {
 
       const selectEntry = () => {
         this.onScrollIntent?.('away');
-        this.scrollToElement(entry.el);
-        this.closeDirectory();
+        this.#scrollToElement(entry.el);
+        this.#closeDirectory();
       };
       itemEl.addEventListener('click', selectEntry);
       itemEl.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -232,17 +232,17 @@ export class NavigationSidebar {
     });
   }
 
-  private refreshOpenDirectory(): void {
+  #refreshOpenDirectory(): void {
     if (!this.tocPopover) return;
-    this.openDirectory();
+    this.#openDirectory();
   }
 
-  private closeDirectory(): void {
+  #closeDirectory(): void {
     this.tocPopover?.remove();
     this.tocPopover = null;
   }
 
-  private scrollToElement(el: HTMLElement): void {
+  #scrollToElement(el: HTMLElement): void {
     this.messagesEl.scrollTo({
       top: Math.max(el.offsetTop - 10, 0),
       behavior: 'smooth',
@@ -252,7 +252,7 @@ export class NavigationSidebar {
   /**
    * Scrolls to previous or next user message, skipping assistant messages.
    */
-  private scrollToMessage(direction: 'prev' | 'next'): void {
+  #scrollToMessage(direction: 'prev' | 'next'): void {
     const messages = Array.from(this.messagesEl.querySelectorAll<HTMLElement>('.claudian-message-user'));
 
     if (messages.length === 0) return;
@@ -264,7 +264,7 @@ export class NavigationSidebar {
       // Find the last message strictly above the current scroll position
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].offsetTop < scrollTop - threshold) {
-          this.scrollToElement(messages[i]);
+          this.#scrollToElement(messages[i]);
           return;
         }
       }
@@ -274,7 +274,7 @@ export class NavigationSidebar {
       // Find the first message strictly below the current scroll position
       for (let i = 0; i < messages.length; i++) {
         if (messages[i].offsetTop > scrollTop + threshold) {
-          this.scrollToElement(messages[i]);
+          this.#scrollToElement(messages[i]);
           return;
         }
       }
@@ -292,7 +292,7 @@ export class NavigationSidebar {
       cancelScheduledAnimationFrame(this.pendingVisibilityFrame);
       this.pendingVisibilityFrame = null;
     }
-    this.closeDirectory();
+    this.#closeDirectory();
     if (this.outsideClickHandler) {
       this.parentEl.ownerDocument?.removeEventListener?.('click', this.outsideClickHandler);
       this.outsideClickHandler = null;

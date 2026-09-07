@@ -421,14 +421,14 @@ export class InlineEditSession {
       this.selectedText = editContext.selectedText;
     }
 
-    this.updatePositionsFromEditor();
+    this.#updatePositionsFromEditor();
   }
 
   getOwnerDocument(): Document {
     return this.editorView.dom.ownerDocument ?? window.document;
   }
 
-  private updatePositionsFromEditor() {
+  #updatePositionsFromEditor() {
     const doc = this.editorView.state.doc;
 
     if (this.mode === 'cursor') {
@@ -456,10 +456,10 @@ export class InlineEditSession {
       installedEditors.add(this.editorView);
     }
 
-    this.updateHighlight();
+    this.#updateHighlight();
 
     if (this.mode === 'selection') {
-      this.attachSelectionListeners();
+      this.#attachSelectionListeners();
     }
 
     // !e.isComposing: skip during IME composition (Chinese, Japanese, Korean, etc.)
@@ -471,7 +471,7 @@ export class InlineEditSession {
     this.getOwnerDocument().addEventListener('keydown', this.escHandler);
   }
 
-  private updateHighlight() {
+  #updateHighlight() {
     const doc = this.editorView.state.doc;
     const line = doc.lineAt(this.selFrom);
     const isInbetween = this.mode === 'cursor' && this.cursorContext?.isInbetween;
@@ -485,10 +485,10 @@ export class InlineEditSession {
         isInbetween,
       }),
     });
-    this.updateSelectionHighlight();
+    this.#updateSelectionHighlight();
   }
 
-  private updateSelectionHighlight(): void {
+  #updateSelectionHighlight(): void {
     if (this.mode === 'selection' && this.selFrom !== this.selTo) {
       showSelectionHighlight(this.editorView, this.selFrom, this.selTo);
     } else {
@@ -496,8 +496,8 @@ export class InlineEditSession {
     }
   }
 
-  private attachSelectionListeners() {
-    this.removeSelectionListeners();
+  #attachSelectionListeners() {
+    this.#removeSelectionListeners();
     this.selectionListener = (e: Event) => {
       const target = e.target as Node | null;
       if (target && this.inputEl && (target === this.inputEl || this.inputEl.contains(target))) {
@@ -507,9 +507,9 @@ export class InlineEditSession {
       const prevTo = this.selTo;
       const newSelection = this.editor.getSelection();
       if (newSelection && newSelection.length > 0) {
-        this.updatePositionsFromEditor();
+        this.#updatePositionsFromEditor();
         if (prevFrom !== this.selFrom || prevTo !== this.selTo) {
-          this.updateHighlight();
+          this.#updateHighlight();
         }
       }
     };
@@ -583,14 +583,14 @@ export class InlineEditSession {
     const actionsEl = previewEl.createDiv({ cls: 'claudian-inline-preview-actions' });
     actionsEl.setAttribute('role', 'toolbar');
     actionsEl.setAttribute('aria-label', 'Inline edit actions');
-    actionsEl.appendChild(this.createPreviewActionButton('Reject', 'reject', () => this.reject()));
-    actionsEl.appendChild(this.createPreviewActionButton('Accept', 'accept', () => this.accept()));
+    actionsEl.appendChild(this.#createPreviewActionButton('Reject', 'reject', () => this.reject()));
+    actionsEl.appendChild(this.#createPreviewActionButton('Accept', 'accept', () => this.accept()));
 
-    void this.renderMarkdownDiffPreview(bodyEl, diffOps);
+    void this.#renderMarkdownDiffPreview(bodyEl, diffOps);
     return previewEl;
   }
 
-  private createPreviewActionButton(
+  #createPreviewActionButton(
     label: string,
     variant: 'accept' | 'reject',
     onClick: () => void
@@ -612,7 +612,7 @@ export class InlineEditSession {
     return button;
   }
 
-  private async renderMarkdownPreview(container: HTMLElement, markdown: string): Promise<void> {
+  async #renderMarkdownPreview(container: HTMLElement, markdown: string): Promise<void> {
     await renderInlineEditMarkdownPreview({
       app: this.app,
       component: this.plugin,
@@ -623,17 +623,17 @@ export class InlineEditSession {
     });
   }
 
-  private async renderMarkdownDiffPreview(container: HTMLElement, diffOps: DiffOp[]): Promise<void> {
+  async #renderMarkdownDiffPreview(container: HTMLElement, diffOps: DiffOp[]): Promise<void> {
     container.empty();
     for (const document of buildMarkdownDiffDocuments(diffOps)) {
       if (!document.markdown) continue;
 
       const opEl = container.createDiv({ cls: `claudian-diff-block ${getDiffBlockClass(document.type)}` });
-      await this.renderMarkdownPreview(opEl, document.markdown);
+      await this.#renderMarkdownPreview(opEl, document.markdown);
     }
   }
 
-  private replaceRenderedPreview(target: HTMLElement, rendered: HTMLElement): void {
+  #replaceRenderedPreview(target: HTMLElement, rendered: HTMLElement): void {
     target.empty();
 
     if (rendered.childNodes) {
@@ -658,18 +658,18 @@ export class InlineEditSession {
     this.sourceSnapshot = {
       doc: sourceDoc,
       from: this.selFrom,
-      text: this.getDocumentSlice(sourceDoc, this.selFrom, this.selTo),
+      text: this.#getDocumentSlice(sourceDoc, this.selFrom, this.selTo),
       to: this.selTo,
     };
 
     // Slash commands are passed directly to SDK for handling
 
-    this.removeSelectionListeners();
+    this.#removeSelectionListeners();
 
     this.inputEl.disabled = true;
     this.spinnerEl.removeClass('claudian-hidden');
 
-    const contextFiles = this.resolveContextFilesFromMessage(userMessage);
+    const contextFiles = this.#resolveContextFilesFromMessage(userMessage);
 
     let result;
     try {
@@ -698,31 +698,31 @@ export class InlineEditSession {
         }
       }
     } catch (error) {
-      if (this.isGenerationActive(generation)) {
-        this.handleError(error instanceof Error ? error.message : 'Error - try again');
+      if (this.#isGenerationActive(generation)) {
+        this.#handleError(error instanceof Error ? error.message : 'Error - try again');
       }
       return;
     } finally {
-      if (this.isGenerationActive(generation)) {
+      if (this.#isGenerationActive(generation)) {
         this.spinnerEl?.addClass('claudian-hidden');
       }
     }
 
-    if (!this.isGenerationActive(generation)) {
+    if (!this.#isGenerationActive(generation)) {
       return;
     }
-    if (!this.isSourceUnchanged()) {
-      this.rejectStaleSource();
+    if (!this.#isSourceUnchanged()) {
+      this.#rejectStaleSource();
       return;
     }
 
     if (result.success) {
       if (result.editedText !== undefined) {
         this.editedText = result.editedText;
-        this.showDiffInPlace();
+        this.#showDiffInPlace();
       } else if (result.insertedText !== undefined) {
         this.insertedText = result.insertedText;
-        this.showInsertionInPlace();
+        this.#showInsertionInPlace();
       } else if (result.clarification) {
         this.showAgentReply(result.clarification);
         this.isConversing = true;
@@ -731,14 +731,14 @@ export class InlineEditSession {
         this.inputEl.placeholder = 'Reply to continue...';
         this.inputEl.focus();
       } else {
-        this.handleError('No response from agent');
+        this.#handleError('No response from agent');
       }
     } else {
       if (result.resetRequired) {
         this.isConversing = false;
         this.inlineEditService.resetConversation();
       }
-      this.handleError(result.error || 'Error - try again');
+      this.#handleError(result.error || 'Error - try again');
     }
   }
 
@@ -750,26 +750,26 @@ export class InlineEditSession {
 
     replyEl.removeClass('claudian-hidden');
     replyEl.empty();
-    void this.renderMarkdownPreview(renderedEl, message).then(() => {
+    void this.#renderMarkdownPreview(renderedEl, message).then(() => {
       if (renderVersion !== this.agentReplyRenderVersion || replyEl !== this.agentReplyEl) {
         return;
       }
-      this.replaceRenderedPreview(replyEl, renderedEl);
+      this.#replaceRenderedPreview(replyEl, renderedEl);
     });
     this.containerEl.classList.add('has-agent-reply');
   }
 
-  private handleError(errorMessage: string) {
+  #handleError(errorMessage: string) {
     if (!this.inputEl) return;
     this.inputEl.disabled = false;
     this.inputEl.placeholder = errorMessage;
-    this.updatePositionsFromEditor();
-    this.updateHighlight();
-    this.attachSelectionListeners();
+    this.#updatePositionsFromEditor();
+    this.#updateHighlight();
+    this.#attachSelectionListeners();
     this.inputEl.focus();
   }
 
-  private showDiffInPlace() {
+  #showDiffInPlace() {
     if (this.editedText === null) return;
 
     hideSelectionHighlight(this.editorView);
@@ -787,10 +787,10 @@ export class InlineEditSession {
       }),
     });
 
-    this.installAcceptRejectHandler();
+    this.#installAcceptRejectHandler();
   }
 
-  private showInsertionInPlace() {
+  #showInsertionInPlace() {
     if (this.insertedText === null) return;
 
     hideSelectionHighlight(this.editorView);
@@ -809,10 +809,10 @@ export class InlineEditSession {
       }),
     });
 
-    this.installAcceptRejectHandler();
+    this.#installAcceptRejectHandler();
   }
 
-  private installAcceptRejectHandler() {
+  #installAcceptRejectHandler() {
     if (this.escHandler) {
       this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
     }
@@ -835,8 +835,8 @@ export class InlineEditSession {
     }
     const textToInsert = this.editedText ?? this.insertedText;
     if (textToInsert !== null) {
-      if (!this.isSourceUnchanged()) {
-        this.rejectStaleSource();
+      if (!this.#isSourceUnchanged()) {
+        this.#rejectStaleSource();
         return;
       }
       // Convert CM6 positions back to Obsidian Editor positions
@@ -849,7 +849,7 @@ export class InlineEditSession {
       this.settled = true;
       this.cleanup();
       this.editor.replaceRange(textToInsert, from, to);
-      this.focusEditor();
+      this.#focusEditor();
       this.resolve({ decision: 'accept', editedText: textToInsert });
     } else {
       this.settled = true;
@@ -864,12 +864,12 @@ export class InlineEditSession {
     }
     this.settled = true;
     this.cleanup({ keepSelectionHighlight: true });
-    this.restoreSelectionHighlight();
-    this.focusEditor();
+    this.#restoreSelectionHighlight();
+    this.#focusEditor();
     this.resolve({ decision: 'reject' });
   }
 
-  private removeSelectionListeners() {
+  #removeSelectionListeners() {
     if (this.selectionListener) {
       this.editorView.dom.removeEventListener('mouseup', this.selectionListener);
       this.editorView.dom.removeEventListener('keyup', this.selectionListener);
@@ -882,7 +882,7 @@ export class InlineEditSession {
     this.inlineEditService.cancel();
     this.inlineEditService.resetConversation();
     this.isConversing = false;
-    this.removeSelectionListeners();
+    this.#removeSelectionListeners();
     if (this.escHandler) {
       this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
     }
@@ -904,14 +904,14 @@ export class InlineEditSession {
     }
   }
 
-  private restoreSelectionHighlight(): void {
+  #restoreSelectionHighlight(): void {
     if (this.mode !== 'selection' || this.selFrom === this.selTo) {
       return;
     }
     showSelectionHighlight(this.editorView, this.selFrom, this.selTo);
   }
 
-  private isSourceUnchanged(): boolean {
+  #isSourceUnchanged(): boolean {
     const snapshot = this.sourceSnapshot;
     if (!snapshot) {
       return false;
@@ -925,25 +925,25 @@ export class InlineEditSession {
       && snapshot.from >= 0
       && snapshot.to >= snapshot.from
       && snapshot.to <= currentLength
-      && this.getDocumentSlice(currentDoc, snapshot.from, snapshot.to) === snapshot.text;
+      && this.#getDocumentSlice(currentDoc, snapshot.from, snapshot.to) === snapshot.text;
   }
 
-  private isGenerationActive(generation: number): boolean {
+  #isGenerationActive(generation: number): boolean {
     return !this.settled && generation === this.generation;
   }
 
-  private rejectStaleSource(): void {
+  #rejectStaleSource(): void {
     if (this.settled) {
       return;
     }
     new Notice('Inline edit was not applied because the source document or selection changed.');
     this.settled = true;
     this.cleanup();
-    this.focusEditor();
+    this.#focusEditor();
     this.resolve({ decision: 'reject' });
   }
 
-  private getDocumentSlice(doc: Text, from: number, to: number): string {
+  #getDocumentSlice(doc: Text, from: number, to: number): string {
     const compatibleDoc = doc as Text & {
       sliceString?: (start: number, end: number) => string;
     };
@@ -964,7 +964,7 @@ export class InlineEditSession {
       || this.editorView.dom.contains(target);
   }
 
-  private focusEditor(): void {
+  #focusEditor(): void {
     const compatibleView = this.editorView as EditorView & { focus?: () => void };
     compatibleView.focus?.();
   }
@@ -990,7 +990,7 @@ export class InlineEditSession {
     }
   }
 
-  private resolveContextFilesFromMessage(message: string): string[] {
+  #resolveContextFilesFromMessage(message: string): string[] {
     if (!message.includes('@')) return [];
 
     const vaultFiles = this.mentionDataProvider.getCachedVaultFiles();

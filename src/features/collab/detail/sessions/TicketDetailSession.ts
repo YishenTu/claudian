@@ -82,7 +82,7 @@ export class TicketDetailSession {
         };
       },
       ...(this.options.openTicketInNewTab ? {
-        onOpenTicket: (ticketNumber: number) => this.openTicketReference(
+        onOpenTicket: (ticketNumber: number) => this.#openTicketReference(
           state,
           ticketNumber,
         ),
@@ -117,7 +117,7 @@ export class TicketDetailSession {
       && this.state.ticketId === state.ticketId;
   }
 
-  private async openTicketReference(
+  async #openTicketReference(
     state: CollabTicketDetailViewState,
     ticketNumber: number,
   ): Promise<void> {

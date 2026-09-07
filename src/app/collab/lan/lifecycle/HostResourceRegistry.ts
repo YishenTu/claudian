@@ -75,7 +75,7 @@ export class HostResourceRegistry {
     memberId: string,
     reason: Extract<HostResourceCloseReason, 'access-removed' | 'pending-expired'>,
   ): Promise<void> {
-    return this.closeMatching(resource => (
+    return this.#closeMatching(resource => (
       resource.projectId === projectId && resource.memberId === memberId
     ), reason);
   }
@@ -84,22 +84,22 @@ export class HostResourceRegistry {
     projectId: string,
     reason: Extract<HostResourceCloseReason, 'project-stopped'>,
   ): Promise<void> {
-    return this.closeMatching(resource => resource.projectId === projectId, reason);
+    return this.#closeMatching(resource => resource.projectId === projectId, reason);
   }
 
   closeAll(
     reason: Extract<HostResourceCloseReason, 'host-stopped'>,
   ): Promise<void> {
-    return this.closeMatching(() => true, reason);
+    return this.#closeMatching(() => true, reason);
   }
 
-  private closeMatching(
+  #closeMatching(
     matches: (resource: HostOwnedResource) => boolean,
     reason: HostResourceCloseReason,
   ): Promise<void> {
     const selected = [...this.resources.values()].filter(matches);
     for (const resource of selected) this.resources.delete(resource.id);
-    const closings = selected.map(resource => this.closeOne(resource, reason));
+    const closings = selected.map(resource => this.#closeOne(resource, reason));
     return Promise.all(closings).then(outcomes => {
       if (outcomes.includes('timed-out')) {
         throw resourceError('operation-timeout', 'host-resource-close-timeout');
@@ -110,7 +110,7 @@ export class HostResourceRegistry {
     });
   }
 
-  private closeOne(
+  #closeOne(
     resource: HostOwnedResource,
     reason: HostResourceCloseReason,
   ): Promise<CloseOutcome> {

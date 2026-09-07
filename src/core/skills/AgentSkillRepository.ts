@@ -96,7 +96,7 @@ export class AgentSkillRepository {
     for (const directoryPath of directPackages) {
       const name = path.posix.basename(directoryPath);
       try {
-        const document = await this.readDocument(name);
+        const document = await this.#readDocument(name);
         skills.push(document);
       } catch (error) {
         diagnostics.push({
@@ -116,7 +116,7 @@ export class AgentSkillRepository {
 
   async create(input: AgentSkillInput): Promise<AgentSkillDocument> {
     validateAgentSkillInput(input);
-    return this.withMutation(async () => {
+    return this.#withMutation(async () => {
       await this.files.ensureManagedFolder(AGENT_SKILLS_ROOT);
       const directory = packagePath(input.name);
       try {
@@ -153,7 +153,7 @@ export class AgentSkillRepository {
         }
         throw error;
       }
-      return this.documentFromRaw(input.name, content);
+      return this.#documentFromRaw(input.name, content);
     });
   }
 
@@ -162,17 +162,17 @@ export class AgentSkillRepository {
     expectedRevision: string,
     input: AgentSkillInput,
   ): Promise<AgentSkillDocument> {
-    this.assertValidName(previousName);
+    this.#assertValidName(previousName);
     validateAgentSkillInput(input);
-    return this.withMutation(async () => {
-      const current = await this.readDocumentWithRaw(previousName);
+    return this.#withMutation(async () => {
+      const current = await this.#readDocumentWithRaw(previousName);
       if (current.skill.revision !== expectedRevision) {
         throw new AgentSkillRevisionConflictError(previousName);
       }
       const content = serializeAgentSkillMarkdown(current.skill.frontmatter, input);
       if (previousName === input.name) {
         await this.files.writeManagedFile(current.skill.filePath, content);
-        return this.documentFromRaw(input.name, content);
+        return this.#documentFromRaw(input.name, content);
       }
 
       const oldDirectory = packagePath(previousName);
@@ -216,14 +216,14 @@ export class AgentSkillRepository {
         }
         throw error;
       }
-      return this.documentFromRaw(input.name, content);
+      return this.#documentFromRaw(input.name, content);
     });
   }
 
   async trash(name: string, expectedRevision: string): Promise<void> {
-    this.assertValidName(name);
-    await this.withMutation(async () => {
-      const current = await this.readDocument(name);
+    this.#assertValidName(name);
+    await this.#withMutation(async () => {
+      const current = await this.#readDocument(name);
       if (current.revision !== expectedRevision) {
         throw new AgentSkillRevisionConflictError(name);
       }
@@ -233,29 +233,29 @@ export class AgentSkillRepository {
     });
   }
 
-  private assertValidName(name: string): void {
+  #assertValidName(name: string): void {
     const error = validateAgentSkillName(name);
     if (error) throw new AgentSkillValidationError('name', error);
   }
 
-  private async readDocument(name: string): Promise<AgentSkillDocument> {
-    return (await this.readDocumentWithRaw(name)).skill;
+  async #readDocument(name: string): Promise<AgentSkillDocument> {
+    return (await this.#readDocumentWithRaw(name)).skill;
   }
 
-  private async readDocumentWithRaw(name: string): Promise<{
+  async #readDocumentWithRaw(name: string): Promise<{
     skill: AgentSkillDocument;
     raw: string;
   }> {
-    this.assertValidName(name);
+    this.#assertValidName(name);
     const directoryPath = packagePath(name);
     const filePath = skillFilePath(name);
     await this.files.verifyManagedPath(directoryPath, { expectedType: 'folder' });
     await this.files.verifyManagedPath(filePath, { expectedType: 'file' });
     const raw = await this.files.readManagedFile(filePath);
-    return { skill: this.documentFromRaw(name, raw), raw };
+    return { skill: this.#documentFromRaw(name, raw), raw };
   }
 
-  private documentFromRaw(name: string, raw: string): AgentSkillDocument {
+  #documentFromRaw(name: string, raw: string): AgentSkillDocument {
     let parsed;
     try {
       parsed = parseAgentSkillMarkdown(raw, name);
@@ -271,7 +271,7 @@ export class AgentSkillRepository {
     };
   }
 
-  private withMutation<T>(operation: () => Promise<T>): Promise<T> {
+  #withMutation<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.mutationQueue.then(operation, operation);
     this.mutationQueue = result.then(() => undefined, () => undefined);
     return result;

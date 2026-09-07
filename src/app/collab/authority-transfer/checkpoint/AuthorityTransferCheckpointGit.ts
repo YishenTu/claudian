@@ -134,7 +134,7 @@ export class AuthorityTransferCheckpointGit {
     input: AuthorityTransferCheckpointGitInput,
   ): Promise<CollabCheckpointArtifactFact> {
     assertRefs(input.refs);
-    await this.assertRepositoryRefs(input.repositoryPath, input.refs, input.signal);
+    await this.#assertRepositoryRefs(input.repositoryPath, input.refs, input.signal);
     await rm(input.bundlePath, { force: true }).catch(() => undefined);
     try {
       await this.runner.run({
@@ -211,7 +211,7 @@ export class AuthorityTransferCheckpointGit {
         signal: input.signal,
         suppressHooks: true,
       });
-      await this.assertRepositoryIdentity(
+      await this.#assertRepositoryIdentity(
         input.targetRepositoryPath,
         manifest.gitObjectFormat,
         input.signal,
@@ -244,7 +244,7 @@ export class AuthorityTransferCheckpointGit {
         signal: input.signal,
         suppressHooks: true,
       });
-      await this.assertRepositoryRefs(
+      await this.#assertRepositoryRefs(
         input.targetRepositoryPath,
         refs,
         input.signal,
@@ -271,7 +271,7 @@ export class AuthorityTransferCheckpointGit {
     }
   }
 
-  private async assertRepositoryIdentity(
+  async #assertRepositoryIdentity(
     repositoryPath: string,
     objectFormat: 'sha1' | 'sha256',
     signal?: AbortSignal,
@@ -298,7 +298,7 @@ export class AuthorityTransferCheckpointGit {
     ) throw gitError('checkpoint-git-target-identity-invalid');
   }
 
-  private async assertRepositoryRefs(
+  async #assertRepositoryRefs(
     repositoryPath: string,
     refs: readonly CollabCheckpointGitRef[],
     signal?: AbortSignal,

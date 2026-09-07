@@ -136,18 +136,18 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
     signal?: AbortSignal,
   ): Promise<T> {
     try {
-      return await this.withNetworkGeneration(context, operation, signal);
+      return await this.#withNetworkGeneration(context, operation, signal);
     } catch (error) {
       if (!isProjectConnectionReset(error)) throw error;
-      return this.withNetworkGeneration(
-        await this.refreshAuthorityGeneration(context),
+      return this.#withNetworkGeneration(
+        await this.#refreshAuthorityGeneration(context),
         operation,
         signal,
       );
     }
   }
 
-  private async refreshAuthorityGeneration(
+  async #refreshAuthorityGeneration(
     context: PublishProjectContext,
   ): Promise<PublishProjectContext> {
     const membership = await this.projects.loadMembership(context.projectId);
@@ -162,7 +162,7 @@ export class LocalPublishGitNetworkPort implements PublishGitNetworkPort {
     return { ...context, remoteUrl: membership.authority.gitRemoteUrl };
   }
 
-  private async withNetworkGeneration<T>(
+  async #withNetworkGeneration<T>(
     context: PublishProjectContext,
     operation: (network: GitNetworkEnvironment | undefined, remoteUrl: string) => Promise<T>,
     signal?: AbortSignal,

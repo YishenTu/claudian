@@ -99,9 +99,9 @@ export class PersonalChangesPanel {
         return;
       }
       if (state.activeOperation?.kind === 'publish') {
-        this.setView({ ...this.viewState, kind: 'publishing' });
+        this.#setView({ ...this.viewState, kind: 'publishing' });
       } else if (this.viewState.kind !== 'loading') {
-        this.queueRefresh();
+        this.#queueRefresh();
       }
     });
     this.render();
@@ -112,7 +112,7 @@ export class PersonalChangesPanel {
     if (this.destroyed || this.active === active) return false;
     this.active = active;
     if (!active) {
-      const hadWorkingTreeRefresh = this.clearWorkingTreeRefreshTimer();
+      const hadWorkingTreeRefresh = this.#clearWorkingTreeRefreshTimer();
       this.refreshOnResume = this.refreshOnResume
         || this.refreshPromise !== null
         || hadWorkingTreeRefresh;
@@ -132,13 +132,13 @@ export class PersonalChangesPanel {
   setProject(project: CollabLocalProjectSummary): void {
     if (this.destroyed) return;
     if (this.project.id === project.id) {
-      this.clearWorkingTreeRefreshTimer();
+      this.#clearWorkingTreeRefreshTimer();
       this.project = project;
       void this.refresh();
       return;
     }
     this.refreshCycle += 1;
-    this.clearWorkingTreeRefreshTimer();
+    this.#clearWorkingTreeRefreshTimer();
     this.refreshPromise = null;
     this.refreshRequested = false;
     this.inspectionTasks.cancel();
@@ -160,7 +160,7 @@ export class PersonalChangesPanel {
     }
     this.refreshRequested = true;
     if (this.refreshPromise) return this.refreshPromise;
-    const refreshPromise = this.drainRefreshes(this.refreshCycle);
+    const refreshPromise = this.#drainRefreshes(this.refreshCycle);
     this.refreshPromise = refreshPromise;
     try {
       await refreshPromise;
@@ -173,18 +173,18 @@ export class PersonalChangesPanel {
     if (this.destroyed) return;
     this.workingTreeInvalidationVersion += 1;
     if (!this.active) {
-      this.clearWorkingTreeRefreshTimer();
+      this.#clearWorkingTreeRefreshTimer();
       this.refreshOnResume = true;
       return;
     }
-    this.clearWorkingTreeRefreshTimer();
+    this.#clearWorkingTreeRefreshTimer();
     this.workingTreeRefreshTimer = window.setTimeout(() => {
       this.workingTreeRefreshTimer = null;
       void this.refresh();
     }, WORKING_TREE_REFRESH_DELAY_MS);
   }
 
-  private async drainRefreshes(cycle: number): Promise<void> {
+  async #drainRefreshes(cycle: number): Promise<void> {
     while (
       this.active
       && this.refreshRequested
@@ -192,11 +192,11 @@ export class PersonalChangesPanel {
       && cycle === this.refreshCycle
     ) {
       this.refreshRequested = false;
-      await this.refreshOnce();
+      await this.#refreshOnce();
     }
   }
 
-  private async refreshOnce(): Promise<void> {
+  async #refreshOnce(): Promise<void> {
     const task = this.inspectionTasks.start();
     const projectId = this.project.id;
     const workingTreeVersion = this.workingTreeInvalidationVersion;
@@ -212,14 +212,14 @@ export class PersonalChangesPanel {
         );
       }
       this.options.onInspection?.(result);
-      this.setView(this.viewFromInspection(result));
+      this.#setView(this.#viewFromInspection(result));
     } catch {
       if (this.isCurrent(task, projectId)) {
         this.options.onInspection?.({
           error: new CollabError({ code: 'operation-failed' }),
           status: 'failure',
         });
-        this.setView({ changedFiles: [], kind: 'error' });
+        this.#setView({ changedFiles: [], kind: 'error' });
       }
       return;
     } finally {
@@ -230,7 +230,7 @@ export class PersonalChangesPanel {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.clearWorkingTreeRefreshTimer();
+    this.#clearWorkingTreeRefreshTimer();
     this.refreshQueued = false;
     this.refreshRequested = false;
     this.refreshCycle += 1;
@@ -239,7 +239,7 @@ export class PersonalChangesPanel {
     this.rootEl.remove();
   }
 
-  private viewFromInspection(
+  #viewFromInspection(
     result: CollabResult<CollabProjectInspection>,
   ): PersonalChangesViewState {
     if (result.status !== 'success') {
@@ -322,7 +322,7 @@ export class PersonalChangesPanel {
 
   private render(): void {
     if (this.destroyed) return;
-    const focus = this.captureFocus();
+    const focus = this.#captureFocus();
     this.rootEl.replaceChildren();
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-publish-header' });
     const canOpenWorkingTree = this.viewState.unpublishedReview !== undefined
@@ -342,7 +342,7 @@ export class PersonalChangesPanel {
         text: t('collab.publish.title'),
       });
       title.disabled = !this.options.onOpenWorkingTreeReview;
-      title.addEventListener('click', () => this.openWorkingTreeReview());
+      title.addEventListener('click', () => this.#openWorkingTreeReview());
     } else {
       header.createEl('h4', { text: t('collab.publish.title') });
     }
@@ -367,16 +367,16 @@ export class PersonalChangesPanel {
       review.disabled = !this.options.onOpenPublicationReview;
       review.addEventListener('click', () => {
         if (this.viewState.publicationReview) {
-          this.openPublicationReview(this.viewState.publicationReview);
+          this.#openPublicationReview(this.viewState.publicationReview);
         }
       });
     }
     if (actions.childElementCount === 0) actions.remove();
-    if (this.shouldRenderStatus()) {
+    if (this.#shouldRenderStatus()) {
       this.rootEl.createDiv({
         attr: { 'aria-live': 'polite' },
         cls: `claudian-collab-publish-status claudian-collab-publish-status--${this.viewState.kind}`,
-        text: this.statusText(),
+        text: this.#statusText(),
       });
     }
 
@@ -390,36 +390,36 @@ export class PersonalChangesPanel {
         focusOnSelect: true,
         onSelect: path => {
           this.selectedPath = path;
-          this.openWorkingTreeReview(path);
+          this.#openWorkingTreeReview(path);
         },
         selectedPath: this.selectedPath,
         semantics: 'list',
       });
     }
 
-    this.restoreFocus(focus);
+    this.#restoreFocus(focus);
   }
 
-  private openWorkingTreeReview(selectedPath?: string): void {
+  #openWorkingTreeReview(selectedPath?: string): void {
     if (this.workingTreeRefreshTimer !== null
       || this.workingTreeInspectionVersion < this.workingTreeInvalidationVersion) {
-      this.clearWorkingTreeRefreshTimer();
-      void this.refreshWorkingTreeThenOpen(selectedPath);
+      this.#clearWorkingTreeRefreshTimer();
+      void this.#refreshWorkingTreeThenOpen(selectedPath);
       return;
     }
     if (this.refreshPromise) {
-      void this.refreshPromise.then(() => this.dispatchWorkingTreeReview(selectedPath));
+      void this.refreshPromise.then(() => this.#dispatchWorkingTreeReview(selectedPath));
       return;
     }
-    this.dispatchWorkingTreeReview(selectedPath);
+    this.#dispatchWorkingTreeReview(selectedPath);
   }
 
-  private async refreshWorkingTreeThenOpen(selectedPath?: string): Promise<void> {
+  async #refreshWorkingTreeThenOpen(selectedPath?: string): Promise<void> {
     await this.refresh();
-    this.dispatchWorkingTreeReview(selectedPath);
+    this.#dispatchWorkingTreeReview(selectedPath);
   }
 
-  private dispatchWorkingTreeReview(selectedPath?: string): void {
+  #dispatchWorkingTreeReview(selectedPath?: string): void {
     if (!this.active || this.destroyed) return;
     const review = this.viewState.unpublishedReview;
     if (!review) return;
@@ -430,7 +430,7 @@ export class PersonalChangesPanel {
     this.options.onOpenWorkingTreeReview?.(review, path);
   }
 
-  private openPublicationReview(
+  #openPublicationReview(
     review: CollabPublicationReview,
     selectedPath?: string,
   ): void {
@@ -441,7 +441,7 @@ export class PersonalChangesPanel {
     }
   }
 
-  private queueRefresh(): void {
+  #queueRefresh(): void {
     if (this.destroyed) return;
     if (!this.active) {
       this.refreshOnResume = true;
@@ -455,14 +455,14 @@ export class PersonalChangesPanel {
     });
   }
 
-  private clearWorkingTreeRefreshTimer(): boolean {
+  #clearWorkingTreeRefreshTimer(): boolean {
     if (this.workingTreeRefreshTimer === null) return false;
     window.clearTimeout(this.workingTreeRefreshTimer);
     this.workingTreeRefreshTimer = null;
     return true;
   }
 
-  private statusText(): string {
+  #statusText(): string {
     switch (this.viewState.kind) {
       case 'loading': return t('collab.publish.loading');
       case 'clean': return t('collab.publish.clean');
@@ -479,13 +479,13 @@ export class PersonalChangesPanel {
     }
   }
 
-  private shouldRenderStatus(): boolean {
+  #shouldRenderStatus(): boolean {
     return this.viewState.kind !== 'conflict'
       && this.viewState.kind !== 'dirty'
       && this.viewState.kind !== 'review';
   }
 
-  private setView(viewState: PersonalChangesViewState): void {
+  #setView(viewState: PersonalChangesViewState): void {
     this.viewState = viewState;
     this.render();
   }
@@ -498,7 +498,7 @@ export class PersonalChangesPanel {
       && this.options.port.state.selectedProjectId === projectId;
   }
 
-  private captureFocus(): FocusSnapshot {
+  #captureFocus(): FocusSnapshot {
     const active = this.rootEl.ownerDocument.activeElement;
     if (!(active instanceof HTMLElement) || !this.rootEl.contains(active)) {
       return { scrollTop: this.rootEl.scrollTop };
@@ -510,7 +510,7 @@ export class PersonalChangesPanel {
     };
   }
 
-  private restoreFocus(snapshot: FocusSnapshot): void {
+  #restoreFocus(snapshot: FocusSnapshot): void {
     this.rootEl.scrollTop = snapshot.scrollTop;
     const target = snapshot.path
       ? [...this.rootEl.querySelectorAll<HTMLElement>('[data-path]')]

@@ -146,25 +146,25 @@ export class SqlJsProjectDatabase {
   }
 
   open(): Promise<SqlJsProjectDatabaseOpenResult> {
-    return this.queue.run(() => this.openUnlocked());
+    return this.queue.run(() => this.#openUnlocked());
   }
 
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T> {
     return this.queue.run(async () => {
-      const database = this.requireDatabase();
+      const database = this.#requireDatabase();
       return reader(new SqlJsConnection(database));
     });
   }
 
   exportSnapshot(): Promise<Uint8Array> {
-    return this.queue.run(async () => Uint8Array.from(this.requireDatabase().export()));
+    return this.queue.run(async () => Uint8Array.from(this.#requireDatabase().export()));
   }
 
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
   ): Promise<SqlJsMutationResult<T>> {
     return this.queue.run(async () => {
-      const database = this.requireDatabase();
+      const database = this.#requireDatabase();
       database.run('BEGIN IMMEDIATE');
       let transactionCommitted = false;
       let value: T;
@@ -188,20 +188,20 @@ export class SqlJsProjectDatabase {
         database.run('COMMIT');
         transactionCommitted = true;
         const bytes = database.export();
-        await this.persistSnapshot(bytes, this.hasValidPrimary);
+        await this.#persistSnapshot(bytes, this.hasValidPrimary);
         this.generationValue = generation;
         this.hasValidPrimary = true;
-        this.notifyMutationListeners(generation);
+        this.#notifyMutationListeners(generation);
         return { generation, value };
       } catch (error) {
         if (!transactionCommitted) {
           try {
             database.run('ROLLBACK');
           } catch {
-            throw this.blockForRecovery();
+            throw this.#blockForRecovery();
           }
         }
-        if (transactionCommitted) throw this.blockForRecovery();
+        if (transactionCommitted) throw this.#blockForRecovery();
         if (error instanceof CollabError) throw error;
         throw authorityError('authority-integrity-error', 'authority-transaction-failed');
       }
@@ -218,7 +218,7 @@ export class SqlJsProjectDatabase {
   }
 
   subscribe(listener: (generation: number) => void): SqlJsProjectDatabaseSubscription {
-    this.requireDatabase();
+    this.#requireDatabase();
     this.mutationListeners.add(listener);
     let disposed = false;
     return {
@@ -230,11 +230,11 @@ export class SqlJsProjectDatabase {
     };
   }
 
-  private async openUnlocked(): Promise<SqlJsProjectDatabaseOpenResult> {
+  async #openUnlocked(): Promise<SqlJsProjectDatabaseOpenResult> {
     if (this.blockedError) throw this.blockedError;
     if (this.closed) throw authorityError('not-initialized', 'authority-database-closed');
     if (this.database && this.openResult) return this.openResult;
-    await this.assertAuthorityDirectory();
+    await this.#assertAuthorityDirectory();
     const SQL = await this.loadSqlJs().catch(() => {
       throw authorityError('operation-failed', 'sql-js-initialize-failed');
     });
@@ -253,7 +253,7 @@ export class SqlJsProjectDatabase {
       if (bytes === null) continue;
       rawCandidates.set(kind, bytes);
       try {
-        validCandidates.push(this.validateCandidate(SQL, kind, bytes));
+        validCandidates.push(this.#validateCandidate(SQL, kind, bytes));
       } catch (error) {
         if (
           error instanceof CollabError
@@ -310,15 +310,15 @@ export class SqlJsProjectDatabase {
           requireProject: true,
         });
         selected.database.run('COMMIT');
-        await this.persistSnapshot(selected.database.export(), this.hasValidPrimary);
+        await this.#persistSnapshot(selected.database.export(), this.hasValidPrimary);
         this.generationValue = generation;
         this.hasValidPrimary = true;
       } else if (selected.kind !== 'primary') {
-        await this.persistSnapshot(selected.database.export(), this.hasValidPrimary);
+        await this.#persistSnapshot(selected.database.export(), this.hasValidPrimary);
         this.hasValidPrimary = true;
       }
     } catch {
-      throw this.blockForRecovery();
+      throw this.#blockForRecovery();
     }
 
     this.openResult = {
@@ -329,7 +329,7 @@ export class SqlJsProjectDatabase {
     return this.openResult;
   }
 
-  private validateCandidate(
+  #validateCandidate(
     sqlJs: SqlJsStatic,
     kind: SqlJsSnapshotKind,
     bytes: Uint8Array,
@@ -364,7 +364,7 @@ export class SqlJsProjectDatabase {
     }
   }
 
-  private async persistSnapshot(bytes: Uint8Array, rotatePrimary: boolean): Promise<void> {
+  async #persistSnapshot(bytes: Uint8Array, rotatePrimary: boolean): Promise<void> {
     await this.snapshotStore.writeTemporary(bytes);
     if (rotatePrimary) {
       await this.snapshotStore.removeBackup();
@@ -376,7 +376,7 @@ export class SqlJsProjectDatabase {
     await this.snapshotStore.syncDirectory();
   }
 
-  private requireDatabase(): Database {
+  #requireDatabase(): Database {
     if (this.blockedError) throw this.blockedError;
     if (!this.database || this.closed) {
       throw authorityError('not-initialized', 'authority-database-not-open');
@@ -384,7 +384,7 @@ export class SqlJsProjectDatabase {
     return this.database;
   }
 
-  private notifyMutationListeners(generation: number): void {
+  #notifyMutationListeners(generation: number): void {
     for (const listener of [...this.mutationListeners]) {
       try {
         listener(generation);
@@ -394,7 +394,7 @@ export class SqlJsProjectDatabase {
     }
   }
 
-  private blockForRecovery(): CollabError {
+  #blockForRecovery(): CollabError {
     this.database?.close();
     this.database = null;
     this.blockedError ??= authorityError(
@@ -404,7 +404,7 @@ export class SqlJsProjectDatabase {
     return this.blockedError;
   }
 
-  private async assertAuthorityDirectory(): Promise<void> {
+  async #assertAuthorityDirectory(): Promise<void> {
     const directoryStat = await lstat(this.authorityDirectory).catch(() => null);
     if (!directoryStat?.isDirectory() || directoryStat.isSymbolicLink()) {
       throw authorityError('database-corrupt', 'authority-directory-invalid');

@@ -210,7 +210,7 @@ export class CollabAuthorityControlRouter implements
     projectId: string,
     options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
   ) {
-    return this.executeSession(projectId, options, (session, initialSnapshot) => {
+    return this.#executeSession(projectId, options, (session, initialSnapshot) => {
       if (options?.signal?.aborted) return Promise.reject(new CollabError({ code: 'cancelled' }));
       return initialSnapshot === undefined
         ? session.control.readSnapshot(projectId, options)
@@ -243,7 +243,7 @@ export class CollabAuthorityControlRouter implements
     input: CollabAuthorityMembershipOperationMap[Operation]['input'],
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityMembershipOperationMap[Operation]['result']> {
-    return this.executeMembership(input.projectId, options, control => (
+    return this.#executeMembership(input.projectId, options, control => (
       control.membership(operation, input, options)
     ));
   }
@@ -268,15 +268,15 @@ export class CollabAuthorityControlRouter implements
     options: CollabOperationOptions | undefined,
     operation: (control: CollabAuthorityControlPort) => Promise<T>,
   ): Promise<T> {
-    return this.executeSession(projectId, options, session => operation(session.control));
+    return this.#executeSession(projectId, options, session => operation(session.control));
   }
 
-  private executeMembership<T>(
+  #executeMembership<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
     operation: (control: CollabAuthorityMembershipControlPort) => Promise<T>,
   ): Promise<T> {
-    return this.executeSession(projectId, options, session => {
+    return this.#executeSession(projectId, options, session => {
       if (session.authorityKind !== 'lan' || session.membership?.authorityKind !== 'lan') {
         throw routerError('authority-session-membership-control-unavailable');
       }
@@ -284,7 +284,7 @@ export class CollabAuthorityControlRouter implements
     });
   }
 
-  private async executeSession<T>(
+  async #executeSession<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
     operation: (

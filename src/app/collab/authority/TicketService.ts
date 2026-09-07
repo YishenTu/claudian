@@ -212,7 +212,7 @@ export class TicketService {
     }
     const cursor = decodeCursor(request.cursor);
     return this.database.read(connection => {
-      this.requireActor(connection, request.projectId, actorMemberId);
+      this.#requireActor(connection, request.projectId, actorMemberId);
       const rows = this.tickets.list(connection, {
         cursor,
         limit: limit + 1,
@@ -240,7 +240,7 @@ export class TicketService {
     request: ResolveTicketNumberRequest,
   ): Promise<ResolveTicketNumberResponse> {
     return this.database.read(connection => {
-      this.requireActor(connection, request.projectId, actorMemberId);
+      this.#requireActor(connection, request.projectId, actorMemberId);
       return { ticketId: this.tickets.findByNumber(connection, request.ticketNumber)?.id ?? null };
     });
   }
@@ -251,7 +251,7 @@ export class TicketService {
     ticketId: string,
   ): Promise<CollabTicketDetail> {
     return this.database.read(connection => {
-      this.requireActor(connection, projectId, actorMemberId);
+      this.#requireActor(connection, projectId, actorMemberId);
       const detail = this.tickets.detail(connection, ticketId);
       if (!detail) throw ticketError('ticket-not-found', 'ticket-detail-missing');
       return detail;
@@ -274,7 +274,7 @@ export class TicketService {
     }
     const cursor = decodeAuthorityKeysetCursor(query.cursor, 'ticket-comment-cursor-invalid');
     return this.database.read(connection => {
-      this.requireActor(connection, projectId, actorMemberId);
+      this.#requireActor(connection, projectId, actorMemberId);
       if (!this.tickets.find(connection, ticketId)) {
         throw ticketError('ticket-not-found', 'ticket-detail-missing');
       }
@@ -305,7 +305,7 @@ export class TicketService {
     }
     const cursor = decodeAuthorityKeysetCursor(query.cursor, 'ticket-relation-cursor-invalid');
     return this.database.read(connection => {
-      this.requireActor(connection, projectId, actorMemberId);
+      this.#requireActor(connection, projectId, actorMemberId);
       if (!this.tickets.find(connection, ticketId)) {
         throw ticketError('ticket-not-found', 'ticket-detail-missing');
       }
@@ -330,7 +330,7 @@ export class TicketService {
       CLAUDIAN_COLLAB_LIMITS.maxTicketBodyBytes,
       'ticket-body',
     );
-    return this.mutateIdempotently(
+    return this.#mutateIdempotently(
       actorMemberId,
       request.projectId,
       'create-ticket',
@@ -350,7 +350,7 @@ export class TicketService {
           createdAt,
           ticketId: detail.ticket.id,
         });
-        this.appendEvent(connection, actor.memberId, createdAt, 'ticket.created', detail.ticket.id);
+        this.#appendEvent(connection, actor.memberId, createdAt, 'ticket.created', detail.ticket.id);
         return detail;
       },
     );
@@ -366,7 +366,7 @@ export class TicketService {
       CLAUDIAN_COLLAB_LIMITS.maxTicketBodyBytes,
       'ticket-body',
     );
-    return this.mutateIdempotently(
+    return this.#mutateIdempotently(
       actorMemberId,
       request.projectId,
       'update-ticket',
@@ -380,13 +380,13 @@ export class TicketService {
       }),
       storedSummary,
       (connection, actor, updatedAt) => {
-        const current = this.requireTicket(connection, request.ticketId);
+        const current = this.#requireTicket(connection, request.ticketId);
         if (actor.role !== 'manager' && current.ticket.authorMemberId !== actor.memberId) {
           throw ticketError('authorization-denied', 'ticket-edit-denied');
         }
-        this.requireRevision(current.ticket, request.expectedRevision);
+        this.#requireRevision(current.ticket, request.expectedRevision);
         if (current.ticket.title === title && current.body === body) return current.ticket;
-        this.requireNoIncompleteAcceptance(connection, current.ticket.id);
+        this.#requireNoIncompleteAcceptance(connection, current.ticket.id);
         const updated = this.tickets.updateContent(connection, {
           body,
           expectedRevision: request.expectedRevision,
@@ -402,7 +402,7 @@ export class TicketService {
           createdAt: updatedAt,
           ticketId: updated.id,
         });
-        this.appendEvent(connection, actor.memberId, updatedAt, 'ticket.updated', updated.id);
+        this.#appendEvent(connection, actor.memberId, updatedAt, 'ticket.updated', updated.id);
         return updated;
       },
     );
@@ -417,7 +417,7 @@ export class TicketService {
       CLAUDIAN_COLLAB_LIMITS.maxTicketCommentBytes,
       'ticket-comment',
     );
-    return this.mutateIdempotently(
+    return this.#mutateIdempotently(
       actorMemberId,
       request.projectId,
       'comment-ticket',
@@ -434,8 +434,8 @@ export class TicketService {
         };
       },
       (connection, actor, createdAt) => {
-        const current = this.requireTicket(connection, request.ticketId).ticket;
-        this.requireNoIncompleteAcceptance(connection, current.id);
+        const current = this.#requireTicket(connection, request.ticketId).ticket;
+        this.#requireNoIncompleteAcceptance(connection, current.id);
         if (current.commentCount >= CLAUDIAN_COLLAB_LIMITS.maxTicketComments) {
           throw ticketError('quota-exceeded', 'ticket-comment-limit');
         }
@@ -452,7 +452,7 @@ export class TicketService {
           createdAt,
           ticketId: request.ticketId,
         });
-        this.appendEvent(
+        this.#appendEvent(
           connection,
           actor.memberId,
           createdAt,
@@ -468,22 +468,22 @@ export class TicketService {
     actorMemberId: CollabMemberId,
     request: ChangeTicketStatusRequest,
   ): Promise<CollabTicketSummary> {
-    return this.changeStatus(actorMemberId, request, 'closed');
+    return this.#changeStatus(actorMemberId, request, 'closed');
   }
 
   reopen(
     actorMemberId: CollabMemberId,
     request: ChangeTicketStatusRequest,
   ): Promise<CollabTicketSummary> {
-    return this.changeStatus(actorMemberId, request, 'open');
+    return this.#changeStatus(actorMemberId, request, 'open');
   }
 
-  private changeStatus(
+  #changeStatus(
     actorMemberId: CollabMemberId,
     request: ChangeTicketStatusRequest,
     status: 'open' | 'closed',
   ): Promise<CollabTicketSummary> {
-    return this.mutateIdempotently(
+    return this.#mutateIdempotently(
       actorMemberId,
       request.projectId,
       'change-ticket-status',
@@ -495,8 +495,8 @@ export class TicketService {
       }),
       storedSummary,
       (connection, actor, updatedAt) => {
-        const current = this.requireTicket(connection, request.ticketId).ticket;
-        this.requireRevision(current, request.expectedRevision);
+        const current = this.#requireTicket(connection, request.ticketId).ticket;
+        this.#requireRevision(current, request.expectedRevision);
         if (
           actor.role !== 'manager'
           && current.authorMemberId !== actor.memberId
@@ -504,8 +504,8 @@ export class TicketService {
           throw ticketError('authorization-denied', 'ticket-status-denied');
         }
         if (current.status === status) return current;
-        this.requireNoIncompleteAcceptance(connection, current.id);
-        if (status === 'open' && this.ticketsHasPendingResolve(connection, current.id)) {
+        this.#requireNoIncompleteAcceptance(connection, current.id);
+        if (status === 'open' && this.#ticketsHasPendingResolve(connection, current.id)) {
           throw ticketError('stale-ticket', 'ticket-pending-resolve-reopen');
         }
         const updated = this.tickets.changeStatus(connection, {
@@ -518,13 +518,13 @@ export class TicketService {
         if (!updated || updated.revision !== request.expectedRevision + 1) {
           throw ticketError('stale-ticket', 'ticket-status-cas-failed');
         }
-        this.appendEvent(connection, actor.memberId, updatedAt, 'ticket.updated', updated.id);
+        this.#appendEvent(connection, actor.memberId, updatedAt, 'ticket.updated', updated.id);
         return updated;
       },
     );
   }
 
-  private async mutateIdempotently<T>(
+  async #mutateIdempotently<T>(
     actorMemberId: CollabMemberId,
     projectId: string,
     operationKind: CollabOperationKind,
@@ -544,7 +544,7 @@ export class TicketService {
       requestFingerprint,
     };
     const initial = await this.database.read(connection => {
-      this.requireActor(connection, projectId, actorMemberId);
+      this.#requireActor(connection, projectId, actorMemberId);
       return this.idempotency.find<unknown>(connection, idempotencyInput);
     });
     if (initial) return decode(initial.response);
@@ -552,7 +552,7 @@ export class TicketService {
     const result = await this.database.mutate(connection => {
       const replay = this.idempotency.find<unknown>(connection, idempotencyInput);
       if (replay) return decode(replay.response);
-      const actor = this.requireActor(connection, projectId, actorMemberId);
+      const actor = this.#requireActor(connection, projectId, actorMemberId);
       const response = mutation(connection, actor, createdAt);
       const stored = this.idempotency.store(connection, {
         ...idempotencyInput,
@@ -564,7 +564,7 @@ export class TicketService {
     return result.value;
   }
 
-  private requireActor(
+  #requireActor(
     connection: AuthorityDatabaseConnection,
     projectId: string,
     memberId: CollabMemberId,
@@ -580,7 +580,7 @@ export class TicketService {
     return { memberId, role };
   }
 
-  private requireTicket(
+  #requireTicket(
     connection: AuthorityDatabaseConnection,
     ticketId: string,
   ): CollabTicketDetail {
@@ -589,13 +589,13 @@ export class TicketService {
     return ticket;
   }
 
-  private requireRevision(ticket: CollabTicketSummary, expectedRevision: number): void {
+  #requireRevision(ticket: CollabTicketSummary, expectedRevision: number): void {
     if (ticket.revision !== expectedRevision) {
       throw ticketError('stale-ticket', 'ticket-revision-changed');
     }
   }
 
-  private requireNoIncompleteAcceptance(
+  #requireNoIncompleteAcceptance(
     connection: AuthorityDatabaseConnection,
     ticketId: string,
   ): void {
@@ -607,7 +607,7 @@ export class TicketService {
     }
   }
 
-  private ticketsHasPendingResolve(
+  #ticketsHasPendingResolve(
     connection: AuthorityDatabaseConnection,
     ticketId: string,
   ): boolean {
@@ -619,7 +619,7 @@ export class TicketService {
     ) !== null;
   }
 
-  private appendEvent(
+  #appendEvent(
     connection: AuthorityDatabaseConnection,
     actorMemberId: CollabMemberId,
     createdAt: string,

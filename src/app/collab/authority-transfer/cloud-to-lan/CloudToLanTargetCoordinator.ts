@@ -120,7 +120,7 @@ function assertTargetStatus(
 export class CloudToLanTargetCoordinator {
   constructor(private readonly options: CloudToLanTargetCoordinatorOptions) {}
 
-  private assertOwnedRecord(record: AuthorityTransferRecord): void {
+  #assertOwnedRecord(record: AuthorityTransferRecord): void {
     if (record.ownerInstallationKey !== this.options.installationKey) {
       throw targetError('host-installation-recovery-owner-mismatch');
     }
@@ -132,7 +132,7 @@ export class CloudToLanTargetCoordinator {
   ): Promise<CollabAuthorityTransferStatus> {
     const handle = decodeCloudToLanTransferHandle(input);
     const entry = await this.options.persistence.loadCloudToLanTargetEntry(handle.projectId);
-    this.assertPreparedHandle(entry, handle);
+    this.#assertPreparedHandle(entry, handle);
     if (entry.phase === 'handed-off') {
       const record = await this.options.persistence.load(handle.projectId);
       if (
@@ -142,7 +142,7 @@ export class CloudToLanTargetCoordinator {
         || record.operationIntentId !== handle.operationIntentId
         || record.transferId !== handle.transferId
       ) throw targetError('cloud-to-lan-target-successor-mismatch');
-      return this.resumeRecord(record, options, entry.selectedTargetMemberId);
+      return this.#resumeRecord(record, options, entry.selectedTargetMemberId);
     }
     const proposed = await this.options.cloud.authorityTransfer(
       'getProjectAuthorityTransfer',
@@ -177,7 +177,7 @@ export class CloudToLanTargetCoordinator {
       entry,
       record,
     );
-    return this.resumeRecord(persisted, options, handle.selectedTargetMemberId);
+    return this.#resumeRecord(persisted, options, handle.selectedTargetMemberId);
   }
 
   async resume(
@@ -188,7 +188,7 @@ export class CloudToLanTargetCoordinator {
     if (!record || record.localRole !== 'target') {
       throw targetError('cloud-to-lan-record-missing');
     }
-    this.assertOwnedRecord(record);
+    this.#assertOwnedRecord(record);
     const targetEntry = await this.options.persistence.loadCloudToLanTargetEntry(projectId);
     if (
       !targetEntry
@@ -198,10 +198,10 @@ export class CloudToLanTargetCoordinator {
       || targetEntry.successor.ownerInstallationKey !== record.ownerInstallationKey
       || targetEntry.successor.transferId !== record.transferId
     ) throw targetError('cloud-to-lan-target-successor-mismatch');
-    return this.resumeRecord(record, options, targetEntry.selectedTargetMemberId);
+    return this.#resumeRecord(record, options, targetEntry.selectedTargetMemberId);
   }
 
-  private async resumeRecord(
+  async #resumeRecord(
     initial: AuthorityTransferRecord,
     options: CollabOperationOptions,
     selectedTargetMemberId?: string,
@@ -210,7 +210,7 @@ export class CloudToLanTargetCoordinator {
     let activatedThisRun = false;
     for (let step = 0; step < 16; step += 1) {
       if (record.status.state === 'cancelled') {
-        return this.completeCancellation(record, options);
+        return this.#completeCancellation(record, options);
       }
       if (record.status.state === 'completed') {
         const proof = record.status.relinquishmentProof;
@@ -227,7 +227,7 @@ export class CloudToLanTargetCoordinator {
       )) {
         if (record.status.phase === 'cancel-intent') {
           const proof = await this.options.target.invalidateStaging(record, options);
-          this.assertTargetCleanupProof(record, proof, selectedTargetMemberId);
+          this.#assertTargetCleanupProof(record, proof, selectedTargetMemberId);
           const invalidated = await this.options.cloud.authorityTransfer(
             'confirmCloudToLanTargetInvalidated',
             {
@@ -247,7 +247,7 @@ export class CloudToLanTargetCoordinator {
           continue;
         }
         await this.options.target.cancelStaging(record, options);
-        record = await this.readAndAdvance(record, options);
+        record = await this.#readAndAdvance(record, options);
         if (record.status.state === 'cancelled') {
           await this.options.persistence.completeTerminalCleanup({
             operationIntentId: record.operationIntentId,
@@ -286,12 +286,12 @@ export class CloudToLanTargetCoordinator {
             accepted,
           );
         } catch (error: unknown) {
-          record = await this.advanceAfterRejectedTargetWork(record, options, error);
+          record = await this.#advanceAfterRejectedTargetWork(record, options, error);
         }
         continue;
       }
       if (record.status.phase === 'cloud-quiesced') {
-        record = await this.readAndAdvance(record, options);
+        record = await this.#readAndAdvance(record, options);
         continue;
       }
       if (record.status.phase === 'checkpoint-captured') {
@@ -353,14 +353,14 @@ export class CloudToLanTargetCoordinator {
             options,
           );
           await this.options.persistence.acknowledgeClaimBatch(receipt);
-          record = await this.readAndAdvance(record, options);
+          record = await this.#readAndAdvance(record, options);
         } catch (error: unknown) {
-          record = await this.advanceAfterRejectedTargetWork(record, options, error);
+          record = await this.#advanceAfterRejectedTargetWork(record, options, error);
         }
         continue;
       }
       if (record.status.phase === 'target-staged' || record.status.phase === 'claims-retained') {
-        record = await this.readAndAdvance(record, options);
+        record = await this.#readAndAdvance(record, options);
         continue;
       }
       if (record.status.phase === 'cloud-relinquished') {
@@ -394,7 +394,7 @@ export class CloudToLanTargetCoordinator {
         if (!proof) throw targetError('cloud-to-lan-relinquishment-proof-missing');
         await this.options.target.activate(record, proof, options);
         activatedThisRun = true;
-        record = await this.readAndAdvance(record, options);
+        record = await this.#readAndAdvance(record, options);
         continue;
       }
       throw targetError('cloud-to-lan-phase-unhandled');
@@ -402,7 +402,7 @@ export class CloudToLanTargetCoordinator {
     throw targetError('cloud-to-lan-recovery-did-not-converge');
   }
 
-  private assertPreparedHandle(
+  #assertPreparedHandle(
     entry: CloudToLanTargetEntryRecord | null,
     handle: CloudToLanTransferHandle,
   ): asserts entry is CloudToLanTargetEntryRecord {
@@ -417,7 +417,7 @@ export class CloudToLanTargetCoordinator {
     }
   }
 
-  private assertTargetCleanupProof(
+  #assertTargetCleanupProof(
     record: AuthorityTransferRecord,
     proof: CollabCloudToLanTargetCleanupProof,
     selectedTargetMemberId?: string,
@@ -448,7 +448,7 @@ export class CloudToLanTargetCoordinator {
     ) throw targetError('cloud-to-lan-target-cleanup-proof-mismatch');
   }
 
-  private async completeCancellation(
+  async #completeCancellation(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
@@ -462,7 +462,7 @@ export class CloudToLanTargetCoordinator {
     return record.status;
   }
 
-  private readStatus(
+  #readStatus(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
@@ -472,14 +472,14 @@ export class CloudToLanTargetCoordinator {
     }, options);
   }
 
-  private async readAndAdvance(
+  async #readAndAdvance(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<AuthorityTransferRecord> {
     const next = await advanceThroughObservedAuthorityStatus(
       this.options.persistence,
       record,
-      await this.readStatus(record, options),
+      await this.#readStatus(record, options),
     );
     if (next.status.phase === record.status.phase) {
       throw targetError('cloud-to-lan-authority-progress-pending');
@@ -487,13 +487,13 @@ export class CloudToLanTargetCoordinator {
     return next;
   }
 
-  private async advanceAfterRejectedTargetWork(
+  async #advanceAfterRejectedTargetWork(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
     rejected: unknown,
   ): Promise<AuthorityTransferRecord> {
     try {
-      return await this.readAndAdvance(record, options);
+      return await this.#readAndAdvance(record, options);
     } catch {
       throw rejected;
     }

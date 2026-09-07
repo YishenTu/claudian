@@ -34,7 +34,7 @@ export class InstructionModeManager {
 
     const text = this.inputEl.value;
     if (text === '') {
-      this.exitMode();
+      this.#exitMode();
     } else {
       this.state.rawInstruction = text;
     }
@@ -60,7 +60,7 @@ export class InstructionModeManager {
   }
 
   /** Exits instruction mode, restoring original state. */
-  private exitMode(): void {
+  #exitMode(): void {
     const wrapper = this.callbacks.getInputWrapper();
     if (wrapper) {
       wrapper.removeClass('claudian-input-instruction-mode');
@@ -125,13 +125,13 @@ export class InstructionModeManager {
   /** Cancels instruction mode and clears input. */
   private cancel(): void {
     this.inputEl.value = '';
-    this.exitMode();
+    this.#exitMode();
   }
 
   /** Clears the input and resets state (called after successful submission). */
   clear(): void {
     this.inputEl.value = '';
-    this.exitMode();
+    this.#exitMode();
   }
 
   /** Cleans up event listeners. */

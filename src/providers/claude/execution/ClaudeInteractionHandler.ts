@@ -47,7 +47,7 @@ export class ClaudeInteractionHandler {
       };
     }
 
-    const interactionId = this.getInteractionId(options.toolUseID);
+    const interactionId = this.#getInteractionId(options.toolUseID);
     if (this.pendingInteractionIds.has(interactionId)) {
       return {
         behavior: 'deny',
@@ -170,7 +170,7 @@ export class ClaudeInteractionHandler {
     this.pendingInteractionIds.clear();
   }
 
-  private getInteractionId(nativeToolUseId: string): string {
+  #getInteractionId(nativeToolUseId: string): string {
     return `claude:${this.deps.sessionInstanceId}:${nativeToolUseId}`;
   }
 }

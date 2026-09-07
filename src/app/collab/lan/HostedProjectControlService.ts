@@ -348,7 +348,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ListRequestCommentsRequest,
   ): Promise<CollabCommentPage> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.requests.readComments(
       actor,
       request.projectId,
@@ -364,7 +364,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: UpdateMyRequestMetadataRequest,
   ): Promise<UpdateMyRequestMetadataResponse> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.requests.updateMetadata(actor, request);
   }
 
@@ -372,7 +372,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ResolveTicketNumberRequest,
   ): Promise<ResolveTicketNumberResponse> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.resolveNumber(actor, request);
   }
 
@@ -380,7 +380,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ListTicketsRequest,
   ): Promise<CollabTicketPage> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.list(actor, request);
   }
 
@@ -388,7 +388,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ListTicketCommentsRequest,
   ): Promise<CollabTicketCommentPage> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.listComments(
       actor,
       request.projectId,
@@ -404,7 +404,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ListTicketAcceptedRelationsRequest,
   ): Promise<CollabTicketAcceptedRelationPage> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.listAcceptedRelations(
       actor,
       request.projectId,
@@ -421,7 +421,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     projectId: string,
     ticketId: string,
   ): Promise<CollabTicketDetail> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.read(actor, projectId, ticketId);
   }
 
@@ -429,7 +429,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: CreateTicketRequest,
   ) {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return { ticket: await this.tickets.create(actor, request) };
   }
 
@@ -437,7 +437,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: UpdateTicketContentRequest,
   ) {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return { ticket: await this.tickets.updateContent(actor, request) };
   }
 
@@ -445,7 +445,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: CreateTicketCommentRequest,
   ): Promise<CreateTicketCommentResponse> {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return this.tickets.comment(actor, request);
   }
 
@@ -453,7 +453,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ChangeTicketStatusRequest,
   ) {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return { ticket: await this.tickets.close(actor, request) };
   }
 
@@ -461,7 +461,7 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: ChangeTicketStatusRequest,
   ) {
-    const actor = await this.authenticateActive(memberCredential);
+    const actor = await this.#authenticateActive(memberCredential);
     return { ticket: await this.tickets.reopen(actor, request) };
   }
 
@@ -469,15 +469,15 @@ export class HostedProjectControlService implements CollabControlProjectService 
     memberCredential: string,
     request: RemoveMemberRequest,
   ): Promise<MembershipTerminationResponse> {
-    const actor = await this.authenticateAdministration(memberCredential);
+    const actor = await this.#authenticateAdministration(memberCredential);
     return this.administration.removeMember(actor, request);
   }
 
-  private async authenticateAdministration(memberCredential: string): Promise<string> {
-    return this.authenticateActive(memberCredential);
+  async #authenticateAdministration(memberCredential: string): Promise<string> {
+    return this.#authenticateActive(memberCredential);
   }
 
-  private async authenticateActive(memberCredential: string): Promise<string> {
+  async #authenticateActive(memberCredential: string): Promise<string> {
     const actor = await this.membership.authenticateMemberCredential(
       memberCredential,
       ['active'],

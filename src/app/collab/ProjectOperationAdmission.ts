@@ -67,7 +67,7 @@ export class ProjectOperationAdmission {
   }
 
   runGlobal<T>(operation: () => Promise<T>): Promise<T> {
-    return this.runAdmitted(operation);
+    return this.#runAdmitted(operation);
   }
 
   runLifecycleRecovery<T>(operation: () => Promise<T>): Promise<T> {
@@ -103,7 +103,7 @@ export class ProjectOperationAdmission {
         safeContext: { projectId, reason: 'collab-feature-project-suspended' },
       }));
     }
-    return this.runAdmitted(operation, projectId);
+    return this.#runAdmitted(operation, projectId);
   }
 
   runProjectTransition<T>(
@@ -123,19 +123,19 @@ export class ProjectOperationAdmission {
         safeContext: { projectId, reason: 'collab-feature-project-closed' },
       }));
     }
-    return this.runTracked(
+    return this.#runTracked(
       operation,
       this.transitions,
       'Collab Project transition failed.',
     );
   }
 
-  private runAdmitted<T>(
+  #runAdmitted<T>(
     operation: () => Promise<T>,
     projectId?: CollabProjectId,
   ): Promise<T> {
     if (this.closing) return Promise.reject(closingError());
-    const admitted = this.runTracked(
+    const admitted = this.#runTracked(
       operation,
       this.active,
       'Admitted Collab Project operation failed.',
@@ -155,7 +155,7 @@ export class ProjectOperationAdmission {
     return admitted;
   }
 
-  private runTracked<T>(
+  #runTracked<T>(
     operation: () => Promise<T>,
     operations: Set<Promise<unknown>>,
     failureMessage: string,

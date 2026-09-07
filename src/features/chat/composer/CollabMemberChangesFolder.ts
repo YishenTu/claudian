@@ -16,11 +16,11 @@ export class CollabMemberChangesFolder {
       inputPrefix: "Member's Changes/",
       kind: 'folder',
       label: "Member's Changes",
-      load: (query, folderSignal) => this.loadMembers(query, folderSignal),
+      load: (query, folderSignal) => this.#loadMembers(query, folderSignal),
     }];
   }
 
-  private async loadMembers(
+  async #loadMembers(
     query: string,
     signal: AbortSignal,
   ): Promise<readonly ComposerDropdownValueItem[]> {

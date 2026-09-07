@@ -93,7 +93,7 @@ export class CollabProjectLifecycleSubsystem {
       ),
     });
     this.localExit = Object.freeze<CollabLocalExitPort>({
-      leaveProject: (request, operationOptions) => this.runExclusiveWithPredecessor(
+      leaveProject: (request, operationOptions) => this.#runExclusiveWithPredecessor(
         request.projectId,
         'local-exit',
         ['manager-responsibility'],
@@ -131,12 +131,12 @@ export class CollabProjectLifecycleSubsystem {
     this.recoveryStages = [...options.recoveryStages];
     this.lifecycleRecovery = {
       close: () => this.close(),
-      resume: recoveryOptions => this.startRecovery(recoveryOptions),
+      resume: recoveryOptions => this.#startRecovery(recoveryOptions),
     };
   }
 
   registerDurableOwner(owner: CollabProjectLifecycleDurableOwner): void {
-    this.assertRegistrationOpen();
+    this.#assertRegistrationOpen();
     if (!owner.name || this.durableOwners.has(owner.name)) {
       throw new Error('Collab lifecycle durable owner is already registered');
     }
@@ -144,7 +144,7 @@ export class CollabProjectLifecycleSubsystem {
   }
 
   registerRecoveryStage(stage: CollabProjectLifecycleRecoveryStage): void {
-    this.assertRegistrationOpen();
+    this.#assertRegistrationOpen();
     if (!stage.name || this.recoveryStages.some(existing => existing.name === stage.name)) {
       throw new Error('Collab lifecycle recovery stage is already registered');
     }
@@ -157,7 +157,7 @@ export class CollabProjectLifecycleSubsystem {
     mode: CollabProjectLifecycleAdmissionMode,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       ownerName,
       [],
@@ -170,7 +170,7 @@ export class CollabProjectLifecycleSubsystem {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'authority-transfer',
       ['authority-transfer-claimant'],
@@ -183,7 +183,7 @@ export class CollabProjectLifecycleSubsystem {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'authority-transfer',
       ['authority-transfer-claimant'],
@@ -196,7 +196,7 @@ export class CollabProjectLifecycleSubsystem {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'cloud-management',
       ['manager-responsibility'],
@@ -210,7 +210,7 @@ export class CollabProjectLifecycleSubsystem {
     assertAuthorityTransferPredecessor: () => Promise<void>,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'cloud-management',
       ['authority-transfer'],
@@ -224,7 +224,7 @@ export class CollabProjectLifecycleSubsystem {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'cloud-management',
       ['local-exit'],
@@ -238,7 +238,7 @@ export class CollabProjectLifecycleSubsystem {
     mode: CollabProjectLifecycleAdmissionMode,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'manager-responsibility',
       ['cloud-management'],
@@ -251,7 +251,7 @@ export class CollabProjectLifecycleSubsystem {
     projectId: CollabProjectId,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.runExclusiveWithPredecessor(
+    return this.#runExclusiveWithPredecessor(
       projectId,
       'retirement',
       ['local-exit', 'manager-responsibility'],
@@ -260,7 +260,7 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
-  private runExclusiveWithPredecessor<T>(
+  #runExclusiveWithPredecessor<T>(
     projectId: CollabProjectId,
     ownerName: string,
     predecessorOwnerNames: readonly string[],
@@ -425,7 +425,7 @@ export class CollabProjectLifecycleSubsystem {
   }
 
   bindMembership(membership: CollabMembershipPort): CollabMembershipPort {
-    this.assertRegistrationOpen();
+    this.#assertRegistrationOpen();
     if (this.membershipBound) {
       throw new Error('Manager responsibility lifecycle port is already bound');
     }
@@ -449,7 +449,7 @@ export class CollabProjectLifecycleSubsystem {
       ),
       createManagerResponsibilityOffer: (request, operationOptions) => (
         request.purpose === 'manager-leave'
-          ? this.runExclusiveWithPredecessor(
+          ? this.#runExclusiveWithPredecessor(
             request.projectId,
             'manager-responsibility',
             ['cloud-management', 'local-exit'],
@@ -514,7 +514,7 @@ export class CollabProjectLifecycleSubsystem {
     }
   }
 
-  private startRecovery(options: CollabOperationOptions = {}): Promise<void> {
+  #startRecovery(options: CollabOperationOptions = {}): Promise<void> {
     if (this.closed) {
       return Promise.reject(new CollabError({
         code: 'durable-progress-recovery-required',
@@ -556,7 +556,7 @@ export class CollabProjectLifecycleSubsystem {
     return this.closePromise;
   }
 
-  private assertRegistrationOpen(): void {
+  #assertRegistrationOpen(): void {
     if (this.closed) throw new Error('Collab lifecycle subsystem is closed');
     if (this.started) throw new Error('Collab lifecycle subsystem has already started');
   }

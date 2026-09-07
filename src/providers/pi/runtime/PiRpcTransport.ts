@@ -62,7 +62,7 @@ export class PiRpcTransport {
 
     this.unsubscribeLines = subscribePiJsonlLines(
       this.streams.input,
-      (line) => this.handleLine(line),
+      (line) => this.#handleLine(line),
       () => {
         if (!this.disposed) {
           this.dispose(new PiRpcTransportClosedError('Pi RPC input closed'));
@@ -150,7 +150,7 @@ export class PiRpcTransport {
       });
 
       try {
-        this.sendRaw({ id, type: commandType, ...payload });
+        this.#sendRaw({ id, type: commandType, ...payload });
       } catch (error) {
         this.pending.delete(id);
         cleanup();
@@ -166,7 +166,7 @@ export class PiRpcTransport {
     if (this.disposed) {
       return;
     }
-    this.sendRaw(record);
+    this.#sendRaw(record);
   }
 
   dispose(error: Error = new PiRpcTransportClosedError('Pi RPC transport disposed')): void {
@@ -179,7 +179,7 @@ export class PiRpcTransport {
     this.unsubscribeLines = undefined;
     this.unregisterClose?.();
     this.unregisterClose = undefined;
-    this.rejectAllPending(error);
+    this.#rejectAllPending(error);
     for (const listener of this.closeListeners) {
       try {
         listener(error);
@@ -191,11 +191,11 @@ export class PiRpcTransport {
     this.eventHandlers.clear();
   }
 
-  private sendRaw(record: PiRpcRecord): void {
+  #sendRaw(record: PiRpcRecord): void {
     writePiJsonl(this.streams.output, record);
   }
 
-  private handleLine(line: string): void {
+  #handleLine(line: string): void {
     if (!line.trim()) {
       return;
     }
@@ -212,7 +212,7 @@ export class PiRpcTransport {
     }
 
     if (record.type === 'response' && typeof record.id === 'string') {
-      this.handleResponse(record.id, record);
+      this.#handleResponse(record.id, record);
       return;
     }
 
@@ -221,7 +221,7 @@ export class PiRpcTransport {
     }
   }
 
-  private handleResponse(id: string, record: PiRpcRecord): void {
+  #handleResponse(id: string, record: PiRpcRecord): void {
     const pending = this.pending.get(id);
     if (!pending) {
       return;
@@ -248,7 +248,7 @@ export class PiRpcTransport {
     pending.resolve(record);
   }
 
-  private rejectAllPending(error: Error): void {
+  #rejectAllPending(error: Error): void {
     for (const pending of this.pending.values()) {
       pending.cleanup();
       pending.reject(error);

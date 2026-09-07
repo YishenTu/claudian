@@ -313,12 +313,12 @@ export class SlashCommandSettings {
     this.app = app;
     this.containerEl = containerEl;
     this.repository = repository;
-    void this.loadAndRender();
+    void this.#loadAndRender();
   }
 
-  private async loadAndRender(): Promise<void> {
+  async #loadAndRender(): Promise<void> {
     if (!this.repository) {
-      this.renderUnavailable();
+      this.#renderUnavailable();
       return;
     }
 
@@ -326,7 +326,7 @@ export class SlashCommandSettings {
     this.render();
   }
 
-  private renderUnavailable(): void {
+  #renderUnavailable(): void {
     this.containerEl.empty();
     const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
     emptyEl.setText('Claude command catalog is unavailable.');
@@ -345,7 +345,7 @@ export class SlashCommandSettings {
       attr: { 'aria-label': 'Add' },
     });
     setIcon(addBtn, 'plus');
-    addBtn.addEventListener('click', () => this.openCommandModal(null));
+    addBtn.addEventListener('click', () => this.#openCommandModal(null));
 
     if (this.commands.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
@@ -356,11 +356,11 @@ export class SlashCommandSettings {
     const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
 
     for (const cmd of this.commands) {
-      this.renderCommandItem(listEl, cmd);
+      this.#renderCommandItem(listEl, cmd);
     }
   }
 
-  private renderCommandItem(listEl: HTMLElement, cmd: ProviderCommandEntry): void {
+  #renderCommandItem(listEl: HTMLElement, cmd: ProviderCommandEntry): void {
     const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
 
     const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
@@ -392,7 +392,7 @@ export class SlashCommandSettings {
         attr: { 'aria-label': 'Edit' },
       });
       setIcon(editBtn, 'pencil');
-      editBtn.addEventListener('click', () => this.openCommandModal(cmd));
+      editBtn.addEventListener('click', () => this.#openCommandModal(cmd));
     }
 
     if (!isSkillEntry(cmd) && cmd.isEditable) {
@@ -404,7 +404,7 @@ export class SlashCommandSettings {
       convertBtn.addEventListener('click', () => {
         void (async (): Promise<void> => {
         try {
-          await this.transformToSkill(cmd);
+          await this.#transformToSkill(cmd);
         } catch {
           new Notice('Failed to convert to skill');
         }
@@ -421,7 +421,7 @@ export class SlashCommandSettings {
       deleteBtn.addEventListener('click', () => {
         void (async (): Promise<void> => {
         try {
-          await this.deleteCommand(cmd);
+          await this.#deleteCommand(cmd);
         } catch {
           const label = isSkillEntry(cmd) ? 'skill' : 'slash command';
           new Notice(`Failed to delete ${label}`);
@@ -431,19 +431,19 @@ export class SlashCommandSettings {
     }
   }
 
-  private openCommandModal(existingCmd: ProviderCommandEntry | null): void {
+  #openCommandModal(existingCmd: ProviderCommandEntry | null): void {
     const modal = new SlashCommandModal(
       this.app,
       this.commands,
       existingCmd,
       async (cmd) => {
-        await this.saveCommand(cmd, existingCmd);
+        await this.#saveCommand(cmd, existingCmd);
       },
     );
     modal.open();
   }
 
-  private async saveCommand(cmd: ProviderCommandEntry, existing: ProviderCommandEntry | null): Promise<void> {
+  async #saveCommand(cmd: ProviderCommandEntry, existing: ProviderCommandEntry | null): Promise<void> {
     if (!this.repository) {
       return;
     }
@@ -454,28 +454,28 @@ export class SlashCommandSettings {
       await this.repository.deleteVaultEntry(existing);
     }
 
-    await this.reloadCommands();
+    await this.#reloadCommands();
 
     this.render();
     const label = isSkillEntry(cmd) ? 'Skill' : 'Slash command';
     new Notice(`${label} "/${cmd.name}" ${existing ? 'updated' : 'created'}`);
   }
 
-  private async deleteCommand(cmd: ProviderCommandEntry): Promise<void> {
+  async #deleteCommand(cmd: ProviderCommandEntry): Promise<void> {
     if (!this.repository) {
       return;
     }
 
     await this.repository.deleteVaultEntry(cmd);
 
-    await this.reloadCommands();
+    await this.#reloadCommands();
 
     this.render();
     const label = isSkillEntry(cmd) ? 'Skill' : 'Slash command';
     new Notice(`${label} "/${cmd.name}" deleted`);
   }
 
-  private async transformToSkill(cmd: ProviderCommandEntry): Promise<void> {
+  async #transformToSkill(cmd: ProviderCommandEntry): Promise<void> {
     if (!this.repository) {
       return;
     }
@@ -507,12 +507,12 @@ export class SlashCommandSettings {
     await this.repository.saveVaultEntry(skill);
     await this.repository.deleteVaultEntry(cmd);
 
-    await this.reloadCommands();
+    await this.#reloadCommands();
     this.render();
     new Notice(`Converted "/${cmd.name}" to skill`);
   }
 
-  private async reloadCommands(): Promise<void> {
+  async #reloadCommands(): Promise<void> {
     if (!this.repository) {
       this.commands = [];
       return;
@@ -522,6 +522,6 @@ export class SlashCommandSettings {
   }
 
   public refresh(): void {
-    void this.loadAndRender();
+    void this.#loadAndRender();
   }
 }
