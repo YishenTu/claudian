@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
   COLLAB_LIMITS,
+  type CollabCloudCapability,
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
   type CollabTicketDetail,
@@ -23,10 +24,11 @@ import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventClientOptions } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
 import {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -57,6 +59,27 @@ describe('CollabClientProjection', () => {
   afterEach(async () => {
     await Promise.all([...registries].map(registry => registry.close()));
     registries.clear();
+  });
+
+  it('resolves cached Ticket numbers only when online lookup is unavailable', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    control.readTicket.mockResolvedValue(ticketDetail());
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await projection.readSnapshot('project-a');
+    await projection.readTicket('project-a', 'ticket-a');
+    const request = { projectId: 'project-a', ticketNumber: ticketDetail().ticket.number };
+    control.resolveTicketNumber.mockResolvedValue({ ticketId: null });
+    await expect(projection.resolveTicketNumber(request)).resolves.toEqual({ ticketId: null });
+
+    const unavailable = new CollabError({ code: 'endpoint-unreachable' });
+    control.resolveTicketNumber.mockRejectedValue(unavailable);
+    await expect(projection.resolveTicketNumber(request)).resolves.toEqual({ ticketId: 'ticket-a' });
+    await expect(projection.resolveTicketNumber({ ...request, ticketNumber: 999 }))
+      .rejects.toBe(unavailable);
+    const denied = new CollabError({ code: 'authorization-denied' });
+    control.resolveTicketNumber.mockRejectedValue(denied);
+    await expect(projection.resolveTicketNumber(request)).rejects.toBe(denied);
   });
 
   it('coalesces online snapshot reads and durably projects cache plus event cursor', async () => {
@@ -473,6 +496,68 @@ describe('CollabClientProjection', () => {
     await expect(offline.readTicketPage('project-a', 'ticket-a')).rejects.toBe(offlineFailure);
   });
 
+  it('restores a complete Ticket larger than a wire comment page from durable cache', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    await store.saveMembership(cloudMembership());
+    const completeDetail = ticketDetailWithComments(10);
+    const expected = {
+      ...completeDetail,
+      comments: {
+        comments: completeDetail.comments.comments.map(comment => ({
+          ...comment,
+          body: 'x'.repeat(16 * 1024),
+        })),
+      },
+    };
+    let online = true;
+    const request: CloudAuthorityHttpTransport = async input => {
+      if (!online) throw new CollabError({ code: 'endpoint-unreachable' });
+      if (input.method === 'GET') return cloudCapabilities(['tickets']);
+      const operation = input.url.split('/').at(-1);
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+      const data = operation === 'getTicket'
+        ? {
+          ...expected,
+          comments: { comments: expected.comments.comments.slice(0, 6), nextCursor: 'six' },
+        }
+        : { comments: expected.comments.comments.slice(6) };
+      return {
+        body: collabCloudSuccessEnvelope(
+          (input.body as { readonly requestId: string }).requestId,
+          data,
+        ),
+        contentType: 'application/json',
+        status: 200,
+      };
+    };
+    const sessions = new CollabProjectWorkSessionRegistry();
+    registries.add(sessions);
+    const authoritySessions = new CollabAuthoritySessionFactory([
+      new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+    ]);
+    const control = new CollabAuthorityControlRouter(store, sessions, authoritySessions);
+    const projection = new CollabClientProjection(store, control, { authoritySessions, sessions });
+    const snapshot = await projection.readSnapshot('project-a');
+    await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toEqual({
+      detail: expected,
+      source: 'online',
+      stale: false,
+    });
+
+    online = false;
+
+    await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toEqual({
+      detail: expected,
+      source: 'cache',
+      stale: true,
+    });
+    await expect(projection.readSnapshot('project-a')).resolves.toMatchObject({
+      snapshot: snapshot.snapshot,
+      source: 'cache',
+      stale: true,
+    });
+  });
+
   it('never falls back to cached Tickets for authorization failures', async () => {
     const store = new MemoryProjectionStore();
     const onlineControl = controlPort();
@@ -547,7 +632,7 @@ describe('CollabClientProjection', () => {
       occurredAt: CREATED_AT,
       payload: { retiredAt: CREATED_AT, retirementId: 'retirement-project-a' },
       projectId: 'project-a',
-      protocolVersion: 9,
+      protocolVersion: 10,
       sequence: 6,
     });
     await flushEvents();
@@ -967,9 +1052,9 @@ function cloudEventSessions(
   })]);
 }
 
-function cloudCapabilities(): CloudAuthorityHttpResponse {
+function cloudCapabilities(additional: readonly CollabCloudCapability[] = []): CloudAuthorityHttpResponse {
   return {
-    body: collabCloudCapabilityDocument(['project-events', 'project-snapshot'], {
+    body: collabCloudCapabilityDocument(['project-events', 'project-snapshot', ...additional], {
       maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
       maxCheckpointManifestUtf8Bytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxManifestBytes,
       maxCheckpointRepositoryBundleBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxRepositoryBundleBytes,
@@ -1062,11 +1147,11 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 5,
-      gitRemoteUrl: 'https://cloud.example.test/v5/projects/project-a/repository.git',
+      bindingVersion: 6,
+      gitRemoteUrl: 'https://cloud.example.test/v6/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 9,
+      wireVersion: 10,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -1158,6 +1243,7 @@ function controlPort(): jest.Mocked<CollabClientProjectionControlPort> {
     listTicketAcceptedRelations: jest.fn(),
     listTicketComments: jest.fn(),
     listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     readRequest: jest.fn(),
     readRequestPage: jest.fn(),
     readSnapshot: jest.fn().mockResolvedValue(snapshot()),

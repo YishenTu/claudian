@@ -813,12 +813,12 @@ describe('AuthorityTransferModule', () => {
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
-          bindingVersion: 5,
+          bindingVersion: 6,
           developmentActorId: 'member-host',
-          gitRemoteUrl: `https://cloud.example.test/v5/projects/${PROJECT_ID}/repository.git`,
+          gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test/',
-          wireVersion: 9,
+          wireVersion: 10,
         },
         createdAt: '2026-08-27T00:00:00.000Z',
         lastEventSequence: 1,

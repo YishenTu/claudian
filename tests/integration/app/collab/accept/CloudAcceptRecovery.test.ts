@@ -353,11 +353,11 @@ function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 5,
-      gitRemoteUrl: `https://cloud.example.test/v5/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 6,
+      gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 9,
+      wireVersion: 10,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

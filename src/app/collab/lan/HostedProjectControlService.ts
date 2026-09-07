@@ -1,4 +1,4 @@
-import { type AcceptRequest, type AcceptResponse, type ChangeTicketStatusRequest, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentRequest, type CreateCommentResponse, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type EnsureMyRequestRequest, type EnsureMyRequestResponse, type GetRequestRequest, type ListRequestCommentsRequest, type ListTicketAcceptedRelationsRequest, type ListTicketCommentsRequest, type ListTicketsRequest, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse, type UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import { type AcceptRequest, type AcceptResponse, type ChangeTicketStatusRequest, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentRequest, type CreateCommentResponse, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type EnsureMyRequestRequest, type EnsureMyRequestResponse, type GetRequestRequest, type ListRequestCommentsRequest, type ListTicketAcceptedRelationsRequest, type ListTicketCommentsRequest, type ListTicketsRequest, type ResolveTicketNumberRequest, type ResolveTicketNumberResponse, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse, type UpdateTicketContentRequest } from '@claudian-collab/protocol';
 
 import type {
   CollabActiveProjectRouting,
@@ -85,6 +85,10 @@ export interface HostedRequestControlPort {
 }
 
 export interface HostedTicketControlPort {
+  resolveNumber(
+    actorMemberId: CollabMemberId,
+    request: ResolveTicketNumberRequest,
+  ): Promise<ResolveTicketNumberResponse>;
   close(
     actorMemberId: CollabMemberId,
     request: ChangeTicketStatusRequest,
@@ -362,6 +366,14 @@ export class HostedProjectControlService implements CollabControlProjectService 
   ): Promise<UpdateMyRequestMetadataResponse> {
     const actor = await this.authenticateActive(memberCredential);
     return this.requests.updateMetadata(actor, request);
+  }
+
+  async resolveTicketNumber(
+    memberCredential: string,
+    request: ResolveTicketNumberRequest,
+  ): Promise<ResolveTicketNumberResponse> {
+    const actor = await this.authenticateActive(memberCredential);
+    return this.tickets.resolveNumber(actor, request);
   }
 
   async listTickets(

@@ -55,6 +55,7 @@ describe('CollabControlOperationBindings', () => {
       ['listRequestComments', ['GET', 'requests/:requestId/comments', 'active-member', 'active', 'path-and-query', 200]],
       ['ensureMyRequest', ['PUT', 'requests/mine', 'active-member', 'active', 'body', 200]],
       ['createComment', ['POST', 'requests/:requestId/comments', 'active-member', 'active', 'path-and-body', 201]],
+      ['resolveTicketNumber', ['GET', 'tickets/by-number/:ticketNumber', 'active-member', 'active', 'path', 200]],
       ['listTickets', ['GET', 'tickets', 'active-member', 'active', 'path-and-query', 200]],
       ['getTicket', ['GET', 'tickets/:ticketId', 'active-member', 'active', 'path', 200]],
       ['listTicketComments', ['GET', 'tickets/:ticketId/comments', 'active-member', 'active', 'path-and-query', 200]],

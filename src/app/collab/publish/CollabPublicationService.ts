@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import { type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import {
@@ -521,6 +522,13 @@ export class CollabPublicationService {
       projectId: request.projectId,
       requestId: request.requestId,
     }, options);
+  }
+
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<ResolveTicketNumberResponse> {
+    return this.projection.resolveTicketNumber(request, options);
   }
 
   listTickets(

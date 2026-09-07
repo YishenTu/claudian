@@ -207,10 +207,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 5,
+        bindingVersion: 6,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 9,
+        wireVersion: 10,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -249,10 +249,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 5,
+        bindingVersion: 6,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 9,
+        wireVersion: 10,
       },
       lastEventSequence: 1,
       member: {
@@ -270,11 +270,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 5 as const,
-        gitRemoteUrl: `https://cloud.example.test/v5/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 6 as const,
+        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 9 as const,
+        wireVersion: 10 as const,
       },
       member: {
         displayName: 'Host',
@@ -388,11 +388,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 5 as const,
-        gitRemoteUrl: `https://cloud.example.test/v5/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 6 as const,
+        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 9 as const,
+        wireVersion: 10 as const,
       },
       member: {
         displayName: 'Host',

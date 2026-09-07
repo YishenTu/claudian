@@ -62,6 +62,7 @@ import type {
   CollabAuthorityEventConnectionInput,
   CollabAuthorityEventInvalidation,
   CollabAuthoritySession,
+  CollabAuthoritySessionCreationOptions,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { completeRequestDetail, completeTicketDetail } from '@/app/collab/remote-authority/completeCollabDetails';
 import {
@@ -655,6 +656,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
   ) {
     return this.#updateRequest(request, idempotencyKey, options);
   }
+  resolveTicketNumber(
+    request: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[0],
+    options: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[1] = {},
+  ) { return this.execute('tickets', 'resolveTicketNumber', request, options); }
+
   listTickets(
     request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
     options: Parameters<CollabAuthorityControlPort['listTickets']>[1] = {},
@@ -713,6 +719,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       detail,
       (cursor, limit) => this.listRequestComments(projectId, requestId, { cursor, limit }, options),
       reason => controlIntegrityError(`cloud-control-${reason}`),
+      () => this.#readRequestDetail(projectId, requestId, options),
     );
   }
   readRequestPage(
@@ -731,6 +738,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       (cursor, limit) => this.listTicketComments(projectId, ticketId, { cursor, limit }, options),
       (cursor, limit) => this.listTicketAcceptedRelations(projectId, ticketId, { cursor, limit }, options),
       reason => controlIntegrityError(`cloud-control-${reason}`),
+      () => this.#readTicketDetail(projectId, ticketId, options),
     );
   }
   readTicketPage(
@@ -1089,7 +1097,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
 
   async create(
     membership: CollabLocalMembershipRecord,
-    options: CollabOperationOptions = {},
+    options: CollabOperationOptions & CollabAuthoritySessionCreationOptions = {},
   ): Promise<CollabAuthoritySession> {
     if (!isCollabLocalCloudMembership(membership)) {
       throw new TypeError('Cloud adapter requires a Cloud membership');
@@ -1128,7 +1136,8 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       headers,
     );
     try {
-      await control.readSnapshot(projectId, options);
+      const snapshot = await control.readSnapshot(projectId, options);
+      options.onInitialSnapshot?.(snapshot);
     } catch (error) {
       control.dispose();
       throw error;

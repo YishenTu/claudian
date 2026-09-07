@@ -1,4 +1,4 @@
-import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, ResolveTicketNumberRequest, ResolveTicketNumberResponse, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian-collab/protocol';
 
 import type {
   CollabControlOperationMatch,
@@ -86,6 +86,10 @@ export interface CollabControlProjectService {
     memberCredential: string,
     request: ListTicketCommentsRequest,
   ): Promise<CollabTicketCommentPage>;
+  resolveTicketNumber(
+    memberCredential: string,
+    request: ResolveTicketNumberRequest,
+  ): Promise<ResolveTicketNumberResponse>;
   listTickets(
     memberCredential: string,
     request: ListTicketsRequest,

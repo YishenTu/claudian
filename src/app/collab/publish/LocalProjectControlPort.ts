@@ -1,4 +1,4 @@
-import { type AcceptResponse, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentResponse } from '@claudian-collab/protocol';
+import { type AcceptResponse, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabMemberId, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateCommentResponse, type ResolveTicketNumberRequest, type ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 
 import type {
   CollabLocalProjectRepository,
@@ -53,6 +53,7 @@ export interface LocalProjectControlClientPort {
   listTicketAcceptedRelations: ProjectControlClient['listTicketAcceptedRelations'];
   listTicketComments: ProjectControlClient['listTicketComments'];
   listTickets: ProjectControlClient['listTickets'];
+  resolveTicketNumber: ProjectControlClient['resolveTicketNumber'];
   readSnapshot(
     projectId: string,
     memberCredential: string,
@@ -171,7 +172,9 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       projectId,
       requestId: detail.request.id,
       ...(options.signal ? { signal: options.signal } : {}),
-    }), reason => controlError('authority-integrity-error', `control-${reason}`));
+    }), reason => controlError('authority-integrity-error', `control-${reason}`), () => (
+      this.readRequestDetail(session, projectId, requestId, options)
+    ));
   }
 
   async readRequestPage(
@@ -188,6 +191,16 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     options: { readonly signal?: AbortSignal },
   ): Promise<{ readonly detail: CollabRequestDetail; readonly session: LocalProjectControlSession }> {
     const session = await this.loadSession(projectId);
+    const detail = await this.readRequestDetail(session, projectId, requestId, options);
+    return { detail, session };
+  }
+
+  private async readRequestDetail(
+    session: LocalProjectControlSession,
+    projectId: string,
+    requestId: string,
+    options: { readonly signal?: AbortSignal },
+  ): Promise<CollabRequestDetail> {
     const detail = await session.client.readRequest({
       memberCredential: session.memberCredential,
       projectId,
@@ -197,7 +210,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     if (detail.request.id !== requestId) {
       throw controlError('authority-integrity-error', 'control-request-detail-mismatch');
     }
-    return { detail, session };
+    return detail;
   }
 
   async createComment(input: {
@@ -220,6 +233,18 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       throw controlError('authority-integrity-error', 'control-comment-response-mismatch');
     }
     return { comment: response.comment };
+  }
+
+  async resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<ResolveTicketNumberResponse> {
+    const session = await this.loadSession(request.projectId);
+    return session.client.resolveTicketNumber({
+      ...request,
+      memberCredential: session.memberCredential,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
   }
 
   async listTickets(
@@ -259,6 +284,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
         ...(options.signal ? { signal: options.signal } : {}),
       }),
       reason => controlError('authority-integrity-error', `control-${reason}`),
+      () => this.readTicketDetail(session, projectId, ticketId, options),
     );
   }
 
@@ -276,6 +302,16 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     options: { readonly signal?: AbortSignal },
   ): Promise<{ readonly detail: CollabTicketDetail; readonly session: LocalProjectControlSession }> {
     const session = await this.loadSession(projectId);
+    const detail = await this.readTicketDetail(session, projectId, ticketId, options);
+    return { detail, session };
+  }
+
+  private async readTicketDetail(
+    session: LocalProjectControlSession,
+    projectId: string,
+    ticketId: string,
+    options: { readonly signal?: AbortSignal },
+  ): Promise<CollabTicketDetail> {
     const detail = await session.client.readTicket({
       memberCredential: session.memberCredential,
       projectId,
@@ -285,7 +321,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     if (detail.ticket.id !== ticketId) {
       throw controlError('authority-integrity-error', 'control-ticket-detail-mismatch');
     }
-    return { detail, session };
+    return detail;
   }
 
   async listRequestComments(

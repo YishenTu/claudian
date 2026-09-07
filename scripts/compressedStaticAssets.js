@@ -31,13 +31,13 @@ function createCompressedStaticAssetsPlugin({ root = process.cwd() } = {}) {
     setup(build) {
       build.onResolve({ filter: /^claudian:compressed-locale-catalog$/ }, () => ({
         namespace: localeCatalogNamespace,
-        path: 'non-english',
+        path: 'all',
       }));
 
       build.onLoad({ filter: /.*/, namespace: localeCatalogNamespace }, () => {
         const catalog = Object.fromEntries(
           readdirSync(localeDirectory)
-            .filter(fileName => fileName.endsWith('.json') && fileName !== 'en.json')
+            .filter(fileName => fileName.endsWith('.json'))
             .sort()
             .map(fileName => [
               path.basename(fileName, '.json'),
@@ -80,24 +80,16 @@ function createCompressedStaticAssetsPlugin({ root = process.cwd() } = {}) {
       });
 
       build.onLoad({ filter: localeFilter }, (args) => {
-        const raw = readFileSync(args.path);
-        const dictionary = JSON.parse(raw.toString('utf8'));
+        const dictionary = JSON.parse(readFileSync(args.path, 'utf8'));
         const exportNames = Object.keys(dictionary);
         if (!exportNames.every(name => /^[$A-Z_a-z][$\w]*$/.test(name))) {
           throw new Error(`Locale ${args.path} has a top-level key that cannot be exported`);
         }
         const locale = path.basename(args.path, '.json');
-        const dictionaryExpression = locale === 'en'
-          ? `JSON.parse(${decodeExpression(
-            compress(raw, zlibConstants.BROTLI_MODE_TEXT),
-          )}.toString("utf8"))`
-          : `loadCompressedLocale(${JSON.stringify(locale)})`;
         return {
           contents: [
-            locale === 'en'
-              ? 'import { brotliDecompressSync } from "node:zlib";'
-              : `import { loadCompressedLocale } from ${JSON.stringify(localeCatalogSpecifier)};`,
-            `const dictionary = ${dictionaryExpression};`,
+            `import { loadCompressedLocale } from ${JSON.stringify(localeCatalogSpecifier)};`,
+            `const dictionary = loadCompressedLocale(${JSON.stringify(locale)});`,
             ...exportNames.map(name => `const ${name} = dictionary.${name};`),
             `export { ${exportNames.join(', ')} };`,
             'export default dictionary;',

@@ -1037,6 +1037,7 @@ export class ClaudianCollabService {
       listAcceptedRelations: ticketService.listAcceptedRelations.bind(ticketService),
       listComments: ticketService.listComments.bind(ticketService),
       read: ticketService.read.bind(ticketService),
+      resolveNumber: ticketService.resolveNumber.bind(ticketService),
       reopen: (...args: Parameters<TicketService['reopen']>) => (
         mutationQueue.run(() => ticketService.reopen(...args))
       ),

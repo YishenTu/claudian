@@ -19,7 +19,7 @@ import type { CollabAuthoritySession } from '@/app/collab/remote-authority/Colla
 import type {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
-import type { CollabOperationOptions } from '@/core/collab';
+import type { CollabOperationOptions, CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabAuthorityMembershipStore {
@@ -131,6 +131,17 @@ export class CollabAuthorityControlRouter implements
     ));
   }
 
+  resolveTicketNumber(
+    request: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[0],
+    options?: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[1],
+  ) {
+    return this.execute(
+      request.projectId,
+      options,
+      control => control.resolveTicketNumber(request, options),
+    );
+  }
+
   listTickets(
     request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
     options?: Parameters<CollabAuthorityControlPort['listTickets']>[1],
@@ -199,7 +210,12 @@ export class CollabAuthorityControlRouter implements
     projectId: string,
     options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
   ) {
-    return this.execute(projectId, options, control => control.readSnapshot(projectId, options));
+    return this.executeSession(projectId, options, (session, initialSnapshot) => {
+      if (options?.signal?.aborted) return Promise.reject(new CollabError({ code: 'cancelled' }));
+      return initialSnapshot === undefined
+        ? session.control.readSnapshot(projectId, options)
+        : Promise.resolve(initialSnapshot);
+    });
   }
 
   readTicket(
@@ -271,10 +287,18 @@ export class CollabAuthorityControlRouter implements
   private async executeSession<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
-    operation: (session: CollabAuthoritySession) => Promise<T>,
+    operation: (
+      session: CollabAuthoritySession,
+      initialSnapshot?: CollabProjectSnapshot,
+    ) => Promise<T>,
   ): Promise<T> {
+    const attempt = async (): Promise<T> => {
+      let initialSnapshot: CollabProjectSnapshot | undefined;
+      const session = await this.session(projectId, snapshot => { initialSnapshot = snapshot; });
+      return operation(session, initialSnapshot);
+    };
     try {
-      return await operation(await this.session(projectId));
+      return await attempt();
     } catch (error) {
       const reconnectable = error instanceof CollabError
         && (error.group === 'connectivity' || error.code === 'operation-timeout');
@@ -283,19 +307,24 @@ export class CollabAuthorityControlRouter implements
         || options?.signal?.aborted
         || !await this.options.tryReconnect?.(projectId, options ?? {})
       ) throw error;
-      return operation(await this.session(projectId));
+      return attempt();
     }
   }
 
-  private async session(projectId: CollabProjectId): Promise<CollabAuthoritySession> {
+  private async session(
+    projectId: CollabProjectId,
+    onInitialSnapshot?: (snapshot: CollabProjectSnapshot) => void,
+  ): Promise<CollabAuthoritySession> {
     const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
     const session = await work.ensureAuthoritySession<CollabAuthoritySession>(async () => {
       const membership = await this.memberships.loadMembership(projectId);
       if (!membership || membership.project.id !== projectId) {
         throw routerError('authority-session-membership-missing');
       }
-      return this.factory.create(membership);
+      return this.factory.create(membership, { onInitialSnapshot });
     });
+    work.assertGeneration(generation);
     return session;
   }
 }

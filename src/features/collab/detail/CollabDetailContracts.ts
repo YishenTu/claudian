@@ -1,6 +1,7 @@
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
-import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabListTicketsRequest, CollabOperationOptions, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabTicketPageProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
+import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabOperationOptions, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
 import type {
   CollabConflictResolutionPanelOptions,
   CollabConflictResolutionPort,
@@ -67,10 +68,10 @@ export type CollabReviewDetailViewState =
 export interface CollabDetailViewPort
   extends CollabConflictResolutionPort, ReviewDiffSessionPort {
   isDetailAdmissionOpen(): boolean;
-  listTickets(
-    request: CollabListTicketsRequest,
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
     options?: CollabOperationOptions,
-  ): Promise<CollabResult<CollabTicketPageProjection>>;
+  ): Promise<CollabResult<ResolveTicketNumberResponse>>;
   prepareReview(
     projectId: string,
     requestId: string,

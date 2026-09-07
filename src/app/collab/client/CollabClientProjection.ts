@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import { type AcceptResponse, COLLAB_LIMITS, type CollabComment, type CollabCommentPage, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import type {
@@ -247,19 +248,19 @@ function decodeCachedTicketDetail(value: unknown): CachedTicketDetail {
     acceptedRelations: { acceptedRelations: [] },
     comments: { comments: [] },
   }));
-  const comments = rawComments.flatMap((_item, index) => {
-    if (index % COLLAB_LIMITS.maxCommentPageSize !== 0) return [];
-    return lanCollabControlOperationCodec('listTicketComments').decodeResponse(cacheEnvelope({
-      comments: rawComments.slice(index, index + COLLAB_LIMITS.maxCommentPageSize),
-    })).comments;
-  });
-  const acceptedRelations = rawRelations.flatMap((_item, index) => {
-    if (index % COLLAB_LIMITS.maxRelationsPerPage !== 0) return [];
-    return lanCollabControlOperationCodec('listTicketAcceptedRelations')
+  // A complete collection spans byte-bounded wire pages. Validate each item
+  // without reconstructing a count-sized page that could exceed its byte limit.
+  const comments = rawComments.flatMap(comment => (
+    lanCollabControlOperationCodec('listTicketComments').decodeResponse(cacheEnvelope({
+      comments: [comment],
+    })).comments
+  ));
+  const acceptedRelations = rawRelations.flatMap(relation => (
+    lanCollabControlOperationCodec('listTicketAcceptedRelations')
       .decodeResponse(cacheEnvelope({
-        acceptedRelations: rawRelations.slice(index, index + COLLAB_LIMITS.maxRelationsPerPage),
-      })).acceptedRelations;
-  });
+        acceptedRelations: [relation],
+      })).acceptedRelations
+  ));
   if (
     detail.ticket.id !== source.ticketId
     || comments.length !== detail.ticket.commentCount
@@ -413,6 +414,37 @@ export class CollabClientProjection {
           status: 'offline',
         },
       };
+    }
+  }
+
+  async resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<ResolveTicketNumberResponse> {
+    this.#assertOpen();
+    throwIfCancelled(options.signal);
+    const generation = this.#projectGeneration(request.projectId);
+    try {
+      const result = await this.#runWithRetirementFallback(
+        request.projectId,
+        () => this.control.resolveTicketNumber(request, options),
+      );
+      throwIfCancelled(options.signal);
+      this.#assertProjectGeneration(request.projectId, generation);
+      return result;
+    } catch (error) {
+      throwIfCancelled(options.signal);
+      if (!(error instanceof CollabError) || !canUseCache(error)) throw error;
+      const cache = await this.#loadCache(request.projectId);
+      throwIfCancelled(options.signal);
+      this.#assertProjectGeneration(request.projectId, generation);
+      const ticket = cache?.ticketDetails.find(
+        entry => entry.detail.ticket.number === request.ticketNumber,
+      )?.detail.ticket ?? cache?.ticketPages.flatMap(entry => entry.page.tickets).find(
+        entry => entry.number === request.ticketNumber,
+      ) ?? cache?.snapshot.ticketHighlights.find(entry => entry.number === request.ticketNumber);
+      if (!ticket) throw error;
+      return { ticketId: ticket.id };
     }
   }
 

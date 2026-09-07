@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import { type CollabAuthorityTransferStatus, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
 
 import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabProjectWorkSession';
@@ -223,6 +224,10 @@ export interface CollabPublicationPort {
     coordination: CollabCoordinationSnapshot | undefined,
     options?: CollabOperationOptions,
   ): Promise<CollabPersonalChangesInspection>;
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options?: CollabOperationOptions,
+  ): Promise<ResolveTicketNumberResponse>;
   listTickets(
     request: CollabListTicketsRequest,
     options?: CollabOperationOptions,
@@ -1468,6 +1473,20 @@ class CollabFeatureServiceCore {
     }
   }
 
+  async resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<ResolveTicketNumberResponse>> {
+    try {
+      throwIfCancelled(options.signal);
+      const value = await this.options.publication.resolveTicketNumber(request, options);
+      throwIfCancelled(options.signal);
+      return { status: 'success', value };
+    } catch (error) {
+      return this.#failureResult(error);
+    }
+  }
+
   async listTickets(
     request: CollabListTicketsRequest,
     options: CollabOperationOptions = {},
@@ -2654,6 +2673,9 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   addComment: CollabFeaturePort['addComment'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.addComment(...args))
+  );
+  resolveTicketNumber: CollabFeaturePort['resolveTicketNumber'] = (...args) => (
+    this.project(() => args[0].projectId, 'active', () => this.core.resolveTicketNumber(...args))
   );
   listTickets: CollabFeaturePort['listTickets'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.listTickets(...args))

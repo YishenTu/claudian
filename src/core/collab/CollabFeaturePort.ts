@@ -1,3 +1,4 @@
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import type { CollabAuthorityTransferStatus, CollabChangeRequest, CollabComment, CollabCommentPage, CollabGitOid, CollabIsoTimestamp, CollabMemberId, CollabOperationId, CollabProjectId, CollabRelativePath, CollabRequestId, CollabResolvingTicketExpectation, CollabTicketAcceptedRelationPage, CollabTicketComment, CollabTicketCommentPage, CollabTicketDetail, CollabTicketId, CollabTicketPage, CollabTicketStatus, CollabTicketSummary } from '@claudian-collab/protocol';
 import type { CollabImportedClaimState, CollabProjectInvitationState, CollabProjectMemberBindingState, CollabRole } from '@claudian-collab/protocol';
 
@@ -557,6 +558,7 @@ export interface CollabFeaturePort {
   prepareReview(projectId: CollabProjectId, requestId: CollabRequestId, options?: CollabOperationOptions): Promise<CollabResult<CollabRequestReview>>;
   readReviewFile(request: CollabReviewFileRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabReviewFileContent>>;
   addComment(request: CollabAddCommentRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabComment>>;
+  resolveTicketNumber(request: ResolveTicketNumberRequest, options?: CollabOperationOptions): Promise<CollabResult<ResolveTicketNumberResponse>>;
   listTickets(request: CollabListTicketsRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabTicketPageProjection>>;
   readTicket(projectId: CollabProjectId, ticketId: CollabTicketId, options?: CollabOperationOptions): Promise<CollabResult<CollabTicketDetailProjection>>;
   createTicket(request: CollabCreateTicketRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabTicketDetail>>;
