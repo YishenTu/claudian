@@ -774,26 +774,7 @@ describe('CollabDetailView', () => {
     const review = workingTreeReview();
     const port = detailPort(requestReview());
     port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: review });
-    port.listTickets.mockResolvedValue({
-      status: 'success',
-      value: {
-        page: {
-          tickets: [{
-            authorMemberId: 'member-a',
-            commentCount: 0,
-            createdAt: '2026-08-08T00:00:00.000Z',
-            id: 'ticket-a',
-            number: 17,
-            revision: 1,
-            status: 'open',
-            title: 'Preview reference',
-            updatedAt: '2026-08-08T00:00:00.000Z',
-          }],
-        },
-        source: 'online',
-        stale: false,
-      },
-    });
+    port.resolveTicketNumber.mockResolvedValue({ status: 'success', value: { ticketId: 'ticket-a' } });
     const openTicketInNewTab = jest.fn().mockResolvedValue(undefined);
     const render = MarkdownRenderer.render as jest.Mock;
     const previousRender = render.getMockImplementation();
@@ -830,10 +811,9 @@ describe('CollabDetailView', () => {
     await nextTurn();
     if (previousRender) render.mockImplementation(previousRender);
 
-    expect(port.listTickets).toHaveBeenCalledWith({
-      limit: 100,
+    expect(port.resolveTicketNumber).toHaveBeenCalledWith({
       projectId: 'project-a',
-      status: 'open',
+      ticketNumber: 17,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(openTicketInNewTab).toHaveBeenCalledWith('project-a', 'ticket-a');
   });
@@ -2111,12 +2091,12 @@ describe('CollabDetailView', () => {
     }));
     let lookupSignal: AbortSignal | undefined;
     let releaseLookup!: () => void;
-    port.listTickets.mockImplementation((_request, options) => {
+    port.resolveTicketNumber.mockImplementation((_request, options) => {
       lookupSignal = options?.signal;
       return new Promise(resolve => {
         releaseLookup = () => resolve({
           status: 'success',
-          value: { page: { tickets: [] }, source: 'online', stale: false },
+          value: { ticketId: null },
         });
       });
     });
@@ -2175,16 +2155,12 @@ describe('CollabDetailView', () => {
     });
     let lookupSignal: AbortSignal | undefined;
     let releaseLookup!: () => void;
-    port.listTickets.mockImplementation((_request, options) => {
+    port.resolveTicketNumber.mockImplementation((_request, options) => {
       lookupSignal = options?.signal;
       return new Promise(resolve => {
         releaseLookup = () => resolve({
           status: 'success',
-          value: {
-            page: { tickets: [{ ...ticketDetail().ticket, number: 99 }] },
-            source: 'online',
-            stale: false,
-          },
+          value: { ticketId: ticketDetail().ticket.id },
         });
       });
     });
@@ -2876,7 +2852,7 @@ function detailPort(review: CollabRequestReview) {
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
     createTicket: jest.fn(),
-    listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     prepareWorkingTreeReview: jest.fn(),
     preparePublicationReview: jest.fn(),
     prepareReview: jest.fn().mockResolvedValue({ status: 'success', value: review }),

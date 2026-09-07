@@ -51,6 +51,7 @@ describe('CollabFeaturePort', () => {
       readReviewFile: true,
       readPublicationReviewFile: true,
       addComment: true,
+      resolveTicketNumber: true,
       listTickets: true,
       readTicket: true,
       createTicket: true,

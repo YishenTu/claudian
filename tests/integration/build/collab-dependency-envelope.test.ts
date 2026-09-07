@@ -395,14 +395,49 @@ describe('Collab dependency envelope', () => {
     expect(bundle).not.toContain('diffs-icon-brand-github');
   });
 
-  it('shares one compressed catalog across non-English locales', () => {
+  it('shares one compressed catalog across all locales', () => {
     const compressedCatalogContributors = bundleContributors.filter(input => (
       input.includes('compressed-locale-catalog')
     ));
 
     expect(compressedCatalogContributors).toEqual([
-      'compressed-locale-catalog:non-english',
+      'compressed-locale-catalog:all',
     ]);
+  });
+
+  it('round-trips every complete locale through the production bundle', async () => {
+    const localeDirectory = path.join(root, 'src/i18n/locales');
+    const localeFiles = readdirSync(localeDirectory)
+      .filter(fileName => fileName.endsWith('.json'))
+      .sort();
+    const result = await build({
+      absWorkingDir: root,
+      bundle: true,
+      charset: 'utf8',
+      external: ['node:zlib'],
+      format: 'cjs',
+      minify: true,
+      plugins: [createCompressedStaticAssetsPlugin()],
+      stdin: {
+        contents: [
+          ...localeFiles.map((fileName, index) => (
+            `import locale${index} from './src/i18n/locales/${fileName}';`
+          )),
+          `module.exports = [${localeFiles.map((_, index) => `locale${index}`).join(',')}];`,
+        ].join('\n'),
+        resolveDir: root,
+      },
+      target: 'es2022',
+      write: false,
+    });
+    expect(result.outputFiles).toHaveLength(1);
+    const output = await minifyProductionBundle(result.outputFiles[0].text);
+    const module = { exports: [] as unknown[] };
+    Function('module', 'exports', 'require', output)(module, module.exports, require);
+
+    expect(module.exports).toEqual(localeFiles.map(fileName => (
+      JSON.parse(readFileSync(path.join(localeDirectory, fileName), 'utf8'))
+    )));
   });
 
   it('mounts Collab review through the styled Pierre custom element', () => {

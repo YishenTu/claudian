@@ -152,6 +152,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
     listTicketAcceptedRelations: jest.fn(),
     listTicketComments: jest.fn(),
     listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     readSnapshot: jest.fn<
       ReturnType<CollabControlProjectService['readSnapshot']>,
       Parameters<CollabControlProjectService['readSnapshot']>

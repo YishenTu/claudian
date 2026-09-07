@@ -97,6 +97,7 @@ export const LAN_COLLAB_CONTROL_OPERATION_CODECS = Object.freeze({
   ensureMyRequest: sharedCodec('ensureMyRequest'),
   createComment: sharedCodec('createComment'),
   listTickets: sharedCodec('listTickets'),
+  resolveTicketNumber: sharedCodec('resolveTicketNumber'),
   getTicket: sharedCodec('getTicket'),
   listTicketComments: sharedCodec('listTicketComments'),
   listTicketAcceptedRelations: sharedCodec('listTicketAcceptedRelations'),

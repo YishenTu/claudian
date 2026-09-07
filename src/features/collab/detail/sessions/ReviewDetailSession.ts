@@ -49,7 +49,7 @@ export type ReviewDetailSessionPort = Pick<
   | 'closeTicket'
   | 'confirmPublish'
   | 'createTicket'
-  | 'listTickets'
+  | 'resolveTicketNumber'
   | 'preparePublicationReview'
   | 'prepareReview'
   | 'prepareWorkingTreeReview'

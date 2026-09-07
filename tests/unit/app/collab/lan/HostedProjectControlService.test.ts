@@ -50,6 +50,7 @@ function createHostedService(
     ...overrides.administration,
   };
   const tickets: HostedTicketControlPort = {
+    resolveNumber: jest.fn(),
     close: jest.fn(),
     comment: jest.fn(),
     create: jest.fn(),

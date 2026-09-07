@@ -1033,11 +1033,11 @@ describe('LanHostCoordinator production transport', () => {
     await localProjects.saveMembership({
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 5,
-        gitRemoteUrl: `http://127.0.0.1:8787/v5/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 6,
+        gitRemoteUrl: `http://127.0.0.1:8787/v6/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud',
         serverUrl: 'http://127.0.0.1:8787/',
-        wireVersion: 9,
+        wireVersion: 10,
       },
       createdAt: existing.createdAt,
       lastEventSequence: existing.lastEventSequence,
@@ -2227,6 +2227,25 @@ describe('LanHostCoordinator production transport', () => {
       authority: { endpoint: null },
     });
   }, 30_000);
+
+  it('resolves Ticket numbers over authenticated LAN control for open, closed, and missing Tickets', async () => {
+    await coordinator.startProject(PROJECT_ID);
+    const control = new LocalProjectControlPort(localProjects);
+    const created = await control.createTicket({
+      body: 'Number lookup', projectId: PROJECT_ID, title: 'Number lookup',
+    }, 'ticket-number-lookup');
+    await expect(control.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 1 }))
+      .resolves.toEqual({ ticketId: created.ticket.id });
+    await control.closeTicket({
+      expectedRevision: 1, projectId: PROJECT_ID, ticketId: created.ticket.id,
+    }, 'ticket-number-close');
+    await expect(control.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 1 }))
+      .resolves.toEqual({ ticketId: created.ticket.id });
+    await expect(control.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 9001 }))
+      .resolves.toEqual({ ticketId: null });
+    await expect(control.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 0 }))
+      .rejects.toMatchObject({ code: 'protocol-payload-invalid' });
+  });
 
   it('traverses bounded activity pages larger than one LAN response', async () => {
     await coordinator.startProject(PROJECT_ID);

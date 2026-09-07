@@ -917,8 +917,8 @@ export default class ClaudianPlugin extends Plugin {
       createTicket: async (...args) => (
         (await this.requireCollabFeatureService()).createTicket(...args)
       ),
-      listTickets: async (...args) => (
-        (await this.requireCollabFeatureService()).listTickets(...args)
+      resolveTicketNumber: async (...args) => (
+        (await this.requireCollabFeatureService()).resolveTicketNumber(...args)
       ),
       prepareReview: async (...args) => (
         (await this.requireCollabFeatureService()).prepareReview(...args)

@@ -61,7 +61,7 @@ describe('CloudPersonalRefReader', () => {
     })).resolves.toBe('b'.repeat(40));
 
     expect(seenUrl).toBe(
-      '/operator-prefix/v5/projects/project-alpha/repository.git/info/refs?service=git-upload-pack',
+      '/operator-prefix/v6/projects/project-alpha/repository.git/info/refs?service=git-upload-pack',
     );
     expect(seenHeaders).toMatchObject({
       authorization: 'Bearer fixture-vault-credential',

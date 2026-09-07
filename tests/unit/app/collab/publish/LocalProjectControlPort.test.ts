@@ -1,6 +1,11 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import {
@@ -38,7 +43,7 @@ function membership(): CollabLocalLanMembershipRecord {
       authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:54545',
       gitRemoteUrl: 'https://192.168.1.20:54545/v1/git/project-a/repository.git',
-      hostCaCertificatePem: 'certificate',
+      hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----',
       hostCaFingerprint: 'ab'.repeat(32),
       kind: 'lan',
     },
@@ -100,6 +105,7 @@ function ticketClientMethods() {
     listTicketAcceptedRelations: jest.fn(),
     listTicketComments: jest.fn(),
     listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     readTicket: jest.fn(),
     reopenTicket: jest.fn(),
     updateRequestMetadata: jest.fn(),
@@ -109,8 +115,38 @@ function ticketClientMethods() {
 }
 
 describe('LocalProjectControlPort', () => {
+  let vaultRoot: string;
+  beforeEach(async () => { vaultRoot = await mkdtemp(path.join(tmpdir(), 'local-control-port-')); });
+  afterEach(async () => { await rm(vaultRoot, { recursive: true, force: true }); });
+
+  it('resolves Ticket numbers through the captured LAN membership and canonical response codec', async () => {
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(membership());
+    const signal = new AbortController().signal;
+    const observed: unknown[] = [];
+    const control = new LocalProjectControlPort(projects, {
+      createClient: trust => new ProjectControlClient({
+        requestWithMember: async (request, credential, options) => {
+          observed.push({ credential, endpoint: trust.endpoint, path: request.path, signal: options?.signal });
+          return request.decode(response({ ticketId: request.path.endsWith('/9001') ? null : 'ticket-target' }));
+        },
+      }),
+    });
+    await expect(control.resolveTicketNumber({ projectId: 'project-a', ticketNumber: 123 }, { signal }))
+      .resolves.toEqual({ ticketId: 'ticket-target' });
+    await expect(control.resolveTicketNumber({ projectId: 'project-a', ticketNumber: 9001 }, { signal }))
+      .resolves.toEqual({ ticketId: null });
+    expect(observed).toEqual([123, 9001].map(ticketNumber => ({
+      credential: membership().member.credential,
+      endpoint: membership().authority.endpoint,
+      path: `/v9/projects/project-a/tickets/by-number/${ticketNumber}`,
+      signal,
+    })));
+  });
+
   it('keeps complete Request continuations on the captured membership and cancellation signal', async () => {
-    let currentMembership = membership();
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(membership());
     const signal = new AbortController().signal;
     const firstComment = {
       authorMemberId: 'member-a',
@@ -126,15 +162,17 @@ describe('LocalProjectControlPort', () => {
       path: string;
       signal?: AbortSignal;
     }> = [];
-    const port = new LocalProjectControlPort({ loadMembership: async () => currentMembership }, {
+    const port = new LocalProjectControlPort(projects, {
       createClient: trust => new ProjectControlClient({
         requestWithMember: async (input, credential, options) => {
           requests.push({ credential, endpoint: trust.endpoint, path: input.path, signal: options?.signal });
           if (requests.length === 1) {
-            currentMembership = {
+            await projects.saveMembership({
               ...membership(),
               member: { ...membership().member, credential: 'B'.repeat(43) },
-            };
+            });
+          }
+          if (!input.path.includes('/comments?')) {
             return input.decode(response({
               comments: { comments: [firstComment], nextCursor: 'request-next' },
               currentMainOid: HEAD,
@@ -155,7 +193,60 @@ describe('LocalProjectControlPort', () => {
     expect(requests.map(({ credential, endpoint, path }) => ({ credential, endpoint, path }))).toEqual([
       { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
       { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v9/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
     ]);
+  });
+
+  it('keeps Request consistency retries on the captured authority after membership replacement', async () => {
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(membership());
+    const signal = new AbortController().signal;
+    let appended = false;
+    const credentials = new Set<string>();
+    const endpoints = new Set<string>();
+    const comment = (id: string) => ({
+      authorMemberId: 'member-a',
+      body: id,
+      createdAt: CREATED_AT,
+      id,
+      requestId: 'request-a',
+    });
+    const port = new LocalProjectControlPort(projects, {
+      createClient: trust => new ProjectControlClient({
+        requestWithMember: async (input, credential, options) => {
+          options?.signal?.throwIfAborted();
+          credentials.add(credential);
+          endpoints.add(trust.endpoint);
+          if (input.path.includes('/comments?')) {
+            appended = true;
+            await projects.saveMembership({
+              ...membership(),
+              authority: {
+                ...membership().authority,
+                endpoint: 'https://192.168.1.21:54545',
+                gitRemoteUrl: 'https://192.168.1.21:54545/v1/git/project-a/repository.git',
+              },
+              member: { ...membership().member, credential: 'B'.repeat(43) },
+            });
+            return input.decode(response({ comments: [comment('two'), comment('three')] }));
+          }
+          return input.decode(response({
+            comments: { comments: [comment('one')], nextCursor: 'after-one' },
+            currentMainOid: HEAD,
+            request: { ...mergedRequest(), commentCount: appended ? 3 : 2 },
+            reviewedHeadOid: HEAD,
+            reviewCondition: 'clean',
+          }));
+        },
+      }),
+    });
+
+    await expect(port.readRequest('project-a', 'request-a', { signal })).resolves.toMatchObject({
+      comments: { comments: [comment('one'), comment('two'), comment('three')] },
+      request: { commentCount: 3 },
+    });
+    expect(credentials).toEqual(new Set(['A'.repeat(43)]));
+    expect(endpoints).toEqual(new Set(['https://192.168.1.20:54545']));
   });
 
   it('propagates cancellation from a complete Request continuation without returning a partial detail', async () => {

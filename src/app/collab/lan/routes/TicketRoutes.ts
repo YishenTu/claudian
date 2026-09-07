@@ -81,6 +81,19 @@ export const handleTicketRoute: CollabControlRouteHandler = async request => {
   const memberCredential = requireOperationCredential(request.authorization, match.operation);
   const ticketId = match.parameters.ticketId;
 
+  if (match.operation === 'resolveTicketNumber') {
+    const ticketNumber = match.parameters.ticketNumber;
+    if (!/^[1-9]\d*$/.test(ticketNumber) || Object.keys(request.query).length !== 0) {
+      throw routeError('ticket-number-query-invalid');
+    }
+    return {
+      data: await request.service.resolveTicketNumber(memberCredential, decode('resolveTicketNumber', {
+        projectId: request.projectId,
+        ticketNumber: Number(ticketNumber),
+      })),
+    };
+  }
+
   if (match.operation === 'listTickets') {
     return {
       data: await request.service.listTickets(memberCredential, listRequest(request)),
