@@ -418,6 +418,18 @@ describe('GrokSettingsTab', () => {
     });
   });
 
+  it('accepts a CLI path pasted with surrounding quotes', async () => {
+    const plugin = createPlugin();
+    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/my tools/grok');
+    await findSetting('CLI path').textComponents[0].onChangeCallback?.('"/my tools/grok"');
+
+    expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({
+      'device:current': '"/my tools/grok"',
+    });
+  });
+
   it('restores CLI path closure and input state after a pre-commit write failure', async () => {
     const plugin = createPlugin();
     const writeError = new Error('write failed');

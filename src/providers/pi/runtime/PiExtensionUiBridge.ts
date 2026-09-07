@@ -42,6 +42,7 @@ export class PiExtensionUiBridge {
     private readonly transport: PiRpcTransport,
     private readonly renderer: PiExtensionUiRenderer | null,
     private readonly emit?: (chunk: StreamChunk) => void,
+    private readonly admitDialog: (request: PiRpcRecord) => boolean = () => true,
   ) {}
 
   handleRequest(request: PiRpcRecord): boolean {
@@ -113,7 +114,7 @@ export class PiExtensionUiBridge {
     ) => Promise<Record<string, unknown>>,
   ): void {
     const id = getString(request.id);
-    if (!id || !this.renderer) {
+    if (!id || !this.renderer || !this.admitDialog(request)) {
       this.sendCancellation(request);
       return;
     }

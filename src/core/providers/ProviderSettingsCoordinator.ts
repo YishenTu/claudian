@@ -90,6 +90,16 @@ function normalizeProviderModel(
   return uiConfig.normalizeModelVariant(model, settings);
 }
 
+function normalizeServiceTier(
+  uiConfig: ProviderChatUIConfig,
+  settings: Record<string, unknown>,
+): void {
+  const toggle = uiConfig.getServiceTierToggle?.(settings) ?? null;
+  settings.serviceTier = toggle
+    ? (toggle.isActive ? toggle.activeValue : toggle.inactiveValue)
+    : 'default';
+}
+
 function normalizeModelDependentSettings(
   uiConfig: ProviderChatUIConfig,
   settings: Record<string, unknown>,
@@ -111,25 +121,7 @@ function normalizeModelDependentSettings(
     );
   }
 
-  const serviceTierToggle = uiConfig.getServiceTierToggle?.(settings) ?? null;
-  if (!serviceTierToggle) {
-    settings.serviceTier = 'default';
-    return;
-  }
-
-  const currentServiceTier = typeof settings.serviceTier === 'string'
-    ? settings.serviceTier
-    : undefined;
-  if (currentServiceTier === 'fast') {
-    settings.serviceTier = serviceTierToggle.activeValue;
-    return;
-  }
-  if (
-    currentServiceTier !== serviceTierToggle.inactiveValue
-    && currentServiceTier !== serviceTierToggle.activeValue
-  ) {
-    settings.serviceTier = serviceTierToggle.inactiveValue;
-  }
+  normalizeServiceTier(uiConfig, settings);
 }
 
 export class ProviderSettingsCoordinator {

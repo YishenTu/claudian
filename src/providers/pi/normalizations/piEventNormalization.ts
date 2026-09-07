@@ -58,6 +58,7 @@ export function getPiTerminalErrorMessage(event: Record<string, unknown>): strin
 
   const terminalEvent = getNestedRecord(event, 'assistantMessageEvent')
     ?? getNestedRecord(event, 'assistant_message_event')
+    ?? getNestedRecord(event, 'message')
     ?? event;
   const records = terminalEvent === event ? [event] : [terminalEvent, event];
   const stopReason = getStringField(records, ['stopReason', 'stop_reason']);

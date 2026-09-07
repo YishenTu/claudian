@@ -57,8 +57,8 @@ class FakeKernel implements PiExecutionKernel {
     this.callbacks.onExtensionChunk(chunk);
   }
 
-  emitExtensionRequest(request: Record<string, unknown>): void {
-    this.callbacks.onExtensionRequest(request);
+  emitExtensionRequest(request: Record<string, unknown>): boolean {
+    return this.callbacks.onExtensionRequest(request);
   }
 
   getStderrSnapshot(): string {
@@ -557,6 +557,215 @@ describe('PiExecutionBackend', () => {
     expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
   });
 
+  it('keeps one execution open across native Pi retries and commits the recovered answer', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    let settled = false;
+    void eventsPromise.then(() => {
+      settled = true;
+    });
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit (attempt 1)',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 1, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit (attempt 2)',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 2, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    harness.responses.set('get_state', {
+      leafEntryId: 'assistant-recovered',
+      parentSession: 'parent-session',
+      sessionFile: '/tmp/pi-session.jsonl',
+      sessionId: 'pi-session-1',
+    });
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      assistantMessageEvent: { text_delta: 'Recovered answer' },
+      type: 'message_update',
+    });
+    kernel.emit({
+      message: {
+        content: [{ text: 'Recovered answer', type: 'text' }],
+        role: 'assistant',
+        stopReason: 'stop',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ attempt: 2, success: true, type: 'auto_retry_end' });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({ text: 'Recovered answer' }),
+    ]);
+    expect(events.filter(event => event.type === 'notice')).toEqual([
+      expect.objectContaining({ message: 'Pi is retrying the turn.' }),
+      expect.objectContaining({ message: 'Pi is retrying the turn.' }),
+      expect.objectContaining({ message: 'Pi retry finished.' }),
+    ]);
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'execution_error',
+    }));
+    expect(events.at(-1)).toMatchObject({
+      nativeAssistantId: 'assistant-recovered',
+      nativeCheckpointId: 'assistant-recovered',
+      type: 'turn_completed',
+    });
+  });
+
+  it('surfaces a native Pi terminal error after a non-retrying agent end', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter retry budget exhausted',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      message: 'OpenRouter retry budget exhausted',
+      type: 'execution_error',
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_completed',
+    }));
+  });
+
+  it('preserves a pending native Pi error when the process exits before agent end', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter quota exceeded',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.close(new Error('Pi process exited'));
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      category: 'process-exited',
+      message: 'OpenRouter quota exceeded',
+      type: 'execution_error',
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_completed',
+    }));
+  });
+
+  it('can cancel while native Pi is waiting to retry and fences later events', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    let settled = false;
+    void eventsPromise.then(() => {
+      settled = true;
+    });
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      message: {
+        content: [],
+        errorMessage: 'OpenRouter rate limit',
+        role: 'assistant',
+        stopReason: 'error',
+      },
+      type: 'message_end',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+    kernel.emit({ attempt: 1, type: 'auto_retry_start' });
+    await flush();
+    await flush();
+    expect(settled).toBe(false);
+
+    run.cancel();
+    kernel.emit({
+      assistantMessageEvent: { text_delta: 'late recovered answer' },
+      type: 'message_update',
+    });
+    kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+
+    const events = await eventsPromise;
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+    expect(events).not.toContainEqual(expect.objectContaining({
+      text: 'late recovered answer',
+      type: 'text_delta',
+    }));
+  });
+
+  it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      context: { linkedContent: { path: 'Projects/Research' } },
+      input: [{ text: 'Inspect linked content', type: 'text' }],
+    }));
+    const eventsPromise = collect(run.events);
+    await flush();
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.cwd).toBe('/vault');
+    expect(getPromptMessages(harness.kernels[0])).toEqual([
+      'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+    ]);
+    expect(getPromptMessages(harness.kernels[0])[0]).not.toMatch(
+      /<(?:linked_note|current_note)\b/,
+    );
+  });
+
   it('launches resumed persistent sessions with their native session file', async () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-session-'));
     const sessionFile = path.join(sessionDir, 'pi-session-1.jsonl');
@@ -572,6 +781,11 @@ describe('PiExecutionBackend', () => {
       },
       vaultWorkingDirectory: sessionDir,
     }));
+    harness.responses.set('get_state', {
+      leafEntryId: 'assistant-1',
+      sessionFile,
+      sessionId: 'pi-session-1',
+    });
     harness.host.settings.providerConfigs.pi.environmentVariables =
       `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
     const run = harness.session.execute(createRequest({
@@ -591,10 +805,184 @@ describe('PiExecutionBackend', () => {
       payload: { message: 'Hello Pi' },
       type: 'prompt',
     });
+    const requestTypes = harness.kernels[0].requests.map(request => request.type);
+    expect(requestTypes.indexOf('get_state')).toBeLessThan(requestTypes.indexOf('prompt'));
     expect(harness.session.getSnapshot().providerState).toMatchObject({
       customState: 'preserved',
       sessionId: 'pi-session-1',
     });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('fails before dispatch when Pi reports a replacement for the requested session', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-mismatch-'));
+    const requestedSessionFile = path.join(sessionDir, 'session-a.jsonl');
+    const replacementSessionFile = path.join(sessionDir, 'session-b.jsonl');
+    await fs.writeFile(
+      requestedSessionFile,
+      '{"type":"session","id":"session-a"}\n',
+    );
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'session-a',
+        providerState: {
+          customState: 'preserved',
+          sessionFile: requestedSessionFile,
+          sessionId: 'session-a',
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }));
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    harness.responses.set('get_state', {
+      leafEntryId: 'replacement-assistant',
+      sessionFile: replacementSessionFile,
+      sessionId: 'session-b',
+    });
+
+    const eventsPromise = collect(harness.session.execute(createRequest()).events);
+    await waitFor(() => harness.kernels.length === 1);
+    await waitFor(() => harness.kernels[0].requests.some(request => request.type === 'get_state'));
+    const events = await eventsPromise;
+
+    expect(getPromptMessages(harness.kernels[0])).toEqual([]);
+    expect(harness.kernels[0].shutdown).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider',
+      recoverable: true,
+      type: 'execution_error',
+    });
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'session-a',
+      providerState: {
+        customState: 'preserved',
+        sessionFile: requestedSessionFile,
+        sessionId: 'session-a',
+      },
+    });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('rejects steer while a relaunched kernel is awaiting resume validation', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-steer-'));
+    const requestedSessionFile = path.join(sessionDir, 'session-a.jsonl');
+    const replacementSessionFile = path.join(sessionDir, 'session-b.jsonl');
+    await fs.writeFile(
+      requestedSessionFile,
+      '{"type":"session","id":"session-a"}\n',
+    );
+    const getState = createRejectableDeferred<unknown>();
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'session-a',
+        providerState: {
+          sessionFile: requestedSessionFile,
+          sessionId: 'session-a',
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }), undefined, async <T>(type: string): Promise<T> => {
+      if (type === 'get_state') return getState.promise as Promise<T>;
+      return {} as T;
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    const session = harness.session;
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Pi session must expose steer');
+    }
+
+    const eventsPromise = collect(session.execute(createRequest()).events);
+    await waitFor(() => harness.kernels.length === 1);
+    await waitFor(() => harness.kernels[0].requests.some(
+      request => request.type === 'get_state',
+    ));
+
+    await expect(session.steer(createRequest({
+      input: [{ text: 'Do not send this', type: 'text' }],
+    }))).resolves.toBe(false);
+    expect(harness.kernels[0].emitExtensionRequest({
+      id: 'startup-input',
+      method: 'input',
+      type: 'extension_ui_request',
+    })).toBe(false);
+    expect(harness.kernels[0].requests).not.toContainEqual(expect.objectContaining({
+      type: 'steer',
+    }));
+
+    getState.resolve({
+      sessionFile: replacementSessionFile,
+      sessionId: 'session-b',
+    });
+    await eventsPromise;
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('ignores stale resume validation from a replaced kernel', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-stale-'));
+    const requestedSessionFile = path.join(sessionDir, 'session-a.jsonl');
+    const replacementSessionFile = path.join(sessionDir, 'session-b.jsonl');
+    await fs.writeFile(
+      requestedSessionFile,
+      '{"type":"session","id":"session-a"}\n',
+    );
+    const firstGetState = createRejectableDeferred<unknown>();
+    const secondGetState = createRejectableDeferred<unknown>();
+    let getStateCount = 0;
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'session-a',
+        providerState: {
+          sessionFile: requestedSessionFile,
+          sessionId: 'session-a',
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }), undefined, async <T>(type: string): Promise<T> => {
+      if (type !== 'get_state') return {} as T;
+      getStateCount += 1;
+      return (getStateCount === 1
+        ? firstGetState.promise
+        : secondGetState.promise) as Promise<T>;
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    const session = harness.session;
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Pi session must expose steer');
+    }
+
+    const firstRun = session.execute(createRequest());
+    const firstEvents = collect(firstRun.events);
+    await waitFor(() => harness.kernels[0]?.requests.some(
+      request => request.type === 'get_state',
+    ));
+    firstRun.cancel();
+    await firstEvents;
+
+    const secondEvents = collect(session.execute(createRequest()).events);
+    await waitFor(() => harness.kernels[1]?.requests.some(
+      request => request.type === 'get_state',
+    ));
+    firstGetState.resolve({
+      sessionFile: requestedSessionFile,
+      sessionId: 'session-a',
+    });
+    await flush();
+
+    await expect(session.steer(createRequest({
+      input: [{ text: 'Do not send this either', type: 'text' }],
+    }))).resolves.toBe(false);
+    expect(harness.kernels[1].requests).not.toContainEqual(expect.objectContaining({
+      type: 'steer',
+    }));
+
+    secondGetState.resolve({
+      sessionFile: replacementSessionFile,
+      sessionId: 'session-b',
+    });
+    await secondEvents;
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
@@ -1161,6 +1549,33 @@ describe('PiExecutionBackend', () => {
     expect(harness.kernels[0].launchSpec.args).toContain(expected);
   });
 
+  it('includes provider-default dynamic sections in the complete system prompt', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      configuration: {
+        model: 'pi:anthropic/claude-sonnet-4',
+        reasoning: 'high',
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    const args = harness.kernels[0].launchSpec.args;
+    const promptIndex = args.indexOf('--system-prompt');
+    const systemPrompt = args[promptIndex + 1] ?? '';
+    expect(systemPrompt).toContain('## Runtime Context');
+    expect(systemPrompt).toContain('Use `bash: date`');
+    expect(systemPrompt).toContain('## Vault Media');
+    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
+    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
+  });
+
   it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
@@ -1657,6 +2072,7 @@ describe('PiExecutionBackend', () => {
       createForkSessionFile,
       rollbackForkSessionFile,
     });
+    harness.responses.set('get_state', retryTarget);
     const firstRun = harness.session.execute(createRequest({
       input: [{ text: 'A', type: 'text' }],
     }));
@@ -1804,6 +2220,7 @@ describe('PiExecutionBackend', () => {
       createForkSessionFile,
       rollbackForkSessionFile,
     });
+    harness.responses.set('get_state', retryTarget);
     const firstRun = harness.session.execute(createRequest({
       input: [{ text: 'A', type: 'text' }],
     }));
@@ -1907,7 +2324,11 @@ describe('PiExecutionBackend', () => {
         },
       },
       vaultWorkingDirectory: tempDir,
-    }));
+    }), kernel => {
+      harness.responses.set('get_state', {
+        sessionFile: kernel.launchSpec.sessionTarget,
+      });
+    });
     const run = harness.session.execute(createRequest());
     const eventsPromise = collect(run.events);
     await waitFor(() => harness.kernels.length === 1);

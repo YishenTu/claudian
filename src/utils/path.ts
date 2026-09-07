@@ -83,7 +83,7 @@ export function expandHomePath(p: string): string {
   return expanded;
 }
 
-function stripSurroundingQuotes(value: string): string {
+export function stripSurroundingQuotes(value: string): string {
   if (
     (value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'"))
@@ -91,6 +91,20 @@ function stripSurroundingQuotes(value: string): string {
     return value.slice(1, -1);
   }
   return value;
+}
+
+/**
+ * Normalizes a user-configured CLI path. Windows Explorer's "Copy as path" wraps the
+ * path in double quotes exactly when it contains a space, so a configured path field
+ * receives a quoted value far more often than a PATH segment does. Unquoting before
+ * expansion mirrors `parsePathEntries`, so `"%APPDATA%\..."` still expands.
+ *
+ * Returns an empty string when nothing is configured; callers treat that as "unset".
+ */
+export function normalizeConfiguredCliPath(rawPath: string | undefined): string {
+  const trimmed = (rawPath ?? '').trim();
+  if (!trimmed) return '';
+  return expandHomePath(stripSurroundingQuotes(trimmed));
 }
 
 export function parsePathEntries(pathValue?: string): string[] {

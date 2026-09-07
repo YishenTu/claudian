@@ -1,0 +1,113 @@
+.claudian-composer-dropdown {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  z-index: 1000;
+  max-height: 300px;
+  margin-bottom: 4px;
+  overflow-y: auto;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 20%);
+}
+
+.claudian-composer-dropdown.is-visible {
+  display: block;
+}
+
+.claudian-composer-dropdown--fixed {
+  position: fixed;
+  right: auto;
+  bottom: var(--claudian-fixed-dropdown-bottom);
+  left: var(--claudian-fixed-dropdown-left);
+  z-index: 10001;
+  width: var(--claudian-fixed-dropdown-width);
+}
+
+.claudian-composer-dropdown-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.claudian-composer-dropdown-item:hover,
+.claudian-composer-dropdown-item.is-selected {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-composer-dropdown-item[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.claudian-composer-dropdown-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.claudian-composer-dropdown-icon,
+.claudian-composer-dropdown-folder-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.claudian-composer-dropdown-icon svg,
+.claudian-composer-dropdown-folder-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-composer-dropdown-folder-icon {
+  margin-left: auto;
+}
+
+.claudian-composer-dropdown-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.claudian-composer-dropdown-label,
+.claudian-composer-dropdown-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-composer-dropdown-label {
+  font-size: 13px;
+}
+
+.claudian-composer-dropdown-detail {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.claudian-composer-dropdown-item.is-loading,
+.claudian-composer-dropdown-item.is-empty,
+.claudian-composer-dropdown-item.is-error {
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+}
+
+.claudian-composer-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.claudian-composer-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claudian-composer-dropdown::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}

@@ -94,6 +94,17 @@ const localizedKeys = [
   'settings.codex.environment.name',
   'settings.codexSkills.noSkills',
   'settings.codexSubagents.noAgents',
+  'collab.access.managerCount',
+  'collab.access.makeManager',
+  'collab.access.makeMember',
+  'collab.access.completePromotion',
+  'collab.access.promotionPending',
+  'collab.access.cancelPromotion',
+  'collab.access.cancelManagerSuccession',
+  'collab.access.lastManagerRequired',
+  'collab.access.confirmPromote',
+  'collab.access.confirmDemote',
+  'collab.access.demoteHostUnchanged',
 ] as const;
 
 const staleBangBashDesc =
@@ -148,5 +159,14 @@ describe('locale files', () => {
     expect(english['settings.hiddenSlashCommands.desc']).toBe(
       'Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.',
     );
+  });
+
+  it('uses the accepted legacy Host claim confirmation', () => {
+    expect(english['collab.host.legacyClaimConfirmation'])
+      .toBe('Use this device as the Host owner?');
+  });
+
+  it('uses the accepted hosted-here label', () => {
+    expect(english['collab.host.hostedHere']).toBe('Hosted on this device');
   });
 });

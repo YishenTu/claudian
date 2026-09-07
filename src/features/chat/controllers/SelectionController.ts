@@ -1,4 +1,4 @@
-import type { App } from 'obsidian';
+import type { App, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView } from 'obsidian';
 
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
@@ -24,6 +24,7 @@ export class SelectionController {
   private focusScopeEls: HTMLElement[];
   private onVisibilityChange: (() => void) | null;
   private onUserSelectionChanged: (() => void) | null;
+  private owningLeaf: WorkspaceLeaf | null;
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
   private pollInterval: number | null = null;
@@ -44,6 +45,7 @@ export class SelectionController {
     onVisibilityChange?: () => void,
     focusScopeEl?: FocusScopeInput,
     onUserSelectionChanged?: () => void,
+    owningLeaf?: WorkspaceLeaf,
   ) {
     this.app = app;
     this.contextTray = contextTray;
@@ -51,6 +53,7 @@ export class SelectionController {
     this.focusScopeEls = this.normalizeFocusScopes(focusScopeEl);
     this.onVisibilityChange = onVisibilityChange ?? null;
     this.onUserSelectionChanged = onUserSelectionChanged ?? null;
+    this.owningLeaf = owningLeaf ?? null;
   }
 
   start(): void {
@@ -276,7 +279,12 @@ export class SelectionController {
 
   private isFocusWithinChatSidebar(): boolean {
     const activeElement = this.getActiveElement(this.getFocusScopeOwnerDocument()) as Node | null;
-    return activeElement !== null && this.isNodeWithinFocusScopes(activeElement);
+    if (activeElement !== null && this.isNodeWithinFocusScopes(activeElement)) {
+      return true;
+    }
+
+    return this.owningLeaf !== null
+      && this.app.workspace.getMostRecentLeaf() === this.owningLeaf;
   }
 
   private isNativeEditorSelectionVisible(sel: StoredSelection): boolean {

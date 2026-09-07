@@ -6,7 +6,13 @@ on:
       - '*'
 
 jobs:
+  verify:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,23 +53,27 @@ jobs:
         id: prev_tag
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          echo "tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog
+        env:
+          PREVIOUS_TAG: ${{ steps.prev_tag.outputs.tag }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [ -n "${{ steps.prev_tag.outputs.tag }}" ]; then
-            CHANGELOG=$(git log ${{ steps.prev_tag.outputs.tag }}..HEAD --pretty=format:"- %s" --no-merges | grep -v "^- ${{ github.ref_name }}$" || true)
+          if [ -n "$PREVIOUS_TAG" ]; then
+            CHANGELOG=$(git log "$PREVIOUS_TAG..HEAD" --pretty=format:"- %s" --no-merges | grep -Fvx -- "- $RELEASE_TAG" || true)
           else
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges | head -20)
           fi
-          # Handle multiline output
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "notes<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           body: |
             ## What's Changed

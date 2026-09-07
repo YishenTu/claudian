@@ -12,15 +12,39 @@ test('Obsidian DOM creation helpers are enforced for source files', async () => 
   assert.deepEqual(config.rules['obsidianmd/prefer-create-el'], [2]);
 });
 
-test('TypeScript promise rejections require Error reasons', async () => {
+test('TypeScript promise rejections require Error reasons with type information', async () => {
   const eslint = new ESLint();
   const config = await eslint.calculateConfigForFile(
     'src/features/chat/execution/ChatExecutionCoordinator.ts',
   );
 
-  assert.deepEqual(config.rules['prefer-promise-reject-errors'], [
+  assert.equal(config.rules['prefer-promise-reject-errors'][0], 0);
+  assert.equal(config.rules['@typescript-eslint/prefer-promise-reject-errors'][0], 2);
+});
+
+test('source lint matches strict Obsidian and type-aware review policy', async () => {
+  const eslint = new ESLint();
+  const config = await eslint.calculateConfigForFile(
+    'src/features/chat/ClaudianView.ts',
+  );
+
+  for (const rule of [
+    '@typescript-eslint/await-thenable',
+    '@typescript-eslint/no-deprecated',
+    '@typescript-eslint/no-redundant-type-constituents',
+    '@typescript-eslint/no-unsafe-call',
+    '@typescript-eslint/no-unsafe-member-access',
+    '@typescript-eslint/prefer-promise-reject-errors',
+    'eslint-comments/require-description',
+    'obsidianmd/detach-leaves',
+    'obsidianmd/hardcoded-config-path',
+    'obsidianmd/settings-tab/no-deprecated-display',
+  ]) {
+    assert.equal(config.rules[rule]?.[0], 2, `${rule} must be an error`);
+  }
+  assert.deepEqual(config.rules['eslint-comments/no-restricted-disable'], [
     2,
-    { allowEmptyReject: false },
+    'obsidianmd/*',
   ]);
 });
 

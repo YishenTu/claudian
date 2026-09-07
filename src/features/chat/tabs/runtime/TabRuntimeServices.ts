@@ -15,6 +15,7 @@ export function buildTabRuntimeServices(
 ): TabServices {
   const subagentManager = new SubagentManager((subagent) => {
     runtimeRef.requirePublished().controllers.streamController.onAsyncSubagentStateChange(subagent);
+    options.onWorkChanged?.(runtimeRef.requirePublished());
   });
   options.registerCleanup('tab subagent state', () => subagentManager.clear());
 

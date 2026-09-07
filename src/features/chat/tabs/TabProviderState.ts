@@ -156,13 +156,13 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
   };
 }
 
-export function syncSlashCommandDropdownForProvider(
+export function syncComposerDropdownForProvider(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
   getProviderCatalogConfig?: ProviderCatalogResolver,
   conversation?: Conversation | null,
 ): void {
-  const dropdown = tab.ui.slashCommandDropdown;
+  const dropdown = tab.ui.composerDropdown;
   if (!dropdown) {
     return;
   }
@@ -269,7 +269,7 @@ export function refreshTabWorkspaceServices(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
 ): void {
-  syncSlashCommandDropdownForProvider(tab, plugin);
+  syncComposerDropdownForProvider(tab, plugin);
   applyProviderUIGating(tab, plugin);
 }
 
@@ -372,7 +372,7 @@ export function onProviderAvailabilityChanged(
   tab.providerId = nextProviderId;
 
   syncTabProviderServices(tab, tab.services, plugin);
-  syncSlashCommandDropdownForProvider(tab, plugin);
+  syncComposerDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab, plugin);
   applyProviderUIGating(tab, plugin);

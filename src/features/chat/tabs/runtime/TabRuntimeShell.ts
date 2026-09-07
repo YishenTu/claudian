@@ -88,7 +88,11 @@ export function buildTabRuntimeShell(
     options,
     runtimeRef,
   );
-  const session = new TabSession(sessionState, executionCoordinator);
+  const session = new TabSession(
+    sessionState,
+    executionCoordinator,
+    () => options.onWorkChanged?.(runtimeRef.requirePublished()),
+  );
   options.registerCleanup(
     'tab execution coordinator',
     () => session.disposeExecutionCoordinator(),
@@ -144,7 +148,7 @@ export function buildTabRuntimeShell(
     executionCoordinator,
     providerCatalogResolver: () => options.getProviderCatalogConfig(providerCatalogContext),
     captureReviewableSettlement: options.captureReviewableSettlement
-      ? () => options.captureReviewableSettlement!(runtimeRef.requirePublished())
+      ? outcome => options.captureReviewableSettlement!(runtimeRef.requirePublished(), outcome)
       : null,
     state,
     dom,
@@ -292,6 +296,9 @@ function createTabExecutionCoordinator(
       event,
       context,
     ),
+    onBackgroundWorkChanged: () => {
+      options.onWorkChanged?.(runtimeRef.requirePublished());
+    },
     resolveMissingProviderSession: (conversationId, missingProviderSessionId) =>
       plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),
     onError: error => {

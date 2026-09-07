@@ -28,7 +28,7 @@ export interface ForkContext {
   sourceTitle?: string;
   /** 1-based index used for fork title suffix (counts only canonical user messages). */
   forkAtUserMessage?: number;
-  currentNote?: string;
+  linkedContentPath?: string;
 }
 
 interface ForkSource {
@@ -37,7 +37,7 @@ interface ForkSource {
   sourceProviderState?: Record<string, unknown>;
   sourceSelectedModel?: string;
   sourceTitle?: string;
-  currentNote?: string;
+  linkedContentPath?: string;
 }
 
 function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -80,7 +80,7 @@ async function resolveForkSource(
       ? resolveConversationModel(plugin.settings, providerId, conversation).model
       : getTabSelectedModel(tab, plugin) ?? undefined,
     sourceTitle: conversation?.title,
-    currentNote: conversation?.currentNote,
+    linkedContentPath: conversation?.linkedContentPath,
   };
 }
 
@@ -143,7 +143,7 @@ export async function handleForkRequest(
     resumeAt: rewindContext.prevAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: msgs.slice(0, userIdx + 1).filter(isCanonicalUserMessage).length,
-    currentNote: source.currentNote,
+    linkedContentPath: source.linkedContentPath,
   });
 }
 
@@ -206,6 +206,6 @@ export async function handleForkAll(
     resumeAt: lastAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: msgs.filter(isCanonicalUserMessage).length + 1,
-    currentNote: source.currentNote,
+    linkedContentPath: source.linkedContentPath,
   });
 }

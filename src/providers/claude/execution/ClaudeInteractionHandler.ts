@@ -14,7 +14,7 @@ import {
   TOOL_EXIT_PLAN_MODE,
 } from '../../../core/tools/toolNames';
 import type { PermissionMode } from '../../../core/types/settings';
-import { buildPermissionUpdates } from '../security/ClaudePermissionUpdates';
+import { buildPersistentPermissionUpdates } from '../security/ClaudePermissionUpdates';
 
 export interface ClaudeExecutionInteractionDeps {
   readonly interactionPort: ProviderInteractionPort;
@@ -166,16 +166,23 @@ export class ClaudeInteractionHandler {
           interrupt: true,
         };
       }
-      if (decision === 'allow' || decision === 'allow-always') {
+      if (decision === 'allow') {
         return {
           behavior: 'allow',
           updatedInput: input,
-          updatedPermissions: buildPermissionUpdates(
+          decisionClassification: 'user_temporary',
+        };
+      }
+      if (decision === 'allow-always') {
+        return {
+          behavior: 'allow',
+          updatedInput: input,
+          updatedPermissions: buildPersistentPermissionUpdates(
             toolName,
             input,
-            decision,
             options.suggestions,
           ),
+          decisionClassification: 'user_permanent',
         };
       }
       this.deps.onToolBlocked(options.toolUseID);

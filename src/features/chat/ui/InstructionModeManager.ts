@@ -1,7 +1,7 @@
 export interface InstructionModeCallbacks {
   onSubmit: (rawInstruction: string) => Promise<void>;
   getInputWrapper: () => HTMLElement | null;
-  resetInputHeight?: () => void;
+  onActiveChange?: (active: boolean) => void;
 }
 
 export interface InstructionModeState {
@@ -9,7 +9,7 @@ export interface InstructionModeState {
   rawInstruction: string;
 }
 
-const INSTRUCTION_MODE_PLACEHOLDER = '# Save in custom system prompt';
+const INSTRUCTION_MODE_PLACEHOLDER = 'Save in custom system prompt';
 
 export class InstructionModeManager {
   private inputEl: HTMLTextAreaElement;
@@ -25,21 +25,6 @@ export class InstructionModeManager {
     this.inputEl = inputEl;
     this.callbacks = callbacks;
     this.originalPlaceholder = inputEl.placeholder;
-  }
-
-  /**
-   * Handles keydown to detect # trigger.
-   * Returns true if the event was consumed (should prevent default).
-   */
-  handleTriggerKey(e: KeyboardEvent): boolean {
-    // Only trigger on # keystroke when input is empty and not already in mode
-    if (!this.state.active && this.inputEl.value === '' && e.key === '#') {
-      if (this.enterMode()) {
-        e.preventDefault();
-        return true;
-      }
-    }
-    return false;
   }
 
   /** Handles input changes to track instruction text. */
@@ -59,7 +44,8 @@ export class InstructionModeManager {
    * Only enters if the indicator can be successfully shown.
    * Returns true if mode was entered, false otherwise.
    */
-  private enterMode(): boolean {
+  enter(): boolean {
+    if (this.state.active) return true;
     // Indicator is single source of truth - only enter mode if we can show it
     const wrapper = this.callbacks.getInputWrapper();
     if (!wrapper) return false;
@@ -67,6 +53,8 @@ export class InstructionModeManager {
     wrapper.addClass('claudian-input-instruction-mode');
     this.state = { active: true, rawInstruction: '' };
     this.inputEl.placeholder = INSTRUCTION_MODE_PLACEHOLDER;
+    this.callbacks.onActiveChange?.(true);
+    this.inputEl.focus?.();
     return true;
   }
 
@@ -78,6 +66,7 @@ export class InstructionModeManager {
     }
     this.state = { active: false, rawInstruction: '' };
     this.inputEl.placeholder = this.originalPlaceholder;
+    this.callbacks.onActiveChange?.(false);
   }
 
   /** Handles keydown events. Returns true if handled. */
@@ -136,14 +125,12 @@ export class InstructionModeManager {
   private cancel(): void {
     this.inputEl.value = '';
     this.exitMode();
-    this.callbacks.resetInputHeight?.();
   }
 
   /** Clears the input and resets state (called after successful submission). */
   clear(): void {
     this.inputEl.value = '';
     this.exitMode();
-    this.callbacks.resetInputHeight?.();
   }
 
   /** Cleans up event listeners. */

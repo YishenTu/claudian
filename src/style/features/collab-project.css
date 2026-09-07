@@ -1,0 +1,43 @@
+.claudian-collab-create-modal {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.claudian-collab-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.claudian-collab-create-field label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-collab-create-status {
+  min-height: var(--line-height-normal);
+  margin: 12px 0;
+}
+
+.claudian-collab-create-warning {
+  color: var(--text-warning);
+}
+
+.claudian-collab-create-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.claudian-collab-access-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.claudian-collab-access-manager-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}

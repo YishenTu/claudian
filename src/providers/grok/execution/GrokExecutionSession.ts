@@ -21,7 +21,7 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendLinkedContent } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
   buildContextFromHistory,
@@ -57,6 +57,10 @@ import {
   normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
+import {
+  buildGrokSystemPrompt,
+  type GrokSystemPromptSettings,
+} from '../prompt/GrokSystemPrompt';
 import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
@@ -561,7 +565,7 @@ RewindableExecutionSession {
   ): Promise<string> {
     const owner = this.getNativeOwner(native);
     const sessionConfigurationKey = request
-      ? buildSessionConfigurationKey(request)
+      ? this.buildSessionConfigurationKey(request)
       : null;
     if (this.providerSessionId) {
       if (owner.loadedSessionId === this.providerSessionId) {
@@ -577,26 +581,13 @@ RewindableExecutionSession {
         return this.providerSessionId;
       }
       const targetSessionId = this.providerSessionId;
-      const response = await native.loadSession({
-        _meta: buildSessionMeta(request),
-        cwd: this.config.vaultWorkingDirectory,
-        mcpServers: [],
-        sessionId: targetSessionId,
-      });
-      this.throwIfCancellationRequested(active);
-      this.captureProviderSession(
-        response.sessionId ?? targetSessionId,
-        typeof this.providerState.sessionDirectory === 'string'
-          ? this.providerState.sessionDirectory
-          : undefined,
+      return this.loadProviderSession(
+        native,
+        targetSessionId,
+        request,
+        active,
+        sessionConfigurationKey,
       );
-      owner.loadedSessionId = this.providerSessionId;
-      owner.loadedSessionConfigurationKey = sessionConfigurationKey;
-      this.updateSnapshot(this.active ? 'executing' : 'idle');
-      this.emitCurrentSnapshot();
-      await this.publishSessionModels(response, owner.modelContextKey);
-      this.throwIfCancellationRequested(active);
-      return this.providerSessionId;
     }
     const state = parseGrokProviderState(this.providerState);
     if (state.forkSource && !this.forkApplied) {
@@ -628,12 +619,16 @@ RewindableExecutionSession {
       );
       this.throwIfCancellationRequested(active);
       if (this.disposed) throw new GrokExecutionCancellationError();
-      owner.loadedSessionId = sessionId;
-      owner.loadedSessionConfigurationKey = sessionConfigurationKey;
-      return sessionId;
+      return this.loadProviderSession(
+        native,
+        sessionId,
+        request,
+        active,
+        sessionConfigurationKey,
+      );
     }
     const response = await native.newSession({
-      _meta: buildSessionMeta(request),
+      _meta: this.buildSessionMeta(request),
       cwd: this.config.vaultWorkingDirectory,
       mcpServers: [],
     });
@@ -647,6 +642,67 @@ RewindableExecutionSession {
     await this.publishSessionModels(response, owner.modelContextKey);
     this.throwIfCancellationRequested(active);
     return response.sessionId;
+  }
+
+  private async loadProviderSession(
+    native: GrokExecutionNativeConnection,
+    targetSessionId: string,
+    request: ProviderExecutionRequest | undefined,
+    active: ActiveExecution | undefined,
+    sessionConfigurationKey: string | null,
+  ): Promise<string> {
+    const owner = this.getNativeOwner(native);
+    const response = await native.loadSession({
+      _meta: this.buildSessionMeta(request),
+      cwd: this.config.vaultWorkingDirectory,
+      mcpServers: [],
+      sessionId: targetSessionId,
+    });
+    this.throwIfCancellationRequested(active);
+    const loadedSessionId = response.sessionId ?? targetSessionId;
+    this.captureProviderSession(
+      loadedSessionId,
+      typeof this.providerState.sessionDirectory === 'string'
+        ? this.providerState.sessionDirectory
+        : undefined,
+    );
+    owner.loadedSessionId = loadedSessionId;
+    owner.loadedSessionConfigurationKey = sessionConfigurationKey;
+    this.updateSnapshot(this.active ? 'executing' : 'idle');
+    this.emitCurrentSnapshot();
+    await this.publishSessionModels(response, owner.modelContextKey);
+    this.throwIfCancellationRequested(active);
+    return loadedSessionId;
+  }
+
+  private buildSessionMeta(
+    request: ProviderExecutionRequest | undefined,
+  ): Record<string, unknown> {
+    return buildSessionMeta(
+      request,
+      request?.configuration.systemInstructions.kind === 'provider-default'
+        ? buildGrokSystemPrompt(this.getSystemPromptSettings(), {
+            dynamicSections: request.configuration.systemInstructions.dynamicSections,
+          })
+        : undefined,
+    );
+  }
+
+  private buildSessionConfigurationKey(request: ProviderExecutionRequest): string {
+    const meta = this.buildSessionMeta(request);
+    return JSON.stringify({
+      systemPromptOverride: meta.systemPromptOverride ?? null,
+      yoloMode: meta.yoloMode === true,
+    });
+  }
+
+  private getSystemPromptSettings(): GrokSystemPromptSettings {
+    return {
+      customPrompt: this.plugin.settings.systemPrompt,
+      mediaFolder: this.plugin.settings.mediaFolder,
+      userName: this.plugin.settings.userName,
+      vaultPath: this.config.vaultWorkingDirectory,
+    };
   }
 
   private async applyConfiguration(
@@ -1228,7 +1284,9 @@ function buildPromptBlocks(
     .map(block => block.text)
     .join('\n');
   const context = request.context;
-  if (context?.currentNote) text = appendCurrentNote(text, context.currentNote.path);
+  if (context?.linkedContent) {
+    text = appendLinkedContent(text, context.linkedContent.path);
+  }
   if (context?.editorSelection && context.editorSelection.mode !== 'none') {
     text = appendEditorContext(text, context.editorSelection);
   }
@@ -1258,28 +1316,22 @@ function buildPromptBlocks(
 
 function buildSessionMeta(
   request: ProviderExecutionRequest | undefined,
+  providerDefaultInstructions?: string,
 ): Record<string, unknown> {
   if (!request) return {};
   const rawModel = request.configuration.model
     ? decodeGrokModelId(request.configuration.model)
     : null;
-  const systemPromptOverride = buildGrokSystemPromptOverride(request);
+  const systemPromptOverride = buildGrokSystemPromptOverride(
+    request,
+    providerDefaultInstructions,
+  );
   return {
     ...(rawModel ? { modelId: rawModel } : {}),
     ...(systemPromptOverride ? { systemPromptOverride } : {}),
     yoloMode: request.configuration.permissionMode === 'yolo'
       || request.toolPolicy.kind === 'unrestricted',
   };
-}
-
-function buildSessionConfigurationKey(
-  request: ProviderExecutionRequest,
-): string {
-  const meta = buildSessionMeta(request);
-  return JSON.stringify({
-    systemPromptOverride: meta.systemPromptOverride ?? null,
-    yoloMode: meta.yoloMode === true,
-  });
 }
 
 const GROK_PASSIVE_TOOL_INSTRUCTION = [
@@ -1289,14 +1341,15 @@ const GROK_PASSIVE_TOOL_INSTRUCTION = [
 
 function buildGrokSystemPromptOverride(
   request: ProviderExecutionRequest,
+  providerDefaultInstructions?: string,
 ): string | undefined {
-  const explicitInstructions = request.configuration.systemInstructions.kind === 'explicit'
+  const instructions = request.configuration.systemInstructions.kind === 'explicit'
     ? request.configuration.systemInstructions.instructions.trim()
-    : '';
+    : providerDefaultInstructions?.trim() ?? '';
   if (request.toolPolicy.kind !== 'passive') {
-    return explicitInstructions || undefined;
+    return instructions || undefined;
   }
-  return [explicitInstructions, GROK_PASSIVE_TOOL_INSTRUCTION]
+  return [instructions, GROK_PASSIVE_TOOL_INSTRUCTION]
     .filter(Boolean)
     .join('\n\n');
 }

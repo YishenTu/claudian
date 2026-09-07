@@ -72,14 +72,18 @@ export class TabBar {
 
   /** Renders a single tab badge. */
   private renderBadge(item: TabBarItem): void {
-    // Determine state class (priority: active > attention > streaming > idle)
+    // Determine state class (priority: active > action required > working > review > idle)
     let stateClass = 'claudian-tab-badge-idle';
     if (item.isActive) {
       stateClass = 'claudian-tab-badge-active';
-    } else if (item.needsAttention) {
-      stateClass = 'claudian-tab-badge-attention';
-    } else if (item.isStreaming) {
+    } else if (item.attention?.kind === 'action-required') {
+      stateClass = 'claudian-tab-badge-action-required';
+    } else if (item.isWorking) {
       stateClass = 'claudian-tab-badge-streaming';
+    } else if (item.attention?.kind === 'review') {
+      stateClass = item.attention.outcome === 'error'
+        ? 'claudian-tab-badge-review-error'
+        : 'claudian-tab-badge-review';
     }
 
     const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
@@ -93,8 +97,7 @@ export class TabBar {
     });
 
     // Obsidian uses aria-label for hover tooltips here; adding title causes duplicate tooltip text.
-    badgeEl.setAttribute('aria-label', item.title);
-    badgeEl.setAttribute('data-provider', item.providerId);
+    badgeEl.setAttribute('aria-label', `${item.title}, ${this.getBadgeStatusLabel(item)}`);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
 
     // Click handler to switch tab
@@ -178,6 +181,18 @@ export class TabBar {
     }
 
     return this.truncateExpandedTitle(item.title);
+  }
+
+  private getBadgeStatusLabel(item: TabBarItem): string {
+    if (item.isActive) return 'active';
+    if (item.attention?.kind === 'action-required') return 'needs your input';
+    if (item.isWorking) return 'working';
+    if (item.attention?.kind === 'review') {
+      return item.attention.outcome === 'error'
+        ? 'stopped with an error, ready to review'
+        : 'finished, ready to review';
+    }
+    return 'idle';
   }
 
   private truncateExpandedTitle(title: string): string {

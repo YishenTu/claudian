@@ -4,6 +4,7 @@ describe('PI_PROVIDER_CAPABILITIES', () => {
   it('exposes the Pi capability contract', () => {
     expect(PI_PROVIDER_CAPABILITIES).toEqual({
       providerId: 'pi',
+      commandDiscoveryDeadline: 'provider-owned',
       supportsNativeHistory: true,
       supportsPlanMode: false,
       supportsRewind: false,

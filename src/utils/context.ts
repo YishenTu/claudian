@@ -6,16 +6,16 @@
 
 import { escapePromptXmlAttribute, formatPromptXmlCdata } from './promptXml';
 
-const LINKED_NOTE_TAG = 'linked_note';
-const NOTE_CONTEXT_TAG_PATTERN = '(linked_note|current_note)';
-const SELF_CLOSING_NOTE_CONTEXT_PATTERN = '<(?:linked_note|current_note)(?:\\s[^>]*)?\\s*/>';
-const PAIRED_NOTE_CONTEXT_PATTERN = `<${NOTE_CONTEXT_TAG_PATTERN}(?:\\s[^>]*)?>[\\s\\S]*?<\\/\\1>`;
-const NOTE_CONTEXT_BLOCK_PATTERN = `(?:${SELF_CLOSING_NOTE_CONTEXT_PATTERN}|${PAIRED_NOTE_CONTEXT_PATTERN})`;
+const LINKED_CONTENT_TAG = 'linked_content';
+const LINKED_CONTENT_TAG_PATTERN = '(linked_content|linked_note|current_note)';
+const SELF_CLOSING_LINKED_CONTENT_PATTERN = '<(?:linked_content|linked_note|current_note)(?:\\s[^>]*)?\\s*/>';
+const PAIRED_LINKED_CONTENT_PATTERN = `<${LINKED_CONTENT_TAG_PATTERN}(?:\\s[^>]*)?>[\\s\\S]*?<\\/\\1>`;
+const LINKED_CONTENT_BLOCK_PATTERN = `(?:${SELF_CLOSING_LINKED_CONTENT_PATTERN}|${PAIRED_LINKED_CONTENT_PATTERN})`;
 
 // Matches note context at the START of prompt (legacy placement)
-const NOTE_CONTEXT_PREFIX_REGEX = new RegExp(`^${NOTE_CONTEXT_BLOCK_PATTERN}\\n\\n`);
+const LINKED_CONTENT_PREFIX_REGEX = new RegExp(`^${LINKED_CONTENT_BLOCK_PATTERN}\\n\\n`);
 // Matches note context at the END of prompt (current placement)
-const NOTE_CONTEXT_SUFFIX_REGEX = new RegExp(`\\n\\n${NOTE_CONTEXT_BLOCK_PATTERN}$`);
+const LINKED_CONTENT_SUFFIX_REGEX = new RegExp(`\\n\\n${LINKED_CONTENT_BLOCK_PATTERN}$`);
 
 /**
  * Pattern to match XML context tags appended to prompts.
@@ -23,41 +23,41 @@ const NOTE_CONTEXT_SUFFIX_REGEX = new RegExp(`\\n\\n${NOTE_CONTEXT_BLOCK_PATTERN
  * Matches: linked_note/current_note, editor_selection (with attributes), editor_cursor (with attributes),
  * context_files, canvas_selection, browser_selection
  */
-export const XML_CONTEXT_PATTERN = /\n\n<(?:linked_note|current_note|editor_selection|editor_cursor|context_files|canvas_selection|browser_selection)[\s>]/;
+export const XML_CONTEXT_PATTERN = /\n\n<(?:linked_content|linked_note|current_note|editor_selection|editor_cursor|context_files|canvas_selection|browser_selection)[\s>]/;
 const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
-export function formatCurrentNote(notePath: string): string {
-  return `<${LINKED_NOTE_TAG} path="${escapePromptXmlAttribute(notePath)}" />`;
+export function formatLinkedContent(contentPath: string): string {
+  return `<${LINKED_CONTENT_TAG} path="${escapePromptXmlAttribute(contentPath)}" />`;
 }
 
-export function appendCurrentNote(prompt: string, notePath: string): string {
-  return `${prompt}\n\n${formatCurrentNote(notePath)}`;
+export function appendLinkedContent(prompt: string, contentPath: string): string {
+  return `${prompt}\n\n${formatLinkedContent(contentPath)}`;
 }
 
-export function formatCurrentNoteContent(notePath: string, content: string): string {
-  return `<current_note path="${escapePromptXmlAttribute(notePath)}">\n${formatPromptXmlCdata(
+export function formatLinkedContentBody(contentPath: string, content: string): string {
+  return `<${LINKED_CONTENT_TAG} path="${escapePromptXmlAttribute(contentPath)}">\n${formatPromptXmlCdata(
     content,
-  )}\n</current_note>`;
+  )}\n</${LINKED_CONTENT_TAG}>`;
 }
 
-export function appendCurrentNoteContent(
+export function appendLinkedContentBody(
   prompt: string,
-  notePath: string,
+  contentPath: string,
   content: string,
 ): string {
-  return `${prompt}\n\n${formatCurrentNoteContent(notePath, content)}`;
+  return `${prompt}\n\n${formatLinkedContentBody(contentPath, content)}`;
 }
 
 /**
  * Strips note context from a prompt.
  * Handles legacy <current_note> tags and canonical <linked_note> tags.
  */
-export function stripCurrentNoteContext(prompt: string): string {
-  const strippedPrefix = prompt.replace(NOTE_CONTEXT_PREFIX_REGEX, '');
+export function stripLinkedContentContext(prompt: string): string {
+  const strippedPrefix = prompt.replace(LINKED_CONTENT_PREFIX_REGEX, '');
   if (strippedPrefix !== prompt) {
     return strippedPrefix;
   }
-  return prompt.replace(NOTE_CONTEXT_SUFFIX_REGEX, '');
+  return prompt.replace(LINKED_CONTENT_SUFFIX_REGEX, '');
 }
 
 /**
@@ -119,8 +119,8 @@ export function extractUserQuery(prompt: string): string {
 
   // No XML context - return the whole prompt stripped of any remaining tags
   return prompt
-    .replace(/<(?:linked_note|current_note)(?:\s[^>]*)?\s*\/>\s*/g, '')
-    .replace(/<(linked_note|current_note)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*/g, '')
+    .replace(/<(?:linked_content|linked_note|current_note)(?:\s[^>]*)?\s*\/>\s*/g, '')
+    .replace(/<(linked_content|linked_note|current_note)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*/g, '')
     .replace(/<editor_selection[\s\S]*?<\/editor_selection>\s*/g, '')
     .replace(/<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g, '')
     .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')

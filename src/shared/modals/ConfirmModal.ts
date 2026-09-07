@@ -39,16 +39,16 @@ class ConfirmModal extends Modal {
           .setButtonText(t('common.cancel'))
           .onClick(() => this.close())
       )
-      .addButton(btn =>
+      .addButton(btn => {
         btn
           .setButtonText(this.confirmText)
-          .setWarning()
+          .setDestructive()
           .onClick(() => {
             this.resolved = true;
             this.resolve(true);
             this.close();
-          })
-      );
+          });
+      });
   }
 
   onClose() {

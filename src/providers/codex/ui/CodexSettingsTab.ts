@@ -13,7 +13,7 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath, stripSurroundingQuotes } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { getCodexModelOptions } from '../modelOptions';
 import { getDefaultCodexModel } from '../models';
@@ -139,13 +139,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       if (!trimmed) return null;
 
       if (!shouldValidateCliPathAsFile()) {
-        if (isWindowsStyleCliReference(trimmed)) {
+        if (isWindowsStyleCliReference(stripSurroundingQuotes(trimmed))) {
           return t('settings.codex.cliPath.validation.wslWindowsPath');
         }
         return null;
       }
 
-      const expandedPath = expandHomePath(trimmed);
+      const expandedPath = normalizeConfiguredCliPath(trimmed);
 
       if (!fs.existsSync(expandedPath)) {
         return t('settings.cliPath.validation.notExist');

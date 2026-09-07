@@ -12,12 +12,33 @@ describe('toggleServiceTier', () => {
           inactiveLabel: 'Standard',
           activeValue: 'priority',
           activeLabel: 'Fast',
+          isActive: false,
         }),
       }),
       onServiceTierChange,
     })).resolves.toBe(true);
 
     expect(onServiceTierChange).toHaveBeenCalledWith('priority');
+  });
+
+  it('uses the provider-resolved active state instead of the raw setting', async () => {
+    const onServiceTierChange = jest.fn().mockResolvedValue(undefined);
+
+    await expect(toggleServiceTier({
+      getSettings: () => ({ serviceTier: 'fast' }),
+      getUIConfig: () => ({
+        getServiceTierToggle: () => ({
+          inactiveValue: 'default',
+          inactiveLabel: 'Standard',
+          activeValue: 'priority',
+          activeLabel: 'Fast',
+          isActive: true,
+        }),
+      }),
+      onServiceTierChange,
+    })).resolves.toBe(true);
+
+    expect(onServiceTierChange).toHaveBeenCalledWith('default');
   });
 
   it('returns false without persisting when the provider has no service-tier toggle', async () => {
@@ -43,6 +64,7 @@ describe('toggleServiceTier', () => {
           inactiveLabel: 'Standard',
           activeValue: 'priority',
           activeLabel: 'Fast',
+          isActive: true,
         }),
       }),
       onServiceTierChange: jest.fn().mockRejectedValue(failure),

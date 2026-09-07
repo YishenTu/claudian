@@ -1,12 +1,10 @@
 import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
-import { spawn } from 'child_process';
+import spawn from 'cross-spawn';
 
 import { createCustomSpawnFunction } from '@/providers/claude/runtime/customSpawn';
 import * as env from '@/utils/env';
 
-jest.mock('child_process', () => ({
-  spawn: jest.fn(),
-}));
+jest.mock('cross-spawn', () => jest.fn());
 
 describe('createCustomSpawnFunction', () => {
   const originalPlatform = process.platform;
@@ -123,7 +121,7 @@ describe('createCustomSpawnFunction', () => {
     });
 
     const spawnOptions = spawnMock.mock.calls[0][2];
-    expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'pipe']);
+    expect(spawnOptions?.stdio).toEqual(['pipe', 'pipe', 'pipe']);
     expect(mockProcess.stderr?.on).toHaveBeenCalledWith('data', expect.any(Function));
   });
 
@@ -142,7 +140,7 @@ describe('createCustomSpawnFunction', () => {
     });
 
     const spawnOptions = spawnMock.mock.calls[0][2];
-    expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'ignore']);
+    expect(spawnOptions?.stdio).toEqual(['pipe', 'pipe', 'ignore']);
     expect(mockProcess.stderr?.on).not.toHaveBeenCalled();
   });
 
@@ -212,7 +210,7 @@ describe('createCustomSpawnFunction', () => {
     expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
   });
 
-  it('wraps manually configured Windows .cmd commands through cmd.exe', () => {
+  it('passes manually configured Windows .cmd commands to cross-spawn', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
@@ -229,12 +227,11 @@ describe('createCustomSpawnFunction', () => {
 
     expect(findNodeExecutable).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledWith(
-      process.env.ComSpec || process.env.comspec || 'cmd.exe',
-      ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd" --output-format stream-json"'],
+      'C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd',
+      ['--output-format', 'stream-json'],
       expect.objectContaining({
         cwd: 'C:\\Vault',
         windowsHide: true,
-        windowsVerbatimArguments: true,
       }),
     );
   });

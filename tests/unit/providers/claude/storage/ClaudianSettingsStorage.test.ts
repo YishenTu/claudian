@@ -19,11 +19,13 @@ import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
+const mockGetLegacyDeviceSettingsKey = jest.fn<string | null, []>(() => null);
 const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
+  getLegacyDeviceSettingsKey: () => mockGetLegacyDeviceSettingsKey(),
 }));
 
 const mockAdapter = {
@@ -45,6 +47,7 @@ describe('ClaudianSettingsStorage', () => {
     mockAdapter.write.mockResolvedValue(undefined);
     mockAdapter.delete.mockResolvedValue(undefined);
     mockGetHostnameKey.mockReturnValue('host-a');
+    mockGetLegacyDeviceSettingsKey.mockReturnValue(null);
     storage = new ClaudianSettingsStorage(mockAdapter);
   });
 
@@ -65,9 +68,59 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.titleGenerationLocale).toBe('');
       expect(result.lastSelectedChatModel).toBeNull();
       expect(result.enableDualPane).toBe(true);
-      expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
+      expect(result.restoreTabsOnStartup).toBe(true);
+      expect(result.collabEnabled).toBe(false);
+      expect(result.collabProjectsFolder).toBe('workspace');
+      expect(result.collabGitPath).toBe('');
       expect(mockAdapter.read).not.toHaveBeenCalled();
+    });
+
+    it('normalizes stored Collab enablement and Projects folder settings', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        collabEnabled: true,
+        collabProjectsFolder: '  Shared/Collab Projects  ',
+        lastSelectedChatModel: null,
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.collabEnabled).toBe(true);
+      expect(result.collabProjectsFolder).toBe('Shared/Collab Projects');
+      expect(writtenContent.collabEnabled).toBe(true);
+      expect(writtenContent.collabProjectsFolder).toBe('Shared/Collab Projects');
+    });
+
+    it('falls back for malformed stored Collab foundation settings', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        collabEnabled: 'yes',
+        collabProjectsFolder: '../outside',
+        lastSelectedChatModel: null,
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.collabEnabled).toBe(false);
+      expect(result.collabProjectsFolder).toBe('workspace');
+      expect(writtenContent.collabEnabled).toBe(false);
+      expect(writtenContent.collabProjectsFolder).toBe('workspace');
+    });
+
+    it('normalizes the Vault-scoped advanced Git path', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        collabGitPath: '  /opt/homebrew/bin/git  ',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.collabGitPath).toBe('/opt/homebrew/bin/git');
+      expect(JSON.parse(mockAdapter.write.mock.calls[0][1]).collabGitPath)
+        .toBe('/opt/homebrew/bin/git');
     });
 
     it('loads legacy .claude settings and migrates them to .claudian', async () => {
@@ -284,7 +337,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.chatViewPlacement).toBe('right-sidebar');
     });
 
-    it('normalizes invalid dual-pane preferences', async () => {
+    it('normalizes dual-pane preferences and removes the legacy file pane setting', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         enableDualPane: 'yes',
@@ -296,11 +349,37 @@ describe('ClaudianSettingsStorage', () => {
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(result.enableDualPane).toBe(true);
-      expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
+      expect(result).not.toHaveProperty('enableFilePane');
       expect(writtenContent.enableDualPane).toBe(true);
-      expect(writtenContent.enableFilePane).toBe(true);
       expect(writtenContent.dualPaneSide).toBe('right');
+      expect(writtenContent).not.toHaveProperty('enableFilePane');
+    });
+
+    it('normalizes invalid startup tab restore values', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        restoreTabsOnStartup: 'yes',
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.restoreTabsOnStartup).toBe(true);
+      expect(writtenContent.restoreTabsOnStartup).toBe(true);
+    });
+
+    it('preserves a disabled startup tab restore toggle', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        restoreTabsOnStartup: false,
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.restoreTabsOnStartup).toBe(false);
+      expect(writtenContent.restoreTabsOnStartup).toBe(false);
     });
 
     it('should strip legacy blocklist fields from loaded data', async () => {
@@ -448,6 +527,53 @@ describe('ClaudianSettingsStorage', () => {
         'host-b': '/custom/pi-b',
       });
       expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+
+    it('migrates current-device provider maps from the colon key to the portable key', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      mockGetHostnameKey.mockReturnValue('device-portable');
+      mockGetLegacyDeviceSettingsKey.mockReturnValue('device:legacy');
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: null,
+        providerConfigs: {
+          claude: {
+            cliPathsByHost: {
+              'device:legacy': '/legacy/claude',
+              'device:other': '/other/claude',
+            },
+          },
+          codex: {
+            cliPathsByHost: {
+              'device:legacy': '/legacy/codex',
+              'device-portable': '/portable/codex',
+            },
+            installationMethodsByHost: {
+              'device:legacy': 'wsl',
+            },
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const claudeSettings = getClaudeProviderSettings(result);
+      const codexSettings = getCodexProviderSettings(result);
+      const persisted = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(claudeSettings.cliPathsByHost).toEqual({
+        'device-portable': '/legacy/claude',
+        'device:other': '/other/claude',
+      });
+      expect(codexSettings.cliPathsByHost).toEqual({
+        'device-portable': '/portable/codex',
+      });
+      expect(codexSettings.installationMethodsByHost).toEqual({
+        'device-portable': 'wsl',
+      });
+      expect(persisted.providerConfigs.claude.cliPathsByHost)
+        .toEqual(claudeSettings.cliPathsByHost);
+      expect(persisted.providerConfigs.codex.cliPathsByHost)
+        .toEqual(codexSettings.cliPathsByHost);
     });
 
     it('clears Codex Windows installation settings on non-Windows hosts during normalization', async () => {

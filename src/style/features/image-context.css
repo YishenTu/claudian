@@ -49,23 +49,40 @@
 }
 
 /* Individual image in message - standardized size */
-.claudian-message-image {
+button.claudian-message-image,
+button.claudian-message-image:active {
+  appearance: none;
   width: 120px;
   height: 120px;
+  margin: 0;
+  padding: 0;
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   background: var(--background-secondary);
+  background-image: none;
   border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  box-shadow: none;
 }
 
-.claudian-message-image:hover {
+button.claudian-message-image:hover,
+button.claudian-message-image:focus-visible {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  background-image: none;
+  color: var(--text-normal);
   transform: scale(1.03);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.claudian-message-image img {
+button.claudian-message-image:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+button.claudian-message-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;

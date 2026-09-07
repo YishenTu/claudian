@@ -271,13 +271,13 @@ describe('session utilities', () => {
   });
 
   describe('formatContextLine', () => {
-    it('returns formatted context line for message with currentNote', () => {
+    it('returns formatted context line for canonical Linked content', () => {
       const message: ChatMessage = {
         id: 'msg-1',
         role: 'user',
         content: 'Hello',
         timestamp: Date.now(),
-        currentNote: 'notes/test.md',
+        linkedContentPath: 'notes/test.md',
       };
 
       const result = formatContextLine(message);
@@ -285,7 +285,7 @@ describe('session utilities', () => {
       expect(result).toContain('notes/test.md');
     });
 
-    it('returns null when currentNote is undefined', () => {
+    it('returns null when Linked content is undefined', () => {
       const message: ChatMessage = {
         id: 'msg-1',
         role: 'user',
@@ -298,13 +298,13 @@ describe('session utilities', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when currentNote is empty', () => {
+    it('returns null when Linked content is empty', () => {
       const message: ChatMessage = {
         id: 'msg-1',
         role: 'user',
         content: 'Hello',
         timestamp: Date.now(),
-        currentNote: '',
+        linkedContentPath: '',
       };
 
       const result = formatContextLine(message);
@@ -368,14 +368,14 @@ describe('session utilities', () => {
       expect(result).toContain('[Tool Read status=error] error: File not found');
     });
 
-    it('includes currentNote context for user messages', () => {
+    it('includes canonical Linked content context for user messages', () => {
       const messages: ChatMessage[] = [
         {
           id: 'msg-1',
           role: 'user',
           content: 'Analyze this note',
           timestamp: 1000,
-          currentNote: 'notes/important.md',
+          linkedContentPath: 'notes/important.md',
         },
       ];
 

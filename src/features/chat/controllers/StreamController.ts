@@ -1746,6 +1746,7 @@ export class StreamController {
     if (state.thinkingEl) {
       state.currentContentEl.appendChild(state.thinkingEl);
       this.deps.updateQueueIndicator();
+      this.scrollToBottom();
       return;
     }
 
@@ -1785,7 +1786,7 @@ export class StreamController {
       }
       const thinkingWindow = state.currentContentEl.ownerDocument.defaultView ?? timerWindow;
       state.setFlavorTimerInterval(thinkingWindow.setInterval(updateTimer, 1000), thinkingWindow);
-
+      this.scrollToBottom();
     }, StreamController.THINKING_INDICATOR_DELAY), timerWindow);
   }
 

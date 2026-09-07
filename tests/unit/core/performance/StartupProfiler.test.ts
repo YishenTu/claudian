@@ -1,12 +1,22 @@
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
 
 describe('StartupProfiler', () => {
+  const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(
+    global.navigator,
+    'clipboard',
+  );
+
   beforeEach(() => {
     StartupProfiler.reset();
   });
 
   afterEach(() => {
     StartupProfiler.reset();
+    if (originalClipboardDescriptor) {
+      Object.defineProperty(global.navigator, 'clipboard', originalClipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(global.navigator, 'clipboard');
+    }
   });
 
   it('records module eval and onload times', () => {
@@ -54,7 +64,10 @@ describe('StartupProfiler', () => {
 
   it('copies report to clipboard', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
-    Object.assign(global.navigator, { clipboard: { writeText } });
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
 
     StartupProfiler.recordCount('session-metadata-count', 5);
     const copied = await StartupProfiler.copyToClipboard();
@@ -66,8 +79,9 @@ describe('StartupProfiler', () => {
   });
 
   it('returns false when clipboard write fails', async () => {
-    Object.assign(global.navigator, {
-      clipboard: { writeText: jest.fn().mockRejectedValue(new Error('denied')) },
+    Object.defineProperty(global.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: jest.fn().mockRejectedValue(new Error('denied')) },
     });
 
     const copied = await StartupProfiler.copyToClipboard();

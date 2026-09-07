@@ -50,6 +50,7 @@ export function createProviderRecoveryTestHarness(
     }),
     releaseExecutionBinding: jest.fn(),
     stageConversationInput: jest.fn(async () => undefined),
+    assertConversationExecutionAuthority: jest.fn(async () => undefined),
     acceptConversationInput: jest.fn(async () => undefined),
     discardStagedConversationInput: jest.fn(async () => undefined),
     copyConversationInputsForFork: jest.fn(async () => undefined),

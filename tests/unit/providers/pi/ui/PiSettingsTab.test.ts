@@ -563,6 +563,20 @@ describe('PiSettingsTab', () => {
     expect(context.plugin.saveSettings).toHaveBeenCalled();
   });
 
+  it('accepts a CLI path pasted with surrounding quotes', async () => {
+    const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
+    render(settings);
+    const cliInput = findSetting('CLI path').textComponents[0];
+
+    mockedExists.mockImplementation((filePath: unknown) => String(filePath) === '/my tools/pi');
+    mockedStat.mockReturnValue({ isFile: () => true });
+    await cliInput.onChangeCallback?.('"/my tools/pi"');
+
+    expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
+      'current-host': '"/my tools/pi"',
+    });
+  });
+
   it('commits the Pi CLI path and clears discovery inside the execution transition', async () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {

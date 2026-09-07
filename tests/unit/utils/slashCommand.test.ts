@@ -571,7 +571,7 @@ describe('yamlString', () => {
   });
 
   it('quotes strings with newlines', () => {
-    expect(yamlString('line1\nline2')).toBe('"line1\nline2"');
+    expect(yamlString('line1\nline2')).toBe('"line1\\nline2"');
   });
 
   it('quotes strings starting with space', () => {
@@ -584,6 +584,11 @@ describe('yamlString', () => {
 
   it('escapes double quotes inside quoted strings', () => {
     expect(yamlString('has "quotes" inside: yes')).toBe('"has \\"quotes\\" inside: yes"');
+  });
+
+  it('escapes backslashes inside quoted strings', () => {
+    expect(yamlString(String.raw`C:\Users\name: value`))
+      .toBe('"C:\\\\Users\\\\name: value"');
   });
 });
 

@@ -1,0 +1,109 @@
+.claudian-collab-team-home,
+.claudian-collab-team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.claudian-collab-team-home {
+  padding: 10px 4px;
+}
+
+.claudian-collab-team-home {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-team-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.claudian-collab-team-header h4 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-collab-team-count {
+  min-width: 1.5rem;
+  padding: 1px var(--size-2-2);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-l);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.claudian-collab-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.claudian-collab-panel .claudian-collab-team-request {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--size-2-2);
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  color: var(--text-normal);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  text-align: start;
+}
+
+.claudian-collab-team-request-conflict {
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-team-request:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-collab-team-member {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-collab-team-status,
+.claudian-collab-team-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-team-request-body {
+  padding: 2px 0 6px;
+}
+
+.claudian-collab-panel button.claudian-collab-team-request-resolve {
+  width: auto;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-panel button.claudian-collab-team-request-resolve:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-team-request-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-team-request-status {
+  padding: 6px 8px;
+}

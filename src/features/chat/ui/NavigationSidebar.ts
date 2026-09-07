@@ -7,6 +7,8 @@ import {
 } from '../../../utils/animationFrame';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 
+type NavigationScrollIntent = 'away' | 'bottom';
+
 /**
  * Floating sidebar for navigating chat history.
  * Provides quick access to top/bottom and previous/next user messages.
@@ -24,10 +26,11 @@ export class NavigationSidebar {
   private mutationObserver: MutationObserver | null = null;
   private pendingVisibilityFrame: ScheduledAnimationFrame | null = null;
   private isVisible: boolean | null = null;
+  private onScrollIntent: ((intent: NavigationScrollIntent) => void) | null = null;
 
   constructor(
     private parentEl: HTMLElement,
-    private messagesEl: HTMLElement
+    private messagesEl: HTMLElement,
   ) {
     this.container = this.parentEl.createDiv({ cls: 'claudian-nav-sidebar' });
 
@@ -61,15 +64,23 @@ export class NavigationSidebar {
 
     // Button clicks
     this.topBtn.addEventListener('click', () => {
+      this.onScrollIntent?.('away');
       this.messagesEl.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
     this.bottomBtn.addEventListener('click', () => {
+      this.onScrollIntent?.('bottom');
       this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
     });
 
-    this.prevBtn.addEventListener('click', () => this.scrollToMessage('prev'));
-    this.nextBtn.addEventListener('click', () => this.scrollToMessage('next'));
+    this.prevBtn.addEventListener('click', () => {
+      this.onScrollIntent?.('away');
+      this.scrollToMessage('prev');
+    });
+    this.nextBtn.addEventListener('click', () => {
+      this.onScrollIntent?.('away');
+      this.scrollToMessage('next');
+    });
     this.tocBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       this.toggleDirectory();
@@ -208,6 +219,7 @@ export class NavigationSidebar {
       itemEl.setAttribute('title', entry.title);
 
       const selectEntry = () => {
+        this.onScrollIntent?.('away');
         this.scrollToElement(entry.el);
         this.closeDirectory();
       };
@@ -271,6 +283,10 @@ export class NavigationSidebar {
     }
   }
 
+  setOnScrollIntent(callback: ((intent: NavigationScrollIntent) => void) | null): void {
+    this.onScrollIntent = callback;
+  }
+
   destroy(): void {
     if (this.pendingVisibilityFrame !== null) {
       cancelScheduledAnimationFrame(this.pendingVisibilityFrame);
@@ -283,6 +299,7 @@ export class NavigationSidebar {
     }
     this.mutationObserver?.disconnect();
     this.mutationObserver = null;
+    this.onScrollIntent = null;
     this.messagesEl.removeEventListener('scroll', this.scrollHandler);
     this.container.remove();
   }

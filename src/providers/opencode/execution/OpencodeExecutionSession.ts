@@ -838,7 +838,9 @@ function buildKernelConfigurationKey(
   return JSON.stringify([
     resolveProfile(request),
     instructions.kind,
-    instructions.kind === 'explicit' ? instructions.instructions : null,
+    instructions.kind === 'explicit'
+      ? instructions.instructions
+      : instructions.dynamicSections ?? null,
   ]);
 }
 
@@ -857,14 +859,12 @@ function buildPromptBlocks(
       block.type === 'image'
     ))
     .map(({ image }) => image);
-  const currentNote = request.context?.currentNote;
   return buildOpencodePromptBlocks({
     browserSelection: request.context?.browserSelection,
     canvasSelection: request.context?.canvasSelection,
-    currentNoteContent: currentNote?.content,
-    currentNotePath: currentNote?.path,
     editorSelection: request.context?.editorSelection,
     images,
+    linkedContent: request.context?.linkedContent,
     text,
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]

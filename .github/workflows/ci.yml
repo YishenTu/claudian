@@ -5,10 +5,28 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+
   lockfile:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -18,8 +36,9 @@ jobs:
       - name: Check Bun lockfile
         run: npm run check:lockfile
 
-  lint:
+  quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -27,24 +46,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -52,8 +54,39 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
+  diff-hygiene:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed lines for whitespace errors
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +94,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -69,9 +102,74 @@ jobs:
       - name: Test
         run: npm run test
 
-  build:
-    needs: [lint, typecheck, test]
+  cross-platform-collab-scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine whether cross-platform Collab smoke is required
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          run_smoke=false
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              src/app/collab/* | \
+              src/core/collab/* | \
+              src/features/collab/* | \
+              src/style/features/collab-* | \
+              tests/*collab/* | \
+              src/utils/windowsCmdShim.ts | \
+              src/core/process/ManagedStdioProcess.ts | \
+              tests/unit/utils/windowsCmdShim.test.ts | \
+              tests/unit/core/process/ManagedStdioProcess.test.ts | \
+              src/providers/pi/runtime/PiSubprocess.ts | \
+              tests/unit/providers/pi/runtime/PiSubprocess.test.ts | \
+              tests/integration/providers/pi/PiSubprocess.windows.test.ts | \
+              scripts/*collab* | \
+              scripts/build* | \
+              scripts/check-architecture-boundaries.test.mjs | \
+              scripts/compressedStaticAssets.js | \
+              esbuild.config.mjs | \
+              package.json | \
+              package-lock.json | \
+              .node-version | \
+              tsconfig*.json | \
+              .github/workflows/ci.yml | \
+              .github/workflows/release.yml | \
+              .github/workflows/nightly.yml)
+                run_smoke=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+
+          echo "run=$run_smoke" >> "$GITHUB_OUTPUT"
+
+  cross-platform-smoke:
+    needs: cross-platform-collab-scope
+    if: needs.cross-platform-collab-scope.outputs.run == 'true'
+    name: Cross-platform Collab smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -79,10 +177,40 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Run Windows architecture boundaries
+        if: runner.os == 'Windows'
+        run: npm run test:architecture
+
+      - name: Build production plugin
+        run: npm run build
+
+      - name: Run OS-sensitive Collab tests
+        run: npm run test:cross-platform-collab
+
+      - name: Run Windows Pi launch integration
+        if: runner.os == 'Windows'
+        run: npm run test:unit -- --runInBand tests/integration/providers/pi/PiSubprocess.windows.test.ts
+
+  build:
+    needs: [quality, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and inspect production artifacts
         run: npm run build && npm run check:performance

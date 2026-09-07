@@ -131,6 +131,7 @@ function createMockUIConfig() {
           inactiveLabel: 'Standard',
           activeValue: 'fast',
           activeLabel: 'Fast',
+          isActive: settings.serviceTier === 'fast',
           description: '1.5x speed, 2x credits',
         }
         : null
@@ -754,17 +755,19 @@ describe('PermissionToggle', () => {
 describe('ServiceTierToggle', () => {
   let parentEl: any;
   let callbacks: ReturnType<typeof createMockCallbacks>;
+  let uiConfig: ReturnType<typeof createMockUIConfig>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     parentEl = createMockEl();
-    const uiConfig = createMockUIConfig();
+    uiConfig = createMockUIConfig();
     uiConfig.getServiceTierToggle.mockReturnValue({
       inactiveValue: 'default',
       inactiveLabel: 'Standard',
       activeValue: 'fast',
       activeLabel: 'Fast',
       description: '1.5x speed, 2x credits',
+      isActive: false,
     });
     callbacks = createMockCallbacks({
       getUIConfig: jest.fn().mockReturnValue(uiConfig),
@@ -791,16 +794,17 @@ describe('ServiceTierToggle', () => {
     const container = parentEl.querySelector('.claudian-service-tier-toggle');
     expect(button?.hasClass('active')).toBe(false);
     expect(icon).not.toBeNull();
-    expect(container?.getAttribute('title')).toBe('Toggle on/off fast mode');
+    expect(container?.getAttribute('title')).toBe('Fast mode: Standard');
   });
 
   it('renders the icon button in the active state when fast mode is on', () => {
-    callbacks.getSettings.mockReturnValue({
-      model: TEST_CODEX_MODEL,
-      thinkingBudget: 'off',
-      effortLevel: 'medium',
-      serviceTier: 'fast',
-      permissionMode: 'normal',
+    uiConfig.getServiceTierToggle.mockReturnValue({
+      inactiveValue: 'default',
+      inactiveLabel: 'Standard',
+      activeValue: 'fast',
+      activeLabel: 'Fast',
+      description: '1.5x speed, 2x credits',
+      isActive: true,
     });
     const parentEl2 = createMockEl();
     new ServiceTierToggle(parentEl2, callbacks);
@@ -808,7 +812,7 @@ describe('ServiceTierToggle', () => {
     const button = parentEl2.querySelector('.claudian-service-tier-button');
     const container = parentEl2.querySelector('.claudian-service-tier-toggle');
     expect(button?.hasClass('active')).toBe(true);
-    expect(container?.getAttribute('title')).toBe('Toggle on/off fast mode');
+    expect(container?.getAttribute('title')).toBe('Fast mode: Fast');
   });
 
   it('toggles from Standard to Fast on click', async () => {
@@ -824,6 +828,14 @@ describe('ServiceTierToggle', () => {
       effortLevel: 'medium',
       serviceTier: 'fast',
       permissionMode: 'normal',
+    });
+    uiConfig.getServiceTierToggle.mockReturnValue({
+      inactiveValue: 'default',
+      inactiveLabel: 'Standard',
+      activeValue: 'fast',
+      activeLabel: 'Fast',
+      description: '1.5x speed, 2x credits',
+      isActive: true,
     });
     const parentEl2 = createMockEl();
     new ServiceTierToggle(parentEl2, callbacks);

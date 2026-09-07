@@ -4,7 +4,7 @@ import type { ProviderCommandDropdownConfig } from '../../../core/providers/comm
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import type { MainChatComposerDropdown } from '../composer/MainChatComposerDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import type { ConversationController } from '../controllers/ConversationController';
@@ -13,10 +13,11 @@ import type { NavigationController } from '../controllers/NavigationController';
 import type { SelectionController } from '../controllers/SelectionController';
 import type { StreamController } from '../controllers/StreamController';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
+import type { LinkedContentController } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
-import type { TabAttention } from '../state/types';
+import type { TabAttention, TabReviewOutcome } from '../state/types';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 import type { FileContextManager } from '../ui/FileContext';
@@ -70,6 +71,9 @@ export interface TabManagerInterface {
 
   /** Gets all tabs. */
   getAllTabs(): AssembledTabRuntime[];
+
+  /** Reports aggregate user-visible work for a runtime tab. */
+  isTabWorking(tabId: TabId): boolean;
 }
 
 /** Tab identifier type. */
@@ -116,6 +120,7 @@ export interface TabServices {
 export interface TabUIComponents {
   readonly contextTray: ComposerContextTray;
   readonly fileContextManager: FileContextManager;
+  readonly linkedContentController: LinkedContentController;
   readonly imageContextManager: ImageContextManager;
   readonly modelSelector: ModelSelector;
   readonly modeSelector: ModeSelector;
@@ -123,7 +128,7 @@ export interface TabUIComponents {
   readonly externalContextSelector: ExternalContextSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
-  readonly slashCommandDropdown: SlashCommandDropdown;
+  readonly composerDropdown: MainChatComposerDropdown;
   readonly instructionModeManager: InstructionModeManager;
   readonly bangBashModeManager: BangBashModeManager | null;
   readonly contextUsageMeter: ContextUsageMeter;
@@ -221,7 +226,7 @@ export interface AssembledTabRuntime {
   readonly providerCatalogResolver: ProviderCatalogResolver;
 
   /** Captures whether completed runtime work will need review after finalization. */
-  readonly captureReviewableSettlement: (() => () => void) | null;
+  readonly captureReviewableSettlement: ((outcome: TabReviewOutcome) => () => void) | null;
 
   /** Per-tab chat state. */
   readonly state: ChatState;
@@ -266,11 +271,14 @@ export interface TabManagerCallbacks {
   /** Skips the target prompt when the active layout always forks into a new runtime tab. */
   shouldForkToNewTab?: () => boolean;
 
-  /** Called when a tab is created. */
+  /** Called after a newly created tab completes admission. */
   onTabCreated?: (tab: AssembledTabRuntime) => void;
 
   /** Called immediately after the active tab changes, before async tab loading completes. */
   onActiveTabChanged?: (fromTabId: TabId | null, toTabId: TabId) => void;
+
+  /** Called after an explicit active-tab switch completes without rollback. */
+  onActiveTabCommitted?: (fromTabId: TabId | null, toTabId: TabId) => void;
 
   /** Called when switching to a different tab. */
   onTabSwitched?: (fromTabId: TabId | null, toTabId: TabId) => void;
@@ -280,6 +288,9 @@ export interface TabManagerCallbacks {
 
   /** Called when tab streaming state changes. */
   onTabStreamingChanged?: (tabId: TabId, isStreaming: boolean) => void;
+
+  /** Called when foreground, continuation, provider-background, or async-subagent work changes. */
+  onTabWorkChanged?: (tabId: TabId) => void;
 
   /** Called when tab rewind transaction state changes. */
   onTabRewindingChanged?: (tabId: TabId, isRewinding: boolean) => void;
@@ -293,6 +304,9 @@ export interface TabManagerCallbacks {
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;
 
+  /** Called when the selected model for a blank retained tab changes. */
+  onTabDraftChanged?: (tabId: TabId, draftModel: string | null) => void;
+
   /** Called when the active provider changes within a tab (blank tab model selection). */
   onTabProviderChanged?: (tabId: TabId, providerId: ProviderId) => void;
 }
@@ -305,9 +319,9 @@ export interface TabBarItem {
   /** 1-based index for display. */
   index: number;
   title: string;
-  providerId: ProviderId;
   isActive: boolean;
-  isStreaming: boolean;
-  needsAttention: boolean;
+  /** True while any foreground, continuation, provider-background, or async-subagent work remains. */
+  isWorking: boolean;
+  attention: TabAttention;
   canClose: boolean;
 }

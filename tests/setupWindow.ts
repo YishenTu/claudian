@@ -1,9 +1,20 @@
+import { TextDecoder, TextEncoder } from 'node:util';
+
+import { toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
+
 type TestWindow = typeof globalThis & {
   cancelAnimationFrame?: (handle: number) => void;
+  localStorage?: Storage;
   requestAnimationFrame?: (callback: FrameRequestCallback) => number;
 };
 
 const testWindow = globalThis as TestWindow;
+
+if (!globalThis.TextEncoder) {
+  Object.assign(globalThis, { TextDecoder, TextEncoder });
+}
 
 if (!testWindow.requestAnimationFrame) {
   testWindow.requestAnimationFrame = (callback: FrameRequestCallback): number => (
@@ -17,11 +28,35 @@ if (!testWindow.cancelAnimationFrame) {
   };
 }
 
+if (globalThis.Range && !Reflect.has(globalThis.Range.prototype, 'getClientRects')) {
+  Object.defineProperty(globalThis.Range.prototype, 'getClientRects', {
+    configurable: true,
+    value: () => [],
+  });
+}
+
 if (!('window' in globalThis)) {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: testWindow,
     writable: true,
+  });
+}
+
+if (!testWindow.localStorage) {
+  const values = new Map<string, string>();
+  Object.defineProperty(testWindow, 'localStorage', {
+    configurable: true,
+    value: {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    } satisfies Storage,
   });
 }
 
@@ -103,6 +138,18 @@ function applyDomElementInfo(el: Element, info: unknown): void {
   return el;
 };
 
+if (globalThis.Node && !Reflect.has(globalThis.Node.prototype, 'win')) {
+  Object.defineProperty(globalThis.Node.prototype, 'win', {
+    configurable: true,
+    get(this: Node): Window {
+      const owner = this.nodeType === Node.DOCUMENT_NODE
+        ? this as Document
+        : this.ownerDocument;
+      return owner?.defaultView ?? globalThis.window;
+    },
+  });
+}
+
 if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'createDiv')) {
   globalThis.HTMLElement.prototype.createDiv = function (this: HTMLElement, info?, callback?) {
     const el = createDiv(info, callback);
@@ -123,6 +170,12 @@ if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'cr
     const el = createSvg(tag, info, callback);
     this.appendChild(el);
     return el;
+  };
+}
+
+if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'setText')) {
+  globalThis.HTMLElement.prototype.setText = function (this: HTMLElement, value: string) {
+    this.textContent = value;
   };
 }
 

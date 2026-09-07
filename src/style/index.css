@@ -9,7 +9,6 @@
 /* Components */
 @import "./components/tabs.css";
 @import "./components/history.css";
-@import "./components/vault-file-tree.css";
 @import "./components/messages.css";
 @import "./components/nav-sidebar.css";
 @import "./components/code.css";
@@ -21,6 +20,7 @@
 @import "./components/input.css";
 @import "./components/context-tray.css";
 @import "./components/context-footer.css";
+@import "./components/composer-dropdown.css";
 
 /* Toolbar */
 @import "./toolbar/model-selector.css";
@@ -31,17 +31,28 @@
 @import "./toolbar/external-context.css";
 
 /* Features */
-@import "./features/file-context.css";
 @import "./features/file-link.css";
 @import "./features/image-context.css";
 @import "./features/image-embed.css";
 @import "./features/image-modal.css";
 @import "./features/inline-edit.css";
 @import "./features/diff.css";
-@import "./features/slash-commands.css";
 @import "./features/resume-session.css";
 @import "./features/ask-user-question.css";
 @import "./features/plan-mode.css";
+@import "./features/collab-git.css";
+@import "./features/collab-project.css";
+@import "./features/collab-join.css";
+@import "./features/collab-panel.css";
+@import "./features/collab-publish.css";
+@import "./features/collab-requests.css";
+@import "./features/collab-markdown-editor.css";
+@import "./features/collab-comments.css";
+@import "./features/collab-tickets.css";
+@import "./features/collab-review.css";
+@import "./features/collab-conflicts.css";
+@import "./features/collab-access.css";
+@import "./features/collab-polish.css";
 
 /* Modals */
 @import "./modals/instruction.css";

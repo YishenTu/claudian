@@ -19,7 +19,7 @@ export async function toggleServiceTier(
     return false;
   }
 
-  const next = settings.serviceTier === toggleConfig.activeValue
+  const next = toggleConfig.isActive
     ? toggleConfig.inactiveValue
     : toggleConfig.activeValue;
   await context.onServiceTierChange(next);

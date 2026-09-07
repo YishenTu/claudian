@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { getEnhancedPath } from './env';
-import { expandHomePath, parsePathEntries } from './path';
+import { expandHomePath, normalizeConfiguredCliPath, parsePathEntries, stripSurroundingQuotes } from './path';
 
 export function isExistingFile(filePath: string): boolean {
   try {
@@ -13,13 +13,11 @@ export function isExistingFile(filePath: string): boolean {
 }
 
 export function resolveConfiguredCliPath(configuredPath: string | undefined): string | null {
-  const trimmed = (configuredPath ?? '').trim();
-  if (!trimmed) {
-    return null;
-  }
-
   try {
-    const expandedPath = expandHomePath(trimmed);
+    const expandedPath = normalizeConfiguredCliPath(configuredPath);
+    if (!expandedPath) {
+      return null;
+    }
     return isExistingFile(expandedPath) ? expandedPath : null;
   } catch {
     return null;
@@ -67,16 +65,6 @@ function parsePathEntriesForPlatform(pathValue: string | undefined, platform: No
       return upper !== '$PATH' && upper !== '${PATH}' && upper !== '%PATH%';
     })
     .map(segment => translateMsysPathForPlatform(expandHomePath(segment), platform));
-}
-
-function stripSurroundingQuotes(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 function translateMsysPathForPlatform(value: string, platform: NodeJS.Platform): string {

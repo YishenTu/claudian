@@ -2,7 +2,7 @@ import type { Component } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
-import type { TabAttention } from '@/features/chat/state/types';
+import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
 import type {
@@ -53,18 +53,26 @@ export interface TabRuntimeFactoryOptions {
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
   openConversation?: (conversationId: string) => Promise<void>;
   onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
+  onWorkChanged?: (tab: AssembledTabRuntime) => void;
   onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
   onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
   onConversationIdChanged?: (
     tab: AssembledTabRuntime,
     conversationId: string | null,
   ) => void;
+  onDraftModelChanged?: (
+    tab: AssembledTabRuntime,
+    draftModel: string | null,
+  ) => void;
   onProviderChanged?: (
     tab: AssembledTabRuntime,
     providerId: ProviderId,
   ) => void | Promise<void>;
   onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
-  captureReviewableSettlement?: (tab: AssembledTabRuntime) => () => void;
+  captureReviewableSettlement?: (
+    tab: AssembledTabRuntime,
+    outcome: TabReviewOutcome,
+  ) => () => void;
 }
 
 interface CleanupEntry {

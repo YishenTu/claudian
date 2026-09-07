@@ -10,6 +10,7 @@
 import type { App, TFile } from 'obsidian';
 
 import { escapeHtml } from './html';
+import { transformMarkdownSegments } from './markdownSegments';
 import { getVaultFileByPath } from './obsidianCompat';
 
 const IMAGE_EXTENSIONS = new Set([
@@ -117,23 +118,31 @@ export function replaceImageEmbedsWithHtml(
   // Reset lastIndex to avoid issues with global regex
   IMAGE_EMBED_PATTERN.lastIndex = 0;
 
-  return markdown.replace(
-    IMAGE_EMBED_PATTERN,
-    (match, imagePath: string, altText: string | undefined) => {
-      try {
-        if (!isImagePath(imagePath)) {
-          return match;
-        }
-
-        const file = resolveImageFile(app, imagePath, normalizedOptions);
-        if (!file) {
-          return createFallbackHtml(match);
-        }
-
-        return createImageHtml(app, file, altText);
-      } catch {
-        return createFallbackHtml(match);
+  return transformMarkdownSegments(markdown, {
+    wikilink: (wikilink, { embedded }) => {
+      if (!embedded) {
+        return wikilink;
       }
-    }
-  );
+
+      return wikilink.replace(
+        IMAGE_EMBED_PATTERN,
+        (match, imagePath: string, altText: string | undefined) => {
+          try {
+            if (!isImagePath(imagePath)) {
+              return match;
+            }
+
+            const file = resolveImageFile(app, imagePath, normalizedOptions);
+            if (!file) {
+              return createFallbackHtml(match);
+            }
+
+            return createImageHtml(app, file, altText);
+          } catch {
+            return createFallbackHtml(match);
+          }
+        }
+      );
+    },
+  });
 }

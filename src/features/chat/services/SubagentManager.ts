@@ -519,6 +519,12 @@ export class SubagentManager {
     return this._spawnedThisStream;
   }
 
+  public hasActiveAsyncSubagents(): boolean {
+    return Array.from(this.asyncSubagents.values()).some(({ info }) => (
+      info.asyncStatus === 'pending' || info.asyncStatus === 'running'
+    ));
+  }
+
   public resetSpawnedCount(): void {
     this._spawnedThisStream = 0;
   }

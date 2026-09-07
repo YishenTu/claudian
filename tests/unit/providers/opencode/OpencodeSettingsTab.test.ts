@@ -547,6 +547,28 @@ describe('OpencodeSettingsTab', () => {
     },
   );
 
+  it('accepts a CLI path pasted with surrounding quotes', async () => {
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/my tools/opencode');
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => mutation());
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: any) => void | Promise<void>,
+    ) => {
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+
+    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    await findSetting('CLI path').textComponents[0].onChangeCallback?.('"/my tools/opencode"');
+
+    expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({
+      'host-a': '"/my tools/opencode"',
+    });
+  });
+
   it('stores the CLI path and resets provider state inside an execution transition', async () => {
     mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/custom/opencode');
     let transitionActive = false;

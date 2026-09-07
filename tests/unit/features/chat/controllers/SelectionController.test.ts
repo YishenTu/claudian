@@ -191,6 +191,55 @@ describe('SelectionController', () => {
     expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
   });
 
+  it('preserves selection when the owning chat view is active in a detached window', () => {
+    const owningLeaf = {};
+    app.workspace.getMostRecentLeaf = jest.fn().mockReturnValue(owningLeaf);
+    controller = new SelectionController(
+      app,
+      contextTray as any,
+      inputEl,
+      undefined,
+      focusScopeEl,
+      undefined,
+      owningLeaf as any,
+    );
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.hasSelection()).toBe(true);
+
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    (global as any).document.activeElement = null;
+    jest.advanceTimersByTime(250);
+
+    expect(app.workspace.getMostRecentLeaf).toHaveBeenCalled();
+    expect(controller.hasSelection()).toBe(true);
+    expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
+  });
+
+  it('clears selection when a different chat leaf is active', () => {
+    const owningLeaf = {};
+    app.workspace.getMostRecentLeaf = jest.fn().mockReturnValue({});
+    controller = new SelectionController(
+      app,
+      contextTray as any,
+      inputEl,
+      undefined,
+      focusScopeEl,
+      undefined,
+      owningLeaf as any,
+    );
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.hasSelection()).toBe(true);
+
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    (global as any).document.activeElement = null;
+    jest.advanceTimersByTime(250);
+
+    expect(controller.hasSelection()).toBe(false);
+    expect(contextTray.clearItems).toHaveBeenCalledWith('editor-selection');
+  });
+
   it('preserves selection when a relocated composer outside tab content has focus', () => {
     const contentScopeEl = createMockEventTarget();
     const composerScopeEl = createMockEventTarget();

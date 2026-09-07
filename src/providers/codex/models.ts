@@ -38,6 +38,7 @@ export const CODEX_FALLBACK_REASONING_EFFORT_VALUES = [
 
 const DEFAULT_INPUT_MODALITIES: Array<'text' | 'image'> = ['text', 'image'];
 const ULTRA_REASONING_EFFORT = 'ultra';
+export const CODEX_DEFAULT_SERVICE_TIER = 'default';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -254,4 +255,26 @@ export function getCodexFastServiceTier(
   model: CodexDiscoveredModel,
 ): CodexModelServiceTier | null {
   return model.serviceTiers.find(tier => tier.name.trim().toLowerCase() === 'fast') ?? null;
+}
+
+export function resolveCodexModelServiceTier(
+  model: CodexDiscoveredModel | null,
+  selectedServiceTier: unknown,
+): string | null {
+  if (!model) {
+    return null;
+  }
+  // "default" is an explicit Standard selection, distinct from the catalog default.
+  if (selectedServiceTier === CODEX_DEFAULT_SERVICE_TIER) {
+    return CODEX_DEFAULT_SERVICE_TIER;
+  }
+  if (typeof selectedServiceTier === 'string') {
+    if (model.serviceTiers.some(tier => tier.id === selectedServiceTier)) {
+      return selectedServiceTier;
+    }
+    if (selectedServiceTier === 'fast') {
+      return getCodexFastServiceTier(model)?.id ?? null;
+    }
+  }
+  return model.defaultServiceTier;
 }

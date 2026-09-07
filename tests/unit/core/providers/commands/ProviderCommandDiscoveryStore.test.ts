@@ -151,4 +151,72 @@ describe('ProviderCommandDiscoveryStore', () => {
       jest.useRealTimers();
     }
   });
+
+  it('lets provider-owned discovery outlive the shared deadline', async () => {
+    jest.useFakeTimers();
+    try {
+      const response = deferred<ProviderCommandDiscoveryResult<string>>();
+      let loaderSignal: AbortSignal | null = null;
+      const store = new ProviderCommandDiscoveryStore<string>(
+        (signal) => {
+          loaderSignal = signal;
+          return response.promise;
+        },
+        { resolveTimeoutMs: () => null },
+      );
+
+      const load = store.load();
+      await jest.advanceTimersByTimeAsync(8_000);
+
+      expect((loaderSignal as AbortSignal | null)?.aborted).toBe(false);
+      expect(store.getSnapshot()).toEqual({ status: 'loading' });
+
+      response.resolve({ status: 'ready', items: ['review'] });
+      await expect(load).resolves.toEqual({ status: 'ready', items: ['review'] });
+      expect(store.getSnapshot()).toEqual({ status: 'ready', items: ['review'] });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('resolves the shared deadline again after invalidation', async () => {
+    jest.useFakeTimers();
+    try {
+      const first = deferred<ProviderCommandDiscoveryResult<string>>();
+      let timeoutMs: number | null = null;
+      const signals: AbortSignal[] = [];
+      const store = new ProviderCommandDiscoveryStore<string>(
+        (signal) => {
+          signals.push(signal);
+          return signals.length === 1
+            ? first.promise
+            : new Promise(() => undefined);
+        },
+        { resolveTimeoutMs: () => timeoutMs },
+      );
+
+      const firstLoad = store.load();
+      await jest.advanceTimersByTimeAsync(8_000);
+      expect(store.getSnapshot()).toEqual({ status: 'loading' });
+
+      store.invalidate();
+      expect(signals[0]?.aborted).toBe(true);
+      timeoutMs = 100;
+
+      const secondLoad = store.load();
+      await jest.advanceTimersByTimeAsync(100);
+      await secondLoad;
+
+      expect(signals[1]?.aborted).toBe(true);
+      first.resolve({ status: 'ready', items: ['review'] });
+      await firstLoad;
+      expect(store.getSnapshot()).toEqual({
+        status: 'error',
+        message: 'Provider command discovery timed out',
+        retryable: true,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

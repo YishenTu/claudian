@@ -201,6 +201,7 @@ export class DefaultOpencodeAcpSessionKernel
               this.options.plugin,
               this.options.config.vaultWorkingDirectory,
             ),
+            dynamicSystemPromptSections: options.systemInstructions.dynamicSections,
           }),
         workspaceRoot: this.options.config.vaultWorkingDirectory,
       });

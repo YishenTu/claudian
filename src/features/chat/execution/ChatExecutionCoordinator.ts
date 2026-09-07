@@ -90,6 +90,7 @@ export interface ChatExecutionPersistence {
     conversationId: string,
     record: ConversationInputRecord,
   ): Promise<void>;
+  assertConversationExecutionAuthority(conversationId: string): Promise<void>;
   acceptConversationInput(
     conversationId: string,
     recordId: string,
@@ -142,6 +143,7 @@ export interface ChatExecutionCoordinatorDeps {
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
+  readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
   readonly resolveMissingProviderSession: (
     conversationId: string,
     missingProviderSessionId?: string,
@@ -251,6 +253,10 @@ export class ChatExecutionCoordinator {
 
   get snapshot(): ProviderSessionSnapshot | null {
     return this.sessionBinding?.session.getSnapshot() ?? null;
+  }
+
+  get hasBackgroundWork(): boolean {
+    return (this.sessionBinding?.backgroundSequences.size ?? 0) > 0;
   }
 
   isEventContextCurrent(context: ChatExecutionEventContext): boolean {
@@ -401,6 +407,12 @@ export class ChatExecutionCoordinator {
         throw new Error('Chat execution binding changed before provider handoff');
       }
       await this.prepare();
+      if (!sameConversationBinding(conversation, this.conversation)) {
+        throw new Error('Chat execution binding changed before provider handoff');
+      }
+      await this.deps.persistence.assertConversationExecutionAuthority(
+        conversation.conversationId,
+      );
       if (!sameConversationBinding(conversation, this.conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
       }
@@ -928,7 +940,9 @@ export class ChatExecutionCoordinator {
         ) {
           return;
         }
+        const wasIdle = binding.backgroundSequences.size === 0;
         binding.backgroundSequences.set(event.scope.turnId, event.scope.sequence);
+        if (wasIdle) this.deps.onBackgroundWorkChanged?.(true);
         this.fireAndReport(this.touchWarmSlot());
       } else {
         if (previous === undefined || event.scope.sequence <= previous) return;
@@ -954,6 +968,9 @@ export class ChatExecutionCoordinator {
     if (event.type === 'background_turn_completed') {
       binding.backgroundSequences.delete(event.scope.turnId);
       binding.completedBackgroundTurns.add(event.scope.turnId);
+      if (binding.backgroundSequences.size === 0) {
+        this.deps.onBackgroundWorkChanged?.(false);
+      }
       this.notifyMayCool();
     }
   }
@@ -1002,6 +1019,9 @@ export class ChatExecutionCoordinator {
     const binding = this.sessionBinding;
     if (!binding) return;
     this.sessionBinding = null;
+    if (binding.backgroundSequences.size > 0) {
+      this.deps.onBackgroundWorkChanged?.(false);
+    }
     this.stale = true;
     this.pendingSteerAttempts.clear();
     this.invalidateActiveExecution('invalidated', 'provider-transition');
@@ -1015,6 +1035,9 @@ export class ChatExecutionCoordinator {
   private async releaseSessionBinding(): Promise<void> {
     const binding = this.sessionBinding;
     this.sessionBinding = null;
+    if (binding && binding.backgroundSequences.size > 0) {
+      this.deps.onBackgroundWorkChanged?.(false);
+    }
     if (binding) {
       this.deps.persistence.releaseExecutionBinding(
         binding.conversation.conversationId,

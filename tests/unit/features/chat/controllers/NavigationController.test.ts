@@ -490,6 +490,31 @@ describe('NavigationController', () => {
       messagesEl.dispatchEvent(keydownA);
       expect(focusSpy).toHaveBeenCalled();
     });
+
+    it('does not steal focus when the focus key comes from the Linked content editor', () => {
+      const focusSpy = jest.spyOn(inputEl, 'focus');
+      const linkedContentInput = {
+        classList: {
+          contains: (className: string) => (
+            className === 'claudian-linked-content-picker-search'
+          ),
+        },
+      };
+      const keydownEvent = new KeyboardEvent('keydown', {
+        key: 'i',
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(keydownEvent, 'target', {
+        configurable: true,
+        value: linkedContentInput,
+      });
+
+      messagesEl.dispatchEvent(keydownEvent);
+
+      expect(focusSpy).not.toHaveBeenCalled();
+      expect(keydownEvent.defaultPrevented).toBe(false);
+    });
   });
 
   describe('escape key in input', () => {

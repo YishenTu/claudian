@@ -5,7 +5,7 @@
  */
 
 import type { ChatMessage, ToolCallInfo } from '../core/types';
-import { extractUserQuery, formatCurrentNote } from './context';
+import { extractUserQuery, formatLinkedContent } from './context';
 
 // ============================================
 // Session Recovery
@@ -131,10 +131,11 @@ export function truncateToolResult(result: string, maxLength = 500): string {
 }
 
 export function formatContextLine(message: ChatMessage): string | null {
-  if (!message.currentNote) {
+  const linkedContentPath = message.linkedContentPath ?? message.currentNote;
+  if (!linkedContentPath) {
     return null;
   }
-  return formatCurrentNote(message.currentNote);
+  return formatLinkedContent(linkedContentPath);
 }
 
 /**

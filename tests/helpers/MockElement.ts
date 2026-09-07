@@ -3,6 +3,7 @@ export interface MockElement {
   children: MockElement[];
   style: Record<string, string>;
   dataset: Record<string, string>;
+  scrollLeft: number;
   scrollTop: number;
   scrollHeight: number;
   innerHTML: string;
@@ -23,6 +24,8 @@ export interface MockElement {
   createEl: (tag: string, opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => MockElement;
   createSvg: (tag: string, opts?: { cls?: string; attr?: Record<string, string> }) => MockElement;
   appendChild: (child: any) => any;
+  replaceChildren: (...children: MockElement[]) => void;
+  cloneNode: (deep?: boolean) => MockElement;
   insertBefore: (el: MockElement, ref: MockElement | null) => void;
   firstChild: MockElement | null;
   remove: () => void;
@@ -32,11 +35,16 @@ export interface MockElement {
   setAttribute: (name: string, value: string) => void;
   getAttribute: (name: string) => string | undefined | null;
   removeAttribute: (name: string) => void;
-  addEventListener: (event: string, handler: (...args: any[]) => void) => void;
+  addEventListener: (
+    event: string,
+    handler: (...args: any[]) => void,
+    options?: AddEventListenerOptions | boolean,
+  ) => void;
   removeEventListener: (event: string, handler: (...args: any[]) => void) => void;
   dispatchEvent: (eventOrType: string | { type: string; [key: string]: any }, extraArg?: any) => void;
   click: () => void;
   getEventListenerCount: (event: string) => number;
+  getEventListenerOptions: (event: string) => Array<AddEventListenerOptions | boolean | undefined>;
   querySelector: (selector: string) => MockElement | null;
   querySelectorAll: (selector: string) => MockElement[];
   getBoundingClientRect: () => { top: number; left: number; width: number; height: number; right: number; bottom: number; x: number; y: number; toJSON: () => void };
@@ -66,6 +74,7 @@ export interface MockElement {
   _classList: Set<string>;
   _attributes: Map<string, string>;
   _eventListeners: Map<string, Array<(...args: any[]) => void>>;
+  _eventListenerOptions: Map<string, Array<AddEventListenerOptions | boolean | undefined>>;
   _children: MockElement[];
   [key: string]: any;
 }
@@ -98,6 +107,10 @@ export function createMockEl(tag = 'div'): any {
   const classes = new Set<string>();
   const attributes = new Map<string, string>();
   const eventListeners = new Map<string, Array<(...args: any[]) => void>>();
+  const eventListenerOptions = new Map<
+    string,
+    Array<AddEventListenerOptions | boolean | undefined>
+  >();
   const dataset: Record<string, string> = {};
   const style: Record<string, string> = {};
   let textContent = '';
@@ -194,6 +207,7 @@ export function createMockEl(tag = 'div'): any {
     children,
     style,
     dataset,
+    scrollLeft: 0,
     scrollTop: 0,
     scrollHeight: 0,
     innerHTML: '',
@@ -283,7 +297,33 @@ export function createMockEl(tag = 'div'): any {
       return child;
     },
 
-    appendChild(child: any) { children.push(child); return child; },
+    appendChild(child: any) {
+      const existingIndex = children.indexOf(child);
+      if (existingIndex >= 0) children.splice(existingIndex, 1);
+      children.push(child);
+      return child;
+    },
+    replaceChildren(...replacementChildren: MockElement[]) {
+      children.length = 0;
+      for (const child of replacementChildren) children.push(child);
+    },
+    cloneNode(deep = false) {
+      const clone = createMockEl(tag);
+      clone.className = element.className;
+      clone.innerHTML = element.innerHTML;
+      clone.textContent = textContent;
+      clone.scrollLeft = element.scrollLeft;
+      clone.scrollTop = element.scrollTop;
+      clone.scrollHeight = element.scrollHeight;
+      clone.value = element.value;
+      Object.assign(clone.style, style);
+      Object.assign(clone.dataset, dataset);
+      for (const [name, value] of attributes) clone.setAttribute(name, value);
+      if (deep) {
+        for (const child of children) clone.appendChild(child.cloneNode(true));
+      }
+      return clone;
+    },
     insertBefore(el: MockElement, _ref: MockElement | null) { children.unshift(el); },
     get firstChild() { return children[0] || null; },
     remove() {},
@@ -332,9 +372,15 @@ export function createMockEl(tag = 'div'): any {
       }
     },
 
-    addEventListener(event: string, handler: (...args: any[]) => void) {
+    addEventListener(
+      event: string,
+      handler: (...args: any[]) => void,
+      options?: AddEventListenerOptions | boolean,
+    ) {
       if (!eventListeners.has(event)) eventListeners.set(event, []);
       eventListeners.get(event)!.push(handler);
+      if (!eventListenerOptions.has(event)) eventListenerOptions.set(event, []);
+      eventListenerOptions.get(event)!.push(options);
     },
     removeEventListener(event: string, handler: (...args: any[]) => void) {
       const handlers = eventListeners.get(event);
@@ -358,6 +404,9 @@ export function createMockEl(tag = 'div'): any {
     },
     getEventListenerCount(event: string) {
       return eventListeners.get(event)?.length ?? 0;
+    },
+    getEventListenerOptions(event: string) {
+      return eventListenerOptions.get(event) ?? [];
     },
 
     querySelector(selector: string) {
@@ -411,6 +460,7 @@ export function createMockEl(tag = 'div'): any {
     _classList: classes,
     _attributes: attributes,
     _eventListeners: eventListeners,
+    _eventListenerOptions: eventListenerOptions,
     _children: children,
   };
 

@@ -1,0 +1,385 @@
+.claudian-collab-ticket-home {
+  border-top: 1px solid var(--background-modifier-border);
+  padding: 10px 4px;
+}
+
+.claudian-collab-ticket-list-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.claudian-collab-ticket-list-header h4 {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+
+.claudian-collab-ticket-list-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-filter {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 0;
+  width: auto;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-filter:is(:hover, :focus-visible, :active) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-ticket-add {
+  flex: none;
+}
+
+.claudian-collab-ticket-connection-state {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-list-item {
+  align-items: baseline;
+  border: 0;
+  box-shadow: none;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-list-item:not([aria-current="true"]) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-list-item:not([aria-current="true"]):is(:hover, :focus-visible, :active) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-list-item:focus-visible {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: -1px;
+}
+
+.claudian-collab-panel button.claudian-collab-ticket-list-item[aria-current="true"],
+.claudian-collab-panel button.claudian-collab-ticket-list-item[aria-current="true"]:hover,
+.claudian-collab-panel button.claudian-collab-ticket-list-item[aria-current="true"]:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-collab-ticket-number,
+.claudian-collab-ticket-detail-number {
+  color: var(--text-muted);
+  flex: none;
+  font-family: var(--font-monospace);
+}
+
+.claudian-collab-ticket-title {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-collab-ticket-list-status,
+.claudian-collab-ticket-editor-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-collab-ticket-editor-status {
+  padding: 8px;
+}
+
+.claudian-collab-ticket-list-status.is-error,
+.claudian-collab-ticket-editor-status.is-error {
+  color: var(--text-error);
+}
+
+.claudian-collab-ticket-load-more {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.claudian-collab-ticket-editor {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 1.5vw, 22px);
+  margin: 0 auto;
+  max-width: 1200px;
+  min-width: 0;
+  padding: clamp(24px, 4vw, 56px);
+  width: 100%;
+}
+
+.claudian-collab-ticket-detail-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.claudian-collab-ticket-detail-header h2 {
+  align-items: baseline;
+  display: flex;
+  flex: 0 1 auto;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.claudian-collab-ticket-detail-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-collab-ticket-edit-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.claudian-collab-review button.claudian-collab-ticket-status-toggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 0;
+  width: auto;
+}
+
+.claudian-collab-review button.claudian-collab-ticket-status-toggle:is(:hover, :focus-visible, :active) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-review button.claudian-collab-ticket-status-toggle:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.claudian-collab-review button.claudian-collab-ticket-edit {
+  margin-inline-start: auto;
+  width: auto;
+}
+
+.claudian-collab-ticket-field,
+.claudian-collab-request-description {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.claudian-collab-ticket-field input,
+.claudian-collab-ticket-field select {
+  box-sizing: border-box;
+  max-width: none;
+  width: 100%;
+}
+
+.claudian-collab-ticket-field-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.claudian-collab-ticket-field-header > .claudian-collab-markdown-draft-modes {
+  margin-inline-start: auto;
+}
+
+.claudian-collab-ticket-editor-status:empty {
+  display: none;
+}
+
+.claudian-collab-ticket-editor > .mod-cta {
+  align-self: flex-start;
+  min-width: 180px;
+}
+
+.claudian-collab-ticket-activity {
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.claudian-collab-ticket-activity:not(.has-entries) > .claudian-collab-comment-composer {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.claudian-collab-ticket-activity h3 {
+  margin: 0;
+}
+
+.claudian-collab-ticket-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.claudian-collab-ticket-activity-item {
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  padding: 12px 14px;
+}
+
+.claudian-collab-ticket-activity-item.is-comment {
+  background: var(--background-primary);
+}
+
+.claudian-collab-ticket-activity-item.is-references,
+.claudian-collab-ticket-activity-item.is-resolves {
+  border-inline-start: 3px solid var(--text-accent);
+}
+
+.claudian-collab-ticket-activity-item.is-resolves {
+  border-inline-start-color: var(--text-success);
+}
+
+.claudian-collab-ticket-relation-event {
+  color: var(--text-normal);
+}
+.claudian-collab-review .claudian-collab-markdown-draft-modes button.claudian-collab-request-description-submit {
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--button-radius, var(--radius-s));
+  box-shadow: var(--input-shadow);
+  color: var(--text-normal);
+  min-height: var(--input-height);
+  padding: 4px 12px;
+}
+
+.claudian-collab-review .claudian-collab-markdown-draft-modes button.claudian-collab-request-description-submit:is(:hover, :focus-visible) {
+  background: var(--interactive-hover);
+  border-color: var(--background-modifier-border-hover);
+  box-shadow: var(--input-shadow);
+  color: var(--text-normal);
+}
+
+.claudian-collab-request-description {
+  margin-top: 8px;
+}
+
+.claudian-collab-request-description-header {
+  align-items: center;
+  align-self: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2) var(--size-4-3);
+}
+
+.claudian-collab-request-description-header:empty {
+  display: none;
+}
+
+.claudian-collab-request-description-modes {
+  margin-inline-start: auto;
+}
+
+.claudian-collab-request-description-header > .claudian-collab-review-metadata-line {
+  margin-inline-start: auto;
+}
+
+.claudian-collab-request-description-header
+  > .claudian-collab-review-metadata-line
+  + .claudian-collab-request-description-modes {
+  margin-inline-start: 0;
+}
+
+.claudian-collab-request-description > [data-collab-description="true"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.claudian-collab-request-description.is-request:not(.is-editing) .claudian-collab-markdown-draft-preview {
+  border: 0;
+  border-radius: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+.claudian-collab-request-description-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-request-description-status:empty {
+  display: none;
+}
+
+.claudian-collab-ticket-offline-read-only {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-markdown-suggestions {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+
+.claudian-collab-markdown-suggestions[hidden] {
+  display: none;
+}
+
+.claudian-collab-review .claudian-collab-markdown-suggestions button.claudian-collab-markdown-suggestion {
+  appearance: none;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+  display: flex;
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+.claudian-collab-review .claudian-collab-markdown-suggestions button.claudian-collab-markdown-suggestion:is(:hover, :focus-visible),
+.claudian-collab-review .claudian-collab-markdown-suggestions button.claudian-collab-markdown-suggestion[aria-selected="true"] {
+  background: var(--background-modifier-hover);
+}

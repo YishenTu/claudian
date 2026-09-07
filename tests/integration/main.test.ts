@@ -1,15 +1,20 @@
 
 import { Notice, TFile, TFolder } from 'obsidian';
 
+import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
+import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
+import type { SessionMetadataReadResult } from '@/core/bootstrap/SessionStorage';
+import { SessionStorage } from '@/core/bootstrap/SessionStorage';
+import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
-import { type Conversation, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { COLLAB_DETAIL_VIEW_TYPE } from '@/features/collab/detail/CollabDetailView';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
-import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import {
@@ -35,8 +40,15 @@ import ClaudianPlugin from '@/main';
 
 describe('ClaudianPlugin', () => {
   let plugin: ClaudianPlugin;
+  let pluginInstances: ClaudianPlugin[];
   let mockApp: any;
   let mockManifest: any;
+
+  function createPlugin(): ClaudianPlugin {
+    const instance = new ClaudianPlugin(mockApp, mockManifest);
+    pluginInstances.push(instance);
+    return instance;
+  }
 
   function getRegisteredCommand(commandId: string) {
     const call = (plugin.addCommand as jest.Mock).mock.calls.find(
@@ -48,6 +60,18 @@ describe('ClaudianPlugin', () => {
     }
 
     return call[0];
+  }
+
+  function enableCollab(): void {
+    mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+      path === '.claudian/claudian-settings.json'
+    ));
+    mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+      if (path === '.claudian/claudian-settings.json') {
+        return JSON.stringify({ collabEnabled: true });
+      }
+      throw new Error(`Missing test file: ${path}`);
+    });
   }
 
   function getConversationPersistence(
@@ -75,9 +99,19 @@ describe('ClaudianPlugin', () => {
       .mockImplementation(async (id) => {
         const item = metadataById.get(id);
         return item
-          ? { metadata: item, needsMigration: false, source: 'current' as const }
+          ? { metadata: item, needsMigration: false, source: 'device' as const }
           : null;
       });
+  }
+
+  function deviceMetadataRecords(
+    ...metadata: SessionMetadata[]
+  ): SessionMetadataReadResult[] {
+    return metadata.map(item => ({
+      metadata: item,
+      needsMigration: false,
+      source: 'device',
+    }));
   }
 
   function installVaultFiles(initialFiles: Record<string, string>): Map<string, string> {
@@ -106,8 +140,17 @@ describe('ClaudianPlugin', () => {
   }
 
   beforeEach(() => {
+    pluginInstances = [];
     // Reset mocks
+    jest.restoreAllMocks();
     jest.clearAllMocks();
+    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'start').mockResolvedValue({
+      origin: 'http://127.0.0.1:61234',
+      rpcUrl: 'http://127.0.0.1:61234/v1/rpc',
+    });
+    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'close').mockResolvedValue(undefined);
+    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'waitForWriteInvocations')
+      .mockResolvedValue(undefined);
     jest.spyOn(sdkSession, 'locateSDKSession').mockImplementation(async (_vaultPath, sessionId) => ({
       availability: 'available',
       sessionPath: `/test/claude-project/${sessionId}.jsonl`,
@@ -135,9 +178,13 @@ describe('ClaudianPlugin', () => {
         },
       },
       workspace: {
+        layoutReady: true,
+        detachLeavesOfType: jest.fn(),
         on: jest.fn().mockReturnValue({ id: 'workspace-event' }),
+        offref: jest.fn(),
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
+        getMostRecentLeaf: jest.fn().mockReturnValue(null),
         getRightLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
@@ -159,8 +206,18 @@ describe('ClaudianPlugin', () => {
     };
 
     // Create plugin instance with mocked app
-    plugin = new ClaudianPlugin(mockApp, mockManifest);
+    plugin = createPlugin();
     (plugin.loadData as jest.Mock).mockResolvedValue({});
+  });
+
+  afterEach(async () => {
+    for (const instance of pluginInstances) {
+      instance.onunload();
+    }
+    await Promise.allSettled(pluginInstances.map(instance => (
+      (instance as unknown as { applicationShutdownPromise?: Promise<void> })
+        .applicationShutdownPromise
+    )));
   });
 
   describe('onload', () => {
@@ -170,6 +227,104 @@ describe('ClaudianPlugin', () => {
       expect(plugin.settings).toBeDefined();
       expect(plugin.settings.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
+      expect(plugin.settings.collabEnabled).toBe(false);
+    });
+
+    it('keeps Collab Runtime, Host restore, commands, and prompt dormant by default', async () => {
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const getCollabFeatureService = jest.spyOn(
+        plugin as unknown as { getCollabFeatureService(): Promise<unknown> },
+        'getCollabFeatureService',
+      );
+
+      await plugin.onload();
+      const afterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      afterLayout?.();
+      await new Promise(resolve => setTimeout(resolve, 1));
+
+      expect(start).not.toHaveBeenCalled();
+      expect(getCollabFeatureService).not.toHaveBeenCalled();
+      expect(getRegisteredCommand('open-collab').checkCallback(true)).toBe(false);
+      expect(getRegisteredCommand('create-collab-project').checkCallback(true)).toBe(false);
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
+    });
+
+    it('enables, drains, and re-enables Collab without restarting the Plugin', async () => {
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const close = jest.mocked(LocalAgentRuntimeHttpServer.prototype.close);
+      const restoreLifecycle = jest.fn().mockResolvedValue(undefined);
+      const restoreHosts = jest.fn().mockResolvedValue(undefined);
+      const getCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          getCollabFeatureService(): Promise<{
+            restoreHosts(): Promise<void>;
+            restoreLifecycle(): Promise<void>;
+          }>;
+        },
+        'getCollabFeatureService',
+      ).mockResolvedValue({ restoreHosts, restoreLifecycle });
+
+      await plugin.onload();
+      const afterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      afterLayout?.();
+
+      await plugin.setCollabEnabled(true);
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([
+        expect.stringContaining('http://127.0.0.1:61234/v1/rpc'),
+      ]);
+      await new Promise(resolve => setTimeout(resolve, 1));
+
+      expect(plugin.settings.collabEnabled).toBe(true);
+      expect(getRegisteredCommand('open-collab').checkCallback(true)).toBe(true);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(getCollabFeatureService).toHaveBeenCalledTimes(1);
+      expect(restoreLifecycle).toHaveBeenCalledTimes(1);
+      expect(restoreHosts).toHaveBeenCalledTimes(1);
+
+      await plugin.setCollabEnabled(false);
+
+      expect(plugin.settings.collabEnabled).toBe(false);
+      expect(getRegisteredCommand('open-collab').checkCallback(true)).toBe(false);
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
+      expect(close).toHaveBeenCalledTimes(1);
+
+      await plugin.setCollabEnabled(true);
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toHaveLength(1);
+
+      expect(start).toHaveBeenCalledTimes(2);
+    });
+
+    it('closes transient Collab UI and fences a deferred Create launch on disable', async () => {
+      await plugin.onload();
+      await plugin.setCollabEnabled(true);
+      const trackedSurface = { close: jest.fn(), open: jest.fn() };
+      const transientSurfaces = (plugin as any).collabTransientSurfaces;
+      transientSurfaces.open(() => trackedSurface);
+      const openTransient = jest.spyOn(transientSurfaces, 'open');
+      openTransient.mockClear();
+      let finishInitialization!: () => void;
+      const initialize = jest.fn(() => new Promise(resolve => {
+        finishInitialization = () => resolve({ status: 'success', value: undefined });
+      }));
+      jest.spyOn(plugin as any, 'getCollabFeatureService').mockResolvedValue({ initialize });
+      jest.spyOn(plugin as any, 'resolveCollabGit').mockResolvedValue({
+        status: 'available',
+        version: '2.42.0',
+      });
+
+      getRegisteredCommand('create-collab-project').checkCallback(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(initialize).toHaveBeenCalledTimes(1);
+      const disable = plugin.setCollabEnabled(false);
+      finishInitialization();
+      await disable;
+      await Promise.resolve();
+
+      expect(trackedSurface.close).toHaveBeenCalledTimes(1);
+      expect(openTransient).not.toHaveBeenCalled();
     });
 
     // Note: With multi-tab, agentService is per-tab via TabManager, not on plugin
@@ -181,6 +336,404 @@ describe('ClaudianPlugin', () => {
         VIEW_TYPE_CLAUDIAN,
         expect.any(Function)
       );
+    });
+
+    it('registers the Collab detail view without initializing Collab', async () => {
+      const createCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          createCollabFeatureService(): Promise<unknown>;
+        },
+        'createCollabFeatureService',
+      );
+
+      await plugin.onload();
+
+      expect((plugin.registerView as jest.Mock)).toHaveBeenCalledWith(
+        COLLAB_DETAIL_VIEW_TYPE,
+        expect.any(Function),
+      );
+      expect(createCollabFeatureService).not.toHaveBeenCalled();
+      expect((plugin as unknown as { collabFoundation: unknown }).collabFoundation)
+        .toBeNull();
+      expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+        .toBeNull();
+    });
+
+    it('derives Ticket focus from the most-recent root leaf', async () => {
+      await plugin.onload();
+      const first = {
+        getViewState: () => ({
+          state: { kind: 'ticket', projectId: 'project-a', ticketId: 'ticket-a' },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      };
+      const second = {
+        getViewState: () => ({
+          state: { kind: 'ticket', projectId: 'project-a', ticketId: 'ticket-b' },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([first, second]);
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue(second);
+
+      expect((plugin as any).readCollabTicketFocus()).toEqual({
+        projectId: 'project-a',
+        ticketId: 'ticket-b',
+      });
+
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+        getViewState: () => ({ state: {}, type: 'markdown' }),
+      });
+      expect((plugin as any).readCollabTicketFocus()).toBeNull();
+
+      for (const state of [
+        { kind: 'ticket', projectId: 'bad project', ticketId: 'ticket-a' },
+        { kind: 'ticket', projectId: `p${'a'.repeat(64)}`, ticketId: 'ticket-a' },
+        { kind: 'ticket', projectId: 'project-a', ticketId: 'bad.ticket' },
+        { kind: 'ticket', projectId: 'project-a', ticketId: `t${'a'.repeat(128)}` },
+      ]) {
+        mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+          getViewState: () => ({ state, type: COLLAB_DETAIL_VIEW_TYPE }),
+        });
+        expect((plugin as any).readCollabTicketFocus()).toBeNull();
+      }
+
+      const maximumProjectId = `p${'a'.repeat(63)}`;
+      const maximumTicketId = `t${'a'.repeat(127)}`;
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue({
+        getViewState: () => ({
+          state: {
+            kind: 'ticket',
+            projectId: maximumProjectId,
+            ticketId: maximumTicketId,
+          },
+          type: COLLAB_DETAIL_VIEW_TYPE,
+        }),
+      });
+      expect((plugin as any).readCollabTicketFocus()).toEqual({
+        projectId: maximumProjectId,
+        ticketId: maximumTicketId,
+      });
+    });
+
+    it('keeps restored Collab detail subscriptions inert while Collab is disabled', async () => {
+      await plugin.onload();
+      const requireCollabFeatureService = jest.spyOn(
+        plugin as unknown as { requireCollabFeatureService(): Promise<unknown> },
+        'requireCollabFeatureService',
+      );
+      const port = (
+        plugin as unknown as {
+          createCollabDetailViewPort(): { subscribe(listener: () => void): { dispose(): void } };
+        }
+      ).createCollabDetailViewPort();
+
+      const subscription = port.subscribe(jest.fn());
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(requireCollabFeatureService).not.toHaveBeenCalled();
+      expect(() => subscription.dispose()).not.toThrow();
+    });
+
+    it('starts the Agent Runtime during onload without awaiting bind or Collab', async () => {
+      enableCollab();
+      let resolveStart!: (endpoint: { origin: string; rpcUrl: string }) => void;
+      const startPending = new Promise<{ origin: string; rpcUrl: string }>(resolve => {
+        resolveStart = resolve;
+      });
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+        .mockReturnValue(startPending);
+      const createCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          createCollabFeatureService(): Promise<unknown>;
+        },
+        'createCollabFeatureService',
+      );
+
+      const completedWithoutListener = await Promise.race([
+        plugin.onload().then(() => true),
+        new Promise<boolean>(resolve => setTimeout(() => resolve(false), 100)),
+      ]);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(completedWithoutListener).toBe(true);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(createCollabFeatureService).not.toHaveBeenCalled();
+      resolveStart({
+        origin: 'http://127.0.0.1:61234',
+        rpcUrl: 'http://127.0.0.1:61234/v1/rpc',
+      });
+      await (
+        plugin as unknown as { agentRuntimeStartPromise: Promise<unknown> }
+      ).agentRuntimeStartPromise;
+    });
+
+    it('resolves the Collab application port only for a real Collab RPC call', async () => {
+      enableCollab();
+      const collabPort = {
+        listProjects: jest.fn().mockResolvedValue({ status: 'success', value: [] }),
+      };
+      const getCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          getCollabFeatureService(): Promise<typeof collabPort>;
+        },
+        'getCollabFeatureService',
+      ).mockResolvedValue(collabPort);
+      await plugin.onload();
+      await new Promise(resolve => setImmediate(resolve));
+      const gateway = (
+        plugin as unknown as {
+          agentRuntime: { gateway: { handle(input: unknown): Promise<unknown> } };
+        }
+      ).agentRuntime.gateway;
+
+      await gateway.handle({
+        id: 'health-1',
+        method: 'runtime.health.check',
+        params: {},
+      });
+      expect(getCollabFeatureService).not.toHaveBeenCalled();
+
+      await gateway.handle({
+        id: 'projects-1',
+        method: 'collab.projects.list',
+        params: {},
+      });
+      expect(getCollabFeatureService).toHaveBeenCalledTimes(1);
+      expect(collabPort.listProjects).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses one Agent Runtime start across concurrent dynamic-section requests', async () => {
+      enableCollab();
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      await plugin.onload();
+
+      const dynamicSections = await Promise.all([
+        plugin.getMainAgentDynamicSystemPromptSections(),
+        plugin.getMainAgentDynamicSystemPromptSections(),
+      ]);
+
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(dynamicSections[0]).toEqual(dynamicSections[1]);
+    });
+
+    it('does not initialize Collab when Agent Runtime is unavailable', async () => {
+      enableCollab();
+      const createCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          createCollabFeatureService(): Promise<unknown>;
+        },
+        'createCollabFeatureService',
+      );
+      jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+        .mockRejectedValue(new Error('synthetic bind failure'));
+
+      await plugin.onload();
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
+
+      expect(createCollabFeatureService).not.toHaveBeenCalled();
+    });
+
+    it('returns the stable dynamic system section after the Agent Runtime starts', async () => {
+      enableCollab();
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      await plugin.onload();
+
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([
+        expect.stringContaining('http://127.0.0.1:61234/v1/rpc'),
+      ]);
+
+      expect(start).toHaveBeenCalledTimes(1);
+    });
+
+    it('contains Agent Runtime start failure without failing Plugin startup', async () => {
+      enableCollab();
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+        .mockRejectedValue(new Error('synthetic bind failure'));
+
+      await expect(plugin.onload()).resolves.toBeUndefined();
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
+
+      expect((
+        plugin as unknown as { agentRuntimeStartPromise: unknown }
+      ).agentRuntimeStartPromise).toBeNull();
+      await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
+      expect(start).toHaveBeenCalledTimes(2);
+    });
+
+    it('closes the Agent Runtime when unload races an in-flight bind', async () => {
+      enableCollab();
+      let resolveStart!: (endpoint: { origin: string; rpcUrl: string }) => void;
+      const startPending = new Promise<{ origin: string; rpcUrl: string }>(resolve => {
+        resolveStart = resolve;
+      });
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+        .mockReturnValue(startPending);
+      const close = jest.mocked(LocalAgentRuntimeHttpServer.prototype.close);
+
+      await plugin.onload();
+      await new Promise(resolve => setImmediate(resolve));
+      plugin.onunload();
+      resolveStart({
+        origin: 'http://127.0.0.1:61234',
+        rpcUrl: 'http://127.0.0.1:61234/v1/rpc',
+      });
+      await Promise.all([
+        (
+          plugin as unknown as { applicationShutdownPromise: Promise<void> }
+        ).applicationShutdownPromise,
+        (
+          plugin as unknown as { agentRuntimeStartPromise: Promise<unknown> }
+        ).agentRuntimeStartPromise,
+      ]);
+
+      expect(close).toHaveBeenCalled();
+      expect(start).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes restored Collab review leaves after layout readiness', async () => {
+      await plugin.onload();
+
+      expect(mockApp.workspace.detachLeavesOfType).not.toHaveBeenCalled();
+      const afterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      expect(afterLayout).toBeDefined();
+      afterLayout?.();
+
+      expect(mockApp.workspace.detachLeavesOfType)
+        .toHaveBeenCalledWith(COLLAB_DETAIL_VIEW_TYPE);
+      plugin.onunload();
+    });
+
+    it('keeps an enabled restored Collab detail leaf inert until layout readiness detaches it', async () => {
+      enableCollab();
+      await plugin.onload();
+      const requireCollabFeatureService = jest.spyOn(
+        plugin as unknown as { requireCollabFeatureService(): Promise<unknown> },
+        'requireCollabFeatureService',
+      );
+      const factory = (plugin.registerView as jest.Mock).mock.calls.find(
+        call => call[0] === COLLAB_DETAIL_VIEW_TYPE,
+      )?.[1] as ((leaf: unknown) => {
+        getState(): Record<string, unknown>;
+        onOpen(): Promise<void>;
+        setState(state: unknown, result: { history: boolean }): Promise<void>;
+      }) | undefined;
+      expect(factory).toBeDefined();
+
+      const globals = globalThis as Record<string, unknown>;
+      const previousActiveDocument = globals.activeDocument;
+      const previousMutationObserver = globals.MutationObserver;
+      globals.activeDocument = { body: { classList: { contains: () => false } } };
+      globals.MutationObserver = class {
+        observe(): void {}
+        disconnect(): void {}
+      };
+      try {
+        const restored = factory!({ detach: jest.fn() });
+        const state = {
+          kind: 'ticket',
+          projectId: 'project-a',
+          ticketId: 'ticket-a',
+        };
+        await restored.setState(state, { history: false });
+        await restored.onOpen();
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(restored.getState()).toEqual(state);
+        expect(requireCollabFeatureService).not.toHaveBeenCalled();
+        expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+          .toBeNull();
+      } finally {
+        globals.activeDocument = previousActiveDocument;
+        globals.MutationObserver = previousMutationObserver;
+      }
+
+      const afterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      afterLayout?.();
+      expect(mockApp.workspace.detachLeavesOfType)
+        .toHaveBeenCalledWith(COLLAB_DETAIL_VIEW_TYPE);
+      plugin.onunload();
+    });
+
+    it('restores saved Collab Hosts after layout readiness without blocking onload', async () => {
+      enableCollab();
+      const restoreLifecycle = jest.fn().mockResolvedValue(undefined);
+      const restoreHosts = jest.fn().mockResolvedValue(undefined);
+      const getCollabFeatureService = jest.spyOn(
+        plugin as unknown as {
+          getCollabFeatureService(): Promise<{
+            restoreHosts(): Promise<void>;
+            restoreLifecycle(): Promise<void>;
+          }>;
+        },
+        'getCollabFeatureService',
+      ).mockResolvedValue({ restoreHosts, restoreLifecycle });
+
+      await plugin.onload();
+
+      expect(getCollabFeatureService).not.toHaveBeenCalled();
+      const restoreAfterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+      expect(restoreAfterLayout).toBeDefined();
+      restoreAfterLayout?.();
+      await new Promise(resolve => setTimeout(resolve, 1));
+
+      expect(getCollabFeatureService).toHaveBeenCalledTimes(1);
+      expect(restoreLifecycle).toHaveBeenCalledTimes(1);
+      expect(restoreHosts).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores Hosts even when lifecycle recovery fails and retries in the background', async () => {
+      jest.useFakeTimers();
+      try {
+        enableCollab();
+        const restoreLifecycle = jest.fn()
+          .mockRejectedValueOnce(new Error('temporary lifecycle failure'))
+          .mockResolvedValue(undefined);
+        const restoreHosts = jest.fn().mockResolvedValue(undefined);
+        jest.spyOn(
+          plugin as unknown as {
+            getCollabFeatureService(): Promise<{
+              restoreHosts(): Promise<void>;
+              restoreLifecycle(): Promise<void>;
+            }>;
+          },
+          'getCollabFeatureService',
+        ).mockResolvedValue({ restoreHosts, restoreLifecycle });
+
+        await plugin.onload();
+        const restoreAfterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+          .mock.calls[0]?.[0] as (() => void) | undefined;
+        restoreAfterLayout?.();
+        await jest.advanceTimersByTimeAsync(1);
+
+        expect(restoreLifecycle).toHaveBeenCalledTimes(1);
+        expect(restoreHosts).toHaveBeenCalledTimes(1);
+
+        await jest.advanceTimersByTimeAsync(1_000);
+        expect(restoreLifecycle).toHaveBeenCalledTimes(2);
+        expect(restoreHosts).toHaveBeenCalledTimes(2);
+        plugin.onunload();
+        await Promise.resolve();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('keeps Agent Runtime startup independent from background Host restoration', async () => {
+      enableCollab();
+      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      await plugin.onload();
+      await new Promise(resolve => setImmediate(resolve));
+      const restoreAfterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
+        .mock.calls[0]?.[0] as (() => void) | undefined;
+
+      restoreAfterLayout?.();
+      await new Promise(resolve => setTimeout(resolve, 1));
+
+      expect(start).toHaveBeenCalledTimes(1);
     });
 
     it('should add ribbon icon', async () => {
@@ -203,6 +756,84 @@ describe('ClaudianPlugin', () => {
       });
     });
 
+    it('registers Collab commands without initializing local foundations', async () => {
+      await plugin.onload();
+
+      expect(getRegisteredCommand('open-collab')).toMatchObject({
+        name: 'Open Collab',
+      });
+      expect(getRegisteredCommand('create-collab-project')).toMatchObject({
+        name: 'Create Collab project',
+      });
+      expect(getRegisteredCommand('join-collab-project')).toMatchObject({
+        name: 'Join Collab project',
+      });
+      expect(getRegisteredCommand('resume-collab-project-setup')).toMatchObject({
+        name: 'Resume Collab project setup',
+      });
+      expect(plugin.collabSurfaceFactory).toBeDefined();
+      expect((plugin as unknown as { collabFoundation: unknown }).collabFoundation)
+        .toBeNull();
+      expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+        .toBeNull();
+    });
+
+    it('routes the Open collab command through an existing compatible view', async () => {
+      enableCollab();
+      const selectCollabSurface = jest.fn().mockReturnValue(true);
+      const leaf = {
+        view: {
+          getTabManager: jest.fn(),
+          selectCollabSurface,
+        },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([leaf]);
+      await plugin.onload();
+
+      getRegisteredCommand('open-collab').checkCallback(false);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(selectCollabSurface).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+    });
+
+    it('opens Collab in a main-tab fallback when existing views are narrow', async () => {
+      enableCollab();
+      const narrowSelect = jest.fn().mockReturnValue(false);
+      const fallbackSelect = jest.fn().mockReturnValue(true);
+      const refreshDualPaneLayout = jest.fn();
+      const fallbackLeaf = {
+        setViewState: jest.fn().mockResolvedValue(undefined),
+        view: {
+          getTabManager: jest.fn(),
+          refreshDualPaneLayout,
+          selectCollabSurface: fallbackSelect,
+        },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        view: {
+          getTabManager: jest.fn(),
+          selectCollabSurface: narrowSelect,
+        },
+      }]);
+      mockApp.workspace.getLeaf.mockReturnValue(fallbackLeaf);
+      await plugin.onload();
+
+      getRegisteredCommand('open-collab').checkCallback(false);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(narrowSelect).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith('tab');
+      expect(fallbackLeaf.setViewState).toHaveBeenCalledWith({
+        active: true,
+        type: VIEW_TYPE_CLAUDIAN,
+      });
+      expect(refreshDualPaneLayout).toHaveBeenCalledTimes(1);
+      expect(fallbackSelect).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(fallbackLeaf);
+    });
+
     it('registers the file explorer context menu', async () => {
       await plugin.onload();
 
@@ -213,7 +844,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
-    it('loads only current-tab metadata before the full history scan', async () => {
+    it('does not preload legacy tab metadata before a view claims migration', async () => {
       type EmptyMetadataScan = {
         metadata: [];
         complete: true;
@@ -236,7 +867,7 @@ describe('ClaudianPlugin', () => {
         .mockResolvedValue({
           metadata: restoredMetadata,
           needsMigration: false,
-          source: 'current',
+          source: 'device',
         });
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
@@ -260,8 +891,63 @@ describe('ClaudianPlugin', () => {
       loadSourceSpy.mockRestore();
 
       expect(completedBeforeHistoryScan).toBe(true);
-      expect(didLoadRestoredMetadata).toBe(true);
-      expect(cachedConversation?.title).toBe(restoredMetadata.title);
+      expect(didLoadRestoredMetadata).toBe(false);
+      expect(cachedConversation).toBeNull();
+    });
+
+    it('loads metadata requested by a view-scoped tab workspace', async () => {
+      const restoredMetadata = {
+        id: 'view-restored-conversation',
+        providerId: 'claude' as const,
+        title: 'View restored conversation',
+        createdAt: 1,
+        lastActivityAt: 2,
+      };
+      const loadSourceSpy = mockMetadataSources(restoredMetadata);
+
+      await plugin.onload();
+      expect(plugin.getCachedConversation(restoredMetadata.id)).toBeNull();
+
+      await plugin.ensureConversationMetadataLoaded([restoredMetadata.id]);
+
+      expect(plugin.getCachedConversation(restoredMetadata.id)?.title)
+        .toBe(restoredMetadata.title);
+      expect(loadSourceSpy).toHaveBeenCalledWith(restoredMetadata.id);
+      loadSourceSpy.mockRestore();
+    });
+
+    it('discards stale global tab state after a view-scoped restore succeeds', async () => {
+      const clearLegacyState = jest.spyOn(
+        SharedStorageService.prototype,
+        'clearTabManagerState',
+      ).mockResolvedValue(undefined);
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          activeTabId: 'legacy-tab',
+          openTabs: [{ conversationId: null, tabId: 'legacy-tab' }],
+        },
+      });
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        getViewState: jest.fn().mockReturnValue({
+          state: {
+            tabWorkspace: {
+              version: 1,
+              activeTabId: 'view-tab',
+              openTabs: [{ conversationId: null, tabId: 'view-tab' }],
+            },
+          },
+        }),
+      }]);
+      await plugin.onload();
+
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
+      await expect(plugin.claimLegacyTabManagerState()).resolves.toBeNull();
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
+
+      await plugin.completeLegacyTabManagerStateMigration();
+
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
+      clearLegacyState.mockRestore();
     });
 
     it('publishes the remaining conversation metadata after layout readiness', async () => {
@@ -276,9 +962,9 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
         layoutReady = callback;
       });
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [backgroundMetadata],
+          records: deviceMetadataRecords(backgroundMetadata),
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -311,11 +997,11 @@ describe('ClaudianPlugin', () => {
         selectedModel: 'claude-code/retired-model',
       };
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -355,7 +1041,7 @@ describe('ClaudianPlugin', () => {
       saveSpy.mockRestore();
     });
 
-    it('migrates legacy metadata through the repository after a read-only scan', async () => {
+    it('migrates very old metadata into the unscoped namespace after scanning', async () => {
       const legacyMetadata = {
         id: 'legacy-background-conversation',
         providerId: 'claude' as const,
@@ -363,17 +1049,16 @@ describe('ClaudianPlugin', () => {
         createdAt: 1,
         lastActivityAt: 2,
       };
-      const events: string[] = [];
-
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
-        .mockImplementation(async () => {
-          events.push('scan');
-          return {
-            metadata: [legacyMetadata],
-            complete: true,
-            invalidMetadataCount: 0,
-          };
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
+        .mockResolvedValue({
+          records: [{
+            metadata: legacyMetadata,
+            needsMigration: false,
+            source: 'legacy',
+          }],
+          complete: true,
+          invalidMetadataCount: 0,
         });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
@@ -382,9 +1067,10 @@ describe('ClaudianPlugin', () => {
           source: 'legacy',
         });
       const persistence = getConversationPersistence(plugin);
+      const events: string[] = [];
       const saveSpy = jest.spyOn(persistence, 'saveMetadata')
         .mockImplementation(async () => {
-          events.push('save-current');
+          events.push('save-unscoped');
         });
       const deleteLegacySpy = jest.spyOn(persistence, 'deleteLegacyMetadata')
         .mockImplementation(async () => {
@@ -393,7 +1079,7 @@ describe('ClaudianPlugin', () => {
 
       await (plugin as any).loadRemainingSessionMetadata();
 
-      expect(events).toEqual(['scan', 'save-current', 'delete-legacy']);
+      expect(events).toEqual(['save-unscoped', 'delete-legacy']);
       expect(plugin.getCachedConversation(legacyMetadata.id)?.title)
         .toBe(legacyMetadata.title);
 
@@ -405,9 +1091,9 @@ describe('ClaudianPlugin', () => {
 
     it('recovers missing model metadata after the background session scan', async () => {
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [],
+          records: [],
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -435,9 +1121,9 @@ describe('ClaudianPlugin', () => {
       };
       await plugin.onload();
       (plugin as any).pendingEnvironmentInvalidationGenerations.set('codex', 1);
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
-          metadata: [metadata],
+          records: deviceMetadataRecords(metadata),
           complete: true,
           invalidMetadataCount: 0,
         });
@@ -531,11 +1217,11 @@ describe('ClaudianPlugin', () => {
       });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([restoredMetadata, deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(restoredMetadata, deferredMetadata));
           return {
-            metadata: [restoredMetadata, deferredMetadata],
+            records: deviceMetadataRecords(restoredMetadata, deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -597,11 +1283,11 @@ describe('ClaudianPlugin', () => {
       });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([restoredMetadata, deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(restoredMetadata, deferredMetadata));
           return {
-            metadata: [restoredMetadata, deferredMetadata],
+            records: deviceMetadataRecords(restoredMetadata, deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -666,14 +1352,14 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([firstMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(firstMetadata));
           markFirstBatchPublished();
           await laterBatchRelease;
-          options?.onBatch?.([laterMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(laterMetadata));
           return {
-            metadata: [firstMetadata, laterMetadata],
+            records: deviceMetadataRecords(firstMetadata, laterMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -745,14 +1431,14 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([firstMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(firstMetadata));
           markFirstBatchPublished();
           await scanRelease;
-          options?.onBatch?.([laterMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(laterMetadata));
           return {
-            metadata: [firstMetadata, laterMetadata],
+            records: deviceMetadataRecords(firstMetadata, laterMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -816,11 +1502,11 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: false,
             invalidMetadataCount: 0,
           };
@@ -855,12 +1541,12 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata').mockImplementation(async (options) => {
-        options?.onBatch?.([backgroundMetadata]);
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan').mockImplementation(async (options) => {
+        options?.onBatch?.(deviceMetadataRecords(backgroundMetadata));
         markBatchPublished();
         await scanRelease;
         return {
-          metadata: [backgroundMetadata],
+          records: deviceMetadataRecords(backgroundMetadata),
           complete: true,
           invalidMetadataCount: 0,
         };
@@ -898,11 +1584,11 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([tombstonedMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(tombstonedMetadata));
           return {
-            metadata: [tombstonedMetadata],
+            records: deviceMetadataRecords(tombstonedMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -933,11 +1619,11 @@ describe('ClaudianPlugin', () => {
         tombstonedMetadata,
       );
       (plugin as any).conversationRepository.mergeMetadataConversations([shell]);
-      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([tombstonedMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(tombstonedMetadata));
           return {
-            metadata: [tombstonedMetadata],
+            records: deviceMetadataRecords(tombstonedMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -982,17 +1668,17 @@ describe('ClaudianPlugin', () => {
       expect(pendingGeneration).toEqual(expect.any(Number));
 
       plugin.onunload();
-      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      const restartedPlugin = createPlugin();
       (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
       const restartedSaveMetadataSpy = jest.spyOn(
         ConversationPersistenceStore.prototype,
         'saveMetadata',
       );
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1004,7 +1690,9 @@ describe('ClaudianPlugin', () => {
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
-        files.get('.claudian/sessions/restart-deferred-session.meta.json') ?? '{}',
+        files.get(
+          `${getDeviceSessionsPath(getHostnameKey())}/restart-deferred-session.meta.json`,
+        ) ?? '{}',
       );
       const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       const deferredInvalidationWrites = restartedSaveMetadataSpy.mock.calls.filter(
@@ -1051,11 +1739,11 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -1099,6 +1787,14 @@ describe('ClaudianPlugin', () => {
       expect(() => plugin.onunload()).not.toThrow();
     });
 
+    it('leaves plugin-view detachment to Obsidian during unload', async () => {
+      await plugin.onload();
+
+      plugin.onunload();
+
+      expect(mockApp.workspace.detachLeavesOfType).not.toHaveBeenCalled();
+    });
+
     it('disposes the application execution lifecycle registry', async () => {
       await plugin.onload();
       const disposeSpy = jest.spyOn(
@@ -1133,13 +1829,27 @@ describe('ClaudianPlugin', () => {
         ProviderWorkspaceRegistry,
         'disposeInitialized',
       ).mockResolvedValue(undefined);
+      const closeRuntime = jest.fn().mockResolvedValue(undefined);
+      const retainedCollabService = { close: jest.fn().mockResolvedValue(undefined) };
+      Object.assign(plugin as unknown as Record<string, unknown>, {
+        agentRuntime: {
+          close: closeRuntime,
+          waitForWriteInvocations: jest.fn().mockResolvedValue(undefined),
+        },
+        collabFeatureService: retainedCollabService,
+      });
 
       plugin.onunload();
       await Promise.resolve();
 
       expect(prepareForPluginUnload).toHaveBeenCalledTimes(1);
+      expect(closeRuntime).toHaveBeenCalledTimes(1);
       expect(disposeExecution).not.toHaveBeenCalled();
       expect(disposeWorkspaces).not.toHaveBeenCalled();
+      await expect((
+        plugin as unknown as { getCollabFeatureService(): Promise<unknown> }
+      ).getCollabFeatureService()).resolves.toBeNull();
+      expect(retainedCollabService.close).toHaveBeenCalledTimes(1);
 
       resolveViewDrain();
       await (plugin as any).applicationShutdownPromise;
@@ -1150,17 +1860,65 @@ describe('ClaudianPlugin', () => {
         disposeWorkspaces.mock.invocationCallOrder[0],
       );
     });
+
+    it('closes the Agent Runtime before disposing Collab application state', async () => {
+      await plugin.onload();
+      const closeRuntime = jest.fn().mockResolvedValue(undefined);
+      let releaseWrites!: () => void;
+      const writesSettled = new Promise<void>(resolve => {
+        releaseWrites = resolve;
+      });
+      const waitForWriteInvocations = jest.fn(() => writesSettled);
+      const closeFeature = jest.fn().mockResolvedValue(undefined);
+      const closeFoundation = jest.fn().mockResolvedValue(undefined);
+      Object.assign(plugin as unknown as Record<string, unknown>, {
+        agentRuntime: { close: closeRuntime, waitForWriteInvocations },
+        collabFeatureService: { close: closeFeature },
+        collabFoundation: { close: closeFoundation },
+      });
+
+      plugin.onunload();
+      const shutdown = (
+        plugin as unknown as { applicationShutdownPromise: Promise<void> }
+      ).applicationShutdownPromise;
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(closeRuntime).toHaveBeenCalledTimes(1);
+      expect(waitForWriteInvocations).toHaveBeenCalledTimes(1);
+      expect(closeFeature).toHaveBeenCalledTimes(1);
+      expect(closeFoundation).not.toHaveBeenCalled();
+
+      releaseWrites();
+      await shutdown;
+
+      expect(closeFeature).toHaveBeenCalledTimes(1);
+      expect(closeFoundation).toHaveBeenCalledTimes(1);
+      expect(closeRuntime.mock.invocationCallOrder[0]).toBeLessThan(
+        waitForWriteInvocations.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+      expect(waitForWriteInvocations.mock.invocationCallOrder[0]).toBeLessThan(
+        closeFoundation.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+    });
   });
 
   describe('activateView', () => {
     it('should reveal existing leaf if view already exists', async () => {
-      const mockLeaf = { id: 'existing-leaf' };
+      const focusActiveInput = jest.fn();
+      const mockLeaf = {
+        id: 'existing-leaf',
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
       mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
 
       await plugin.onload();
       await plugin.activateView();
 
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+      expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
     it('should create new leaf in right sidebar by default if view does not exist', async () => {
@@ -1178,6 +1936,68 @@ describe('ClaudianPlugin', () => {
         type: VIEW_TYPE_CLAUDIAN,
         active: true,
       });
+    });
+
+    it('focuses a newly revealed right-sidebar chat even when the root editor stays most recent', async () => {
+      const focusActiveInput = jest.fn();
+      const mockRightLeaf = {
+        setViewState: jest.fn().mockResolvedValue(undefined),
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getRightLeaf.mockReturnValue(mockRightLeaf);
+      mockApp.workspace.getMostRecentLeaf.mockReturnValue({ id: 'previous-editor-leaf' });
+
+      await plugin.onload();
+      await plugin.activateView();
+
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockRightLeaf);
+      expect(focusActiveInput).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.revealLeaf.mock.invocationCallOrder[0]).toBeLessThan(
+        focusActiveInput.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not reclaim focus when another leaf activates during cold view setup', async () => {
+      let resolveViewSetup!: () => void;
+      const focusActiveInput = jest.fn();
+      const mockRightLeaf = {
+        setViewState: jest.fn().mockImplementation(() => new Promise<void>((resolve) => {
+          resolveViewSetup = resolve;
+        })),
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
+      const activeLeafListeners = new Map<object, (leaf: unknown) => void>();
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getRightLeaf.mockReturnValue(mockRightLeaf);
+      mockApp.workspace.on.mockImplementation((event: string, listener: (leaf: unknown) => void) => {
+        const eventRef = { event, listener };
+        if (event === 'active-leaf-change') {
+          activeLeafListeners.set(eventRef, listener);
+        }
+        return eventRef;
+      });
+      mockApp.workspace.offref = jest.fn((eventRef: object) => {
+        activeLeafListeners.delete(eventRef);
+      });
+
+      await plugin.onload();
+      const activation = plugin.activateView();
+      for (const listener of activeLeafListeners.values()) {
+        listener({ id: 'newer-editor-leaf' });
+      }
+      resolveViewSetup();
+      await activation;
+
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockRightLeaf);
+      expect(focusActiveInput).not.toHaveBeenCalled();
+      expect(activeLeafListeners.size).toBe(0);
     });
 
     it('should create new leaf in left sidebar when chatViewPlacement is left-sidebar', async () => {
@@ -1893,15 +2713,15 @@ describe('ClaudianPlugin', () => {
       const batchPublished = new Promise<void>(resolve => { markBatchPublished = resolve; });
       let finishScan!: () => void;
       const scanRelease = new Promise<void>(resolve => { finishScan = resolve; });
-      const scanSpy = jest.spyOn(plugin.storage.sessions, 'scanMetadata')
+      const scanSpy = jest.spyOn(plugin.storage.sessions, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           markBatchPublished();
           await scanRelease;
           return {
             complete: false,
             invalidMetadataCount: 0,
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
           };
         });
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
@@ -2356,17 +3176,17 @@ describe('ClaudianPlugin', () => {
         .toEqual(expect.any(Number));
 
       plugin.onunload();
-      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      const restartedPlugin = createPlugin();
       (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
       const saveMetadataSpy = jest.spyOn(
         ConversationPersistenceStore.prototype,
         'saveMetadata',
       );
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockImplementation(async (options) => {
-          options?.onBatch?.([deferredMetadata]);
+          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
           return {
-            metadata: [deferredMetadata],
+            records: deviceMetadataRecords(deferredMetadata),
             complete: true,
             invalidMetadataCount: 0,
           };
@@ -2378,7 +3198,9 @@ describe('ClaudianPlugin', () => {
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
-        files.get('.claudian/sessions/runtime-settings-restart-session.meta.json') ?? '{}',
+        files.get(
+          `${getDeviceSessionsPath(getHostnameKey())}/runtime-settings-restart-session.meta.json`,
+        ) ?? '{}',
       );
       const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       const invalidationWrites = saveMetadataSpy.mock.calls.filter(
@@ -3073,71 +3895,147 @@ describe('ClaudianPlugin', () => {
       expect(firstView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
       expect(secondView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
     });
+
+    it('keeps a committed Conversation when an open view projection fails', async () => {
+      await plugin.onload();
+      const healthyView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(),
+      };
+      const failingView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(() => {
+          throw new Error('detached view');
+        }),
+      };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([
+        failingView as any,
+        healthyView as any,
+      ]);
+
+      const conversation = await plugin.createConversation({
+        linkedContentPath: 'Projects/Plan.md',
+      });
+
+      expect(plugin.getConversationSync(conversation.id)).toBe(conversation);
+      expect(healthyView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+    });
   });
 
-  describe('linked note renames', () => {
-    it('registers Vault rename and delete listeners', async () => {
+  describe('Linked content path events', () => {
+    it('registers Vault create, rename, and delete listeners', async () => {
       await plugin.onload();
 
+      expect(mockApp.vault.on).toHaveBeenCalledWith('create', expect.any(Function));
       expect(mockApp.vault.on).toHaveBeenCalledWith('rename', expect.any(Function));
       expect(mockApp.vault.on).toHaveBeenCalledWith('delete', expect.any(Function));
     });
 
     it('rewrites linked file and folder paths without changing activity timestamps', async () => {
       await plugin.onload();
-      const fileConversation = await plugin.createConversation();
-      const folderConversation = await plugin.createConversation();
-      await plugin.updateConversation(fileConversation.id, { currentNote: 'Notes/Old.md' });
-      await plugin.updateConversation(folderConversation.id, {
-        currentNote: 'Projects/Old/Plan.md',
+      const fileConversation = await plugin.createConversation({
+        linkedContentPath: 'Notes/Old.md',
+      });
+      const folderConversation = await plugin.createConversation({
+        linkedContentPath: 'Projects/Old/Plan.md',
       });
       const fileUpdatedAt = fileConversation.lastActivityAt;
       const folderUpdatedAt = folderConversation.lastActivityAt;
-      await plugin.setLinkedNotePinned('Notes/Old.md', true);
-      await plugin.setLinkedNotePinned('Projects/Old/Plan.md', true);
+      await plugin.setLinkedContentPinned('Notes/Old.md', true);
+      await plugin.setLinkedContentPinned('Projects/Old/Plan.md', true);
 
-      await (plugin as any).handleLinkedNoteRename(
+      await (plugin as any).handleLinkedContentRename(
         new (TFile as any)('Notes/New.md'),
         'Notes/Old.md',
       );
-      await (plugin as any).handleLinkedNoteRename(
+      await (plugin as any).handleLinkedContentRename(
         new (TFolder as any)('Projects/New'),
         'Projects/Old',
       );
 
       expect(fileConversation).toMatchObject({
-        currentNote: 'Notes/New.md',
+        linkedContentPath: 'Notes/New.md',
         lastActivityAt: fileUpdatedAt,
       });
       expect(folderConversation).toMatchObject({
-        currentNote: 'Projects/New/Plan.md',
+        linkedContentPath: 'Projects/New/Plan.md',
         lastActivityAt: folderUpdatedAt,
       });
-      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([
+      expect(plugin.settings.pinnedLinkedContentPaths).toEqual([
         'Notes/New.md',
         'Projects/New/Plan.md',
       ]);
     });
 
-    it('removes deleted file and folder paths from pinned linked notes', async () => {
+    it('removes deleted file and folder paths from pinned Linked content', async () => {
       await plugin.onload();
-      await plugin.setLinkedNotePinned('Notes/Plan.md', true);
-      await plugin.setLinkedNotePinned('Projects/Archive/One.md', true);
-      await plugin.setLinkedNotePinned('Projects/Archive/Two.md', true);
+      await plugin.setLinkedContentPinned('Notes/Plan.md', true);
+      await plugin.setLinkedContentPinned('Projects/Archive/One.md', true);
+      await plugin.setLinkedContentPinned('Projects/Archive/Two.md', true);
 
-      await (plugin as any).handlePinnedLinkedNoteDeleted(
+      await (plugin as any).handlePinnedLinkedContentDeleted(
         new (TFile as any)('Notes/Plan.md'),
       );
-      await (plugin as any).handlePinnedLinkedNoteDeleted(
+      await (plugin as any).handlePinnedLinkedContentDeleted(
         new (TFolder as any)('Projects/Archive'),
       );
 
-      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([]);
+      expect(plugin.settings.pinnedLinkedContentPaths).toEqual([]);
+    });
+
+    it('invalidates open history projections when unpinned targets disappear or reappear', async () => {
+      await plugin.onload();
+      const view = {
+        handleLinkedContentCreated: jest.fn(),
+        handleLinkedContentDeleted: jest.fn(),
+        notifyConversationListChanged: jest.fn(),
+      };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([view as any]);
+
+      await (plugin as any).handlePinnedLinkedContentDeleted(
+        new (TFile as any)('Notes/Unpinned.md'),
+      );
+
+      expect(view.handleLinkedContentDeleted).toHaveBeenCalledWith(
+        'Notes/Unpinned.md',
+        false,
+      );
+      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+
+      const createListener = mockApp.vault.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'create',
+      )?.[1];
+      expect(createListener).toEqual(expect.any(Function));
+      createListener(new (TFile as any)('Notes/Unpinned.md'));
+
+      expect(view.handleLinkedContentCreated).toHaveBeenCalledWith('Notes/Unpinned.md');
+      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('invalidates deleted targets even when pinned-settings cleanup fails', async () => {
+      await plugin.onload();
+      const view = {
+        handleLinkedContentDeleted: jest.fn(),
+        notifyConversationListChanged: jest.fn(),
+      };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([view as any]);
+      jest.spyOn((plugin as any).pinnedLinkedContentPaths, 'removePaths')
+        .mockRejectedValueOnce(new Error('settings unavailable'));
+
+      await expect((plugin as any).handlePinnedLinkedContentDeleted(
+        new (TFile as any)('Notes/Unpinned.md'),
+      )).rejects.toThrow('settings unavailable');
+
+      expect(view.handleLinkedContentDeleted).toHaveBeenCalledWith(
+        'Notes/Unpinned.md',
+        false,
+      );
+      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('updateConversation', () => {
-    it('creates linked-note metadata atomically and publishes later note changes', async () => {
+    it('keeps Linked content creation-only and routes Vault renames explicitly', async () => {
       await plugin.onload();
       const notifyConversationListChanged = jest.fn();
       jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
@@ -3145,18 +4043,24 @@ describe('ClaudianPlugin', () => {
       } as any]);
 
       const conv = await plugin.createConversation({
-        currentNote: 'Projects/Initial.md',
+        linkedContentPath: 'Projects/Initial.md',
       });
 
-      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.linkedContentPath)
         .toBe('Projects/Initial.md');
       notifyConversationListChanged.mockClear();
 
-      await plugin.updateConversation(conv.id, {
-        currentNote: 'Projects/Updated.md',
-      });
+      await expect((plugin.updateConversation as any)(conv.id, {
+        linkedContentPath: 'Projects/Updated.md',
+      })).rejects.toThrow('immutable fields');
 
-      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+      await plugin.rewriteLinkedContentPaths(
+        'Projects/Initial.md',
+        'Projects/Updated.md',
+        false,
+      );
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.linkedContentPath)
         .toBe('Projects/Updated.md');
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
 

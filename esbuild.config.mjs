@@ -10,12 +10,21 @@ import {
   readFileSync,
   rmSync,
 } from 'fs';
+import { assertRuntimeDependencyParity } from './scripts/runtimeDependencyParity.mjs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
+import desktopRuntimeAliasHelpers from './scripts/desktopRuntimeAliases.js';
+import terserProductionBundleHelpers from './scripts/terserProductionBundle.js';
+import pierreShikiBundleHelpers from './scripts/pierreShikiBundle.js';
+import compressedStaticAssetsHelpers from './scripts/compressedStaticAssets.js';
 
 const {
   findUnsafeTimerUnrefSites,
   patchRendererUnsafeUnrefSites,
 } = rendererSafeUnrefHelpers;
+const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
+const { createTerserProductionBundlePlugin } = terserProductionBundleHelpers;
+const { createPierreShikiBundlePlugin } = pierreShikiBundleHelpers;
+const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 
 // Load .env.local if it exists
 if (existsSync('.env.local')) {
@@ -29,6 +38,7 @@ if (existsSync('.env.local')) {
 }
 
 const prod = process.argv[2] === 'production';
+if (prod) assertRuntimeDependencyParity(process.cwd());
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -183,15 +193,23 @@ const external = [
 
 const mainContext = await esbuild.context({
   entryPoints: ['src/main.ts'],
+  alias: {
+    ...createDesktopRuntimeAliases(),
+  },
   bundle: true,
   plugins: [
     patchSdkImportMeta,
+    createCompressedStaticAssetsPlugin(),
+    createPierreShikiBundlePlugin(),
+    ...(prod ? [createTerserProductionBundlePlugin(['main.js'])] : []),
     createPatchRendererUnsafeUnref(['main.js']),
     copyToObsidian,
   ],
   external,
   format: 'cjs',
-  target: 'es2018',
+  loader: { '.wasm': 'binary' },
+  target: 'es2022',
+  charset: 'utf8',
   logLevel: 'info',
   minify: prod,
   sourcemap: prod ? false : 'inline',

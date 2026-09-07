@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../../core/types/settings';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { normalizeConfiguredCliPath } from '../../../utils/path';
 import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
 import { getClaudeProviderSettings } from '../settings';
 
@@ -68,10 +68,9 @@ export class ClaudeCliResolver {
 }
 
 function resolveConfiguredPath(rawPath: string | undefined): string | null {
-  const trimmed = (rawPath ?? '').trim();
-  if (!trimmed) return null;
   try {
-    const expanded = expandHomePath(trimmed);
+    const expanded = normalizeConfiguredCliPath(rawPath);
+    if (!expanded) return null;
     if (fs.existsSync(expanded) && fs.statSync(expanded).isFile()) {
       return expanded;
     }

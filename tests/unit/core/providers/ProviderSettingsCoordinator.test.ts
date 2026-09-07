@@ -75,6 +75,49 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.effortLevel).toBe('ultra');
     });
 
+    it.each([
+      {
+        caseName: 'legacy Fast with no catalog default',
+        storedServiceTier: 'fast',
+        defaultServiceTier: null,
+        expectedServiceTier: 'priority',
+      },
+      {
+        caseName: 'explicit Standard with a Fast catalog default',
+        storedServiceTier: 'default',
+        defaultServiceTier: 'priority',
+        expectedServiceTier: 'default',
+      },
+    ])('canonicalizes $caseName for a model snapshot', ({
+      storedServiceTier,
+      defaultServiceTier,
+      expectedServiceTier,
+    }) => {
+      const discoveredModels = TEST_CODEX_CATALOG.map(model => model.model === TEST_CODEX_MODEL
+        ? { ...model, defaultServiceTier }
+        : model);
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        model: TEST_CODEX_MODEL,
+        effortLevel: 'medium',
+        serviceTier: storedServiceTier,
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            discoveredModels,
+          },
+        },
+      };
+
+      const conversationSnapshot = getProviderSettingsSnapshotWithModel(
+        settings,
+        'codex',
+        TEST_CODEX_MODEL,
+      );
+
+      expect(conversationSnapshot.serviceTier).toBe(expectedServiceTier);
+    });
+
     it('uses a Pi conversation model preference before normalizing against the saved provider model', () => {
       const deepSeekModel = 'pi:deepseek/deepseek-reasoner';
       const gptModel = 'pi:openai/gpt-5';

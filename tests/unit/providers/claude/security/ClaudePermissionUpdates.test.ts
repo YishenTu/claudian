@@ -1,19 +1,14 @@
-import { buildPermissionUpdates } from '@/providers/claude/security/ClaudePermissionUpdates';
+import { buildPersistentPermissionUpdates } from '@/providers/claude/security/ClaudePermissionUpdates';
 
-describe('buildPermissionUpdates', () => {
-  it('constructs allow rule for allow decision', () => {
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow');
+describe('buildPersistentPermissionUpdates', () => {
+  it('constructs a project allow rule from the action', () => {
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'git status' });
     expect(updates).toEqual([{
       type: 'addRules',
       behavior: 'allow',
       rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
-      destination: 'session',
+      destination: 'projectSettings',
     }]);
-  });
-
-  it('uses projectSettings destination for always decisions', () => {
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always');
-    expect(updates[0].destination).toBe('projectSettings');
   });
 
   it('uses SDK suggestions when available', () => {
@@ -23,7 +18,7 @@ describe('buildPermissionUpdates', () => {
       rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
       destination: 'session' as const,
     }];
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'git status' }, suggestions);
     expect(updates).toEqual([{
       type: 'addRules',
       behavior: 'allow',
@@ -33,23 +28,17 @@ describe('buildPermissionUpdates', () => {
   });
 
   it('falls back to constructed rule when no addRules suggestions', () => {
-    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'allow', []);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'ls' }, []);
     expect(updates).toEqual([{
       type: 'addRules',
       behavior: 'allow',
       rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
-      destination: 'session',
+      destination: 'projectSettings',
     }]);
   });
 
-  it('omits ruleContent when pattern is null (missing file_path)', () => {
-    const updates = buildPermissionUpdates('Read', {}, 'allow');
-    expect(updates).toEqual([{
-      type: 'addRules',
-      behavior: 'allow',
-      rules: [{ toolName: 'Read' }],
-      destination: 'session',
-    }]);
+  it('does not persist an unscoped fallback rule', () => {
+    expect(buildPersistentPermissionUpdates('Read', {})).toEqual([]);
   });
 
   it('includes addDirectories suggestions without overriding destination', () => {
@@ -66,7 +55,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Read', { file_path: '/external/path/file.md' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Read', { file_path: '/external/path/file.md' }, suggestions);
     expect(updates).toHaveLength(2);
     expect(updates[0]).toEqual({
       type: 'addRules',
@@ -89,7 +78,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'ls' }, suggestions);
     expect(updates).toHaveLength(2);
     expect(updates[0]).toEqual({
       type: 'addRules',
@@ -112,7 +101,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'echo hi' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'echo hi' }, suggestions);
     expect(updates).toHaveLength(2);
     expect(updates[0]).toEqual({
       type: 'addRules',
@@ -135,7 +124,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Read', { file_path: '/new/dir/file.md' }, 'allow', suggestions);
+    const updates = buildPersistentPermissionUpdates('Read', { file_path: '/new/dir/file.md' }, suggestions);
     expect(updates).toHaveLength(2);
     expect(updates[0].type).toBe('addRules');
     expect(updates[1].type).toBe('addDirectories');
@@ -150,7 +139,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'git status' }, suggestions);
     expect(updates).toHaveLength(1);
     expect(updates[0]).toEqual({
       type: 'replaceRules',
@@ -169,13 +158,13 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'git status' }, suggestions);
     expect(updates).toHaveLength(2);
     expect(updates[0].type).toBe('addRules');
     expect(updates[0]).toMatchObject({
       behavior: 'allow',
       rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
-      destination: 'session',
+      destination: 'projectSettings',
     });
     expect(updates[1].type).toBe('removeRules');
   });
@@ -189,7 +178,7 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
+    const updates = buildPersistentPermissionUpdates('Bash', { command: 'git status' }, suggestions);
     const removeEntry = updates.find(u => u.type === 'removeRules');
     expect(removeEntry).toBeDefined();
     expect(removeEntry!.behavior).toBe('deny');
@@ -197,9 +186,9 @@ describe('buildPermissionUpdates', () => {
   });
 
   it('returns no persistent update when neither suggestions nor fallback have a non-empty scope', () => {
-    expect(buildPermissionUpdates('Read', {}, 'allow-always')).toEqual([]);
-    expect(buildPermissionUpdates('Bash', { command: '   ' }, 'allow-always')).toEqual([]);
-    expect(buildPermissionUpdates('UnknownTool', {}, 'allow-always')).toEqual([]);
+    expect(buildPersistentPermissionUpdates('Read', {})).toEqual([]);
+    expect(buildPersistentPermissionUpdates('Bash', { command: '   ' })).toEqual([]);
+    expect(buildPersistentPermissionUpdates('UnknownTool', {})).toEqual([]);
   });
 
   it('ignores whitespace-only suggested scopes for persistent approval', () => {
@@ -210,7 +199,7 @@ describe('buildPermissionUpdates', () => {
       destination: 'session' as const,
     }];
 
-    expect(buildPermissionUpdates('Read', {}, 'allow-always', suggestions)).toEqual([]);
+    expect(buildPersistentPermissionUpdates('Read', {}, suggestions)).toEqual([]);
   });
 
   it('preserves the exact non-empty provider suggestion for persistent approval', () => {
@@ -221,7 +210,7 @@ describe('buildPermissionUpdates', () => {
       destination: 'session' as const,
     }];
 
-    expect(buildPermissionUpdates('Bash', {}, 'allow-always', suggestions)).toEqual([{
+    expect(buildPersistentPermissionUpdates('Bash', {}, suggestions)).toEqual([{
       type: 'addRules',
       behavior: 'allow',
       rules: [{ toolName: 'Bash', ruleContent: 'git *' }],

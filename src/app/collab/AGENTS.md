@@ -1,0 +1,21 @@
+# Collab application domain
+
+## Host installation authority
+
+- Project membership owns Member identity, role, credential, personal ref, and the Member-level `hostOwnership.ownsAuthority` flag. None of those fields identifies the installation allowed to operate local Host authority.
+- `HostInstallationBindingService` is the sole policy owner for local Host execution. It interprets the current installation against the authority marker, admits explicit legacy claim and transfer-target binding, and rejects mismatched Host-owned recovery before side effects. LAN Host start performs legacy binding before durable restart guards; its guarded authority-open callback may only use the service's already-admitted marker-capability revalidation path.
+- `CollabLocalProjectRepository` owns bounded marker and authority-directory filesystem mechanics. Marker inspection is read-only; opening, creating, retiring, or removing authority state requires an owned capability issued for the current installation.
+- Host runtime CA and process-lock state is scoped below `.claudian/collab/installations/<installationKey>/`. Legacy global CA files are read-only migration input during an explicitly approved legacy claim; global CA and lock files are never runtime ownership evidence.
+- A synchronized installation with the same Host Member but a foreign marker remains an ordinary LAN client with the same role and credential. Local Host selection, recovery, TLS, locking, authority access, and deletion require `hosted-here`; Member authorization rules continue to use membership.
+- Marker inspection failure is strict for Host-control operations, but it only makes the optional active-local target ineligible for ordinary LAN client routing. Project summaries isolate the affected Host projection as needs-attention instead of failing unrelated Projects.
+- Only Project setup, physical Host-transfer recovery, production authority-transfer recovery, private Cloud-bootstrap transition, and retirement tombstone records carry an installation owner. Generic Publish, request, conflict, working-copy, Leave, claimant, and ordinary Member recovery remain synchronized client state.
+- After a schema 2 marker exists, Host admission first reruns idempotent binding for eligible legacy source records before restart guards. Ownerless legacy target or terminal records remain visible and fail with recovery-required diagnostics; only valid foreign and completed owner-bound records remain inert synchronized evidence.
+- Incoming Host transfer and Cloud-to-LAN target recovery persist an owner-bound intent before listener, TLS, staging, or provisional authority work. Cloud-to-LAN keeps the canonical authority directory markerless until relinquishment proof; activation binds only an exact, complete provisional database and repository.
+- A hosted route becomes visible only after its project is live with the installation-scoped pinned CA. Every hosted-route publication, removal, or rebind resets the shared LAN work-session projection after route visibility changes so cached clients cannot retain a stale local route.
+- A reconnectable LAN control failure coalesces uniquely trusted discovery at the shared work-session boundary, persists endpoint and Git-origin rotation, resets that session generation, and retries the same idempotent operation once. Publish and review validate control and execute Git from one generation.
+- `LanAuthorityProjectionTransitionCoordinator` serializes Host start/rebind, reconnect, and physical Host-transfer Git-origin plus membership projection changes per Project. Each writer revalidates its expected membership inside that lane before rotating origin and saving membership. Fresh Host clones have no stopped-Host origin; the first trusted route establishes it, while legacy sentinels are repair input only.
+
+## Dependency direction
+
+- `src/main.ts` resolves the installation key once and injects it into Collab composition. App and feature modules do not read renderer persistence directly.
+- Core and presentation may consume the installation-status projection and explicit legacy-claim port only. They do not import the binding service, local repository, TLS identity, or Host coordinator.

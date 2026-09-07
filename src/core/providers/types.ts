@@ -31,6 +31,8 @@ export interface ProviderCapabilities {
   supportsRewind: boolean;
   supportsFork: boolean;
   supportsProviderCommands: boolean;
+  /** Whether command discovery uses the shared UI deadline or provider-owned bounds. */
+  commandDiscoveryDeadline?: 'shared' | 'provider-owned';
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
   supportsTurnSteer?: boolean;
@@ -105,7 +107,7 @@ export interface ProviderSettingsReconciler {
 
 /** Tab manager state persisted across restarts. */
 export interface AppTabManagerState {
-  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>;
+  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string }>;
   activeTabId: string | null;
   expandedTitleTabIds?: string[];
 }
@@ -249,6 +251,8 @@ export interface ProviderServiceTierToggleConfig {
   inactiveLabel: string;
   activeValue: string;
   activeLabel: string;
+  /** Whether the provider will use the active tier for the next request. */
+  isActive: boolean;
   description?: string;
 }
 

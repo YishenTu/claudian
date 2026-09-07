@@ -43,6 +43,62 @@ const nativeOptions = {
 };
 
 describe('createClaudeExecutionCanUseTool', () => {
+  it('allows only the current invocation for an allow-once decision', async () => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async (request) => ({
+      interactionId: request.interactionId,
+      decision: 'allow',
+    }));
+    const handler = createHandler(port);
+    const input = { command: 'ls /external/path' };
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'ls *' }],
+      destination: 'session' as const,
+    }];
+
+    const result = await handler('Bash', input, {
+      ...nativeOptions,
+      suggestions,
+    });
+
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      decisionClassification: 'user_temporary',
+    });
+  });
+
+  it('applies provider suggestions only for an always-allow decision', async () => {
+    const port = createPort();
+    const handler = createHandler(port);
+    const input = { command: 'git status' };
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'session' as const,
+    }];
+
+    const result = await handler('Bash', input, {
+      ...nativeOptions,
+      suggestions,
+    });
+
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      updatedPermissions: [{
+        type: 'addRules',
+        behavior: 'allow',
+        rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+        destination: 'projectSettings',
+      }],
+      decisionClassification: 'user_permanent',
+    });
+  });
+
   it('routes approvals with stable native/local identity and dismisses the exact interaction', async () => {
     const port = createPort();
     const handler = createHandler(port);

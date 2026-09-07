@@ -1,0 +1,54 @@
+.claudian-collab-git-setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+  padding: var(--size-4-3);
+}
+
+.claudian-collab-git-title {
+  margin: 0;
+}
+
+.claudian-collab-git-status {
+  border-radius: var(--radius-s);
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.claudian-collab-git-status--ready {
+  background: rgba(var(--color-green-rgb), 0.12);
+  color: var(--text-success);
+}
+
+.claudian-collab-git-status--blocked {
+  background: var(--background-modifier-error-hover);
+  color: var(--text-error);
+}
+
+.claudian-collab-git-capabilities {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  margin-top: var(--size-4-1);
+}
+
+.claudian-collab-git-support,
+.claudian-collab-git-path-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.claudian-collab-git-prompt {
+  box-sizing: border-box;
+  font-family: var(--font-monospace);
+  resize: vertical;
+  width: 100%;
+}
+
+.claudian-collab-git-actions {
+  display: flex;
+  gap: var(--size-4-2);
+}
+
+.claudian-collab-git-path {
+  width: 100%;
+}

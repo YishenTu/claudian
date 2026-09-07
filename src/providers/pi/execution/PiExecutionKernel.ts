@@ -14,7 +14,7 @@ export interface PiExecutionKernelCallbacks {
   onClose(error?: Error): void;
   onEvent(event: PiRpcRecord): void;
   onExtensionChunk(chunk: StreamChunk): void;
-  onExtensionRequest(request: PiRpcRecord): void;
+  onExtensionRequest(request: PiRpcRecord): boolean;
 }
 
 export interface PiExecutionKernel {
@@ -70,13 +70,13 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
       transport,
       this.extensionUiRenderer,
       chunk => this.callbacks.onExtensionChunk(chunk),
+      request => this.callbacks.onExtensionRequest(request),
     );
     this.transport = transport;
     this.extensionBridge = extensionBridge;
     transport.start();
     this.removeEventListener = transport.onEvent((event) => {
       if (event.type === 'extension_ui_request') {
-        this.callbacks.onExtensionRequest(event);
         extensionBridge.handleRequest(event);
         return;
       }

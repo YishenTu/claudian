@@ -17,7 +17,7 @@ import type { WriteEditState } from '../rendering/WriteEditRenderer';
 export interface ChatTurnRequest {
   text: string;
   images?: ImageAttachment[];
-  currentNotePath?: string;
+  linkedContentPath?: string;
   editorSelection?: EditorSelectionContext | null;
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
@@ -43,10 +43,19 @@ export interface PendingToolCall {
 
 export type TabAttentionKind = 'review' | 'action-required';
 
-export type TabAttention = {
-  kind: TabAttentionKind;
-  since: number;
-} | null;
+export type TabReviewOutcome = 'completed' | 'error';
+
+export type TabAttention =
+  | {
+      kind: 'review';
+      outcome: TabReviewOutcome;
+      since: number;
+    }
+  | {
+      kind: 'action-required';
+      since: number;
+    }
+  | null;
 
 /** Stored selection state from editor polling. */
 export interface StoredSelection {

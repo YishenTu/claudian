@@ -68,6 +68,67 @@ describe('replaceImageEmbedsWithHtml', () => {
       expect(result).toContain('image');
       expect(result).toContain('<img');
     });
+
+    it('replaces image embeds in text but preserves image embed syntax in inline code', () => {
+      const app = createMockApp(new Map([
+        ['visible.png', 'app://local/visible.png'],
+        ['literal.png', 'app://local/literal.png'],
+      ]));
+
+      const result = replaceImageEmbedsWithHtml(
+        'Visible ![[visible.png]] and `literal ![[literal.png]]`',
+        app
+      );
+
+      expect(result).toBe(
+        'Visible <span class="claudian-embedded-image"><img src="app://local/visible.png" alt="visible" loading="lazy"></span> and `literal ![[literal.png]]`'
+      );
+    });
+  });
+
+  describe('code syntax', () => {
+    it('preserves image embed syntax in backtick and tilde fences', () => {
+      const app = createMockApp(new Map([
+        ['visible.png', 'app://local/visible.png'],
+        ['backtick.png', 'app://local/backtick.png'],
+        ['tilde.png', 'app://local/tilde.png'],
+      ]));
+      const markdown = [
+        '![[visible.png]]',
+        '',
+        '```md',
+        '![[backtick.png]]',
+        '```',
+        '',
+        '~~~md',
+        '![[tilde.png]]',
+        '~~~',
+      ].join('\n');
+
+      const result = replaceImageEmbedsWithHtml(markdown, app);
+
+      expect(result).toContain('src="app://local/visible.png"');
+      expect(result).toContain('```md\n![[backtick.png]]\n```');
+      expect(result).toContain('~~~md\n![[tilde.png]]\n~~~');
+      expect(result).not.toContain('src="app://local/backtick.png"');
+      expect(result).not.toContain('src="app://local/tilde.png"');
+    });
+
+    it('preserves image embed syntax in indented code', () => {
+      const app = createMockApp(new Map([
+        ['visible.png', 'app://local/visible.png'],
+        ['literal.png', 'app://local/literal.png'],
+      ]));
+
+      const result = replaceImageEmbedsWithHtml(
+        '![[visible.png]]\n\n    ![[literal.png]]',
+        app
+      );
+
+      expect(result).toContain('src="app://local/visible.png"');
+      expect(result).toContain('\n\n    ![[literal.png]]');
+      expect(result).not.toContain('src="app://local/literal.png"');
+    });
   });
 
   describe('alt text and dimensions', () => {

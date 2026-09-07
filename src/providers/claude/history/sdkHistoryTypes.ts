@@ -20,6 +20,7 @@ export interface SDKNativeMessage {
     model?: string;
   };
   subtype?: string;
+  durationMs?: number;
   duration_ms?: number;
   duration_api_ms?: number;
   toolUseResult?: unknown;

@@ -32,7 +32,7 @@ import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendContextFiles,
-  appendCurrentNote,
+  appendLinkedContent,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import { parseEnvironmentVariables } from '../../../utils/env';
@@ -123,6 +123,7 @@ interface ActiveRun {
   nativeRequestDispatched: boolean;
   nativeAssistantId?: string;
   nativeUserMessageId?: string;
+  pendingTerminalError: Error | null;
   sequence: number;
   terminal: boolean;
   terminalSignal: Deferred<void>;
@@ -156,6 +157,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private kernelGeneration = 0;
   private processKey: string | null = null;
   private readonly kernelSessionTargets = new Set<string>();
+  private kernelResumeValidationTarget: string | null = null;
   private lifecycleError: Error | null = null;
   private normalizationState: PiEventNormalizationState =
     createPiEventNormalizationState();
@@ -268,6 +270,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.disposed
       || !active
       || !kernel
+      || this.kernelResumeValidationTarget !== null
       || request.signal.aborted
     ) {
       return false;
@@ -368,6 +371,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       accepted: false,
       assistantStarted: false,
       nativeRequestDispatched: false,
+      pendingTerminalError: null,
       sequence: 0,
       terminal: false,
       terminalSignal: createDeferred<void>(),
@@ -384,6 +388,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       await this.ensureKernel(encoded.launchSpec, active);
       if (!this.isActive(active) || !this.kernel) return;
 
+      await this.validateKernelResume(active.abortController.signal);
+      if (!this.isActive(active) || !this.kernel) return;
       await this.applyModelConfiguration(encoded, active.abortController.signal);
       if (!this.isActive(active)) return;
       const previousLeafId = getPiState(this.providerState).leafEntryId ?? null;
@@ -610,9 +616,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         onExtensionChunk: chunk =>
           this.handleStreamChunk(kernel, generation, chunk),
         onExtensionRequest: () => {
-          if (this.isCurrentKernel(kernel, generation) && this.activeRun) {
-            this.ensureAccepted(this.activeRun);
-          }
+          const currentActive = this.activeRun;
+          if (
+            !this.isCurrentKernel(kernel, generation)
+            || !currentActive
+            || this.kernelResumeValidationTarget !== null
+          ) return false;
+          this.ensureAccepted(currentActive);
+          return true;
         },
       },
       this.config.lifecycle === 'persistent'
@@ -625,6 +636,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
     this.kernel = kernel;
     this.processKey = launchSpec.processKey;
+    this.kernelResumeValidationTarget = launchSpec.sessionTarget;
     this.replaceKernelSessionTargets(launchSpec.sessionTarget);
     if (
       !this.isActive(active)
@@ -649,6 +661,39 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     void this.publishCommands(kernel, generation);
+  }
+
+  private async validateKernelResume(signal: AbortSignal): Promise<void> {
+    const expectedTarget = this.kernelResumeValidationTarget;
+    const kernel = this.kernel;
+    if (!expectedTarget || !kernel) return;
+
+    const response = await kernel.request<unknown>(
+      'get_state',
+      {},
+      10_000,
+      signal,
+    );
+    if (
+      this.kernel !== kernel
+      || this.kernelResumeValidationTarget !== expectedTarget
+    ) return;
+    const reportedIdentity = extractReportedPiSessionIdentity(response);
+    if (matchesExpectedPiSession(
+      expectedTarget,
+      getPiState(this.providerState),
+      reportedIdentity,
+    )) {
+      this.kernelResumeValidationTarget = null;
+      return;
+    }
+
+    const error = new PiProviderSessionMismatchError(
+      expectedTarget,
+      reportedIdentity.sessionFile ?? reportedIdentity.sessionId,
+    );
+    await this.shutdownKernel().catch(() => undefined);
+    throw error;
   }
 
   private async applyModelConfiguration(
@@ -695,6 +740,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
     if (event.type === 'agent_end') {
       this.ensureAccepted(active);
+      if (event.willRetry === true) {
+        active.pendingTerminalError = null;
+        return;
+      }
+      const pendingTerminalError = active.pendingTerminalError;
+      active.pendingTerminalError = null;
+      if (pendingTerminalError) {
+        active.terminalSignal.reject(pendingTerminalError);
+        return;
+      }
       active.terminalSignal.resolve();
       return;
     }
@@ -705,14 +760,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
 
+    const terminalError = getPiTerminalErrorMessage(event);
+    if (terminalError) {
+      this.ensureAccepted(active);
+      active.pendingTerminalError = new Error(terminalError);
+      return;
+    }
+
     const chunks = normalizePiRpcEvent(event, this.normalizationState);
     if (chunks.length > 0) this.ensureAccepted(active);
     for (const chunk of chunks) {
       this.handleStreamChunk(kernel, generation, chunk);
-    }
-    const terminalError = getPiTerminalErrorMessage(event);
-    if (terminalError) {
-      active.terminalSignal.reject(new Error(terminalError));
     }
   }
 
@@ -826,18 +884,21 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     );
     this.kernel = null;
     this.processKey = null;
+    this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     if (!this.hasNativeSessionState()) {
       this.nativeConversationContextEstablished = false;
     }
     const active = this.activeRun;
     if (active && !active.terminal) {
-      active.terminalSignal.reject(
-        error ?? new Error('Pi subprocess exited.'),
-      );
+      const runError = active.pendingTerminalError
+        ?? error
+        ?? new Error('Pi subprocess exited.');
+      active.pendingTerminalError = null;
+      active.terminalSignal.reject(runError);
       this.finishError(
         active,
-        error ?? new Error('Pi subprocess exited.'),
+        runError,
         missingProviderSessionId
           ? 'provider-session-missing'
           : 'process-exited',
@@ -1229,6 +1290,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const kernel = this.kernel;
     this.kernel = null;
     this.processKey = null;
+    this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     this.kernelGeneration += 1;
     if (!this.hasNativeSessionState()) {
@@ -1367,6 +1429,15 @@ class PiProviderSessionMissingError extends Error {
   }
 }
 
+class PiProviderSessionMismatchError extends Error {
+  constructor(expected: string, reported: string | null) {
+    super(
+      `Pi resumed an unexpected native session. Expected ${expected}, received ${reported ?? 'no session identity'}. The original conversation session was preserved.`,
+    );
+    this.name = 'PiProviderSessionMismatchError';
+  }
+}
+
 class PiForkRollbackError extends Error {
   constructor(readonly cleanupError: Error) {
     super(cleanupError.message);
@@ -1473,7 +1544,9 @@ function resolveSystemPrompt(
     userName: getString(settings.userName) ?? undefined,
     vaultPath,
   } satisfies SystemPromptSettings, {
-    toolGuidanceProfile: 'provider-native',
+    dynamicSections: request.configuration.systemInstructions.dynamicSections
+      ? [...request.configuration.systemInstructions.dynamicSections]
+      : undefined,
   });
 }
 
@@ -1486,8 +1559,8 @@ function encodePrompt(
 } {
   let text = getInputText(request);
   const context = request.context;
-  if (context?.currentNote?.path) {
-    text = appendCurrentNote(text, context.currentNote.path);
+  if (context?.linkedContent?.path) {
+    text = appendLinkedContent(text, context.linkedContent.path);
   }
   if (context?.editorSelection) {
     text = appendEditorContext(text, context.editorSelection);
@@ -1559,7 +1632,11 @@ function getFirstRejectedError(
 }
 
 function isSamePath(left: string, right: string): boolean {
-  return path.resolve(left) === path.resolve(right);
+  const resolvedLeft = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
+    : resolvedLeft === resolvedRight;
 }
 
 function toError(error: unknown): Error {
@@ -1613,6 +1690,55 @@ function getPiMissingSessionTarget(
 function extractStateRecord(response: unknown): Record<string, unknown> {
   const record = getRecord(response);
   return getRecord(record.state ?? record.session ?? response);
+}
+
+interface ReportedPiSessionIdentity {
+  readonly sessionFile: string | null;
+  readonly sessionId: string | null;
+}
+
+function extractReportedPiSessionIdentity(response: unknown): ReportedPiSessionIdentity {
+  const state = extractStateRecord(response);
+  return {
+    sessionFile: getString(state.sessionFile)
+      ?? getString(state.session_file)
+      ?? getString(state.sessionPath)
+      ?? getString(state.session_path)
+      ?? getString(state.path),
+    sessionId: getString(state.sessionId)
+      ?? getString(state.session_id)
+      ?? getString(getRecord(state.session).id),
+  };
+}
+
+function matchesExpectedPiSession(
+  expectedTarget: string,
+  expectedState: PiProviderState,
+  reported: ReportedPiSessionIdentity,
+): boolean {
+  const expectedFile = expectedState.sessionFile
+    ?? (isPiSessionPathReference(expectedState.sessionId)
+      ? expectedState.sessionId
+      : isPiSessionPathReference(expectedTarget)
+        ? expectedTarget
+        : null);
+  const expectedId = expectedState.sessionId
+    && !isPiSessionPathReference(expectedState.sessionId)
+    ? expectedState.sessionId
+    : !isPiSessionPathReference(expectedTarget)
+      ? expectedTarget
+      : null;
+  let compared = false;
+
+  if (expectedFile && reported.sessionFile) {
+    compared = true;
+    if (!isSamePath(expectedFile, reported.sessionFile)) return false;
+  }
+  if (expectedId && reported.sessionId) {
+    compared = true;
+    if (expectedId !== reported.sessionId) return false;
+  }
+  return compared;
 }
 
 function findLastRoleId(

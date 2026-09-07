@@ -38,7 +38,7 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
       },
     ],
     context: {
-      currentNote: { path: 'Notes/design.md' },
+      linkedContent: { path: 'Notes/design.md' },
       editorSelection: {
         notePath: 'Notes/design.md',
         mode: 'selection',
@@ -72,6 +72,27 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
     signal,
   };
 }
+
+describe('Provider system instructions', () => {
+  it('carries provider-default dynamic sections as execution configuration', () => {
+    const request = createRequest();
+    const configured: ProviderExecutionRequest = {
+      ...request,
+      configuration: {
+        ...request.configuration,
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    };
+
+    expect(configured.configuration.systemInstructions).toEqual({
+      dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+      kind: 'provider-default',
+    });
+  });
+});
 
 class ContractRun implements ProviderExecutionRun {
   readonly executionId: string;

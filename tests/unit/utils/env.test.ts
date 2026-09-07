@@ -14,6 +14,7 @@ const {
   getEnhancedPath,
   getMissingNodeError,
   getHostnameKey,
+  getInstallationKey,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
@@ -251,6 +252,14 @@ describe('getEnhancedPath', () => {
       const segments = result.split(SEP);
 
       expect(segments).toContain(path.join('/mock/home', '.opencode', 'bin'));
+    });
+
+    it('includes the user bin path from HOME', () => {
+      process.env.HOME = '/mock/home';
+      const result = getEnhancedPath();
+      const segments = result.split(SEP);
+
+      expect(segments).toContain(path.join('/mock/home', 'bin'));
     });
   });
 
@@ -669,11 +678,10 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
     const shebang = '#!/usr/bin/env node\nconsole.log("hi");\n';
 
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
-    );
     jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'fstatSync').mockImplementation(
+      () => ({ isFile: () => true }) as fsType.Stats
+    );
     jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
@@ -685,10 +693,11 @@ describe('cliPathRequiresNode', () => {
 
   it('returns false when path exists but is a directory', () => {
     const dirPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === dirPath);
-    jest.spyOn(fs, 'statSync').mockImplementation(
+    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => false }) as fsType.Stats
     );
+    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(dirPath)).toBe(false);
   });
@@ -697,11 +706,10 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\script' : '/tmp/script';
     const shebang = '#!/usr/bin/env python\nprint("hi")\n';
 
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
-    );
     jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'fstatSync').mockImplementation(
+      () => ({ isFile: () => true }) as fsType.Stats
+    );
     jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
@@ -721,11 +729,10 @@ describe('cliPathRequiresNode', () => {
       '',
     ].join('\n');
 
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
-    );
     jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'fstatSync').mockImplementation(
+      () => ({ isFile: () => true }) as fsType.Stats
+    );
     jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(script);
       return script.length;
@@ -855,6 +862,29 @@ describe('findNodeDirectory', () => {
 });
 
 describe('getHostnameKey', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const storedValues = new Map<string, string>();
+
+  beforeAll(() => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        localStorage: {
+          getItem: (key: string) => storedValues.get(key) ?? null,
+          setItem: (key: string, value: string) => storedValues.set(key, value),
+        },
+      },
+    });
+  });
+
+  afterAll(() => {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, 'window', originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  });
+
   it('returns a non-empty string', () => {
     const key = getHostnameKey();
     expect(typeof key).toBe('string');
@@ -863,13 +893,55 @@ describe('getHostnameKey', () => {
 
   it('returns an opaque device key instead of the system hostname', () => {
     const key = getHostnameKey();
-    expect(key).toMatch(/^device:/);
+    expect(key).toMatch(/^device-[a-f0-9]{64}$/);
+    expect(key).not.toContain(':');
   });
 
   it('returns consistent value on repeated calls', () => {
     const first = getHostnameKey();
     const second = getHostnameKey();
     expect(first).toBe(second);
+  });
+
+  it('is the backward-compatible alias of the installation key', () => {
+    expect(getHostnameKey()).toBe(getInstallationKey());
+  });
+
+  it('fails closed instead of caching a volatile key when localStorage rejects the seed', () => {
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis.window, 'localStorage');
+    const values = new Map<string, string>();
+    const setItem = jest.fn()
+      .mockImplementationOnce(() => {
+        throw new Error('storage unavailable');
+      })
+      .mockImplementation((key: string, value: string) => {
+        values.set(key, value);
+      });
+    Object.defineProperty(globalThis.window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem,
+      },
+    });
+
+    try {
+      jest.resetModules();
+      // Dynamic require re-evaluates the module-level device-key cache.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const isolatedEnv = require('../../../src/utils/env') as typeof env;
+
+      expect(() => isolatedEnv.getHostnameKey()).toThrow('persist');
+      const durableKey = isolatedEnv.getHostnameKey();
+
+      expect(durableKey).toMatch(/^device-[a-f0-9]{64}$/);
+      expect(values.get('claudian.deviceSettingsKey')).toBeTruthy();
+    } finally {
+      if (originalStorage) {
+        Object.defineProperty(globalThis.window, 'localStorage', originalStorage);
+      }
+      jest.resetModules();
+    }
   });
 
 });

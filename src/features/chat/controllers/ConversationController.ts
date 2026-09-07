@@ -9,6 +9,7 @@ import type {
   ChatMessage,
   Conversation,
   ConversationMeta,
+  ConversationMutablePatch,
   ProviderId,
   SessionManagerOrganization,
   SessionManagerSort,
@@ -19,14 +20,15 @@ import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { FeatureHost } from '../../FeatureHost';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
+import type { LinkedContentController } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement, renderWelcomeContent } from '../rendering/WelcomeRenderer';
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import {
-  getLinkedNoteTitle,
-  isProvisionalNotePath,
+  getLinkedContentTitle,
+  isLegacyProvisionalLinkedContent,
   organizeSessionList,
   type SessionListSection,
 } from '../session-manager/SessionListOrganizer';
@@ -76,6 +78,7 @@ export interface ConversationControllerDeps {
   getInputEl: () => HTMLTextAreaElement;
   restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
   getFileContextManager: () => FileContextManager | null;
+  getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
   getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
@@ -107,6 +110,8 @@ export type HistoryConversationStatus = {
   tabIndex?: number;
 };
 
+type SessionStatusIndicatorKind = 'action-required' | 'error' | 'running';
+
 type HistoryRenderOptions = {
   onSelectConversation: (id: string) => Promise<void>;
   onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
@@ -124,14 +129,15 @@ type HistoryRenderOptions = {
   organization?: SessionManagerOrganization;
   sort?: SessionManagerSort;
   language?: string;
-  noteExists?: (notePath: string) => boolean;
+  contentExists?: (contentPath: string) => boolean;
+  contentIsNote?: (contentPath: string) => boolean;
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   onSetConversationsArchived?: (ids: readonly string[]) => Promise<void>;
-  onSetLinkedNotePinned?: (notePath: string, isPinned: boolean) => Promise<void>;
-  onStartLinkedNoteConversation?: (notePath: string) => Promise<void>;
-  pinnedLinkedNotePaths?: ReadonlySet<string>;
+  onSetLinkedContentPinned?: (contentPath: string, isPinned: boolean) => Promise<void>;
+  onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
+  pinnedLinkedContentPaths?: ReadonlySet<string>;
   preserveListState?: boolean;
   showAttentionState?: boolean;
   showPinnedSection?: boolean;
@@ -143,6 +149,7 @@ type HistoryRenderOptions = {
   searchQuery?: string;
   onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
   onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
+  onAssignConversationToDevice?: (id: string) => Promise<void>;
   onBeforeRestoreListState?: (container: HTMLElement) => void;
   onRequestInlineRename?: (request: {
     beginRename: (item: HTMLElement) => void;
@@ -263,9 +270,8 @@ export class ConversationController {
 
       this.deps.getInputEl().value = '';
 
-      const fileCtx = this.deps.getFileContextManager();
-      fileCtx?.resetForNewConversation();
-      fileCtx?.autoAttachActiveFile();
+      this.deps.getFileContextManager()?.clearAttachments();
+      this.deps.getLinkedContentController().resetAutoDraft();
 
       this.deps.getImageContextManager()?.clearImages();
       // Pass current settings to ensure we have the most up-to-date persistent paths
@@ -306,9 +312,8 @@ export class ConversationController {
 
       await this.getExecutionCoordinator()?.bindConversation(null);
 
-      const fileCtx = this.deps.getFileContextManager();
-      fileCtx?.resetForNewConversation();
-      fileCtx?.autoAttachActiveFile();
+      this.deps.getFileContextManager()?.clearAttachments();
+      this.deps.getLinkedContentController().resetAutoDraft();
 
       // Initialize external contexts with persistent paths from settings
       this.deps.getExternalContextSelector()?.clearExternalContexts(
@@ -327,7 +332,7 @@ export class ConversationController {
     }
 
     await this.deps.ensureExecutionForConversation?.(conversation);
-    this.restoreConversation(conversation, { autoAttachFile: true });
+    this.restoreConversation(conversation);
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationLoaded?.();
@@ -613,26 +618,16 @@ export class ConversationController {
       return;
     }
 
-    const fileCtx = this.deps.getFileContextManager();
-    const currentNote = fileCtx?.getCurrentNotePath() || undefined;
-
     // Entry point with messages - create conversation lazily
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
-      const selectedModel = this.deps.getSelectedModel?.() ?? undefined;
-      const conversation = await plugin.createConversation({
-        providerId: this.deps.getProviderId?.(),
-        ...(selectedModel ? { selectedModel } : {}),
-        ...(currentNote ? { currentNote } : {}),
-      });
-      state.currentConversationId = conversation.id;
+      throw new Error('Cannot save messages before the Conversation shell is created');
     }
 
     const externalContextSelector = this.deps.getExternalContextSelector();
     const externalContextPaths = externalContextSelector?.getExternalContexts() ?? [];
-    const updates: Partial<Conversation> = {
+    const updates: ConversationMutablePatch = {
       messages: state.messages,
-      currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
     };
@@ -657,10 +652,7 @@ export class ConversationController {
    * Shared logic for restoring a conversation into the current tab.
    * Used by both loadActive() and switchTo() to avoid duplication.
    */
-  private restoreConversation(
-    conversation: Conversation,
-    options?: { autoAttachFile?: boolean }
-  ): void {
+  private restoreConversation(conversation: Conversation): void {
     const { plugin, state, renderer } = this.deps;
 
     state.currentConversationId = conversation.id;
@@ -676,14 +668,8 @@ export class ConversationController {
 
     // Determine external context paths for this session
     // Empty session: use persistent paths; session with messages: use saved paths
-    const fileCtx = this.deps.getFileContextManager();
-    fileCtx?.resetForLoadedConversation(hasMessages);
-
-    if (conversation.currentNote) {
-      fileCtx?.setCurrentNote(conversation.currentNote);
-    } else if (!hasMessages && options?.autoAttachFile) {
-      fileCtx?.autoAttachActiveFile();
-    }
+    this.deps.getFileContextManager()?.clearAttachments();
+    this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
 
     this.restoreExternalContextPaths(conversation.externalContextPaths, !hasMessages);
 
@@ -820,55 +806,56 @@ export class ConversationController {
     const filteredConversations = searchTerms.length === 0
       ? scopedConversations
       : scopedConversations.filter((conversation) => {
-          const searchableText = [conversation.title, conversation.currentNote ?? '']
+          const searchableText = [conversation.title, conversation.linkedContentPath ?? '']
             .join('\n')
             .toLocaleLowerCase();
           return searchTerms.every(term => searchableText.includes(term));
         });
-    const conversationsByLinkedNote = new Map<string, ConversationMeta[]>();
+    const conversationsByLinkedContent = new Map<string, ConversationMeta[]>();
     for (const conversation of scopedConversations) {
-      if (!conversation.currentNote) continue;
-      const noteConversations = conversationsByLinkedNote.get(conversation.currentNote) ?? [];
+      if (!conversation.linkedContentPath) continue;
+      const noteConversations = conversationsByLinkedContent.get(conversation.linkedContentPath) ?? [];
       noteConversations.push(conversation);
-      conversationsByLinkedNote.set(conversation.currentNote, noteConversations);
+      conversationsByLinkedContent.set(conversation.linkedContentPath, noteConversations);
     }
-    const pinnedLinkedNotePaths = organization === 'linked-note'
+    const pinnedLinkedContentPaths = organization === 'linked-content'
       && options.showPinnedSection
       && options.sessionScope !== 'archived'
-      ? options.pinnedLinkedNotePaths ?? new Set<string>()
+      ? options.pinnedLinkedContentPaths ?? new Set<string>()
       : new Set<string>();
-    const isInPinnedNoteGroup = (conversation: ConversationMeta): boolean => (
-      !!conversation.currentNote
-      && pinnedLinkedNotePaths.has(conversation.currentNote)
+    const isInPinnedContentGroup = (conversation: ConversationMeta): boolean => (
+      !!conversation.linkedContentPath
+      && pinnedLinkedContentPaths.has(conversation.linkedContentPath)
     );
-    const pinnedNoteConversations = filteredConversations.filter(isInPinnedNoteGroup);
+    const pinnedContentConversations = filteredConversations.filter(isInPinnedContentGroup);
     const pinnedConversations = options.showPinnedSection
       ? filteredConversations.filter(conversation => (
-          conversation.isPinned && !isInPinnedNoteGroup(conversation)
+          conversation.isPinned && !isInPinnedContentGroup(conversation)
         ))
       : [];
     const sessionConversations = options.showPinnedSection
       ? filteredConversations.filter(conversation => (
-          !conversation.isPinned && !isInPinnedNoteGroup(conversation)
+          !conversation.isPinned && !isInPinnedContentGroup(conversation)
         ))
       : filteredConversations;
     const pinnedPathsWithMatchingSessions = new Set(
-      pinnedNoteConversations.flatMap(conversation => (
-        conversation.currentNote ? [conversation.currentNote] : []
+      pinnedContentConversations.flatMap(conversation => (
+        conversation.linkedContentPath ? [conversation.linkedContentPath] : []
       )),
     );
-    const visiblePinnedNotePaths = [...pinnedLinkedNotePaths].filter((notePath) => (
+    const visiblePinnedContentPaths = [...pinnedLinkedContentPaths].filter((contentPath) => (
       searchTerms.length === 0
-      || pinnedPathsWithMatchingSessions.has(notePath)
-      || searchTerms.every(term => notePath.toLocaleLowerCase().includes(term))
+      || pinnedPathsWithMatchingSessions.has(contentPath)
+      || searchTerms.every(term => contentPath.toLocaleLowerCase().includes(term))
     ));
-    const pinnedNoteSections = organizeSessionList(pinnedNoteConversations, {
-      organization: 'linked-note',
+    const pinnedContentSections = organizeSessionList(pinnedContentConversations, {
+      organization: 'linked-content',
       sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
-      includeNotePaths: visiblePinnedNotePaths,
-      noteExists: options.noteExists,
-    }).filter(section => section.notePath !== undefined);
+      includeContentPaths: visiblePinnedContentPaths,
+      contentExists: options.contentExists,
+      contentIsNote: options.contentIsNote,
+    }).filter(section => section.contentPath !== undefined);
     const showSessionSections = options.showPinnedSection || options.showArchivedSection;
 
     let list: HTMLElement;
@@ -876,7 +863,7 @@ export class ConversationController {
     let pinnedList: HTMLElement | null = null;
     if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
-      if (pinnedConversations.length > 0 || pinnedNoteSections.length > 0) {
+      if (pinnedConversations.length > 0 || pinnedContentSections.length > 0) {
         const pinnedSection = list.createDiv({
           cls: 'claudian-history-section claudian-history-section--pinned',
         });
@@ -928,8 +915,8 @@ export class ConversationController {
     );
     list.dataset.visibleCount = String(visibleCount);
 
-    if (filteredConversations.length === 0 && pinnedNoteSections.length === 0) {
-      if (organization === 'linked-note') {
+    if (filteredConversations.length === 0 && pinnedContentSections.length === 0) {
+      if (organization === 'linked-content') {
         options.onGroupKeysChange?.([]);
       }
       sessionList.createDiv({
@@ -955,46 +942,47 @@ export class ConversationController {
       organization,
       sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
-      noteExists: options.noteExists,
+      contentExists: options.contentExists,
+      contentIsNote: options.contentIsNote,
     });
-    if (organization === 'linked-note') {
+    if (organization === 'linked-content') {
       options.onGroupKeysChange?.([
-        ...pinnedNoteSections.map(({ key }) => key),
+        ...pinnedContentSections.map(({ key }) => key),
         ...sections.map(({ key }) => key),
       ]);
     }
-    const visiblePinnedNoteConversationTotal = pinnedNoteSections.reduce((total, section) => (
+    const visiblePinnedContentConversationTotal = pinnedContentSections.reduce((total, section) => (
       options.collapsedGroupKeys?.has(section.key)
         ? total
         : total + section.conversations.length
     ), 0);
-    const visibleSessionConversationTotal = organization === 'linked-note'
+    const visibleSessionConversationTotal = organization === 'linked-content'
       ? sections.reduce((total, section) => (
           options.collapsedGroupKeys?.has(section.key)
             ? total
             : total + section.conversations.length
         ), 0)
       : sessionConversations.length;
-    const visibleConversationTotal = visiblePinnedNoteConversationTotal
+    const visibleConversationTotal = visiblePinnedContentConversationTotal
       + pinnedConversations.length
       + visibleSessionConversationTotal;
     let renderedConversationCount = 0;
 
     if (pinnedList) {
-      for (const section of pinnedNoteSections) {
+      for (const section of pinnedContentSections) {
         const remainingVisibleCount = visibleCount - renderedConversationCount;
         const isCollapsed = options.collapsedGroupKeys?.has(section.key) ?? false;
         const visibleConversations = isCollapsed || remainingVisibleCount <= 0
           ? []
           : section.conversations.slice(0, remainingVisibleCount);
-        this.renderLinkedNoteSection(
+        this.renderLinkedContentSection(
           pinnedList,
           section,
           visibleConversations,
           isCollapsed,
           options,
-          section.notePath
-            ? conversationsByLinkedNote.get(section.notePath) ?? []
+          section.contentPath
+            ? conversationsByLinkedContent.get(section.contentPath) ?? []
             : section.conversations,
         );
         renderedConversationCount += visibleConversations.length;
@@ -1012,22 +1000,22 @@ export class ConversationController {
 
     for (const section of sections) {
       const remainingVisibleCount = visibleCount - renderedConversationCount;
-      const isCollapsed = organization === 'linked-note'
+      const isCollapsed = organization === 'linked-content'
         && (options.collapsedGroupKeys?.has(section.key) ?? false);
       const visibleConversations = isCollapsed || remainingVisibleCount <= 0
         ? []
         : section.conversations.slice(0, remainingVisibleCount);
-      if (organization !== 'linked-note' && visibleConversations.length === 0) break;
+      if (organization !== 'linked-content' && visibleConversations.length === 0) break;
 
-      if (organization === 'linked-note') {
-        this.renderLinkedNoteSection(
+      if (organization === 'linked-content') {
+        this.renderLinkedContentSection(
           sessionList,
           section,
           visibleConversations,
           isCollapsed,
           options,
-          section.notePath
-            ? conversationsByLinkedNote.get(section.notePath) ?? []
+          section.contentPath
+            ? conversationsByLinkedContent.get(section.contentPath) ?? []
             : section.conversations,
         );
       } else {
@@ -1067,28 +1055,32 @@ export class ConversationController {
     );
   }
 
-  private renderLinkedNoteSection(
+  private renderLinkedContentSection(
     list: HTMLElement,
     section: SessionListSection,
     visibleConversations: readonly ConversationMeta[],
     isCollapsed: boolean,
     options: HistoryRenderOptions,
-    linkedNoteConversations: readonly ConversationMeta[],
+    linkedContentConversations: readonly ConversationMeta[],
   ): void {
     const conversationStatuses = section.conversations.map(conversation => (
       this.getHistoryConversationStatusForMetadata(conversation, options)
     ));
-    const hasRunningConversation = conversationStatuses.some(({ isRunning }) => isRunning);
-    const hasAttentionConversation = options.showAttentionState === true
+    const groupStatusKind = this.getGroupSessionStatusIndicatorKind(
+      conversationStatuses,
+      options,
+    );
+    const hasReviewConversation = options.showAttentionState === true
       && options.sessionScope !== 'archived'
       && conversationStatuses.some(({ attention }) => (
-        attention !== null && attention !== undefined
+        attention?.kind === 'review' && attention.outcome === 'completed'
       ));
+    const showGroupReviewState = groupStatusKind === null && hasReviewConversation;
     const groupHeader = list.createDiv({
       cls: [
         'claudian-session-group-header',
         `claudian-session-group-header--${section.kind}`,
-        hasAttentionConversation && isCollapsed
+        showGroupReviewState && isCollapsed
           ? 'claudian-session-group-header--attention'
           : '',
       ].filter(Boolean).join(' '),
@@ -1097,13 +1089,13 @@ export class ConversationController {
     groupHeader.setAttribute('role', 'button');
     groupHeader.setAttribute('tabindex', '0');
     groupHeader.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-    if (section.notePath) {
-      groupHeader.setAttribute('data-note-path', section.notePath);
-      groupHeader.setAttribute('title', section.notePath);
-      const noteIcon = groupHeader.createSpan({
+    if (section.contentPath) {
+      groupHeader.setAttribute('data-content-path', section.contentPath);
+      groupHeader.setAttribute('title', section.contentPath);
+      const contentIcon = groupHeader.createSpan({
         cls: 'claudian-session-group-icon',
       });
-      setIcon(noteIcon, 'file-text');
+      setIcon(contentIcon, section.kind === 'missing' ? 'file-question' : 'link');
     } else if (section.kind === 'ungrouped') {
       const ungroupedIcon = groupHeader.createSpan({
         cls: 'claudian-session-group-icon',
@@ -1120,27 +1112,21 @@ export class ConversationController {
         text: 'Missing',
       });
     }
-    const groupRunningIndicator = hasRunningConversation
-      ? groupHeader.createSpan({
-          cls: [
-            'claudian-session-group-running-indicator',
-            isCollapsed
-              ? 'claudian-session-group-running-indicator--visible'
-              : '',
-          ].filter(Boolean).join(' '),
-        })
-      : null;
-    if (groupRunningIndicator) {
-      setIcon(groupRunningIndicator, 'loader-2');
-      groupRunningIndicator.setAttribute('aria-label', 'Running');
-    }
+    const groupStatusIndicator = groupStatusKind === null
+      ? null
+      : this.createSessionStatusIndicator(
+          groupHeader,
+          groupStatusKind,
+          true,
+          isCollapsed,
+        );
     if (
-      section.kind === 'note'
-      && section.notePath
-      && options.onStartLinkedNoteConversation
+      section.kind === 'content'
+      && section.contentPath
+      && options.onStartLinkedContentConversation
     ) {
-      const notePath = section.notePath;
-      const startLinkedNoteConversation = options.onStartLinkedNoteConversation;
+      const contentPath = section.contentPath;
+      const startLinkedContentConversation = options.onStartLinkedContentConversation;
       const newConversationButton = groupHeader.createSpan({
         cls: 'claudian-session-group-new-action',
       });
@@ -1149,16 +1135,16 @@ export class ConversationController {
       setIcon(newConversationButton, 'square-pen');
       newConversationButton.setAttribute(
         'aria-label',
-        `New chat for ${section.label ?? notePath}`,
+        `New chat for ${section.label ?? contentPath}`,
       );
       newConversationButton.setAttribute(
         'title',
-        `New chat for ${section.label ?? notePath}`,
+        `New chat for ${section.label ?? contentPath}`,
       );
       const startConversation = (): void => {
         runConversationAction(
-          () => startLinkedNoteConversation(notePath),
-          'Failed to start a chat for this note',
+          () => startLinkedContentConversation(contentPath),
+          'Failed to start a chat for this Linked content',
         );
       };
       newConversationButton.addEventListener('click', (event) => {
@@ -1185,11 +1171,15 @@ export class ConversationController {
       const collapsed = groupHeader.getAttribute('aria-expanded') === 'true';
       groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       groupBody.toggleClass('claudian-session-group-body--collapsed', collapsed);
-      groupRunningIndicator?.toggleClass(
-        'claudian-session-group-running-indicator--visible',
-        collapsed,
-      );
-      if (hasAttentionConversation) {
+      if (groupStatusIndicator) {
+        groupStatusIndicator.toggleClass(
+          groupStatusKind === 'running'
+            ? 'claudian-session-group-running-indicator--visible'
+            : 'claudian-session-group-status-indicator--visible',
+          collapsed,
+        );
+      }
+      if (showGroupReviewState) {
         groupHeader.toggleClass('claudian-session-group-header--attention', collapsed);
       }
       options.onGroupCollapseChange?.(section.key, collapsed);
@@ -1202,49 +1192,49 @@ export class ConversationController {
       toggleGroup();
     });
 
-    const notePath = section.notePath;
-    const onSetLinkedNotePinned = options.onSetLinkedNotePinned;
+    const contentPath = section.contentPath;
+    const onSetLinkedContentPinned = options.onSetLinkedContentPinned;
     const onSetConversationsArchived = options.onSetConversationsArchived;
-    const isPinnedLinkedNote = notePath
-      ? options.pinnedLinkedNotePaths?.has(notePath) ?? false
+    const isPinnedLinkedContent = contentPath
+      ? options.pinnedLinkedContentPaths?.has(contentPath) ?? false
       : false;
-    const canToggleLinkedNotePin = !!(
-      notePath
-      && onSetLinkedNotePinned
-      && (section.kind === 'note' || isPinnedLinkedNote)
+    const canToggleLinkedContentPin = !!(
+      contentPath
+      && onSetLinkedContentPinned
+      && (section.kind === 'content' || section.kind === 'missing' || isPinnedLinkedContent)
     );
-    const canArchiveLinkedNoteSessions = !!(
-      notePath
+    const canArchiveLinkedContentSessions = !!(
+      contentPath
       && onSetConversationsArchived
       && options.sessionActionMode === 'active'
     );
     if (
-      notePath
-      && (canToggleLinkedNotePin || canArchiveLinkedNoteSessions)
+      contentPath
+      && (canToggleLinkedContentPin || canArchiveLinkedContentSessions)
     ) {
       groupHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
         const menu = new Menu().setUseNativeMenu(false);
-        if (canToggleLinkedNotePin && onSetLinkedNotePinned) {
+        if (canToggleLinkedContentPin && onSetLinkedContentPinned) {
           menu.addItem(menuItem => menuItem
-            .setTitle(isPinnedLinkedNote ? 'Unpin linked note' : 'Pin linked note')
+            .setTitle(isPinnedLinkedContent ? 'Unpin Linked content' : 'Pin Linked content')
             .onClick(() => {
               runConversationAction(
-                () => onSetLinkedNotePinned(notePath, !isPinnedLinkedNote),
-                isPinnedLinkedNote
-                  ? 'Failed to unpin linked note'
-                  : 'Failed to pin linked note',
+                () => onSetLinkedContentPinned(contentPath, !isPinnedLinkedContent),
+                isPinnedLinkedContent
+                  ? 'Failed to unpin Linked content'
+                  : 'Failed to pin Linked content',
               );
             }));
         }
-        if (canArchiveLinkedNoteSessions && onSetConversationsArchived) {
-          const archivableConversationIds = linkedNoteConversations
+        if (canArchiveLinkedContentSessions && onSetConversationsArchived) {
+          const archivableConversationIds = linkedContentConversations
             .filter(conversation => (
               !this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
             ))
             .map(conversation => conversation.id);
-          if (canToggleLinkedNotePin) menu.addSeparator();
+          if (canToggleLinkedContentPin) menu.addSeparator();
           menu.addItem((menuItem) => {
             menuItem
               .setTitle('Archive all sessions')
@@ -1253,7 +1243,7 @@ export class ConversationController {
               menuItem.onClick(() => {
                 runConversationAction(
                   () => onSetConversationsArchived(archivableConversationIds),
-                  'Failed to archive linked-note sessions',
+                  'Failed to archive Linked content sessions',
                 );
               });
             }
@@ -1327,10 +1317,19 @@ export class ConversationController {
       options,
     );
     const { openState, isRunning } = conversationStatus;
-    const showAttentionState = options.showAttentionState === true
+    const hasAttentionState = options.showAttentionState === true
       && options.sessionScope !== 'archived'
       && conversationStatus.attention !== null
       && conversationStatus.attention !== undefined;
+    const showReviewState = hasAttentionState
+      && conversationStatus.attention?.kind === 'review'
+      && conversationStatus.attention.outcome === 'completed';
+    const sessionStatusKind = this.getSessionStatusIndicatorKind(
+      conversationStatus,
+      options,
+    );
+    const showRunningPresentation = isRunning
+      && sessionStatusKind !== 'action-required';
     const isCurrent = openState === 'current';
     const isOpen = openState === 'open';
     const isSelectable = !isCurrent && options.allowConversationSelection !== false;
@@ -1339,8 +1338,8 @@ export class ConversationController {
         'claudian-history-item',
         isCurrent ? 'active' : '',
         isOpen ? 'open' : '',
-        isRunning ? 'running' : '',
-        showAttentionState ? 'claudian-history-item--attention' : '',
+        showRunningPresentation ? 'running' : '',
+        showReviewState ? 'claudian-history-item--attention' : '',
         options.allowConversationSelection === false
           ? 'claudian-history-item--noninteractive'
           : '',
@@ -1355,7 +1354,7 @@ export class ConversationController {
     }
 
     const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-    setIcon(iconEl, this.getHistoryItemIcon(openState, isRunning));
+    setIcon(iconEl, this.getHistoryItemIcon(openState, showRunningPresentation));
 
     const content = item.createDiv({ cls: 'claudian-history-item-content' });
     const titleEl = content.createDiv({
@@ -1503,8 +1502,26 @@ export class ConversationController {
       });
     };
 
+    if (conversation.isLegacySession && options.onAssignConversationToDevice) {
+      const assignDeviceBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-assign-device-btn',
+      });
+      setIcon(assignDeviceBtn, 'monitor-down');
+      assignDeviceBtn.setAttribute('aria-label', 'Assign to this device');
+      assignDeviceBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onAssignConversationToDevice?.(conversation.id),
+            'Failed to assign session to this device',
+          ),
+          'Failed to assign session to this device',
+        );
+      });
+    }
+
     if (options.sessionActionMode === 'active') {
-      if (!showAttentionState) {
+      if (!hasAttentionState) {
         const isPinned = conversation.isPinned === true;
         if (options.showInlinePinAction !== false) {
           const pinBtn = actions.createEl('button', {
@@ -1575,13 +1592,85 @@ export class ConversationController {
       createDeleteButton();
     }
 
-    if (isRunning && options.showOpenStateLabels === false) {
-      const runningIndicator = item.createSpan({
-        cls: 'claudian-session-running-indicator',
-      });
-      setIcon(runningIndicator, 'loader-2');
-      runningIndicator.setAttribute('aria-label', 'Running');
+    if (sessionStatusKind) {
+      this.createSessionStatusIndicator(item, sessionStatusKind);
     }
+  }
+
+  private getSessionStatusIndicatorKind(
+    status: HistoryConversationStatus,
+    options: HistoryRenderOptions,
+  ): SessionStatusIndicatorKind | null {
+    if (options.showOpenStateLabels !== false) return null;
+
+    const canShowAttention = options.showAttentionState === true
+      && options.sessionScope !== 'archived';
+    if (canShowAttention && status.attention?.kind === 'action-required') {
+      return 'action-required';
+    }
+    if (status.isRunning) return 'running';
+    if (
+      canShowAttention
+      && status.attention?.kind === 'review'
+      && status.attention.outcome === 'error'
+    ) {
+      return 'error';
+    }
+    return null;
+  }
+
+  private getGroupSessionStatusIndicatorKind(
+    statuses: readonly HistoryConversationStatus[],
+    options: HistoryRenderOptions,
+  ): SessionStatusIndicatorKind | null {
+    const kinds = statuses.map(status => (
+      this.getSessionStatusIndicatorKind(status, options)
+    ));
+    if (kinds.includes('action-required')) return 'action-required';
+    if (kinds.includes('running')) return 'running';
+    if (kinds.includes('error')) return 'error';
+    return null;
+  }
+
+  private createSessionStatusIndicator(
+    parent: HTMLElement,
+    kind: SessionStatusIndicatorKind,
+    isGroup = false,
+    isVisible = true,
+  ): HTMLElement {
+    const isRunning = kind === 'running';
+    const indicator = parent.createSpan({
+      cls: isRunning
+        ? [
+            isGroup
+              ? 'claudian-session-group-running-indicator'
+              : 'claudian-session-running-indicator',
+            isGroup && isVisible
+              ? 'claudian-session-group-running-indicator--visible'
+              : '',
+          ].filter(Boolean).join(' ')
+        : [
+            'claudian-session-status-indicator',
+            `claudian-session-status-indicator--${kind}`,
+            isGroup ? 'claudian-session-group-status-indicator' : '',
+            isGroup && isVisible
+              ? 'claudian-session-group-status-indicator--visible'
+              : '',
+          ].filter(Boolean).join(' '),
+    });
+    const icon = kind === 'action-required'
+      ? 'alert-circle'
+      : kind === 'error'
+        ? 'x-circle'
+        : 'loader-2';
+    const label = kind === 'action-required'
+      ? 'Needs your input'
+      : kind === 'error'
+        ? 'Stopped with an error'
+        : 'Running';
+    setIcon(indicator, icon);
+    indicator.setAttribute('aria-label', label);
+    return indicator;
   }
 
   private getHistoryConversationStatusForMetadata(
@@ -1655,18 +1744,22 @@ export class ConversationController {
     descriptionTarget.setAttribute('aria-describedby', popoverId);
 
     const language = options.language ?? 'en';
-    const linkedNotePath = conversation.currentNote;
-    const hasLinkedNote = !!linkedNotePath
-      && !isProvisionalNotePath(linkedNotePath, language);
-    if (hasLinkedNote) {
+    const linkedContentPath = conversation.linkedContentPath;
+    const hasLinkedContent = !!linkedContentPath
+      && !isLegacyProvisionalLinkedContent(linkedContentPath, {
+        contentExists: options.contentExists,
+        contentIsNote: options.contentIsNote,
+        language,
+      });
+    if (hasLinkedContent) {
       this.renderSessionMetadataRow(
         hoverEl,
         'file-text',
         null,
-        getLinkedNoteTitle(linkedNotePath),
+        getLinkedContentTitle(linkedContentPath),
         {
-          className: 'claudian-session-metadata-value--note',
-          title: linkedNotePath,
+          className: 'claudian-session-metadata-value--content',
+          title: linkedContentPath,
         },
       );
     }
@@ -2227,14 +2320,10 @@ export class ConversationController {
     const welcomeEl = this.deps.getWelcomeEl();
     if (!welcomeEl) return;
 
-    // Initialize file context to auto-attach the currently focused note
-    const fileCtx = this.deps.getFileContextManager();
-    fileCtx?.resetForNewConversation();
-    fileCtx?.autoAttachActiveFile();
-
     // Only add greeting if not already present
     if (!welcomeEl.querySelector('.claudian-welcome-greeting')) {
       renderWelcomeContent(welcomeEl, this.getGreeting());
+      this.deps.setWelcomeEl(welcomeEl);
     }
 
     this.updateWelcomeVisibility();

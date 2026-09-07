@@ -215,7 +215,7 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
     canonicalText: 'canonical input',
     images: [],
     context: {
-      currentNote: { path: 'note.md', content: 'note' },
+      linkedContent: { path: 'note.md', content: 'note' },
       externalContextPaths: ['/external'],
     },
     conversationHistory: [],
@@ -229,6 +229,7 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
 }
 
 function createHarness(options: {
+  onBackgroundWorkChanged?: (isWorking: boolean) => void;
   onError?: (error: unknown) => void;
   onRequestedEvent?: (
     event: ProviderExecutionEvent,
@@ -249,6 +250,7 @@ function createHarness(options: {
     persistExecutionSnapshot: jest.fn(async () => true),
     releaseExecutionBinding: jest.fn(),
     stageConversationInput: jest.fn(async () => undefined),
+    assertConversationExecutionAuthority: jest.fn(async () => undefined),
     acceptConversationInput: jest.fn(async () => undefined),
     discardStagedConversationInput: jest.fn(async () => undefined),
     copyConversationInputsForFork: jest.fn(async () => undefined),
@@ -296,6 +298,7 @@ function createHarness(options: {
       sessionEventContexts.push(context);
       return options.onSessionEvent?.(event, context);
     },
+    onBackgroundWorkChanged: options.onBackgroundWorkChanged,
     onError: options.onError,
     resolveMissingProviderSession: missingSession,
     ...(options.warmExecution ? { warmExecution: options.warmExecution } : {}),
@@ -810,6 +813,12 @@ describe('ChatExecutionCoordinator', () => {
       timestamp: 124,
     };
     const submission = createSubmission({
+      configuration: {
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
       images: [image],
       messages: { user: userMessage, assistant: assistantMessage },
     });
@@ -824,8 +833,10 @@ describe('ChatExecutionCoordinator', () => {
       canonicalText: 'canonical input',
       localMessageId: 'user-1',
       images: [image],
-      context: { currentNote: { path: 'note.md', content: 'note' } },
+      context: { linkedContent: { path: 'note.md', content: 'note' } },
     });
+    expect(harness.repository.stageConversationInput.mock.calls[0][1])
+      .not.toHaveProperty('systemInstructions');
     expect(session.requests[0]).toMatchObject({
       input: [
         { type: 'text', text: 'canonical input' },
@@ -921,6 +932,39 @@ describe('ChatExecutionCoordinator', () => {
     });
     expect(harness.backends.get('claude')!.sessions).toHaveLength(0);
     expect(harness.repository.discardStagedConversationInput).not.toHaveBeenCalled();
+  });
+
+  it('revalidates durable ownership immediately before provider handoff', async () => {
+    const harness = createHarness();
+    const cause = new Error('conversation assigned to another device');
+    const authorityCheck = (
+      harness.repository as unknown as {
+        assertConversationExecutionAuthority: jest.MockedFunction<
+          (conversationId: string) => Promise<void>
+        >;
+      }
+    ).assertConversationExecutionAuthority;
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('claude')!.sessions[0];
+    const execute = jest.spyOn(session, 'execute').mockImplementation(() => {
+      throw new Error('provider handoff occurred');
+    });
+    authorityCheck.mockRejectedValueOnce(cause);
+
+    await expect(harness.coordinator.execute(createSubmission())).rejects.toMatchObject({
+      name: 'ChatExecutionPreHandoffError',
+      cause,
+    });
+    expect(authorityCheck).toHaveBeenCalledWith('conversation-1');
+    expect(execute).not.toHaveBeenCalled();
+    expect(harness.repository.discardStagedConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'input-1',
+    );
   });
 
   it('discards staging on definite pre-send failure but retains it after execute handoff', async () => {
@@ -1770,7 +1814,8 @@ describe('ChatExecutionCoordinator', () => {
   });
 
   it('routes correlated background turns, persists their snapshots, and rejects stale output', async () => {
-    const harness = createHarness();
+    const onBackgroundWorkChanged = jest.fn();
+    const harness = createHarness({ onBackgroundWorkChanged });
     await harness.coordinator.bindConversation({
       conversationId: 'conversation-1',
       providerId: 'claude',
@@ -1791,6 +1836,8 @@ describe('ChatExecutionCoordinator', () => {
     };
 
     session.emit({ type: 'background_turn_started', scope: backgroundScope });
+    expect(harness.coordinator.hasBackgroundWork).toBe(true);
+    expect(onBackgroundWorkChanged).toHaveBeenLastCalledWith(true);
     session.emit({
       type: 'text_delta',
       scope: { ...backgroundScope, sequence: 2 },
@@ -1806,6 +1853,8 @@ describe('ChatExecutionCoordinator', () => {
       scope: { ...backgroundScope, sequence: 4 },
       reason: 'completed',
     });
+    expect(harness.coordinator.hasBackgroundWork).toBe(false);
+    expect(onBackgroundWorkChanged).toHaveBeenLastCalledWith(false);
     session.emit({
       type: 'text_delta',
       scope: { ...backgroundScope, sequence: 5 },
@@ -2047,6 +2096,9 @@ describe('ChatExecutionCoordinator', () => {
         repository.releaseExecutionBinding(...args);
       },
       stageConversationInput: (...args) => repository.stageConversationInput(...args),
+      assertConversationExecutionAuthority: (...args) => (
+        repository.assertConversationExecutionAuthority(...args)
+      ),
       acceptConversationInput: (...args) => repository.acceptConversationInput(...args),
       discardStagedConversationInput: (...args) => (
         repository.discardStagedConversationInput(...args)

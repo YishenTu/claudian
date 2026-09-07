@@ -1,5 +1,7 @@
-import { spawn } from 'node:child_process';
+import type { spawn as nodeSpawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+
+import crossSpawn from 'cross-spawn';
 
 import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
@@ -20,6 +22,7 @@ const FINGERPRINT_VERSION = '1';
 const MODEL_COMMAND_TIMEOUT_MS = 20_000;
 const VERSION_COMMAND_TIMEOUT_MS = 5_000;
 const MAX_STDOUT_BYTES = 512 * 1024;
+const spawn = crossSpawn as typeof nodeSpawn;
 const ANSI_ESCAPE_SEQUENCE = new RegExp(
   `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
   'g',
@@ -273,7 +276,6 @@ export class SpawnGrokCatalogCommandRunner implements GrokCatalogCommandRunner {
         env: request.env,
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
-        ...(spawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
       const chunks: Buffer[] = [];
       let byteLength = 0;

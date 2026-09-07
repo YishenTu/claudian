@@ -1,0 +1,208 @@
+.claudian-collab-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+}
+
+.claudian-collab-panel--inactive {
+  pointer-events: none;
+}
+
+.claudian-collab-panel-header,
+.claudian-collab-project-toolbar,
+.claudian-collab-empty-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.claudian-collab-panel-header {
+  min-height: 32px;
+  padding-inline: 4px;
+}
+
+.claudian-collab-empty-actions {
+  flex-wrap: nowrap;
+  justify-content: center;
+}
+
+.claudian-collab-empty-actions > button {
+  flex: 1 1 0;
+}
+
+.claudian-collab-panel button.claudian-collab-empty-join {
+  border: 0;
+  background: var(--interactive-normal);
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.claudian-collab-panel button.claudian-collab-empty-join:is(:hover, :focus-visible) {
+  border: 0;
+  background: var(--interactive-hover);
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-panel button.claudian-collab-empty-join:active {
+  border: 0;
+  background: var(--background-modifier-active-hover, var(--interactive-hover));
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-panel-header h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-collab-panel-header-action {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  color: var(--text-muted);
+}
+
+.claudian-collab-panel-header-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.claudian-collab-project-toolbar {
+  flex-wrap: nowrap;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-project-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.claudian-collab-project-management {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+}
+
+.claudian-collab-project-management-icon {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.claudian-collab-project-management-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.claudian-collab-empty,
+.claudian-collab-panel-status {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  justify-content: center;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.claudian-collab-panel .claudian-collab-project-picker {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-start;
+  width: 0;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.claudian-collab-project-picker:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-collab-project-picker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-collab-project-home {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+}
+
+.claudian-collab-retired-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  padding: 16px 8px;
+  color: var(--text-muted);
+}
+
+.claudian-collab-retired-panel h3 {
+  margin: 0;
+  color: var(--text-normal);
+}
+
+.claudian-collab-retired-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.claudian-collab-project-path {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-project-recovery {
+  padding: 10px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.claudian-collab-project-recovery {
+  color: var(--text-warning);
+}
+
+.claudian-collab-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.claudian-collab-panel-status--warning {
+  color: var(--text-warning);
+}

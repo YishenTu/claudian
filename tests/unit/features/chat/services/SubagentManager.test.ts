@@ -64,6 +64,31 @@ describe('SubagentManager', () => {
   // ============================================
 
   describe('async lifecycle', () => {
+    it('reports whether any async subagent remains active', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      expect(manager.hasActiveAsyncSubagents()).toBe(false);
+
+      manager.handleTaskToolUse(
+        'task-1',
+        { description: 'Background', run_in_background: true },
+        parentEl,
+      );
+      expect(manager.hasActiveAsyncSubagents()).toBe(true);
+
+      manager.handleAsyncSubagentCompletion({
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'provider-task-1',
+        toolUseId: 'task-1',
+        status: 'completed',
+        result: 'Done',
+      });
+
+      expect(manager.hasActiveAsyncSubagents()).toBe(false);
+    });
+
     it('keeps one canonical task record across notification and late launch events', () => {
       const { manager } = createManager();
       const parentEl = createMockEl();

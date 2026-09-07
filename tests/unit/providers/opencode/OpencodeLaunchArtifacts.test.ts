@@ -243,6 +243,32 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     expect(first.launchKey).toBe(second.launchKey);
   });
 
+  it('includes provider-default dynamic sections in the managed prompt and launch key', async () => {
+    const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
+    const baseParams = {
+      runtimeEnv: { HOME: tmpRoot } as NodeJS.ProcessEnv,
+      settings: {
+        customPrompt: '',
+        mediaFolder: '',
+        userName: '',
+        vaultPath: tmpRoot,
+      },
+      workspaceRoot: tmpRoot,
+    };
+
+    const withoutAppendix = await prepareOpencodeLaunchArtifacts(baseParams);
+    const withAppendix = await prepareOpencodeLaunchArtifacts({
+      ...baseParams,
+      dynamicSystemPromptSections: ['## Collab Mode\nRuntime guidance.'],
+    });
+    const prompt = await fs.readFile(withAppendix.systemPromptPath, 'utf8');
+
+    expect(prompt).toContain('## Runtime Context');
+    expect(prompt).toContain('## Collab Mode\nRuntime guidance.');
+    expect(prompt.match(/## Collab Mode/g)).toHaveLength(1);
+    expect(withAppendix.launchKey).not.toBe(withoutAppendix.launchKey);
+  });
+
   it('creates the resolved OpenCode database directory before launch', async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
     const xdgDataHome = path.join(tmpRoot, 'xdg-data');

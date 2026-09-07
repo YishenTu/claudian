@@ -1,0 +1,189 @@
+.claudian-collab-publish {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 10px 4px;
+  overflow: auto;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-publish-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.claudian-collab-publish-header h4,
+.claudian-collab-panel button.claudian-collab-publish-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-collab-panel button.claudian-collab-publish-title {
+  width: fit-content;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  text-align: start;
+}
+
+.claudian-collab-panel button.claudian-collab-publish-title:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-publish-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.claudian-collab-publish-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-collab-publish-status--conflict,
+.claudian-collab-publish-status--error {
+  color: var(--text-error);
+}
+
+.claudian-collab-publish-status--offline,
+.claudian-collab-publish-status--awaiting-request,
+.claudian-collab-publish-status--cancelled {
+  color: var(--text-warning);
+}
+
+.claudian-collab-file-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.claudian-collab-file-list--list {
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.claudian-collab-file-list--flat {
+  padding: 2px 0;
+}
+
+.claudian-collab-file-list--list > li {
+  min-width: 0;
+}
+
+.claudian-collab-panel button.claudian-collab-file-button {
+  display: grid;
+  width: 100%;
+  color: var(--text-muted);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-file-list--list > li > button.claudian-collab-file-button {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.claudian-collab-file-list--flat > button.claudian-collab-file-button {
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: start;
+}
+
+.claudian-collab-panel button.claudian-collab-file-button:is(:active, [aria-pressed="true"]) {
+  color: var(--text-normal);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-file-button:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+  border: 0;
+  background: var(--background-modifier-hover);
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-file-button:disabled,
+.claudian-collab-panel button.claudian-collab-file-button:disabled:is(:hover, :focus-visible, :active) {
+  color: var(--text-faint);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+}
+
+.claudian-collab-file-kind {
+  color: var(--text-accent);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-file-list--list .claudian-collab-file-kind {
+  width: 14px;
+}
+
+.claudian-collab-file-kind[data-kind="added"],
+.claudian-collab-file-kind[data-kind="copied"] {
+  color: var(--text-success);
+}
+
+.claudian-collab-file-kind[data-kind="deleted"] {
+  color: var(--text-error);
+}
+
+.claudian-collab-file-kind[data-kind="modified"],
+.claudian-collab-file-kind[data-kind="renamed"],
+.claudian-collab-file-kind[data-kind="type-changed"] {
+  color: var(--text-warning);
+}
+
+.claudian-collab-file-path {
+  overflow: hidden;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-collab-panel button.claudian-collab-publish-navigation {
+  width: auto;
+  padding: 3px 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-panel button.claudian-collab-publish-navigation:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-publish-navigation:disabled {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}

@@ -1,11 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 
-jest.mock('node:child_process', () => ({
-  spawn: jest.fn(),
-}));
+jest.mock('cross-spawn', () => jest.fn());
 
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 
 import { AcpSubprocess } from '@/providers/acp/AcpSubprocess';
 
@@ -54,7 +52,7 @@ describe('AcpSubprocess', () => {
     }));
   });
 
-  it('wraps Windows .cmd shims through cmd.exe', () => {
+  it('passes Windows .cmd shims to cross-spawn', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new AcpSubprocess({
       args: ['acp', '--cwd=C:\\Vault'],
@@ -66,12 +64,11 @@ describe('AcpSubprocess', () => {
     subprocess.start();
 
     expect(mockSpawn).toHaveBeenCalledWith(
-      process.env.ComSpec || process.env.comspec || 'cmd.exe',
-      ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\opencode.cmd" acp "--cwd=C:\\Vault""'],
+      'C:\\Users\\R&D\\AppData\\Roaming\\npm\\opencode.cmd',
+      ['acp', '--cwd=C:\\Vault'],
       expect.objectContaining({
         cwd: 'C:\\Vault',
         windowsHide: true,
-        windowsVerbatimArguments: true,
       }),
     );
   });

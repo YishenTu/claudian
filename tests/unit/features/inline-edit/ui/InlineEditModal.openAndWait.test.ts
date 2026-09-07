@@ -9,25 +9,6 @@ import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/
 import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 import * as editorUtils from '@/utils/editor';
 
-const mentionDropdownCtor = jest.fn();
-jest.mock('@/shared/mention/MentionDropdownController', () => ({
-  MentionDropdownController: function MockMentionDropdownController(...args: any[]) {
-    mentionDropdownCtor(...args);
-    return {
-      handleInputChange: jest.fn(),
-      handleKeydown: jest.fn().mockReturnValue(false),
-      destroy: jest.fn(),
-    };
-  },
-}));
-
-jest.mock('@/shared/components/SlashCommandDropdown', () => ({
-  SlashCommandDropdown: jest.fn().mockImplementation(() => ({
-    handleKeydown: jest.fn().mockReturnValue(false),
-    destroy: jest.fn(),
-  })),
-}));
-
 jest.mock('@/utils/externalContextScanner', () => ({
   externalContextScanner: {
     scanPaths: jest.fn().mockReturnValue([]),
@@ -198,7 +179,8 @@ describe('InlineEditModal - openAndWait', () => {
     );
   });
 
-  it('wires mention getCachedVaultFolders through VaultFolderCache.getFolders', async () => {
+  it('debounces Inline Edit Vault mention loading through the shared dropdown', async () => {
+    jest.useFakeTimers();
     const originalDocument = (global as any).document;
     (global as any).document = {
       body: createMockEl('body'),
@@ -282,11 +264,21 @@ describe('InlineEditModal - openAndWait', () => {
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
-      expect(mentionDropdownCtor).toHaveBeenCalled();
-      const callbacks = mentionDropdownCtor.mock.calls[0]?.[2];
-      expect(callbacks).toBeDefined();
-      expect(callbacks.getCachedVaultFolders()).toEqual([{ name: 'src', path: 'src' }]);
+      const inputEl = widgetRef?.inputEl;
+      inputEl.value = '@s';
+      inputEl.selectionStart = inputEl.selectionEnd = 2;
+      inputEl.dispatchEvent({ type: 'input' });
+      jest.advanceTimersByTime(199);
+      expect(getFoldersSpy).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+
       expect(getFoldersSpy).toHaveBeenCalledTimes(1);
+      const labels = (global as any).document.body
+        .querySelectorAll('.claudian-composer-dropdown-label')
+        .map((element: { textContent: string }) => element.textContent);
+      expect(labels).toEqual(['@src/']);
 
       widgetRef?.reject();
       await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
@@ -295,6 +287,7 @@ describe('InlineEditModal - openAndWait', () => {
       getFoldersSpy.mockRestore();
     } finally {
       (global as any).document = originalDocument;
+      jest.useRealTimers();
     }
   });
 
@@ -397,17 +390,14 @@ describe('InlineEditModal - openAndWait', () => {
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
-      const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
       expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
         plugin,
         'codex',
         'inline-edit',
       );
-      const constructorCall = SlashCommandDropdown.mock.calls[0];
-      expect(Array.from(constructorCall[3].hiddenCommands)).toEqual(['analyze']);
-      expect(constructorCall[3].includeBuiltIns).toBe(false);
-      expect(constructorCall[3].providerDiscovery).toBeDefined();
-      expect(constructorCall[3].getProviderEntries).toBeUndefined();
+      expect(Array.from(widgetRef?.slashSource?.hiddenCommands ?? [])).toEqual(['analyze']);
+      expect(widgetRef?.slashSource?.includeBuiltIns).toBe(false);
+      expect(widgetRef?.slashSource?.discovery).toBeDefined();
 
       widgetRef?.reject();
       await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
@@ -763,7 +753,7 @@ describe('InlineEditModal - openAndWait', () => {
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
-      const callbacks = mentionDropdownCtor.mock.calls[0]?.[2];
+      const callbacks = widgetRef?.mentionSource?.callbacks;
       expect(callbacks.getCachedVaultFiles()).toEqual([]);
       expect(callbacks.getCachedVaultFiles()).toEqual([]);
 

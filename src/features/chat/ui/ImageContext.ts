@@ -3,6 +3,7 @@ import * as path from 'path';
 
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
 import { ComposerContextTray } from './ComposerContextTray';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -28,7 +29,7 @@ export class ImageContextManager {
   private dropOverlay: HTMLElement | null = null;
   private dropZoneEl: HTMLElement | null = null;
   private attachedImages: Map<string, ImageAttachment> = new Map();
-  private closeImageModal: (() => void) | null = null;
+  private readonly imagePreviewModal = new ImagePreviewModal();
   private destroyed = false;
   private enabled = true;
   private readonly dragEnterHandler = (event: DragEvent): void => this.handleDragEnter(event);
@@ -112,7 +113,7 @@ export class ImageContextManager {
     }
     this.dropOverlay?.remove();
     this.dropOverlay = null;
-    this.closeImageModal?.();
+    this.imagePreviewModal.close();
     this.attachedImages.clear();
     this.contextTray.clearItems('images');
     this.ownedContextTray?.destroy();
@@ -314,45 +315,9 @@ export class ImageContextManager {
 
   private showFullImage(image: ImageAttachment) {
     if (this.destroyed) return;
-    this.closeImageModal?.();
 
     const ownerDocument = this.containerEl.ownerDocument ?? window.document;
-    const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
-    const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
-
-    modal.createEl('img', {
-      attr: {
-        src: `data:${image.mediaType};base64,${image.data}`,
-        alt: image.name,
-      },
-    });
-
-    const closeBtn = modal.createDiv({ cls: 'claudian-image-modal-close' });
-    closeBtn.setText('\u00D7');
-
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        close();
-      }
-    };
-
-    let isClosed = false;
-    const close = () => {
-      if (isClosed) return;
-      isClosed = true;
-      ownerDocument.removeEventListener('keydown', handleEsc);
-      overlay.remove();
-      if (this.closeImageModal === close) {
-        this.closeImageModal = null;
-      }
-    };
-
-    closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
-    ownerDocument.addEventListener('keydown', handleEsc);
-    this.closeImageModal = close;
+    this.imagePreviewModal.open(ownerDocument, image);
   }
 
   private generateId(): string {

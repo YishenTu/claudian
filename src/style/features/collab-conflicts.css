@@ -1,0 +1,106 @@
+.claudian-collab-conflict {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: var(--size-4-4);
+}
+
+.claudian-collab-conflict-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-3);
+  padding-block-end: var(--size-4-3);
+}
+
+.claudian-collab-conflict-header h2,
+.claudian-collab-conflict-content h3 {
+  margin: 0;
+}
+
+.claudian-collab-conflict-progress,
+.claudian-collab-conflict-kind,
+.claudian-collab-conflict-guidance {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-collab-conflict-guidance {
+  flex: 0 0 auto;
+  margin: 0 0 var(--size-4-4);
+}
+
+.claudian-collab-conflict-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.claudian-collab-conflict-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24rem;
+  min-width: 0;
+  padding-block: var(--size-4-3) var(--size-4-6);
+  border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-conflict-section:first-child {
+  padding-block-start: 0;
+}
+
+.claudian-collab-conflict-section:last-child {
+  padding-block-end: 0;
+  border-block-end: 0;
+}
+
+.claudian-collab-conflict-kind {
+  margin-block: var(--size-2-1) var(--size-4-3);
+}
+
+.claudian-collab-conflict-diff-labels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-4-3);
+  margin-block-end: var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-conflict-diff-labels span:last-child {
+  text-align: end;
+}
+
+.claudian-collab-conflict-diff {
+  min-width: 0;
+  font-family: var(--font-monospace);
+}
+
+.claudian-collab-conflict-versions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-4-3);
+}
+
+.claudian-collab-conflict-version {
+  min-width: 0;
+  padding-block: var(--size-2-2);
+}
+
+.claudian-collab-conflict-blocking {
+  max-width: 48rem;
+  padding: var(--size-4-3);
+}
+
+.claudian-collab-conflict-message {
+  margin: auto;
+  color: var(--text-muted);
+}
+
+@media (max-width: 700px) {
+  .claudian-collab-conflict-versions {
+    grid-template-columns: 1fr;
+  }
+}

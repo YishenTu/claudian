@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { normalizeLinkedContentPath } from '../path/LinkedContentPath';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   ExecutionInputContextSnapshot,
@@ -41,6 +42,7 @@ export type ConversationInputLedgerReadResult =
   | {
       status: 'loaded';
       ledger: ConversationInputLedger;
+      needsMigration: boolean;
     }
   | {
       status: 'unavailable';
@@ -108,10 +110,15 @@ export class ConversationInputLedgerStorage
     ) {
       return { status: 'unavailable', reason: 'unsupported-version' };
     }
-    if (!isConversationInputLedger(parsed, conversationId)) {
+    const normalized = normalizeConversationInputLedger(parsed, conversationId);
+    if (!normalized) {
       return { status: 'unavailable', reason: 'malformed' };
     }
-    return { status: 'loaded', ledger: parsed };
+    return {
+      status: 'loaded',
+      ledger: normalized.ledger,
+      needsMigration: normalized.needsMigration,
+    };
   }
 
   async save(
@@ -119,7 +126,8 @@ export class ConversationInputLedgerStorage
     ledger: ConversationInputLedger,
   ): Promise<void> {
     const path = this.getPath(conversationId);
-    if (!isConversationInputLedger(ledger, conversationId)) {
+    const normalized = normalizeConversationInputLedger(ledger, conversationId);
+    if (!normalized || normalized.needsMigration) {
       throw new Error(`Invalid conversation input ledger: ${conversationId}`);
     }
     await this.adapter.write(path, JSON.stringify(ledger, null, 2));
@@ -130,19 +138,91 @@ export class ConversationInputLedgerStorage
   }
 }
 
-function isConversationInputLedger(
+function normalizeConversationInputLedger(
   value: unknown,
   conversationId: string,
-): value is ConversationInputLedger {
+): { ledger: ConversationInputLedger; needsMigration: boolean } | null {
   if (
     !isRecord(value)
     || value.schemaVersion !== CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION
     || value.conversationId !== conversationId
     || !Array.isArray(value.records)
   ) {
-    return false;
+    return null;
   }
-  return value.records.every(isConversationInputRecord);
+  const normalizedRecords: ConversationInputRecord[] = [];
+  let needsMigration = false;
+  for (const record of value.records) {
+    if (!isConversationInputRecord(record)) return null;
+    const normalized = normalizeInputContext(record.context);
+    if (!normalized) return null;
+    needsMigration ||= normalized.needsMigration;
+    normalizedRecords.push({
+      ...record,
+      ...(normalized.context === undefined
+        ? { context: undefined }
+        : { context: normalized.context }),
+    });
+  }
+  return {
+    ledger: {
+      schemaVersion: CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
+      conversationId,
+      records: normalizedRecords,
+    },
+    needsMigration,
+  };
+}
+
+function normalizeInputContext(
+  value: ExecutionInputContextSnapshot | undefined,
+): {
+  context: ExecutionInputContextSnapshot | undefined;
+  needsMigration: boolean;
+} | null {
+  if (value === undefined) {
+    return { context: undefined, needsMigration: false };
+  }
+  if (!isRecord(value)) return null;
+
+  const raw = value;
+  const hasCanonical = Object.prototype.hasOwnProperty.call(raw, 'linkedContent');
+  const hasLegacy = Object.prototype.hasOwnProperty.call(raw, 'currentNote');
+  const context = { ...raw };
+  delete context.linkedContent;
+  delete context.currentNote;
+
+  if (!hasCanonical && !hasLegacy) {
+    return {
+      context: context as unknown as ExecutionInputContextSnapshot,
+      needsMigration: false,
+    };
+  }
+
+  const selected = hasCanonical ? raw.linkedContent : raw.currentNote;
+  if (!isRecord(selected)) {
+    return {
+      context: context as unknown as ExecutionInputContextSnapshot,
+      needsMigration: true,
+    };
+  }
+  const path = normalizeLinkedContentPath(selected.path);
+  const content = selected.content;
+  if (path === null || (content !== undefined && typeof content !== 'string')) {
+    return {
+      context: context as unknown as ExecutionInputContextSnapshot,
+      needsMigration: true,
+    };
+  }
+
+  context.linkedContent = {
+    path,
+    ...(typeof content === 'string' ? { content } : {}),
+  };
+  return {
+    context: context as unknown as ExecutionInputContextSnapshot,
+    needsMigration: !hasCanonical || hasLegacy || path !== selected.path,
+  };
 }
 
 function isConversationInputRecord(value: unknown): value is ConversationInputRecord {

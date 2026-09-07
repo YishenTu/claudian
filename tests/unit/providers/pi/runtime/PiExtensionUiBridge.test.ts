@@ -1,11 +1,19 @@
 import { PiExtensionUiBridge, type PiExtensionUiRenderer } from '@/providers/pi/runtime/PiExtensionUiBridge';
 import type { PiRpcTransport } from '@/providers/pi/runtime/PiRpcTransport';
 
-function createBridge(renderer: Partial<PiExtensionUiRenderer>) {
+function createBridge(
+  renderer: Partial<PiExtensionUiRenderer>,
+  admitDialog: () => boolean = () => true,
+) {
   const transport = {
     send: jest.fn(),
   } as unknown as PiRpcTransport;
-  const bridge = new PiExtensionUiBridge(transport, renderer as PiExtensionUiRenderer);
+  const bridge = new PiExtensionUiBridge(
+    transport,
+    renderer as PiExtensionUiRenderer,
+    undefined,
+    admitDialog,
+  );
   return { bridge, transport };
 }
 
@@ -35,6 +43,22 @@ describe('PiExtensionUiBridge', () => {
 
     bridge.handleRequest({ id: 'ui-1', method: 'confirm', type: 'extension_ui_request' });
 
+    expect(transport.send).toHaveBeenCalledWith({
+      cancelled: true,
+      id: 'ui-1',
+      type: 'extension_ui_response',
+    });
+  });
+
+  it('cancels a denied dialog before invoking the renderer', () => {
+    const renderer = {
+      input: jest.fn().mockResolvedValue({ value: 'must-not-be-sent' }),
+    };
+    const { bridge, transport } = createBridge(renderer, () => false);
+
+    bridge.handleRequest({ id: 'ui-1', method: 'input', type: 'extension_ui_request' });
+
+    expect(renderer.input).not.toHaveBeenCalled();
     expect(transport.send).toHaveBeenCalledWith({
       cancelled: true,
       id: 'ui-1',

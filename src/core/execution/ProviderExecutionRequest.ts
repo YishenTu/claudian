@@ -13,13 +13,13 @@ export type ProviderExecutionInputBlock =
       readonly image: ImageAttachment;
     };
 
-export interface ProviderCurrentNoteContext {
+export interface ProviderLinkedContentContext {
   readonly path: string;
   readonly content?: string;
 }
 
 export interface ProviderExecutionContext {
-  readonly currentNote?: ProviderCurrentNoteContext;
+  readonly linkedContent?: ProviderLinkedContentContext;
   readonly editorSelection?: EditorSelectionContext | null;
   readonly browserSelection?: BrowserSelectionContext | null;
   readonly canvasSelection?: CanvasSelectionContext | null;
@@ -29,6 +29,7 @@ export interface ProviderExecutionContext {
 export type ProviderSystemInstructions =
   | {
       readonly kind: 'provider-default';
+      readonly dynamicSections?: readonly string[];
     }
   | {
       readonly kind: 'explicit';

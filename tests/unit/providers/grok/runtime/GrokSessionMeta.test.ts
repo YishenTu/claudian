@@ -1,3 +1,4 @@
+import { buildSystemPrompt, computeSystemPromptKey } from '@/core/prompt/mainAgent';
 import {
   buildGrokSystemPrompt,
   computeGrokSystemPromptKey,
@@ -12,25 +13,20 @@ describe('Grok system prompt', () => {
     vaultPath: '/vault',
   };
 
-  it('uses the provider-native profile without duplicating Claudian tool recipes', () => {
+  it('uses the complete shared Claudian system prompt', () => {
     const prompt = buildGrokSystemPrompt(promptSettings);
 
-    expect(prompt).toContain('You are collaborating with **Ada**');
+    expect(prompt).toBe(buildSystemPrompt(promptSettings));
+    expect(prompt).toContain("inside **Ada**'s Obsidian Vault");
     expect(prompt).toContain('Vault absolute path: /vault');
     expect(prompt).toContain('Keep my explicit instructions.');
-    expect(prompt).not.toContain('bash: date');
-    expect(prompt).not.toContain('WebFetch does NOT support images');
-    expect(prompt).not.toContain('curl -sfo');
+    expect(prompt).toContain('bash: date');
+    expect(prompt).toContain('## Vault Media');
   });
 
-  it('uses the provider-native profile in the prompt key', () => {
-    expect(computeGrokSystemPromptKey(promptSettings)).not.toBe(
-      [
-        promptSettings.mediaFolder,
-        promptSettings.customPrompt,
-        promptSettings.vaultPath,
-        promptSettings.userName,
-      ].join('::'),
+  it('uses the shared Claudian prompt key', () => {
+    expect(computeGrokSystemPromptKey(promptSettings)).toBe(
+      computeSystemPromptKey(promptSettings),
     );
   });
 });
