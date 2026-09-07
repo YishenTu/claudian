@@ -208,52 +208,49 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
-.claudian-queue-indicator-action {
+.claudian-queue-indicator-actions button.claudian-queue-indicator-action,
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action {
   flex: 0 0 auto;
-  padding: 1px 8px;
+  height: auto;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: var(--interactive-accent);
+  box-shadow: none;
+  color: var(--text-muted);
   font: inherit;
   cursor: pointer;
 }
 
-.claudian-queue-indicator-action:hover {
-  text-decoration: underline;
-}
-
-.claudian-queue-indicator-action[disabled] {
-  color: var(--text-faint);
-  cursor: default;
-  text-decoration: none;
-}
-
-.claudian-queue-indicator-icon-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  padding: 0;
+.claudian-queue-indicator-actions button.claudian-queue-indicator-action:is(:hover, :focus-visible, :active),
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action:is(:hover, :focus-visible, :active) {
   border: 0;
-  border-radius: 4px;
   background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.claudian-queue-indicator-icon-action:hover {
-  background: var(--background-modifier-hover);
+  box-shadow: none;
   color: var(--text-normal);
 }
 
-.claudian-queue-indicator-icon-action svg {
+.claudian-queue-indicator-actions button.claudian-queue-indicator-action[disabled],
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action[disabled] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action svg {
   width: 14px;
   height: 14px;
+  color: currentColor;
 }
 
 /* Light blue border when instruction mode is active */
