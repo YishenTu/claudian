@@ -507,6 +507,8 @@ class CollabFeatureServiceCore {
    #activeOperationController: AbortController | null = null;
    #activeOperationProjectId: CollabProjectId | null = null;
    #activeProjectSelections = 0;
+   #selectionGeneration = 0;
+   #committedSelectionGeneration = 0;
    #initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
   private readonly listeners = new Set<CollabFeatureStateListener>();
    #lifecycleRecoveryController: AbortController | null = null;
@@ -717,6 +719,7 @@ class CollabFeatureServiceCore {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabProjectInspection>> {
+    const generation = ++this.#selectionGeneration;
     this.#activeProjectSelections += 1;
     try {
       this.#throwIfDisposed();
@@ -733,10 +736,14 @@ class CollabFeatureServiceCore {
           status: 'failure',
         };
       }
+      throwIfCancelled(options.signal);
+      if (generation !== this.#selectionGeneration) throw new CollabError({ code: 'cancelled' });
       await this.foundation.local.projects.selectProject(projectId);
+      this.#committedSelectionGeneration = generation;
       this.#throwIfDisposed();
       const inspection = await this.inspectProject(projectId, options);
       this.#throwIfDisposed();
+      if (generation !== this.#committedSelectionGeneration) throw new CollabError({ code: 'cancelled' });
       this.scheduleAcceptedMainSynchronization(projectId);
       this.#publishState({ ...this.#stateValue, projects, selectedProjectId: projectId });
       return inspection;
