@@ -14,11 +14,13 @@ import {
   completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { WebSocketServer } from 'ws';
 
 import type {
   CollabLocalCloudMembershipRecord,
   CollabLocalLanMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
@@ -404,6 +406,83 @@ describe('CollabPublicationService reconnect', () => {
     } finally {
       request.mockRestore();
       await service.close();
+    }
+  });
+
+  it.each([
+    'endpoint-unreachable',
+    'authorization-denied',
+    'authority-integrity-error',
+  ] as const)('preserves cold cached coordination only for connectivity failure: %s', async code => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)
+        : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ server });
+    const eventConnected = deferred<void>();
+    sockets.on('connection', () => eventConnected.resolve());
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server address missing');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-cached-coordination-'));
+    const services: CollabPublicationService[] = [];
+    try {
+      const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
+      const projects = new CollabLocalProjectRepository(vaultRoot);
+      await projects.saveMembership(membership);
+      await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+      const transport = new NodeCloudAuthorityHttpTransport();
+      let fault: CollabError | null = null;
+      const cloudAuthority = new CloudAuthorityAdapter(vaultRoot, {
+        request: input => fault ? Promise.reject(fault) : transport.request(input),
+        requestIdFactory: () => 'response-snapshot',
+      });
+      const create = () => {
+        const service = new CollabPublicationService({
+          local: { pathPolicy: {}, projects, workspace: {} },
+          requireGitFoundation: jest.fn(),
+        } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+          cloudAuthority,
+          vaultRoot,
+        }));
+        services.push(service);
+        return service;
+      };
+      const online = create();
+      await online.readSnapshot(CLOUD_PROJECT_ID);
+      await online.close();
+
+      fault = new CollabError({ code });
+      const restarted = create();
+      const cachedResult = {
+        value: expect.objectContaining({
+          snapshot: expect.objectContaining({ eventSequence: 1, project: expect.objectContaining({ id: CLOUD_PROJECT_ID }) }),
+          source: 'cache',
+          stale: true,
+          syncState: expect.objectContaining({ status: 'offline' }),
+        }),
+      };
+      const observed = await restarted.readCoordinationSnapshot(CLOUD_PROJECT_ID).then(
+        value => ({ value }),
+        (error: CollabError) => ({ code: error.code }),
+      );
+      expect(observed).toEqual(code === 'endpoint-unreachable' ? cachedResult : { code });
+
+      fault = null;
+      await expect(restarted.readCoordinationSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+        source: 'online',
+        stale: false,
+      });
+      await eventConnected.promise;
+    } finally {
+      await Promise.all(services.map(service => service.close()));
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
     }
   });
 

@@ -280,7 +280,7 @@ export class CollabPublicationService {
   ): Promise<CollabCoordinationSnapshot> {
     const snapshot = await this.projection.readSnapshot(projectId, options);
     this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
-    await this.ensureEventSubscription(projectId);
+    if (!snapshot.stale) await this.ensureEventSubscription(projectId);
     return snapshot;
   }
 
