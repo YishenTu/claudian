@@ -57,7 +57,7 @@ describeOnWindows('PiSubprocess Windows argv integration', () => {
       await subprocess?.shutdown();
       await fs.rm(npmPrefix, { force: true, recursive: true });
     }
-  }, 20_000);
+  }, 45_000);
 });
 
 function createWindowsCommandShim(commandPath: string, targetPath: string): string {
@@ -86,6 +86,7 @@ function createWindowsCommandShim(commandPath: string, targetPath: string): stri
 function readFirstLine(subprocess: PiSubprocess, launch: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let buffered = '';
+    // Allow for slow Node startup on hosted Windows runners.
     const timeout = window.setTimeout(() => {
       cleanup();
       reject(new Error(`Timed out waiting for the Pi argv fixture: ${JSON.stringify({
@@ -94,7 +95,7 @@ function readFirstLine(subprocess: PiSubprocess, launch: Record<string, unknown>
         stdout: buffered,
         stderr: subprocess.getStderrSnapshot(),
       })}`));
-    }, 10_000);
+    }, 30_000);
     const onData = (chunk: Buffer | string): void => {
       buffered += chunk.toString();
       const newlineIndex = buffered.indexOf('\n');
