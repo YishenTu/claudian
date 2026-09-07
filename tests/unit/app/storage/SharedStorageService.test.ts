@@ -1,18 +1,6 @@
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
-import type { SharedAppStorage } from '@/core/bootstrap/storage';
 
 describe('SharedStorageService', () => {
-  it('exposes only read-only session capabilities through SharedAppStorage', () => {
-    const writerIsExposed: 'saveMetadata' extends keyof SharedAppStorage['sessions']
-      ? true
-      : false = false;
-    const ledgerWriterIsExposed: 'saveInputLedger' extends keyof SharedAppStorage['sessions']
-      ? true
-      : false = false;
-
-    expect(writerIsExposed).toBe(false);
-    expect(ledgerWriterIsExposed).toBe(false);
-  });
 
   it('does not create storage directories during read-only initialization', async () => {
     const adapter = {

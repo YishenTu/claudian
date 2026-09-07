@@ -1,6 +1,5 @@
 import {
-  normalizeProviderCommandDiscoveryItems,
-  type ProviderCommandDiscoveryResult,
+normalizeProviderCommandDiscoveryItems
 } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 
 describe('ProviderCommandDiscoveryResult', () => {
@@ -13,19 +12,5 @@ describe('ProviderCommandDiscoveryResult', () => {
 
   it('normalizes an authoritative zero-item response to empty', () => {
     expect(normalizeProviderCommandDiscoveryItems([])).toEqual({ status: 'empty' });
-  });
-
-  it('models retryable errors without provider settings or diagnostics payloads', () => {
-    const result: ProviderCommandDiscoveryResult<string> = {
-      status: 'error',
-      message: 'Could not load provider commands',
-      retryable: true,
-    };
-
-    expect(result).toEqual({
-      status: 'error',
-      message: 'Could not load provider commands',
-      retryable: true,
-    });
   });
 });

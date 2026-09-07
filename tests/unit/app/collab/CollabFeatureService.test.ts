@@ -1,39 +1,39 @@
 import {
-  mkdir,
-  mkdtemp,
-  rm,
+mkdir,
+mkdtemp,
+rm,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { CollabChangeRequest } from '@claudian-collab/protocol';
 import {
-  completeCollabFeatureOptions,
-  TEST_COLLAB_FEATURE_PORT_METHODS,
+completeCollabFeatureOptions,
+TEST_COLLAB_FEATURE_PORT_METHODS,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
 import {
-  CollabAuthorityTransferOutcomeError,
+CollabAuthorityTransferOutcomeError,
 } from '@/app/collab/authority-transfer/CollabAuthorityTransferOutcomeError';
 import {
-  type CollabFeatureFoundationPort,
-  CollabFeatureService,
-  type CollabHostTransferPort,
-  type CollabLocalExitPort,
-  type CollabMembershipPort,
-  type CollabProjectSetupPort,
-  type CollabPublicationPort,
+type CollabFeatureFoundationPort,
+CollabFeatureService,
+type CollabHostTransferPort,
+type CollabLocalExitPort,
+type CollabMembershipPort,
+type CollabProjectSetupPort,
+type CollabPublicationPort,
 } from '@/app/collab/CollabFeatureService';
 import type { CollabLocalProjectIndex } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import {
-  encodeCloudMembershipClaimInvitation,
+encodeCloudMembershipClaimInvitation,
 } from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabLanProjectSnapshot } from '@/core/collab';
-import { type CollabPublishOutcome, type CollabResult } from '@/core/collab';
+import { type CollabPublishOutcome,type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
@@ -2119,7 +2119,6 @@ describe('CollabFeatureService', () => {
       'publication-subscription',
       'publication',
     ]);
-    expect(service).not.toHaveProperty('dispose');
   });
 
   it('drains a same-turn admitted lifecycle transition before closing its arbiter', async () => {

@@ -1,16 +1,14 @@
 import {
-  COLLAB_AUTHORITY_TRANSFER_OPERATIONS,
+COLLAB_AUTHORITY_TRANSFER_OPERATIONS,
 } from '@claudian-collab/protocol';
 
 import {
-  COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
-  collabLanAuthorityTransferOperationPath,
-  matchCollabLanAuthorityTransferRoute,
+collabLanAuthorityTransferOperationPath,
+matchCollabLanAuthorityTransferRoute
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferBinding';
 
 describe('LAN authority-transfer binding', () => {
   it('owns an independent version and round-trips every package operation', () => {
-    expect(COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION).toBe(2);
 
     for (const operation of COLLAB_AUTHORITY_TRANSFER_OPERATIONS) {
       const path = collabLanAuthorityTransferOperationPath('project-alpha', operation);

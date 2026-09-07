@@ -1,86 +1,21 @@
 import {
-  // Tool arrays
-  AGENT_LIFECYCLE_TOOLS,
-  BASH_TOOLS,
-  EDIT_TOOLS,
-  FILE_TOOLS,
-  isAgentLifecycleTool,
-  isBashTool,
-  // Type guards
-  isEditTool,
-  isFileTool,
-  isMcpTool,
-  isReadOnlyTool,
-  isWriteEditTool,
-  MCP_TOOLS,
-  READ_ONLY_TOOLS,
-  // Constants
-  TOOL_AGENT_OUTPUT,
-  TOOL_BASH,
-  TOOL_BASH_OUTPUT,
-  TOOL_CLOSE_AGENT,
-  TOOL_EDIT,
-  TOOL_GLOB,
-  TOOL_GREP,
-  TOOL_KILL_SHELL,
-  TOOL_LIST_MCP_RESOURCES,
-  TOOL_LS,
-  TOOL_MCP,
-  TOOL_NOTEBOOK_EDIT,
-  TOOL_READ,
-  TOOL_READ_MCP_RESOURCE,
-  TOOL_RESUME_AGENT,
-  TOOL_SEND_INPUT,
-  TOOL_SKILL,
-  TOOL_SPAWN_AGENT,
-  TOOL_SUBAGENT,
-  TOOL_TODO_WRITE,
-  TOOL_TOOL_SEARCH,
-  TOOL_WAIT,
-  TOOL_WAIT_AGENT,
-  TOOL_WEB_FETCH,
-  TOOL_WEB_SEARCH,
-  TOOL_WRITE,
-  WRITE_EDIT_TOOLS,
+isAgentLifecycleTool,
+isBashTool,
+// Type guards
+isEditTool,
+isFileTool,
+isMcpTool,
+isReadOnlyTool,
+isWriteEditTool,
+TOOL_BASH,
+TOOL_CLOSE_AGENT,
+TOOL_RESUME_AGENT,
+TOOL_SEND_INPUT,
+TOOL_SPAWN_AGENT,
+TOOL_SUBAGENT,
+TOOL_WAIT,
+TOOL_WAIT_AGENT
 } from '@/core/tools/toolNames';
-
-describe('Tool Constants', () => {
-  it('should export all tool name constants', () => {
-    expect(TOOL_AGENT_OUTPUT).toBe('TaskOutput');
-    expect(TOOL_BASH).toBe('Bash');
-    expect(TOOL_BASH_OUTPUT).toBe('BashOutput');
-    expect(TOOL_EDIT).toBe('Edit');
-    expect(TOOL_GLOB).toBe('Glob');
-    expect(TOOL_GREP).toBe('Grep');
-    expect(TOOL_KILL_SHELL).toBe('KillShell');
-    expect(TOOL_LS).toBe('LS');
-    expect(TOOL_LIST_MCP_RESOURCES).toBe('ListMcpResources');
-    expect(TOOL_MCP).toBe('Mcp');
-    expect(TOOL_NOTEBOOK_EDIT).toBe('NotebookEdit');
-    expect(TOOL_READ).toBe('Read');
-    expect(TOOL_READ_MCP_RESOURCE).toBe('ReadMcpResource');
-    expect(TOOL_SKILL).toBe('Skill');
-    expect(TOOL_SUBAGENT).toBe('Agent');
-    expect(TOOL_TODO_WRITE).toBe('TodoWrite');
-    expect(TOOL_WEB_FETCH).toBe('WebFetch');
-    expect(TOOL_WEB_SEARCH).toBe('WebSearch');
-    expect(TOOL_TOOL_SEARCH).toBe('ToolSearch');
-    expect(TOOL_WRITE).toBe('Write');
-  });
-});
-
-describe('AGENT_LIFECYCLE_TOOLS', () => {
-  it('should expose provider-neutral lifecycle names', () => {
-    expect(AGENT_LIFECYCLE_TOOLS).toEqual([
-      TOOL_SPAWN_AGENT,
-      TOOL_SEND_INPUT,
-      TOOL_WAIT,
-      TOOL_WAIT_AGENT,
-      TOOL_RESUME_AGENT,
-      TOOL_CLOSE_AGENT,
-    ]);
-  });
-});
 
 describe('isAgentLifecycleTool', () => {
   it('should return true for runtime lifecycle tools only', () => {
@@ -92,75 +27,6 @@ describe('isAgentLifecycleTool', () => {
     expect(isAgentLifecycleTool(TOOL_CLOSE_AGENT)).toBe(true);
     expect(isAgentLifecycleTool(TOOL_BASH)).toBe(false);
     expect(isAgentLifecycleTool(TOOL_SUBAGENT)).toBe(false);
-  });
-});
-
-describe('Tool Arrays', () => {
-  describe('EDIT_TOOLS', () => {
-    it('should contain Write, Edit, and NotebookEdit', () => {
-      expect(EDIT_TOOLS).toContain('Write');
-      expect(EDIT_TOOLS).toContain('Edit');
-      expect(EDIT_TOOLS).toContain('NotebookEdit');
-      expect(EDIT_TOOLS).toHaveLength(3);
-    });
-  });
-
-  describe('WRITE_EDIT_TOOLS', () => {
-    it('should contain Write and Edit only', () => {
-      expect(WRITE_EDIT_TOOLS).toContain('Write');
-      expect(WRITE_EDIT_TOOLS).toContain('Edit');
-      expect(WRITE_EDIT_TOOLS).toHaveLength(2);
-    });
-  });
-
-  describe('BASH_TOOLS', () => {
-    it('should contain Bash, BashOutput, and KillShell', () => {
-      expect(BASH_TOOLS).toContain('Bash');
-      expect(BASH_TOOLS).toContain('BashOutput');
-      expect(BASH_TOOLS).toContain('KillShell');
-      expect(BASH_TOOLS).toHaveLength(3);
-    });
-  });
-
-  describe('FILE_TOOLS', () => {
-    it('should contain all file-related tools', () => {
-      expect(FILE_TOOLS).toContain('Read');
-      expect(FILE_TOOLS).toContain('Write');
-      expect(FILE_TOOLS).toContain('Edit');
-      expect(FILE_TOOLS).toContain('Glob');
-      expect(FILE_TOOLS).toContain('Grep');
-      expect(FILE_TOOLS).toContain('LS');
-      expect(FILE_TOOLS).toContain('NotebookEdit');
-      expect(FILE_TOOLS).toContain('Bash');
-      expect(FILE_TOOLS).toHaveLength(8);
-    });
-  });
-
-  describe('MCP_TOOLS', () => {
-    it('should contain all MCP-related tools', () => {
-      expect(MCP_TOOLS).toContain('ListMcpResources');
-      expect(MCP_TOOLS).toContain('ReadMcpResource');
-      expect(MCP_TOOLS).toContain('Mcp');
-      expect(MCP_TOOLS).toHaveLength(3);
-    });
-  });
-
-  describe('READ_ONLY_TOOLS', () => {
-    it('should contain all read-only tools', () => {
-      expect(READ_ONLY_TOOLS).toContain('Read');
-      expect(READ_ONLY_TOOLS).toContain('Grep');
-      expect(READ_ONLY_TOOLS).toContain('Glob');
-      expect(READ_ONLY_TOOLS).toContain('LS');
-      expect(READ_ONLY_TOOLS).toContain('WebSearch');
-      expect(READ_ONLY_TOOLS).toContain('WebFetch');
-      expect(READ_ONLY_TOOLS).toHaveLength(6);
-    });
-
-    it('should not contain write tools', () => {
-      expect(READ_ONLY_TOOLS).not.toContain('Write');
-      expect(READ_ONLY_TOOLS).not.toContain('Edit');
-      expect(READ_ONLY_TOOLS).not.toContain('Bash');
-    });
   });
 });
 

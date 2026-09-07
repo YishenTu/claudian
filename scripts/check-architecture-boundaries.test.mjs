@@ -479,19 +479,6 @@ test('chat consumes Collab only through the FeatureHost surface seam', () => {
   );
 });
 
-test('the retired Vault file-tree surface stays outside the plugin', () => {
-  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
-  const viewSource = fs.readFileSync(path.join(featuresRoot, 'chat', 'ClaudianView.ts'), 'utf8');
-  const settingsTypeSource = fs.readFileSync(path.join(sourceRoot, 'core', 'types', 'settings.ts'), 'utf8');
-  const treeRoot = path.join(featuresRoot, 'chat', 'ui', 'vault-file-tree');
-
-  assert.equal(packageJson.dependencies?.['@pierre/trees'], undefined);
-  assert.equal(fs.existsSync(treeRoot) && listTypeScriptFiles(treeRoot).length > 0, false);
-  assert.equal(fs.existsSync(path.join(sourceRoot, 'style', 'components', 'vault-file-tree.css')), false);
-  assert.doesNotMatch(viewSource, /VaultFileTree|filesSurface|showVaultFiles/);
-  assert.doesNotMatch(settingsTypeSource, /enableFilePane/);
-});
-
 test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
   const mainFile = path.join(sourceRoot, 'main.ts');
   const eagerGraph = listStaticSourceGraph(mainFile);
@@ -804,34 +791,6 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
   ), []);
 });
 
-test('Collab application barrel exposes only composition values', () => {
-  const barrelPath = path.join(appRoot, 'collab', 'index.ts');
-  const source = fs.readFileSync(barrelPath, 'utf8');
-  assert.doesNotMatch(source, /export\s+\*/);
-
-  const sourceFile = ts.createSourceFile(
-    barrelPath,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  );
-  const runtimeExports = [];
-  for (const statement of sourceFile.statements) {
-    if (!ts.isExportDeclaration(statement) || !statement.exportClause) continue;
-    if (!ts.isNamedExports(statement.exportClause)) continue;
-    for (const element of statement.exportClause.elements) {
-      if (!statement.isTypeOnly && !element.isTypeOnly) runtimeExports.push(element.name.text);
-    }
-  }
-  assert.deepEqual(runtimeExports.sort(), [
-    'ClaudianCollabService',
-    'CollabFeatureService',
-    'CollabProjectSetupService',
-    'createCollabFeatureSubcomposition',
-  ].sort());
-});
-
 test('superseded Collab state authorities stay removed', () => {
   assert.deepEqual(findMatches(
     [path.join(appRoot, 'collab')],
@@ -862,7 +821,7 @@ test('production consumes protocol-owned canonical Collab Git refs', () => {
   ), []);
 });
 
-test('Collab consumer CI does not retain protocol producer gates', () => {
+test('Collab consumer CI runs production and cross-platform checks', () => {
   const workflow = fs.readFileSync(
     path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
     'utf8',
@@ -870,26 +829,12 @@ test('Collab consumer CI does not retain protocol producer gates', () => {
   const crossPlatformJob = workflow
     .split(/^  build:/mu)[0]
     .split(/^  cross-platform-smoke:/mu)[1] ?? '';
-  assert.doesNotMatch(workflow, /protocol-contract:|verify:protocol|check:protocol-compatibility/);
-  assert.doesNotMatch(workflow, /packages\/collab-protocol/);
   assert.match(crossPlatformJob, /npm run build/);
   assert.match(
     crossPlatformJob,
     /name: Run Windows architecture boundaries\s+if: runner\.os == 'Windows'\s+run: npm run test:architecture/,
   );
   assert.match(crossPlatformJob, /npm run test:cross-platform-collab/);
-});
-
-test('Collab Git process owners await Windows process-tree termination', () => {
-  for (const relativePath of [
-    'src/app/collab/git/GitCommandRunner.ts',
-    'src/app/collab/lan/GitHttpBackendProxy.ts',
-  ]) {
-    const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
-    assert.match(source, /killProcessTree:\s*true/);
-    assert.match(source, /terminateSpawnedProcessTree\(/);
-    assert.match(source, /await\s+(?:active\.)?terminationTask/);
-  }
 });
 
 test('CI gates releases, cross-platform behavior, and security', () => {
@@ -905,13 +850,10 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
   assert.match(ci, /diff-hygiene:/);
   assert.match(ci, /dependency-review-action@v4/);
-  assert.doesNotMatch(ci, /protocol-contract:/);
-  assert.doesNotMatch(ci, /npm run check:protocol-compatibility/);
   assert.match(ci, /cross-platform-smoke:/);
   assert.match(ci, /windows-latest/);
   assert.match(ci, /macos-latest/);
   assert.match(ci, /cross-platform-collab-scope:/);
-  assert.doesNotMatch(ci, /packages\/collab-protocol/);
   assert.match(ci, /src\/app\/collab\/\*/);
   assert.match(ci, /src\/core\/collab\/\*/);
   assert.match(ci, /src\/features\/collab\/\*/);

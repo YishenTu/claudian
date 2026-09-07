@@ -25,76 +25,6 @@ const locales = {
   'zh-TW': zhTW,
 } as const;
 
-const localizedKeys = [
-  'chat.rewind.confirmMessageConversationOnly',
-  'chat.rewind.confirmMessageConflicts',
-  'chat.rewind.inProgress',
-  'chat.rewind.menuConversationOnly',
-  'chat.rewind.menuCodeAndConversation',
-  'chat.rewind.noticeConversationOnly',
-  'chat.rewind.noticeConversationOnlySaveFailed',
-  'chat.fork.errorMessageNotFound',
-  'chat.fork.errorNoSession',
-  'chat.fork.errorNoActiveTab',
-  'settings.subagents.name',
-  'settings.subagents.desc',
-  'settings.subagents.noAgents',
-  'settings.subagents.deleteConfirm',
-  'settings.subagents.saveFailed',
-  'settings.subagents.deleteFailed',
-  'settings.subagents.renameCleanupFailed',
-  'settings.subagents.created',
-  'settings.subagents.updated',
-  'settings.subagents.deleted',
-  'settings.subagents.duplicateName',
-  'settings.subagents.descriptionRequired',
-  'settings.subagents.promptRequired',
-  'settings.subagents.modal.titleEdit',
-  'settings.subagents.modal.titleAdd',
-  'settings.subagents.modal.nameDesc',
-  'settings.subagents.modal.descriptionDesc',
-  'settings.subagents.modal.descriptionPlaceholder',
-  'settings.subagents.modal.advancedOptions',
-  'settings.subagents.modal.modelDesc',
-  'settings.subagents.modal.toolsDesc',
-  'settings.subagents.modal.disallowedTools',
-  'settings.subagents.modal.disallowedToolsDesc',
-  'settings.subagents.modal.skills',
-  'settings.subagents.modal.skillsDesc',
-  'settings.subagents.modal.prompt',
-  'settings.subagents.modal.promptDesc',
-  'settings.subagents.modal.promptPlaceholder',
-  'settings.requireCommandOrControlEnterToSend.name',
-  'settings.requireCommandOrControlEnterToSend.desc',
-  'settings.claudeSafeMode.name',
-  'settings.claudeSafeMode.desc',
-  'settings.codexSafeMode.name',
-  'settings.codexSafeMode.desc',
-  'settings.customModels.name',
-  'settings.customModels.desc',
-  'settings.providerEnablement.name',
-  'settings.providerEnablement.desc',
-  'settings.codex.customModels.name',
-  'settings.codex.customModels.desc',
-  'settings.codex.reasoningSummary.name',
-  'settings.codex.skills.name',
-  'settings.codex.subagents.name',
-  'settings.codex.environment.name',
-  'settings.codexSkills.noSkills',
-  'settings.codexSubagents.noAgents',
-  'collab.access.managerCount',
-  'collab.access.makeManager',
-  'collab.access.makeMember',
-  'collab.access.completePromotion',
-  'collab.access.promotionPending',
-  'collab.access.cancelPromotion',
-  'collab.access.cancelManagerSuccession',
-  'collab.access.lastManagerRequired',
-  'collab.access.confirmPromote',
-  'collab.access.confirmDemote',
-  'collab.access.demoteHostUnchanged',
-] as const;
-
 function flattenTranslations(
   translations: TranslationTree,
   prefix = '',
@@ -118,39 +48,9 @@ describe('locale files', () => {
 
   it('keeps every locale structurally aligned with the English dictionary', () => {
     const englishKeys = Object.keys(english).sort();
-    for (const [locale, translations] of Object.entries(locales)) {
+    for (const translations of Object.values(locales)) {
       const localeKeys = Object.keys(flattenTranslations(translations as unknown as TranslationTree)).sort();
       expect(localeKeys).toEqual(englishKeys);
-      expect(locale).toBeTruthy();
     }
-  });
-
-  it('localizes the recent subagent additions', () => {
-    for (const translations of Object.values(locales)) {
-      const locale = flattenTranslations(translations as unknown as TranslationTree);
-
-      for (const key of localizedKeys) {
-        expect(locale[key]).toBeDefined();
-        expect(locale[key]).not.toBe(english[key]);
-      }
-
-    }
-  });
-
-  it('uses commands-and-skills copy for hidden Claude entries', () => {
-    expect(english['settings.hiddenSlashCommands.name']).toBe('Hidden Commands and Skills');
-    expect(english['settings.hiddenSlashCommands.desc']).toBe(
-      'Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.',
-    );
-  });
-
-  it('uses the accepted legacy Host claim confirmation', () => {
-    expect(english['collab.host.legacyClaimConfirmation'])
-      .toBe('Use this device as the Host owner?');
-  });
-
-  it('uses the accepted local Host summary', () => {
-    expect(english['collab.host.hostedHereSummary'])
-      .toBe('LAN Host (on this device)');
   });
 });

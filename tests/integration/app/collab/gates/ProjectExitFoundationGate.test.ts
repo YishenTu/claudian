@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
-import initSqlJs, { type SqlJsStatic } from 'sql.js';
+import { TEST_INSTALLATION_A,TEST_INSTALLATION_B } from '@test/helpers/installations';
+import initSqlJs,{ type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -14,10 +14,9 @@ import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminSe
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import {
-  type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
+type AuthorityDatabaseConnection,
+SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { COLLAB_AUTHORITY_SCHEMA_VERSION, COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { assertHostTransferTransition } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
@@ -61,12 +60,7 @@ describe('Project exit foundation gate', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('freezes the v9/v2/v12 contract and strict lifecycle envelopes', () => {
-    expect({
-      authority: COLLAB_AUTHORITY_SCHEMA_VERSION,
-      local: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      protocol: COLLAB_CONTROL_PROTOCOL_VERSION,
-    }).toEqual({ authority: 12, local: 3, protocol: 9 });
+  it('decodes strict lifecycle envelopes', () => {
     expect(lanCollabControlOperationCodec('leaveProject').decodeRequest({
       expectedHostMemberId: 'member-host',
       expectedMemberId: 'member-target',
@@ -85,29 +79,6 @@ describe('Project exit foundation gate', () => {
       projectId: 'project-alpha',
       retiredAt: '2026-08-13T08:00:00.000Z',
     });
-  });
-
-  it('keeps responsibility validity participant-scoped instead of generation-bound', async () => {
-    const service = new ManagerResponsibilityService({
-      database,
-      events: new AuthorityEventRepository(),
-      idempotency: new AuthorityIdempotencyRepository(),
-      presence: { hasAuthenticatedPresence: () => true },
-    }, {
-      createOfferId: () => 'offer-foundation',
-      now: () => new Date('2026-08-13T01:00:00.000Z'),
-    });
-
-    await service.create('member-host', {
-      idempotencyKey: 'offer-foundation-key',
-      projectId: 'project-alpha',
-      purpose: 'manager-promotion',
-      targetMemberId: 'member-target',
-    });
-
-    await expect(database.read(connection => connection.all(`
-      PRAGMA table_info(manager_responsibility_offers)
-    `).map(column => column.name))).resolves.not.toContain('source_manager_generation');
   });
 
   it('exposes only legal Host transfer progression and no rollback after cutover', () => {

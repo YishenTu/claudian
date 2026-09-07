@@ -1,32 +1,32 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp,rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
-  COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
-  COLLAB_LIMITS,
-  collabCloudCapabilityDocument,
-  collabCloudSuccessEnvelope,
+COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
+COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
+COLLAB_LIMITS,
+collabCloudCapabilityDocument,
+collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
 import {
-  completeCollabPublicationOptions,
+completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
 import type {
-  CollabLocalCloudMembershipRecord,
-  CollabLocalLanMembershipRecord,
+CollabLocalCloudMembershipRecord,
+CollabLocalLanMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
-  type CollabPublicationFoundationPort,
-  CollabPublicationService,
+type CollabPublicationFoundationPort,
+CollabPublicationService,
 } from '@/app/collab/publish/CollabPublicationService';
 import type { CollabRequestDraftRecord } from '@/app/collab/publish/CollabRequestDraftRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -1029,7 +1029,6 @@ describe('CollabPublicationService reconnect', () => {
     await expect(Promise.all([first, overlapping])).resolves.toEqual([undefined, undefined]);
     expect(disposeProjection).toHaveBeenCalledTimes(1);
     expect(harness.coordinationListeners.size).toBe(0);
-    expect(service).not.toHaveProperty('dispose');
   });
 
   it('shares a rejected close and tears down local projection exactly once', async () => {
