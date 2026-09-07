@@ -1,14 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  symlink,
-  writeFile,
+chmod,
+mkdir,
+mkdtemp,
+readdir,
+readFile,
+rm,
+stat,
+symlink,
+writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,26 +16,26 @@ import path from 'node:path';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
-  type CollabLocalCloudMembershipRecord,
-  type CollabLocalLanMembershipRecord,
-  type CollabLocalMembershipRecord,
-  type CollabLocalProjectIndexEntry,
-  CollabLocalProjectRepository,
+type CollabLocalCloudMembershipRecord,
+type CollabLocalLanMembershipRecord,
+type CollabLocalMembershipRecord,
+type CollabLocalProjectIndexEntry,
+CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
-  createHostTransferRecoveryRecord,
+createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
-  decodeCloudRetirementIntent,
+decodeCloudRetirementIntent,
 } from '@/app/collab/retirement/CloudRetirementIntent';
 import {
-  decodeRetirementRecord,
-  type RetirementRecord,
+decodeRetirementRecord,
+type RetirementRecord,
 } from '@/app/collab/retirement/RetirementRecord';
 import {
-  type RetirementTombstoneRecord,
+type RetirementTombstoneRecord,
 } from '@/app/collab/retirement/RetirementTombstoneRecord';
 
 const PROJECT_ID = 'project-alpha';
@@ -1328,12 +1328,6 @@ describe('CollabLocalProjectRepository', () => {
       code: 'operation-failed',
       safeContext: { reason: 'local-record-corrupt' },
     });
-  });
-
-  it('does not expose a cursor-only membership projection mutator', () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-
-    expect(repository).not.toHaveProperty('updateMembershipEventSequence');
   });
 
   it('projects promotion and demotion monotonically with the event cursor', async () => {

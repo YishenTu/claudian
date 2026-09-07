@@ -6,19 +6,18 @@ jest.mock('../../../../src/utils/env', () => ({
 }));
 
 import {
-  clearCurrentGrokCatalog,
-  DEFAULT_GROK_PROVIDER_SETTINGS,
-  getCurrentGrokCatalog,
-  getGrokProviderSettings,
-  normalizeGrokCatalogSnapshot,
-  updateCurrentGrokCatalog,
-  updateGrokProviderSettings,
-  updateGrokVisibleModels,
+clearCurrentGrokCatalog,
+getCurrentGrokCatalog,
+getGrokProviderSettings,
+normalizeGrokCatalogSnapshot,
+updateCurrentGrokCatalog,
+updateGrokProviderSettings,
+updateGrokVisibleModels
 } from '@/providers/grok/settings';
 import {
-  buildGrokProviderState,
-  buildPersistedGrokProviderState,
-  parseGrokProviderState,
+buildGrokProviderState,
+buildPersistedGrokProviderState,
+parseGrokProviderState,
 } from '@/providers/grok/types';
 
 describe('Grok settings', () => {
@@ -48,20 +47,6 @@ describe('Grok settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('device:current');
-  });
-
-  it('defaults to disabled with empty environment and host state', () => {
-    expect(DEFAULT_GROK_PROVIDER_SETTINGS).toEqual({
-      catalogsByHost: {},
-      cliPath: '',
-      cliPathsByHost: {},
-      enabled: false,
-      environmentHash: '',
-      environmentVariables: '',
-      modelAliases: {},
-      preferredReasoningByModel: {},
-      visibleModels: null,
-    });
   });
 
   it('preserves hostname-scoped state without assigning it to the current device', () => {

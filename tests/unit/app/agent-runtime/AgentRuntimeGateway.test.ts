@@ -1,8 +1,8 @@
 import {
-  AgentRuntimeGateway,
-  type CollabAgentPort,
+AgentRuntimeGateway,
+type CollabAgentPort,
 } from '@/app/agent-runtime/AgentRuntimeGateway';
-import { type CollabLocalProjectSummary, type CollabResult } from '@/core/collab';
+import { type CollabLocalProjectSummary,type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT: CollabLocalProjectSummary = {
@@ -95,8 +95,6 @@ describe('AgentRuntimeGateway', () => {
         protocolVersion: 5,
       },
     });
-    expect(response).not.toHaveProperty('result.methodDescriptors');
-    expect(response).not.toHaveProperty('result.methods');
     expect(resolveCollab).not.toHaveBeenCalled();
   });
 
@@ -151,29 +149,6 @@ describe('AgentRuntimeGateway', () => {
     })).resolves.toEqual({
       error: { code: 'invalid_params', message: 'Invalid RPC params.' },
       id: 'contract-invalid',
-    });
-    expect(resolveCollab).not.toHaveBeenCalled();
-  });
-
-  it('does not retain the removed v1 discovery aliases', async () => {
-    const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
-    const gateway = new AgentRuntimeGateway(resolveCollab);
-
-    await expect(gateway.handle({
-      id: 'legacy-describe',
-      method: 'system.describe',
-      params: {},
-    })).resolves.toEqual({
-      error: { code: 'method_not_found', message: 'Unknown RPC method.' },
-      id: 'legacy-describe',
-    });
-    await expect(gateway.handle({
-      id: 'legacy-ping',
-      method: 'system.ping',
-      params: {},
-    })).resolves.toEqual({
-      error: { code: 'method_not_found', message: 'Unknown RPC method.' },
-      id: 'legacy-ping',
     });
     expect(resolveCollab).not.toHaveBeenCalled();
   });

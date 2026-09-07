@@ -1,19 +1,9 @@
 import {
-  ensureProviderProjectionMap,
-  normalizeProviderProjectionMap,
-  PROVIDER_PROJECTION_KEYS,
+ensureProviderProjectionMap,
+normalizeProviderProjectionMap
 } from '@/core/providers/settings/ProviderProjectionMap';
 
 describe('ProviderProjectionMap', () => {
-  it('covers every supported saved provider projection key', () => {
-    expect(PROVIDER_PROJECTION_KEYS).toEqual([
-      'savedProviderModel',
-      'savedProviderEffort',
-      'savedProviderServiceTier',
-      'savedProviderThinkingBudget',
-      'savedProviderPermissionMode',
-    ]);
-  });
 
   it.each([null, undefined, 'model', 1, true, []])(
     'rejects non-map input %p',

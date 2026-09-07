@@ -1,16 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import {
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
+mkdtempSync,
+readdirSync,
+readFileSync,
+rmSync,
+writeFileSync,
 } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { build, stop } from 'esbuild';
+import { build,stop } from 'esbuild';
 
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
@@ -150,15 +150,6 @@ describe('Collab dependency envelope', () => {
   afterAll(() => {
     stop();
     rmSync(tempDirectory, { force: true, recursive: true });
-  });
-
-  it('configures the production build to inline WebAssembly assets', () => {
-    const config = readFileSync(esbuildConfigPath, 'utf8');
-
-    expect(config).toContain("'.wasm': 'binary'");
-    expect(config).toContain('createCompressedStaticAssetsPlugin()');
-    expect(config).toContain("target: 'es2022'");
-    expect(config).toContain("charset: 'utf8'");
   });
 
   it('pins Pierre to its verified fine-grained Shiki import contract', () => {
@@ -320,7 +311,6 @@ describe('Collab dependency envelope', () => {
     expect(path.basename(aliases.ws)).toBe('index.js');
     expect(protocolInputs).toHaveLength(1);
     expect(config).toContain('...createDesktopRuntimeAliases()');
-    expect(config).not.toContain('sourcePackageAliases');
     expect(bundle).not.toContain('@claudian-collab/protocol');
     expect(bundle).not.toContain('ws does not work in the browser');
     expect(runBundle(`

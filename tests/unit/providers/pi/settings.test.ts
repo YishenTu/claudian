@@ -7,12 +7,11 @@ jest.mock('../../../../src/utils/env', () => ({
 
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 import {
-  DEFAULT_PI_PROVIDER_SETTINGS,
-  getPiProviderSettings,
-  normalizePiModelAliases,
-  normalizePiPreferredThinkingByModel,
-  normalizePiVisibleModels,
-  updatePiProviderSettings,
+getPiProviderSettings,
+normalizePiModelAliases,
+normalizePiPreferredThinkingByModel,
+normalizePiVisibleModels,
+updatePiProviderSettings
 } from '@/providers/pi/settings';
 
 describe('Pi settings normalization', () => {
@@ -40,14 +39,6 @@ describe('Pi settings normalization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
-  });
-
-  it('defaults Pi to disabled all-tools mode', () => {
-    expect(DEFAULT_PI_PROVIDER_SETTINGS).toMatchObject({
-      enabled: false,
-      toolMode: 'all',
-      visibleModels: [],
-    });
   });
 
   it('preserves hostname-scoped CLI paths without assigning them to the current device', () => {

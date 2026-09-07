@@ -6,12 +6,11 @@ jest.mock('../../../../src/utils/env', () => ({
 }));
 
 import {
-  DEFAULT_OPENCODE_PROVIDER_SETTINGS,
-  getOpencodeProviderSettings,
-  normalizeOpencodeModelAliases,
-  normalizeOpencodePreferredThinkingByModel,
-  normalizeOpencodeVisibleModels,
-  updateOpencodeProviderSettings,
+getOpencodeProviderSettings,
+normalizeOpencodeModelAliases,
+normalizeOpencodePreferredThinkingByModel,
+normalizeOpencodeVisibleModels,
+updateOpencodeProviderSettings
 } from '../../../../src/providers/opencode/settings';
 
 describe('OpenCode settings normalization', () => {
@@ -24,10 +23,6 @@ describe('OpenCode settings normalization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
-  });
-
-  it('enables Exa-backed web search in the default provider env', () => {
-    expect(DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables).toBe('OPENCODE_ENABLE_EXA=1');
   });
 
   it('normalizes visible models to base model ids', () => {

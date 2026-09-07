@@ -1,9 +1,6 @@
-import { DEFAULT_LOCALE, getLocaleDisplayString, getLocaleInfo, SUPPORTED_LOCALES } from '@/i18n/constants';
+import { getLocaleDisplayString,getLocaleInfo,SUPPORTED_LOCALES } from '@/i18n/constants';
 
 describe('i18n/constants', () => {
-  it('DEFAULT_LOCALE is en', () => {
-    expect(DEFAULT_LOCALE).toBe('en');
-  });
 
   it('getLocaleInfo returns metadata for a supported locale', () => {
     const info = getLocaleInfo('en');

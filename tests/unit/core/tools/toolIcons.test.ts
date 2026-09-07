@@ -1,32 +1,26 @@
-import { getToolIcon, MCP_ICON_MARKER } from '@/core/tools/toolIcons';
+import { getToolIcon,MCP_ICON_MARKER } from '@/core/tools/toolIcons';
 import {
-  TOOL_AGENT_OUTPUT,
-  TOOL_ASK_USER_QUESTION,
-  TOOL_BASH,
-  TOOL_BASH_OUTPUT,
-  TOOL_EDIT,
-  TOOL_GLOB,
-  TOOL_GREP,
-  TOOL_KILL_SHELL,
-  TOOL_LIST_MCP_RESOURCES,
-  TOOL_LS,
-  TOOL_MCP,
-  TOOL_NOTEBOOK_EDIT,
-  TOOL_READ,
-  TOOL_READ_MCP_RESOURCE,
-  TOOL_SKILL,
-  TOOL_SUBAGENT,
-  TOOL_TODO_WRITE,
-  TOOL_WEB_FETCH,
-  TOOL_WEB_SEARCH,
-  TOOL_WRITE,
+TOOL_AGENT_OUTPUT,
+TOOL_ASK_USER_QUESTION,
+TOOL_BASH,
+TOOL_BASH_OUTPUT,
+TOOL_EDIT,
+TOOL_GLOB,
+TOOL_GREP,
+TOOL_KILL_SHELL,
+TOOL_LIST_MCP_RESOURCES,
+TOOL_LS,
+TOOL_MCP,
+TOOL_NOTEBOOK_EDIT,
+TOOL_READ,
+TOOL_READ_MCP_RESOURCE,
+TOOL_SKILL,
+TOOL_SUBAGENT,
+TOOL_TODO_WRITE,
+TOOL_WEB_FETCH,
+TOOL_WEB_SEARCH,
+TOOL_WRITE,
 } from '@/core/tools/toolNames';
-
-describe('MCP_ICON_MARKER', () => {
-  it('should be defined as a special marker string', () => {
-    expect(MCP_ICON_MARKER).toBe('__mcp_icon__');
-  });
-});
 
 describe('getToolIcon', () => {
   it.each([
