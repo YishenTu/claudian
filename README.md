@@ -96,8 +96,9 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Depending on the selected provider, data is sent to Anthropic (Claude), OpenAI (Codex), xAI (Grok), or the providers configured in OpenCode or Pi. The destination can be configured through provider settings and environment variables.
-- **Collab LAN traffic**: When you explicitly Host or synchronize a Collab Project, Project Git data and authenticated coordination metadata travel directly between invited teammates' devices on the local network. Collab Mode itself does not send Project data to a Claudian cloud service or any third party.
-- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and explicitly started Collab LAN work.
+- **Collab LAN mode**: Project Git data and coordination records are shared within your Project team and stored on your designated Host computer. LAN collaboration traffic stays between your Project team's devices and that Host on the local network.
+- **Collab Cloud mode (self-hosted)**: Project Git data and coordination records are shared within your Project team and stored on your designated [self-hosted Claudian Cloud Server](https://github.com/YishenTu/claudian-cloud-server). Cloud collaboration traffic stays between your Project team's devices and your Cloud server.
+- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and configured Collab LAN or Cloud operations, synchronization, and recovery.
 
 ## Troubleshooting
 
@@ -145,8 +146,8 @@ For provider-specific installation and configuration guidance, refer to the prov
 src/
 ├── main.ts                      # Plugin entry point
 ├── app/                         # Application services, storage, and lazy Collab infrastructure
-├── core/                        # Provider-neutral runtime, registry, and type contracts
-│   ├── runtime/                 # ChatRuntime interface and approval types
+├── core/                        # Provider-neutral execution, registry, and type contracts
+│   ├── execution/               # Provider execution, session lifecycle, and interaction contracts
 │   ├── providers/               # Provider registry and workspace services
 │   ├── auxiliary/               # Shared provider auxiliary services
 │   ├── bootstrap/               # Plugin bootstrap wiring
