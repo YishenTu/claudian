@@ -57,14 +57,15 @@ it('publishes one private credential for concurrent admissions and rejects a sym
   await expect(store.getOrCreate(PROJECT)).rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
 });
 
-it('does not expose a credential until its directory entry is durably synchronized', async () => {
+it.each(['credential', 'directory'] as const)('does not expose a credential until its %s is durably synchronized', async target => {
   const file = path.join(directory, '.claudian/collab/cloud-credentials', `${PROJECT}.json`);
   const filesystem = jest.requireActual<typeof FileSystem>('node:fs/promises');
   const open = filesystem.open;
   const fault = jest.spyOn(filesystem, 'open').mockImplementation(async (...args) => {
     const handle = await open(...args);
-    if (args[0] === path.dirname(file) && existsSync(file)) {
-      handle.sync = () => Promise.reject(Object.assign(new Error('Injected directory sync failure'), { code: 'EIO' }));
+    const retainedCredential = args[0] === file && typeof args[1] === 'number';
+    if ((target === 'credential' ? retainedCredential : args[0] === path.dirname(file)) && existsSync(file)) {
+      handle.sync = () => Promise.reject(Object.assign(new Error('Injected sync failure'), { code: 'EIO' }));
     }
     return handle;
   });
