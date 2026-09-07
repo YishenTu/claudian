@@ -1356,6 +1356,7 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   it('replaces ordinary authority-transfer routes with a restart-safe terminal responder', async () => {
+    authorityTransferNow = new Date('2026-08-08T00:00:10.000Z');
     const running = await coordinator.startProject(PROJECT_ID);
     const membership = await localProjects.loadMembership(PROJECT_ID);
     if (!membership || !isCollabLocalLanMembership(membership)) {
