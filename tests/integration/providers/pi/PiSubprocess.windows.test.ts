@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
+import { findNodeExecutable, getEnhancedPath } from '@/utils/env';
 
 const describeOnWindows = process.platform === 'win32' ? describe : describe.skip;
 
@@ -47,7 +48,11 @@ describeOnWindows('PiSubprocess Windows argv integration', () => {
       });
       subprocess.start();
 
-      await expect(readFirstLine(subprocess)).resolves.toEqual(expectedArgs);
+      await expect(readFirstLine(subprocess, {
+        fixture: cliPath,
+        node: findNodeExecutable(getEnhancedPath(process.env.PATH, commandPath)),
+        runner: process.execPath,
+      })).resolves.toEqual(expectedArgs);
     } finally {
       await subprocess?.shutdown();
       await fs.rm(npmPrefix, { force: true, recursive: true });
@@ -78,12 +83,17 @@ function createWindowsCommandShim(commandPath: string, targetPath: string): stri
   ].join('\r\n');
 }
 
-function readFirstLine(subprocess: PiSubprocess): Promise<unknown> {
+function readFirstLine(subprocess: PiSubprocess, launch: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let buffered = '';
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error('Timed out waiting for the Pi argv fixture'));
+      reject(new Error(`Timed out waiting for the Pi argv fixture: ${JSON.stringify({
+        ...launch,
+        alive: subprocess.isAlive(),
+        stdout: buffered,
+        stderr: subprocess.getStderrSnapshot(),
+      })}`));
     }, 10_000);
     const onData = (chunk: Buffer | string): void => {
       buffered += chunk.toString();
