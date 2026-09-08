@@ -1,5 +1,7 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
@@ -153,7 +155,7 @@ export interface TabDOMElements {
   readonly inputContainerEl: HTMLElement;
   readonly queueIndicatorEl: HTMLElement;
   readonly inputWrapper: HTMLElement;
-  readonly inputEl: HTMLTextAreaElement;
+  readonly inputEl: ComposerInputElement;
 
   /** Nav row for tab badges and header icons (above input wrapper). */
   readonly navRowEl: HTMLElement;

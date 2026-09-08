@@ -18,7 +18,7 @@ import type {
 type MentionValue =
   | { readonly kind: 'agent'; readonly agentId: string }
   | { readonly kind: 'context-file'; readonly absolutePath: string }
-  | { readonly kind: 'vault-file'; readonly path: string };
+  | { readonly kind: 'vault-file' | 'vault-folder'; readonly path: string };
 
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
@@ -144,6 +144,8 @@ export class MentionSource implements ComposerDropdownSource {
     return {
       kind: 'replace',
       text: item.replacement,
+      ...(value?.kind === 'vault-file' || value?.kind === 'vault-folder' ? { filePath: value.path } : {}),
+      ...(value?.kind === 'context-file' ? { filePath: value.absolutePath } : {}),
       onApplied: () => {
         if (!value) return;
         if (value.kind === 'agent') this.callbacks.onAgentMentionSelect?.(value.agentId);
@@ -311,6 +313,7 @@ export class MentionSource implements ComposerDropdownSource {
             kind: 'value',
             label: `@${folder.path}/`,
             replacement: `@${normalized}/ `,
+            value: { kind: 'vault-folder', path: `${normalized}/` } satisfies MentionValue,
           },
           mtime: folderMtimes.get(folder.path) ?? 0,
           name: folder.name,

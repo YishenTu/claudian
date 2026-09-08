@@ -236,7 +236,7 @@ export class BrowserSelectionController {
   }
 
   private clearWhenInputIsNotFocused(): void {
-    if (this.inputEl.ownerDocument.activeElement === this.inputEl) return;
+    if (this.inputEl.contains(this.inputEl.ownerDocument.activeElement)) return;
     if (this.storedSelection) {
       this.storedSelection = null;
       this.updateIndicator();

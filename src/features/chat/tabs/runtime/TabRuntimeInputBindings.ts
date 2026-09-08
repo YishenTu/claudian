@@ -30,6 +30,7 @@ export function buildTabRuntimeInputBindings(
   };
 
   const keydownHandler = (event: KeyboardEvent) => {
+    if ((event.target as HTMLElement | null)?.closest?.('button')) return;
     const tab = runtimeRef.requirePublished();
     if (ui.bangBashModeManager?.isActive()) {
       ui.bangBashModeManager.handleKeydown(event);
@@ -69,10 +70,10 @@ export function buildTabRuntimeInputBindings(
       return;
     }
   };
-  dom.inputEl.addEventListener('keydown', keydownHandler);
+  dom.inputEl.addEventListener('keydown', keydownHandler, true);
   options.registerCleanup(
     'tab input keydown binding',
-    () => dom.inputEl.removeEventListener('keydown', keydownHandler),
+    () => dom.inputEl.removeEventListener('keydown', keydownHandler, true),
   );
 
   const inputHandler = () => {

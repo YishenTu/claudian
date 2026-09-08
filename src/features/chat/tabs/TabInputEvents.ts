@@ -35,7 +35,7 @@ function shouldSendMessageFromEnterKey(
 }
 
 function isTabInputFocused(tab: AssembledTabRuntime): boolean {
-  return tab.dom.inputEl.ownerDocument.activeElement === tab.dom.inputEl;
+  return tab.dom.inputEl.contains(tab.dom.inputEl.ownerDocument.activeElement);
 }
 
 function sendTabInputMessage(

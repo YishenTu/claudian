@@ -1,5 +1,7 @@
 import { Menu, Notice, setIcon } from 'obsidian';
 
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
 import type {
   ChatRewindConflict,
   ChatRewindMode,
@@ -75,7 +77,7 @@ export interface ConversationControllerDeps {
   getWelcomeEl: () => HTMLElement | null;
   setWelcomeEl: (el: HTMLElement | null) => void;
   getMessagesEl: () => HTMLElement;
-  getInputEl: () => HTMLTextAreaElement;
+  getInputEl: () => ComposerInputElement;
   restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
   getFileContextManager: () => FileContextManager | null;
   getLinkedContentController: () => LinkedContentController;

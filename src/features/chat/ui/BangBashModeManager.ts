@@ -1,5 +1,7 @@
 import { Notice } from 'obsidian';
 
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
 import { t } from '../../../i18n/i18n';
 
 export interface BangBashModeCallbacks {
@@ -13,14 +15,14 @@ export interface BangBashModeState {
 }
 
 export class BangBashModeManager {
-  private inputEl: HTMLTextAreaElement;
+  private inputEl: ComposerInputElement;
   private callbacks: BangBashModeCallbacks;
   private state: BangBashModeState = { active: false, rawCommand: '' };
   private isSubmitting = false;
   private originalPlaceholder: string = '';
 
   constructor(
-    inputEl: HTMLTextAreaElement,
+    inputEl: ComposerInputElement,
     callbacks: BangBashModeCallbacks
   ) {
     this.inputEl = inputEl;

@@ -1,5 +1,7 @@
 import type { EditorView } from '@codemirror/view';
 
+import type { ComposerFileMention } from '@/shared/composer-dropdown/types';
+
 import type { TodoItem } from '../../../core/tools/todo';
 import type {
   ChatMessage,
@@ -16,6 +18,7 @@ import type { WriteEditState } from '../rendering/WriteEditRenderer';
 
 export interface ChatTurnRequest {
   text: string;
+  fileMentions?: readonly ComposerFileMention[];
   images?: ImageAttachment[];
   linkedContentPath?: string;
   editorSelection?: EditorSelectionContext | null;

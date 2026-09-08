@@ -2824,7 +2824,8 @@ export class ClaudianView extends ItemView {
 
     const currentValue = inputEl.value;
     const separator = currentValue && !/\s$/.test(currentValue) ? ' ' : '';
-    inputEl.value = `${currentValue}${separator}${text}`;
+    if (inputEl.replaceText) inputEl.replaceText(currentValue.length, currentValue.length, `${separator}${text}`);
+    else inputEl.value = `${currentValue}${separator}${text}`;
 
     const cursorPosition = inputEl.value.length;
     inputEl.selectionStart = cursorPosition;

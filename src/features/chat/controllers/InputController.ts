@@ -1,5 +1,7 @@
 import { Notice, setIcon } from 'obsidian';
 
+import type { ComposerFileMention, ComposerInputElement } from '@/shared/composer-dropdown/types';
+
 import {
   type BuiltInCommand,
   detectBuiltInCommand,
@@ -107,7 +109,7 @@ export interface InputControllerDeps {
   browserSelectionController?: BrowserSelectionController;
   canvasSelectionController: CanvasSelectionController;
   conversationController: ConversationController;
-  getInputEl: () => HTMLTextAreaElement;
+  getInputEl: () => ComposerInputElement;
   getWelcomeEl: () => HTMLElement | null;
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
@@ -314,7 +316,11 @@ export class InputController {
 
     const contentOverride = options?.content;
     const shouldUseInput = contentOverride === undefined;
-    const content = (contentOverride ?? inputEl.value).trim();
+    const rawContent = contentOverride ?? inputEl.value;
+    const content = rawContent.trim();
+    const fileMentions = shouldUseInput
+      ? trimFileMentions(rawContent, inputEl.getFileMentions?.() ?? [])
+      : [];
     const imageOverride = options?.images;
     const hasImages = imageOverride !== undefined
       ? imageOverride.length > 0
@@ -355,6 +361,7 @@ export class InputController {
       const canvasContext = canvasSelectionController.getContext();
       const { displayContent, turnRequest } = this.buildTurnSubmission({
         content,
+        fileMentions,
         images,
         editorContextOverride: editorContext,
         browserContextOverride: browserContext,
@@ -419,6 +426,7 @@ export class InputController {
       }
       : this.buildTurnSubmission({
         content,
+        fileMentions,
         images: imagesForMessage,
         editorContextOverride: options?.editorContextOverride,
         browserContextOverride: options?.browserContextOverride,
@@ -887,9 +895,15 @@ export class InputController {
     const { content, images } = message;
     const inputEl = this.deps.getInputEl();
     const currentContent = options.mergeWithComposer ? inputEl.value.trim() : '';
-    inputEl.value = currentContent
-      ? appendMarkdownSnippet(content, currentContent)
-      : content;
+    const currentMentions = options.mergeWithComposer
+      ? trimFileMentions(inputEl.value, inputEl.getFileMentions?.() ?? []) : [];
+    const restoredContent = currentContent ? appendMarkdownSnippet(content, currentContent) : content;
+    inputEl.value = restoredContent;
+    const offset = restoredContent.length - currentContent.length;
+    inputEl.setFileMentions?.([
+      ...(message.turnRequest?.fileMentions ?? []),
+      ...shiftFileMentions(currentMentions, offset),
+    ]);
 
     const imageContextManager = this.deps.getImageContextManager();
     const currentImages = options.mergeWithComposer
@@ -912,6 +926,7 @@ export class InputController {
 
     return this.createQueuedMessage(content, {
       text: content,
+      fileMentions: this.deps.getInputEl().getFileMentions?.(),
       images,
     });
   }
@@ -1001,6 +1016,7 @@ export class InputController {
 
   private buildTurnSubmission(options: {
     content: string;
+    fileMentions?: readonly ComposerFileMention[];
     images?: ChatMessage['images'];
     editorContextOverride?: EditorSelectionContext | null;
     browserContextOverride?: BrowserSelectionContext | null;
@@ -1042,6 +1058,7 @@ export class InputController {
       displayContent: options.content,
       turnRequest: {
         text: transformedText,
+        fileMentions: options.fileMentions,
         images: options.images,
         linkedContentPath,
         editorSelection: editorContext,
@@ -2345,6 +2362,7 @@ export class InputController {
 function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
   return {
     ...request,
+    fileMentions: request.fileMentions?.map(mention => ({ ...mention })),
     externalContextPaths: request.externalContextPaths
       ? [...request.externalContextPaths]
       : undefined,
@@ -2367,10 +2385,18 @@ function mergeQueuedChatTurns(
     ...(existing.request.images ?? []),
     ...(incoming.request.images ?? []),
   ];
+  const existingLength = existing.displayContent.trim().length;
   return {
     displayContent: mergeText(existing.displayContent, incoming.displayContent),
     request: {
       ...cloneChatTurnRequest(incoming.request),
+      fileMentions: [
+        ...trimFileMentions(existing.displayContent, existing.request.fileMentions ?? []),
+        ...shiftFileMentions(
+          trimFileMentions(incoming.displayContent, incoming.request.fileMentions ?? []),
+          existingLength ? existingLength + 2 : 0,
+        ),
+      ],
       linkedContentPath:
         incoming.request.linkedContentPath ?? existing.request.linkedContentPath,
       externalContextPaths:
@@ -2379,4 +2405,15 @@ function mergeQueuedChatTurns(
       text: mergeText(existing.request.text, incoming.request.text),
     },
   };
+}
+
+function trimFileMentions(text: string, mentions: readonly ComposerFileMention[]): ComposerFileMention[] {
+  const offset = text.length - text.trimStart().length;
+  const length = text.trim().length;
+  return shiftFileMentions(mentions, -offset)
+    .filter(mention => mention.from >= 0 && mention.to <= length);
+}
+
+function shiftFileMentions(mentions: readonly ComposerFileMention[], offset: number): ComposerFileMention[] {
+  return mentions.map(mention => ({ ...mention, from: mention.from + offset, to: mention.to + offset }));
 }

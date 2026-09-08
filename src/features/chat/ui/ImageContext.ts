@@ -1,6 +1,8 @@
 import { Notice } from 'obsidian';
 import * as path from 'path';
 
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
 import { ComposerContextTray } from './ComposerContextTray';
 import { ImagePreviewModal } from './ImagePreviewModal';
@@ -25,7 +27,7 @@ export class ImageContextManager {
   private containerEl: HTMLElement;
   private contextTray: ComposerContextTray;
   private ownedContextTray: ComposerContextTray | null = null;
-  private inputEl: HTMLTextAreaElement;
+  private inputEl: ComposerInputElement;
   private dropOverlay: HTMLElement | null = null;
   private dropZoneEl: HTMLElement | null = null;
   private attachedImages: Map<string, ImageAttachment> = new Map();
@@ -44,7 +46,7 @@ export class ImageContextManager {
 
   constructor(
     containerEl: HTMLElement,
-    inputEl: HTMLTextAreaElement,
+    inputEl: ComposerInputElement,
     callbacks: ImageContextCallbacks,
     previewContainerEl?: HTMLElement,
     contextTray?: ComposerContextTray,
@@ -103,7 +105,7 @@ export class ImageContextManager {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.inputEl.removeEventListener('paste', this.pasteHandler);
+    this.inputEl.removeEventListener('paste', this.pasteHandler, true);
     if (this.dropZoneEl) {
       this.dropZoneEl.removeEventListener('dragenter', this.dragEnterHandler);
       this.dropZoneEl.removeEventListener('dragover', this.dragOverHandler);
@@ -207,7 +209,7 @@ export class ImageContextManager {
   }
 
   private setupPasteHandler() {
-    this.inputEl.addEventListener('paste', this.pasteHandler);
+    this.inputEl.addEventListener('paste', this.pasteHandler, true);
   }
 
   private async handlePaste(e: ClipboardEvent): Promise<void> {

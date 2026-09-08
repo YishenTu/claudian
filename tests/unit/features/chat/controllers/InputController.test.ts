@@ -14,6 +14,7 @@ import {
   type ChatTurnSubmission,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { ChatState } from '@/features/chat/state/ChatState';
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
@@ -38,12 +39,12 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   },
 }));
 
-function createInput(): HTMLTextAreaElement {
+function createInput(): ComposerInputElement {
   return {
     dispatchEvent: jest.fn().mockReturnValue(true),
     focus: jest.fn(),
     value: '',
-  } as unknown as HTMLTextAreaElement;
+  } as unknown as ComposerInputElement;
 }
 
 function deferred<T>(): {
@@ -223,6 +224,38 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     state,
   };
 }
+
+describe('inline file chips', () => {
+  it('restores selected chips after a definite failure before provider handoff', async () => {
+    const fixture = createFixture();
+    fixture.input.value = '@A.md';
+    fixture.input.getFileMentions = () => [{ from: 0, to: 5, path: 'A.md' }];
+    fixture.input.setFileMentions = jest.fn();
+    fixture.coordinator.execute.mockRejectedValue(new ChatExecutionPreHandoffError('ledger unavailable'));
+    await fixture.controller.sendMessage();
+    expect(fixture.input.value).toBe('@A.md');
+    expect(fixture.input.setFileMentions).toHaveBeenCalledWith([{ from: 0, to: 5, path: 'A.md' }]);
+    expect(fixture.state.messages).toEqual([]);
+  });
+
+  it('preserves chips when queued messages are merged and returned to the draft', async () => {
+    const fixture = createFixture();
+    fixture.state.isStreaming = true;
+    fixture.input.value = '  @A.md  ';
+    fixture.input.getFileMentions = () => [{ from: 2, to: 7, path: 'A.md' }];
+    await fixture.controller.sendMessage();
+    fixture.input.value = '@B.md';
+    fixture.input.getFileMentions = () => [{ from: 0, to: 5, path: 'B.md' }];
+    await fixture.controller.sendMessage();
+    fixture.input.getFileMentions = () => [];
+    fixture.input.setFileMentions = jest.fn();
+    fixture.controller.withdrawQueuedMessageToComposer();
+    expect(fixture.input.value).toBe('@A.md\n\n@B.md');
+    expect(fixture.input.setFileMentions).toHaveBeenCalledWith([
+      { from: 0, to: 5, path: 'A.md' }, { from: 7, to: 12, path: 'B.md' },
+    ]);
+  });
+});
 
 describe('InputController approval details', () => {
   it('makes long approval details a named keyboard-scrollable region', () => {

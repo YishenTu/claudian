@@ -85,14 +85,21 @@ export class ComposerDropdownController {
         }
       }
     }
-    if (!sourceMatch?.match) {
+    if (!sourceMatch) {
+      this.hide();
+      return;
+    }
+    const { match, source } = sourceMatch;
+    // Selected chips are completed references, even though their @path stays in the document.
+    if (this.inputEl.getFileMentions?.().some(mention =>
+      match.start < mention.to && match.end > mention.from)) {
       this.hide();
       return;
     }
 
-    if (this.activeSource?.id !== sourceMatch.source.id) this.activeFolder = null;
-    this.activeSource = sourceMatch.source;
-    this.activeMatch = sourceMatch.match;
+    if (this.activeSource?.id !== source.id) this.activeFolder = null;
+    this.activeSource = source;
+    this.activeMatch = match;
     this.requestActiveLoad(inputDriven);
   }
 
@@ -307,18 +314,22 @@ export class ComposerDropdownController {
       return;
     }
     if (action.kind === 'replace') {
-      this.replaceRange(match, action.text);
+      this.replaceRange(match, action.text, action.filePath);
       this.hide();
       action.onApplied?.();
       this.inputEl.focus();
     }
   }
 
-  private replaceRange(match: ComposerTriggerMatch, replacement: string): void {
-    let after = this.inputEl.value.slice(match.end);
-    if (/\s$/.test(replacement) && /^\s/.test(after)) after = after.slice(1);
+  private replaceRange(match: ComposerTriggerMatch, replacement: string, filePath?: string): void {
+    const duplicateSpace = /\s$/.test(replacement) && /^\s/.test(this.inputEl.value.slice(match.end));
+    const end = match.end + (duplicateSpace ? 1 : 0);
+    if (this.inputEl.replaceText) {
+      this.inputEl.replaceText(match.start, end, replacement, filePath);
+      return;
+    }
     const before = this.inputEl.value.slice(0, match.start);
-    this.inputEl.value = before + replacement + after;
+    this.inputEl.value = before + replacement + this.inputEl.value.slice(end);
     const cursor = before.length + replacement.length;
     this.inputEl.selectionStart = cursor;
     this.inputEl.selectionEnd = cursor;

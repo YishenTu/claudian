@@ -1,10 +1,10 @@
 import { setIcon } from 'obsidian';
 
-import type { ComposerDropdownItem } from './types';
+import type { ComposerDropdownItem, ComposerInputElement } from './types';
 
 export interface ComposerDropdownViewOptions {
   readonly fixed?: boolean;
-  readonly inputEl: HTMLInputElement | HTMLTextAreaElement;
+  readonly inputEl: ComposerInputElement;
   readonly onHover: (index: number) => void;
   readonly onSelect: (index: number) => void;
 }

@@ -4,8 +4,9 @@
  * Dropup UI for selecting a previous conversation to resume.
  * Shown when the /resume built-in command is executed.
  */
-
 import { setIcon } from 'obsidian';
+
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import type { ConversationMeta } from '../../core/types';
 
@@ -25,7 +26,7 @@ let nextListboxId = 0;
 
 export class ResumeSessionDropdown {
   private containerEl: HTMLElement;
-  private inputEl: HTMLTextAreaElement;
+  private inputEl: ComposerInputElement;
   private dropdownEl: HTMLElement;
   private callbacks: ResumeSessionDropdownCallbacks;
   private conversations: ConversationMeta[];
@@ -37,7 +38,7 @@ export class ResumeSessionDropdown {
 
   constructor(
     containerEl: HTMLElement,
-    inputEl: HTMLTextAreaElement,
+    inputEl: ComposerInputElement,
     conversations: ConversationMeta[],
     currentConversationId: string | null,
     callbacks: ResumeSessionDropdownCallbacks

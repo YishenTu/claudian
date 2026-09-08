@@ -5,7 +5,7 @@ export function calculateTextareaMaxHeight(viewHeight: number): number {
   return Math.max(TEXTAREA_MIN_MAX_HEIGHT, viewHeight * TEXTAREA_MAX_HEIGHT_PERCENT);
 }
 
-export function installTextareaSizing(textarea: HTMLTextAreaElement): () => void {
+export function installTextareaSizing(textarea: HTMLElement): () => void {
   const container = textarea.closest<HTMLElement>('.claudian-container');
   const ownerWindow = textarea.ownerDocument.defaultView;
   let currentMaxHeight = '';
