@@ -5,7 +5,9 @@ import { axe } from 'jest-axe';
 import { type App, type Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
+import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
+import { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
 import { FileContextManager } from '@/features/chat/ui/FileContext';
 import { ImageContextManager } from '@/features/chat/ui/ImageContext';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
@@ -352,5 +354,36 @@ it.each([
   } finally {
     editor.destroy();
     parent.remove();
+  }
+});
+
+it('retains Canvas selection while typing into the composer', () => {
+  jest.useFakeTimers();
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const canvas = { selection: new Set([{ id: 'node-1' }]) };
+  const view = { getViewType: () => 'canvas', canvas, file: { path: 'Board.canvas' } };
+  const app = { workspace: { getMostRecentLeaf: () => ({ view }), getLeavesOfType: () => [{ view }] } };
+  const tray = new ComposerContextTray(parent.createDiv());
+  const controller = new CanvasSelectionController(app as never, tray, editor.element);
+  try {
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.getContext()).toEqual({ canvasPath: 'Board.canvas', nodeIds: ['node-1'] });
+    editor.element.focus();
+    expect(editor.element.contains(document.activeElement)).toBe(true);
+    canvas.selection.clear();
+    jest.advanceTimersByTime(250);
+    expect(controller.getContext()).toEqual({ canvasPath: 'Board.canvas', nodeIds: ['node-1'] });
+    const outside = parent.createEl('button', { text: 'Outside', attr: { type: 'button' } });
+    outside.focus();
+    jest.advanceTimersByTime(250);
+    expect(controller.getContext()).toBeNull();
+  } finally {
+    controller.stop();
+    tray.destroy();
+    editor.destroy();
+    parent.remove();
+    jest.useRealTimers();
   }
 });

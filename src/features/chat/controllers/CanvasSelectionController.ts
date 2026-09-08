@@ -78,7 +78,7 @@ export class CanvasSelectionController {
         this.updateIndicator();
         this.onUserSelectionChanged?.();
       }
-    } else if (this.getActiveElement() !== this.inputEl) {
+    } else if (!this.inputEl.contains(this.getActiveElement())) {
       if (this.storedSelection) {
         this.storedSelection = null;
         this.updateIndicator();
