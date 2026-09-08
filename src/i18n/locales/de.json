@@ -224,6 +224,7 @@
       "proposeLanToCloud": "Verschieben in die Cloud anfragen",
       "lanToCloudProposal": "Cloud-Ziel: {url} · {phase}",
       "acceptLanToCloud": "Verschieben in die Cloud akzeptieren",
+      "retryLanToCloud": "Verschieben in die Cloud erneut versuchen",
       "lanHost": "LAN-Host",
       "thisDevice": "Dieses Gerät",
       "anotherDevice": "Anderes Gerät",

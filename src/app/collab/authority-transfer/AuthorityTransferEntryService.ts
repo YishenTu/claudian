@@ -260,7 +260,7 @@ export class AuthorityTransferEntryService {
     if (!COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES.includes(
       proposal.status.phase as never,
     )) throw entryError('authority-transfer-phase-not-cancellable');
-    const result = await this.#module.cancelLanToCloudTransfer({
+    const result = await this.#module.cancelLanToCloudTransfer(proposal.cancellation ?? {
       expectedAuthorityGeneration: generation,
       expectedPhase: proposal.status.phase as (
         typeof COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES

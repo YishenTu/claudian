@@ -224,6 +224,7 @@
       "proposeLanToCloud": "Demander le déplacement vers Cloud",
       "lanToCloudProposal": "Cible Cloud : {url} · {phase}",
       "acceptLanToCloud": "Accepter le déplacement vers Cloud",
+      "retryLanToCloud": "Réessayer le déplacement vers Cloud",
       "lanHost": "Hôte LAN",
       "thisDevice": "Cet appareil",
       "anotherDevice": "Un autre appareil",

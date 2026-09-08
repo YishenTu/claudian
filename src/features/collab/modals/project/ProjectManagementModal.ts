@@ -1399,7 +1399,9 @@ export class ProjectManagementModal extends Modal {
       ) {
         const actions = section.createDiv({ cls: 'claudian-collab-access-actions' });
         this.#createTransferButton(actions, 'accept-lan-to-cloud',
-          t('collab.access.acceptLanToCloud'), async () => {
+          t(proposal.proposedByMemberId === this.#currentMemberId
+            ? 'collab.access.retryLanToCloud'
+            : 'collab.access.acceptLanToCloud'), async () => {
             const result = await this.#port.acceptLanToCloudTransfer(
               {
                 projectId: this.#options.project.id,
@@ -1452,7 +1454,9 @@ export class ProjectManagementModal extends Modal {
       cls: 'mod-cta claudian-collab-authority-transfer-submit',
       text: proposal?.status === null
         ? t('collab.joinProject.resume')
-        : t('collab.access.proposeLanToCloud'),
+        : this.#hostProject.hostInstallationStatus === 'hosted-here'
+          ? t('collab.access.moveToCloud')
+          : t('collab.access.proposeLanToCloud'),
     });
     propose.disabled = this.#managementActionBlocked() || !input.value.trim();
     input.addEventListener('input', () => {
@@ -1552,12 +1556,15 @@ export class ProjectManagementModal extends Modal {
       if (!this.#cloudTargetDescriptor) {
         section.createDiv({ text: t('collab.access.prepareLanHelp') });
         this.#createTransferButton(section, 'prepare-cloud-to-lan',
-          t('collab.access.prepareCloudToLan'), async () => {
+          t(isManager ? 'collab.access.moveToLan' : 'collab.access.prepareCloudToLan'), async () => {
             const result = await this.#port.prepareCloudToLanTarget(
               { projectId: this.#options.project.id },
             );
-            if (result.status === 'success') this.#cloudTargetDescriptor = result.value;
-            return result;
+            if (result.status !== 'success') return result;
+            this.#cloudTargetDescriptor = result.value;
+            return isManager
+              ? this.#beginCloudToLanMove(result.value, true)
+              : result;
           });
         return;
       }
@@ -1568,7 +1575,7 @@ export class ProjectManagementModal extends Modal {
           t('collab.access.cloudToLanDescriptor'), 'copy-cloud-to-lan-descriptor');
       }
       if (this.#cloudTransferHandle || !isManager) {
-        this.#renderCloudToLanAcceptance(section);
+        this.#renderCloudToLanAcceptance(section, isManager);
       }
     }
 
@@ -1589,12 +1596,7 @@ export class ProjectManagementModal extends Modal {
           try {
             const descriptor = thisDevice ? this.#cloudTargetDescriptor!
               : JSON.parse(descriptorInput!.value) as CollabCloudToLanTargetPreparationDescriptor;
-            const result = await this.#port.beginCloudToLanTransfer({ descriptor });
-            if (result.status === 'success') {
-              this.#cloudTargetDescriptor = descriptor;
-              this.#cloudTransferHandle = result.value;
-            }
-            return result;
+            return await this.#beginCloudToLanMove(descriptor, thisDevice);
           } catch {
             return { status: 'failure' as const, error: new Error() as never };
           }
@@ -1656,13 +1658,30 @@ export class ProjectManagementModal extends Modal {
     }
   }
 
-  #renderCloudToLanAcceptance(section: HTMLElement): void {
+  async #beginCloudToLanMove(
+    descriptor: CollabCloudToLanTargetPreparationDescriptor,
+    acceptHere: boolean,
+  ): Promise<{ readonly status: string }> {
+    const begun = await this.#port.beginCloudToLanTransfer({ descriptor });
+    if (begun.status !== 'success') return begun;
+    this.#cloudTargetDescriptor = descriptor;
+    this.#cloudTransferHandle = begun.value;
+    if (!acceptHere) return begun;
+    const accepted = await this.#port.acceptCloudToLanTransfer(begun.value);
+    if (accepted.status === 'success') {
+      this.#cloudTransferStatus = accepted.value;
+      this.#finishTerminalTransfer(accepted.value);
+    }
+    return accepted;
+  }
+
+  #renderCloudToLanAcceptance(section: HTMLElement, initiatedHere = false): void {
     const handle = this.#cloudTransferHandle;
     const input = handle ? null : this.#renderJsonInput(
       section, 'cloud-to-lan-handle', t('collab.access.cloudToLanHandle'),
     );
     const accept = this.#createTransferButton(section, 'accept-cloud-to-lan',
-      t('collab.access.acceptCloudToLan'), async () => {
+      t(initiatedHere ? 'collab.access.retry' : 'collab.access.acceptCloudToLan'), async () => {
         try {
           const result = await this.#port.acceptCloudToLanTransfer(
             handle ?? JSON.parse(input!.value) as CollabCloudToLanTransferHandle,
@@ -1755,9 +1774,7 @@ export class ProjectManagementModal extends Modal {
     }
     this.#status = result.status === 'success'
       ? { kind: 'success', text: t('collab.access.transferUpdated') }
-      : result.status === 'recovery-required'
-        ? { kind: 'error', text: t('collab.joinProject.resumeRequired') }
-        : { kind: 'error', text: t('collab.access.actionFailed') };
+      : { kind: 'error', text: t('collab.access.actionFailed') };
     this.#renderCurrentView();
   }
 

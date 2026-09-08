@@ -224,6 +224,7 @@
       "proposeLanToCloud": "Запросить перенос в Cloud",
       "lanToCloudProposal": "Целевой Cloud: {url} · {phase}",
       "acceptLanToCloud": "Принять перенос в Cloud",
+      "retryLanToCloud": "Повторить перенос в Cloud",
       "lanHost": "LAN-хост",
       "thisDevice": "Это устройство",
       "anotherDevice": "Другое устройство",

@@ -199,6 +199,7 @@ export interface CreateLanToCloudRequesterInput {
 }
 
 export interface LanToCloudSourceProposalView {
+  readonly cancellation: LanToCloudCancellationIntent | null;
   readonly beginSubmission: 'cloud-absent' | 'not-sent' | 'possibly-sent';
   readonly proposedByMemberId: LanAuthorityTransferActor['memberId'];
   readonly request: Readonly<RequestLanToCloudTransferRequest>;
@@ -570,6 +571,7 @@ export class AuthorityTransferModule {
     ) throw moduleError('authority-transfer-source-successor-mismatch');
     return Object.freeze({
       beginSubmission: entry.beginSubmission,
+      cancellation: entry.cancellation,
       proposedByMemberId: entry.proposedByMemberId,
       request: entry.request,
       status: record?.status ?? entry.status,
@@ -1159,6 +1161,13 @@ export class AuthorityTransferModule {
           assertCloudToLanTargetHandle(entry, handle);
         } catch {
           throw moduleError('authority-transfer-target-handle-mismatch');
+        }
+        const completed = await this.options.persistence.load(handle.projectId);
+        if (completed?.status.state === 'completed') {
+          await this.runtimes.resume(completed, options);
+          await this.#settleMatchingCloudToLanManager(handle, completed.status);
+          this.readyCloudToLanTargets.set(handle.projectId, completed.transferId);
+          return completed.status;
         }
         if (!binding) {
           const createConnection = this.options.createCloudToLanConnection;

@@ -1259,11 +1259,24 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('clears an exact rejected cancellation after observed begin progress is durable', async () => {
+  it.each([
+    ['no interruption', 'source-quiesced', 'not-sent', 'completed'],
+    ['before save', 'collecting-readiness', 'possibly-sent', 'interrupted cancellation refresh'],
+    ['after save', 'source-quiesced', 'not-sent', 'interrupted cancellation refresh'],
+  ])('retains cancellation across a stale-phase refresh with %s', async (fault, expectedPhase, submission, outcome) => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository, {
-      isRecoveryOwner: () => true,
-    });
+    let refreshing = false;
+    const persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferEntries: {
+        ...repository.authorityTransferEntries,
+        saveSource: async entry => {
+          if (refreshing && fault === 'before save') throw new Error('interrupted cancellation refresh');
+          await repository.authorityTransferEntries.saveSource(entry);
+          if (refreshing && fault === 'after save') throw new Error('interrupted cancellation refresh');
+        },
+      },
+    }, { isRecoveryOwner: () => true });
     const entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
       request: {
@@ -1304,13 +1317,22 @@ describe('AuthorityTransferPersistence', () => {
     };
     await persistence.advance(advanced, 'collecting-readiness');
 
-    await expect(persistence.settleRejectedLanToCloudCancellation(
-      cancellation,
-      advanced,
-    )).resolves.toBeUndefined();
-    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+    refreshing = true;
+    const refresh = await persistence.settleRejectedLanToCloudCancellation(cancellation, advanced).then(
+      () => 'completed',
+      (error: unknown) => error instanceof Error ? error.message : 'unexpected failure',
+    );
+    expect(refresh).toBe(outcome);
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true,
+    });
+    await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
       beginSubmission: 'possibly-sent',
-      cancellation: null,
+      cancellation: {
+        ...cancellation,
+        expectedPhase,
+        submission,
+      },
     });
   });
 
@@ -2582,6 +2604,48 @@ describe('AuthorityTransferPersistence', () => {
     expect(projectsWereIsolated).toBe(true);
   });
 
+  it('retains an exact custody receipt when the Cloud clock is behind local retention', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:03:29.524Z'),
+    });
+    await persistence.create(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('collecting-readiness'),
+    }));
+    const batch = claimBatch();
+    await persistence.retainClaimBatch({
+      batch,
+      operationIntentId: OPERATION_INTENT_ID,
+      purpose: 'source-terminal',
+    });
+    const receipt = {
+      batchRevision: batch.batchRevision,
+      batchSha256: batch.batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:03:29.474Z',
+      custodyAuthority: { generation: 1, kind: 'lan' as const },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-cloud-clock',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    };
+
+    await expect(persistence.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
+
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true,
+    });
+    await expect(reopened.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
+    await expect(reopened.loadRetainedClaimBatch(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(batch);
+  });
+
   it('rotates only an unacknowledged exact batch and scrubs one verified claim at a time', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
@@ -3071,6 +3135,120 @@ describe('AuthorityTransferPersistence', () => {
     );
     await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
   });
+
+  it.each(['none', 'after-remove', 'before-save', 'after-save'] as const)(
+    'prepares a LAN target after a settled Cloud move and recovers %s', async fault => {
+      const repository = new CollabLocalProjectRepository(vaultRoot);
+      const predecessor = markAuthorityTransferTerminalCleanupCompleted(
+        expireAuthorityTransferTerminalResponder(createAuthorityTransferRecord({
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          lifecycleOwnership: 'owned',
+          localRole: 'source',
+          operationIntentId: OPERATION_INTENT_ID,
+          stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+          status: transferStatus('completed'),
+        })),
+      );
+      await repository.authorityTransferRecords.save(predecessor);
+      const replacement = createCloudToLanTargetEntry({
+        createdAt: '2026-09-30T00:01:00.000Z',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+        operationIntentId: 'intent-round-trip',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_ALICE,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        sourceAuthorityGeneration: 2,
+        sourceCloudUrl: predecessor.status.targetUrl,
+      });
+      let interrupted = false;
+      const persistence = new AuthorityTransferPersistence({
+        ...repository,
+        authorityTransferRecords: {
+          ...repository.authorityTransferRecords,
+          removeExact: async record => {
+            const removed = await repository.authorityTransferRecords.removeExact(record);
+            if (!interrupted && fault === 'after-remove') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+            return removed;
+          },
+        },
+        authorityTransferEntries: {
+          ...repository.authorityTransferEntries,
+          saveTarget: async entry => {
+            if (!interrupted && fault === 'before-save') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+            await repository.authorityTransferEntries.saveTarget(entry);
+            if (!interrupted && fault === 'after-save') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+          },
+        },
+      }, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+      const result = await persistence.prepareCloudToLanTargetEntry(replacement).then(
+        () => 'prepared', error => (error as Error).message,
+      );
+      expect(result).toBe(fault === 'none' ? 'prepared' : fault);
+      const reopened = new AuthorityTransferPersistence(
+        new CollabLocalProjectRepository(vaultRoot),
+        { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A },
+      );
+      await expect(reopened.prepareCloudToLanTargetEntry(replacement)).resolves.toEqual(replacement);
+      await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
+      await expect(reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(replacement);
+    },
+  );
+
+  it.each(['active-responder', 'cleanup-pending', 'wrong-generation', 'wrong-cloud', 'foreign-owner', 'retained-custody'] as const)(
+    'preserves the Cloud move predecessor when LAN preparation has %s', async conflict => {
+      const repository = new CollabLocalProjectRepository(vaultRoot);
+      const active = createAuthorityTransferRecord({
+        ownerInstallationKey: conflict === 'foreign-owner' ? TEST_INSTALLATION_B : TEST_INSTALLATION_A,
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: OPERATION_INTENT_ID,
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+        status: transferStatus('completed'),
+      });
+      const expired = expireAuthorityTransferTerminalResponder(active);
+      const predecessor = conflict === 'active-responder' ? active
+        : conflict === 'cleanup-pending' ? expired
+          : markAuthorityTransferTerminalCleanupCompleted(expired);
+      await repository.authorityTransferRecords.save(predecessor);
+      if (conflict === 'retained-custody') {
+        await repository.authorityTransferClaims.save(createAuthorityTransferClaimCustodyRecord({
+          batch: claimBatch(),
+          createdAt: '2026-08-26T00:01:00.000Z',
+          operationIntentId: OPERATION_INTENT_ID,
+          purpose: 'source-terminal',
+        }));
+      }
+      const persistence = new AuthorityTransferPersistence(repository, {
+        isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      });
+      const replacement = createCloudToLanTargetEntry({
+        createdAt: '2026-09-30T00:01:00.000Z',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+        operationIntentId: 'intent-round-trip',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_ALICE,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        sourceAuthorityGeneration: conflict === 'wrong-generation' ? 3 : 2,
+        sourceCloudUrl: conflict === 'wrong-cloud' ? 'https://other.example.test/' : predecessor.status.targetUrl,
+      });
+      await expect(persistence.prepareCloudToLanTargetEntry(replacement)).rejects.toMatchObject({
+        safeContext: { reason: 'authority-transfer-target-entry-conflict' },
+      });
+      await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toEqual(predecessor);
+      await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+    },
+  );
 
   it('refuses terminal cleanup when claim custody belongs to a different durable owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);

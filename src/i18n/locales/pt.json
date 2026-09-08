@@ -224,6 +224,7 @@
       "proposeLanToCloud": "Solicitar mudança para Cloud",
       "lanToCloudProposal": "Destino Cloud: {url} · {phase}",
       "acceptLanToCloud": "Aceitar mudança para Cloud",
+      "retryLanToCloud": "Tentar novamente a mudança para Cloud",
       "lanHost": "Host LAN",
       "thisDevice": "Este dispositivo",
       "anotherDevice": "Outro dispositivo",

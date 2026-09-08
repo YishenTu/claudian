@@ -224,6 +224,7 @@
       "proposeLanToCloud": "Cloud로 이동 요청",
       "lanToCloudProposal": "Cloud 대상: {url} · {phase}",
       "acceptLanToCloud": "Cloud로 이동 수락",
+      "retryLanToCloud": "Cloud로 이동 재시도",
       "lanHost": "LAN 호스트",
       "thisDevice": "이 기기",
       "anotherDevice": "다른 기기",

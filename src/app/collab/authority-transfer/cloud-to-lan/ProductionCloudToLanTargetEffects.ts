@@ -665,6 +665,43 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
+  async #removeSupersededLanAuthority(record: AuthorityTransferRecord): Promise<void> {
+    const foundation = this.options.foundation;
+    if (await foundation.hostInstallations.inspect(record.projectId) !== 'hosted-here') return;
+    const [current, membership] = await Promise.all([
+      this.options.persistence.load(record.projectId),
+      foundation.local.projects.loadMembership(record.projectId),
+    ]);
+    if (
+      !current
+      || current.localRole !== 'target'
+      || current.ownerInstallationKey !== record.ownerInstallationKey
+      || current.operationIntentId !== record.operationIntentId
+      || current.transferId !== record.transferId
+      || current.status.direction !== 'cloud-to-lan'
+      || current.status.phase !== 'checkpoint-captured'
+      || current.status.checkpointSha256 !== record.status.checkpointSha256
+      || current.status.sourceAuthority.generation !== record.status.sourceAuthority.generation
+      || !membership
+      || !isCollabLocalCloudMembership(membership)
+      || !this.options.cloudSession
+      || membership.authority.serverUrl !== this.options.cloudSession.serverUrl
+      || membership.authority.authorityGeneration !== current.status.sourceAuthority.generation
+      || foundation.lanHost.isProjectRunning(record.projectId)
+    ) throw targetError('authority-transfer-former-source-not-replaceable');
+    const authority = await foundation.inspectAuthority(record.projectId);
+    const project = authority
+      ? await authority.database.read(connection => authority.projects.get(connection))
+      : null;
+    if (
+      !project
+      || project.projectId !== record.projectId
+      || project.authorityGeneration + 1 !== current.status.sourceAuthority.generation
+    ) throw targetError('authority-transfer-former-source-not-replaceable');
+    await foundation.closeAuthority(record.projectId);
+    await foundation.hostInstallations.removeOwned(record.projectId);
+  }
+
   async stage(
     record: AuthorityTransferRecord,
     artifacts: readonly CloudToLanDownloadedArtifact[],
@@ -682,6 +719,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (
         manifest.projectId !== record.projectId
         || manifest.operationId !== record.transferId
+        || manifest.sourceAuthority.kind !== record.status.sourceAuthority.kind
+        || manifest.sourceAuthority.generation !== record.status.sourceAuthority.generation
         || manifest.targetAuthority?.kind !== 'lan'
         || manifest.targetAuthority.generation !== record.status.targetAuthority.generation
         || (record.status.checkpointSha256 !== null
@@ -696,6 +735,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         throw targetError('authority-transfer-target-imported-identity-mismatch');
       }
       if (state.claimBatch === null) {
+        await this.#removeSupersededLanAuthority(record);
         await this.options.foundation.discardAuthorityTransferTarget(
           record.projectId,
           record.ownerInstallationKey,
@@ -778,6 +818,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     record: AuthorityTransferRecord,
     proof: CollabAuthorityRelinquishmentProof,
   ): Promise<void> {
+    if (record.status.state === 'completed') return this.restoreCompleted(record);
     return this.queue.run(() => this.#convergeLocal(record, proof));
   }
 
