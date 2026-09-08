@@ -156,7 +156,6 @@ export function buildTabRuntimeControllers(
     renderer,
     subagentManager: services.subagentManager,
     getMessagesEl: () => dom.messagesEl,
-    getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => (
       runtimeRef.requirePublished().controllers.inputController.updateQueueIndicator()
     ),
@@ -237,7 +236,6 @@ export function buildTabRuntimeControllers(
         runtimeRef.requirePublished().controllers.inputController
           .restoreRewoundMessageToComposer(message)
       ),
-      getFileContextManager: () => ui.fileContextManager,
       getLinkedContentController: () => ui.linkedContentController,
       getImageContextManager: () => ui.imageContextManager,
       clearQueuedMessage: () => (

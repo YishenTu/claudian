@@ -557,7 +557,6 @@ export class InlineEditSession {
     });
     this.mentionSource = new MentionSource({
       // Inline Edit resolves @mentions at send time from input text.
-      onAttachFile: () => {},
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
@@ -1011,7 +1010,7 @@ export class InlineEditSession {
       if (!isMentionStart(message, index)) continue;
 
       const vaultMatch = findBestMentionLookupMatch(
-        message, index + 1, pathLookup, normalizeMentionPath, normalizeForPlatformLookup
+        message, index + 1, pathLookup
       );
       if (vaultMatch) {
         resolved.add(vaultMatch.resolvedPath);

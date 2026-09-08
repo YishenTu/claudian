@@ -36,7 +36,6 @@ import {
 } from '../session-manager/SessionListOrganizer';
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention } from '../state/types';
-import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { StatusPanel } from '../ui/StatusPanel';
 
@@ -78,7 +77,6 @@ export interface ConversationControllerDeps {
   getMessagesEl: () => HTMLElement;
   getInputEl: () => ComposerInputElement;
   restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
-  getFileContextManager: () => FileContextManager | null;
   getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
   clearQueuedMessage: () => void;
@@ -270,7 +268,6 @@ export class ConversationController {
 
       this.deps.getInputEl().value = '';
 
-      this.deps.getFileContextManager()?.clearAttachments();
       this.deps.getLinkedContentController().resetAutoDraft();
 
       this.deps.getImageContextManager()?.clearImages();
@@ -308,7 +305,6 @@ export class ConversationController {
 
       await this.getExecutionCoordinator()?.bindConversation(null);
 
-      this.deps.getFileContextManager()?.clearAttachments();
       this.deps.getLinkedContentController().resetAutoDraft();
 
       const welcomeEl = renderer.renderMessages(
@@ -652,7 +648,6 @@ export class ConversationController {
     // Clear status panels (auto-hide: panels reappear when agent creates new todos)
     state.currentTodos = null;
 
-    this.deps.getFileContextManager()?.clearAttachments();
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
 
     const welcomeEl = renderer.renderMessages(

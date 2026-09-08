@@ -119,12 +119,6 @@ type MockStreamControllerDeps = StreamControllerDeps;
 function createMockDeps(): MockStreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockEl();
-  const fileContextManager = {
-    markFileBeingEdited: jest.fn(),
-    trackEditedFile: jest.fn(),
-    getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-    hasFilesChanged: jest.fn().mockReturnValue(false),
-  };
 
   return {
     plugin: {
@@ -168,7 +162,6 @@ function createMockDeps(): MockStreamControllerDeps {
       subagentsSpawnedThisStream: 0,
     } as any,
     getMessagesEl: () => messagesEl,
-    getFileContextManager: () => fileContextManager as any,
     updateQueueIndicator: jest.fn(),
     getProviderId: () => 'claude',
     getProviderSessionId: () => 'session-1',

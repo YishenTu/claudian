@@ -336,7 +336,6 @@ function installTransitionController(
     setWelcomeEl: (element) => { tab.dom.welcomeEl = element; },
     getMessagesEl: () => tab.dom.messagesEl,
     getInputEl: () => tab.dom.inputEl,
-    getFileContextManager: () => null,
     getLinkedContentController: () => tab.ui.linkedContentController,
     getImageContextManager: () => null,
     clearQueuedMessage: jest.fn(),

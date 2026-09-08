@@ -1,7 +1,6 @@
 export interface MentionLookupMatch {
   resolvedPath: string;
   endIndex: number;
-  trailingPunctuation: string;
 }
 
 const TRAILING_PUNCTUATION_REGEX = /[),.!?:;]+$/;
@@ -51,9 +50,7 @@ export function normalizeForPlatformLookup(value: string): string {
 export function findBestMentionLookupMatch(
   text: string,
   pathStart: number,
-  pathLookup: Map<string, string>,
-  normalizePath: (pathText: string) => string,
-  normalizeLookupKey: (value: string) => string
+  pathLookup: Map<string, string>
 ): MentionLookupMatch | null {
   if (pathLookup.size === 0 || pathStart >= text.length) return null;
 
@@ -67,15 +64,14 @@ export function findBestMentionLookupMatch(
       ? rawPath.slice(0, -trailingPunctuation.length)
       : rawPath;
 
-    const normalizedPath = normalizePath(rawPathWithoutPunctuation);
+    const normalizedPath = normalizeMentionPath(rawPathWithoutPunctuation);
     if (!normalizedPath) continue;
 
-    const resolvedPath = pathLookup.get(normalizeLookupKey(normalizedPath));
+    const resolvedPath = pathLookup.get(normalizeForPlatformLookup(normalizedPath));
     if (resolvedPath) {
       return {
         resolvedPath,
         endIndex,
-        trailingPunctuation,
       };
     }
   }

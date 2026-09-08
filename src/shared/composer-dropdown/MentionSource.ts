@@ -13,16 +13,13 @@ import type {
   ComposerTriggerMatch,
 } from './types';
 
-type MentionValue =
-  | { readonly kind: 'agent'; readonly agentId: string }
-  | { readonly kind: 'vault-file'; readonly path: string };
+type MentionValue = { readonly kind: 'agent'; readonly agentId: string };
 
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
-  readonly getCachedVaultFolders: () => readonly Pick<FolderMentionItem, 'name' | 'path'>[];
+  readonly getCachedVaultFolders: () => readonly FolderMentionItem[];
   readonly normalizePathForVault: (path: string | undefined | null) => string | null;
   readonly onAgentMentionSelect?: (agentId: string) => void;
-  readonly onAttachFile: (path: string) => void;
 }
 
 export interface MentionSourceOptions {
@@ -108,11 +105,9 @@ export class MentionSource implements ComposerDropdownSource {
     return {
       kind: 'replace',
       text: item.replacement,
-      onApplied: () => {
-        if (!value) return;
-        if (value.kind === 'agent') this.callbacks.onAgentMentionSelect?.(value.agentId);
-        if (value.kind === 'vault-file') this.callbacks.onAttachFile(value.path);
-      },
+      onApplied: value?.kind === 'agent'
+        ? () => this.callbacks.onAgentMentionSelect?.(value.agentId)
+        : undefined,
     };
   }
 
@@ -260,7 +255,6 @@ export class MentionSource implements ComposerDropdownSource {
             kind: 'value',
             label: file.path,
             replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
-            value: { kind: 'vault-file', path: normalized } satisfies MentionValue,
           },
           mtime: file.stat.mtime,
           name: file.name,

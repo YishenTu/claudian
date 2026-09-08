@@ -54,7 +54,7 @@ describe('contextMentionResolver', () => {
   });
 
   describe('findBestMentionLookupMatch', () => {
-    it('matches the longest path and preserves trailing punctuation', () => {
+    it('matches the longest path followed by punctuation', () => {
       const text = 'Check @src/my file.md, then continue';
       const pathStart = text.indexOf('@') + 1;
       const lookup = new Map<string, string>([
@@ -65,15 +65,12 @@ describe('contextMentionResolver', () => {
       const match = findBestMentionLookupMatch(
         text,
         pathStart,
-        lookup,
-        normalizeMentionPath,
-        normalizeForPlatformLookup
+        lookup
       );
 
       expect(match).toEqual({
         resolvedPath: '/vault/src/my file.md',
         endIndex: text.indexOf(',') + 1,
-        trailingPunctuation: ',',
       });
     });
 
@@ -85,9 +82,7 @@ describe('contextMentionResolver', () => {
       const match = findBestMentionLookupMatch(
         text,
         pathStart,
-        lookup,
-        normalizeMentionPath,
-        normalizeForPlatformLookup
+        lookup
       );
 
       expect(match).toBeNull();

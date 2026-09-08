@@ -30,9 +30,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
 
-  const fileContextManager = {
-    clearAttachments: jest.fn(),
-  };
   const linkedContentController = {
     resetAutoDraft: jest.fn(),
     lock: jest.fn(),
@@ -86,7 +83,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     setWelcomeEl: (el: any) => { welcomeEl = el; },
     getMessagesEl: () => messagesEl as any,
     getInputEl: () => inputEl,
-    getFileContextManager: () => fileContextManager as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
@@ -156,13 +152,11 @@ describe('ConversationController', () => {
           .toBeLessThan((deps.plugin.updateConversation as jest.Mock).mock.invocationCallOrder[0]);
       });
 
-      it('clears attachments and resets the Linked content draft', async () => {
-        const fileContextManager = deps.getFileContextManager()!;
+      it('resets the Linked content draft', async () => {
         const linkedContentController = deps.getLinkedContentController();
 
         await controller.createNew();
 
-        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
         expect(linkedContentController.resetAutoDraft).toHaveBeenCalled();
       });
 
@@ -253,14 +247,12 @@ describe('ConversationController', () => {
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
       });
 
-      it('clears attachments and locks the switched Conversation target', async () => {
+      it('locks the switched Conversation target', async () => {
         deps.state.currentConversationId = 'old-conv';
-        const fileContextManager = deps.getFileContextManager()!;
         const linkedContentController = deps.getLinkedContentController();
 
         await controller.switchTo('new-conv');
 
-        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
         expect(linkedContentController.lock).toHaveBeenCalled();
       });
 

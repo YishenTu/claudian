@@ -77,7 +77,6 @@ import {
 import type { SubagentManager } from '../services/SubagentManager';
 import type { AsyncSubagentCompletion } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
-import type { FileContextManager } from '../ui/FileContext';
 import { StreamingRenderCoordinator } from './StreamingRenderCoordinator';
 
 export interface StreamControllerDeps {
@@ -86,7 +85,6 @@ export interface StreamControllerDeps {
   renderer: MessageRenderer;
   subagentManager: SubagentManager;
   getMessagesEl: () => HTMLElement;
-  getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
   getProviderId?: () => ProviderId;
   getProviderSessionId?: () => string | null;
