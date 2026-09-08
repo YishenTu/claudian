@@ -57,18 +57,6 @@
       "errorNoActiveTab": "Kein aktiver Tab",
       "commandNoMessages": "Verzweigung nicht möglich: keine Nachrichten in der Konversation",
       "commandNoAssistantUuid": "Verzweigung nicht möglich: keine Assistentenantwort mit Kennungen"
-    },
-    "bangBash": {
-      "placeholder": "> Einen Bash-Befehl ausführen...",
-      "commandPanel": "Befehlspanel",
-      "copyAriaLabel": "Neueste Befehlsausgabe kopieren",
-      "clearAriaLabel": "Bash-Ausgabe löschen",
-      "commandLabel": "{command}",
-      "statusLabel": "Status des Befehls: {status}",
-      "collapseOutput": "Befehlsausgabe einklappen",
-      "expandOutput": "Befehlsausgabe ausklappen",
-      "running": "Wird ausgeführt...",
-      "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",
       "desc": "Erlaubt Claude die Interaktion mit Chrome über die claude-in-chrome-Erweiterung. Die Erweiterung muss installiert sein. Erfordert Neustart der Sitzung."
-    },
-    "enableBangBash": {
-      "name": "Bash-Modus (!) aktivieren",
-      "desc": "Gib ! in ein leeres Eingabefeld ein, um den Bash-Modus zu starten. Führt Befehle direkt über Node.js child_process aus. Die Ansicht muss neu geöffnet werden.",
-      "validation": {
-        "noNode": "Node.js wurde auf PATH nicht gefunden. Installiere Node.js oder prüfe deine PATH-Konfiguration."
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "Maximale gleichzeitig laufende Sitzungen",

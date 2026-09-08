@@ -36,15 +36,6 @@ const localizedKeys = [
   'chat.fork.errorMessageNotFound',
   'chat.fork.errorNoSession',
   'chat.fork.errorNoActiveTab',
-  'chat.bangBash.placeholder',
-  'chat.bangBash.commandPanel',
-  'chat.bangBash.copyAriaLabel',
-  'chat.bangBash.clearAriaLabel',
-  'chat.bangBash.statusLabel',
-  'chat.bangBash.collapseOutput',
-  'chat.bangBash.expandOutput',
-  'chat.bangBash.running',
-  'chat.bangBash.copyFailed',
   'settings.subagents.name',
   'settings.subagents.desc',
   'settings.subagents.noAgents',
@@ -73,9 +64,6 @@ const localizedKeys = [
   'settings.subagents.modal.prompt',
   'settings.subagents.modal.promptDesc',
   'settings.subagents.modal.promptPlaceholder',
-  'settings.enableBangBash.name',
-  'settings.enableBangBash.desc',
-  'settings.enableBangBash.validation.noNode',
   'settings.requireCommandOrControlEnterToSend.name',
   'settings.requireCommandOrControlEnterToSend.desc',
   'settings.claudeSafeMode.name',
@@ -106,9 +94,6 @@ const localizedKeys = [
   'collab.access.confirmDemote',
   'collab.access.demoteHostUnchanged',
 ] as const;
-
-const staleBangBashDesc =
-  'Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.';
 
 function flattenTranslations(
   translations: TranslationTree,
@@ -141,7 +126,7 @@ describe('locale files', () => {
     }
   });
 
-  it('localizes the recent bang bash and subagent additions', () => {
+  it('localizes the recent subagent additions', () => {
     for (const translations of Object.values(locales)) {
       const locale = flattenTranslations(translations as unknown as TranslationTree);
 
@@ -150,7 +135,6 @@ describe('locale files', () => {
         expect(locale[key]).not.toBe(english[key]);
       }
 
-      expect(locale['settings.enableBangBash.desc']).not.toBe(staleBangBashDesc);
     }
   });
 

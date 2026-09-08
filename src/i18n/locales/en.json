@@ -57,18 +57,6 @@
       "errorNoActiveTab": "No active tab",
       "commandNoMessages": "Cannot fork: no messages in conversation",
       "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
-    },
-    "bangBash": {
-      "placeholder": "> Run a bash command...",
-      "commandPanel": "Command panel",
-      "copyAriaLabel": "Copy latest command output",
-      "clearAriaLabel": "Clear bash output",
-      "commandLabel": "{command}",
-      "statusLabel": "Status: {status}",
-      "collapseOutput": "Collapse command output",
-      "expandOutput": "Expand command output",
-      "running": "Running...",
-      "copyFailed": "Failed to copy to clipboard"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "Enable Chrome extension",
       "desc": "Allow Claude to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."
-    },
-    "enableBangBash": {
-      "name": "Enable bash mode (!)",
-      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process. Requires view reopen.",
-      "validation": {
-        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "Maximum concurrent running sessions",

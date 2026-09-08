@@ -393,7 +393,6 @@ export function buildTabRuntimeControllers(
     isStreaming: () => state.isStreaming,
     shouldSkipEscapeHandling: () => {
       if (ui.instructionModeManager.isActive()) return true;
-      if (ui.bangBashModeManager?.isActive()) return true;
       if (inputController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
       return false;

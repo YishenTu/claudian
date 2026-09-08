@@ -169,7 +169,6 @@ describe('ComposerDropdownController', () => {
 
     it.each([
       ['hide', (controller: ComposerDropdownController) => controller.hide()],
-      ['disable', (controller: ComposerDropdownController) => controller.setEnabled(false)],
       ['destroy', (controller: ComposerDropdownController) => controller.destroy()],
     ])('does not load after %s cancels a pending debounce', (_name, cancel) => {
       const input = createInput();

@@ -57,18 +57,6 @@
       "errorNoActiveTab": "沒有使用中的分頁",
       "commandNoMessages": "無法分叉：對話中沒有訊息",
       "commandNoAssistantUuid": "無法分叉：沒有帶識別碼的助手回覆"
-    },
-    "bangBash": {
-      "placeholder": "> 執行 bash 指令...",
-      "commandPanel": "指令面板",
-      "copyAriaLabel": "複製最新的指令輸出",
-      "clearAriaLabel": "清除 bash 輸出",
-      "commandLabel": "{command}",
-      "statusLabel": "狀態：{status}",
-      "collapseOutput": "摺疊指令輸出",
-      "expandOutput": "展開指令輸出",
-      "running": "執行中...",
-      "copyFailed": "複製到剪貼簿失敗"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",
       "desc": "允許 Claude 透過 claude-in-chrome 擴充功能與 Chrome 互動。需要安裝該擴充功能。需要重新啟動工作階段。"
-    },
-    "enableBangBash": {
-      "name": "啟用 bash 模式 (!)",
-      "desc": "在空白輸入框中輸入 ! 以進入 bash 模式。透過 Node.js child_process 直接執行指令。需要重新開啟檢視。",
-      "validation": {
-        "noNode": "在 PATH 中找不到 Node.js。請安裝 Node.js 或檢查 PATH 設定。"
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "最大並行執行工作階段數",

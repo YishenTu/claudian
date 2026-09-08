@@ -13,12 +13,8 @@ import type {
   ProviderChatUIConfig,
   ProviderId,
 } from '../../../../core/providers/types';
-import { getEnhancedPath } from '../../../../utils/env';
-import { getVaultPath } from '../../../../utils/path';
 import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
 import { LinkedContentController } from '../../linked-content';
-import { BangBashService } from '../../services/BangBashService';
-import { BangBashModeManager as BangBashModeManagerClass } from '../../ui/BangBashModeManager';
 import { ComposerContextTray } from '../../ui/ComposerContextTray';
 import { FileContextManager } from '../../ui/FileContext';
 import { ImageContextManager } from '../../ui/ImageContext';
@@ -143,10 +139,9 @@ function buildInstructionComponents(
   composerDropdown: MainChatComposerDropdown,
 ): Pick<
   TabUIComponents,
-  'instructionModeManager' | 'bangBashModeManager' | 'statusPanel'
+  'instructionModeManager' | 'statusPanel'
 > {
   const { dom } = shell;
-  const { plugin } = options;
   const instructionModeManager = new InstructionModeManagerClass(
     dom.inputEl,
     {
@@ -169,45 +164,7 @@ function buildInstructionComponents(
   options.registerCleanup('tab status panel', () => statusPanel.destroy());
   statusPanel.mount(dom.statusPanelContainerEl);
 
-  let bangBashModeManager: TabUIComponents['bangBashModeManager'] = null;
-  if (isBangBashEnabled(plugin.settings)) {
-    const vaultPath = getVaultPath(plugin.app);
-    if (vaultPath) {
-      const enhancedPath = getEnhancedPath();
-      const bashService = new BangBashService(vaultPath, enhancedPath);
-
-      bangBashModeManager = new BangBashModeManagerClass(
-        dom.inputEl,
-        {
-          onSubmit: async (command) => {
-            const id = `bash-${Date.now()}`;
-            statusPanel.addBashOutput({ id, command, status: 'running', output: '' });
-
-            const result = await bashService.execute(command);
-            const output = [result.stdout, result.stderr, result.error]
-              .filter(Boolean)
-              .join('\n')
-              .trim();
-            const status = result.exitCode === 0 ? 'completed' : 'error';
-            statusPanel.updateBashOutput(id, { status, output, exitCode: result.exitCode });
-          },
-          getInputWrapper: () => dom.inputWrapper,
-        },
-      );
-      const ownedBangBashModeManager = bangBashModeManager;
-      options.registerCleanup(
-        'tab bang-bash mode manager',
-        () => ownedBangBashModeManager.destroy(),
-      );
-    }
-  }
-  return { bangBashModeManager, instructionModeManager, statusPanel };
-}
-
-function isBangBashEnabled(settings: Record<string, unknown>): boolean {
-  return ProviderRegistry.getEnabledProviderIds(settings).some((providerId) => (
-    ProviderRegistry.getChatUIConfig(providerId).isBangBashEnabled?.(settings) ?? false
-  ));
+  return { instructionModeManager, statusPanel };
 }
 
 function buildInputToolbar(

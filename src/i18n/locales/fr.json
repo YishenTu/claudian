@@ -57,18 +57,6 @@
       "errorNoActiveTab": "Aucun onglet actif",
       "commandNoMessages": "Impossible de bifurquer : aucun message dans la conversation",
       "commandNoAssistantUuid": "Impossible de bifurquer : aucune réponse de l’assistant avec des identifiants"
-    },
-    "bangBash": {
-      "placeholder": "> Exécuter une commande bash...",
-      "commandPanel": "Panneau de commandes",
-      "copyAriaLabel": "Copier la sortie de la dernière commande",
-      "clearAriaLabel": "Effacer la sortie bash",
-      "commandLabel": "{command}",
-      "statusLabel": "Statut : {status}",
-      "collapseOutput": "Réduire la sortie de la commande",
-      "expandOutput": "Développer la sortie de la commande",
-      "running": "Exécution...",
-      "copyFailed": "Échec de la copie dans le presse-papiers"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "Activer l'extension Chrome",
       "desc": "Permettre à Claude d'interagir avec Chrome via l'extension claude-in-chrome. L'extension doit être installée. Nécessite un redémarrage de session."
-    },
-    "enableBangBash": {
-      "name": "Activer le mode bash (!)",
-      "desc": "Saisissez ! dans un champ vide pour passer en mode bash. Exécute les commandes directement via le child_process de Node.js. Nécessite de rouvrir la vue.",
-      "validation": {
-        "noNode": "Node.js introuvable dans PATH. Installez Node.js ou vérifiez votre configuration PATH."
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "Maximum de sessions exécutées simultanément",

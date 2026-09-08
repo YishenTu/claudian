@@ -20,7 +20,6 @@ import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '../state/types';
-import type { BangBashModeManager } from '../ui/BangBashModeManager';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
@@ -132,7 +131,6 @@ export interface TabUIComponents {
   readonly serviceTierToggle: ServiceTierToggle;
   readonly composerDropdown: MainChatComposerDropdown;
   readonly instructionModeManager: InstructionModeManager;
-  readonly bangBashModeManager: BangBashModeManager | null;
   readonly contextUsageMeter: ContextUsageMeter;
   readonly statusPanel: StatusPanel;
   readonly navigationSidebar: NavigationSidebar;

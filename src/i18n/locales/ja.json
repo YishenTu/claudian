@@ -57,18 +57,6 @@
       "errorNoActiveTab": "アクティブなタブがありません",
       "commandNoMessages": "フォークできません: 会話にメッセージがありません",
       "commandNoAssistantUuid": "フォークできません: 識別子付きのアシスタント応答がありません"
-    },
-    "bangBash": {
-      "placeholder": "> bash コマンドを実行...",
-      "commandPanel": "コマンドパネル",
-      "copyAriaLabel": "最新のコマンド出力をコピー",
-      "clearAriaLabel": "bash 出力をクリア",
-      "commandLabel": "{command}",
-      "statusLabel": "状態: {status}",
-      "collapseOutput": "コマンド出力を折りたたむ",
-      "expandOutput": "コマンド出力を展開",
-      "running": "実行中...",
-      "copyFailed": "クリップボードへのコピーに失敗しました"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
       "desc": "claude-in-chrome拡張機能を通じてClaudeがChromeと連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
-    },
-    "enableBangBash": {
-      "name": "bash モード (!) を有効化",
-      "desc": "入力欄が空の状態で ! を入力すると bash モードに入ります。Node.js の child_process 経由でコマンドを直接実行します。ビューの再オープンが必要です。",
-      "validation": {
-        "noNode": "PATH に Node.js が見つかりません。Node.js をインストールするか、PATH 設定を確認してください。"
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "同時実行セッションの上限",

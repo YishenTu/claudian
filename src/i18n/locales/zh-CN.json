@@ -57,18 +57,6 @@
       "errorNoActiveTab": "没有活动标签页",
       "commandNoMessages": "无法分叉：对话中没有消息",
       "commandNoAssistantUuid": "无法分叉：没有带标识符的助手回复"
-    },
-    "bangBash": {
-      "placeholder": "> 运行命令...",
-      "commandPanel": "命令面板",
-      "copyAriaLabel": "复制最新命令输出",
-      "clearAriaLabel": "清除命令输出",
-      "commandLabel": "{command}",
-      "statusLabel": "状态: {status}",
-      "collapseOutput": "折叠命令输出",
-      "expandOutput": "展开命令输出",
-      "running": "运行中...",
-      "copyFailed": "复制到剪贴板失败"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "启用 Chrome 扩展",
       "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
-    },
-    "enableBangBash": {
-      "name": "启用命令模式 (!)",
-      "desc": "在空输入框中输入 ! 进入命令模式。通过 Node.js child_process 直接运行命令。需要重新打开视图。",
-      "validation": {
-        "noNode": "未在 PATH 中找到 Node.js。请安装 Node.js 或检查 PATH 配置。"
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "最大并发运行会话数",

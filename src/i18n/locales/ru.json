@@ -57,18 +57,6 @@
       "errorNoActiveTab": "Нет активной вкладки",
       "commandNoMessages": "Нельзя форкнуть: в диалоге нет сообщений",
       "commandNoAssistantUuid": "Нельзя форкнуть: нет ответа ассистента с идентификаторами"
-    },
-    "bangBash": {
-      "placeholder": "> Выполнить команду bash...",
-      "commandPanel": "Панель команд",
-      "copyAriaLabel": "Скопировать вывод последней команды",
-      "clearAriaLabel": "Очистить вывод bash",
-      "commandLabel": "{command}",
-      "statusLabel": "Статус: {status}",
-      "collapseOutput": "Свернуть вывод команды",
-      "expandOutput": "Развернуть вывод команды",
-      "running": "Выполняется...",
-      "copyFailed": "Не удалось скопировать в буфер обмена"
     }
   },
   "collab": {
@@ -623,13 +611,6 @@
     "enableChrome": {
       "name": "Включить расширение Chrome",
       "desc": "Разрешить Claude взаимодействовать с Chrome через расширение claude-in-chrome. Требуется установка расширения. Требуется перезапуск сессии."
-    },
-    "enableBangBash": {
-      "name": "Включить режим bash (!)",
-      "desc": "Введите ! в пустом поле ввода, чтобы перейти в режим bash. Команды выполняются напрямую через Node.js child_process. Требуется повторно открыть представление.",
-      "validation": {
-        "noNode": "Node.js не найден в PATH. Установите Node.js или проверьте настройку PATH."
-      }
     },
     "maxWarmAgentProcesses": {
       "name": "Максимум одновременно запущенных сессий",
