@@ -833,32 +833,47 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       );
       if (!membership) throw targetError('authority-transfer-membership-missing');
       const expired = this.now().getTime() >= Date.parse(record.status.expiresAt);
+      const emptyClaims = !record.terminalCleanupCompleted
+        && await this.options.persistence.isRetainedClaimBatchEmpty(record.projectId, record.transferId);
       const authority = await this.options.foundation.inspectAuthority(record.projectId);
       if (!authority) throw targetError('authority-transfer-target-authority-missing');
+      if (record.terminalCleanupCompleted) {
+        await this.#assertCompletedTargetConvergence(record, authority, null, null, false);
+        await this.options.persistence.completeTerminalCleanup({
+          operationIntentId: record.operationIntentId,
+          projectId: record.projectId,
+          stagingDirectoryName: record.stagingDirectoryName,
+          transferId: record.transferId,
+        });
+        await this.#startConfiguredHost(record);
+        return;
+      }
       const state = await readState(
         path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
       );
       if (!state) {
-        if (expired) {
+        if (expired || emptyClaims) {
           await this.options.foundation.lanHost.stopAuthorityTransferRoute(
             record.projectId,
             'target-active',
           );
           this.#activeRegistration = null;
           await this.#expireActiveRouteUnlocked(record);
+          await this.#startConfiguredHost({ ...record, terminalCleanupCompleted: true });
           return;
         }
         throw targetError('authority-transfer-target-state-owner-mismatch');
       }
       const targetProof = await this.#assertActiveState(record, proof, state, authority);
       await this.#convergePersistedState(record, state, targetProof, authority);
-      if (expired) {
+      if (expired || emptyClaims) {
         await this.options.foundation.lanHost.stopAuthorityTransferRoute(
           record.projectId,
           'target-active',
         );
         this.#activeRegistration = null;
         await this.#expireActiveRouteUnlocked(record);
+        await this.#startConfiguredHost({ ...record, terminalCleanupCompleted: true });
       } else {
         await this.#startActiveRoute(record, state);
       }
@@ -1079,7 +1094,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
    async #assertExpiredRecordCurrent(
     record: AuthorityTransferRecord,
   ): Promise<AuthorityTransferRecord> {
-    if (this.now().getTime() < Date.parse(record.status.expiresAt)) {
+    if (
+      this.now().getTime() < Date.parse(record.status.expiresAt)
+      && !await this.options.persistence.isRetainedClaimBatchEmpty(record.projectId, record.transferId)
+    ) {
       throw targetError('authority-transfer-target-expiry-early');
     }
     const current = await this.options.persistence.load(record.projectId);
@@ -1684,6 +1702,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || typeof membership.hostOwnership.autoStart !== 'boolean'
     ) throw targetError('authority-transfer-target-convergence-incomplete');
     if (membership.hostOwnership.autoStart === false) return;
+    if (record.terminalCleanupCompleted) {
+      await this.options.foundation.lanHost.startProject(projectId);
+      return;
+    }
     if (this.options.foundation.lanHost.isProjectRunning(projectId)) return;
     await this.options.foundation.lanHost.startProjectAfterCloudToLanTargetRecovery({
       expectedEndpoint: record.status.targetUrl,

@@ -1166,6 +1166,7 @@ export class AuthorityTransferModule {
         if (completed?.status.state === 'completed') {
           await this.runtimes.resume(completed, options);
           await this.#settleMatchingCloudToLanManager(handle, completed.status);
+          await this.#releaseCompletedCloudToLanRuntime(handle.projectId);
           this.readyCloudToLanTargets.set(handle.projectId, completed.transferId);
           return completed.status;
         }
@@ -1236,6 +1237,7 @@ export class AuthorityTransferModule {
           );
         }
         if (status.state === 'completed') {
+          await this.#releaseCompletedCloudToLanRuntime(handle.projectId);
           this.readyCloudToLanTargets.set(handle.projectId, status.transferId);
         }
         return status;
@@ -1309,6 +1311,20 @@ export class AuthorityTransferModule {
         }
       },
     );
+  }
+
+  async #releaseCompletedCloudToLanRuntime(projectId: CollabProjectId): Promise<void> {
+    const record = await this.options.persistence.load(projectId);
+    if (
+      record?.localRole !== 'target'
+      || record.status.direction !== 'cloud-to-lan'
+      || record.status.state !== 'completed'
+      || !record.terminalCleanupCompleted
+    ) return;
+    if (!await this.#disposeCloudToLanTargetRuntime(projectId)) {
+      throw durableOutcome(record.operationIntentId, 'authority-transfer-target-cleanup-incomplete');
+    }
+    this.runtimes.release(projectId, 'target');
   }
 
   async #disposeCloudToLanTargetRuntime(projectId: CollabProjectId): Promise<boolean> {
@@ -1613,6 +1629,7 @@ export class AuthorityTransferModule {
         }
       }
     }
+    await this.#releaseCompletedCloudToLanRuntime(record.projectId);
     const current = await this.options.persistence.load(record.projectId);
     if (
       current

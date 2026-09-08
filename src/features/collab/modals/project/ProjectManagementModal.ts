@@ -1453,7 +1453,7 @@ export class ProjectManagementModal extends Modal {
       attr: { 'data-action': 'propose-lan-to-cloud', type: 'button' },
       cls: 'mod-cta claudian-collab-authority-transfer-submit',
       text: proposal?.status === null
-        ? t('collab.joinProject.resume')
+        ? t('collab.access.retryLanToCloud')
         : this.#hostProject.hostInstallationStatus === 'hosted-here'
           ? t('collab.access.moveToCloud')
           : t('collab.access.proposeLanToCloud'),
