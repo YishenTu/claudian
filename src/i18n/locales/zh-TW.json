@@ -224,6 +224,7 @@
       "proposeLanToCloud": "請求遷移至 Cloud",
       "lanToCloudProposal": "Cloud 目標：{url} · {phase}",
       "acceptLanToCloud": "接受遷移至 Cloud",
+      "retryLanToCloud": "重試遷移至 Cloud",
       "lanHost": "區域網路 Host",
       "thisDevice": "本機",
       "anotherDevice": "另一台裝置",

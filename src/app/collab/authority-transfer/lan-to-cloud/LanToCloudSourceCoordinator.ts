@@ -257,6 +257,10 @@ export class LanToCloudSourceCoordinator {
       const settled = await this.#completeLocalCancellation(prepared, options);
       return settled.status;
     }
+    if (record.status.phase === 'target-cleaned') {
+      await this.options.source.reopenAfterCancellation(record, options);
+      request = await this.options.persistence.prepareLanToCloudSourceReopenAcknowledgement(record);
+    }
     let settled: AuthorityTransferRecord;
     try {
       await this.options.persistence.markLanToCloudCancellationPossiblySent(request);
@@ -309,6 +313,9 @@ export class LanToCloudSourceCoordinator {
       ) throw error;
       const prepared = await this.options.persistence.cancelUnbegunLanToCloudSource(request, true);
       return (await this.#completeLocalCancellation(prepared, options)).status;
+    }
+    if (settled.status.phase === 'target-cleaned' && request.expectedPhase !== 'target-cleaned') {
+      return this.#resumeCancellation(settled, request, options);
     }
     if (settled.status.state === 'cancelled') {
       await this.#completeCancellation(settled, options);

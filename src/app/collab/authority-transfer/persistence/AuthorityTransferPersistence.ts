@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES,
   COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES,
   type CollabAuthorityTransferReceiptVerifier,
   type CollabAuthorityTransferStatus,
@@ -515,19 +516,28 @@ export class AuthorityTransferPersistence {
       );
     }
     return this.runProject(decoded.projectId, async () => {
-      const [loadedEntry, loadedRecord] = await Promise.all([
+      const [loadedEntry, loadedRecord, custody, commitment] = await Promise.all([
         this.stores.authorityTransferEntries.load(decoded.projectId),
         this.stores.authorityTransferRecords.load(decoded.projectId),
+        this.stores.authorityTransferClaims.load(decoded.projectId),
+        this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
       ]);
       let record = loadedRecord;
       const document = await this.#removeExpiredEntry(loadedEntry, record);
       if (
         record
         && !this.#isForeignPhysical(record)
-        && record.localRole === 'target'
-        && record.status.direction === 'cloud-to-lan'
-        && record.status.state === 'cancelled'
-        && record.terminalCleanupCompleted
+        && custody === null
+        && commitment === null
+        && (
+          (record.localRole === 'target'
+            && record.status.direction === 'cloud-to-lan'
+            && record.status.state === 'cancelled'
+            && record.terminalCleanupCompleted)
+          || (this.#isSettledLanToCloudPredecessor(record)
+            && record.status.targetAuthority.generation === decoded.sourceAuthorityGeneration
+            && record.status.targetUrl === decoded.sourceCloudUrl)
+        )
       ) {
         if (!await this.stores.authorityTransferRecords.removeExact(record)) {
           throw transferError(
@@ -1183,6 +1193,54 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  prepareLanToCloudSourceReopenAcknowledgement(
+    record: AuthorityTransferRecord,
+  ): Promise<LanToCloudCancellationIntent> {
+    return this.runProject(record.projectId, async () => {
+      const [document, current] = await Promise.all([
+        this.stores.authorityTransferEntries.load(record.projectId),
+        this.stores.authorityTransferRecords.load(record.projectId),
+      ]);
+      const source = document?.source;
+      if (
+        !source
+        || !this.#isLocalSourceEntry(source)
+        || source.phase !== 'handed-off'
+        || !source.cancellation
+        || !current
+        || !sameValue(current, record)
+        || current.localRole !== 'source'
+        || current.status.phase !== 'target-cleaned'
+        || current.status.relinquishmentProof !== null
+      ) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-source-reopen-stale');
+      }
+      await this.#reconcileEntrySuccessor(source, current);
+      const request: LanToCloudCancellationIntent = {
+        expectedAuthorityGeneration: current.status.sourceAuthority.generation,
+        expectedPhase: 'target-cleaned',
+        idempotencyKey: authorityTransferChildIdempotencyKey(
+          current.operationIntentId,
+          'cancel-source-reopened',
+        ),
+        projectId: current.projectId,
+        transferId: current.transferId,
+      };
+      if (source.cancellation.expectedPhase === 'target-cleaned') {
+        // An acknowledgement may already have escaped; retain its exact identity.
+        const { submission: _submission, ...existing } = source.cancellation;
+        return existing;
+      }
+      await this.stores.authorityTransferEntries.saveSource(
+        prepareAuthorityTransferSourceCancellation(
+          clearAuthorityTransferSourceCancellation(source),
+          request,
+        ),
+      );
+      return request;
+    });
+  }
+
   settleRejectedLanToCloudCancellation(
     request: LanToCloudCancellationIntent,
     record: AuthorityTransferRecord,
@@ -1214,9 +1272,14 @@ export class AuthorityTransferPersistence {
           'authority-transfer-cancellation-rejection-stale',
         );
       }
-      await this.stores.authorityTransferEntries.saveSource(
-        clearAuthorityTransferSourceCancellation(source),
+      const cleared = clearAuthorityTransferSourceCancellation(source);
+      const expectedPhase = COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES.find(
+        phase => phase === current.status.phase,
       );
+      const refreshed = expectedPhase
+        ? prepareAuthorityTransferSourceCancellation(cleared, { ...request, expectedPhase })
+        : cleared;
+      await this.stores.authorityTransferEntries.saveSource(refreshed);
     });
   }
 
@@ -1861,13 +1924,13 @@ export class AuthorityTransferPersistence {
         if (sameValue(current.custodyReceipt, receipt)) return current.custodyReceipt;
         throw transferError('authority-transfer-stale', 'authority-transfer-custody-receipt-stale');
       }
+      // The receipt and local retention timestamps come from independent clocks.
       if (
         current.operationIntentId !== receipt.operationIntentId
         || current.batchRevision !== receipt.batchRevision
         || current.batchSha256 !== receipt.batchSha256
         || current.checkpointSha256 !== receipt.checkpointSha256
         || current.targetAuthorityGeneration !== receipt.targetAuthorityGeneration
-        || receipt.committedAt < current.createdAt
         || receipt.committedAt >= current.expiresAt
         || receipt.custodyAuthority.kind !== record.status.sourceAuthority.kind
         || receipt.custodyAuthority.generation !== record.status.sourceAuthority.generation
@@ -2108,7 +2171,9 @@ export class AuthorityTransferPersistence {
         && COLLAB_AUTHORITY_TRANSFER_CANCELLATION_PHASES.includes(
           record.status.phase as never,
         );
-      if (record.status.state !== 'cancelled' && !locallyProvedCancellation) {
+      const targetCleanupProved = record.status.phase === 'target-cleaned'
+        || record.status.phase === 'source-reopened';
+      if (record.status.state !== 'cancelled' && !locallyProvedCancellation && !targetCleanupProved) {
         throw transferError(
           'durable-progress-recovery-required',
           'authority-transfer-cancellation-restart-stale',

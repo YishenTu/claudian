@@ -1,6 +1,7 @@
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
+import type { LanToCloudCancellationIntent } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-entry-service';
@@ -93,6 +94,7 @@ function createSubject(options: Readonly<{
     })),
     readLanToCloudSourceProposal: jest.fn(async () => ({
       beginSubmission: 'not-sent',
+      cancellation: null as LanToCloudCancellationIntent | null,
       proposedByMemberId: 'member-host',
       request: {
         expectedAuthorityGeneration: 7,
@@ -431,6 +433,7 @@ describe('AuthorityTransferEntryService', () => {
     const subject = createSubject();
     subject.module.readLanToCloudSourceProposal.mockResolvedValue({
       beginSubmission: 'possibly-sent',
+      cancellation: null,
       proposedByMemberId: 'member-other',
       request: {
         expectedAuthorityGeneration: 7,
@@ -477,6 +480,28 @@ describe('AuthorityTransferEntryService', () => {
     });
     expect(subject.sourceBinding.dispose).not.toHaveBeenCalled();
     expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the persisted cancellation after authoritative phase progress', async () => {
+    const subject = createSubject();
+    const proposal = await subject.module.readLanToCloudSourceProposal();
+    const cancellation = {
+      expectedAuthorityGeneration: 7,
+      expectedPhase: 'collecting-readiness' as const,
+      idempotencyKey: 'intent-pending-cancel',
+      projectId: PROJECT_ID,
+      transferId: 'transfer-entry-service',
+    };
+    subject.module.readLanToCloudSourceProposal.mockResolvedValue({
+      ...proposal,
+      cancellation,
+      status: { ...status(), phase: 'target-cleaned' },
+    });
+    await subject.service.cancelLanToCloudTransfer({
+      projectId: PROJECT_ID,
+      transferId: 'transfer-entry-service',
+    });
+    expect(subject.module.cancelLanToCloudTransfer).toHaveBeenCalledWith(cancellation);
   });
 
   it('fails closed when the Cloud endpoint did not negotiate authority transfer', async () => {

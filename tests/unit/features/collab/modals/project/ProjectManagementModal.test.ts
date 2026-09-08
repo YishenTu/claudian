@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 
 import { type CollabMember } from '@claudian-collab/protocol';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
@@ -809,10 +809,16 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.textContent).toContain(proposal.serverUrl);
   });
 
-  it('binds LAN-to-Cloud accept and cancel actions to the displayed transfer', async () => {
-    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+  it.each([
+    ['member-manager', 'Retry move to Cloud'],
+    ['member-other', 'Accept move to Cloud'],
+  ])('binds %s LAN-to-Cloud actions to the saved transfer on reopen', async (proposedByMemberId, label) => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-other', 'Maya'),
+    ];
     const proposal = {
-      proposedByMemberId: 'member-manager',
+      proposedByMemberId,
       serverUrl: 'https://cloud.example.test/',
       sourceOwned: true,
       status: {
@@ -834,9 +840,7 @@ describe('ProjectManagementModal', () => {
 
     modal.onOpen();
     await flush();
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="accept-lan-to-cloud"]',
-    )?.click();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: label }));
     await flush();
     expect(port.acceptLanToCloudTransfer).toHaveBeenCalledWith({
       projectId: 'project-alpha',
@@ -1235,9 +1239,13 @@ describe('ProjectManagementModal', () => {
       proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({
         phase: 'collecting-readiness', state: 'active', transferId: 'transfer-host-retry',
       } as never)),
-      acceptLanToCloudTransfer: jest.fn().mockResolvedValue({
-        error: new CollabError({ code: 'endpoint-unreachable' }), status: 'failure',
-      }),
+      acceptLanToCloudTransfer: jest.fn()
+        .mockResolvedValueOnce({
+          error: new CollabError({ code: 'endpoint-unreachable' }), status: 'failure',
+        })
+        .mockResolvedValue(success({
+          phase: 'completed', state: 'completed', transferId: 'transfer-host-retry',
+        } as never)),
     }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
     const modal = new ProjectManagementModal({} as never, port, {
       project: project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' }),
@@ -1250,14 +1258,20 @@ describe('ProjectManagementModal', () => {
     fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
       target: { value: 'https://cloud.example.test/' },
     });
-    fireEvent.click(ui.getByRole('button', { name: 'Request move to Cloud' }));
+    fireEvent.click(within(modal.contentEl.querySelector('#claudian-collab-transfer-form')!).getByRole('button', { name: 'Move to Cloud' }));
     await flush();
     expect(port.acceptLanToCloudTransfer).toHaveBeenCalledWith({
       projectId: 'project-alpha', transferId: 'transfer-host-retry',
     });
     expect(ui.getByRole('alert').textContent).toContain('You can retry safely.');
-    expect(ui.getByRole('button', { name: 'Accept move to Cloud' })).toHaveProperty('disabled', false);
+    expect(ui.getByRole('button', { name: 'Retry move to Cloud' })).toHaveProperty('disabled', false);
     expect(modal.close).not.toHaveBeenCalled();
+    fireEvent.click(ui.getByRole('button', { name: 'Retry move to Cloud' }));
+    await flush();
+    expect(port.acceptLanToCloudTransfer).toHaveBeenLastCalledWith({
+      projectId: 'project-alpha', transferId: 'transfer-host-retry',
+    });
+    expect(modal.close).toHaveBeenCalled();
     modal.onClose();
     modal.contentEl.remove();
   });
@@ -1280,7 +1294,7 @@ describe('ProjectManagementModal', () => {
     fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
       target: { value: 'https://cloud.example.test/' },
     });
-    fireEvent.click(ui.getByRole('button', { name: 'Request move to Cloud' }));
+    fireEvent.click(within(modal.contentEl.querySelector('#claudian-collab-transfer-form')!).getByRole('button', { name: 'Move to Cloud' }));
     modal.close();
     finishProposal(success({
       phase: 'collecting-readiness', state: 'active', transferId: 'transfer-after-close',
@@ -1326,8 +1340,8 @@ describe('ProjectManagementModal', () => {
     expect(hosting.textContent).not.toContain('Cancelled');
     expect(hosting.querySelector('[data-field="lan-to-cloud-server-url"]')).not.toBeNull();
     fireEvent.click(within(hosting).getByRole('button', { name: 'Move to Cloud' }));
-    const requestMove = within(hosting).getByRole('button', {
-      name: 'Request move to Cloud',
+    const requestMove = within(hosting.querySelector('#claudian-collab-transfer-form')!).getByRole('button', {
+      name: 'Move to Cloud',
     });
     expect(requestMove.classList.contains('mod-cta')).toBe(true);
     expect(requestMove.classList.contains(
@@ -1390,7 +1404,7 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).toBeNull();
   });
 
-  it('renders the explicit Cloud-to-LAN prepare, begin, accept, observe, and cancel flow', async () => {
+  it.each([false, true])('moves to this LAN device with one action and retains a failed move for retry (%s)', async retry => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const descriptor = {
       expiresAt: '2026-09-10T00:00:00.000Z',
@@ -1417,7 +1431,9 @@ describe('ProjectManagementModal', () => {
       state: 'completed',
     } as never;
     const port = createPort(members, {
-      acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success(completedStatus)),
+      acceptCloudToLanTransfer: jest.fn().mockResolvedValueOnce(retry
+        ? { status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) }
+        : success(completedStatus)).mockResolvedValue(success(completedStatus)),
       beginCloudToLanTransfer: jest.fn().mockResolvedValue(success(handle)),
       listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
       listMembers: jest.fn().mockResolvedValue(success([{
@@ -1475,33 +1491,15 @@ describe('ProjectManagementModal', () => {
     expect(port.prepareCloudToLanTarget).toHaveBeenCalledWith({
       projectId: 'project-alpha',
     });
-    expect(ui.queryByRole('textbox')).toBeNull();
-    expect(ui.getByRole('button', { name: 'Begin move to LAN' })).not.toBeNull();
-
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="begin-cloud-to-lan"]',
-    )?.click();
-    await flush();
     expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ descriptor });
-    expect(ui.queryByRole('textbox')).toBeNull();
-    expect(ui.queryByRole('button', { name: 'Begin move to LAN' })).toBeNull();
-    expect(ui.getByRole('button', { name: 'Accept transfer on this device' })).not.toBeNull();
-    expect(modal.contentEl.querySelector('[data-action="cancel-cloud-to-lan"]')).toBeNull();
-
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="observe-cloud-to-lan"]',
-    )?.click();
-    await flush();
-    expect(modal.contentEl.textContent).toContain('In progress');
-    expect(modal.contentEl.textContent).not.toContain('source-quiesced');
-    expect(modal.contentEl.querySelector('[data-action="cancel-cloud-to-lan"]')).not.toBeNull();
-
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="accept-cloud-to-lan"]',
-    )?.click();
-    await flush();
-
     expect(port.acceptCloudToLanTransfer).toHaveBeenCalledWith(handle);
+    await waitFor(() => expect(ui.queryByRole('button', { name: 'Retry' }) !== null).toBe(retry));
+    if (retry) {
+      fireEvent.click(ui.getByRole('button', { name: 'Retry' }));
+      await flush();
+    }
+    expect(port.acceptCloudToLanTransfer).toHaveBeenLastCalledWith(handle);
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     modal.contentEl.remove();
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(modal.close).toHaveBeenCalledTimes(1);

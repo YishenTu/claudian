@@ -5,6 +5,7 @@ export type AuthorityTransferChildOperation =
   | 'activate'
   | 'begin'
   | 'cancel'
+  | 'cancel-source-reopened'
   | 'claims'
   | 'custody'
   | 'relinquish'
