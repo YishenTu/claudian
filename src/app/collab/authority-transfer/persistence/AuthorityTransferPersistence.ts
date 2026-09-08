@@ -290,7 +290,7 @@ export class AuthorityTransferPersistence {
       return isAuthorityTransferTerminal(record)
         && record.terminalCleanupCompleted
         && (!localSource || source.phase === 'cancelled')
-        && !localTarget
+        && (!localTarget || record.status.state === 'completed')
         ? 'terminal'
         : 'nonterminal';
     });
@@ -1044,7 +1044,38 @@ export class AuthorityTransferPersistence {
             'authority-transfer-foreign-record-conflict',
           );
         }
-        await this.#assertSafeCancelledPhysicalReplacement(physical);
+        if (
+          physical.localRole === 'target'
+          && physical.status.direction === 'cloud-to-lan'
+          && physical.status.state === 'completed'
+          && physical.status.targetAuthority.generation === decoded.request.expectedAuthorityGeneration
+          && physical.terminalCleanupCompleted
+          && physical.restartFence === 'open'
+        ) {
+          const [custody, commitment] = await Promise.all([
+            this.stores.authorityTransferClaims.load(decoded.projectId),
+            this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
+          ]);
+          if (
+            custody
+            || commitment
+            || (document?.manager && this.#isRecoveryOwner(document.manager.ownerInstallationKey))
+          ) {
+            throw transferError('durable-progress-recovery-required', 'authority-transfer-terminal-cleanup-incomplete');
+          }
+          const target = document?.target;
+          if (target) {
+            if (!this.#isLocalTargetEntry(target)) {
+              throw transferError('durable-progress-recovery-required', 'authority-transfer-target-entry-owner-mismatch');
+            }
+            await this.#reconcileTargetEntrySuccessor(target, physical);
+            if (!await this.stores.authorityTransferEntries.removeTarget(target)) {
+              throw transferError('authority-transfer-stale', 'authority-transfer-entry-target-stale');
+            }
+          }
+        } else {
+          await this.#assertSafeCancelledPhysicalReplacement(physical);
+        }
         if (!await this.stores.authorityTransferRecords.removeExact(physical)) {
           throw transferError(
             'durable-progress-recovery-required',
@@ -1617,7 +1648,7 @@ export class AuthorityTransferPersistence {
           );
         }
       }
-      if (target && this.#isLocalTargetEntry(target)) {
+      if (target && this.#isLocalTargetEntry(target) && record.status.state !== 'completed') {
         if (!await this.stores.authorityTransferEntries.removeTarget(target)) {
           throw transferError(
             'durable-progress-recovery-required',

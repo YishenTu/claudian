@@ -1243,6 +1243,7 @@ export class LanHostCoordinator {
     }
     const existing = this.#hostedProjects.get(projectId);
     if (existing && this.listener) {
+      if (!options.targetActive) await this.#restoreAuthorityTransferSourceRoute(projectId);
       return { endpoint: this.listener.endpoint, projectId, status: 'running' };
     }
     if (this.#recoveringHostTransfers.has(projectId)) {
@@ -2162,6 +2163,18 @@ export class LanHostCoordinator {
     }
   }
 
+   async #restoreAuthorityTransferSourceRoute(projectId: CollabProjectId): Promise<void> {
+    const hosted = this.#hostedProjects.get(projectId);
+    if (hosted?.runtime.authorityTransfer && !this.#authorityTransferRoutes.resolve(projectId)) {
+      await this.#authorityTransferRoutes.install({
+        hostMemberId: hosted.membership.member.id,
+        projectId,
+        service: hosted.runtime.authorityTransfer,
+        state: 'source-active',
+      });
+    }
+  }
+
    async #completeTargetExpiryFinalization(
     finalization: TargetExpiryFinalization,
   ): Promise<void> {
@@ -2169,6 +2182,7 @@ export class LanHostCoordinator {
     if (this.#targetExpiryFinalizations.get(projectId) !== finalization) return;
     this.#targetExpiryFinalizations.delete(projectId);
     try {
+      await this.#restoreAuthorityTransferSourceRoute(projectId);
       await this.#closeUnusedListener();
     } catch (error) {
       this.#targetExpiryFinalizations.set(projectId, finalization);

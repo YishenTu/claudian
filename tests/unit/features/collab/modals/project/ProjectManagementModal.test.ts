@@ -762,9 +762,7 @@ describe('ProjectManagementModal', () => {
       '[data-field="lan-to-cloud-server-url"]',
     );
     expect(input?.value).toBe(proposal.serverUrl);
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="propose-lan-to-cloud"]',
-    )?.click();
+    within(modal.contentEl).getByRole('button', { name: 'Retry move to Cloud' }).click();
     await flush();
     expect(port.proposeLanToCloudTransfer).toHaveBeenCalledWith({
       projectId: 'project-alpha',

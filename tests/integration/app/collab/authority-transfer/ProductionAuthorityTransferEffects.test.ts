@@ -1442,7 +1442,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  async function captureSource() {
+  async function captureSource(includePeer = true) {
     const sourceFoundation = foundation(sourceRoot);
     const sourceSetup = new CollabProjectSetupService(sourceFoundation, {
       installationKey: TEST_INSTALLATION_A,
@@ -1463,25 +1463,27 @@ describe('production authority-transfer effects', () => {
     await sourceFeature.initialize();
     await sourceFeature.createProject({ memberDisplayName: 'Alice', name: 'Portable' });
     const sourceAuthority = await sourceFoundation.openAuthority(PROJECT_ID);
-    await sourceAuthority.database.mutate(connection => {
-      connection.run(`
-        INSERT INTO members (
-          member_id, display_name, personal_ref, role, status, credential_hash,
-          join_attempt_id, created_at, activated_at, revoked_at
-        ) VALUES (
-          'member-production-peer', 'Bob',
-          'refs/heads/members/member-production-peer', 'member', 'active', ?,
-          NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
-        )
-      `, [Buffer.alloc(32, 8)]);
-    });
-    const sourceAuthorityRepository = path.join(sourceAuthority.authorityDirectory, 'repository.git');
-    const authorityMainOid = git(sourceAuthorityRepository, ['rev-parse', 'refs/heads/main']);
-    git(sourceAuthorityRepository, [
-      'update-ref',
-      'refs/heads/members/member-production-peer',
-      authorityMainOid,
-    ]);
+    if (includePeer) {
+      await sourceAuthority.database.mutate(connection => {
+        connection.run(`
+          INSERT INTO members (
+            member_id, display_name, personal_ref, role, status, credential_hash,
+            join_attempt_id, created_at, activated_at, revoked_at
+          ) VALUES (
+            'member-production-peer', 'Bob',
+            'refs/heads/members/member-production-peer', 'member', 'active', ?,
+            NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
+          )
+        `, [Buffer.alloc(32, 8)]);
+      });
+      const sourceAuthorityRepository = path.join(sourceAuthority.authorityDirectory, 'repository.git');
+      const authorityMainOid = git(sourceAuthorityRepository, ['rev-parse', 'refs/heads/main']);
+      git(sourceAuthorityRepository, [
+        'update-ref',
+        'refs/heads/members/member-production-peer',
+        authorityMainOid,
+      ]);
+    }
     const sourceMembership = await sourceFoundation.local.projects.loadMembership(PROJECT_ID);
     if (!sourceMembership || sourceMembership.authority.kind !== 'lan') {
       throw new Error('Missing source LAN membership');
@@ -2703,7 +2705,7 @@ describe('production authority-transfer effects', () => {
     await expect(expiryRegistration.service.expire()).resolves.toBeUndefined();
     expect(completeTerminalCleanup).toHaveBeenCalledTimes(3);
     await expect(targetFoundation.local.projects.authorityTransferEntries.load(PROJECT_ID))
-      .resolves.toBeNull();
+      .resolves.toMatchObject({ target: { phase: 'handed-off' } });
     expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
     await expect(targetFoundation.lanHost.startProject(PROJECT_ID)).resolves.toMatchObject({
       projectId: PROJECT_ID,
@@ -2722,7 +2724,7 @@ describe('production authority-transfer effects', () => {
     await targetFoundation.close();
   });
 
-  it('moves Manager Alice Cloud authority to Member Bob through the composed feature facade', async () => {
+  it.each([false, true])('moves Cloud authority through the composed feature facade (single Member: %s)', async (singleMember) => {
     const {
       artifactBytes,
       repositoryBytes,
@@ -2731,7 +2733,8 @@ describe('production authority-transfer effects', () => {
       sourceFoundation,
       sourceManifestBytes,
       sourceMembership,
-    } = await captureSource();
+    } = await captureSource(!singleMember);
+    const targetMemberId = singleMember ? MEMBER_ID : 'member-production-peer';
     const managerRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-manager-'));
     const cloudServerUrl = 'https://cloud.example.test/';
     const sourceManifest = decodeCollabProjectCheckpointManifest(
@@ -2796,6 +2799,7 @@ describe('production authority-transfer effects', () => {
         role: 'member' as const,
       },
     ];
+    if (singleMember) members.pop();
     const transferLifecycle = {
       authorityTransfer: jest.fn(async (operation: string, request: never) => {
         const input = request as Record<string, unknown>;
@@ -2891,7 +2895,7 @@ describe('production authority-transfer effects', () => {
             operationIntentId: staged.idempotencyKey,
             projectId: PROJECT_ID,
             receiptId: 'receipt-composed-cloud-to-lan',
-            submittedByMemberId: 'member-production-peer',
+            submittedByMemberId: targetMemberId,
             targetAuthorityGeneration: 3,
             transferId: TRANSFER_ID,
           };
@@ -3073,8 +3077,8 @@ describe('production authority-transfer effects', () => {
       return { composition, foundation: seeded };
     };
 
-    const manager = await seed(managerRoot, TEST_INSTALLATION_A, members[0]);
-    let target = await seed(targetRoot, TEST_INSTALLATION_B, members[1]);
+    let target = await seed(targetRoot, TEST_INSTALLATION_B, singleMember ? members[0] : members[1]);
+    const manager = singleMember ? target : await seed(managerRoot, TEST_INSTALLATION_A, members[0]);
     try {
       const prepared = await target.composition.feature.prepareCloudToLanTarget({
         projectId: PROJECT_ID,
@@ -3085,14 +3089,14 @@ describe('production authority-transfer effects', () => {
       }
       expect(prepared).toMatchObject({
         status: 'success',
-        value: { selectedTargetMemberId: 'member-production-peer' },
+        value: { selectedTargetMemberId: targetMemberId },
       });
       const begunResult = await manager.composition.feature.beginCloudToLanTransfer({
         descriptor: prepared.value,
       });
       expect(begunResult).toMatchObject({
         status: 'success',
-        value: { selectedTargetMemberId: 'member-production-peer' },
+        value: { selectedTargetMemberId: targetMemberId },
       });
       if (begunResult.status !== 'success') throw new Error('Manager begin failed');
       const accepted = await target.composition.feature
@@ -3105,7 +3109,8 @@ describe('production authority-transfer effects', () => {
       expect(accepted.value).toMatchObject({ state: 'completed' });
       await expect(target.composition.feature.acceptCloudToLanTransfer(begunResult.value))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
-      const observed = await manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID);
+      const observed = singleMember ? accepted
+        : await manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID);
       if (observed.status !== 'success') {
         if ('error' in observed) throw observed.error;
         throw new Error(`Manager observation returned ${observed.status}`);
@@ -3116,12 +3121,12 @@ describe('production authority-transfer effects', () => {
         .resolves.toMatchObject({
           authority: { kind: 'lan' },
           hostOwnership: { autoStart: true, ownsAuthority: true },
-          member: { id: 'member-production-peer', role: 'member' },
+          member: { id: targetMemberId, role: singleMember ? 'manager' : 'member' },
         });
       await expect(manager.foundation.local.projects.loadMembership(PROJECT_ID))
         .resolves.toMatchObject({
           authority: { kind: 'lan' },
-          hostOwnership: { ownsAuthority: false },
+          hostOwnership: { ownsAuthority: singleMember },
           member: { id: MEMBER_ID, role: 'manager' },
         });
       await expect(manager.foundation.authorityTransfers.loadCloudToLanManagerEntry(PROJECT_ID))
@@ -3145,6 +3150,37 @@ describe('production authority-transfer effects', () => {
       cloudAuthority.connectAuthorityTransfer.mockRejectedValue(new Error('completed retry must stay local'));
       await expect(target.composition.feature.acceptCloudToLanTransfer(begunResult.value))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      const nextProposal = singleMember
+        ? await target.composition.feature.proposeLanToCloudTransfer({
+            projectId: PROJECT_ID,
+            serverUrl: cloudServerUrl,
+          })
+        : null;
+      expect({ proposal: nextProposal }).toMatchObject({
+        proposal: singleMember ? {
+          status: 'success',
+          value: {
+            direction: 'lan-to-cloud',
+            phase: 'collecting-readiness',
+            sourceAuthority: { generation: 3, kind: 'lan' },
+            targetAuthority: { generation: 4, kind: 'cloud' },
+          },
+        } : null,
+      });
+      expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
+      if (singleMember) {
+        const sourceBinding = await target.composition.authorityTransfer.bindLanToCloudSource({
+          cloudSession: {
+            projectId: PROJECT_ID,
+            serverUrl: cloudServerUrl,
+            supports: () => true,
+          } as unknown as CloudAuthorityConnection,
+          projectId: PROJECT_ID,
+        });
+        await sourceBinding.dispose();
+
+      }
+
     } finally {
       await Promise.all([
         manager.composition.feature.close(),
