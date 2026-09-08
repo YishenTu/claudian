@@ -20,29 +20,9 @@ export function buildTabRuntimeInputBindings(
   const { dom, state } = shell;
   const { plugin } = options;
 
-  let wasBangBashActive = ui.bangBashModeManager?.isActive() ?? false;
-  const syncBangBashSuppression = (): void => {
-    const isActive = ui.bangBashModeManager?.isActive() ?? false;
-    if (isActive === wasBangBashActive) return;
-    wasBangBashActive = isActive;
-
-    ui.composerDropdown.setEnabled(!isActive);
-  };
-
   const keydownHandler = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
-    if (ui.bangBashModeManager?.isActive()) {
-      ui.bangBashModeManager.handleKeydown(event);
-      syncBangBashSuppression();
-      return;
-    }
-
-    if (ui.bangBashModeManager?.handleTriggerKey(event)) {
-      syncBangBashSuppression();
-      return;
-    }
-
     if (ui.instructionModeManager.isActive()) {
       ui.instructionModeManager.handleKeydown(event);
       return;
@@ -79,16 +59,11 @@ export function buildTabRuntimeInputBindings(
   const inputHandler = () => {
     commitProvisionalTab(runtimeRef.requirePublished());
     ui.instructionModeManager.handleInputChange();
-    if (
-      !ui.bangBashModeManager?.isActive()
-      && !ui.instructionModeManager.isActive()
-    ) {
+    if (!ui.instructionModeManager.isActive()) {
       ui.composerDropdown.handleInputChange();
     } else {
       ui.composerDropdown.hide();
     }
-    ui.bangBashModeManager?.handleInputChange();
-    syncBangBashSuppression();
   };
   dom.inputEl.addEventListener('input', inputHandler);
   options.registerCleanup(

@@ -1,8 +1,6 @@
 import type { TFile } from 'obsidian';
 
 import type { AgentMentionProvider } from '@/core/providers/types';
-import { buildExternalContextDisplayEntries } from '@/utils/externalContext';
-import { externalContextScanner } from '@/utils/externalContextScanner';
 
 import { formatVaultFileMention } from '../mention/formatMention';
 import type { FolderMentionItem } from '../mention/types';
@@ -15,18 +13,13 @@ import type {
   ComposerTriggerMatch,
 } from './types';
 
-type MentionValue =
-  | { readonly kind: 'agent'; readonly agentId: string }
-  | { readonly kind: 'context-file'; readonly absolutePath: string }
-  | { readonly kind: 'vault-file'; readonly path: string };
+type MentionValue = { readonly kind: 'agent'; readonly agentId: string };
 
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
-  readonly getCachedVaultFolders: () => readonly Pick<FolderMentionItem, 'name' | 'path'>[];
-  readonly getExternalContexts: () => readonly string[];
+  readonly getCachedVaultFolders: () => readonly FolderMentionItem[];
   readonly normalizePathForVault: (path: string | undefined | null) => string | null;
   readonly onAgentMentionSelect?: (agentId: string) => void;
-  readonly onAttachFile: (path: string) => void;
 }
 
 export interface MentionSourceOptions {
@@ -72,29 +65,8 @@ export class MentionSource implements ComposerDropdownSource {
       return this.agentFolder().load(match.query.slice('agents/'.length), signal);
     }
 
-    const contextEntries = buildExternalContextDisplayEntries([
-      ...this.callbacks.getExternalContexts(),
-    ]);
-    const matchingContext = contextEntries
-      .filter(entry => query.startsWith(`${entry.displayNameLower}/`))
-      .sort((left, right) => right.displayNameLower.length - left.displayNameLower.length)[0];
-    if (matchingContext) {
-      return this.externalContextFolder(
-        matchingContext.displayName,
-        matchingContext.contextRoot,
-      ).load(match.query.slice(matchingContext.displayName.length + 1), signal);
-    }
-
     if (this.agentService?.searchAgents('').length && 'agents'.includes(query)) {
       items.push(this.agentFolder());
-    }
-
-    const seenContextNames = new Set<string>();
-    for (const entry of contextEntries) {
-      if (seenContextNames.has(entry.displayName)) continue;
-      if (!entry.displayNameLower.includes(query)) continue;
-      seenContextNames.add(entry.displayName);
-      items.push(this.externalContextFolder(entry.displayName, entry.contextRoot));
     }
 
     const extensionFolders = this.extensionFoldersLoader?.(signal);
@@ -125,18 +97,6 @@ export class MentionSource implements ComposerDropdownSource {
     };
   }
 
-  preScanExternalContexts(): void {
-    const paths = this.callbacks.getExternalContexts();
-    if (paths.length === 0) return;
-    window.setTimeout(() => {
-      try {
-        externalContextScanner.scanPaths([...paths]);
-      } catch {
-        // Best-effort warmup only.
-      }
-    }, 0);
-  }
-
   select(
     item: ComposerDropdownValueItem,
     _match: ComposerTriggerMatch,
@@ -145,12 +105,9 @@ export class MentionSource implements ComposerDropdownSource {
     return {
       kind: 'replace',
       text: item.replacement,
-      onApplied: () => {
-        if (!value) return;
-        if (value.kind === 'agent') this.callbacks.onAgentMentionSelect?.(value.agentId);
-        if (value.kind === 'context-file') this.callbacks.onAttachFile(value.absolutePath);
-        if (value.kind === 'vault-file') this.callbacks.onAttachFile(value.path);
-      },
+      onApplied: value?.kind === 'agent'
+        ? () => this.callbacks.onAgentMentionSelect?.(value.agentId)
+        : undefined,
     };
   }
 
@@ -233,42 +190,6 @@ export class MentionSource implements ComposerDropdownSource {
     });
   }
 
-  private externalContextFolder(
-    displayName: string,
-    contextRoot: string,
-  ): ComposerDropdownFolderItem {
-    return {
-      className: 'is-context-folder',
-      icon: 'folder',
-      id: `context:${contextRoot}`,
-      inputPrefix: `${displayName}/`,
-      kind: 'folder',
-      label: displayName,
-      load: query => externalContextScanner.scanPaths([contextRoot])
-        .filter(file => {
-          const normalized = file.relativePath.replace(/\\/g, '/');
-          return normalized.toLocaleLowerCase().includes(query.toLocaleLowerCase())
-            || file.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-        })
-        .sort((left, right) => {
-          const normalizedQuery = query.toLocaleLowerCase();
-          const leftStarts = left.name.toLocaleLowerCase().startsWith(normalizedQuery);
-          const rightStarts = right.name.toLocaleLowerCase().startsWith(normalizedQuery);
-          if (leftStarts !== rightStarts) return leftStarts ? -1 : 1;
-          return right.mtime - left.mtime;
-        })
-        .map(file => ({
-          className: 'is-context-file',
-          icon: 'folder-open',
-          id: `context-file:${file.path}`,
-          kind: 'value',
-          label: file.relativePath.replace(/\\/g, '/'),
-          replacement: `@${displayName}/${file.relativePath.replace(/\\/g, '/')} `,
-          value: { absolutePath: file.path, kind: 'context-file' } satisfies MentionValue,
-        })),
-    };
-  }
-
   private vaultItems(query: string): readonly ComposerDropdownValueItem[] {
     type Scored = {
       readonly item: ComposerDropdownValueItem;
@@ -334,7 +255,6 @@ export class MentionSource implements ComposerDropdownSource {
             kind: 'value',
             label: file.path,
             replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
-            value: { kind: 'vault-file', path: normalized } satisfies MentionValue,
           },
           mtime: file.stat.mtime,
           name: file.name,

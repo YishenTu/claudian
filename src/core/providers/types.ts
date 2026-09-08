@@ -338,9 +338,6 @@ export interface ProviderChatUIConfig {
   /** Optional hook when the toolbar changes a provider-owned mode selection. */
   applyModeSelection?(value: string, settings: unknown): void;
 
-  /** Whether the provider enables the shared bang-bash input mode. */
-  isBangBashEnabled?(settings: Record<string, unknown>): boolean;
-
   /** SVG icon for the provider (shown next to model names in selectors). */
   getProviderIcon?(): ProviderIconSvg | null;
 }
@@ -368,7 +365,6 @@ export interface ProviderCliResolver {
 export interface ProviderCommandLoaderContext {
   allowIsolatedMetadataCreation: boolean;
   conversation: Conversation | null;
-  externalContextPaths: string[];
   plugin: ProviderHost;
   readyCommandSnapshot?: readonly SlashCommand[];
   /** Cancels provider-owned discovery work when its consumer is invalidated. */
@@ -394,7 +390,6 @@ export type ProviderTabWarmupLifecycleState = 'provisional' | 'cold' | 'warm' | 
 export interface ProviderTabWarmupContext {
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
   conversation: Conversation | null;
-  externalContextPaths: string[];
   hasResumableNativeSeed: boolean;
   plugin: ProviderHost;
   tab: {

@@ -443,7 +443,6 @@ describe('ClaudeExecutionBackend', () => {
       ],
       context: {
         linkedContent: { path: 'note.md' },
-        externalContextPaths: ['/external'],
       },
       configuration: {
         systemInstructions: { kind: 'provider-default' },
@@ -456,7 +455,6 @@ describe('ClaudeExecutionBackend', () => {
     ]);
     expect(sdkMock.getLastOptions()).toEqual(expect.objectContaining({
       cwd: '/vault',
-      additionalDirectories: ['/external'],
       tools: ['Read', 'Grep'],
     }));
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();

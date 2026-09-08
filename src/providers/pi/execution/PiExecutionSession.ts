@@ -31,7 +31,6 @@ import type {
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
-  appendContextFiles,
   appendLinkedContent,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
@@ -1570,9 +1569,6 @@ function encodePrompt(
   }
   if (context?.canvasSelection) {
     text = appendCanvasContext(text, context.canvasSelection);
-  }
-  if (context?.externalContextPaths?.length) {
-    text = appendContextFiles(text, [...context.externalContextPaths]);
   }
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];

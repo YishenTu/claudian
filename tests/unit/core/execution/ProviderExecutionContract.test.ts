@@ -50,7 +50,6 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
         canvasPath: 'Boards/design.canvas',
         nodeIds: ['node-1'],
       },
-      externalContextPaths: ['/external/reference.md'],
     },
     conversationHistory: [],
     configuration: {
@@ -62,7 +61,6 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
       reasoning: 'high',
       permissionMode: 'normal',
       serviceTier: 'default',
-      externalWorkspaceRoots: ['/external'],
     },
     toolPolicy: { kind: 'read-only' },
     signal,

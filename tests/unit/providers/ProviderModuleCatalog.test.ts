@@ -40,7 +40,6 @@ describe('built-in ProviderModule catalog', () => {
     Object.assign(getProviderConfig(malformedSettings, 'claude'), {
       customModels: {},
       defaultModel: {},
-      enableBangBash: 1,
       enableChrome: 'true',
       lastModel: [],
       loadUserSettings: 'false',
@@ -89,7 +88,6 @@ describe('built-in ProviderModule catalog', () => {
     expect(getProviderConfig(normalizedSettings, 'claude')).toMatchObject({
       customModels: expect.any(String),
       defaultModel: expect.any(String),
-      enableBangBash: false,
       enableChrome: false,
       lastModel: expect.any(String),
       loadUserSettings: true,

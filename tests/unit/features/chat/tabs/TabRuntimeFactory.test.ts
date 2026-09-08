@@ -156,7 +156,6 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
   const settings: Record<string, unknown> = {
     model: 'claude-default',
     permissionMode: 'normal',
-    persistentExternalContextPaths: [],
   };
   let nextModelSelectionIntent = 0;
   return {
@@ -334,10 +333,8 @@ function installTransitionController(
     setWelcomeEl: (element) => { tab.dom.welcomeEl = element; },
     getMessagesEl: () => tab.dom.messagesEl,
     getInputEl: () => tab.dom.inputEl,
-    getFileContextManager: () => null,
     getLinkedContentController: () => tab.ui.linkedContentController,
     getImageContextManager: () => null,
-    getExternalContextSelector: () => null,
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
     getStatusPanel: () => null,
@@ -807,7 +804,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.modelSelector).not.toBeNull();
       expect(tab?.ui.modeSelector).not.toBeNull();
       expect(tab?.ui.thinkingBudgetSelector).not.toBeNull();
-      expect(tab?.ui.externalContextSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
       expect(tab?.ui.composerDropdown).not.toBeNull();

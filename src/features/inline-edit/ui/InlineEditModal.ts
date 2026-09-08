@@ -19,16 +19,12 @@ import {
 } from '../../../shared/composer-dropdown';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
-  createExternalContextLookupGetter,
   findBestMentionLookupMatch,
   isMentionStart,
   normalizeForPlatformLookup,
   normalizeMentionPath,
-  resolveExternalMentionAtIndex,
 } from '../../../utils/contextMentionResolver';
 import { type CursorContext, getEditorView } from '../../../utils/editor';
-import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
-import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
@@ -310,7 +306,6 @@ export class InlineEditModal {
     private view: MarkdownView,
     private editContext: InlineEditContext,
     private notePath: string,
-    private getExternalContexts: () => string[] = () => []
   ) {}
 
   async openAndWait(): Promise<{ decision: InlineEditDecision; editedText?: string }> {
@@ -358,7 +353,6 @@ export class InlineEditModal {
         editor,
         this.editContext,
         this.notePath,
-        this.getExternalContexts,
         resolve,
         providerContext,
       );
@@ -402,7 +396,6 @@ export class InlineEditSession {
     private editor: Editor,
     editContext: InlineEditContext,
     private notePath: string,
-    private getExternalContexts: () => string[],
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void,
     providerContext?: InlineEditProviderContext,
   ) {
@@ -564,8 +557,6 @@ export class InlineEditSession {
     });
     this.mentionSource = new MentionSource({
       // Inline Edit resolves @mentions at send time from input text.
-      onAttachFile: () => {},
-      getExternalContexts: this.getExternalContexts,
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
@@ -1015,26 +1006,11 @@ export class InlineEditSession {
     }
 
     const resolved = new Set<string>();
-    const externalEntries = buildExternalContextDisplayEntries(this.getExternalContexts())
-      .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
-    const getExternalLookup = createExternalContextLookupGetter(
-      contextRoot => externalContextScanner.scanPaths([contextRoot])
-    );
-
     for (let index = 0; index < message.length; index++) {
       if (!isMentionStart(message, index)) continue;
 
-      const externalMatch = resolveExternalMentionAtIndex(
-        message, index, externalEntries, getExternalLookup
-      );
-      if (externalMatch) {
-        resolved.add(externalMatch.resolvedPath);
-        index = externalMatch.endIndex - 1;
-        continue;
-      }
-
       const vaultMatch = findBestMentionLookupMatch(
-        message, index + 1, pathLookup, normalizeMentionPath, normalizeForPlatformLookup
+        message, index + 1, pathLookup
       );
       if (vaultMatch) {
         resolved.add(vaultMatch.resolvedPath);

@@ -179,9 +179,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     getInputContainerEl: () => createMockEl() as any,
     getWelcomeEl: () => null,
     getMessagesEl: () => createMockEl() as any,
-    getFileContextManager: () => ({
-      transformContextMentions: jest.fn((text: string) => text),
-    }) as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
@@ -189,7 +186,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       hasImages: jest.fn().mockReturnValue(false),
       setImages: jest.fn(),
     }) as any,
-    getExternalContextSelector: () => null,
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,
     getTitleGenerationService: () => null,
@@ -492,9 +488,6 @@ describe('InputController coordinator execution', () => {
       getSnapshot: () => ({ mode: 'locked', path: 'note.md' }),
     };
     const fixture = createFixture({
-      getFileContextManager: () => ({
-        transformContextMentions: (text: string) => `canonical:${text}`,
-      }),
       getLinkedContentController: () => linkedContentController,
     });
     const editorContext = {
@@ -543,7 +536,7 @@ describe('InputController coordinator execution', () => {
 
     const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
     expect(submission).toMatchObject({
-      canonicalText: 'canonical:B',
+      canonicalText: 'B',
       context: {
         browserSelection: browserContext,
         canvasSelection: canvasContext,
@@ -566,13 +559,6 @@ describe('InputController coordinator execution', () => {
       getSnapshot: () => ({ mode: 'locked', path: 'note.md' }),
     };
     const fixture = createFixture({
-      getExternalContextSelector: () => ({
-        addExternalContext: jest.fn(),
-        getExternalContexts: () => ['/external/project'],
-      }),
-      getFileContextManager: () => ({
-        transformContextMentions: (text: string) => text,
-      }),
       getLinkedContentController: () => linkedContentController,
     });
 
@@ -589,12 +575,10 @@ describe('InputController coordinator execution', () => {
     expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
       canonicalText: 'use context',
       configuration: expect.objectContaining({
-        externalWorkspaceRoots: ['/external/project'],
         model: 'claude-model',
       }),
       context: expect.objectContaining({
         linkedContent: { path: 'note.md' },
-        externalContextPaths: ['/external/project'],
       }),
     }));
   });
@@ -1832,14 +1816,14 @@ describe('InputController coordinator execution', () => {
     const fixture = createFixture({ onReviewableSettlement });
     fixture.state.queuedMessage = {
       canvasContext: null,
-      content: '/add-dir Projects',
+      content: '/resume',
       editorContext: null,
     };
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
     fixture.state.queuedMessage = null;
-    await fixture.controller.sendMessage({ content: '/add-dir Projects' });
+    await fixture.controller.sendMessage({ content: '/resume' });
 
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });

@@ -479,6 +479,7 @@ export class SessionStorage implements SessionMetadataReader {
       rawMetadata.createdAt,
     ) ?? 0;
     const {
+      externalContextPaths: _externalContextPaths,
       updatedAt: _updatedAt,
       lastResponseAt: _lastResponseAt,
       selectedModel: rawSelectedModel,
@@ -500,6 +501,7 @@ export class SessionStorage implements SessionMetadataReader {
       lastActivityAt,
     } as unknown as SessionMetadata;
     const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
+      || 'externalContextPaths' in rawMetadata
       || 'updatedAt' in rawMetadata
       || 'lastResponseAt' in rawMetadata
       || linkedContent.needsMigration

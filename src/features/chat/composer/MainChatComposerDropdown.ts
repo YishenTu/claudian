@@ -98,10 +98,6 @@ export class MainChatComposerDropdown {
     return this.controller.isVisible();
   }
 
-  setEnabled(enabled: boolean): void {
-    this.controller.setEnabled(enabled);
-  }
-
   setHiddenCommands(commands: ReadonlySet<string>): void {
     this.slashSource.setHiddenCommands(commands);
   }

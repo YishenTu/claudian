@@ -147,10 +147,6 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return CLAUDE_PERMISSION_MODE_TOGGLE;
   },
 
-  isBangBashEnabled(settings) {
-    return getClaudeProviderSettings(settings).enableBangBash;
-  },
-
   getProviderIcon() {
     return CLAUDE_PROVIDER_ICON;
   },

@@ -22,7 +22,6 @@ export interface ClaudeProviderSettings {
   cliPathsByHost: HostnameCliPaths;
   loadUserSettings: boolean;
   enableChrome: boolean;
-  enableBangBash: boolean;
   customModels: string;
   defaultModel: string;
   lastModel: string;
@@ -39,7 +38,6 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   cliPathsByHost: {},
   loadUserSettings: true,
   enableChrome: false,
-  enableBangBash: false,
   customModels: '',
   defaultModel: 'opus',
   lastModel: 'haiku',
@@ -108,10 +106,6 @@ export function getClaudeProviderSettings(
     enableChrome: readStoredBoolean(
       config.enableChrome,
       readStoredBoolean(settings.enableChrome, DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableChrome),
-    ),
-    enableBangBash: readStoredBoolean(
-      config.enableBangBash,
-      readStoredBoolean(settings.enableBangBash, DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableBangBash),
     ),
     customModels: readStoredString(
       config.customModels,

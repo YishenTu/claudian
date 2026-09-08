@@ -60,7 +60,6 @@ function createSession() {
     editor as any,
     { mode: 'selection', selectedText: 'hello' },
     'note.md',
-    () => [],
     resolve,
     { providerId: 'claude' },
   );

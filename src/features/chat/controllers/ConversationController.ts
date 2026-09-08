@@ -36,9 +36,7 @@ import {
 } from '../session-manager/SessionListOrganizer';
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention } from '../state/types';
-import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { ExternalContextSelector } from '../ui/InputToolbar';
 import type { StatusPanel } from '../ui/StatusPanel';
 
 function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
@@ -79,10 +77,8 @@ export interface ConversationControllerDeps {
   getMessagesEl: () => HTMLElement;
   getInputEl: () => ComposerInputElement;
   restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
-  getFileContextManager: () => FileContextManager | null;
   getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
-  getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
@@ -269,14 +265,9 @@ export class ConversationController {
 
       this.deps.getInputEl().value = '';
 
-      this.deps.getFileContextManager()?.clearAttachments();
       this.deps.getLinkedContentController().resetAutoDraft();
 
       this.deps.getImageContextManager()?.clearImages();
-      // Pass current settings to ensure we have the most up-to-date persistent paths
-      this.deps.getExternalContextSelector()?.clearExternalContexts(
-        plugin.settings.persistentExternalContextPaths || []
-      );
       this.deps.clearQueuedMessage();
 
       this.callbacks.onNewConversation?.();
@@ -308,13 +299,7 @@ export class ConversationController {
 
       await this.getExecutionCoordinator()?.bindConversation(null);
 
-      this.deps.getFileContextManager()?.clearAttachments();
       this.deps.getLinkedContentController().resetAutoDraft();
-
-      // Initialize external contexts with persistent paths from settings
-      this.deps.getExternalContextSelector()?.clearExternalContexts(
-        plugin.settings.persistentExternalContextPaths || []
-      );
 
       const welcomeEl = renderer.renderMessages(
         [],
@@ -620,11 +605,8 @@ export class ConversationController {
       throw new Error('Cannot save messages before the Conversation shell is created');
     }
 
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    const externalContextPaths = externalContextSelector?.getExternalContexts() ?? [];
     const updates: ConversationMutablePatch = {
       messages: state.messages,
-      externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
     };
 
@@ -660,46 +642,13 @@ export class ConversationController {
     // Clear status panels (auto-hide: panels reappear when agent creates new todos)
     state.currentTodos = null;
 
-    const hasMessages = state.messages.length > 0;
-
-    // Determine external context paths for this session
-    // Empty session: use persistent paths; session with messages: use saved paths
-    this.deps.getFileContextManager()?.clearAttachments();
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
-
-    this.restoreExternalContextPaths(conversation.externalContextPaths, !hasMessages);
 
     const welcomeEl = renderer.renderMessages(
       state.messages,
       () => this.getGreeting()
     );
     this.deps.setWelcomeEl(welcomeEl);
-  }
-
-  /**
-   * Restores external context paths based on session state.
-   * New or empty sessions get current persistent paths from settings.
-   * Sessions with messages restore exactly what was saved.
-   */
-  private restoreExternalContextPaths(
-    savedPaths: string[] | undefined,
-    isEmptySession: boolean
-  ): void {
-    const { plugin } = this.deps;
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    if (!externalContextSelector) {
-      return;
-    }
-
-    if (isEmptySession) {
-      // Empty session: use current persistent paths from settings
-      externalContextSelector.clearExternalContexts(
-        plugin.settings.persistentExternalContextPaths || []
-      );
-    } else {
-      // Session with messages: restore exactly what was saved
-      externalContextSelector.setExternalContexts(savedPaths || []);
-    }
   }
 
   // ============================================

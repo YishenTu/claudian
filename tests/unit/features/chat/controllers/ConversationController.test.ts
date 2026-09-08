@@ -30,9 +30,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
 
-  const fileContextManager = {
-    clearAttachments: jest.fn(),
-  };
   const linkedContentController = {
     resetAutoDraft: jest.fn(),
     lock: jest.fn(),
@@ -86,15 +83,9 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     setWelcomeEl: (el: any) => { welcomeEl = el; },
     getMessagesEl: () => messagesEl as any,
     getInputEl: () => inputEl,
-    getFileContextManager: () => fileContextManager as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
-    }) as any,
-    getExternalContextSelector: () => ({
-      getExternalContexts: jest.fn().mockReturnValue([]),
-      setExternalContexts: jest.fn(),
-      clearExternalContexts: jest.fn(),
     }) as any,
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
@@ -161,13 +152,11 @@ describe('ConversationController', () => {
           .toBeLessThan((deps.plugin.updateConversation as jest.Mock).mock.invocationCallOrder[0]);
       });
 
-      it('clears attachments and resets the Linked content draft', async () => {
-        const fileContextManager = deps.getFileContextManager()!;
+      it('resets the Linked content draft', async () => {
         const linkedContentController = deps.getLinkedContentController();
 
         await controller.createNew();
 
-        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
         expect(linkedContentController.resetAutoDraft).toHaveBeenCalled();
       });
 
@@ -258,14 +247,12 @@ describe('ConversationController', () => {
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
       });
 
-      it('clears attachments and locks the switched Conversation target', async () => {
+      it('locks the switched Conversation target', async () => {
         deps.state.currentConversationId = 'old-conv';
-        const fileContextManager = deps.getFileContextManager()!;
         const linkedContentController = deps.getLinkedContentController();
 
         await controller.switchTo('new-conv');
 
-        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
         expect(linkedContentController.lock).toHaveBeenCalled();
       });
 
@@ -3717,216 +3704,6 @@ describe('ConversationController - Race Condition Guards', () => {
 
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
     });
-  });
-});
-
-describe('ConversationController - Persistent External Context Paths', () => {
-  let controller: ConversationController;
-  let deps: ConversationControllerDeps;
-  let mockExternalContextSelector: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockExternalContextSelector = {
-      getExternalContexts: jest.fn().mockReturnValue([]),
-      setExternalContexts: jest.fn(),
-      clearExternalContexts: jest.fn(),
-    };
-    deps = createMockDeps({
-      getExternalContextSelector: () => mockExternalContextSelector,
-    });
-    (deps.plugin.settings as any).persistentExternalContextPaths = ['/persistent/path/a', '/persistent/path/b'];
-    controller = new ConversationController(deps);
-  });
-
-  describe('createNew', () => {
-    it('should call clearExternalContexts with persistent paths from settings', async () => {
-      await controller.createNew();
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(
-        ['/persistent/path/a', '/persistent/path/b']
-      );
-    });
-
-    it('should call clearExternalContexts with empty array if no persistent paths', async () => {
-      (deps.plugin.settings as any).persistentExternalContextPaths = undefined;
-
-      await controller.createNew();
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith([]);
-    });
-  });
-
-  describe('loadActive', () => {
-    it('should use persistent paths for new conversation (no existing conversation)', async () => {
-      deps.state.currentConversationId = null;
-
-      await controller.loadActive();
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(
-        ['/persistent/path/a', '/persistent/path/b']
-      );
-    });
-
-    it('should use persistent paths for empty conversation (msg=0)', async () => {
-      deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
-        id: 'existing-conv',
-        messages: [],
-        sessionId: null,
-      });
-
-      await controller.loadActive();
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(
-        ['/persistent/path/a', '/persistent/path/b']
-      );
-    });
-
-    it('should restore saved paths for conversation with messages (msg>0)', async () => {
-      deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
-        id: 'existing-conv',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        externalContextPaths: ['/saved/path'],
-      });
-
-      await controller.loadActive();
-
-      expect(mockExternalContextSelector.setExternalContexts).toHaveBeenCalledWith(['/saved/path']);
-      expect(mockExternalContextSelector.clearExternalContexts).not.toHaveBeenCalled();
-    });
-
-    it('should restore empty paths for conversation with messages but no saved paths', async () => {
-      deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
-        id: 'existing-conv',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        externalContextPaths: undefined,
-      });
-
-      await controller.loadActive();
-
-      expect(mockExternalContextSelector.setExternalContexts).toHaveBeenCalledWith([]);
-    });
-  });
-
-  describe('switchTo', () => {
-    beforeEach(() => {
-      deps.state.currentConversationId = 'old-conv';
-    });
-
-    it('should use persistent paths when switching to empty conversation (msg=0)', async () => {
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'empty-conv',
-        messages: [],
-        sessionId: null,
-        externalContextPaths: ['/old/saved/path'],
-      });
-
-      await controller.switchTo('empty-conv');
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(
-        ['/persistent/path/a', '/persistent/path/b']
-      );
-      expect(mockExternalContextSelector.setExternalContexts).not.toHaveBeenCalled();
-    });
-
-    it('should restore saved paths when switching to conversation with messages', async () => {
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'conv-with-messages',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        externalContextPaths: ['/saved/path/from/session'],
-      });
-
-      await controller.switchTo('conv-with-messages');
-
-      expect(mockExternalContextSelector.setExternalContexts).toHaveBeenCalledWith(
-        ['/saved/path/from/session']
-      );
-      expect(mockExternalContextSelector.clearExternalContexts).not.toHaveBeenCalled();
-    });
-
-    it('should restore empty array for conversation with messages but no saved paths', async () => {
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'conv-with-messages',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        externalContextPaths: undefined,
-      });
-
-      await controller.switchTo('conv-with-messages');
-
-      expect(mockExternalContextSelector.setExternalContexts).toHaveBeenCalledWith([]);
-    });
-  });
-
-  describe('Scenario: Adding persistent paths across sessions', () => {
-    it('should show all persistent paths when returning to empty session', async () => {
-      // Scenario:
-      // 1. User is in session 0 (empty), adds path A as persistent
-      // 2. User switches to session 1 (with messages), adds path B as persistent
-      // 3. User returns to session 0 (empty) - should see both A and B
-
-      // Step 1: Session 0 is empty, persistent paths = [A]
-      (deps.plugin.settings as any).persistentExternalContextPaths = ['/path/a'];
-      deps.state.currentConversationId = null;
-      await controller.loadActive();
-
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(['/path/a']);
-
-      // Step 2: User switches to session 1 and adds path B, settings now have [A, B]
-      deps.state.currentConversationId = 'session-0'; // Currently in session 0
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'session-1',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        externalContextPaths: [],
-      });
-      await controller.switchTo('session-1');
-
-      // User adds path B in session 1, settings now have [A, B]
-      (deps.plugin.settings as any).persistentExternalContextPaths = ['/path/a', '/path/b'];
-
-      // Step 3: User returns to session 0 (empty)
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'session-0',
-        messages: [], // Empty session
-        sessionId: null,
-        externalContextPaths: ['/path/a'], // Only had A when originally created
-      });
-
-      jest.clearAllMocks();
-      await controller.switchTo('session-0');
-
-      // Should get BOTH paths because session is empty (msg=0)
-      expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(
-        ['/path/a', '/path/b']
-      );
-    });
-  });
-});
-
-describe('ConversationController - restoreExternalContextPaths null selector', () => {
-  it('should return early when external context selector is null', async () => {
-    const deps = createMockDeps({
-      getExternalContextSelector: () => null,
-    });
-    const controller = new ConversationController(deps);
-
-    deps.state.currentConversationId = 'old-conv';
-    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-      id: 'new-conv',
-      messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-      sessionId: null,
-      externalContextPaths: ['/some/path'],
-    });
-
-    // Should not throw even though selector is null
-    await expect(controller.switchTo('new-conv')).resolves.not.toThrow();
   });
 });
 

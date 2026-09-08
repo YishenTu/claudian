@@ -95,9 +95,6 @@ function createMockTab(options: Record<string, any>): any {
       messagesEl: createMockEl(),
     },
     ui: {
-      externalContextSelector: {
-        getExternalContexts: jest.fn().mockReturnValue([]),
-      },
     },
   };
   mockTabs.push(tab);
@@ -180,7 +177,6 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     },
     settings: {
       maxWarmAgentProcesses: 5,
-      persistentExternalContextPaths: [],
     },
     providerHost: {
       executionLifecycleRegistry: {
@@ -504,7 +500,6 @@ describe('TabManager provider execution orchestration', () => {
     const { manager } = createManager(createPlugin({
       settings: {
         maxWarmAgentProcesses: 1,
-        persistentExternalContextPaths: [],
       },
     }));
 
@@ -1747,7 +1742,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
       allowIsolatedMetadataCreation: false,
       conversation: null,
-      externalContextPaths: [],
     }));
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
   });

@@ -25,7 +25,7 @@
 | `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
 | `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
 | `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
-| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/external/Agent mentions, and optional Collab Member Changes/Ticket references |
+| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/Agent mentions, and optional Collab Member Changes/Ticket references |
 | `LinkedContentController` | One tab's Linked content selection, greeting selector, context-tray projection, first-create submission freeze, immutable lock, and Vault path-event reconciliation |
 | `TabSessionEvents` | Provider-session event routing, background-work sequencing, and automatic-turn rendering |
 | `TabForking` | Fork-source resolution and immutable fork-context preparation |
@@ -126,5 +126,4 @@ Tab activation and conversation hydration do not themselves authorize creation o
 ## Gotchas
 
 - `ClaudianView.onClose()` must abort active tabs and dispose execution coordinators.
-- Bang-bash mode bypasses provider execution and runs a local shell command directly. It is available only when the enabled provider exposes it in `ProviderChatUIConfig`.
 - Forking is provider-owned under the hood. Use execution and provider history contracts instead of reconstructing provider session IDs in feature code.

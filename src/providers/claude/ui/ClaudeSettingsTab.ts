@@ -342,32 +342,5 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           })
       );
 
-    new Setting(container)
-      .setName(t('settings.enableBangBash.name'))
-      .setDesc(t('settings.enableBangBash.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(claudeSettings.enableBangBash)
-          .onChange(async (value) => {
-            bangBashValidationEl.toggleClass('claudian-hidden', true);
-            if (value) {
-              const { findNodeExecutable, getEnhancedPath } = await import('../../../utils/env');
-              const nodePath = findNodeExecutable(getEnhancedPath());
-              if (!nodePath) {
-                bangBashValidationEl.setText(t('settings.enableBangBash.validation.noNode'));
-                bangBashValidationEl.toggleClass('claudian-hidden', false);
-                toggle.setValue(false);
-                return;
-              }
-            }
-            await context.plugin.mutateSettings((settings) => {
-              updateClaudeProviderSettings(settings, { enableBangBash: value });
-            });
-          })
-      );
-
-    const bangBashValidationEl = container.createDiv({
-      cls: 'claudian-bang-bash-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-    });
   },
 };

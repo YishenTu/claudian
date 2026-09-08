@@ -56,6 +56,25 @@ describe('ClaudianSettingsStorage', () => {
   });
 
   describe('load', () => {
+    it('retires saved directory selections while preserving current settings and provider configuration', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        ...DEFAULT_SETTINGS,
+        persistentExternalContextPaths: ['/old/project'],
+        userName: 'Ada',
+        providerConfigs: { claude: { loadUserSettings: true } },
+      }));
+
+      const loaded = await storage.load();
+      const written = JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]);
+
+      expect(loaded.userName).toBe('Ada');
+      expect(written.userName).toBe('Ada');
+      expect(written.providerConfigs.claude.loadUserSettings).toBe(true);
+      expect(loaded).not.toHaveProperty('persistentExternalContextPaths');
+      expect(written).not.toHaveProperty('persistentExternalContextPaths');
+    });
+
     it('should return defaults when file does not exist', async () => {
       mockAdapter.exists.mockResolvedValue(false);
 

@@ -155,8 +155,6 @@ export interface Conversation {
   isPinned?: boolean;
   /** Whether the session is archived and hidden from active session lists. */
   isArchived?: boolean;
-  /** Session-specific external context paths (directories with full access). Resets on new session. */
-  externalContextPaths?: string[];
   /** Context window usage information. */
   usage?: UsageInfo;
   /** Status of AI title generation. */
@@ -223,7 +221,6 @@ export interface SessionMetadata {
   linkedContentPath?: string;
   isPinned?: boolean;
   isArchived?: boolean;
-  externalContextPaths?: string[];
   usage?: UsageInfo;
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;

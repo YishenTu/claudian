@@ -47,9 +47,7 @@ import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
-import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { AddExternalContextResult } from '../ui/InputToolbar';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { StatusPanel } from '../ui/StatusPanel';
 import type { BrowserSelectionController } from './BrowserSelectionController';
@@ -107,13 +105,8 @@ export interface InputControllerDeps {
   getInputEl: () => ComposerInputElement;
   getWelcomeEl: () => HTMLElement | null;
   getMessagesEl: () => HTMLElement;
-  getFileContextManager: () => FileContextManager | null;
   getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
-  getExternalContextSelector: () => {
-    getExternalContexts: () => string[];
-    addExternalContext: (path: string) => AddExternalContextResult;
-  } | null;
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
@@ -321,7 +314,7 @@ export class InputController {
       return;
     }
 
-    // Check for built-in commands first (e.g., /clear, /new, /add-dir)
+    // Check for built-in commands first (e.g., /clear, /new)
     const builtInCmd = detectBuiltInCommand(content, this.getActiveProviderId());
     if (builtInCmd) {
       if (builtInCmd.command.action === 'clear') {
@@ -920,9 +913,6 @@ export class InputController {
       canvasSelectionController,
     } = this.deps;
 
-    const fileContextManager = this.deps.getFileContextManager();
-    const externalContextSelector = this.deps.getExternalContextSelector();
-
     const editorContext = options.editorContextOverride !== undefined
       ? options.editorContextOverride
       : selectionController.getContext();
@@ -933,28 +923,21 @@ export class InputController {
       ? options.canvasContextOverride
       : canvasSelectionController.getContext();
 
-    const externalContextPaths = externalContextSelector?.getExternalContexts();
     const isCompact = /^\/compact(\s|$)/i.test(options.content);
     const candidateUserTurnOrdinal = this.deps.state.messages
       .filter(isCanonicalUserMessage).length + 1;
     const linkedContentPath = !isCompact && candidateUserTurnOrdinal === 1
       ? this.deps.getLinkedContentController().getSnapshot().path ?? undefined
       : undefined;
-    const transformedText = !isCompact && fileContextManager
-      ? fileContextManager.transformContextMentions(options.content)
-      : options.content;
     return {
       displayContent: options.content,
       turnRequest: {
-        text: transformedText,
+        text: options.content,
         images: options.images,
         linkedContentPath,
         editorSelection: editorContext,
         browserSelection: browserContext,
         canvasSelection: canvasContext,
-        externalContextPaths: externalContextPaths && externalContextPaths.length > 0
-          ? externalContextPaths
-          : undefined,
       },
     };
   }
@@ -1010,9 +993,6 @@ export class InputController {
     return {
       canonicalText: request.text,
       configuration: {
-        ...(request.externalContextPaths
-          ? { externalWorkspaceRoots: [...request.externalContextPaths] }
-          : {}),
         ...(this.getAuxiliaryModel()
           ? { model: this.getAuxiliaryModel() ?? undefined }
           : {}),
@@ -1038,9 +1018,6 @@ export class InputController {
           : {}),
         ...(request.editorSelection
           ? { editorSelection: request.editorSelection }
-          : {}),
-        ...(request.externalContextPaths
-          ? { externalContextPaths: [...request.externalContextPaths] }
           : {}),
       },
       conversationHistory: user && assistant
@@ -2026,20 +2003,6 @@ export class InputController {
         }
         break;
       }
-      case 'add-dir': {
-        const externalContextSelector = this.deps.getExternalContextSelector();
-        if (!externalContextSelector) {
-          new Notice('External context selector not available.');
-          return;
-        }
-        const result = externalContextSelector.addExternalContext(args);
-        if (result.success) {
-          new Notice(`Added external context: ${result.normalizedPath}`);
-        } else {
-          new Notice(result.error);
-        }
-        break;
-      }
       case 'resume':
         this.showResumeDropdown();
         break;
@@ -2143,9 +2106,6 @@ export class InputController {
 function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
   return {
     ...request,
-    externalContextPaths: request.externalContextPaths
-      ? [...request.externalContextPaths]
-      : undefined,
     images: request.images ? [...request.images] : undefined,
   };
 }
@@ -2157,10 +2117,6 @@ function mergeQueuedChatTurns(
   const mergeText = (first: string, second: string) => (
     [first, second].map(value => value.trim()).filter(Boolean).join('\n\n')
   );
-  const externalContextPaths = Array.from(new Set([
-    ...(existing.request.externalContextPaths ?? []),
-    ...(incoming.request.externalContextPaths ?? []),
-  ]));
   const images = [
     ...(existing.request.images ?? []),
     ...(incoming.request.images ?? []),
@@ -2171,8 +2127,6 @@ function mergeQueuedChatTurns(
       ...cloneChatTurnRequest(incoming.request),
       linkedContentPath:
         incoming.request.linkedContentPath ?? existing.request.linkedContentPath,
-      externalContextPaths:
-        externalContextPaths.length > 0 ? externalContextPaths : undefined,
       images: images.length > 0 ? images : undefined,
       text: mergeText(existing.request.text, incoming.request.text),
     },

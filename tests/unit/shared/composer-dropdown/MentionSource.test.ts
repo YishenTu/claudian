@@ -14,18 +14,15 @@ function file(path: string, mtime = 1): TFile {
 }
 
 function source(overrides: Record<string, unknown> = {}) {
-  const onAttachFile = jest.fn();
   const onAgentMentionSelect = jest.fn();
   const value = new MentionSource({
     getCachedVaultFiles: () => [file('notes/Alpha.md', 5)],
     getCachedVaultFolders: () => [{ name: 'notes', path: 'notes' }],
-    getExternalContexts: () => [],
     normalizePathForVault: path => path ?? null,
     onAgentMentionSelect,
-    onAttachFile,
     ...overrides,
   });
-  return { onAgentMentionSelect, onAttachFile, source: value };
+  return { onAgentMentionSelect, source: value };
 }
 
 describe('MentionSource', () => {
@@ -47,15 +44,14 @@ describe('MentionSource', () => {
     value.destroy();
   });
 
-  it('lists Vault files and folders and preserves attachment side effects', async () => {
-    const { onAttachFile, source: value } = source();
+  it('lists and selects Vault files and folders', async () => {
+    const { source: value } = source();
     const match = value.match('@alp', 4)!;
     const items = await value.load(match, new AbortController().signal);
     const fileItem = items.find(item => item.kind === 'value' && item.label === 'notes/Alpha.md');
     expect(fileItem).toEqual(expect.objectContaining({ replacement: '@notes/Alpha.md ' }));
     const action = value.select(fileItem as Extract<typeof fileItem, { kind: 'value' }>, match);
-    if (action.kind === 'replace') action.onApplied?.();
-    expect(onAttachFile).toHaveBeenCalledWith('notes/Alpha.md');
+    expect(action).toEqual(expect.objectContaining({ kind: 'replace', text: '@notes/Alpha.md ' }));
 
     const rootItems = await value.load(value.match('@notes', 6)!, new AbortController().signal);
     expect(rootItems).toEqual(expect.arrayContaining([

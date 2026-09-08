@@ -1,4 +1,3 @@
-
 import { Notice, TFile, TFolder } from 'obsidian';
 
 import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
@@ -3000,7 +2999,6 @@ describe('ClaudianPlugin', () => {
         sessionId: 'session-123',
       });
       await plugin.updateConversation(conversation.id, {
-        externalContextPaths: ['/saved/context'],
         messages: [{
           content: 'hi',
           id: 'msg-1',

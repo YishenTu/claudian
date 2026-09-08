@@ -29,7 +29,6 @@
 @import "./toolbar/thinking-selector.css";
 @import "./toolbar/permission-toggle.css";
 @import "./toolbar/service-tier-toggle.css";
-@import "./toolbar/external-context.css";
 
 /* Features */
 @import "./features/file-link.css";
