@@ -53,6 +53,7 @@ const LEGACY_STRIPPED_SHARED_SETTING_FIELDS = [
   'openInMainTab',
   'pinnedLinkedNotePaths',
   'enableFilePane',
+  'persistentExternalContextPaths',
 ] as const;
 
 function getProviderSettingsAdapters() {
@@ -557,6 +558,7 @@ export class ClaudianSettingsStorage {
       || 'activeConversationId' in stored
       || 'allowExternalAccess' in stored
       || 'allowedExportPaths' in stored
+      || 'persistentExternalContextPaths' in stored
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
       || shouldPersistChatViewPlacementMigration(stored, chatViewPlacement)

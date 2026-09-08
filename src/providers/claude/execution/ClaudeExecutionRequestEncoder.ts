@@ -146,10 +146,6 @@ export class ClaudeExecutionRequestEncoder {
           ? [...request.configuration.systemInstructions.dynamicSections]
           : undefined,
       });
-    const externalPaths = uniqueStrings([
-      ...(request.context?.externalContextPaths ?? []),
-      ...(request.configuration.externalWorkspaceRoots ?? []),
-    ]);
     const options: Options = {
       cwd: sessionConfig.vaultWorkingDirectory,
       systemPrompt,
@@ -176,9 +172,6 @@ export class ClaudeExecutionRequestEncoder {
         ...UNSUPPORTED_SDK_TOOLS,
         ...DISABLED_BUILTIN_SUBAGENTS,
       ],
-      ...(externalPaths.length > 0
-        ? { additionalDirectories: externalPaths }
-        : {}),
       ...(policy.tools !== undefined ? { tools: policy.tools } : {}),
       ...(policy.hooks ? { hooks: policy.hooks } : {}),
       ...(resume.sessionId ? { resume: resume.sessionId } : {}),
@@ -222,7 +215,6 @@ export class ClaudeExecutionRequestEncoder {
         tools: policy.tools,
         disallowedTools: options.disallowedTools,
         hooks: Boolean(policy.hooks),
-        additionalDirectories: externalPaths,
         cliPath,
         settingSources: options.settingSources,
         enableChrome: claudeSettings.enableChrome,

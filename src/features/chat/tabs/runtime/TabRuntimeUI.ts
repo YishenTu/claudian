@@ -58,7 +58,6 @@ import type {
 } from './TabRuntimeConstruction';
 
 function buildContextManagers(
-  externalContextSelector: TabUIComponents['externalContextSelector'],
   options: TabRuntimeConstructionContext,
   shell: TabRuntimeShellBundle,
   contextTray: ComposerContextTray,
@@ -72,7 +71,6 @@ function buildContextManagers(
   const fileContextManager = new FileContextManager(
     plugin.app,
     {
-      getExternalContexts: () => externalContextSelector.getExternalContexts(),
       onAgentMentionSelect: () => onUserModified(),
     },
   );
@@ -476,7 +474,6 @@ export function buildTabRuntimeUI(
 
   const toolbar = buildInputToolbar(shell, services, options, runtimeRef, onUserModified);
   const contextManagers = buildContextManagers(
-    toolbar.externalContextSelector,
     options,
     shell,
     contextTray,
@@ -510,7 +507,6 @@ export function buildTabRuntimeUI(
     modelSelector: toolbar.modelSelector,
     modeSelector: toolbar.modeSelector,
     thinkingBudgetSelector: toolbar.thinkingBudgetSelector,
-    externalContextSelector: toolbar.externalContextSelector,
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
     composerDropdown,
@@ -518,20 +514,6 @@ export function buildTabRuntimeUI(
     contextUsageMeter: toolbar.contextUsageMeter,
     navigationSidebar,
   };
-
-  ui.externalContextSelector.setOnChange(() => {
-    ui.fileContextManager.preScanExternalContexts();
-    options.onCommandContextChanged?.(runtimeRef.requirePublished());
-    onUserModified();
-  });
-  ui.externalContextSelector.setPersistentPaths(
-    plugin.settings.persistentExternalContextPaths || [],
-  );
-  ui.externalContextSelector.setOnPersistenceChange((paths) => {
-    void plugin.mutateSettings((settings) => {
-      settings.persistentExternalContextPaths = paths;
-    });
-  });
 
   const resizeObserver = new ResizeObserver(() => {
     navigationSidebar.updateVisibility();

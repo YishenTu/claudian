@@ -596,7 +596,7 @@ export class CodexExecutionSession
         serviceTier,
         effort,
         summary: getEffectiveCodexReasoningSummary(settings, model),
-        sandboxPolicy: this.buildTurnSandboxPolicy(request, policy),
+        sandboxPolicy: policy.sandboxPolicy,
         collaborationMode,
       });
       this.markNativeConversationContextEstablished(run);
@@ -1854,32 +1854,17 @@ export class CodexExecutionSession
         ? { type: 'dangerFullAccess' }
         : sandboxConfig.sandbox === 'read-only'
           ? strictReadOnlySandbox()
-          : this.buildWorkspaceWriteSandboxPolicy([]),
+          : this.buildWorkspaceWriteSandboxPolicy(),
     };
   }
 
-  private buildTurnSandboxPolicy(
-    request: ProviderExecutionRequest,
-    policy: CodexPolicy,
-  ): SandboxPolicy {
-    if (policy.sandbox !== 'workspace-write') return policy.sandboxPolicy;
-    const externalPaths = [
-      ...(request.context?.externalContextPaths ?? []),
-      ...(request.configuration.externalWorkspaceRoots ?? []),
-    ];
-    return this.buildWorkspaceWriteSandboxPolicy(externalPaths);
-  }
-
-  private buildWorkspaceWriteSandboxPolicy(
-    externalPaths: readonly string[],
-  ): SandboxPolicy {
+  private buildWorkspaceWriteSandboxPolicy(): SandboxPolicy {
     const transcriptRoot = this.resolveTranscriptRootTarget();
     const memoriesDir = deriveCodexMemoriesDirFromSessionsRoot(transcriptRoot)
       ?? this.runtimeContext?.memoriesDirTarget
       ?? null;
     const roots = [
       this.resolveTargetWorkingDirectory(),
-      ...externalPaths.map(hostPath => this.mapRequiredHostPath(hostPath)),
       memoriesDir,
       this.mapHostPathToTarget(os.tmpdir()),
       this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,

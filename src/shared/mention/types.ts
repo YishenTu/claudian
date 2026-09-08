@@ -18,21 +18,6 @@ export interface FolderMentionItem {
   path: string;
 }
 
-export interface ContextFileMentionItem {
-  type: 'context-file';
-  name: string;
-  absolutePath: string;
-  contextRoot: string;
-  folderName: string;
-}
-
-export interface ContextFolderMentionItem {
-  type: 'context-folder';
-  name: string;
-  contextRoot: string;
-  folderName: string;
-}
-
 export interface AgentMentionItem {
   type: 'agent';
   /** Display name */
@@ -55,7 +40,5 @@ export type { AgentMentionProvider };
 export type MentionItem =
   | FileMentionItem
   | FolderMentionItem
-  | ContextFileMentionItem
-  | ContextFolderMentionItem
   | AgentMentionItem
   | AgentFolderMentionItem;

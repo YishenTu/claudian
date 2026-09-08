@@ -10,7 +10,6 @@ import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
 export type BuiltInCommandAction =
   | 'clear'
-  | 'add-dir'
   | 'resume'
   | 'fork'
   | 'fast'
@@ -53,13 +52,6 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     aliases: ['new'],
     description: 'Start a new conversation',
     action: 'clear',
-  },
-  {
-    name: 'add-dir',
-    description: 'Add external context directory',
-    action: 'add-dir',
-    hasArgs: true,
-    argumentHint: '[path/to/directory]',
   },
   {
     name: 'resume',

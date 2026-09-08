@@ -84,7 +84,7 @@ describe('transformSDKMessage', () => {
         session_id: 'test-session-456',
         agents: ['Explore', 'Plan', 'custom-agent'],
         skills: ['commit', 'review-pr'],
-        slash_commands: ['clear', 'add-dir'],
+        slash_commands: ['clear', 'compact'],
       });
 
       const results = [...transformSDKMessage(message)];

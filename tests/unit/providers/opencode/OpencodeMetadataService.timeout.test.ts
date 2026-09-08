@@ -64,7 +64,6 @@ function createContext(plugin: any): ProviderCommandLoaderContext {
   return {
     allowIsolatedMetadataCreation: true,
     conversation: null,
-    externalContextPaths: [],
     plugin,
   };
 }

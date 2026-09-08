@@ -25,7 +25,7 @@
 | `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
 | `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
 | `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
-| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/external/Agent mentions, and optional Collab Member Changes/Ticket references |
+| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/Agent mentions, and optional Collab Member Changes/Ticket references |
 | `LinkedContentController` | One tab's Linked content selection, greeting selector, context-tray projection, first-create submission freeze, immutable lock, and Vault path-event reconciliation |
 | `TabSessionEvents` | Provider-session event routing, background-work sequencing, and automatic-turn rendering |
 | `TabForking` | Fork-source resolution and immutable fork-context preparation |

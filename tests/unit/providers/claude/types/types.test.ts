@@ -111,8 +111,6 @@ describe('types.ts', () => {
         customContextLimits: {},
         customModelAliases: {},
         systemPrompt: '',
-
-        persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         requireCommandOrControlEnterToSend: false,
         locale: 'en',
@@ -172,8 +170,6 @@ describe('types.ts', () => {
         customContextLimits: {},
         customModelAliases: {},
         systemPrompt: '',
-
-        persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         requireCommandOrControlEnterToSend: false,
         locale: 'zh-CN',
@@ -234,8 +230,6 @@ describe('types.ts', () => {
         customContextLimits: {},
         customModelAliases: {},
         systemPrompt: '',
-
-        persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         requireCommandOrControlEnterToSend: true,
         locale: 'en',

@@ -83,7 +83,6 @@ describe('systemPrompt', () => {
       );
       expect(prompt).not.toContain('You always use relative paths.');
       expect(prompt).not.toContain('A leading slash or absolute path will FAIL');
-      expect(prompt).not.toContain('External context paths');
     });
 
     it('should document only current live context shapes', () => {

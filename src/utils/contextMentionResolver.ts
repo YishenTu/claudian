@@ -1,6 +1,3 @@
-import type { ExternalContextDisplayEntry } from './externalContext';
-import type { ExternalContextFile } from './externalContextScanner';
-
 export interface MentionLookupMatch {
   resolvedPath: string;
   endIndex: number;
@@ -51,58 +48,6 @@ export function normalizeForPlatformLookup(value: string): string {
   return process.platform === 'win32' ? value.toLowerCase() : value;
 }
 
-export function buildExternalContextLookup(
-  files: ExternalContextFile[]
-): Map<string, string> {
-  const lookup = new Map<string, string>();
-  for (const file of files) {
-    const normalized = normalizeMentionPath(file.relativePath);
-    if (!normalized) continue;
-    const key = normalizeForPlatformLookup(normalized);
-    if (!lookup.has(key)) {
-      lookup.set(key, file.path);
-    }
-  }
-  return lookup;
-}
-
-export function resolveExternalMentionAtIndex(
-  text: string,
-  mentionStart: number,
-  contextEntries: ExternalContextDisplayEntry[],
-  getContextLookup: (contextRoot: string) => Map<string, string>
-): MentionLookupMatch | null {
-  const mentionBodyStart = mentionStart + 1;
-  let bestMatch: MentionLookupMatch | null = null;
-
-  for (const entry of contextEntries) {
-    const displayNameEnd = mentionBodyStart + entry.displayName.length;
-    if (displayNameEnd >= text.length) continue;
-
-    const mentionDisplayName = text.slice(mentionBodyStart, displayNameEnd).toLowerCase();
-    if (mentionDisplayName !== entry.displayNameLower) continue;
-
-    const separator = text[displayNameEnd];
-    if (separator !== '/' && separator !== '\\') continue;
-
-    const lookup = getContextLookup(entry.contextRoot);
-    const match = findBestMentionLookupMatch(
-      text,
-      displayNameEnd + 1,
-      lookup,
-      normalizeMentionPath,
-      normalizeForPlatformLookup
-    );
-    if (!match) continue;
-
-    if (!bestMatch || match.endIndex > bestMatch.endIndex) {
-      bestMatch = match;
-    }
-  }
-
-  return bestMatch;
-}
-
 export function findBestMentionLookupMatch(
   text: string,
   pathStart: number,
@@ -136,19 +81,4 @@ export function findBestMentionLookupMatch(
   }
 
   return null;
-}
-
-export function createExternalContextLookupGetter(
-  getContextFiles: (contextRoot: string) => ExternalContextFile[]
-): (contextRoot: string) => Map<string, string> {
-  const lookupCache = new Map<string, Map<string, string>>();
-
-  return (contextRoot: string): Map<string, string> => {
-    const cached = lookupCache.get(contextRoot);
-    if (cached) return cached;
-
-    const lookup = buildExternalContextLookup(getContextFiles(contextRoot));
-    lookupCache.set(contextRoot, lookup);
-    return lookup;
-  };
 }

@@ -65,6 +65,32 @@ describe('SessionStorage', () => {
   });
 
   describe('loadMetadata', () => {
+    it('migrates saved directory selections while preserving conversation identity and provider state', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-directories.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-directories',
+        title: 'Saved conversation',
+        createdAt: 100,
+        lastActivityAt: 200,
+        externalContextPaths: ['/old/project'],
+        providerState: { providerSessionId: 'native-session' },
+      }));
+
+      expect(await storage.load('session-directories')).toEqual({
+        metadata: {
+          id: 'session-directories',
+          title: 'Saved conversation',
+          createdAt: 100,
+          lastActivityAt: 200,
+          providerState: { providerSessionId: 'native-session' },
+        },
+        needsMigration: true,
+        source: 'unscoped',
+      });
+    });
+
     it('normalizes legacy timestamps to a single activity timestamp', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${SESSIONS_PATH}/session-legacy-time.meta.json`
@@ -846,7 +872,6 @@ describe('SessionStorage', () => {
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
         ],
         linkedContentPath: 'notes/test.md',
-        externalContextPaths: ['/external/path'],
         usage,
         titleGenerationStatus: 'success',
       };
@@ -860,7 +885,6 @@ describe('SessionStorage', () => {
       expect(metadata.sessionId).toBe('sdk-session');
       expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
       expect(metadata.linkedContentPath).toBe('notes/test.md');
-      expect(metadata.externalContextPaths).toEqual(['/external/path']);
       expect(metadata.usage).toEqual(usage);
       expect(metadata.titleGenerationStatus).toBe('success');
 

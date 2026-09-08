@@ -88,7 +88,6 @@ type ProviderWarmupContext = {
   commandContextRevision: number;
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
   conversation: Conversation | null;
-  externalContextPaths: string[];
   hasResumableNativeSeed: boolean;
   plugin: FeatureHost['providerHost'];
   tab: {
@@ -2033,20 +2032,13 @@ export class TabManager implements TabManagerInterface {
       : tab.executionCoordinator.state;
     const draftModel = tab.draftModel;
     const lifecycleState = tab.lifecycleState;
-    const selectedExternalContextPaths = tab.ui.externalContextSelector.getExternalContexts();
     const conversation = conversationId
       ? await this.plugin.getConversationById(conversationId)
       : null;
-    const hasConversationContext = (conversation?.messages.length ?? 0) > 0;
-    const externalContextPaths = selectedExternalContextPaths
-      ?? (hasConversationContext
-        ? conversation?.externalContextPaths ?? []
-        : this.plugin.settings.persistentExternalContextPaths ?? []);
     const baseContext: Omit<ProviderWarmupContext, 'warmupMode'> = {
       commandContextRevision,
       coordinatorState,
       conversation,
-      externalContextPaths,
       hasResumableNativeSeed: Boolean(
         conversation?.sessionId
         || conversation?.resumeAtMessageId
@@ -2223,7 +2215,6 @@ export class TabManager implements TabManagerInterface {
       allowIsolatedMetadataCreation: context.warmupMode === 'commands'
         && tab.id === this.activeTabId,
       conversation: context.conversation,
-      externalContextPaths: context.externalContextPaths,
       plugin: this.plugin.providerHost,
       signal,
     });

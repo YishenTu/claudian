@@ -196,7 +196,6 @@ describe('GrokWorkspaceServices', () => {
     const commandLoad = services.commandLoader!.loadCommands({
       allowIsolatedMetadataCreation: true,
       conversation: null,
-      externalContextPaths: [],
       plugin,
     });
     const ensure = services.modelCatalogCoordinator.ensureFresh('settings');

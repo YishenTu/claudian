@@ -26,7 +26,6 @@ import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type {
   ContextUsageMeter,
-  ExternalContextSelector,
   ModelSelector,
   ModeSelector,
   PermissionToggle,
@@ -127,7 +126,6 @@ export interface TabUIComponents {
   readonly modelSelector: ModelSelector;
   readonly modeSelector: ModeSelector;
   readonly thinkingBudgetSelector: ThinkingBudgetSelector;
-  readonly externalContextSelector: ExternalContextSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
   readonly composerDropdown: MainChatComposerDropdown;

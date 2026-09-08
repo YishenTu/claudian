@@ -368,7 +368,6 @@ export default class ClaudianPlugin extends Plugin {
             view,
             editContext,
             notePath,
-            () => this.getView()?.getActiveTab()?.ui.externalContextSelector?.getExternalContexts() ?? []
           );
           const result = await modal.openAndWait();
 
@@ -1795,7 +1794,6 @@ export default class ClaudianPlugin extends Plugin {
       linkedContentPath: meta.linkedContentPath,
       isPinned: meta.isPinned,
       isArchived: meta.isArchived,
-      externalContextPaths: meta.externalContextPaths,
       usage: meta.usage,
       titleGenerationStatus: meta.titleGenerationStatus,
       resumeAtMessageId: meta.resumeAtMessageId,

@@ -6,13 +6,6 @@ import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
 import type { FolderMentionItem } from '../../../shared/mention/types';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
-  createExternalContextLookupGetter,
-  isMentionStart,
-  resolveExternalMentionAtIndex,
-} from '../../../utils/contextMentionResolver';
-import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
-import { externalContextScanner } from '../../../utils/externalContextScanner';
-import {
   getVaultPath,
   normalizePathForVault as normalizePathForVaultUtil,
   rewriteVaultPathAfterRename,
@@ -20,12 +13,11 @@ import {
 import { formatComposerWikilink } from '../composer/composerWikilinks';
 
 export interface FileContextCallbacks {
-  getExternalContexts?: () => readonly string[];
   onAgentMentionSelect?: (agentId: string) => void;
 }
 
 /**
- * Owns composer file attachments, Vault mention caches, and mention transformation.
+ * Owns composer file attachments and Vault mention caches.
  * Linked content state and presentation belong to LinkedContentController.
  */
 export class FileContextManager {
@@ -44,7 +36,6 @@ export class FileContextManager {
     this.mentionSource = new MentionSource({
       onAttachFile: filePath => this.attachedFiles.add(filePath),
       onAgentMentionSelect: agentId => this.callbacks.onAgentMentionSelect?.(agentId),
-      getExternalContexts: () => this.callbacks.getExternalContexts?.() ?? [],
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: rawPath => this.normalizePathForVault(rawPath),
@@ -98,46 +89,8 @@ export class FileContextManager {
     return this.mentionSource;
   }
 
-  transformContextMentions(text: string): string {
-    const externalContexts = this.callbacks.getExternalContexts?.() ?? [];
-    if (externalContexts.length === 0 || !text.includes('@')) return text;
-
-    const contextEntries = buildExternalContextDisplayEntries([...externalContexts])
-      .sort((left, right) => right.displayNameLower.length - left.displayNameLower.length);
-    const getContextLookup = createExternalContextLookupGetter(
-      contextRoot => externalContextScanner.scanPaths([contextRoot]),
-    );
-    let replaced = false;
-    let cursor = 0;
-    const chunks: string[] = [];
-
-    for (let index = 0; index < text.length; index++) {
-      if (!isMentionStart(text, index)) continue;
-      const resolved = resolveExternalMentionAtIndex(
-        text,
-        index,
-        contextEntries,
-        getContextLookup,
-      );
-      if (!resolved) continue;
-      chunks.push(text.slice(cursor, index));
-      chunks.push(`${resolved.resolvedPath}${resolved.trailingPunctuation}`);
-      cursor = resolved.endIndex;
-      index = resolved.endIndex - 1;
-      replaced = true;
-    }
-
-    if (!replaced) return text;
-    chunks.push(text.slice(cursor));
-    return chunks.join('');
-  }
-
   setAgentService(agentService: AgentMentionProvider | null): void {
     this.mentionSource.setAgentService(agentService);
-  }
-
-  preScanExternalContexts(): void {
-    this.mentionSource.preScanExternalContexts();
   }
 
   destroy(): void {

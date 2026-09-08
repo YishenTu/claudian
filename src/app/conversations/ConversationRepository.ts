@@ -1987,7 +1987,6 @@ export class ConversationRepository {
       linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
-      externalContextPaths: conversation.externalContextPaths,
       usage: conversation.usage,
       resumeAtMessageId: conversation.resumeAtMessageId,
     };

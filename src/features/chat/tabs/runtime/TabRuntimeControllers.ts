@@ -240,7 +240,6 @@ export function buildTabRuntimeControllers(
       getFileContextManager: () => ui.fileContextManager,
       getLinkedContentController: () => ui.linkedContentController,
       getImageContextManager: () => ui.imageContextManager,
-      getExternalContextSelector: () => ui.externalContextSelector,
       clearQueuedMessage: () => (
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
       ),
@@ -336,7 +335,6 @@ export function buildTabRuntimeControllers(
     getFileContextManager: () => ui.fileContextManager,
     getLinkedContentController: () => ui.linkedContentController,
     getImageContextManager: () => ui.imageContextManager,
-    getExternalContextSelector: () => ui.externalContextSelector,
     getInstructionModeManager: () => ui.instructionModeManager,
     getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,

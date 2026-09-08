@@ -216,7 +216,6 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
     images: [],
     context: {
       linkedContent: { path: 'note.md', content: 'note' },
-      externalContextPaths: ['/external'],
     },
     conversationHistory: [],
     configuration: {

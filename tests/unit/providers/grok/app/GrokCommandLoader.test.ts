@@ -7,7 +7,6 @@ function createContext(
   return {
     allowIsolatedMetadataCreation: false,
     conversation: null,
-    externalContextPaths: [],
     plugin: {} as any,
     ...overrides,
   };

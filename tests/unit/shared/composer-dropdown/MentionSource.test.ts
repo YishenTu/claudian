@@ -19,7 +19,6 @@ function source(overrides: Record<string, unknown> = {}) {
   const value = new MentionSource({
     getCachedVaultFiles: () => [file('notes/Alpha.md', 5)],
     getCachedVaultFolders: () => [{ name: 'notes', path: 'notes' }],
-    getExternalContexts: () => [],
     normalizePathForVault: path => path ?? null,
     onAgentMentionSelect,
     onAttachFile,

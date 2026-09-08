@@ -23,7 +23,6 @@ export interface ProviderExecutionContext {
   readonly editorSelection?: EditorSelectionContext | null;
   readonly browserSelection?: BrowserSelectionContext | null;
   readonly canvasSelection?: CanvasSelectionContext | null;
-  readonly externalContextPaths?: readonly string[];
 }
 
 export type ProviderSystemInstructions =
@@ -43,7 +42,6 @@ export interface ProviderExecutionConfiguration {
   readonly permissionMode?: string;
   readonly mode?: string;
   readonly serviceTier?: string;
-  readonly externalWorkspaceRoots?: readonly string[];
 }
 
 export type ProviderToolPolicy =

@@ -372,7 +372,6 @@ export interface ProviderCliResolver {
 export interface ProviderCommandLoaderContext {
   allowIsolatedMetadataCreation: boolean;
   conversation: Conversation | null;
-  externalContextPaths: string[];
   plugin: ProviderHost;
   readyCommandSnapshot?: readonly SlashCommand[];
   /** Cancels provider-owned discovery work when its consumer is invalidated. */
@@ -398,7 +397,6 @@ export type ProviderTabWarmupLifecycleState = 'provisional' | 'cold' | 'warm' | 
 export interface ProviderTabWarmupContext {
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
   conversation: Conversation | null;
-  externalContextPaths: string[];
   hasResumableNativeSeed: boolean;
   plugin: ProviderHost;
   tab: {

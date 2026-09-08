@@ -1,7 +1,6 @@
 import { TFile, TFolder } from 'obsidian';
 
 import { FileContextManager } from '@/features/chat/ui/FileContext';
-import type { ExternalContextFile } from '@/utils/externalContextScanner';
 
 let mockVaultPath = '/vault';
 jest.mock('@/utils/path', () => {
@@ -11,13 +10,6 @@ jest.mock('@/utils/path', () => {
     getVaultPath: jest.fn(() => mockVaultPath),
   };
 });
-
-const mockScanPaths = jest.fn<ExternalContextFile[], [string[]]>(() => []);
-jest.mock('@/utils/externalContextScanner', () => ({
-  externalContextScanner: {
-    scanPaths: (paths: string[]) => mockScanPaths(paths),
-  },
-}));
 
 function createFile(path: string): TFile {
   const file = new TFile();
@@ -98,7 +90,6 @@ describe('FileContextManager', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     mockVaultPath = '/vault';
-    mockScanPaths.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -163,29 +154,6 @@ describe('FileContextManager', () => {
     handlers.get('delete')?.(createFile('Other.md'));
 
     expect(manager.getAttachedFiles()).toEqual(new Set());
-    manager.destroy();
-  });
-
-  it('keeps external mention transformation and agent delegation', () => {
-    const externalFile: ExternalContextFile = {
-      contextRoot: '/external/Project',
-      name: 'Plan.md',
-      path: '/external/Project/Plan.md',
-      relativePath: 'Plan.md',
-      mtime: 0,
-    };
-    mockScanPaths.mockReturnValue([externalFile]);
-    const onAgentMentionSelect = jest.fn();
-    const { app } = createMockApp();
-    const manager = new FileContextManager(app, {
-      getExternalContexts: () => ['/external/Project'],
-      onAgentMentionSelect,
-    });
-
-    expect(manager.transformContextMentions('Review @Project/Plan.md.'))
-      .toBe('Review /external/Project/Plan.md.');
-    expect(() => manager.setAgentService(null)).not.toThrow();
-    expect(() => manager.preScanExternalContexts()).not.toThrow();
     manager.destroy();
   });
 

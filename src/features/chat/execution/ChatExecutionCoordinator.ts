@@ -1351,7 +1351,7 @@ function createExecutionRequest(
 function createInputRecord(
   submission: ChatTurnSubmission,
 ): ConversationInputRecord {
-  const { externalContextPaths: _, ...context } = submission.context ?? {};
+  const context = submission.context ?? {};
   const ledgerContext = Object.keys(context).length > 0 ? context : undefined;
   return {
     schemaVersion: CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,

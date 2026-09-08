@@ -26,7 +26,6 @@ export interface OpencodePromptRequest {
   editorSelection?: EditorSelectionContext | null;
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
-  externalContextPaths?: string[];
 }
 
 export function buildOpencodePromptText(
