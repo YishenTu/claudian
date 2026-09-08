@@ -60,7 +60,6 @@ export function createProviderRecoveryTestHarness(
     askUserQuestion: jest.fn(),
     dismissInteraction: jest.fn(),
     requestApproval: jest.fn(),
-    requestPlanDecision: jest.fn(),
   } as unknown as ProviderInteractionPort;
   let nextId = 0;
   const coordinator = new ChatExecutionCoordinator({

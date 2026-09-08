@@ -61,7 +61,6 @@ const EFFORT_LEVELS = new Set<EffortLevel>([
 ]);
 const PERMISSION_MODES = new Set<PermissionMode>([
   'normal',
-  'plan',
   'yolo',
 ]);
 const EXPLICIT_PROTOCOL_INSTRUCTIONS = [
@@ -125,10 +124,9 @@ export class ClaudeExecutionRequestEncoder {
         ? request.configuration.reasoning
         : settings.effortLevel,
     );
-    const sdkPermissionMode = this.resolveSdkPermissionMode(
-      settings.permissionMode,
-      claudeSettings.safeMode,
-    );
+    const sdkPermissionMode = settings.permissionMode === 'yolo'
+      ? 'bypassPermissions'
+      : claudeSettings.safeMode;
     const prompt = this.encodePrompt(request, replayConversationHistory);
     const policy = resolveToolPolicy(request);
     const systemPrompt = request.configuration.systemInstructions.kind === 'explicit'
@@ -233,15 +231,6 @@ export class ClaudeExecutionRequestEncoder {
     };
   }
 
-  resolveSdkPermissionMode(
-    permissionMode: PermissionMode,
-    safeMode = getClaudeProviderSettings(this.deps.host.settings).safeMode,
-  ): SDKPermissionMode {
-    if (permissionMode === 'yolo') return 'bypassPermissions';
-    if (permissionMode === 'plan') return 'plan';
-    return safeMode;
-  }
-
   private resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {
     const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.deps.host.settings,
@@ -250,8 +239,7 @@ export class ClaudeExecutionRequestEncoder {
     if (request.configuration.model?.trim()) {
       settings.model = request.configuration.model;
     }
-    const requestedMode = request.configuration.mode
-      ?? request.configuration.permissionMode;
+    const requestedMode = request.configuration.permissionMode;
     if (isPermissionMode(requestedMode)) {
       settings.permissionMode = requestedMode;
     }

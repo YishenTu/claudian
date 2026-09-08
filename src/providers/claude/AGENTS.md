@@ -45,7 +45,6 @@ The execution session owns the live provider snapshot. History services reconstr
 - Auto-triggered SDK turns can arrive without a registered handler; they buffer until the result event.
 - `MessageChannel` coalesces text-only queued messages and keeps only one queued attachment message.
 - Claude session files are tree-structured. Branch filtering must preserve the canonical branch plus relevant sibling tool results.
-- `EnterPlanMode` does not hit `canUseTool`; `ExitPlanMode` does.
 - Context-window selection must handle multi-model runs by exact model match first, then family match, and null on ambiguity.
 
 ## Invariants

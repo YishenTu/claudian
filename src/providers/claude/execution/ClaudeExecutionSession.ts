@@ -9,7 +9,6 @@ import {
   type ChatRewindMode,
   type ChatRewindPreview,
   type ChatRewindResult,
-  type ModeConfigurableExecutionSession,
   type ProviderExecutionEvent,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
@@ -61,7 +60,6 @@ interface ActiveRequestedRun {
   historyReplayGeneration: number | null;
   nativeUserMessageId?: string;
   nativeAssistantId?: string;
-  planCompleted: boolean;
   terminal: boolean;
 }
 
@@ -78,7 +76,6 @@ type ClaudeExecutionSessionServices = Pick<
 export class ClaudeExecutionSession
 implements
 ProviderExecutionSession,
-ModeConfigurableExecutionSession,
 RewindableExecutionSession,
 ClaudeExecutionStrategySink {
   readonly providerId = 'claude' as const;
@@ -112,7 +109,6 @@ ClaudeExecutionStrategySink {
   private readonly pendingProviderStateDeletes = new Set<string>();
   private lastEncodedRequest: ClaudeEncodedExecutionRequest | null = null;
   private lastAllowedTools: ReadonlySet<string> | null = null;
-  private currentPermissionMode: PermissionMode;
   private readonly eventNormalizer = new ClaudeExecutionEventNormalizer();
   private nativeQuery: Query | null = null;
   private authoritativeContextWindow: {
@@ -147,9 +143,6 @@ ClaudeExecutionStrategySink {
     this.replayHistoryGeneration = this.replayHistoryOnNextTurn ? 1 : 0;
     this.resumeAt = config.resumeSeed?.resumeCheckpoint
       ?? forkSource?.resumeAt;
-    this.currentPermissionMode = normalizePermissionMode(
-      host.settings.permissionMode,
-    );
     this.encoder = new ClaudeExecutionRequestEncoder({
       host,
       pluginManager: services.pluginManager,
@@ -162,9 +155,6 @@ ClaudeExecutionStrategySink {
         this.lastAllowedTools === null
         || this.lastAllowedTools.has(toolName)
       ),
-      getPermissionMode: () => this.currentPermissionMode,
-      resolveSdkPermissionMode: (mode) =>
-        this.encoder.resolveSdkPermissionMode(mode),
       onToolBlocked: (toolUseId) => {
         this.eventNormalizer.markToolBlocked(
           toolUseId,
@@ -206,7 +196,6 @@ ClaudeExecutionStrategySink {
       nativeFork: false,
       nativeHandedOff: false,
       historyReplayGeneration: null,
-      planCompleted: false,
       terminal: false,
     };
     this.activeRun = active;
@@ -320,23 +309,6 @@ ClaudeExecutionStrategySink {
     this.backgroundTurn = null;
     this.suppressedPersistentQueryTokens.clear();
     this.suppressedEphemeralQueryTokens.clear();
-  }
-
-  async setMode(mode: string): Promise<boolean> {
-    if (this.disposed) return false;
-    const permissionMode = normalizeRequestedPermissionMode(mode);
-    if (!permissionMode) return false;
-    const sdkMode = this.encoder.resolveSdkPermissionMode(permissionMode);
-    const applied = await this.strategy.setMode(sdkMode);
-    if (!applied) return false;
-    this.currentPermissionMode = permissionMode;
-    this.bumpRevision();
-    this.emitSession({
-      type: 'mode_changed',
-      mode,
-      snapshot: this.getSnapshot(),
-    });
-    return true;
   }
 
   async previewRewind(
@@ -487,12 +459,10 @@ ClaudeExecutionStrategySink {
           this.services.agentManager.setBuiltinAgentNames(event.agents);
         }
         this.emitStateForCurrentTurn();
-        if (event.permissionMode) {
-          const nativeMode = normalizeSdkPermissionMode(event.permissionMode);
-          if (nativeMode) {
-            this.currentPermissionMode = nativeMode;
-          }
-          this.emitModeForCurrentTurn(event.permissionMode);
+        if (event.permissionMode !== undefined) {
+          this.emitPermissionModeForCurrentTurn(
+            event.permissionMode === 'bypassPermissions' ? 'yolo' : 'normal',
+          );
         }
         continue;
       }
@@ -517,25 +487,6 @@ ClaudeExecutionStrategySink {
         const target = this.getOutputTarget();
         if (target) {
           this.emitTurnOutput(target, normalized.event);
-        }
-        continue;
-      }
-      if (normalized.type === 'mode_entered') {
-        this.currentPermissionMode = normalized.mode;
-        this.bumpRevision();
-        const target = this.getOutputTarget();
-        if (target) {
-          this.emitTurnOutput(target, {
-            type: 'mode_changed',
-            mode: normalized.mode,
-            snapshot: this.getSnapshot(),
-          });
-        }
-        continue;
-      }
-      if (normalized.type === 'plan_exited') {
-        if (this.activeRun) {
-          this.activeRun.planCompleted = true;
         }
         continue;
       }
@@ -741,11 +692,6 @@ ClaudeExecutionStrategySink {
     request: ProviderExecutionRequest,
   ): Promise<void> {
     try {
-      this.currentPermissionMode = normalizePermissionMode(
-        request.configuration.mode
-          ?? request.configuration.permissionMode
-          ?? this.host.settings.permissionMode,
-      );
       const nativeResume = this.getNativeResume();
       active.nativeFork = nativeResume.fork === true;
       const replayConversationHistory = this.shouldReplayConversationHistory(
@@ -1006,11 +952,11 @@ ClaudeExecutionStrategySink {
     }
   }
 
-  private emitModeForCurrentTurn(mode: string): void {
+  private emitPermissionModeForCurrentTurn(permissionMode: PermissionMode): void {
     this.bumpRevision();
     const event = {
-      type: 'mode_changed' as const,
-      mode,
+      type: 'permission_mode_changed' as const,
+      permissionMode,
       snapshot: this.getSnapshot(),
     };
     if (this.activeRun) {
@@ -1032,7 +978,6 @@ ClaudeExecutionStrategySink {
     this.emitRequested(active, {
       type: 'turn_completed',
       nativeAssistantId: active.nativeAssistantId,
-      planCompleted: active.planCompleted || undefined,
       reason,
     });
     this.endActiveRun(active);
@@ -1361,35 +1306,6 @@ function cloneRecord(
   value: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
-}
-
-function normalizePermissionMode(value: unknown): PermissionMode {
-  return normalizeRequestedPermissionMode(value) ?? 'normal';
-}
-
-function normalizeRequestedPermissionMode(
-  value: unknown,
-): PermissionMode | null {
-  return value === 'normal' || value === 'plan' || value === 'yolo'
-    ? value
-    : null;
-}
-
-function normalizeSdkPermissionMode(
-  value: unknown,
-): PermissionMode | null {
-  if (value === 'plan') return 'plan';
-  if (value === 'bypassPermissions') return 'yolo';
-  if (
-    value === 'acceptEdits'
-    || value === 'auto'
-    || value === 'default'
-    || value === 'delegate'
-    || value === 'dontAsk'
-  ) {
-    return 'normal';
-  }
-  return null;
 }
 
 function mapSdkCommand(command: SDKSlashCommand): SlashCommand {

@@ -31,7 +31,6 @@ describe('ProviderRegistry', () => {
   it('returns capabilities for the default provider', () => {
     const caps = ProviderRegistry.getCapabilities();
     expect(caps.providerId).toBe('claude');
-    expect(caps).toHaveProperty('supportsPlanMode');
     expect(caps).toHaveProperty('supportsFork');
   });
 
@@ -77,7 +76,6 @@ describe('ProviderRegistry', () => {
   it('returns Codex capabilities', () => {
     const caps = ProviderRegistry.getCapabilities('codex');
     expect(caps.providerId).toBe('codex');
-    expect(caps.supportsPlanMode).toBe(true);
     expect(caps.supportsFork).toBe(true);
     expect(caps.supportsInstructionMode).toBe(true);
     expect(caps.supportsRewind).toBe(false);

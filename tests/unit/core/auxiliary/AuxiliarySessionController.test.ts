@@ -40,7 +40,6 @@ function createController() {
         askUserQuestion: jest.fn(),
         dismissInteraction: jest.fn(),
         requestApproval: jest.fn(),
-        requestPlanDecision: jest.fn(),
       },
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
       vaultWorkingDirectory: '/vault',

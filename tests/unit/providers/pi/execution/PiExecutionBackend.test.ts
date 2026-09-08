@@ -131,7 +131,6 @@ function createInteractionPort(): ProviderInteractionPort {
     askUserQuestion: jest.fn(),
     dismissInteraction: jest.fn(),
     requestApproval: jest.fn(),
-    requestPlanDecision: jest.fn(),
   };
 }
 

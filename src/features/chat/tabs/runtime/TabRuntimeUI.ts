@@ -43,6 +43,7 @@ import {
   syncComposerDropdownForProvider,
   syncTabProviderServices,
   type TabProviderSettings,
+  updateTabPermissionMode,
   updateTabProviderSettings,
   updateTabServiceTier,
 } from '../TabProviderState';
@@ -256,7 +257,7 @@ function buildInputToolbar(
       shell.providerId = providerId;
       syncTabProviderServices(shell, services, plugin);
       syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
-      refreshTabProviderUI(tab, plugin);
+      refreshTabProviderUI(tab);
       applyProviderUIGating(tab, plugin);
     },
     initializeProvider: async (providerId) => {
@@ -429,19 +430,7 @@ function buildInputToolbar(
     },
     onPermissionModeChange: async (mode: string) => {
       const tab = runtimeRef.requirePublished();
-      await updateTabProviderSettings(tab, plugin, (settings) => {
-        const uiConfig = getTabChatUIConfig(tab, plugin);
-        if (uiConfig.applyPermissionMode) {
-          uiConfig.applyPermissionMode(mode, settings);
-        } else {
-          settings.permissionMode = mode;
-        }
-      });
-      tab.ui.permissionToggle.updateDisplay();
-      shell.dom.inputWrapper.toggleClass(
-        'claudian-input-plan-mode',
-        mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
-      );
+      await updateTabPermissionMode(tab, plugin, mode);
       onUserModified();
     },
   });

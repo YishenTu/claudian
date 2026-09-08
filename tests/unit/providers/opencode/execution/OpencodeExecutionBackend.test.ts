@@ -235,7 +235,6 @@ function createConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderS
       decision: 'allow' as const,
     })),
     askUserQuestion: jest.fn(),
-    requestPlanDecision: jest.fn(),
     dismissInteraction: jest.fn(),
   };
   return {
@@ -1016,7 +1015,7 @@ describe('OpencodeExecutionBackend', () => {
     ]));
   });
 
-  it('publishes provider mode changes through the session event channel', async () => {
+  it('publishes normalized permission changes through the session event channel', async () => {
     const harness = createHarness();
     const modes: unknown[] = [];
     harness.session.onEvent((event) => modes.push(event));
@@ -1035,9 +1034,9 @@ describe('OpencodeExecutionBackend', () => {
 
     expect(modes).toEqual([
       expect.objectContaining({
-        mode: 'normal',
+        permissionMode: 'normal',
         scope: expect.objectContaining({ kind: 'session', sequence: 1 }),
-        type: 'mode_changed',
+        type: 'permission_mode_changed',
       }),
     ]);
   });

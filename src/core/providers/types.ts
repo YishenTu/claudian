@@ -27,7 +27,6 @@ export type { ProviderId } from '../types/provider';
 export interface ProviderCapabilities {
   providerId: ProviderId;
   supportsNativeHistory: boolean;
-  supportsPlanMode: boolean;
   supportsRewind: boolean;
   supportsFork: boolean;
   supportsProviderCommands: boolean;
@@ -37,7 +36,6 @@ export interface ProviderCapabilities {
   supportsInstructionMode: boolean;
   supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
-  planPathPrefix?: string;
 }
 
 export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
@@ -241,8 +239,6 @@ export interface ProviderPermissionModeToggleConfig {
   inactiveLabel: string;
   activeValue: string;
   activeLabel: string;
-  planValue?: string;
-  planLabel?: string;
 }
 
 /** Compact service-tier toggle descriptor for providers that expose a fast/standard toolbar control. */

@@ -3,7 +3,6 @@ import type { ConversationInputLedgerReadResult } from '@/core/bootstrap/Convers
 import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
 import type { SessionMetadataReader } from '@/core/bootstrap/SessionStorage';
 import {
-  type ModeConfigurableExecutionSession,
   type ProviderExecutionBackend,
   type ProviderExecutionEvent,
   ProviderExecutionLifecycleRegistry,
@@ -91,7 +90,6 @@ class FakeRun implements ProviderExecutionRun {
 
 class FakeSession implements ProviderExecutionSession,
   SteerableExecutionSession,
-  ModeConfigurableExecutionSession,
   RewindableExecutionSession {
   readonly requests: ProviderExecutionRequest[] = [];
   readonly runs: FakeRun[] = [];
@@ -102,7 +100,6 @@ class FakeSession implements ProviderExecutionSession,
   status: ProviderSessionStatus = 'idle';
   snapshot: ProviderSessionSnapshot;
   steerResult = true;
-  readonly modes: string[] = [];
   rewindResult = {
     canRewind: true,
     sessionStrategy: 'preserve-provider-session' as const,
@@ -132,11 +129,6 @@ class FakeSession implements ProviderExecutionSession,
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     this.steerRequests.push(request);
     return this.steerResult;
-  }
-
-  async setMode(mode: string): Promise<boolean> {
-    this.modes.push(mode);
-    return true;
   }
 
   async previewRewind(): Promise<{ canRewind: boolean }> {
@@ -264,10 +256,6 @@ function createHarness(options: {
     askUserQuestion: jest.fn(async ({ interactionId }) => ({
       interactionId,
       answers: null,
-    })),
-    requestPlanDecision: jest.fn(async ({ interactionId }) => ({
-      interactionId,
-      decision: null,
     })),
     dismissInteraction: jest.fn(),
   } as unknown as jest.Mocked<ProviderInteractionPort>;
@@ -631,61 +619,6 @@ describe('ChatExecutionCoordinator', () => {
     await second.registry.dispose();
   });
 
-  it('protects a provider mode operation until its RPC settles', async () => {
-    const pool = new WarmExecutionPool(() => 5);
-    await reserveProtectedWarmSlots(pool);
-    const first = createHarness({
-      warmExecution: {
-        ownerId: 'first-tab',
-        pool,
-        canCool: () => true,
-      },
-    });
-    const second = createHarness({
-      warmExecution: {
-        ownerId: 'second-tab',
-        pool,
-        canCool: () => true,
-      },
-    });
-    await first.coordinator.bindConversation({
-      conversationId: 'conversation-1',
-      providerId: 'claude',
-    });
-    await first.coordinator.prepare();
-    const firstSession = first.backends.get('claude')!.sessions[0];
-    const modeResult = deferred<boolean>();
-    const setMode = jest.spyOn(firstSession, 'setMode')
-      .mockImplementation(async () => modeResult.promise);
-
-    const pendingModeChange = first.coordinator.setMode('plan');
-    for (let attempt = 0; attempt < 20 && setMode.mock.calls.length === 0; attempt += 1) {
-      await Promise.resolve();
-    }
-    expect(setMode).toHaveBeenCalledTimes(1);
-    await second.coordinator.bindConversation({
-      conversationId: 'conversation-2',
-      providerId: 'claude',
-    });
-    let capacityError: unknown;
-    try {
-      await second.coordinator.prepare();
-    } catch (error) {
-      capacityError = error;
-    }
-
-    modeResult.resolve(true);
-    const applied = await pendingModeChange;
-    expect(capacityError).toEqual(new WarmExecutionCapacityError(5));
-    expect(applied).toBe(true);
-    expect(firstSession.disposeCalls).toBe(0);
-
-    await first.coordinator.dispose();
-    await second.coordinator.dispose();
-    await first.registry.dispose();
-    await second.registry.dispose();
-  });
-
   it('protects pending background event persistence before cooling', async () => {
     const pool = new WarmExecutionPool(() => 5);
     await reserveProtectedWarmSlots(pool);
@@ -860,14 +793,12 @@ describe('ChatExecutionCoordinator', () => {
       scope: requestedScope(session, run, 2),
       reason: 'completed',
       nativeAssistantId: 'native-assistant',
-      planCompleted: true,
     });
     run.events.end();
 
     await expect(resultPromise).resolves.toMatchObject({
       status: 'completed',
       accepted: true,
-      planCompleted: true,
       nativeUserMessageId: 'native-user',
       nativeAssistantMessageId: 'native-assistant',
     });
@@ -2113,7 +2044,6 @@ describe('ChatExecutionCoordinator', () => {
     const interactionPort = {
       requestApproval: jest.fn(),
       askUserQuestion: jest.fn(),
-      requestPlanDecision: jest.fn(),
       dismissInteraction: jest.fn(),
     } as unknown as ProviderInteractionPort;
     const coordinator = new ChatExecutionCoordinator({
@@ -2430,32 +2360,6 @@ describe('ChatExecutionCoordinator', () => {
     expect(harness.repository.persistExecutionSnapshot).not.toHaveBeenCalled();
     expect(harness.repository.releaseExecutionBinding).not.toHaveBeenCalled();
     expect(harness.coordinator.snapshot?.providerId).toBe('codex');
-  });
-
-  it('applies supported mode changes to the current session and persists its resulting snapshot', async () => {
-    const harness = createHarness();
-    await harness.coordinator.bindConversation({
-      conversationId: 'conversation-1',
-      providerId: 'claude',
-    });
-    await harness.coordinator.prepare();
-    const session = harness.backends.get('claude')!.sessions[0];
-    session.snapshot = {
-      providerId: 'claude',
-      revision: 5,
-      status: 'idle',
-      providerSessionId: 'native-mode',
-    };
-
-    await expect(harness.coordinator.setMode('plan')).resolves.toBe(true);
-
-    expect(session.modes).toEqual(['plan']);
-    expect(harness.repository.persistExecutionSnapshot).toHaveBeenCalledWith(
-      'conversation-1',
-      'local-1',
-      0,
-      session.snapshot,
-    );
   });
 
   it('drops the session on lifecycle invalidation and recreates it at the new generation', async () => {

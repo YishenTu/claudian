@@ -15,7 +15,6 @@ import {
   resolveConversationModel,
 } from '../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import { t } from '../../i18n/i18n';
@@ -40,7 +39,6 @@ import { TabBar } from './tabs/TabBar';
 import { sendTabInputMessageFromExplicitEnterShortcut } from './tabs/TabInputEvents';
 import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
-import { updatePlanModeUI } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
 import {
   HorizontalPanelPager,
@@ -258,7 +256,6 @@ export class ClaudianView extends ItemView {
       );
       const model = providerSettings.model;
       const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-      const capabilities = ProviderRegistry.getCapabilities(providerId);
       const contextWindow = uiConfig.getContextWindowSize(
         model,
         providerSettings.customContextLimits,
@@ -276,10 +273,6 @@ export class ClaudianView extends ItemView {
       tab.ui.thinkingBudgetSelector.updateDisplay();
       tab.ui.permissionToggle.updateDisplay();
       tab.ui.serviceTierToggle.updateDisplay();
-      tab.dom.inputWrapper.toggleClass(
-        'claudian-input-plan-mode',
-        providerSettings.permissionMode === 'plan' && capabilities.supportsPlanMode,
-      );
     }
 
     if (!changedProviderId) {
@@ -796,36 +789,6 @@ export class ClaudianView extends ItemView {
   async handleNewConversationCommand(): Promise<boolean> {
     if (!this.isWideSessionLayout) return false;
     await this.activateOrCreateDraftTab();
-    return true;
-  }
-
-  async handleNewSessionPlan(
-    planContent: string,
-    isSourceLive: () => boolean = () => true,
-  ): Promise<boolean> {
-    if (!this.isWideSessionLayout) return false;
-    if (!isSourceLive()) return true;
-
-    const targetTab = await this.createNewTab();
-    if (!targetTab) {
-      throw new Error('New conversation input is unavailable');
-    }
-    if (!isSourceLive()) {
-      if (
-        targetTab.conversationId === null
-        && targetTab.session.userOwnershipRevision === 0
-      ) {
-        await this.tabManager?.discardTab(targetTab.id);
-      }
-      return true;
-    }
-    const inputController = targetTab.controllers.inputController;
-    if (!inputController) {
-      throw new Error('New conversation input is unavailable');
-    }
-    void inputController.sendMessage({ content: planContent }).catch(() => {
-      new Notice('Failed to start the approved plan in a new conversation');
-    });
     return true;
   }
 
@@ -2534,50 +2497,6 @@ export class ClaudianView extends ItemView {
     this.registerDomEvent(activeDocument, 'click', () => {
       this.historyDropdown?.removeClass('visible');
       this.closeCompactCollabMenu();
-    });
-
-    // View-level Shift+Tab to toggle plan mode (works from any focused element)
-    this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
-        e.preventDefault();
-        const activeTab = this.tabManager?.getActiveTab();
-        if (!activeTab) return;
-        const providerId = getTabProviderId(activeTab, this.plugin);
-        if (!ProviderRegistry.getCapabilities(providerId).supportsPlanMode) return;
-        commitProvisionalTab(activeTab);
-        const current = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-          this.plugin.settings,
-          providerId,
-        ).permissionMode as string;
-        if (current === 'plan') {
-          const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
-          void updatePlanModeUI(activeTab, this.plugin, restoreMode, { syncExecution: true })
-            .finally(() => {
-              const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-                this.plugin.settings,
-                providerId,
-              ).permissionMode;
-              if (activeMode !== 'plan') {
-                activeTab.state.prePlanPermissionMode = null;
-              }
-            })
-            .catch((error: unknown) => {
-              new Notice(error instanceof Error ? error.message : 'Failed to change permission mode.');
-            });
-        } else {
-          activeTab.state.prePlanPermissionMode = current;
-          void updatePlanModeUI(activeTab, this.plugin, 'plan', { syncExecution: true }).catch((error: unknown) => {
-            const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-              this.plugin.settings,
-              providerId,
-            ).permissionMode;
-            if (activeMode !== 'plan') {
-              activeTab.state.prePlanPermissionMode = null;
-            }
-            new Notice(error instanceof Error ? error.message : 'Failed to change permission mode.');
-          });
-        }
-      }
     });
 
     // View scopes are the Obsidian-owned boundary for main-area tab hotkeys.

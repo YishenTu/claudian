@@ -432,9 +432,9 @@ export class ProviderSettingsCoordinator {
     const allowedPermissionModes = new Set([
       permissionToggle.inactiveValue,
       permissionToggle.activeValue,
-      ...(permissionToggle.planValue ? [permissionToggle.planValue] : []),
     ]);
-    const currentPermissionMode = normalizeToggleValue(settings.permissionMode, allowedPermissionModes);
+    const currentPermissionMode = normalizeToggleValue(settings.permissionMode, allowedPermissionModes)
+      ?? (settings.permissionMode !== undefined ? permissionToggle.inactiveValue : undefined);
     const derivedPermissionMode = normalizeToggleValue(
       uiConfig.resolvePermissionMode?.(settings),
       allowedPermissionModes,
@@ -442,7 +442,7 @@ export class ProviderSettingsCoordinator {
     const savedPermissionModeValue = normalizeToggleValue(
       savedPermissionMode?.[providerId],
       allowedPermissionModes,
-    );
+    ) ?? (savedPermissionMode?.[providerId] !== undefined ? permissionToggle.inactiveValue : undefined);
 
     const projectedPermissionMode = savedPermissionModeValue
       ?? derivedPermissionMode

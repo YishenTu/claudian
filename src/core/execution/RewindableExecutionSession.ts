@@ -49,10 +49,6 @@ export interface SteerableExecutionSession {
  * Independent capability contracts intentionally omit unsupported operations
  * from base sessions instead of requiring provider parity no-ops.
  */
-export interface ModeConfigurableExecutionSession {
-  setMode(mode: string): Promise<boolean>;
-}
-
 export interface RewindableExecutionSession {
   previewRewind(
     userMessageId: string,
@@ -72,12 +68,6 @@ export function isSteerableExecutionSession(
   session: ProviderExecutionSession,
 ): session is ProviderExecutionSession & SteerableExecutionSession {
   return typeof (session as UnknownExecutionSession).steer === 'function';
-}
-
-export function isModeConfigurableExecutionSession(
-  session: ProviderExecutionSession,
-): session is ProviderExecutionSession & ModeConfigurableExecutionSession {
-  return typeof (session as UnknownExecutionSession).setMode === 'function';
 }
 
 export function isRewindableExecutionSession(

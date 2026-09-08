@@ -3,7 +3,6 @@ import type { ProviderCapabilities } from '../../core/providers/types';
 export const CLAUDE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.freeze({
   providerId: 'claude',
   supportsNativeHistory: true,
-  supportsPlanMode: true,
   supportsRewind: true,
   supportsFork: true,
   supportsProviderCommands: true,
@@ -11,5 +10,4 @@ export const CLAUDE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Obje
   supportsInstructionMode: true,
   supportsTurnSteer: false,
   reasoningControl: 'effort',
-  planPathPrefix: '/.claude/plans/',
 });

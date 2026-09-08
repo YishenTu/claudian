@@ -11,7 +11,6 @@ import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinat
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
 import { ChatState } from '../../state/ChatState';
-import { restorePrePlanMode } from '../TabProviderState';
 import { TabSession } from '../TabSession';
 import {
   createTabMessageId,
@@ -206,7 +205,7 @@ function createTabExecutionCoordinator(
   const { plugin } = options;
   const interactionKinds = new Map<
     string,
-    'approval' | 'question' | 'plan-decision'
+    'approval' | 'question'
   >();
   const interactionPort: ProviderInteractionPort = {
     requestApproval: async (request) => {
@@ -245,29 +244,6 @@ function createTabExecutionCoordinator(
           signal,
         );
         return { interactionId: request.interactionId, answers };
-      } finally {
-        interactionKinds.delete(request.interactionId);
-        state.endActionRequired(request.interactionId);
-      }
-    },
-    requestPlanDecision: async (request, signal) => {
-      const tab = runtimeRef.requirePublished();
-      interactionKinds.set(request.interactionId, request.kind);
-      state.beginActionRequired(request.interactionId);
-      try {
-        const decision = await tab.controllers.inputController.handleExitPlanMode(
-          { ...request.input },
-          signal,
-          request.presentation,
-        );
-        if (decision !== null && decision.type !== 'feedback') {
-          await restorePrePlanMode(tab, plugin);
-          if (decision.type === 'approve-new-session') {
-            tab.state.pendingNewSessionPlan = decision.planContent;
-            tab.state.cancelRequested = true;
-          }
-        }
-        return { interactionId: request.interactionId, decision };
       } finally {
         interactionKinds.delete(request.interactionId);
         state.endActionRequired(request.interactionId);

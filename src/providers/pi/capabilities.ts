@@ -4,7 +4,6 @@ export const PI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.f
   providerId: 'pi',
   commandDiscoveryDeadline: 'provider-owned',
   supportsNativeHistory: true,
-  supportsPlanMode: false,
   supportsRewind: false,
   supportsFork: true,
   supportsProviderCommands: true,

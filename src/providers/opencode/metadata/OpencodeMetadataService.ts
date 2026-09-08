@@ -309,10 +309,6 @@ const DENY_INTERACTION_PORT: ProviderInteractionPort = {
     decision: 'deny',
     interactionId,
   }),
-  requestPlanDecision: async ({ interactionId }) => ({
-    decision: null,
-    interactionId,
-  }),
 };
 
 function resolveVaultPath(plugin: ProviderHost): string {

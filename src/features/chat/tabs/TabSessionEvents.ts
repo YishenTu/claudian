@@ -11,7 +11,7 @@ import {
   providerOutputEventToStreamChunk,
 } from '../controllers/StreamController';
 import type { ChatExecutionEventContext } from '../execution/ChatExecutionCoordinator';
-import { updatePlanModeUI } from './TabProviderState';
+import { updateTabPermissionMode } from './TabProviderState';
 import type { AssembledTabRuntime } from './types';
 
 interface BackgroundTurnRenderResult {
@@ -26,12 +26,6 @@ const backgroundTurnBuffers = new WeakMap<
   Map<string, Map<string, ProviderBackgroundOutputEvent[]>>
 >();
 
-function normalizeProviderMode(mode: string): string {
-  if (mode === 'bypassPermissions' || mode === 'yolo') return 'yolo';
-  if (mode === 'plan') return 'plan';
-  return 'normal';
-}
-
 async function handleTabSessionEvent(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
@@ -40,8 +34,8 @@ async function handleTabSessionEvent(
   isCurrent: () => boolean,
 ): Promise<void> {
   if (!isCurrent()) return;
-  if (event.type === 'mode_changed') {
-    await updatePlanModeUI(tab, plugin, normalizeProviderMode(event.mode));
+  if (event.type === 'permission_mode_changed') {
+    await updateTabPermissionMode(tab, plugin, event.permissionMode);
     if (!isCurrent()) return;
     return;
   }

@@ -4251,7 +4251,7 @@ describe('StreamController - Text Content', () => {
   });
 });
 
-describe('StreamController - Plan Mode', () => {
+describe('StreamController - Tool completion', () => {
   let controller: StreamController;
   let deps: MockStreamControllerDeps;
 
@@ -4268,70 +4268,6 @@ describe('StreamController - Plan Mode', () => {
     deps.state.resetStreamingState();
     restoreTestWindow();
     jest.useRealTimers();
-  });
-
-  describe('capturePlanFilePath', () => {
-    it('should capture plan file path from Write tool_use', async () => {
-      const msg = createTestMessage();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/.claude/plans/plan.md' } },
-        msg
-      );
-
-      expect(deps.state.planFilePath).toBe('/home/user/.claude/plans/plan.md');
-    });
-
-    it('should capture plan file path with Windows backslashes', async () => {
-      const msg = createTestMessage();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'C:\\.claude\\plans\\plan.md' } },
-        msg
-      );
-
-      expect(deps.state.planFilePath).toBe('C:\\.claude\\plans\\plan.md');
-    });
-
-    it('should not capture non-plan Write paths', async () => {
-      const msg = createTestMessage();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/notes/todo.md' } },
-        msg
-      );
-
-      expect(deps.state.planFilePath).toBeNull();
-    });
-
-    it('should not capture plan path from non-Write tools', async () => {
-      const msg = createTestMessage();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: '/home/user/.claude/plans/plan.md' } },
-        msg
-      );
-
-      expect(deps.state.planFilePath).toBeNull();
-    });
-
-    it('should capture plan file path on subsequent tool_use input update', async () => {
-      const msg = createTestMessage();
-      msg.toolCalls = [{
-        id: 'write-1',
-        name: 'Write',
-        input: { content: 'plan content' },
-        status: 'running',
-      }];
-
-      // Second tool_use chunk with same ID updates the input (file_path arrives later)
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/.claude/plans/plan.md' } },
-        msg
-      );
-
-      expect(deps.state.planFilePath).toBe('/home/user/.claude/plans/plan.md');
-    });
   });
 
   describe('tool completion outcomes', () => {

@@ -110,7 +110,7 @@ describe('built-in ProviderModule catalog', () => {
     });
   });
 
-  it('keeps ephemeral OpenCode plan-mode normalization provider-owned', () => {
+  it('normalizes obsolete OpenCode modes through provider storage', () => {
     const opencodeModule = BUILT_IN_PROVIDER_MODULES.find(module => module.id === 'opencode');
     const normalizedSettings: Record<string, unknown> = {};
 

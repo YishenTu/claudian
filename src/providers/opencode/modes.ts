@@ -1,3 +1,5 @@
+import type { PermissionMode } from '@/core/types';
+
 export interface OpencodeMode {
   description?: string;
   id: string;
@@ -7,7 +9,6 @@ export interface OpencodeMode {
 export const OPENCODE_BUILD_MODE_ID = 'build';
 export const OPENCODE_YOLO_MODE_ID = 'claudian-yolo';
 export const OPENCODE_SAFE_MODE_ID = 'claudian-safe';
-export const OPENCODE_PLAN_MODE_ID = 'plan';
 
 export const OPENCODE_FALLBACK_MODES: ReadonlyArray<OpencodeMode> = Object.freeze([
   {
@@ -19,11 +20,6 @@ export const OPENCODE_FALLBACK_MODES: ReadonlyArray<OpencodeMode> = Object.freez
     description: 'Safe mode. Asks before shell commands and file edits.',
     id: OPENCODE_SAFE_MODE_ID,
     name: 'safe',
-  },
-  {
-    description: 'Plan mode. Disallows all edit tools.',
-    id: OPENCODE_PLAN_MODE_ID,
-    name: OPENCODE_PLAN_MODE_ID,
   },
 ]);
 
@@ -125,9 +121,6 @@ export function resolveOpencodeModeForPermissionMode(
   const managedModes = getManagedOpencodeModes(modes);
   const managedModeIds = new Set(managedModes.map((mode) => mode.id));
 
-  if (permissionMode === 'plan' && managedModeIds.has(OPENCODE_PLAN_MODE_ID)) {
-    return OPENCODE_PLAN_MODE_ID;
-  }
   if (permissionMode === 'normal' && managedModeIds.has(OPENCODE_SAFE_MODE_ID)) {
     return OPENCODE_SAFE_MODE_ID;
   }
@@ -143,15 +136,12 @@ export function resolveOpencodeModeForPermissionMode(
 
 export function resolvePermissionModeForManagedOpencodeMode(
   modeId: unknown,
-): 'normal' | 'plan' | 'yolo' | null {
+): PermissionMode | null {
   if (modeId === OPENCODE_BUILD_MODE_ID || modeId === OPENCODE_YOLO_MODE_ID) {
     return 'yolo';
   }
   if (modeId === OPENCODE_SAFE_MODE_ID) {
     return 'normal';
-  }
-  if (modeId === OPENCODE_PLAN_MODE_ID) {
-    return 'plan';
   }
   return null;
 }

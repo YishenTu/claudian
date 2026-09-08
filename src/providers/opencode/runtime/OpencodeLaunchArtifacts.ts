@@ -10,7 +10,6 @@ import {
 import { expandHomePath } from '../../../utils/path';
 import {
   OPENCODE_BUILD_MODE_ID,
-  OPENCODE_PLAN_MODE_ID,
   OPENCODE_SAFE_MODE_ID,
   OPENCODE_YOLO_MODE_ID,
 } from '../modes';
@@ -35,7 +34,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
     definition: {
       mode: 'primary',
       permission: {
-        plan_enter: 'allow',
+        plan_enter: 'deny',
         question: 'allow',
       },
     },
@@ -45,7 +44,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
     definition: {
       mode: 'primary',
       permission: {
-        plan_enter: 'allow',
+        plan_enter: 'deny',
         question: 'allow',
         bash: 'ask',
         edit: 'ask',
@@ -53,7 +52,6 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
     },
     id: OPENCODE_SAFE_MODE_ID,
   },
-  { id: OPENCODE_PLAN_MODE_ID },
 ];
 
 export interface PrepareOpencodeLaunchArtifactsParams {

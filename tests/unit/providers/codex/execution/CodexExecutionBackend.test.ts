@@ -226,10 +226,6 @@ function createInteractionPort(): ProviderInteractionPort {
       interactionId: request.interactionId,
       answers: { choice: 'yes' },
     })),
-    requestPlanDecision: jest.fn().mockImplementation(async request => ({
-      interactionId: request.interactionId,
-      decision: null,
-    })),
     dismissInteraction: jest.fn(),
   };
 }

@@ -11,7 +11,6 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { decodeOpencodeModelId } from './models';
-import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
@@ -47,12 +46,7 @@ export const opencodeProviderRegistration: ProviderModule = {
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'opencode');
       const normalized = getOpencodeProviderSettings(stored);
-      updateOpencodeProviderSettings(target, {
-        ...normalized,
-        selectedMode: normalized.selectedMode === OPENCODE_PLAN_MODE_ID
-          ? OPENCODE_SAFE_MODE_ID
-          : normalized.selectedMode,
-      });
+      updateOpencodeProviderSettings(target, normalized);
       return hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'opencode'),

@@ -39,7 +39,6 @@ export interface ClaudeExecutionStrategy {
     queryToken: number,
   ): Promise<void>;
   cancel(queryToken: number | null, nativeTurnHandedOff: boolean): void;
-  setMode(mode: Parameters<Query['setPermissionMode']>[0]): Promise<boolean>;
   getRewindQuery(): Query | null;
   ensureReadyForRewind(
     request: ClaudeEncodedExecutionRequest,
@@ -149,14 +148,6 @@ implements ClaudeExecutionStrategy {
     ) {
       void this.query?.interrupt().catch(() => undefined);
     }
-  }
-
-  async setMode(
-    mode: Parameters<Query['setPermissionMode']>[0],
-  ): Promise<boolean> {
-    if (!this.query) return false;
-    await this.query.setPermissionMode(mode);
-    return true;
   }
 
   getRewindQuery(): Query | null {
@@ -508,10 +499,6 @@ implements ClaudeExecutionStrategy {
   ): void {
     this.activeAbortController?.abort();
     void this.activeQuery?.interrupt().catch(() => undefined);
-  }
-
-  setMode(): Promise<boolean> {
-    return Promise.resolve(false);
   }
 
   getRewindQuery(): Query | null {

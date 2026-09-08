@@ -703,6 +703,32 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('projectActiveProviderState', () => {
+    it.each(['claude', 'codex', 'grok', 'opencode'] as const)(
+      'projects legacy plan permissions as Safe for %s',
+      (providerId) => {
+        for (const permissionMode of ['plan', 'yolo']) {
+          const settings = {
+            settingsProvider: providerId,
+            permissionMode,
+            savedProviderPermissionMode: { [providerId]: 'plan' },
+          };
+          const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, providerId);
+          expect(snapshot.permissionMode).toBe('normal');
+        }
+      },
+    );
+
+    it.each(['claude', 'codex', 'grok', 'opencode'] as const)(
+      'projects an unsaved legacy plan selection as Safe for %s',
+      (providerId) => {
+        const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+          settingsProvider: providerId,
+          permissionMode: 'plan',
+        }, providerId);
+        expect(snapshot.permissionMode).toBe('normal');
+      },
+    );
+
     it('projects saved model and effort for the settings provider', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',

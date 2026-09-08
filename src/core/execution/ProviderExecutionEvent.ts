@@ -1,5 +1,6 @@
 import type {
   CitationGroup,
+  PermissionMode,
   SDKToolUseResult,
   ToolProviderPayload,
   UsageInfo,
@@ -187,12 +188,12 @@ export type ProviderSessionStateChangedEvent = ProviderEventBase<
     readonly snapshot: ProviderSessionSnapshot;
   };
 
-export type ProviderModeChangedEvent = ProviderEventBase<
-  'mode_changed',
+export type ProviderPermissionModeChangedEvent = ProviderEventBase<
+  'permission_mode_changed',
   ProviderExecutionEventScope
 > &
   ProviderOpaqueEventPayload & {
-    readonly mode: string;
+    readonly permissionMode: PermissionMode;
     readonly snapshot: ProviderSessionSnapshot;
   };
 
@@ -209,7 +210,6 @@ export type ProviderTurnCompletedEvent = ProviderEventBase<
   ProviderOpaqueEventPayload & {
     readonly nativeAssistantId?: string;
     readonly nativeCheckpointId?: string;
-    readonly planCompleted?: boolean;
     readonly reason: ProviderTurnCompletionReason;
   };
 
@@ -255,7 +255,7 @@ export type ProviderRequestedExecutionEvent =
   | (ProviderContextCompactedEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderNoticeEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderRequestedEventScope })
-  | (ProviderModeChangedEvent & { readonly scope: ProviderRequestedEventScope })
+  | (ProviderPermissionModeChangedEvent & { readonly scope: ProviderRequestedEventScope })
   | ProviderTurnCompletedEvent
   | ProviderCancelledEvent
   | ProviderExecutionErrorEvent;
@@ -318,7 +318,7 @@ export type ProviderBackgroundOutputEvent =
   | (ProviderContextCompactedEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderNoticeEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderBackgroundEventScope })
-  | (ProviderModeChangedEvent & { readonly scope: ProviderBackgroundEventScope });
+  | (ProviderPermissionModeChangedEvent & { readonly scope: ProviderBackgroundEventScope });
 
 export type ProviderSessionEvent =
   | ProviderBackgroundTurnStartedEvent
@@ -326,7 +326,7 @@ export type ProviderSessionEvent =
   | ProviderBackgroundTurnCompletedEvent
   | ProviderAsyncSubagentCompletedEvent
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderSessionEventScope })
-  | (ProviderModeChangedEvent & { readonly scope: ProviderSessionEventScope })
+  | (ProviderPermissionModeChangedEvent & { readonly scope: ProviderSessionEventScope })
   | ProviderSessionErrorEvent;
 
 export type ProviderExecutionEvent = ProviderRequestedExecutionEvent;

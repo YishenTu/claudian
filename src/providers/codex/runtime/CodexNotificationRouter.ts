@@ -47,7 +47,6 @@ import type {
 type ChunkEmitter = (chunk: StreamChunk) => void;
 type TurnMetadataListener = (update: {
   assistantMessageId?: string;
-  planCompleted?: boolean;
 }) => void;
 
 interface RawToolResult {
@@ -108,8 +107,6 @@ const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
 export class CodexNotificationRouter {
   private seenWebSearchIds = new Set<string>();
   private planUpdateCounter = 0;
-  private isPlanTurn = false;
-  private sawPlanDelta = false;
   private startedUserMessageIds = new Set<string>();
   private startedAgentMessageIds = new Set<string>();
   private streamedAgentMessageTextById = new Map<string, string>();
@@ -203,9 +200,7 @@ export class CodexNotificationRouter {
     this.streamedAssistantTurnText += text;
   }
 
-  beginTurn(params: { isPlanTurn: boolean }): void {
-    this.isPlanTurn = params.isPlanTurn;
-    this.sawPlanDelta = false;
+  beginTurn(): void {
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
     this.streamedAgentMessageTextById.clear();
@@ -244,8 +239,6 @@ export class CodexNotificationRouter {
   }
 
   endTurn(): void {
-    this.isPlanTurn = false;
-    this.sawPlanDelta = false;
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
     this.streamedAgentMessageTextById.clear();
@@ -353,7 +346,6 @@ export class CodexNotificationRouter {
   }
 
   private onPlanDelta(params: PlanDeltaNotification): void {
-    this.sawPlanDelta = true;
     this.emit({ type: 'text', content: params.delta });
   }
 
@@ -1886,7 +1878,6 @@ export class CodexNotificationRouter {
     if (turn.status === 'completed') {
       this.onTurnMetadata?.({
         assistantMessageId: turn.id,
-        ...(this.isPlanTurn && this.sawPlanDelta ? { planCompleted: true } : {}),
       });
     }
 

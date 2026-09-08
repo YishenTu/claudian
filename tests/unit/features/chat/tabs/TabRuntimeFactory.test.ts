@@ -20,7 +20,7 @@ import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
   initializeTabExecution,
   onProviderAvailabilityChanged,
-  updatePlanModeUI,
+  updateTabPermissionMode,
 } from '@/features/chat/tabs/TabProviderState';
 import {
   createTabRuntime,
@@ -41,7 +41,6 @@ interface MockCoordinator {
   notifyMayCool: jest.Mock;
   prepare: jest.Mock;
   resolveForkSource: jest.Mock;
-  setMode: jest.Mock;
   snapshot: { providerSessionId?: string } | null;
   state: 'absent' | 'idle' | 'active' | 'stale' | 'disposed';
 }
@@ -58,7 +57,6 @@ jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
       notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
       resolveForkSource: jest.fn().mockResolvedValue({ sessionId: 'native-session' }),
-      setMode: jest.fn().mockResolvedValue(true),
       snapshot: null,
       state: 'absent',
     };
@@ -97,7 +95,6 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       providerId: 'claude',
       supportsFork: true,
       supportsImageAttachments: true,
-      supportsPlanMode: true,
     }),
     getChatUIConfig: jest.fn().mockReturnValue({
       applyPermissionMode: (_mode: string, settings: Record<string, unknown>) => {
@@ -2585,29 +2582,27 @@ describe('Tab provider execution ownership', () => {
     expect(forkRequest).not.toHaveBeenCalled();
   });
 
-  it('synchronizes explicit mode changes through the coordinator', async () => {
+  it.each(['normal', 'yolo'] as const)('applies normalized %s permission events to tab settings', async (permissionMode) => {
     const plugin = createPlugin();
-    const tab = await createTestTab({
-      plugin,
-      containerEl: createMockEl() as any,
-      conversation: createConversation(),
-    });
-    const coordinator = coordinatorInstances[0];
+    await createTestTab({ plugin, containerEl: createMockEl() as any });
+    plugin.settings.permissionMode = permissionMode === 'normal' ? 'yolo' : 'normal';
 
-    await updatePlanModeUI(tab, plugin, 'plan', { syncExecution: true });
+    await coordinatorDeps[0].onSessionEvent?.({
+      type: 'permission_mode_changed',
+      permissionMode,
+      scope: { kind: 'session', sessionInstanceId: 'session-instance-1', sequence: 1 },
+      snapshot: { providerId: 'claude', revision: 1, status: 'idle' },
+    }, createEventContext());
 
-    expect(plugin.settings.permissionMode).toBe('plan');
-    expect(coordinator.setMode).toHaveBeenCalledWith('plan');
+    expect(plugin.settings.permissionMode).toBe(permissionMode);
   });
 
-  it('keeps plan mode as draft state when a blank tab has no execution conversation', async () => {
+  it('updates permission settings for an unbound tab', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
-    const coordinator = coordinatorInstances[0];
 
-    await updatePlanModeUI(tab, plugin, 'plan', { syncExecution: true });
+    await updateTabPermissionMode(tab, plugin, 'normal');
 
-    expect(plugin.settings.permissionMode).toBe('plan');
-    expect(coordinator.setMode).not.toHaveBeenCalled();
+    expect(plugin.settings.permissionMode).toBe('normal');
   });
 });

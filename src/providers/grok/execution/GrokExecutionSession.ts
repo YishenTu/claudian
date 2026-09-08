@@ -4,7 +4,6 @@ import type {
   ChatRewindMode,
   ChatRewindPreview,
   ChatRewindResult,
-  ModeConfigurableExecutionSession,
   ProviderExecutionEvent,
   ProviderExecutionRequest,
   ProviderExecutionRun,
@@ -18,7 +17,7 @@ import type {
   SteerableExecutionSession,
 } from '../../../core/execution';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { ChatMessage } from '../../../core/types';
+import type { ChatMessage, PermissionMode } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import { appendLinkedContent } from '../../../utils/context';
@@ -190,7 +189,6 @@ export class GrokExecutionSession
 implements
 ProviderExecutionSession,
 SteerableExecutionSession,
-ModeConfigurableExecutionSession,
 RewindableExecutionSession {
   readonly providerId = 'grok' as const;
   readonly sessionInstanceId = randomUUID();
@@ -342,22 +340,6 @@ RewindableExecutionSession {
         .join('\n'),
     }, request.signal);
     return true;
-  }
-
-  async setMode(mode: string): Promise<boolean> {
-    if (this.disposed) return false;
-    if (mode !== 'plan' && mode !== 'default' && mode !== 'normal') return false;
-    try {
-      const native = await this.ensureNative();
-      const sessionId = await this.ensureSession(native, undefined);
-      const normalized = mode === 'plan' ? 'plan' : 'default';
-      await native.setMode({ modeId: normalized, sessionId });
-      this.updateSnapshot(this.active ? 'executing' : 'idle');
-      this.emitSessionMode(normalized);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   async previewRewind(
@@ -530,7 +512,7 @@ RewindableExecutionSession {
       owner.modeUnsubscribe = native.onModeChanged?.(mode => {
         if (!this.isCurrentNativeOwner(owner)) return;
         this.updateSnapshot(this.active ? 'executing' : 'idle');
-        this.emitSessionMode(mode);
+        this.emitPermissionMode(mode);
       }) ?? (() => {});
       owner.modelsUnsubscribe = native.onModelsChanged?.(models => {
         if (!this.isCurrentNativeOwner(owner)) return;
@@ -739,10 +721,10 @@ RewindableExecutionSession {
         this.throwIfCancellationRequested(active);
       }
     }
-    const requestedMode = resolveGrokNativeMode(request);
-    if (requestedMode) {
+    const permissionMode = request.configuration.permissionMode;
+    if (permissionMode === 'normal' || permissionMode === 'yolo' || permissionMode === 'plan') {
       await native.setMode({
-        modeId: requestedMode,
+        modeId: 'default',
         sessionId,
       });
       this.throwIfCancellationRequested(active);
@@ -789,10 +771,8 @@ RewindableExecutionSession {
       if (owner) void this.publishModelsFromConfig(result.metadata.configOptions, owner);
       return;
     }
-    if (result.metadata?.type === 'current_mode') {
-      this.emitSessionMode(result.metadata.currentModeId === 'plan' ? 'plan' : 'default');
-      return;
-    }
+    // ACP session modes do not describe Grok's Safe/YOLO permissions.
+    if (result.metadata?.type === 'current_mode') return;
     if (!active.acceptingLiveOutput) return;
     this.accept(active);
     for (const event of result.events) {
@@ -1224,16 +1204,16 @@ RewindableExecutionSession {
     }
   }
 
-  private emitSessionMode(mode: string): void {
+  private emitPermissionMode(permissionMode: PermissionMode): void {
     const event: ProviderSessionEvent = {
-      mode,
+      permissionMode,
       scope: {
         kind: 'session',
         sequence: this.revision,
         sessionInstanceId: this.sessionInstanceId,
       },
       snapshot: this.snapshot,
-      type: 'mode_changed',
+      type: 'permission_mode_changed',
     };
     for (const listener of this.listeners) {
       try {
@@ -1352,21 +1332,6 @@ function buildGrokSystemPromptOverride(
   return [instructions, GROK_PASSIVE_TOOL_INSTRUCTION]
     .filter(Boolean)
     .join('\n\n');
-}
-
-function resolveGrokNativeMode(
-  request: ProviderExecutionRequest,
-): 'default' | 'plan' | null {
-  const explicitMode = request.configuration.mode;
-  if (explicitMode !== undefined) {
-    if (explicitMode === 'plan') return 'plan';
-    if (explicitMode === 'default' || explicitMode === 'normal') return 'default';
-    return null;
-  }
-  const permissionMode = request.configuration.permissionMode;
-  if (permissionMode === 'plan') return 'plan';
-  if (permissionMode === 'normal' || permissionMode === 'yolo') return 'default';
-  return null;
 }
 
 function isTurnCompleted(update: unknown): boolean {

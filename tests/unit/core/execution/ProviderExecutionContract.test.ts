@@ -1,5 +1,4 @@
 import {
-  isModeConfigurableExecutionSession,
   isRewindableExecutionSession,
   isSteerableExecutionSession,
   type ProviderApprovalInteractionRequest,
@@ -10,8 +9,6 @@ import {
   type ProviderExecutionSession,
   type ProviderInteractionDismissReason,
   type ProviderInteractionPort,
-  type ProviderPlanInteractionRequest,
-  type ProviderPlanInteractionResponse,
   type ProviderQuestionInteractionRequest,
   type ProviderQuestionInteractionResponse,
   type ProviderSessionEvent,
@@ -65,7 +62,6 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
       reasoning: 'high',
       permissionMode: 'normal',
       serviceTier: 'default',
-      mode: 'plan',
       externalWorkspaceRoots: ['/external'],
     },
     toolPolicy: { kind: 'read-only' },
@@ -488,13 +484,13 @@ describe('provider execution contracts', () => {
       reason: 'completed',
     });
     session.emitSessionEvent({
-      type: 'mode_changed',
+      type: 'permission_mode_changed',
+      permissionMode: 'normal',
       scope: {
         kind: 'session',
         sessionInstanceId: session.sessionInstanceId,
         sequence: 0,
       },
-      mode: 'plan',
       snapshot: {
         providerId: 'test',
         revision: 1,
@@ -577,16 +573,10 @@ describe('provider execution contracts', () => {
     const steerable = Object.assign(new ContractSession(), {
       steer: jest.fn(),
     });
-    const configurable = Object.assign(new ContractSession(), {
-      setMode: jest.fn(),
-    });
-
     expect(isRewindableExecutionSession(base)).toBe(false);
     expect(isSteerableExecutionSession(base)).toBe(false);
-    expect(isModeConfigurableExecutionSession(base)).toBe(false);
     expect(isRewindableExecutionSession(rewindable)).toBe(true);
     expect(isSteerableExecutionSession(steerable)).toBe(true);
-    expect(isModeConfigurableExecutionSession(configurable)).toBe(true);
   });
 
   it('allows steer adapters to reject when native acceptance is unknown', async () => {
@@ -629,17 +619,6 @@ class RecordingInteractionPort implements ProviderInteractionPort {
     };
   }
 
-  async requestPlanDecision(
-    request: ProviderPlanInteractionRequest,
-    signal: AbortSignal,
-  ): Promise<ProviderPlanInteractionResponse> {
-    if (signal.aborted) throw signal.reason;
-    return {
-      interactionId: request.interactionId,
-      decision: { type: 'approve' },
-    };
-  }
-
   dismissInteraction(
     interactionId: string,
     reason: ProviderInteractionDismissReason,
@@ -677,20 +656,9 @@ describe('ProviderInteractionPort', () => {
       },
       signal,
     );
-    const plan = await port.requestPlanDecision(
-      {
-        ...identity,
-        interactionId: 'plan-1',
-        kind: 'plan-decision',
-        input: { plan: 'Implement' },
-      },
-      signal,
-    );
-
-    expect([approval.interactionId, question.interactionId, plan.interactionId]).toEqual([
+    expect([approval.interactionId, question.interactionId]).toEqual([
       'approval-1',
       'question-1',
-      'plan-1',
     ]);
   });
 

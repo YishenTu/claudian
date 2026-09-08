@@ -5,7 +5,6 @@ import type {
   ProviderExecutionEvent,
 } from '../../../core/execution';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -22,7 +21,6 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_SUBAGENT,
   TOOL_TODO_WRITE,
-  TOOL_WRITE,
 } from '../../../core/tools/toolNames';
 import {
   extractToolProviderPayload,
@@ -365,11 +363,6 @@ export class StreamController {
           }
         }
 
-        // Capture plan file path on input updates (file_path may arrive in a later chunk)
-        if (existingToolCall.name === TOOL_WRITE) {
-          this.capturePlanFilePath(existingToolCall.input);
-        }
-
         const rendererRebuilt = nameChanged
           && this.rebuildRenderedToolRenderer(existingToolCall);
 
@@ -416,11 +409,6 @@ export class StreamController {
       if (todos) {
         this.deps.state.currentTodos = todos;
       }
-    }
-
-    // Track Write to provider plan directory for plan mode (used by approve-new-session)
-    if (chunk.name === TOOL_WRITE) {
-      this.capturePlanFilePath(chunk.input);
     }
 
     // Buffer the tool call instead of rendering immediately
@@ -526,18 +514,6 @@ export class StreamController {
     return this.shouldDeferMathRendering() && hasStreamingMathDelimiters(content)
       ? { deferMath: true }
       : undefined;
-  }
-
-  private capturePlanFilePath(input: Record<string, unknown>): void {
-    const filePath = input.file_path as string | undefined;
-    if (!filePath) return;
-
-    const planPathPrefix = ProviderRegistry.getCapabilities(
-      this.getActiveProviderId(),
-    ).planPathPrefix;
-    if (planPathPrefix && filePath.replace(/\\/g, '/').includes(planPathPrefix)) {
-      this.deps.state.planFilePath = filePath;
-    }
   }
 
   /**

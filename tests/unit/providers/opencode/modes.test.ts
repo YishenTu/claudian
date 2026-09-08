@@ -34,7 +34,7 @@ describe('OpenCode mode settings', () => {
     expect(getEffectiveOpencodeModes([])).toEqual(OPENCODE_FALLBACK_MODES);
   });
 
-  it('keeps Claudian on managed YOLO/safe/plan modes even when discovery only reports custom agents', () => {
+  it('keeps Claudian on managed YOLO/safe modes even when discovery only reports custom agents', () => {
     expect(getManagedOpencodeModes([
       { id: 'compaction', name: 'compaction' },
       { id: 'summary', name: 'summary' },
@@ -42,6 +42,7 @@ describe('OpenCode mode settings', () => {
   });
 
   it('normalizes unsupported saved mode selections to the managed safe mode', () => {
+    expect(normalizeManagedOpencodeSelectedMode('plan')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(normalizeManagedOpencodeSelectedMode('compaction')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(normalizeManagedOpencodeSelectedMode(123)).toBe(OPENCODE_SAFE_MODE_ID);
     expect(normalizeManagedOpencodeSelectedMode(null)).toBe(OPENCODE_SAFE_MODE_ID);
@@ -59,7 +60,7 @@ describe('OpenCode mode settings', () => {
   it('maps shared permission modes onto managed OpenCode modes', () => {
     expect(resolveOpencodeModeForPermissionMode('yolo')).toBe(OPENCODE_YOLO_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('normal')).toBe(OPENCODE_SAFE_MODE_ID);
-    expect(resolveOpencodeModeForPermissionMode('plan')).toBe('plan');
+    expect(resolveOpencodeModeForPermissionMode('plan')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('danger-full-access')).toBe(OPENCODE_SAFE_MODE_ID);
   });
 
@@ -67,13 +68,13 @@ describe('OpenCode mode settings', () => {
     expect(resolvePermissionModeForManagedOpencodeMode(OPENCODE_BUILD_MODE_ID)).toBe('yolo');
     expect(resolvePermissionModeForManagedOpencodeMode(OPENCODE_YOLO_MODE_ID)).toBe('yolo');
     expect(resolvePermissionModeForManagedOpencodeMode(OPENCODE_SAFE_MODE_ID)).toBe('normal');
-    expect(resolvePermissionModeForManagedOpencodeMode('plan')).toBe('plan');
+    expect(resolvePermissionModeForManagedOpencodeMode('plan')).toBeNull();
     expect(resolvePermissionModeForManagedOpencodeMode('summary')).toBeNull();
   });
 });
 
 describe('opencodeChatUIConfig permission mode wiring', () => {
-  it('exposes the shared Safe/YOLO/Plan toggle instead of a provider-owned mode selector', () => {
+  it('exposes the shared Safe/YOLO toggle instead of a provider-owned mode selector', () => {
     expect(opencodeChatUIConfig.getModeSelector?.({
       providerConfigs: {
         opencode: {
@@ -92,8 +93,6 @@ describe('opencodeChatUIConfig permission mode wiring', () => {
       activeValue: 'yolo',
       inactiveLabel: 'Safe',
       inactiveValue: 'normal',
-      planLabel: 'Plan',
-      planValue: 'plan',
     });
   });
 
@@ -128,7 +127,7 @@ describe('opencodeChatUIConfig permission mode wiring', () => {
           selectedMode: 'plan',
         },
       },
-    })).toBe('plan');
+    })).toBe('normal');
   });
 
   it('maps shared permission mode changes back into managed OpenCode modes', () => {
@@ -151,7 +150,7 @@ describe('opencodeChatUIConfig permission mode wiring', () => {
     expect((settings.providerConfigs as Record<string, Record<string, unknown>>).opencode.selectedMode).toBe(OPENCODE_SAFE_MODE_ID);
 
     opencodeChatUIConfig.applyPermissionMode?.('plan', settings);
-    expect((settings.providerConfigs as Record<string, Record<string, unknown>>).opencode.selectedMode).toBe('plan');
+    expect((settings.providerConfigs as Record<string, Record<string, unknown>>).opencode.selectedMode).toBe(OPENCODE_SAFE_MODE_ID);
 
     opencodeChatUIConfig.applyPermissionMode?.('yolo', settings);
     expect((settings.providerConfigs as Record<string, Record<string, unknown>>).opencode.selectedMode).toBe(OPENCODE_YOLO_MODE_ID);

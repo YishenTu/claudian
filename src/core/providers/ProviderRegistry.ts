@@ -314,10 +314,6 @@ const PASSIVE_AUXILIARY_INTERACTION_PORT: ProviderInteractionPort = {
     answers: null,
     interactionId: request.interactionId,
   }),
-  requestPlanDecision: async request => ({
-    decision: null,
-    interactionId: request.interactionId,
-  }),
   dismissInteraction: () => undefined,
 };
 

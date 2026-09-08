@@ -1,6 +1,5 @@
 import type {
   CanUseTool,
-  PermissionMode as SDKPermissionMode,
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
 
@@ -11,9 +10,7 @@ import type {
 import { getActionDescription } from '../../../core/security/approvalRules';
 import {
   TOOL_ASK_USER_QUESTION,
-  TOOL_EXIT_PLAN_MODE,
 } from '../../../core/tools/toolNames';
-import type { PermissionMode } from '../../../core/types/settings';
 import { buildPersistentPermissionUpdates } from '../security/ClaudePermissionUpdates';
 
 export interface ClaudeExecutionInteractionDeps {
@@ -21,10 +18,6 @@ export interface ClaudeExecutionInteractionDeps {
   readonly sessionInstanceId: string;
   readonly getTurnId: () => string | null;
   readonly isToolAllowed: (toolName: string) => boolean;
-  readonly getPermissionMode: () => PermissionMode;
-  readonly resolveSdkPermissionMode: (
-    mode: PermissionMode,
-  ) => SDKPermissionMode;
   readonly onToolBlocked: (toolUseId: string) => void;
 }
 
@@ -98,51 +91,6 @@ export class ClaudeInteractionHandler {
             ...questionInput,
             answers: response.answers,
           },
-        };
-      }
-
-      if (toolName === TOOL_EXIT_PLAN_MODE) {
-        const response = await this.deps.interactionPort.requestPlanDecision({
-          ...identity,
-          kind: 'plan-decision',
-          input,
-        }, options.signal);
-        assertResponseIdentity(interactionId, response.interactionId);
-        dismissReason = 'resolved';
-        const decision = response.decision;
-        if (decision === null) {
-          return {
-            behavior: 'deny',
-            message: 'User cancelled.',
-            interrupt: true,
-          };
-        }
-        if (decision.type === 'feedback') {
-          return {
-            behavior: 'deny',
-            message: decision.text,
-            interrupt: false,
-          };
-        }
-        if (decision.type === 'abandon') {
-          return {
-            behavior: 'deny',
-            message: 'User abandoned the plan.',
-            interrupt: true,
-          };
-        }
-
-        const sdkMode = this.deps.resolveSdkPermissionMode(
-          this.deps.getPermissionMode(),
-        );
-        return {
-          behavior: 'allow',
-          updatedInput: input,
-          updatedPermissions: [{
-            type: 'setMode',
-            mode: sdkMode,
-            destination: 'session',
-          }],
         };
       }
 

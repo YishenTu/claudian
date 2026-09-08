@@ -55,12 +55,6 @@ export interface TabManagerViewHost extends Component {
 
   /** Handles /clear and /new when the active layout gives New different semantics. */
   handleNewConversationCommand?(): Promise<boolean>;
-
-  /** Starts approved plan content in a layout-owned new conversation when required. */
-  handleNewSessionPlan?(
-    planContent: string,
-    isSourceLive?: () => boolean,
-  ): Promise<boolean>;
 }
 
 /**

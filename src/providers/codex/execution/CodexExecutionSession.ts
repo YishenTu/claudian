@@ -544,10 +544,7 @@ export class CodexExecutionSession
         undefined,
         this.resolveTargetWorkingDirectory(),
       );
-      const isPlanTurn = request.configuration.mode === 'plan'
-        || request.configuration.permissionMode === 'plan'
-        || settings.permissionMode === 'plan';
-      this.notificationRouter.beginTurn({ isPlanTurn });
+      this.notificationRouter.beginTurn();
       this.pendingTurnNotifications = [];
 
       if (isCompactRequest(request)) {
@@ -580,7 +577,7 @@ export class CodexExecutionSession
         settings,
       );
       const collaborationMode = {
-        mode: isPlanTurn ? 'plan' as const : 'default' as const,
+        mode: 'default' as const,
         settings: {
           model,
           reasoning_effort: effort,
@@ -1843,7 +1840,6 @@ export class CodexExecutionSession
 
     const permissionMode =
       normalizeString(request.configuration.permissionMode)
-      ?? normalizeString(request.configuration.mode)
       ?? normalizeString(settings.permissionMode)
       ?? 'normal';
     const safeMode = getCodexProviderSettings(settings).safeMode;
@@ -2116,9 +2112,6 @@ function resolveCodexSandboxConfig(
 ): { approvalPolicy: string; sandbox: string } {
   if (permissionMode === 'yolo') {
     return { approvalPolicy: 'never', sandbox: 'danger-full-access' };
-  }
-  if (permissionMode === 'plan') {
-    return { approvalPolicy: 'on-request', sandbox: 'workspace-write' };
   }
   return { approvalPolicy: 'on-request', sandbox: safeMode };
 }

@@ -42,8 +42,6 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveLabel: 'Safe',
   activeValue: 'yolo',
   activeLabel: 'YOLO',
-  planValue: 'plan',
-  planLabel: 'Plan',
 };
 
 const DEFAULT_SERVICE_TIER_LABEL = 'Standard';

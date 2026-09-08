@@ -7,7 +7,6 @@ export const GROK_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsNativeHistory: true,
-  supportsPlanMode: true,
   supportsProviderCommands: true,
   supportsRewind: true,
   supportsTurnSteer: true,

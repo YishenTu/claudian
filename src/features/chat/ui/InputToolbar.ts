@@ -440,7 +440,6 @@ export class PermissionToggle {
     if (!this.toggleEl || !this.labelEl) return;
 
     const toggleConfig = this.getToggleConfig();
-    const capabilities = this.callbacks.getCapabilities();
     if (!this.visible || !toggleConfig) {
       this.container.addClass('claudian-hidden');
       return;
@@ -448,24 +447,12 @@ export class PermissionToggle {
 
     this.container.removeClass('claudian-hidden');
     const mode = this.callbacks.getSettings().permissionMode;
-    const planValue = toggleConfig.planValue;
-    const planLabel = toggleConfig.planLabel ?? 'PLAN';
-    const canShowPlan = Boolean(planValue) && capabilities.supportsPlanMode;
-
-    if (canShowPlan && planValue && mode === planValue) {
-      this.toggleEl.addClass('claudian-hidden');
-      this.labelEl.setText(planLabel);
-      this.labelEl.addClass('plan-active');
+    if (mode === toggleConfig.activeValue) {
+      this.toggleEl.addClass('active');
+      this.labelEl.setText(toggleConfig.activeLabel);
     } else {
-      this.toggleEl.removeClass('claudian-hidden');
-      this.labelEl.removeClass('plan-active');
-      if (mode === toggleConfig.activeValue) {
-        this.toggleEl.addClass('active');
-        this.labelEl.setText(toggleConfig.activeLabel);
-      } else {
-        this.toggleEl.removeClass('active');
-        this.labelEl.setText(toggleConfig.inactiveLabel);
-      }
+      this.toggleEl.removeClass('active');
+      this.labelEl.setText(toggleConfig.inactiveLabel);
     }
   }
 

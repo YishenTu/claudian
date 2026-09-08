@@ -28,8 +28,6 @@ const OPENCODE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveLabel: 'Safe',
   activeValue: 'yolo',
   activeLabel: 'YOLO',
-  planValue: 'plan',
-  planLabel: 'Plan',
 };
 
 export const opencodeChatUIConfig: ProviderChatUIConfig = {

@@ -49,7 +49,6 @@ const interactionPort: ProviderInteractionPort = {
   askUserQuestion: jest.fn(),
   dismissInteraction: jest.fn(),
   requestApproval: jest.fn(),
-  requestPlanDecision: jest.fn(),
 };
 
 const sessionConfig: ProviderSessionConfig = {
@@ -79,7 +78,7 @@ function forkSessionConfig(): ProviderSessionConfig {
 function executionRequest(text = 'hello'): ProviderExecutionRequest {
   return {
     configuration: {
-      mode: 'plan',
+      permissionMode: 'normal',
       model: 'grok/grok-4',
       reasoning: 'high',
       systemInstructions: { kind: 'explicit', instructions: 'Be exact.' },
@@ -141,13 +140,11 @@ function persistGrok45Catalog(
 
 function featurePermissionRequest(
   permissionMode: 'normal' | 'plan' | 'yolo',
-  explicitMode?: string,
 ): ProviderExecutionRequest {
   const base = executionRequest(permissionMode);
   return {
     ...base,
     configuration: {
-      ...(explicitMode !== undefined ? { mode: explicitMode } : {}),
       model: base.configuration.model,
       permissionMode,
       reasoning: base.configuration.reasoning,
@@ -206,6 +203,7 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     value: AcpSessionNotification,
     source: 'extension' | 'standard',
   ) => void) | null = null;
+  private permissionModeChanged: ((mode: 'normal' | 'yolo') => void) | null = null;
   private modelsChanged: ((models: AcpSessionModelState) => void) | null = null;
   private retainedModelsChanged: ((models: AcpSessionModelState) => void) | null = null;
   initializeImplementation: () => Promise<void> = async () => {};
@@ -310,6 +308,15 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     };
   }
 
+  onModeChanged(listener: (mode: 'normal' | 'yolo') => void): () => void {
+    this.permissionModeChanged = listener;
+    return () => { this.permissionModeChanged = null; };
+  }
+
+  emitPermissionMode(mode: 'normal' | 'yolo'): void {
+    this.permissionModeChanged?.(mode);
+  }
+
   async setMode(request: AcpSetSessionModeRequest): Promise<void> {
     this.modeRequests.push(request);
   }
@@ -382,7 +389,7 @@ describe('GrokExecutionBackend', () => {
       modelId: 'grok-4',
       sessionId: 'session-existing',
     });
-    expect(native.modeRequests[0]).toEqual({ modeId: 'plan', sessionId: 'session-existing' });
+    expect(native.modeRequests[0]).toEqual({ modeId: 'default', sessionId: 'session-existing' });
     expect(native.promptRequests[0]).toMatchObject({
       prompt: [{ text: 'hello', type: 'text' }],
       sessionId: 'session-existing',
@@ -773,7 +780,7 @@ describe('GrokExecutionBackend', () => {
     ]);
   });
 
-  it('keeps one loaded connection for dynamic model and mode changes', async () => {
+  it('keeps one loaded connection for dynamic model changes', async () => {
     const native = new FakeNativeConnection();
     const nativeFactory: GrokExecutionNativeFactory = {
       create: jest.fn(() => native),
@@ -787,7 +794,6 @@ describe('GrokExecutionBackend', () => {
       ...executionRequest('second'),
       configuration: {
         ...firstRequest.configuration,
-        mode: 'default',
         model: 'grok/grok-3',
       },
     };
@@ -802,7 +808,7 @@ describe('GrokExecutionBackend', () => {
       'grok-3',
     ]);
     expect(native.modeRequests.map(request => request.modeId)).toEqual([
-      'plan',
+      'default',
       'default',
     ]);
   });
@@ -978,7 +984,7 @@ describe('GrokExecutionBackend', () => {
   });
 
   it.each(['normal', 'yolo'] as const)(
-    'exits native Plan mode for a persistent feature-shaped %s request',
+    'uses default native mode for a persistent feature-shaped %s request',
     async (permissionMode) => {
       const native = new FakeNativeConnection();
       const session = new GrokExecutionBackend(
@@ -986,11 +992,11 @@ describe('GrokExecutionBackend', () => {
         { nativeFactory: { create: () => native } },
       ).createSession(sessionConfig);
 
-      await collect(session.execute(featurePermissionRequest('normal', 'plan')).events);
+      await collect(session.execute(featurePermissionRequest('normal')).events);
       await collect(session.execute(featurePermissionRequest(permissionMode)).events);
 
       expect(native.modeRequests).toEqual([
-        { modeId: 'plan', sessionId: 'session-existing' },
+        { modeId: 'default', sessionId: 'session-existing' },
         { modeId: 'default', sessionId: 'session-existing' },
       ]);
       expect(native.loadRequests).toHaveLength(permissionMode === 'yolo' ? 2 : 1);
@@ -1000,7 +1006,7 @@ describe('GrokExecutionBackend', () => {
     },
   );
 
-  it('enters native Plan mode from permission selection when explicit mode is absent', async () => {
+  it('normalizes a legacy plan permission selection to default native mode', async () => {
     const native = new FakeNativeConnection();
     const session = new GrokExecutionBackend(
       { settings: {} } as ProviderHost,
@@ -1010,7 +1016,7 @@ describe('GrokExecutionBackend', () => {
     await collect(session.execute(featurePermissionRequest('plan')).events);
 
     expect(native.modeRequests).toEqual([
-      { modeId: 'plan', sessionId: 'session-existing' },
+      { modeId: 'default', sessionId: 'session-existing' },
     ]);
   });
 
@@ -2036,6 +2042,58 @@ describe('GrokExecutionBackend', () => {
     }));
     expect(native.loadRequests[0]?._meta).not.toHaveProperty('toolProfile');
     expect(interactionPort.requestApproval).not.toHaveBeenCalled();
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('keeps native permission changes authoritative across ACP mode updates', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const permissions: string[] = [];
+    session.onEvent(event => {
+      if (event.type === 'permission_mode_changed') permissions.push(event.permissionMode);
+    });
+    const run = session.execute(featurePermissionRequest('yolo'));
+    while (native.promptRequests.length === 0) await Promise.resolve();
+
+    native.emitPermissionMode('yolo');
+    native.emit({ sessionUpdate: 'current_mode_update', currentModeId: 'default' });
+    native.emit({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' });
+    native.emitPermissionMode('normal');
+    run.cancel();
+    await collect(run.events);
+
+    expect(permissions).toEqual(['yolo', 'normal']);
+  });
+
+  it('answers native plan approval requests with the abandoned outcome', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    while (native.promptRequests.length === 0) await Promise.resolve();
+
+    await expect(nativeOptions?.requestExtension('_x.ai/exit_plan_mode', {
+      sessionId: 'session-existing',
+      toolCallId: 'tool-plan',
+      planContent: 'Implement the proposed changes',
+    })).resolves.toEqual({ outcome: 'abandoned' });
+
     run.cancel();
     await collect(run.events);
   });

@@ -57,7 +57,6 @@ function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
   return () => ({
     providerId,
     supportsNativeHistory: providerId === 'claude',
-    supportsPlanMode: true,
     supportsRewind: true,
     supportsFork: true,
     supportsProviderCommands: true,

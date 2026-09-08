@@ -30,8 +30,6 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveLabel: 'Safe',
   activeValue: 'yolo',
   activeLabel: 'YOLO',
-  planValue: 'plan',
-  planLabel: 'PLAN',
 };
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {

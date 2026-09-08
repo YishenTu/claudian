@@ -9,10 +9,6 @@ describe('OPENCODE_PROVIDER_CAPABILITIES', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.supportsNativeHistory).toBe(true);
   });
 
-  it('should support plan mode', () => {
-    expect(OPENCODE_PROVIDER_CAPABILITIES.supportsPlanMode).toBe(true);
-  });
-
   it('should not support rewind', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.supportsRewind).toBe(false);
   });

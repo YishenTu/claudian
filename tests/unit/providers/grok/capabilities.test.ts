@@ -9,7 +9,6 @@ describe('GROK_PROVIDER_CAPABILITIES', () => {
       supportsImageAttachments: true,
       supportsInstructionMode: true,
       supportsNativeHistory: true,
-      supportsPlanMode: true,
       supportsProviderCommands: true,
       supportsRewind: true,
       supportsTurnSteer: true,

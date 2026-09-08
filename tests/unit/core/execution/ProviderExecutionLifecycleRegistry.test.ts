@@ -94,7 +94,6 @@ function createSessionConfig(
     interactionPort: {
       requestApproval: jest.fn(),
       askUserQuestion: jest.fn(),
-      requestPlanDecision: jest.fn(),
       dismissInteraction: jest.fn(),
     },
   };

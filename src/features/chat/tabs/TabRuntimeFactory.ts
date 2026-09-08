@@ -245,7 +245,7 @@ function assembleTabRuntime(
   registerTabRuntimeResourceOwner(runtime, options.resourceOwner);
   runtimeRef.publish(runtime);
 
-  refreshTabProviderUI(runtime, options.plugin);
+  refreshTabProviderUI(runtime);
   applyProviderUIGating(runtime, options.plugin);
   return runtime;
 }

@@ -119,16 +119,6 @@ export function getTabSelectedModel(
   return null;
 }
 
-export function getTabPermissionMode(
-  tab: TabProviderContext,
-  plugin: FeatureHost,
-): string {
-  const permissionMode = getTabSettingsSnapshot(tab, plugin).permissionMode;
-  return typeof permissionMode === 'string' && permissionMode
-    ? permissionMode
-    : 'normal';
-}
-
 export function getTabHiddenCommands(
   tab: TabProviderContext,
   plugin: FeatureHost,
@@ -231,9 +221,7 @@ export async function toggleTabServiceTier(
   });
 }
 
-export function refreshTabProviderUI(tab: AssembledTabRuntime, plugin: FeatureHost): void {
-  const capabilities = getTabCapabilities(tab, plugin);
-  const permissionMode = getTabPermissionMode(tab, plugin);
+export function refreshTabProviderUI(tab: AssembledTabRuntime): void {
   tab.ui.modelSelector.updateDisplay();
   tab.ui.modelSelector.renderOptions();
   tab.ui.modeSelector.updateDisplay();
@@ -241,10 +229,6 @@ export function refreshTabProviderUI(tab: AssembledTabRuntime, plugin: FeatureHo
   tab.ui.thinkingBudgetSelector.updateDisplay();
   tab.ui.permissionToggle.updateDisplay();
   tab.ui.serviceTierToggle.updateDisplay();
-  tab.dom.inputWrapper.toggleClass(
-    'claudian-input-plan-mode',
-    permissionMode === 'plan' && capabilities.supportsPlanMode,
-  );
 }
 
 export function applyProviderUIGating(
@@ -374,7 +358,7 @@ export function onProviderAvailabilityChanged(
   syncTabProviderServices(tab, tab.services, plugin);
   syncComposerDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
-  refreshTabProviderUI(tab, plugin);
+  refreshTabProviderUI(tab);
   applyProviderUIGating(tab, plugin);
   return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
 }
@@ -455,70 +439,21 @@ function isConversationLike(value: unknown): value is Conversation {
     && Array.isArray((value as Conversation).messages);
 }
 
-export async function restorePrePlanMode(
-  tab: AssembledTabRuntime,
-  plugin: FeatureHost,
-): Promise<void> {
-  if (getTabPermissionMode(tab, plugin) !== 'plan') return;
-  const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
-  try {
-    await updatePlanModeUI(tab, plugin, restoreMode);
-  } finally {
-    if (getTabPermissionMode(tab, plugin) !== 'plan') {
-      tab.state.prePlanPermissionMode = null;
-    }
-  }
-}
-
-export async function updatePlanModeUI(
+export async function updateTabPermissionMode(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
   mode: string,
-  options: { syncExecution?: boolean } = {},
 ): Promise<void> {
-  const providerId = getTabProviderId(tab, plugin);
-  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-  const previousMode = getTabPermissionMode(tab, plugin);
+  const uiConfig = getTabChatUIConfig(tab, plugin);
   try {
-    await plugin.mutateSettings((settings) => {
-      const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
+    await updateTabProviderSettings(tab, plugin, (settings) => {
       if (uiConfig.applyPermissionMode) {
-        uiConfig.applyPermissionMode(mode, snapshot);
+        uiConfig.applyPermissionMode(mode, settings);
       } else {
-        snapshot.permissionMode = mode;
+        settings.permissionMode = mode;
       }
-      ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
-        settings,
-        providerId,
-        snapshot,
-      );
     });
-    if (options.syncExecution && tab.conversationId !== null) {
-      try {
-        await tab.executionCoordinator.setMode(getTabPermissionMode(tab, plugin));
-      } catch (error) {
-        await plugin.mutateSettings((settings) => {
-          const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
-          if (uiConfig.applyPermissionMode) {
-            uiConfig.applyPermissionMode(previousMode, snapshot);
-          } else {
-            snapshot.permissionMode = previousMode;
-          }
-          ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
-            settings,
-            providerId,
-            snapshot,
-          );
-        });
-        throw error;
-      }
-    }
   } finally {
-    const activeMode = getTabPermissionMode(tab, plugin);
     tab.ui.permissionToggle.updateDisplay();
-    tab.dom.inputWrapper.toggleClass(
-      'claudian-input-plan-mode',
-      activeMode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
-    );
   }
 }

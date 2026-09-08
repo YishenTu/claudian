@@ -12,7 +12,7 @@ import {
   type ProviderSessionStatus,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ChatMessage } from '@/core/types';
+import type { ChatMessage, PermissionMode } from '@/core/types';
 import {
   AcpExecutionEventNormalizer,
   type AcpSessionNotification,
@@ -426,7 +426,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       const mode = resolvePermissionModeForManagedOpencodeMode(
         result.metadata.currentModeId,
       );
-      if (mode) this.emitSessionMode(mode);
+      if (mode) this.emitPermissionMode(mode);
     }
     if (
       acceptingLiveOutput
@@ -523,8 +523,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       ? 'claudian-execution-passive'
       : profile === 'readonly'
         ? 'claudian-execution-readonly'
-        : request.configuration.mode
-          ?? resolveOpencodeModeForPermissionMode(
+        : resolveOpencodeModeForPermissionMode(
             request.configuration.permissionMode,
             getOpencodeProviderSettings(this.plugin.settings).availableModes,
           );
@@ -703,16 +702,16 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     await pending;
   }
 
-  private emitSessionMode(mode: string): void {
+  private emitPermissionMode(permissionMode: PermissionMode): void {
     const event: ProviderSessionEvent = {
-      mode,
+      permissionMode,
       scope: {
         kind: 'session',
         sequence: ++this.sessionEventSequence,
         sessionInstanceId: this.sessionInstanceId,
       },
       snapshot: this.snapshot,
-      type: 'mode_changed',
+      type: 'permission_mode_changed',
     };
     this.emitSessionEvent(event);
   }

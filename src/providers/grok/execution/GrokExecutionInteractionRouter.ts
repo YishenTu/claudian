@@ -3,15 +3,6 @@ import type {
   ProviderInteractionPort,
 } from '../../../core/execution';
 
-const PLAN_PRESENTATION = {
-  allowAbandon: true,
-  allowNewSession: false,
-  approveLabel: 'Implement',
-  dismissOnEscape: false,
-  feedbackLabel: 'Revise',
-  shiftTabDecision: 'abandon',
-} as const;
-
 interface GrokQuestionOption {
   readonly description: string;
   readonly id?: string;
@@ -43,7 +34,7 @@ export class GrokExecutionInteractionRouter {
       return this.handleQuestion(params, signal);
     }
     if (normalized === 'x.ai/exit_plan_mode') {
-      return this.handlePlan(params, signal);
+      return { outcome: 'abandoned' };
     }
     throw new Error(`Unsupported Grok server request: ${method}`);
   }
@@ -92,51 +83,6 @@ export class GrokExecutionInteractionRouter {
       return response.answers
         ? buildQuestionResponse(request.questions, response.answers)
         : { outcome: 'cancelled' };
-    } catch {
-      return { outcome: 'cancelled' };
-    } finally {
-      this.finish(interactionId, dismissReason);
-    }
-  }
-
-  private async handlePlan(params: unknown, signal?: AbortSignal): Promise<unknown> {
-    const turnId = this.getTurnId();
-    if (!turnId || !matchesSession(params, this.getSessionId()) || signal?.aborted) {
-      return { outcome: 'cancelled' };
-    }
-    const record = params as Record<string, unknown>;
-    const interactionId = this.nextId('plan');
-    const controller = this.begin(interactionId);
-    let dismissReason: ProviderInteractionDismissReason = 'cancelled';
-    try {
-      const response = await this.interactionPort.requestPlanDecision({
-        input: typeof record.planContent === 'string'
-          ? { planContent: record.planContent }
-          : {},
-        interactionId,
-        kind: 'plan-decision',
-        nativeContext: { sessionId: record.sessionId, toolCallId: record.toolCallId },
-        presentation: PLAN_PRESENTATION,
-        sessionInstanceId: this.sessionInstanceId,
-        turnId,
-      }, controller.signal);
-      if (response.interactionId !== interactionId || this.getTurnId() !== turnId) {
-        dismissReason = 'native-rejected';
-        return { outcome: 'cancelled' };
-      }
-      dismissReason = 'resolved';
-      switch (response.decision?.type) {
-        case 'approve':
-          return { outcome: 'approved' };
-        case 'abandon':
-          return { outcome: 'abandoned' };
-        case 'feedback':
-          return response.decision.text.trim()
-            ? { feedback: response.decision.text.trim(), outcome: 'cancelled' }
-            : { outcome: 'cancelled' };
-        default:
-          return { outcome: 'cancelled' };
-      }
     } catch {
       return { outcome: 'cancelled' };
     } finally {

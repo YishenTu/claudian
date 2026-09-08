@@ -6,7 +6,6 @@ describe('PI_PROVIDER_CAPABILITIES', () => {
       providerId: 'pi',
       commandDiscoveryDeadline: 'provider-owned',
       supportsNativeHistory: true,
-      supportsPlanMode: false,
       supportsRewind: false,
       supportsFork: true,
       supportsProviderCommands: true,

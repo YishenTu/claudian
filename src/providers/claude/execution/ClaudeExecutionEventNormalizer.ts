@@ -63,13 +63,6 @@ export type ClaudeNormalizedExecutionEvent =
     readonly event: ClaudeNormalizedOutputEvent;
   }
   | {
-    readonly type: 'mode_entered';
-    readonly mode: 'plan';
-  }
-  | {
-    readonly type: 'plan_exited';
-  }
-  | {
     readonly type: 'assistant_checkpoint';
     readonly nativeAssistantId: string;
   }
@@ -295,21 +288,6 @@ export class ClaudeExecutionEventNormalizer {
         type: 'output',
         event,
       });
-    }
-    if (
-      (chunk.type === 'tool_use' || chunk.type === 'subagent_tool_use')
-      && chunk.name === 'EnterPlanMode'
-    ) {
-      target.push({
-        type: 'mode_entered',
-        mode: 'plan',
-      });
-    }
-    if (
-      (chunk.type === 'tool_use' || chunk.type === 'subagent_tool_use')
-      && chunk.name === 'ExitPlanMode'
-    ) {
-      target.push({ type: 'plan_exited' });
     }
   }
 }

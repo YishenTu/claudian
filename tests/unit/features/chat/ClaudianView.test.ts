@@ -107,7 +107,6 @@ describe('ClaudianView model refresh routing', () => {
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
       providerId,
       supportsImageAttachments: false,
-      supportsPlanMode: false,
     } as any));
     jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['codex', 'grok']);
     jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
@@ -916,97 +915,6 @@ describe('ClaudianView tab controls', () => {
     await expect(view.handleNewConversationCommand()).resolves.toBe(false);
 
     expect(view.activateOrCreateDraftTab).not.toHaveBeenCalled();
-  });
-
-  it('starts an approved plan in a fresh dual-mode runtime tab', async () => {
-    const sendMessage = jest.fn().mockResolvedValue(undefined);
-    const targetTab = {
-      controllers: { inputController: { sendMessage } },
-    };
-    const view = Object.create(ClaudianView.prototype) as any;
-    view.isWideSessionLayout = true;
-    view.createNewTab = jest.fn().mockResolvedValue(targetTab);
-    view.tabManager = { getActiveTab: jest.fn().mockReturnValue(targetTab) };
-
-    await expect(view.handleNewSessionPlan('Implement the plan')).resolves.toBe(true);
-
-    expect(view.createNewTab).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith({ content: 'Implement the plan' });
-  });
-
-  it('does not send an approved plan after its source runtime closes', async () => {
-    let resolveTab!: (tab: unknown) => void;
-    const tabCreation = new Promise(resolve => {
-      resolveTab = resolve;
-    });
-    const sendMessage = jest.fn().mockResolvedValue(undefined);
-    const targetTab = {
-      id: 'target-tab',
-      conversationId: null,
-      controllers: { inputController: { sendMessage } },
-      session: { userOwnershipRevision: 0 },
-    };
-    const discardTab = jest.fn().mockResolvedValue(true);
-    const view = Object.create(ClaudianView.prototype) as any;
-    let sourceIsLive = true;
-    view.isWideSessionLayout = true;
-    view.createNewTab = jest.fn(() => tabCreation);
-    view.tabManager = {
-      discardTab,
-      getActiveTab: jest.fn().mockReturnValue(targetTab),
-    };
-
-    const handling = view.handleNewSessionPlan(
-      'Implement the plan',
-      () => sourceIsLive,
-    );
-    sourceIsLive = false;
-    resolveTab(targetTab);
-    await expect(handling).resolves.toBe(true);
-
-    expect(sendMessage).not.toHaveBeenCalled();
-    expect(discardTab).toHaveBeenCalledWith(targetTab.id);
-  });
-
-  it('keeps an approved-plan target retained while its source runtime closes', async () => {
-    const tabCreation = deferred<any>();
-    const sendMessage = jest.fn().mockResolvedValue(undefined);
-    const targetTab = {
-      id: 'target-tab',
-      conversationId: null,
-      controllers: { inputController: { sendMessage } },
-      session: { userOwnershipRevision: 1 },
-    };
-    const discardTab = jest.fn().mockResolvedValue(true);
-    const view = Object.create(ClaudianView.prototype) as any;
-    let sourceIsLive = true;
-    view.isWideSessionLayout = true;
-    view.createNewTab = jest.fn(() => tabCreation.promise);
-    view.tabManager = {
-      discardTab,
-      getActiveTab: jest.fn().mockReturnValue(targetTab),
-    };
-
-    const handling = view.handleNewSessionPlan(
-      'Implement the plan',
-      () => sourceIsLive,
-    );
-    sourceIsLive = false;
-    tabCreation.resolve(targetTab);
-    await expect(handling).resolves.toBe(true);
-
-    expect(sendMessage).not.toHaveBeenCalled();
-    expect(discardTab).not.toHaveBeenCalled();
-  });
-
-  it('leaves approved-plan session replacement unchanged in single mode', async () => {
-    const view = Object.create(ClaudianView.prototype) as any;
-    view.isWideSessionLayout = false;
-    view.createNewTab = jest.fn().mockResolvedValue(undefined);
-
-    await expect(view.handleNewSessionPlan('Implement the plan')).resolves.toBe(false);
-
-    expect(view.createNewTab).not.toHaveBeenCalled();
   });
 
   it('keeps tab controls in the view-owned input row', () => {
@@ -4045,38 +3953,6 @@ describe('ClaudianView Escape handling', () => {
     expect(handleActiveFileMetadataChanged).toHaveBeenNthCalledWith(1, file);
     expect(handleActiveFileMetadataChanged).toHaveBeenNthCalledWith(2, file);
     expect(handleActiveFileMetadataChanged).toHaveBeenNthCalledWith(3, null);
-  });
-
-  it('commits a provisional preview before the Shift+Tab plan-mode action', () => {
-    const { view } = createEscapeHarness({ isStreaming: false });
-    const activeTab = {
-      conversationId: null,
-      lifecycleState: 'provisional',
-      providerId: 'claude',
-      session: createOwnershipSession(),
-      state: { prePlanPermissionMode: null },
-    };
-    view.tabManager.getActiveTab.mockReturnValue(activeTab);
-    view.plugin.settings = {};
-    jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
-      providerId: 'claude',
-      supportsPlanMode: true,
-    } as any);
-    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot')
-      .mockReturnValue({ permissionMode: 'normal' } as any);
-
-    view.wireEventHandlers();
-    const keydownHandler = view.registerDomEvent.mock.calls.find(
-      ([target, event]: [unknown, string]) => target === view.containerEl && event === 'keydown',
-    )?.[2] as (event: KeyboardEvent) => void;
-    keydownHandler({
-      isComposing: false,
-      key: 'Tab',
-      preventDefault: jest.fn(),
-      shiftKey: true,
-    } as unknown as KeyboardEvent);
-
-    expect(activeTab.lifecycleState).toBe('cold');
   });
 
   it('sends from focused composer through scoped Mod+Enter', () => {

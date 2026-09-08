@@ -349,14 +349,12 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.normalizeModelVariant('claude', settings)).toBe('claude');
   });
 
-  it('exposes Plan as an overlay on the remembered Safe or YOLO base mode', () => {
+  it('uses Safe for obsolete selections and supports explicit YOLO', () => {
     expect(grokChatUIConfig.getPermissionModeToggle?.()).toEqual({
       activeLabel: 'YOLO',
       activeValue: 'yolo',
       inactiveLabel: 'Safe',
       inactiveValue: 'normal',
-      planLabel: 'PLAN',
-      planValue: 'plan',
     });
     expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();
 
@@ -365,12 +363,10 @@ describe('GrokChatUIConfig', () => {
       providerConfigs: { grok: { enabled: true } },
     };
     grokChatUIConfig.applyPermissionMode?.('plan', settings);
-    expect(settings.permissionMode).toBe('plan');
-    expect(getGrokProviderSettings(settings).planBasePermissionMode).toBe('yolo');
-    expect(grokChatUIConfig.resolvePermissionMode?.(settings)).toBe('plan');
+    expect(settings.permissionMode).toBe('normal');
+    expect(grokChatUIConfig.resolvePermissionMode?.(settings)).toBe('normal');
 
     grokChatUIConfig.applyPermissionMode?.('yolo', settings);
     expect(settings.permissionMode).toBe('yolo');
-    expect(getGrokProviderSettings(settings).planBasePermissionMode).toBe('yolo');
   });
 });

@@ -4,7 +4,6 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   providerId: 'opencode',
   commandDiscoveryDeadline: 'provider-owned',
   supportsNativeHistory: true,
-  supportsPlanMode: true,
   supportsRewind: false,
   supportsFork: false,
   supportsProviderCommands: true,

@@ -27,7 +27,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **`@mention`** - Type `@` to mention anything you want the agent to work with, including vault files, subagents, and files in external directories.
 
-**Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
 **Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
 

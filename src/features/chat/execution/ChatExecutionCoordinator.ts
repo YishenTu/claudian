@@ -23,7 +23,6 @@ import type {
   ProviderToolPolicy,
 } from '@/core/execution';
 import {
-  isModeConfigurableExecutionSession,
   isRewindableExecutionSession,
   isSteerableExecutionSession,
 } from '@/core/execution';
@@ -165,7 +164,6 @@ export interface ChatExecutionResult {
     | 'missing-session'
     | 'invalidated';
   readonly accepted: boolean;
-  readonly planCompleted: boolean;
   readonly nativeUserMessageId?: string;
   readonly nativeAssistantMessageId?: string;
   readonly nativeCheckpointId?: string;
@@ -578,20 +576,6 @@ export class ChatExecutionCoordinator {
     return session.previewRewind(userMessageId, assistantMessageId, mode);
   }
 
-  async setMode(mode: string): Promise<boolean> {
-    return this.runProtectedOperation(() => this.setModeProtected(mode));
-  }
-
-  private async setModeProtected(mode: string): Promise<boolean> {
-    await this.prepare();
-    const binding = this.requireCurrentSessionBinding();
-    if (!isModeConfigurableExecutionSession(binding.session)) return false;
-    const applied = await binding.session.setMode(mode);
-    if (!applied || !this.isBindingCurrent(binding)) return false;
-    await this.persistSnapshot(binding, binding.session.getSnapshot());
-    return true;
-  }
-
   async rewind(
     userMessageId: string,
     assistantMessageId: string | undefined,
@@ -721,7 +705,6 @@ export class ChatExecutionCoordinator {
   ): Promise<ChatExecutionResult> {
     let lastSequence = 0;
     let accepted = false;
-    let planCompleted = false;
     let nativeUserMessageId: string | undefined;
     let nativeAssistantMessageId: string | undefined;
     let nativeCheckpointId: string | undefined;
@@ -766,11 +749,10 @@ export class ChatExecutionCoordinator {
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
         attachAssistantMessageId(active.messages, nativeAssistantMessageId);
-      } else if (event.type === 'session_state_changed' || event.type === 'mode_changed') {
+      } else if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
         await this.persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
         terminal = event;
-        planCompleted = event.planCompleted === true;
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
         nativeCheckpointId =
@@ -845,7 +827,6 @@ export class ChatExecutionCoordinator {
       return {
         status: 'completed',
         accepted,
-        planCompleted,
         nativeUserMessageId,
         nativeAssistantMessageId,
         nativeCheckpointId,
@@ -855,7 +836,6 @@ export class ChatExecutionCoordinator {
       return {
         status: 'cancelled',
         accepted,
-        planCompleted: false,
         nativeUserMessageId,
         nativeAssistantMessageId,
       };
@@ -908,7 +888,6 @@ export class ChatExecutionCoordinator {
       return {
         status: 'missing-session',
         accepted,
-        planCompleted: false,
         nativeUserMessageId,
         nativeAssistantMessageId,
         error: terminal,
@@ -918,7 +897,6 @@ export class ChatExecutionCoordinator {
     return {
       status: 'error',
       accepted,
-      planCompleted: false,
       nativeUserMessageId,
       nativeAssistantMessageId,
       error: terminal,
@@ -954,7 +932,7 @@ export class ChatExecutionCoordinator {
     }
 
     const eventWork: Promise<unknown>[] = [];
-    if (event.type === 'session_state_changed' || event.type === 'mode_changed') {
+    if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       eventWork.push(this.persistSnapshot(binding, event.snapshot));
     }
     try {
@@ -1222,11 +1200,6 @@ export class ChatExecutionCoordinator {
         signal,
         () => this.deps.interactionPort.askUserQuestion(request, signal),
       ),
-      requestPlanDecision: (request, signal) => this.forwardInteraction(
-        request,
-        signal,
-        () => this.deps.interactionPort.requestPlanDecision(request, signal),
-      ),
       dismissInteraction: (interactionId, reason) => {
         this.pendingInteractions.delete(interactionId);
         this.deps.interactionPort.dismissInteraction(interactionId, reason);
@@ -1390,7 +1363,6 @@ function createInterruptedResult(
   return {
     status,
     accepted,
-    planCompleted: false,
   };
 }
 

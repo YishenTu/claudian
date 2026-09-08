@@ -9,7 +9,7 @@
 | `base/` | Variables, container primitives, animations, and global visibility behavior |
 | `components/` | Reusable chat surfaces such as messages, input, tabs, navigation, history/session management, status, context, citations, and tool output |
 | `toolbar/` | Composer and provider-option controls |
-| `features/` | Styles coupled to a named feature workflow such as context, diff, inline edit, plan mode, or commands |
+| `features/` | Styles coupled to a named feature workflow such as context, diff, inline edit, or commands |
 | `modals/` | Modal-specific layouts |
 | `settings/` | Shared settings shell and provider settings modules |
 | `accessibility.css` | Cross-feature accessibility adaptations |

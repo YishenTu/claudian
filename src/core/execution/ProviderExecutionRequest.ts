@@ -41,7 +41,6 @@ export interface ProviderExecutionConfiguration {
   readonly model?: string;
   readonly reasoning?: string;
   readonly permissionMode?: string;
-  readonly mode?: string;
   readonly serviceTier?: string;
   readonly externalWorkspaceRoots?: readonly string[];
 }

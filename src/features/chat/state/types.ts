@@ -126,15 +126,6 @@ export interface ChatStateData {
   // Response timer state
   responseStartTime: number | null;
   flavorTimerInterval: number | null;
-
-  // Pending plan content for approve-new-session (auto-sends in new session after stream ends)
-  pendingNewSessionPlan: string | null;
-
-  // Plan file path captured from Write tool calls to provider plan directory during plan mode
-  planFilePath: string | null;
-
-  // Saved permission mode before entering plan mode (for Shift+Tab toggle restore)
-  prePlanPermissionMode: string | null;
 }
 
 /** Callbacks for ChatState changes. */
