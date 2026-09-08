@@ -225,35 +225,40 @@ function createFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('inline file chips', () => {
-  it('restores selected chips after a definite failure before provider handoff', async () => {
+describe('composer wikilinks', () => {
+  it('sends exact aliased wikilinks and retains them in displayed messages', async () => {
     const fixture = createFixture();
-    fixture.input.value = '@A.md';
-    fixture.input.getFileMentions = () => [{ from: 0, to: 5, path: 'A.md' }];
-    fixture.input.setFileMentions = jest.fn();
+    const content = 'Compare [[DEMO.md|DEMO]] and [[- Bases/DEMO.md|DEMO]]';
+    fixture.input.value = content;
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.coordinator.execute.mock.calls[0][0]).toEqual(expect.objectContaining({
+      canonicalText: content,
+    }));
+    expect(fixture.state.messages.find(message => message.role === 'user')).toEqual(expect.objectContaining({
+      content, displayContent: content,
+    }));
+  });
+
+  it('restores the wikilink source after a definite failure before provider handoff', async () => {
+    const fixture = createFixture();
+    fixture.input.value = '[[Notes/A.md]]';
     fixture.coordinator.execute.mockRejectedValue(new ChatExecutionPreHandoffError('ledger unavailable'));
     await fixture.controller.sendMessage();
-    expect(fixture.input.value).toBe('@A.md');
-    expect(fixture.input.setFileMentions).toHaveBeenCalledWith([{ from: 0, to: 5, path: 'A.md' }]);
+    expect(fixture.input.value).toBe('[[Notes/A.md]]');
     expect(fixture.state.messages).toEqual([]);
   });
 
-  it('preserves chips when queued messages are merged and returned to the draft', async () => {
+  it('preserves wikilinks when queued messages are merged and returned to the draft', async () => {
     const fixture = createFixture();
     fixture.state.isStreaming = true;
-    fixture.input.value = '  @A.md  ';
-    fixture.input.getFileMentions = () => [{ from: 2, to: 7, path: 'A.md' }];
+    fixture.input.value = '  [[Notes/A.md]]  ';
     await fixture.controller.sendMessage();
-    fixture.input.value = '@B.md';
-    fixture.input.getFileMentions = () => [{ from: 0, to: 5, path: 'B.md' }];
+    fixture.input.value = '[[Notes/B.md]]';
     await fixture.controller.sendMessage();
-    fixture.input.getFileMentions = () => [];
-    fixture.input.setFileMentions = jest.fn();
     fixture.controller.withdrawQueuedMessageToComposer();
-    expect(fixture.input.value).toBe('@A.md\n\n@B.md');
-    expect(fixture.input.setFileMentions).toHaveBeenCalledWith([
-      { from: 0, to: 5, path: 'A.md' }, { from: 7, to: 12, path: 'B.md' },
-    ]);
+    expect(fixture.input.value).toBe('[[Notes/A.md]]\n\n[[Notes/B.md]]');
   });
 });
 

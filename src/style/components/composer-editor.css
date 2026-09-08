@@ -55,74 +55,7 @@
   border-left-color: var(--text-normal);
 }
 
-.claudian-mention-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  max-width: 100%;
-  padding: 0 4px 0 6px;
-  border-radius: 4px;
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  font-size: 0.92em;
-  vertical-align: baseline;
-  white-space: nowrap;
-}
-
-.claudian-mention-chip > span,
-button.claudian-mention-open {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.claudian-mention-chip.is-missing {
-  outline: 1px dashed var(--text-faint);
-  color: var(--text-muted);
-}
-
-button.claudian-mention-open,
-button.claudian-mention-remove {
-  height: auto;
-  min-height: 0;
-  padding: 0 3px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-button.claudian-mention-open:hover,
-button.claudian-mention-open:focus-visible,
-button.claudian-mention-open:active,
-button.claudian-mention-remove:hover,
-button.claudian-mention-remove:focus-visible,
-button.claudian-mention-remove:active {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-normal);
-}
-
-button.claudian-mention-open:focus-visible,
-button.claudian-mention-remove:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
-}
-
-button.claudian-mention-open:disabled,
-button.claudian-mention-remove:disabled {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-faint);
-  cursor: default;
-}
-
-button.claudian-mention-open {
-  padding: 0;
-  font: inherit;
-  text-align: start;
-  white-space: nowrap;
+.claudian-composer-wikilink > p {
+  display: inline;
+  margin: 0;
 }

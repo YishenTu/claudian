@@ -1,4 +1,6 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { within } from '@testing-library/dom';
+import { JSDOM } from 'jsdom';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -425,6 +427,25 @@ describe('Tab provider execution ownership', () => {
 
     expect(onWorkChanged).toHaveBeenCalledTimes(4);
     expect(onWorkChanged).toHaveBeenCalledWith(tab);
+  });
+
+  it('leaves Enter on a composer link available for native link activation', async () => {
+    const tab = await createTestTab({
+      plugin: createPlugin(),
+      containerEl: createMockEl() as any,
+    });
+    const dom = new JSDOM('<a href="Notes/A.md">A</a>');
+    try {
+      const link = within(dom.window.document.body).getByRole('link', { name: 'A' });
+      const preventDefault = jest.fn();
+      tab.dom.inputEl.dispatchEvent({
+        type: 'keydown', key: 'Enter', target: link, preventDefault,
+        ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, isComposing: false,
+      });
+      expect(preventDefault).not.toHaveBeenCalled();
+    } finally {
+      dom.window.close();
+    }
   });
 
   it('lets later navigation override bottom auto-scroll intent', async () => {

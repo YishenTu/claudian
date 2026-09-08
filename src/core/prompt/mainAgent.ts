@@ -42,7 +42,7 @@ The user's query comes first, followed by optional Claudian XML context tags. Tr
 - \`<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">\`: Selected browser-view text.
 - \`<canvas_selection path="boards/project.canvas">\`: Selected Canvas node IDs.
 - \`<context_files><context_file path="/absolute/context" /></context_files>\`: Additional file or directory references.
-- \`@filename.md\`: A Vault file mentioned in the query; read it when relevant.`;
+- \`[[vault-relative-path|display-name]]\`: A Vault file reference. The text before \`|\` is the file path relative to the Vault root; the text after \`|\` is only a display label. Use the path, not the label, to identify the file.`;
 }
 
 function getPathConventions(): string {

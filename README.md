@@ -25,7 +25,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**`@mention`** - Type `@` to mention anything you want the agent to work with, including vault files, folders, subagents, and files in external directories. Selecting a file or vault folder creates a removable inline chip while you compose. Click its label to open the referenced vault note or reveal the folder in the file explorer, or use the × to remove it. Missing targets are marked in the draft. Chips retain ordinary `@path` text (including the trailing `/` for folders) when copied or sent, and sent messages keep their existing reference rendering.
+**`@mention`** - Type `@` to mention anything you want the agent to work with, including vault files, subagents, and files in external directories.
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 

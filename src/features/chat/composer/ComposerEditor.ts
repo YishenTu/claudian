@@ -1,83 +1,43 @@
-import { defaultKeymap, history, historyKeymap, insertNewline, invertedEffects } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, insertNewline } from '@codemirror/commands';
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, keymap, placeholder, WidgetType } from '@codemirror/view';
+import { type App, type Component, MarkdownRenderer } from 'obsidian';
 
-import type { ComposerFileMention, ComposerInputElement } from '@/shared/composer-dropdown/types';
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+import { registerFileLinkHandler } from '@/utils/fileLink';
 
-const setMentions = StateEffect.define<readonly ComposerFileMention[]>();
-const refreshMentions = StateEffect.define<null>();
+import { findComposerWikilinks } from './composerWikilinks';
+
+const refreshLinks = StateEffect.define<null>();
 const programmatic = Annotation.define<boolean>();
 
-const mentionsField = StateField.define<readonly ComposerFileMention[]>({
-  create: () => [],
-  update(mentions, transaction) {
-    let next = mentions.map(mention => ({
-      ...mention,
-      from: transaction.changes.mapPos(mention.from, 1),
-      to: transaction.changes.mapPos(mention.to, -1),
-    })).filter((mention, index) => mention.from < mention.to
-      && transaction.newDoc.sliceString(mention.from, mention.to)
-        === transaction.startState.doc.sliceString(mentions[index].from, mentions[index].to));
-    for (const effect of transaction.effects) {
-      if (effect.is(setMentions)) next = effect.value.map(mention => ({ ...mention }));
-    }
-    return next.filter(mention => mention.from >= 0 && mention.to <= transaction.newDoc.length
-      && mention.from < mention.to && transaction.newDoc.sliceString(mention.from, mention.from + 1) === '@');
-  },
-});
-
-class MentionWidget extends WidgetType {
+class WikilinkWidget extends WidgetType {
   constructor(
-    private readonly mention: ComposerFileMention,
-    private readonly missing: boolean,
-    private readonly remove: (mention: ComposerFileMention) => void,
-    private readonly openFile?: (path: string) => void,
-  ) { super(); }
+    private readonly markdown: string,
+    private readonly app: App,
+    private readonly component: Component,
+    private readonly revision: number,
+  ) {
+    super();
+  }
 
-  eq(other: MentionWidget): boolean {
-    return this.mention.from === other.mention.from && this.mention.to === other.mention.to
-      && this.mention.path === other.mention.path && this.missing === other.missing;
+  eq(other: WikilinkWidget): boolean {
+    return this.markdown === other.markdown && this.revision === other.revision;
   }
 
   toDOM(view: EditorView): HTMLElement {
     const ownerWindow = view.dom.ownerDocument.win as Window & { createSpan: typeof createSpan };
-    const chip = ownerWindow.createSpan();
-    chip.className = `claudian-mention-chip${this.missing ? ' is-missing' : ''}`;
-    chip.contentEditable = 'false';
-    chip.title = this.mention.path;
-    const label = this.openFile ? chip.createEl('button') : chip.createSpan();
-    if (this.openFile) {
-      label.setAttribute('type', 'button');
-      label.className = 'claudian-mention-open';
-      label.setAttribute('aria-label', `Open ${this.mention.path}${this.missing ? ' (Missing)' : ''}`);
-      label.addEventListener('click', event => {
-        event.preventDefault();
-        this.openFile?.(this.mention.path);
-      });
-    }
-    const isFolder = this.mention.path.endsWith('/');
-    const basename = this.mention.path.replace(/\/$/, '').split(/[\\/]/).pop() ?? this.mention.path;
-    const name = isFolder ? `${basename}/` : basename.replace(/\.md$/i, '');
-    label.textContent = `${name}${this.missing ? ' · Missing' : ''}`;
-    const button = chip.createEl('button');
-    button.type = 'button';
-    button.className = 'claudian-mention-remove';
-    button.setAttribute('aria-label', `Remove ${this.mention.path}`);
-    button.textContent = '×';
-    button.addEventListener('click', event => {
-      event.preventDefault();
-      this.remove(this.mention);
-    });
-    return chip;
+    const el = ownerWindow.createSpan();
+    el.className = 'claudian-composer-wikilink markdown-rendered';
+    el.contentEditable = 'false';
+    void MarkdownRenderer.render(this.app, this.markdown, el, '', this.component).then(() => {
+      if (el.isConnected) view.requestMeasure();
+    }).catch(() => { el.textContent = this.markdown; });
+    return el;
   }
 }
 
-export interface ComposerEditorOptions {
-  readonly isFileAvailable?: (path: string) => boolean;
-  readonly onOpenFile?: (path: string) => void;
-}
-
-/** Owns the editable document and selected file/folder tokens; serialization stays plain text. */
+/** Owns the editable Markdown document; wikilink presentation is derived from its text. */
 export class ComposerEditor {
   readonly element: ComposerInputElement;
   private state: EditorState;
@@ -88,32 +48,39 @@ export class ComposerEditor {
   private destroyed = false;
   private ariaObserver: MutationObserver | null = null;
   private inputPending = false;
-  private readonly isFileAvailable: (path: string) => boolean;
-  private readonly onOpenFile?: (path: string) => void;
+  private linkRevision = 0;
+  private readonly removeFileLinkHandler: () => void;
 
-  constructor(parent: HTMLElement, options: ComposerEditorOptions = {}) {
-    this.isFileAvailable = options.isFileAvailable ?? (() => true);
-    this.onOpenFile = options.onOpenFile;
+  constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component) {
     const host = parent.createDiv({
       cls: 'claudian-input claudian-composer-editor',
       attr: { role: 'textbox', 'aria-label': 'Message', 'aria-multiline': 'true', tabindex: '0', dir: 'auto' },
     });
     this.element = host as unknown as ComposerInputElement;
+    this.removeFileLinkHandler = registerFileLinkHandler(app, host);
     const decorations = StateField.define<DecorationSet>({
       create: state => this.decorate(state),
       update: (_value, transaction) => this.decorate(transaction.state),
-      provide: field => [
-        EditorView.decorations.from(field),
-        EditorView.atomicRanges.of(view => view.state.field(field)),
-      ],
+      provide: field => EditorView.decorations.from(field),
     });
     this.state = EditorState.create({
       extensions: [
-        mentionsField, decorations, this.historyConfig.of(history()),
-        invertedEffects.of(transaction => transaction.docChanged || transaction.effects.some(effect => effect.is(setMentions))
-          ? [setMentions.of(transaction.startState.field(mentionsField))] : []),
+        decorations, this.historyConfig.of(history()),
         keymap.of([
           { key: 'Enter', run: insertNewline, shift: insertNewline },
+          { key: 'Backspace', run: view => {
+            const { main, ranges } = view.state.selection;
+            if (!main.empty || ranges.length !== 1) return false;
+            const link = findComposerWikilinks(view.state.doc.toString())
+              .find(link => link.index + link.fullMatch.length === main.head);
+            if (!link) return false;
+            view.dispatch({
+              changes: { from: link.index, to: main.head },
+              selection: { anchor: link.index },
+              userEvent: 'delete.backward',
+            });
+            return true;
+          } },
           ...historyKeymap, ...defaultKeymap,
         ]),
         EditorView.lineWrapping,
@@ -132,11 +99,11 @@ export class ComposerEditor {
       value: {
         get: () => this.state.doc.toString(),
         set: (value: string) => {
-          // A replacement starts a new draft; old undo effects must not overwrite its chips.
+          // A replacement starts a new draft with its own undo history.
           this.apply(this.state.update({
             changes: { from: 0, to: this.state.doc.length, insert: value },
             selection: { anchor: value.length },
-            effects: [setMentions.of([]), this.historyConfig.reconfigure([])],
+            effects: this.historyConfig.reconfigure([]),
             annotations: [programmatic.of(true), Transaction.addToHistory.of(false)],
           }));
           this.apply(this.state.update({ effects: this.historyConfig.reconfigure(history()) }));
@@ -159,35 +126,30 @@ export class ComposerEditor {
         },
       },
     });
-    this.element.replaceText = (from, to, text, filePath) => {
+    this.element.replaceText = (from, to, text) => {
       const change = this.state.changes({ from, to, insert: text });
-      const mapped = this.state.field(mentionsField).filter(mention => mention.to <= from || mention.from >= to)
-        .map(mention => ({ ...mention, from: change.mapPos(mention.from, 1), to: change.mapPos(mention.to, -1) }));
-      if (filePath) mapped.push({ from, to: from + text.trimEnd().length, path: filePath });
       this.apply(this.state.update({
         changes: change,
         selection: { anchor: from + text.length },
-        effects: setMentions.of(mapped.sort((a, b) => a.from - b.from)),
         annotations: programmatic.of(true),
         userEvent: 'input.complete',
       }));
     };
-    this.element.getFileMentions = () => this.state.field(mentionsField).map(mention => ({ ...mention }));
-    this.element.setFileMentions = mentions => this.apply(this.state.update({
-      effects: setMentions.of(mentions), annotations: Transaction.addToHistory.of(false),
-    }));
     host.setAttribute('data-placeholder', this.placeholderText);
     host.addEventListener('focus', this.onFocus);
   }
 
-  refreshMentions(): void {
-    if (!this.destroyed) this.apply(this.state.update({ effects: refreshMentions.of(null) }));
+  refreshLinks(): void {
+    if (this.destroyed) return;
+    this.linkRevision++;
+    this.apply(this.state.update({ effects: refreshLinks.of(null) }));
   }
 
   destroy(): void {
     this.destroyed = true;
     this.element.removeEventListener('focus', this.onFocus);
     this.ariaObserver?.disconnect();
+    this.removeFileLinkHandler();
     this.view?.destroy();
     this.view = null;
   }
@@ -215,13 +177,14 @@ export class ComposerEditor {
   };
 
   private decorate(state: EditorState): DecorationSet {
-    return Decoration.set(state.field(mentionsField).map(mention => Decoration.replace({
-      widget: new MentionWidget(mention, !this.isFileAvailable(mention.path), token => {
-        this.element.replaceText!(token.from, token.to, '');
-        this.view?.focus();
-        this.emitInput();
-      }, this.onOpenFile),
-    }).range(mention.from, mention.to)), true);
+    const links = findComposerWikilinks(state.doc.toString()).filter(link => {
+      const end = link.index + link.fullMatch.length;
+      return !state.selection.ranges.some(range =>
+        (range.from > link.index && range.from < end) || (range.to > link.index && range.to < end));
+    });
+    return Decoration.set(links.map(link => Decoration.replace({
+      widget: new WikilinkWidget(link.fullMatch, this.app, this.component, this.linkRevision),
+    }).range(link.index, link.index + link.fullMatch.length)), true);
   }
 
   private setSelection(from: number, to: number): void {

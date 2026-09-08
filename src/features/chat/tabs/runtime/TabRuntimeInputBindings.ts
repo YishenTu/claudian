@@ -30,7 +30,7 @@ export function buildTabRuntimeInputBindings(
   };
 
   const keydownHandler = (event: KeyboardEvent) => {
-    if ((event.target as HTMLElement | null)?.closest?.('button')) return;
+    if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (ui.bangBashModeManager?.isActive()) {
       ui.bangBashModeManager.handleKeydown(event);

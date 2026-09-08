@@ -90,13 +90,6 @@ export class ComposerDropdownController {
       return;
     }
     const { match, source } = sourceMatch;
-    // Selected chips are completed references, even though their @path stays in the document.
-    if (this.inputEl.getFileMentions?.().some(mention =>
-      match.start < mention.to && match.end > mention.from)) {
-      this.hide();
-      return;
-    }
-
     if (this.activeSource?.id !== source.id) this.activeFolder = null;
     this.activeSource = source;
     this.activeMatch = match;
@@ -314,18 +307,18 @@ export class ComposerDropdownController {
       return;
     }
     if (action.kind === 'replace') {
-      this.replaceRange(match, action.text, action.filePath);
+      this.replaceRange(match, action.text);
       this.hide();
       action.onApplied?.();
       this.inputEl.focus();
     }
   }
 
-  private replaceRange(match: ComposerTriggerMatch, replacement: string, filePath?: string): void {
+  private replaceRange(match: ComposerTriggerMatch, replacement: string): void {
     const duplicateSpace = /\s$/.test(replacement) && /^\s/.test(this.inputEl.value.slice(match.end));
     const end = match.end + (duplicateSpace ? 1 : 0);
     if (this.inputEl.replaceText) {
-      this.inputEl.replaceText(match.start, end, replacement, filePath);
+      this.inputEl.replaceText(match.start, end, replacement);
       return;
     }
     const before = this.inputEl.value.slice(0, match.start);

@@ -7,7 +7,6 @@ import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerEditor } from '../../composer/ComposerEditor';
-import { isComposerPathAvailable, openComposerPath } from '../../composer/OpenComposerPath';
 import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
@@ -168,13 +167,10 @@ function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionCont
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
-  const composerEditor = new ComposerEditor(inputWrapper, {
-    onOpenFile: path => { void openComposerPath(options.plugin.app, path); },
-    isFileAvailable: path => isComposerPathAvailable(options.plugin.app, path),
-  });
+  const composerEditor = new ComposerEditor(inputWrapper, options.plugin.app, options.component);
   options.registerCleanup('tab composer editor', () => composerEditor.destroy());
   const vault = options.plugin.app.vault;
-  const refresh = () => composerEditor.refreshMentions();
+  const refresh = () => composerEditor.refreshLinks();
   for (const subscribe of [
     () => vault.on('create', refresh),
     () => vault.on('delete', refresh),

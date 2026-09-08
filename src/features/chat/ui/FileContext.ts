@@ -17,6 +17,7 @@ import {
   normalizePathForVault as normalizePathForVaultUtil,
   rewriteVaultPathAfterRename,
 } from '../../../utils/path';
+import { formatComposerWikilink } from '../composer/composerWikilinks';
 
 export interface FileContextCallbacks {
   getExternalContexts?: () => readonly string[];
@@ -47,6 +48,8 @@ export class FileContextManager {
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: rawPath => this.normalizePathForVault(rawPath),
+    }, {
+      formatVaultFileMention: formatComposerWikilink,
     });
 
     try {

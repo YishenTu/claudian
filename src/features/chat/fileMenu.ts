@@ -1,7 +1,7 @@
 import type { App, EventRef } from 'obsidian';
 import { Notice, TFile } from 'obsidian';
 
-import { formatVaultFileMention } from '../../shared/mention/formatMention';
+import { formatComposerWikilink } from './composer/composerWikilinks';
 
 interface FileMenuViewHost {
   appendToActiveInput(text: string): boolean;
@@ -17,7 +17,7 @@ export interface FileMenuHost {
 export async function addFileToClaudian(host: FileMenuHost, file: TFile): Promise<boolean> {
   try {
     await host.activateView();
-    const appended = host.getView()?.appendToActiveInput(formatVaultFileMention(file.path)) ?? false;
+    const appended = host.getView()?.appendToActiveInput(formatComposerWikilink(file.path)) ?? false;
     if (!appended) {
       new Notice('Claudian chat is not ready.');
     }

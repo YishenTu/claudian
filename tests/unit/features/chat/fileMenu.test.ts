@@ -76,7 +76,7 @@ describe('Claudian file menu', () => {
 
     expect(host.activateView).toHaveBeenCalledTimes(1);
     expect(host.getView).toHaveBeenCalledTimes(1);
-    expect(appendToActiveInput).toHaveBeenCalledWith('@projects/My Plan.md ');
+    expect(appendToActiveInput).toHaveBeenCalledWith('[[projects/My Plan.md|My Plan]] ');
     expect(host.activateView.mock.invocationCallOrder[0])
       .toBeLessThan(appendToActiveInput.mock.invocationCallOrder[0]);
   });

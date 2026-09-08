@@ -18,7 +18,7 @@ import type {
 type MentionValue =
   | { readonly kind: 'agent'; readonly agentId: string }
   | { readonly kind: 'context-file'; readonly absolutePath: string }
-  | { readonly kind: 'vault-file' | 'vault-folder'; readonly path: string };
+  | { readonly kind: 'vault-file'; readonly path: string };
 
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
@@ -30,6 +30,7 @@ export interface MentionSourceCallbacks {
 }
 
 export interface MentionSourceOptions {
+  readonly formatVaultFileMention?: (path: string) => string;
   readonly getExtensionFolders?: (
     signal: AbortSignal,
   ) => Promise<readonly ComposerDropdownFolderItem[]> | readonly ComposerDropdownFolderItem[];
@@ -144,8 +145,6 @@ export class MentionSource implements ComposerDropdownSource {
     return {
       kind: 'replace',
       text: item.replacement,
-      ...(value?.kind === 'vault-file' || value?.kind === 'vault-folder' ? { filePath: value.path } : {}),
-      ...(value?.kind === 'context-file' ? { filePath: value.absolutePath } : {}),
       onApplied: () => {
         if (!value) return;
         if (value.kind === 'agent') this.callbacks.onAgentMentionSelect?.(value.agentId);
@@ -313,7 +312,6 @@ export class MentionSource implements ComposerDropdownSource {
             kind: 'value',
             label: `@${folder.path}/`,
             replacement: `@${normalized}/ `,
-            value: { kind: 'vault-folder', path: `${normalized}/` } satisfies MentionValue,
           },
           mtime: folderMtimes.get(folder.path) ?? 0,
           name: folder.name,
@@ -335,7 +333,7 @@ export class MentionSource implements ComposerDropdownSource {
             id: `vault-file:${file.path}`,
             kind: 'value',
             label: file.path,
-            replacement: formatVaultFileMention(normalized),
+            replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
             value: { kind: 'vault-file', path: normalized } satisfies MentionValue,
           },
           mtime: file.stat.mtime,

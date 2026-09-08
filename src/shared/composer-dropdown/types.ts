@@ -1,19 +1,10 @@
-export interface ComposerFileMention {
-  readonly from: number;
-  readonly to: number;
-  /** Folder references retain their trailing slash, including while missing. */
-  readonly path: string;
-}
-
 /** Text/caret contract shared by native inputs and the Main Chat rich editor. */
 export interface ComposerInputElement extends HTMLElement {
   value: string;
   selectionStart: number | null;
   selectionEnd: number | null;
   placeholder: string;
-  replaceText?: (from: number, to: number, text: string, filePath?: string) => void;
-  getFileMentions?: () => readonly ComposerFileMention[];
-  setFileMentions?: (mentions: readonly ComposerFileMention[]) => void;
+  replaceText?: (from: number, to: number, text: string) => void;
 }
 
 export interface ComposerTriggerMatch {
@@ -74,7 +65,6 @@ export type ComposerSelectionAction =
   | {
     readonly kind: 'replace';
     readonly text: string;
-    readonly filePath?: string;
     readonly onApplied?: () => void;
   };
 

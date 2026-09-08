@@ -5,7 +5,7 @@
  * them clickable to open the file in Obsidian.
  */
 
-import type { App } from 'obsidian';
+import type { App, WorkspaceLeaf } from 'obsidian';
 
 import { getVaultFileByPath } from './obsidianCompat';
 
@@ -63,6 +63,11 @@ export function extractLinkTarget(fullMatch: string): string {
  * Sorted by index descending for end-to-start processing.
  */
 function findWikilinks(app: App, text: string): WikilinkMatch[] {
+  return parseWikilinks(text).filter(match => fileExistsInVault(app, match.linkPath));
+}
+
+/** Parses wikilink source in descending offset order for text replacement. */
+export function parseWikilinks(text: string): WikilinkMatch[] {
   const pattern = createWikilinkPattern();
   const matches: WikilinkMatch[] = [];
 
@@ -70,8 +75,6 @@ function findWikilinks(app: App, text: string): WikilinkMatch[] {
   while ((match = pattern.exec(text)) !== null) {
     const fullMatch = match[0];
     const linkPath = match[1];
-
-    if (!fileExistsInVault(app, linkPath)) continue;
 
     matches.push(buildWikilinkMatch(fullMatch, linkPath, match.index));
   }
@@ -140,6 +143,26 @@ function repairEmptyInternalLink(app: App, link: HTMLAnchorElement): void {
   link.textContent = linkTarget;
 }
 
+async function openFileLink(app: App, linkTarget: string): Promise<void> {
+  const linkPath = extractLinkPathFromTarget(linkTarget);
+  const file = app.metadataCache.getFirstLinkpathDest(linkPath, '');
+  let existingLeaf: WorkspaceLeaf | undefined;
+  if (file) {
+    app.workspace.iterateAllLeaves(leaf => {
+      if (!existingLeaf && leaf.getViewState().state?.file === file.path) {
+        existingLeaf = leaf;
+      }
+    });
+  }
+  if (existingLeaf) {
+    await app.workspace.revealLeaf(existingLeaf);
+    const subpath = linkTarget.slice(linkPath.length);
+    existingLeaf.setEphemeralState({ focus: true, ...(subpath ? { subpath } : {}) });
+    return;
+  }
+  await app.workspace.openLinkText(linkTarget, '', 'tab');
+}
+
 /**
  * Registers a delegated click handler for file links on a container.
  * Should be called once on the messages container.
@@ -158,7 +181,7 @@ export function registerFileLinkHandler(
       event.preventDefault();
       const linkTarget = link.dataset.href || link.getAttribute('href');
       if (linkTarget) {
-        void app.workspace.openLinkText(linkTarget, '', 'tab');
+        void openFileLink(app, linkTarget);
       }
     }
   };

@@ -74,6 +74,26 @@ function attachVaultFile(manager: FileContextManager, path: string): void {
 }
 
 describe('FileContextManager', () => {
+  it('offers vault notes as wikilinks in the main chat picker', async () => {
+    const { app } = createMockApp([createFile('DEMO.md'), createFile('- Bases/DEMO.md')]);
+    const manager = new FileContextManager(app, {});
+    try {
+      const source = manager.getMentionSource();
+      const match = source.match('@DEMO', 5)!;
+      const items = await source.load(match, new AbortController().signal);
+      for (const [path, text] of [
+        ['DEMO.md', '[[DEMO.md|DEMO]] '],
+        ['- Bases/DEMO.md', '[[- Bases/DEMO.md|DEMO]] '],
+      ]) {
+        const item = items.find(item => item.kind === 'value' && item.label === path);
+        if (!item || item.kind !== 'value') throw new Error('Missing note option');
+        expect(source.select(item, match)).toEqual(expect.objectContaining({ kind: 'replace', text }));
+      }
+    } finally {
+      manager.destroy();
+    }
+  });
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
