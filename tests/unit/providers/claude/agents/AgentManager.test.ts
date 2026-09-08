@@ -131,7 +131,7 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
-      const explore = manager.getAgentById('Explore');
+      const explore = manager.getAvailableAgents().find(agent => agent.id === 'Explore');
 
       expect(explore).toBeDefined();
       expect(explore?.source).toBe('builtin');
@@ -488,78 +488,6 @@ describe('AgentManager', () => {
     });
   });
 
-  describe('getAgentById', () => {
-    it('returns agent by exact ID match', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const agent = manager.getAgentById('Explore');
-
-      expect(agent).toBeDefined();
-      expect(agent?.id).toBe('Explore');
-    });
-
-    it('returns undefined for non-existent ID', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const agent = manager.getAgentById('NonExistent');
-
-      expect(agent).toBeUndefined();
-    });
-  });
-
-  describe('searchAgents', () => {
-    it('searches by name (case-insensitive)', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const results = manager.searchAgents('explore');
-
-      expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results[0].id).toBe('Explore');
-    });
-
-    it('searches by ID', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const results = manager.searchAgents('general-purpose');
-
-      expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results.some(r => r.id === 'general-purpose')).toBe(true);
-    });
-
-    it('searches by description', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const results = manager.searchAgents('codebase');
-
-      expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results.some(r => r.id === 'Explore')).toBe(true);
-    });
-
-    it('returns empty array for no matches', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      const results = manager.searchAgents('xyznonexistent');
-
-      expect(results).toEqual([]);
-    });
-
-    it('returns multiple matches', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
-
-      await manager.loadAgents();
-      // 'a' should match multiple built-in agents
-      const results = manager.searchAgents('a');
-
-      expect(results.length).toBeGreaterThan(1);
-    });
-  });
-
   describe('agent with missing optional fields', () => {
     it('handles agents without tools specification', async () => {
       const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
@@ -574,7 +502,7 @@ describe('AgentManager', () => {
       mockFs.readFileSync.mockReturnValue(MINIMAL_AGENT_FILE);
 
       await manager.loadAgents();
-      const agent = manager.getAgentById('MinimalAgent');
+      const agent = manager.getAvailableAgents().find(agent => agent.id === 'MinimalAgent');
 
       expect(agent).toBeDefined();
       expect(agent?.tools).toBeUndefined();

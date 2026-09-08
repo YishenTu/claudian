@@ -14,15 +14,13 @@ function file(path: string, mtime = 1): TFile {
 }
 
 function source(overrides: Record<string, unknown> = {}) {
-  const onAgentMentionSelect = jest.fn();
   const value = new MentionSource({
     getCachedVaultFiles: () => [file('notes/Alpha.md', 5)],
     getCachedVaultFolders: () => [{ name: 'notes', path: 'notes' }],
     normalizePathForVault: path => path ?? null,
-    onAgentMentionSelect,
     ...overrides,
   });
-  return { onAgentMentionSelect, source: value };
+  return { source: value };
 }
 
 describe('MentionSource', () => {
@@ -89,25 +87,16 @@ describe('MentionSource', () => {
     value.destroy();
   });
 
-  it('loads and selects provider-neutral Agent mentions', async () => {
-    const { onAgentMentionSelect, source: value } = source();
-    value.setAgentService({
-      ensureLoaded: jest.fn(async () => undefined),
-      isLoaded: () => true,
-      searchAgents: () => [{
-        id: 'reviewer',
-        name: 'reviewer',
-        description: 'Review changes',
-        source: 'vault',
-      }],
+  it('resolves files inside a Vault Agents folder', async () => {
+    const { source: value } = source({
+      getCachedVaultFiles: () => [file('Agents/reviewer.md')],
+      getCachedVaultFolders: () => [{ name: 'Agents', path: 'Agents' }],
     });
-    const [folder] = await value.load(value.match('@Agents', 7)!, new AbortController().signal);
-    expect(folder).toEqual(expect.objectContaining({ id: 'agents', kind: 'folder' }));
-    const [agent] = await (folder as Extract<typeof folder, { kind: 'folder' }>)
-      .load('', new AbortController().signal);
-    const action = value.select(agent as Extract<typeof agent, { kind: 'value' }>, value.match('@', 1)!);
-    if (action.kind === 'replace') action.onApplied?.();
-    expect(onAgentMentionSelect).toHaveBeenCalledWith('reviewer');
+    const match = value.match('@Agents/rev', 11)!;
+    const [item] = await value.load(match, new AbortController().signal);
+    expect(item).toEqual(expect.objectContaining({
+      kind: 'value', replacement: '@Agents/reviewer.md ',
+    }));
     value.destroy();
   });
 });

@@ -2063,10 +2063,6 @@ export default class ClaudianPlugin extends Plugin {
                     `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
                   );
                 }
-                await ProviderWorkspaceRegistry.refreshAgentMentions(
-                  providerId,
-                  transitionOwner,
-                );
               }
             }
           },

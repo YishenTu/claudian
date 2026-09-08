@@ -150,19 +150,6 @@ export interface AppAgentStorage {
   delete(agent: AgentDefinition): Promise<void>;
 }
 
-export type AgentMentionSource = AgentDefinition['source'];
-
-export interface AgentMentionProvider {
-  ensureLoaded?(): Promise<void>;
-  isLoaded?(): boolean;
-  searchAgents(query: string): Array<{
-    id: string;
-    name: string;
-    description?: string;
-    source: AgentMentionSource;
-  }>;
-}
-
 /** Provider plugin manager interface consumed by the app layer. */
 export interface AppPluginManager {
   loadPlugins(): Promise<void>;
@@ -177,11 +164,9 @@ export interface AppPluginManager {
 }
 
 /** Provider agent manager interface consumed by the app layer. */
-export interface AppAgentManager extends AgentMentionProvider {
+export interface AppAgentManager {
   loadAgents(): Promise<void>;
   getAvailableAgents(): AgentDefinition[];
-  getAgentById(id: string): AgentDefinition | undefined;
-  searchAgents(query: string): AgentDefinition[];
   setBuiltinAgentNames(names: string[]): void;
 }
 
@@ -407,12 +392,10 @@ export interface ProviderTabWarmupPolicy {
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   vaultCommandRepository?: ProviderVaultEntryRepository | null;
-  agentMentionProvider?: AgentMentionProvider | null;
   cliResolver?: ProviderCliResolver | null;
   commandLoader?: ProviderCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
-  refreshAgentMentions?(context?: ProviderTransitionOwnerContext): Promise<void>;
   refreshModelCatalog?(
     context?: ProviderTransitionOwnerContext,
   ): Promise<ProviderModelCatalogRefreshResult>;

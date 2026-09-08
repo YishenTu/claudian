@@ -2465,9 +2465,7 @@ describe('ClaudianPlugin', () => {
         throw publicationError;
       });
       const refreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
-      const refreshAgentMentions = jest.fn().mockResolvedValue(undefined);
       ProviderWorkspaceRegistry.setServices('grok', {
-        refreshAgentMentions,
         refreshModelCatalog,
       });
       const invalidateProviderCommandCaches = jest.fn();
@@ -2489,10 +2487,6 @@ describe('ClaudianPlugin', () => {
           .toBe('GROK_PROFILE=committed');
         expect(refreshModelCatalog).toHaveBeenCalledTimes(1);
         expect(refreshModelCatalog).toHaveBeenCalledWith({
-          providerTransitionOwner: true,
-        });
-        expect(refreshAgentMentions).toHaveBeenCalledTimes(1);
-        expect(refreshAgentMentions).toHaveBeenCalledWith({
           providerTransitionOwner: true,
         });
         expect(invalidateProviderCommandCaches).toHaveBeenCalledWith(['grok']);

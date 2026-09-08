@@ -1,5 +1,4 @@
 const mockDiscoverModels = jest.fn();
-const mockLoadAgents = jest.fn().mockResolvedValue(undefined);
 const mockNormalizeAllModelVariants = jest.fn().mockReturnValue(false);
 const mockSkillBeginTransition = jest.fn();
 const mockSkillQuiesce = jest.fn().mockResolvedValue(undefined);
@@ -15,12 +14,6 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
 jest.mock('@/providers/codex/runtime/CodexModelDiscoveryService', () => ({
   CodexModelDiscoveryService: jest.fn().mockImplementation(() => ({
     discoverModels: mockDiscoverModels,
-  })),
-}));
-
-jest.mock('@/providers/codex/agents/CodexAgentMentionProvider', () => ({
-  CodexAgentMentionProvider: jest.fn().mockImplementation(() => ({
-    loadAgents: mockLoadAgents,
   })),
 }));
 

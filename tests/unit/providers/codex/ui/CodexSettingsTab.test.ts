@@ -117,7 +117,6 @@ jest.mock('@/providers/codex/app/CodexWorkspaceServices', () => ({
   getCodexWorkspaceServices: jest.fn(() => ({
     commandCatalog: null,
     subagentStorage: {},
-    refreshAgentMentions: jest.fn(),
     refreshModelCatalog: mockRefreshModelCatalog,
     cliResolver: { reset: mockCodexCliResolverReset },
   })),

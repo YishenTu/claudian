@@ -283,13 +283,11 @@ export class CodexSubagentSettings {
   private storage: CodexSubagentStorage;
   private agents: CodexSubagentDefinition[] = [];
   private app?: App;
-  private onChanged?: () => void;
 
-  constructor(containerEl: HTMLElement, storage: CodexSubagentStorage, app?: App, onChanged?: () => void) {
+  constructor(containerEl: HTMLElement, storage: CodexSubagentStorage, app?: App) {
     this.containerEl = containerEl;
     this.storage = storage;
     this.app = app;
-    this.onChanged = onChanged;
     void this.render();
   }
 
@@ -375,7 +373,6 @@ export class CodexSubagentSettings {
       try {
         await this.storage.delete(agent);
         await this.render();
-        this.onChanged?.();
         new Notice(t('settings.subagents.deleted', { name: agent.name }));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -395,7 +392,6 @@ export class CodexSubagentSettings {
       async (agent) => {
         await this.storage.save(agent, existing);
         await this.render();
-        this.onChanged?.();
         new Notice(
           existing
             ? t('settings.subagents.updated', { name: agent.name })

@@ -9,7 +9,6 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
-import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
 import { CodexCliResolver } from '../runtime/CodexCliResolver';
 import { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
@@ -22,7 +21,6 @@ import { codexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   subagentStorage: CodexSubagentStorage;
   commandCatalog: ProviderCommandCatalog;
-  agentMentionProvider: CodexAgentMentionProvider;
   cliResolver: ProviderCliResolver;
   modelCatalogCoordinator: CodexModelCatalogCoordinator;
   refreshModelCatalog(
@@ -46,7 +44,6 @@ export async function createCodexWorkspaceServices(
   options: CodexWorkspaceServicesOptions = {},
 ): Promise<CodexWorkspaceServices> {
   const subagentStorage = new CodexSubagentStorage(vaultAdapter);
-  const agentMentionProvider = new CodexAgentMentionProvider(subagentStorage);
 
   const skillListProvider = options.skillListingService
     ?? new CodexSkillListingService(plugin);
@@ -82,15 +79,10 @@ export async function createCodexWorkspaceServices(
   return {
     subagentStorage,
     commandCatalog,
-    agentMentionProvider,
     cliResolver: createCodexCliResolver(),
     modelCatalogCoordinator,
     settingsTabRenderer: codexSettingsTabRenderer,
-    refreshAgentMentions: async () => {
-      await agentMentionProvider.loadAgents();
-    },
     refreshModelCatalog: async context => modelCatalogCoordinator.refreshModelCatalog(context),
-    prepareSettings: async () => agentMentionProvider.loadAgents(),
     dispose() {
       if (disposePromise) return disposePromise;
       unregisterTransitionHook();

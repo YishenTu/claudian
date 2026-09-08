@@ -7,7 +7,6 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
-import { OpencodeAgentMentionProvider } from '../agents/OpencodeAgentMentionProvider';
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
@@ -17,7 +16,6 @@ import { OpencodeCommandLoader } from './OpencodeCommandLoader';
 
 export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
   agentStorage: OpencodeAgentStorage;
-  agentMentionProvider: OpencodeAgentMentionProvider;
   commandCatalog: ProviderCommandCatalog;
   metadataService: OpencodeMetadataService;
 }
@@ -33,23 +31,17 @@ export async function createOpencodeWorkspaceServices(
   plugin: ProviderHost,
 ): Promise<OpencodeWorkspaceServices> {
   const agentStorage = new OpencodeAgentStorage(vaultAdapter);
-  const agentMentionProvider = new OpencodeAgentMentionProvider(agentStorage);
   const commandCatalog = new OpencodeCommandCatalog();
   const metadataService = new OpencodeMetadataService(plugin, { commandCatalog });
 
   return {
     agentStorage,
-    agentMentionProvider,
     commandCatalog,
     cliResolver: new OpencodeCliResolver(),
     metadataService,
     commandLoader: new OpencodeCommandLoader(metadataService),
     settingsTabRenderer: opencodeSettingsTabRenderer,
     tabWarmupPolicy: opencodeTabWarmupPolicy,
-    refreshAgentMentions: async () => {
-      await agentMentionProvider.loadAgents();
-    },
-    prepareSettings: async () => agentMentionProvider.loadAgents(),
     dispose: async () => metadataService.dispose(),
   };
 }

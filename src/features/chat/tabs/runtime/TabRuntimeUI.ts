@@ -65,12 +65,7 @@ function buildContextManagers(
 > {
   const { dom } = shell;
   const { plugin } = options;
-  const fileContextManager = new FileContextManager(
-    plugin.app,
-    {
-      onAgentMentionSelect: () => onUserModified(),
-    },
-  );
+  const fileContextManager = new FileContextManager(plugin.app);
   options.registerCleanup('tab file context manager', () => fileContextManager.destroy());
   const linkedContentController = new LinkedContentController({
     app: plugin.app,

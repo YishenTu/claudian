@@ -70,7 +70,6 @@ const ensureInitialized = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
   ProviderWorkspaceRegistry: {
     ensureInitialized: (...args: unknown[]) => ensureInitialized(...args),
-    getAgentMentionProvider: jest.fn().mockReturnValue(null),
     getCommandCatalog: jest.fn().mockReturnValue(null),
     getIfInitialized: jest.fn().mockReturnValue(null),
     getCommandLoader: jest.fn().mockReturnValue(null),

@@ -33,7 +33,6 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   agentManager: AppAgentManager;
   commandCatalog: ProviderCommandCatalog;
   vaultCommandRepository: ProviderVaultEntryRepository;
-  agentMentionProvider: AppAgentManager;
   dispose(): Promise<void>;
 }
 
@@ -88,12 +87,7 @@ export async function createClaudeWorkspaceServices(
     agentManager,
     commandCatalog,
     vaultCommandRepository: commandCatalog,
-    agentMentionProvider: agentManager,
     settingsTabRenderer: claudeSettingsTabRenderer,
-    refreshAgentMentions: async () => {
-      await pluginManager.loadPlugins();
-      await agentManager.loadAgents();
-    },
     prepareSettings: async () => {
       await pluginManager.loadPlugins();
       await agentManager.loadAgents();

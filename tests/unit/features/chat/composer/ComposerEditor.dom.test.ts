@@ -86,7 +86,7 @@ it.each(['click', 'Enter', 'Tab'])('inserts and renders a picker wikilink using 
   const parent = document.body.createDiv();
   const app = createApp();
   const editor = new ComposerEditor(parent, app, {} as Component);
-  const files = new FileContextManager(app, {});
+  const files = new FileContextManager(app);
   const dropdown = new ComposerDropdownController(parent, editor.element, [files.getMentionSource()]);
   try {
     editor.element.value = 'Read @A today';

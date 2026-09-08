@@ -241,10 +241,6 @@ export function applyProviderUIGating(
 
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
 
-  tab.ui.fileContextManager.setAgentService(
-    ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
-  );
-
   tab.ui.imageContextManager.setEnabled(capabilities.supportsImageAttachments);
   tab.ui.contextUsageMeter.update(tab.state.usage);
 }

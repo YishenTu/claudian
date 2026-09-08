@@ -49,7 +49,6 @@ export class AgentManager {
   private vaultPath: string;
   private pluginManager: PluginManager;
   private resolveConfigDir: () => string;
-  private loaded = false;
   private loadPromise: Promise<void> | null = null;
 
   constructor(
@@ -91,18 +90,6 @@ export class AgentManager {
     }
   }
 
-  async ensureLoaded(): Promise<void> {
-    if (this.loaded) {
-      return;
-    }
-    await this.pluginManager.loadPlugins?.();
-    await this.loadAgents();
-  }
-
-  isLoaded(): boolean {
-    return this.loaded;
-  }
-
   private async loadAgentsInternal(): Promise<void> {
     this.agents = [];
 
@@ -113,25 +100,10 @@ export class AgentManager {
     try { await this.loadPluginAgents(); } catch { /* non-critical */ }
     try { await this.loadVaultAgents(); } catch { /* non-critical */ }
     try { await this.loadGlobalAgents(); } catch { /* non-critical */ }
-    this.loaded = true;
   }
 
   getAvailableAgents(): AgentDefinition[] {
     return [...this.agents];
-  }
-
-  getAgentById(id: string): AgentDefinition | undefined {
-    return this.agents.find(a => a.id === id);
-  }
-
-  /** Used for @-mention filtering in the chat input. */
-  searchAgents(query: string): AgentDefinition[] {
-    const q = query.toLowerCase();
-    return this.agents.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      a.id.toLowerCase().includes(q) ||
-      a.description.toLowerCase().includes(q)
-    );
   }
 
   private async loadPluginAgents(): Promise<void> {

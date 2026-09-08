@@ -140,7 +140,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       const subagentsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
       subagentsDesc.createEl('p', {
         cls: 'setting-item-description',
-        text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files and appear in the @mention menu.',
+        text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files.',
       });
 
       const subagentsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
@@ -150,7 +150,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         context.plugin.app,
         async () => {
           await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
-            await opencodeWorkspace.refreshAgentMentions?.();
+            // Restart execution so native agent definitions are reloaded.
           });
         },
       );

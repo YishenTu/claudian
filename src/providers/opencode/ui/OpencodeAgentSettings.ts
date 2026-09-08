@@ -179,8 +179,8 @@ class OpencodeAgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Hide from @mention')
-      .setDesc('Hide this subagent from the @ autocomplete menu')
+      .setName('Hide in OpenCode autocomplete')
+      .setDesc('Controls visibility in OpenCode’s native agent menu')
       .addToggle((toggle) => {
         toggle.setValue(hiddenValue).onChange((value) => {
           hiddenValue = value;

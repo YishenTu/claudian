@@ -43,7 +43,7 @@ function createMockApp(entries: Array<TFile | TFolder> = []) {
 describe('FileContextManager', () => {
   it('offers vault notes as wikilinks in the main chat picker', async () => {
     const { app } = createMockApp([createFile('DEMO.md'), createFile('- Bases/DEMO.md')]);
-    const manager = new FileContextManager(app, {});
+    const manager = new FileContextManager(app);
     try {
       const source = manager.getMentionSource();
       const match = source.match('@DEMO', 5)!;
@@ -75,7 +75,7 @@ describe('FileContextManager', () => {
     const note = createFile('Notes/Plan.md');
     const folder = createFolder('Projects');
     const { app } = createMockApp([note, folder]);
-    const manager = new FileContextManager(app, {});
+    const manager = new FileContextManager(app);
 
     expect(manager.getCachedVaultFiles()).toEqual([note]);
     expect(manager.getCachedVaultFolders()).toEqual([{ name: 'Projects', path: 'Projects' }]);

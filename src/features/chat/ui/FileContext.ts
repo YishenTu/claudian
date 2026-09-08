@@ -1,6 +1,5 @@
 import type { App, TFile } from 'obsidian';
 
-import type { AgentMentionProvider } from '../../../core/providers/types';
 import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
 import type { FolderMentionItem } from '../../../shared/mention/types';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
@@ -10,10 +9,6 @@ import {
 } from '../../../utils/path';
 import { formatComposerWikilink } from '../composer/composerWikilinks';
 
-export interface FileContextCallbacks {
-  onAgentMentionSelect?: (agentId: string) => void;
-}
-
 /**
  * Owns Vault mention caches and composer mention selection.
  * Linked content state and presentation belong to LinkedContentController.
@@ -22,13 +17,9 @@ export class FileContextManager {
   private readonly mentionDataProvider: VaultMentionDataProvider;
   private readonly mentionSource: MentionSource;
 
-  constructor(
-    private readonly app: App,
-    private readonly callbacks: FileContextCallbacks,
-  ) {
+  constructor(private readonly app: App) {
     this.mentionDataProvider = new VaultMentionDataProvider(this.app);
     this.mentionSource = new MentionSource({
-      onAgentMentionSelect: agentId => this.callbacks.onAgentMentionSelect?.(agentId),
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: rawPath => this.normalizePathForVault(rawPath),
@@ -57,10 +48,6 @@ export class FileContextManager {
 
   getMentionSource(): MentionSource {
     return this.mentionSource;
-  }
-
-  setAgentService(agentService: AgentMentionProvider | null): void {
-    this.mentionSource.setAgentService(agentService);
   }
 
   destroy(): void {

@@ -317,9 +317,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-    new CodexSubagentSettings(subagentContainer, codexWorkspace.subagentStorage, context.plugin.app, () => {
-      void codexWorkspace.refreshAgentMentions?.();
-    });
+    new CodexSubagentSettings(subagentContainer, codexWorkspace.subagentStorage, context.plugin.app);
 
     // --- MCP Servers ---
 

@@ -3,7 +3,6 @@ import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type { ProviderHost } from './ProviderHost';
 import { ProviderInitializationBoundary } from './ProviderInitializationBoundary';
 import type {
-  AgentMentionProvider,
   ProviderCliResolver,
   ProviderCommandLoader,
   ProviderId,
@@ -19,7 +18,7 @@ import type {
  * Registry for provider-owned workspace/bootstrap services.
  *
  * Unlike `ProviderRegistry`, this boundary owns app-level provider services such
- * as command catalogs, mention providers, MCP/plugin/agent managers, and
+ * as command catalogs, CLI resolvers, and
  * provider-specific storage adaptors.
  *
  * Initialization is lazy: providers are only initialized when something first
@@ -102,17 +101,6 @@ export class ProviderWorkspaceRegistry {
 
   static getCommandCatalog(providerId: ProviderId): ProviderCommandCatalog | null {
     return this.getServices(providerId)?.commandCatalog ?? null;
-  }
-
-  static getAgentMentionProvider(providerId: ProviderId): AgentMentionProvider | null {
-    return this.getServices(providerId)?.agentMentionProvider ?? null;
-  }
-
-  static async refreshAgentMentions(
-    providerId: ProviderId,
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<void> {
-    await this.getServices(providerId)?.refreshAgentMentions?.(context);
   }
 
   static async refreshModelCatalog(

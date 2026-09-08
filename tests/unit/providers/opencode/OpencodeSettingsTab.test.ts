@@ -10,7 +10,6 @@ import { opencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSet
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockRefreshAgentMentions = jest.fn().mockResolvedValue(undefined);
 const mockCliResolverReset = jest.fn();
 const mockMetadataLoadCatalog = jest.fn().mockResolvedValue(false);
 const mockMetadataWarmModel = jest.fn().mockResolvedValue(false);
@@ -113,7 +112,6 @@ jest.mock('@/providers/opencode/app/OpencodeWorkspaceServices', () => ({
       loadCatalog: mockMetadataLoadCatalog,
       warmModelMetadata: mockMetadataWarmModel,
     },
-    refreshAgentMentions: mockRefreshAgentMentions,
   })),
 }));
 
@@ -662,7 +660,7 @@ describe('OpencodeSettingsTab', () => {
     });
   });
 
-  it('refreshes vault subagent state inside an execution transition', async () => {
+  it('reloads native subagents inside an execution transition', async () => {
     const plugin = createPlugin();
 
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
@@ -671,7 +669,7 @@ describe('OpencodeSettingsTab', () => {
     expect(createdElements).toContainEqual({
       cls: 'setting-item-description',
       tag: 'p',
-      text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files and appear in the @mention menu.',
+      text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files.',
     });
 
     expect(mockCreatedAgentSettings).toHaveLength(1);
@@ -679,7 +677,6 @@ describe('OpencodeSettingsTab', () => {
 
     await mockCreatedAgentSettings[0].onChanged?.();
 
-    expect(mockRefreshAgentMentions).toHaveBeenCalledTimes(1);
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['opencode'],
       expect.any(Function),

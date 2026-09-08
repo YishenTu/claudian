@@ -1,7 +1,5 @@
 import type { TFile } from 'obsidian';
 
-import type { AgentMentionProvider } from '@/core/providers/types';
-
 import { formatVaultFileMention } from '../mention/formatMention';
 import type { FolderMentionItem } from '../mention/types';
 import type {
@@ -13,13 +11,10 @@ import type {
   ComposerTriggerMatch,
 } from './types';
 
-type MentionValue = { readonly kind: 'agent'; readonly agentId: string };
-
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
   readonly getCachedVaultFolders: () => readonly FolderMentionItem[];
   readonly normalizePathForVault: (path: string | undefined | null) => string | null;
-  readonly onAgentMentionSelect?: (agentId: string) => void;
 }
 
 export interface MentionSourceOptions {
@@ -33,11 +28,7 @@ export class MentionSource implements ComposerDropdownSource {
   readonly id = 'mentions';
   readonly inputLoadPolicy = 'debounced';
 
-  private agentLoadPromise: Promise<void> | null = null;
-  private agentService: AgentMentionProvider | null = null;
-  private destroyed = false;
   private readonly listeners = new Set<() => void>();
-  private readonly loadedAgentServices = new WeakSet<object>();
 
   constructor(
     private readonly callbacks: MentionSourceCallbacks,
@@ -47,9 +38,6 @@ export class MentionSource implements ComposerDropdownSource {
   private extensionFoldersLoader = this.options.getExtensionFolders;
 
   destroy(): void {
-    this.destroyed = true;
-    this.agentService = null;
-    this.agentLoadPromise = null;
     this.listeners.clear();
   }
 
@@ -57,30 +45,19 @@ export class MentionSource implements ComposerDropdownSource {
     match: ComposerTriggerMatch,
     signal: AbortSignal,
   ): Promise<readonly ComposerDropdownItem[]> | readonly ComposerDropdownItem[] {
-    this.ensureAgentsLoaded();
     const query = match.query.toLocaleLowerCase();
-    const items: ComposerDropdownItem[] = [];
-
-    if (query.startsWith('agents/')) {
-      return this.agentFolder().load(match.query.slice('agents/'.length), signal);
-    }
-
-    if (this.agentService?.searchAgents('').length && 'agents'.includes(query)) {
-      items.push(this.agentFolder());
-    }
-
     const extensionFolders = this.extensionFoldersLoader?.(signal);
     if (extensionFolders instanceof Promise) {
       return extensionFolders
-        .then(folders => this.finishRootItems(items, folders, query, signal))
+        .then(folders => this.finishRootItems(folders, query, signal))
         .catch(error => {
           if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
             throw error;
           }
-          return this.finishRootItems(items, [], query, signal);
+          return this.finishRootItems([], query, signal);
         });
     }
-    return this.finishRootItems(items, extensionFolders ?? [], query, signal);
+    return this.finishRootItems(extensionFolders ?? [], query, signal);
   }
 
   match(input: string, cursor: number): ComposerTriggerMatch | null {
@@ -101,21 +78,10 @@ export class MentionSource implements ComposerDropdownSource {
     item: ComposerDropdownValueItem,
     _match: ComposerTriggerMatch,
   ): ComposerSelectionAction {
-    const value = item.value as MentionValue | undefined;
     return {
       kind: 'replace',
       text: item.replacement,
-      onApplied: value?.kind === 'agent'
-        ? () => this.callbacks.onAgentMentionSelect?.(value.agentId)
-        : undefined,
     };
-  }
-
-  setAgentService(service: AgentMentionProvider | null): void {
-    if (this.agentService === service) return;
-    this.agentService = service;
-    this.agentLoadPromise = null;
-    this.notify();
   }
 
   setExtensionFoldersLoader(
@@ -134,60 +100,18 @@ export class MentionSource implements ComposerDropdownSource {
     return () => this.listeners.delete(listener);
   }
 
-  private agentFolder(): ComposerDropdownFolderItem {
-    return {
-      className: 'is-agent-folder',
-      icon: 'bot',
-      id: 'agents',
-      inputPrefix: 'Agents/',
-      kind: 'folder',
-      label: 'Agents',
-      load: query => (this.agentService?.searchAgents(query) ?? []).map(agent => ({
-        className: 'is-agent',
-        detail: agent.description,
-        icon: 'bot',
-        id: `agent:${agent.id}`,
-        kind: 'value',
-        label: `@${agent.id}`,
-        replacement: `@${agent.id} (agent) `,
-        value: { agentId: agent.id, kind: 'agent' } satisfies MentionValue,
-      })),
-    };
-  }
-
   private finishRootItems(
-    items: ComposerDropdownItem[],
     extensionFolders: readonly ComposerDropdownFolderItem[],
     query: string,
     signal: AbortSignal,
   ): readonly ComposerDropdownItem[] {
     if (signal.aborted) throw new DOMException('Mention lookup was cancelled.', 'AbortError');
+    const items: ComposerDropdownItem[] = [];
     for (const folder of extensionFolders) {
       if (folder.label.toLocaleLowerCase().includes(query)) items.push(folder);
     }
     items.push(...this.vaultItems(query));
     return items;
-  }
-
-  private ensureAgentsLoaded(): void {
-    const service = this.agentService;
-    if (
-      !service?.ensureLoaded
-      || service.isLoaded?.()
-      || this.loadedAgentServices.has(service)
-      || this.agentLoadPromise
-    ) return;
-
-    const pending = service.ensureLoaded();
-    this.agentLoadPromise = pending;
-    void pending.then(() => {
-      this.loadedAgentServices.add(service);
-      if (!this.destroyed && this.agentService === service) this.notify();
-    }).catch(() => {
-      // Cached Agent entries remain usable after a failed refresh.
-    }).finally(() => {
-      if (this.agentLoadPromise === pending) this.agentLoadPromise = null;
-    });
   }
 
   private vaultItems(query: string): readonly ComposerDropdownValueItem[] {

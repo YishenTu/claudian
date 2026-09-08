@@ -15,7 +15,7 @@
 - Sidebar surface swipes use one native horizontal scroll container with mandatory snap points. Chromium owns wheel transactions, momentum, drag position, and gesture completion; do not classify physical swipes from delta strength or idle timers, cancel wheel events, or translate the surface strip. Preload the first horizontal drag target without changing semantic activity. For swipe navigation, commit `activeSidebarSurface`, `inert`, `aria-hidden`, and provider surface activation only from `scrollend` after snap completion. This keeps the wheel target valid through Chromium's transaction when the pointer is stationary. With exactly two enabled surfaces, keep the live active surface at the center snap and use one inert, accessibility-hidden visual replica so the other logical surface occupies both adjacent snaps. The replica owns no controller or semantic state, both copies map to the same logical surface, and replica refresh must happen during alignment rather than wheel or scroll dispatch.
 - Resolve provider-owned services through registries:
   - `ProviderRegistry`: execution backends, title generation, instruction refinement, inline edit, task-result interpretation.
-  - `ProviderWorkspaceRegistry`: command catalogs, agent mentions, CLI resolution, settings tabs.
+  - `ProviderWorkspaceRegistry`: command catalogs, CLI resolution, settings tabs.
 
 ## Ownership
 
@@ -25,7 +25,7 @@
 | `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
 | `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
 | `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
-| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/Agent mentions, and optional Collab Member Changes/Ticket references |
+| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault mentions, and optional Collab Member Changes/Ticket references |
 | `LinkedContentController` | One tab's Linked content selection, greeting selector, context-tray projection, first-create submission freeze, immutable lock, and Vault path-event reconciliation |
 | `TabSessionEvents` | Provider-session event routing, background-work sequencing, and automatic-turn rendering |
 | `TabForking` | Fork-source resolution and immutable fork-context preparation |
