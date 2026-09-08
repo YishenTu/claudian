@@ -52,7 +52,6 @@ import { setToolIcon, updateToolCallResult } from '../rendering/ToolCallRenderer
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
-import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { StatusPanel } from '../ui/StatusPanel';
@@ -111,7 +110,6 @@ export interface InputControllerDeps {
   getInputEl: () => ComposerInputElement;
   getWelcomeEl: () => HTMLElement | null;
   getMessagesEl: () => HTMLElement;
-  getFileContextManager: () => FileContextManager | null;
   getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
   getInstructionModeManager: () => InstructionModeManager | null;

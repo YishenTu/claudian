@@ -332,7 +332,6 @@ export function buildTabRuntimeControllers(
     getInputContainerEl: () => dom.inputContainerEl,
     getWelcomeEl: () => dom.welcomeEl,
     getMessagesEl: () => dom.messagesEl,
-    getFileContextManager: () => ui.fileContextManager,
     getLinkedContentController: () => ui.linkedContentController,
     getImageContextManager: () => ui.imageContextManager,
     getInstructionModeManager: () => ui.instructionModeManager,

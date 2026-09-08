@@ -181,8 +181,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     getInputContainerEl: () => createMockEl() as any,
     getWelcomeEl: () => null,
     getMessagesEl: () => createMockEl() as any,
-    getFileContextManager: () => ({
-    }) as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
