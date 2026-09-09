@@ -73,7 +73,6 @@ describe('ClaudianCollabService authority transfer routing', () => {
     const controller = new AbortController();
     const activation = service.activateAuthorityTransferSourceRoute(
       projectId,
-      'https://192.168.1.10:54545',
       { signal: controller.signal },
     );
     await routeStarted;

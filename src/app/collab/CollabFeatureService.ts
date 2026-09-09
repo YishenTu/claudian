@@ -391,6 +391,8 @@ export interface CollabFeatureServiceOptions {
 }
 
 export interface CollabAuthorityTransferEntryPort {
+  moveCloudToLan(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabAuthorityTransferStatus>;
+  moveLanToCloud(request: CollabLanToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabAuthorityTransferStatus>;
   acceptLanToCloudTransfer(
     request: CollabLanToCloudTransferSelectionRequest,
     options?: CollabOperationOptions,
@@ -400,7 +402,7 @@ export interface CollabAuthorityTransferEntryPort {
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus>;
   beginCloudToLanTransfer(
-    input: CollabBeginCloudToLanTransferRequest & Readonly<{ readonly operationIntentId: string }>,
+    input: CollabBeginCloudToLanTransferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferHandle>;
   beginClose(): void;
@@ -418,7 +420,7 @@ export interface CollabAuthorityTransferEntryPort {
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus>;
   prepareCloudToLanTarget(
-    input: CollabPrepareCloudToLanTargetRequest & Readonly<{ readonly operationIntentId: string }>,
+    input: CollabPrepareCloudToLanTargetRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTargetPreparationDescriptor>;
   proposeLanToCloudTransfer(
@@ -606,24 +608,32 @@ class CollabFeatureServiceCore {
     );
   }
 
+  moveCloudToLan(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    return this.#runAuthorityTransferStatus(options, port => port.moveCloudToLan(projectId, options));
+  }
+
+  moveLanToCloud(
+    request: CollabLanToCloudTransferRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabAuthorityTransferStatus>> {
+    return this.#runAuthorityTransferStatus(options, port => port.moveLanToCloud(request, options));
+  }
+
   prepareCloudToLanTarget(
     request: CollabPrepareCloudToLanTargetRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabCloudToLanTargetPreparationDescriptor>> {
-    return this.#runAuthorityTransfer(options, port => port.prepareCloudToLanTarget({
-      ...request,
-      operationIntentId: `cloud-to-lan-target-${randomUUID().replaceAll('-', '')}`,
-    }, options));
+    return this.#runAuthorityTransfer(options, port => port.prepareCloudToLanTarget(request, options));
   }
 
   beginCloudToLanTransfer(
     request: CollabBeginCloudToLanTransferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabCloudToLanTransferHandle>> {
-    return this.#runAuthorityTransfer(options, port => port.beginCloudToLanTransfer({
-      ...request,
-      operationIntentId: `cloud-to-lan-manager-${randomUUID().replaceAll('-', '')}`,
-    }, options));
+    return this.#runAuthorityTransfer(options, port => port.beginCloudToLanTransfer(request, options));
   }
 
   acceptCloudToLanTransfer(
@@ -2785,6 +2795,12 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   cancelLanToCloudTransfer: CollabFeaturePort['cancelLanToCloudTransfer'] = (...args) => (
     this.#projectTransition(() => args[0].projectId, () => this.core.cancelLanToCloudTransfer(...args))
+  );
+  moveCloudToLan: CollabFeaturePort['moveCloudToLan'] = (...args) => (
+    this.#projectTransition(() => args[0], () => this.core.moveCloudToLan(...args))
+  );
+  moveLanToCloud: CollabFeaturePort['moveLanToCloud'] = (...args) => (
+    this.#projectTransition(() => args[0].projectId, () => this.core.moveLanToCloud(...args))
   );
   prepareCloudToLanTarget: CollabFeaturePort['prepareCloudToLanTarget'] = (...args) => (
     this.#projectTransition(() => args[0].projectId, () => this.core.prepareCloudToLanTarget(...args))

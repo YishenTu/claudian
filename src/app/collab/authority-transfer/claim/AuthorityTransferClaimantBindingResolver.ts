@@ -124,6 +124,7 @@ export class AuthorityTransferClaimantBindingResolver {
           cloudSession,
           direction: 'lan-to-cloud',
           lanClient: this.createLanClient({
+            authorityGeneration: record.status.sourceAuthority.generation,
             caCertificatePem: membership.authority.hostCaCertificatePem,
             caFingerprint: membership.authority.hostCaFingerprint,
             endpoint: membership.authority.endpoint,
@@ -167,6 +168,7 @@ export class AuthorityTransferClaimantBindingResolver {
         direction: 'cloud-to-lan',
         lanClient: this.createLanClient({
           ...record.lanTarget,
+          authorityGeneration: record.status.targetAuthority.generation,
           projectId: record.projectId,
         }),
         mode: 'full',

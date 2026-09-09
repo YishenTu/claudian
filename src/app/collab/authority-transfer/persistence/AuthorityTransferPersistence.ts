@@ -2271,7 +2271,7 @@ export class AuthorityTransferPersistence {
 
   runWithCloudToLanTargetRecoveryStartGuard<T>(
     input: Readonly<{
-      expectedEndpoint: string;
+      acceptedTargetUrl: string;
       operationIntentId: string;
       projectId: CollabProjectId;
       transferId: string;
@@ -2287,7 +2287,7 @@ export class AuthorityTransferPersistence {
         || record.status.direction !== 'cloud-to-lan'
         || record.status.state !== 'completed'
         || record.status.relinquishmentProof === null
-        || record.status.targetUrl !== input.expectedEndpoint
+        || record.status.targetUrl !== input.acceptedTargetUrl
         || record.operationIntentId !== input.operationIntentId
         || record.transferId !== input.transferId
         || record.restartFence !== 'open'

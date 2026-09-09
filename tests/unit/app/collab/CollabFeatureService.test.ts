@@ -613,7 +613,6 @@ describe('CollabFeatureService', () => {
     expect(authorityTransfer.acceptCloudToLanTransfer).toHaveBeenCalledWith({ handle }, {});
     expect(authorityTransfer.prepareCloudToLanTarget).toHaveBeenCalledWith(
       {
-        operationIntentId: expect.stringMatching(/^cloud-to-lan-target-[a-f0-9]{32}$/),
         projectId: descriptor.projectId,
       },
       {},
@@ -621,7 +620,6 @@ describe('CollabFeatureService', () => {
     expect(authorityTransfer.beginCloudToLanTransfer).toHaveBeenCalledWith(
       {
         descriptor,
-        operationIntentId: expect.stringMatching(/^cloud-to-lan-manager-[a-f0-9]{32}$/),
       },
       {},
     );
@@ -2196,12 +2194,6 @@ describe('CollabFeatureService', () => {
     };
     const localMembership = membership();
     const entry = new AuthorityTransferEntryService({
-      connectCloud: async () => ({
-        dispose: jest.fn(),
-        projectId: 'project-alpha',
-        serverUrl: 'https://cloud.example.test/',
-        supports: () => true,
-      }) as never,
       loadMembership: async () => ({
         ...localMembership,
         authority: {

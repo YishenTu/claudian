@@ -37,7 +37,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import {
   ClaudianCollabService,
   CollabProjectSetupService,
-  createCollabFeatureSubcomposition,
+  createCollabFeatureSubcomposition as createProductionFeatureSubcomposition,
 } from '@/app/collab';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
@@ -53,7 +53,6 @@ import {
   expireAuthorityTransferTerminalResponder,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
-import { CloudToLanTargetCoordinator } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
 import {
   cloudToLanTransferHandle,
   createCloudToLanManagerEntry,
@@ -74,6 +73,7 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -157,6 +157,8 @@ describe('production authority-transfer effects', () => {
   let SQL: SqlJsStatic;
   let sourceRoot: string;
   let targetRoot: string;
+  const foundations = new Set<ClaudianCollabService>();
+  const features = new Set<ReturnType<typeof createProductionFeatureSubcomposition>['feature']>();
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -168,47 +170,14 @@ describe('production authority-transfer effects', () => {
   });
 
   afterEach(async () => {
+    await Promise.allSettled([...features].map(feature => feature.close()));
+    features.clear();
+    await Promise.allSettled([...foundations].map(service => service.close()));
+    foundations.clear();
     await Promise.all([
       rm(sourceRoot, { force: true, recursive: true }),
       rm(targetRoot, { force: true, recursive: true }),
     ]);
-  });
-
-  it('releases a source endpoint pin when pre-ownership membership loading fails', async () => {
-    const endpoint = 'https://127.0.0.1:54545';
-    const pinAuthorityTransferSourceEndpoint = jest.fn(async () => endpoint);
-    const unpinAuthorityTransferSourceEndpoint = jest.fn(async () => undefined);
-    const loadMembership = jest.fn(async () => {
-      throw new Error('simulated membership read failure');
-    });
-    const effects = new ProductionLanToCloudSourceEffects({
-      cloudSession: null,
-      convergence: {} as AuthorityTransferLocalConvergence,
-      foundation: {
-        lanHost: {
-          pinAuthorityTransferSourceEndpoint,
-          unpinAuthorityTransferSourceEndpoint,
-        },
-        local: { projects: { loadMembership } },
-      } as never,
-      persistence: {} as never,
-      projectId: PROJECT_ID,
-    });
-    const record = createAuthorityTransferRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      lifecycleOwnership: 'proposal',
-      localRole: 'source',
-      operationIntentId: OPERATION_ID,
-      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
-    });
-
-    await expect(effects.sourceEndpoint(record)).rejects.toThrow(
-      'simulated membership read failure',
-    );
-
-    expect(pinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID);
-    expect(unpinAuthorityTransferSourceEndpoint).toHaveBeenCalledWith(PROJECT_ID, endpoint);
   });
 
   it('retains a Cloud-to-LAN target preparation until disposal succeeds', async () => {
@@ -418,15 +387,7 @@ describe('production authority-transfer effects', () => {
         await recovered.feature.initialize();
         await recovered.feature.restoreLifecycle();
         let nextAcceptance: unknown = null;
-        const nextCoordinator = new CloudToLanTargetCoordinator({
-          cloud: {} as never,
-          installationKey: TEST_INSTALLATION_A,
-          persistence: targetFoundation.authorityTransfers,
-          target: effects,
-        });
         try {
-          const release = recovered.authorityTransfer.runtimes.register(PROJECT_ID, 'target', nextCoordinator);
-          release();
           if (onlineRecovery) {
             const descriptor = await recovered.authorityTransfer.prepareCloudToLanTarget({
               operationIntentId: 'prepare-after-recovered-cancellation',
@@ -666,7 +627,6 @@ describe('production authority-transfer effects', () => {
           isProjectRunning: () => false,
           restartProjectAfterAuthorityTransferCancellation,
           startProject,
-          unpinAuthorityTransferSourceEndpoint: jest.fn(),
         },
         local: {
           projects: {
@@ -2047,7 +2007,11 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  it.each([false, true])('captures and activates Cloud-to-LAN with retained next-generation claims: %s', async retainNextGeneration => {
+  it.each([
+    { retainNextGeneration: false, moveAddress: false },
+    { retainNextGeneration: true, moveAddress: false },
+    { retainNextGeneration: false, moveAddress: true },
+  ])('captures and activates Cloud-to-LAN with retained claims $retainNextGeneration, address movement $moveAddress', async ({ retainNextGeneration, moveAddress }) => {
     const {
       artifactBytes,
       recoveryRecord,
@@ -2129,7 +2093,13 @@ describe('production authority-transfer effects', () => {
       Buffer.from(encodeCollabProjectCheckpointManifestCanonicalJson(targetManifest), 'utf8'),
     );
 
-    let targetFoundation = foundation(targetRoot);
+    let targetAddresses = moveAddress ? ['127.0.0.1'] : listPrivateIpv4Addresses();
+    let checkTargetAddress: () => Promise<void> = async () => undefined;
+    const createTargetFoundation = () => foundation(targetRoot, TEST_INSTALLATION_A, {
+      createAddressMonitor: check => { checkTargetAddress = check; return { close: () => undefined }; },
+      getPrivateIpv4Addresses: () => targetAddresses,
+    });
+    let targetFoundation = createTargetFoundation();
     await targetFoundation.local.workspace.claimProjectsFolder('workspace');
     const cloudServerUrl = 'https://cloud.example.test/';
     git(targetRoot, [
@@ -2183,10 +2153,14 @@ describe('production authority-transfer effects', () => {
         userDisplayName: 'Bob',
       },
     );
+    let beforeTargetConvergence: (() => Promise<void>) | null = null;
     const createRecoveryConvergence = async () => {
       const gitFoundation = await targetFoundation.requireGitFoundation();
       return new AuthorityTransferLocalConvergence({
-        activity: { transitionProject: (_projectId, operation) => operation() },
+        activity: { transitionProject: async (_projectId, operation) => {
+          await beforeTargetConvergence?.();
+          await operation();
+        } },
         authorityProjectionTransitions: {
           run: (projectId, operation) => targetFoundation.runAuthorityProjectionTransition(
             projectId,
@@ -2215,6 +2189,11 @@ describe('production authority-transfer effects', () => {
       projectId: PROJECT_ID,
     });
     const prepared = await targetEffects.prepareTarget();
+    if (moveAddress) {
+      targetAddresses = listPrivateIpv4Addresses();
+      if (targetAddresses.length === 0) throw new Error('A private address is required for transfer recovery');
+      await checkTargetAddress();
+    }
     const proposed = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
@@ -2679,7 +2658,21 @@ describe('production authority-transfer effects', () => {
       targetFoundation.lanHost,
       'startProjectAfterCloudToLanTargetRecovery',
     );
+    if (moveAddress) {
+      beforeTargetConvergence = async () => {
+        beforeTargetConvergence = null;
+        targetAddresses = ['127.0.0.1'];
+        await checkTargetAddress();
+      };
+    }
     await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
+    const activeTargetEndpoint = targetFoundation.lanHost.getActiveProjectRoute(PROJECT_ID)?.endpoint;
+    expect(activeTargetEndpoint).toBeDefined();
+    await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { endpoint: activeTargetEndpoint },
+    });
+    expect(git(path.join(targetRoot, 'workspace', 'portable'), ['remote', 'get-url', 'origin']).trim())
+      .toBe(`${activeTargetEndpoint}/v1/git/${PROJECT_ID}/repository.git`);
     expect(repeatedRecoveryStart).not.toHaveBeenCalled();
     await expect(targetFoundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
       authority: { kind: 'lan' },
@@ -2703,7 +2696,8 @@ describe('production authority-transfer effects', () => {
     });
 
     await targetFoundation.close();
-    targetFoundation = foundation(targetRoot);
+    if (moveAddress) targetAddresses = ['127.0.0.1'];
+    targetFoundation = createTargetFoundation();
     const autoStartRecoveryRoute = jest.spyOn(
       targetFoundation.lanHost,
       'startAuthorityTransferRoute',
@@ -2734,7 +2728,7 @@ describe('production authority-transfer effects', () => {
 
     await autoStartRecoveryComposition.feature.close();
     await targetFoundation.close();
-    targetFoundation = foundation(targetRoot);
+    targetFoundation = createTargetFoundation();
     const invalidMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
     if (!invalidMembership || invalidMembership.authority.kind !== 'lan') {
       throw new Error('Missing invalid-recovery target membership');
@@ -2767,7 +2761,7 @@ describe('production authority-transfer effects', () => {
     await invalidRecoveryComposition.feature.close();
     await targetFoundation.close();
 
-    targetFoundation = foundation(targetRoot);
+    targetFoundation = createTargetFoundation();
     const recoverableMembership = await targetFoundation.local.projects.loadMembership(PROJECT_ID);
     if (!recoverableMembership || recoverableMembership.authority.kind !== 'lan') {
       throw new Error('Missing recoverable target membership');
@@ -2817,11 +2811,15 @@ describe('production authority-transfer effects', () => {
     const claimantCredential = Buffer.alloc(32, 9).toString('base64url');
     const claim = staged.claimBatch.claims[0];
     if (!claim) throw new Error('Missing transferred Member claim');
+    const recoveredRoute = await targetFoundation.lanHost.startAuthorityTransferRoute(recoveredRegistration);
     const claimClient = new LanAuthorityTransferClient({
+      authorityGeneration: 3,
       caCertificatePem: targetMembership.authority.hostCaCertificatePem!,
       caFingerprint: targetMembership.authority.hostCaFingerprint!,
       endpoint: targetMembership.authority.endpoint!,
       projectId: PROJECT_ID,
+    }, {
+      discovery: { discoverProjectCandidates: async () => [recoveredRoute] },
     });
     const claimRequest = {
       claim: claim.claim,
@@ -2956,7 +2954,7 @@ describe('production authority-transfer effects', () => {
     expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
     await restartedComposition.feature.close();
     await targetFoundation.close();
-    targetFoundation = foundation(targetRoot);
+    targetFoundation = createTargetFoundation();
     recoveryConvergence = await createRecoveryConvergence();
     const expiryRouteStart = jest.spyOn(
       targetFoundation.lanHost,
@@ -3386,6 +3384,19 @@ describe('production authority-transfer effects', () => {
     let target = await seed(targetRoot, TEST_INSTALLATION_B, singleMember ? members[0] : members[1]);
     const manager = singleMember ? target : await seed(managerRoot, TEST_INSTALLATION_A, members[0]);
     try {
+      const { accepted, handle } = await (async () => {
+        if (singleMember) {
+          const result = await target.composition.feature.moveCloudToLan(PROJECT_ID);
+          if (result.status !== 'success') {
+            if ('error' in result) throw result.error;
+            throw new Error(`Local move returned ${result.status}`);
+          }
+          const view = await target.composition.feature.readCloudToLanTransfer(PROJECT_ID);
+          if (view.status !== 'success' || !view.value?.target?.handle) {
+            throw new Error('Missing durable completed target handle');
+          }
+          return { accepted: result, handle: view.value.target.handle };
+        }
       const prepared = await target.composition.feature.prepareCloudToLanTarget({
         projectId: PROJECT_ID,
       });
@@ -3405,15 +3416,18 @@ describe('production authority-transfer effects', () => {
         value: { selectedTargetMemberId: targetMemberId },
       });
       if (begunResult.status !== 'success') throw new Error('Manager begin failed');
-      const accepted = await target.composition.feature
-        .acceptCloudToLanTransfer(begunResult.value);
+      return {
+        accepted: await target.composition.feature.acceptCloudToLanTransfer(begunResult.value),
+        handle: begunResult.value,
+      };
+      })();
       expect(accepted).toMatchObject({ status: 'success' });
       if (accepted.status !== 'success') {
         if ('error' in accepted) throw accepted.error;
         throw new Error(`Target acceptance returned ${accepted.status}`);
       }
       expect(accepted.value).toMatchObject({ state: 'completed' });
-      await expect(target.composition.feature.acceptCloudToLanTransfer(begunResult.value))
+      await expect(target.composition.feature.acceptCloudToLanTransfer(handle))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
       const observed = singleMember ? accepted
         : await manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID);
@@ -3454,7 +3468,7 @@ describe('production authority-transfer effects', () => {
       };
       await target.composition.feature.initialize();
       cloudAuthority.connectAuthorityTransfer.mockRejectedValue(new Error('completed retry must stay local'));
-      await expect(target.composition.feature.acceptCloudToLanTransfer(begunResult.value))
+      await expect(target.composition.feature.acceptCloudToLanTransfer(handle))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
       const nextProposal = await target.composition.feature.proposeLanToCloudTransfer({
             projectId: PROJECT_ID,
@@ -3518,18 +3532,30 @@ describe('production authority-transfer effects', () => {
     }
   });
 
+  function createCollabFeatureSubcomposition(
+    options: Parameters<typeof createProductionFeatureSubcomposition>[0],
+  ): ReturnType<typeof createProductionFeatureSubcomposition> {
+    const composition = createProductionFeatureSubcomposition(options);
+    features.add(composition.feature);
+    return composition;
+  }
+
   function foundation(
     vaultRoot: string,
     installationKey: typeof TEST_INSTALLATION_A | typeof TEST_INSTALLATION_B = TEST_INSTALLATION_A,
+    lanHost?: ConstructorParameters<typeof ClaudianCollabService>[0]['lanHost'],
   ): ClaudianCollabService {
-    return new ClaudianCollabService({
+    const service = new ClaudianCollabService({
       createAuthorityDatabase: authorityDirectory => (
         new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey,
+      ...(lanHost ? { lanHost } : {}),
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
+    foundations.add(service);
+    return service;
   }
 });

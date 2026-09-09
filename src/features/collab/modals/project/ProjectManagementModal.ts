@@ -59,6 +59,8 @@ export type ProjectManagementModalPort = Pick<
   | 'listManagerResponsibilityOffers'
   | 'listMembers'
   | 'observeCloudToLanTransfer'
+  | 'moveCloudToLan'
+  | 'moveLanToCloud'
   | 'prepareCloudToLanTarget'
   | 'proposeLanToCloudTransfer'
   | 'promoteManager'
@@ -1464,37 +1466,14 @@ export class ProjectManagementModal extends Modal {
     });
     propose.addEventListener('click', () => {
       const serverUrl = input.value;
-      const memberId = this.#currentMemberId;
-      const proposedByMemberId = proposal?.proposedByMemberId ?? this.#requireCurrentMemberId();
       const sourceOwned = this.#hostProject.hostInstallationStatus === 'hosted-here';
-      const signal = this.#abortController.signal;
       void this.#runTransferAction(async () => {
-        const result = await this.#port.proposeLanToCloudTransfer({
-          projectId: this.#options.project.id,
-          serverUrl,
-        });
-        if (result.status !== 'success' || signal.aborted) return result;
-        const proposed = {
-          proposedByMemberId,
-          serverUrl,
-          sourceOwned,
-          status: result.value,
-        };
-        this.#lanToCloudProposal = proposed;
-        if (!sourceOwned || proposedByMemberId !== memberId || result.value.state !== 'active') {
-          this.#finishTerminalTransfer(result.value);
-          return result;
-        }
-        const accepted = await this.#port.acceptLanToCloudTransfer({
-          projectId: this.#options.project.id,
-          transferId: result.value.transferId,
-        });
-        if (signal.aborted) return accepted;
-        if (accepted.status === 'success') {
-          this.#lanToCloudProposal = { ...proposed, status: accepted.value };
-          this.#finishTerminalTransfer(accepted.value);
-        }
-        return accepted;
+        const request = { projectId: this.#options.project.id, serverUrl };
+        const result = sourceOwned
+          ? await this.#port.moveLanToCloud(request)
+          : await this.#port.proposeLanToCloudTransfer(request);
+        if (result.status === 'success') this.#finishTerminalTransfer(result.value);
+        return result;
       });
     });
   }
@@ -1557,14 +1536,9 @@ export class ProjectManagementModal extends Modal {
         section.createDiv({ text: t('collab.access.prepareLanHelp') });
         this.#createTransferButton(section, 'prepare-cloud-to-lan',
           t(isManager ? 'collab.access.moveToLan' : 'collab.access.prepareCloudToLan'), async () => {
-            const result = await this.#port.prepareCloudToLanTarget(
-              { projectId: this.#options.project.id },
-            );
-            if (result.status !== 'success') return result;
-            this.#cloudTargetDescriptor = result.value;
-            return isManager
-              ? this.#beginCloudToLanMove(result.value, true)
-              : result;
+            if (isManager) return this.#moveCloudToLanHere();
+            const result = await this.#port.prepareCloudToLanTarget({ projectId: this.#options.project.id });
+            return result;
           });
         return;
       }
@@ -1596,7 +1570,9 @@ export class ProjectManagementModal extends Modal {
           try {
             const descriptor = thisDevice ? this.#cloudTargetDescriptor!
               : JSON.parse(descriptorInput!.value) as CollabCloudToLanTargetPreparationDescriptor;
-            return await this.#beginCloudToLanMove(descriptor, thisDevice);
+            if (thisDevice) return this.#moveCloudToLanHere();
+            const result = await this.#port.beginCloudToLanTransfer({ descriptor });
+            return result;
           } catch {
             return { status: 'failure' as const, error: new Error() as never };
           }
@@ -1658,21 +1634,10 @@ export class ProjectManagementModal extends Modal {
     }
   }
 
-  async #beginCloudToLanMove(
-    descriptor: CollabCloudToLanTargetPreparationDescriptor,
-    acceptHere: boolean,
-  ): Promise<{ readonly status: string }> {
-    const begun = await this.#port.beginCloudToLanTransfer({ descriptor });
-    if (begun.status !== 'success') return begun;
-    this.#cloudTargetDescriptor = descriptor;
-    this.#cloudTransferHandle = begun.value;
-    if (!acceptHere) return begun;
-    const accepted = await this.#port.acceptCloudToLanTransfer(begun.value);
-    if (accepted.status === 'success') {
-      this.#cloudTransferStatus = accepted.value;
-      this.#finishTerminalTransfer(accepted.value);
-    }
-    return accepted;
+  async #moveCloudToLanHere(): Promise<{ readonly status: string }> {
+    const result = await this.#port.moveCloudToLan(this.#options.project.id);
+    if (result.status === 'success') this.#finishTerminalTransfer(result.value);
+    return result;
   }
 
   #renderCloudToLanAcceptance(section: HTMLElement, initiatedHere = false): void {
@@ -1683,9 +1648,11 @@ export class ProjectManagementModal extends Modal {
     const accept = this.#createTransferButton(section, 'accept-cloud-to-lan',
       t(initiatedHere ? 'collab.access.retry' : 'collab.access.acceptCloudToLan'), async () => {
         try {
-          const result = await this.#port.acceptCloudToLanTransfer(
-            handle ?? JSON.parse(input!.value) as CollabCloudToLanTransferHandle,
-          );
+          const result = initiatedHere
+            ? await this.#port.moveCloudToLan(this.#options.project.id)
+            : await this.#port.acceptCloudToLanTransfer(
+              handle ?? JSON.parse(input!.value) as CollabCloudToLanTransferHandle,
+            );
           if (result.status === 'success') {
             this.#cloudTransferStatus = result.value;
             this.#finishTerminalTransfer(result.value);
@@ -1768,10 +1735,8 @@ export class ProjectManagementModal extends Modal {
     const result = await operation();
     if (!this.#opened || this.#abortController.signal.aborted) return;
     this.#operationPending = false;
-    if (result.status === 'recovery-required') {
-      await this.#refreshAuthorityTransferView();
-      if (!this.#opened || this.#abortController.signal.aborted) return;
-    }
+    await this.#refreshAuthorityTransferView();
+    if (!this.#opened || this.#abortController.signal.aborted) return;
     this.#status = result.status === 'success'
       ? { kind: 'success', text: t('collab.access.transferUpdated') }
       : { kind: 'error', text: t('collab.access.actionFailed') };

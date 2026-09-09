@@ -128,6 +128,8 @@ type FeatureOptionsOverrides = {
 
 function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
   return {
+    moveCloudToLan: () => unexpected('moveCloudToLan'),
+    moveLanToCloud: () => unexpected('moveLanToCloud'),
     acceptLanToCloudTransfer: () => unexpected('acceptLanToCloudTransfer'),
     acceptCloudToLanTransfer: () => unexpected('acceptCloudToLanTransfer'),
     beginCloudToLanTransfer: () => unexpected('beginCloudToLanTransfer'),

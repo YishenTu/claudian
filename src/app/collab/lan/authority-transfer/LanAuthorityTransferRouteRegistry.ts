@@ -59,41 +59,8 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
     return this.registrations.size;
   }
 
-  get pinsEndpoint(): boolean {
-    return [...this.registrations.values()].some(
-      registration => registration.state !== 'source-active'
-        || registration.expectedEndpoint !== undefined,
-    );
-  }
-
-  pinSourceActiveEndpoint(
-    projectId: CollabProjectId,
-    expectedEndpoint: string,
-  ): LanAuthorityTransferRouteRegistration {
-    if (this.closed) throw new Error('Authority-transfer routes are closed');
-    const current = this.registrations.get(routeKey(projectId, null));
-    if (!current || current.state !== 'source-active') {
-      throw routeStateError('authority-transfer-source-route-missing');
-    }
-    if (current.expectedEndpoint && current.expectedEndpoint !== expectedEndpoint) {
-      throw routeStateError('authority-transfer-source-endpoint-conflict');
-    }
-    if (current.expectedEndpoint === expectedEndpoint) return current;
-    const pinned = { ...current, expectedEndpoint };
-    this.registrations.set(routeKey(projectId, null), pinned);
-    return pinned;
-  }
-
-  unpinSourceActiveEndpoint(projectId: CollabProjectId, expectedEndpoint: string): void {
-    if (this.closed) return;
-    const current = this.registrations.get(routeKey(projectId, null));
-    if (
-      !current
-      || current.state !== 'source-active'
-      || current.expectedEndpoint !== expectedEndpoint
-    ) return;
-    const { expectedEndpoint: _removed, ...unpinned } = current;
-    this.registrations.set(routeKey(projectId, null), unpinned);
+  listProjectIds(): readonly CollabProjectId[] {
+    return [...new Set([...this.registrations.values()].map(route => route.projectId))];
   }
 
   resolve(projectId: CollabProjectId, id?: string): LanAuthorityTransferRouteRegistration | null {

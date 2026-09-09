@@ -141,6 +141,7 @@ export async function rotateAuthorityTransferOrigin(
     transition.newRemoteUrl,
     transition.projectId,
   );
+  if (sourceIsLan && targetIsLan) return rotateTrustedCollabOrigin(git, transition);
   let sourceIsCloud: boolean;
   let targetIsCloud: boolean;
   try {
@@ -173,7 +174,10 @@ export async function rotateAuthorityTransferOrigin(
   if (urls[0] === transition.newRemoteUrl) return;
   const sourceWasFencedLanHost = sourceIsLan
     && urls[0] === `https://127.0.0.1:1/claudian-collab/host-stopped/${transition.projectId}`;
-  if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost) {
+  // Git may have reached an earlier authenticated LAN locator before the
+  // corresponding membership write; a listener move does not undo that cutover.
+  const targetWasAlreadyLan = targetIsLan && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
+  if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost && !targetWasAlreadyLan) {
     throw originError('collab-origin-transition-mismatch');
   }
   await writeVerifiedOrigin(git, transition.repositoryPath, transition.newRemoteUrl);

@@ -367,27 +367,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
 
   async sourceEndpoint(record: AuthorityTransferRecord): Promise<string> {
     const endpoint = await this.options.foundation.lanHost
-      .pinAuthorityTransferSourceEndpoint(record.projectId);
-    try {
-      const membership = await this.requireLanMembership(record.projectId);
-      if (!membership.authority.endpoint || membership.authority.endpoint !== endpoint) {
-        throw effectsError('authority-transfer-source-endpoint-missing');
-      }
-      return endpoint;
-    } catch (error) {
-      await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-        record.projectId,
-        endpoint,
-      ).catch(() => undefined);
-      throw error;
+      .authorityTransferSourceEndpoint(record.projectId);
+    const membership = await this.requireLanMembership(record.projectId);
+    if (!membership.authority.endpoint) {
+      throw effectsError('authority-transfer-source-endpoint-missing');
     }
-  }
-
-  releaseSourceEndpoint(record: AuthorityTransferRecord, endpoint: string): Promise<void> {
-    return this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-      record.projectId,
-      endpoint,
-    );
+    return endpoint;
   }
 
   async activateTerminal(
@@ -399,7 +384,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     const service = await this.#terminalService(record);
     await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
     await this.options.foundation.lanHost.activateAuthorityTransferTerminalSource({
-      expectedEndpoint: this.#requireSourceEndpoint(record),
       projectId: record.projectId,
       relinquishmentProof: proof,
       service,
@@ -429,7 +413,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     }
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
       authorityGeneration: record.status.sourceAuthority.generation,
-      expectedEndpoint: this.#requireSourceEndpoint(record),
       projectId: record.projectId,
       service,
       state: 'terminal-source',
@@ -455,7 +438,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     decodeSourceMemberCredentials(await readJsonFile(await this.#sourceMemberCredentialsPath(exact)), exact);
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
       authorityGeneration: exact.status.sourceAuthority.generation,
-      expectedEndpoint: this.#requireSourceEndpoint(exact), projectId: exact.projectId,
+      projectId: exact.projectId,
       service, state: 'terminal-source', transferId: exact.transferId,
     });
   }
@@ -550,13 +533,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       snapshot,
       status: record.status,
     });
-  }
-
-  #requireSourceEndpoint(record: AuthorityTransferRecord): string {
-    if (!record.sourceLanEndpoint) {
-      throw effectsError('authority-transfer-source-endpoint-missing');
-    }
-    return record.sourceLanEndpoint;
   }
 
   async capture(
@@ -745,12 +721,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         projectId: record.projectId,
         transferId: record.transferId,
       });
-    }
-    if (record.sourceLanEndpoint) {
-      await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-        record.projectId,
-        record.sourceLanEndpoint,
-      );
     }
     await this.#cleanupStaging(record);
   }

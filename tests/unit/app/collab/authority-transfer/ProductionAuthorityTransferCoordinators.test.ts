@@ -736,7 +736,7 @@ describe('production authority-transfer direction coordinators', () => {
     );
   });
 
-  it('retains the accepted source endpoint pin after a post-save failure', async () => {
+  it('retains the accepted source locator after a post-save failure', async () => {
     const persistence = new MemoryPersistence();
     persistence.entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: 'member-requester',
@@ -752,7 +752,6 @@ describe('production authority-transfer direction coordinators', () => {
       persistence.record = record;
       throw new Error('simulated post-save failure');
     };
-    const releaseSourceEndpoint = jest.fn(async () => undefined);
     const coordinator = new LanToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {} as CollabAuthorityLifecyclePort,
@@ -761,7 +760,6 @@ describe('production authority-transfer direction coordinators', () => {
         activateTerminal: jest.fn(),
         capture: jest.fn(),
         commitRelinquishmentFence: jest.fn(),
-        releaseSourceEndpoint,
         reopenAfterCancellation: jest.fn(),
         sourceEndpoint: jest.fn(async () => 'https://127.0.0.1:54545'),
       },
@@ -782,7 +780,6 @@ describe('production authority-transfer direction coordinators', () => {
       lifecycleOwnership: 'owned',
       sourceLanEndpoint: 'https://127.0.0.1:54545',
     });
-    expect(releaseSourceEndpoint).not.toHaveBeenCalled();
   });
 
   it.each([

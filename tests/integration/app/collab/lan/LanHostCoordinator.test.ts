@@ -30,6 +30,7 @@ import { RequestQueryService } from '@/app/collab/authority/RequestQueryService'
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { AuthorityTransferModule } from '@/app/collab/authority-transfer/AuthorityTransferModule';
+import { LanAuthorityTransferTargetSnapshotReader } from '@/app/collab/authority-transfer/LanAuthorityTransferTargetSnapshotReader';
 import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -1382,6 +1383,95 @@ describe('LanHostCoordinator production transport', () => {
     expect(cancel).toHaveBeenCalledWith(PROJECT_ID, 'transfer-provisional');
   });
 
+  it.each(['target-only-staged', 'terminal-source'] as const)(
+    'discovers a relocated %s responder while another Project keeps ordinary Host service',
+    async state => {
+      const nextAddress = listPrivateIpv4Addresses()[0];
+      if (!nextAddress) throw new Error('A private address is required for listener replacement');
+      const published = new Map<string, { caFingerprint: string; endpoint: string; projectId: string }>();
+      advertiseProject.mockImplementation(async host => {
+        published.set(host.projectId, host);
+        return { stop: async () => { if (published.get(host.projectId) === host) published.delete(host.projectId); } };
+      });
+      await coordinator.startProject(PROJECT_ID);
+      const retainedProjectId = 'project-retained-responder';
+      const transferStatus = { ...authorityTransferStatus('collecting-readiness'), projectId: retainedProjectId };
+      const credential = Buffer.alloc(32, 13).toString('base64url');
+      const service = state === 'target-only-staged' ? {
+        acceptCloudToLanTransferTarget: async () => transferStatus,
+        confirmCloudToLanTargetActive: async () => transferStatus,
+        getProjectAuthorityTransfer: async () => transferStatus,
+        reportCloudToLanTargetStaged: jest.fn() as never,
+      } : {
+        acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
+        authenticateMemberCredential: async () => ({ memberId: 'member-host' as const }),
+        expire: async () => undefined,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        getProjectAuthorityTransfer: async () => transferStatus,
+        getTransferredMembershipClaim: jest.fn(),
+      };
+      const route = await coordinator.startAuthorityTransferRoute({
+        authorityGeneration: 1,
+        credentialHash: createHash('sha256').update(Buffer.from(credential, 'base64url')).digest('hex'),
+        projectId: retainedProjectId, service, state, transferId: transferStatus.transferId,
+      } as Parameters<LanHostCoordinator['startAuthorityTransferRoute']>[0]);
+      expect(new Set(published.keys())).toEqual(new Set([PROJECT_ID, retainedProjectId]));
+      const client = new LanAuthorityTransferClient({
+        caCertificatePem: route.caCertificatePem, caFingerprint: route.caFingerprint,
+        endpoint: route.endpoint, projectId: retainedProjectId,
+      }, {
+        discovery: { discoverProjectCandidates: async projectId => [...published.values()]
+          .filter(candidate => candidate.projectId === projectId) },
+        timeoutMs: 1_000,
+      });
+
+      privateAddresses = [nextAddress];
+      await checkHostAddress();
+      const request = { projectId: retainedProjectId, transferId: transferStatus.transferId };
+      const recovered = state === 'target-only-staged'
+        ? await client.requestWithTransferCredential('getProjectAuthorityTransfer', request, credential)
+        : await client.requestWithMember('getProjectAuthorityTransfer', request, HOST_CREDENTIAL);
+
+      expect(recovered).toEqual(transferStatus);
+      expect(new URL(client.currentEndpoint).hostname).toBe(nextAddress);
+      expect(coordinator.getProjectState(PROJECT_ID)).toMatchObject({ status: 'running' });
+      await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+        authority: { endpoint: published.get(PROJECT_ID)!.endpoint },
+      });
+      await coordinator.stopAuthorityTransferRoute(retainedProjectId, state, transferStatus.transferId);
+      expect(new Set(published.keys())).toEqual(new Set([PROJECT_ID]));
+    }, 30_000,
+  );
+
+  it('reads the same target generation at a new endpoint before claimant convergence', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) throw new Error('A private address is required for listener replacement');
+    const transferStatus = authorityTransferStatus('collecting-readiness');
+    sourceAuthorityTransfer = {
+      acceptLanToCloudTransferTarget: async () => transferStatus,
+      authenticateMemberCredential: async () => ({ memberId: 'member-host' }),
+      cancelProjectAuthorityTransfer: async () => transferStatus,
+      getProjectAuthorityTransfer: async () => transferStatus,
+      requestLanToCloudTransfer: async () => transferStatus,
+    };
+    await coordinator.startProject(PROJECT_ID);
+    const original = coordinator.getActiveProjectRoute(PROJECT_ID)!;
+    const reader = new LanAuthorityTransferTargetSnapshotReader({ ...original, authorityGeneration: 1 }, {
+      discovery: { discoverProjectCandidates: async () => [coordinator.getActiveProjectRoute(PROJECT_ID)!] },
+      timeoutMs: 1_000,
+    });
+    await expect(reader.readSnapshot(PROJECT_ID, HOST_CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-host' }, project: { id: PROJECT_ID },
+    });
+
+    privateAddresses = [nextAddress];
+    await checkHostAddress();
+    await expect(reader.readSnapshot(PROJECT_ID, HOST_CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-host' }, project: { id: PROJECT_ID },
+    });
+    expect(new URL(reader.currentEndpoint).hostname).toBe(nextAddress);
+  }, 30_000);
+
   it('holds an unadvertised listener while a Cloud-to-LAN target is prepared', async () => {
     const preparation = await coordinator.prepareAuthorityTransferTarget();
     const client = new LanAuthorityTransferClient({
@@ -1799,10 +1889,6 @@ describe('LanHostCoordinator production transport', () => {
 
     expect(expire).toHaveBeenCalledTimes(1);
     expect(callbacks).toHaveLength(2);
-    privateAddresses = ['192.168.50.50'];
-    await expect(checkHostAddress()).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
-    });
     await expect(coordinator.startProject(PROJECT_ID)).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-target-expiry-finalization-in-progress' },
     });
@@ -1916,7 +2002,9 @@ describe('LanHostCoordinator production transport', () => {
     expect(expire).toHaveBeenCalledTimes(1);
   });
 
-  it('retains the target endpoint while stopping a Host during expired cleanup', async () => {
+  it('permits address recovery while target cleanup retains its listener lease', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) throw new Error('A private address is required for listener replacement');
     const callbacks: Array<() => void> = [];
     const startedAt = new Date('2026-08-27T00:00:00.000Z');
     authorityTransferNow = startedAt;
@@ -1951,7 +2039,7 @@ describe('LanHostCoordinator production transport', () => {
     callbacks[0]?.();
     await cleanupStarted;
     await coordinator.stopProject(PROJECT_ID);
-    privateAddresses = ['192.168.50.50'];
+    privateAddresses = [nextAddress];
     let addressError: unknown;
     try {
       await checkHostAddress();
@@ -1961,9 +2049,7 @@ describe('LanHostCoordinator production transport', () => {
     releaseCleanup();
     await new Promise(resolve => window.setTimeout(resolve, 20));
 
-    expect(addressError).toMatchObject({
-      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
-    });
+    expect(addressError).toBeUndefined();
     expect(expire).toHaveBeenCalledTimes(1);
   });
 
@@ -2128,7 +2214,7 @@ describe('LanHostCoordinator production transport', () => {
     expect(coordinator.getProjectState(PROJECT_ID).status).toBe('running');
   }, 30_000);
 
-  it('pins an accepted source-active route until cancellation releases it', async () => {
+  it('keeps an accepted source reachable after an address change', async () => {
     const nextAddress = listPrivateIpv4Addresses()[0];
     if (!nextAddress) return;
     const transferStatus = authorityTransferStatus('collecting-readiness');
@@ -2144,22 +2230,22 @@ describe('LanHostCoordinator production transport', () => {
       },
       state: 'source-active',
     });
-    const expectedEndpoint = await coordinator.pinAuthorityTransferSourceEndpoint(PROJECT_ID);
+    const expectedEndpoint = await coordinator.authorityTransferSourceEndpoint(PROJECT_ID);
     privateAddresses = [nextAddress];
 
-    await expect(checkHostAddress()).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-endpoint-pinned' },
-    });
-    await coordinator.unpinAuthorityTransferSourceEndpoint(PROJECT_ID, expectedEndpoint);
     await expect(checkHostAddress()).resolves.toBeUndefined();
+    const currentEndpoint = await coordinator.authorityTransferSourceEndpoint(PROJECT_ID);
+    expect(new URL(currentEndpoint).hostname).toBe(nextAddress);
+    expect(currentEndpoint).not.toBe(expectedEndpoint);
   }, 30_000);
 
   it.each(['target-only-staged', 'target-active'] as const)(
-    'keeps the signed Cloud-to-LAN endpoint pinned while the route is %s',
+    'preserves Cloud-to-LAN route identity when its %s listener address changes',
     async (state) => {
       const nextAddress = listPrivateIpv4Addresses()[0];
       if (!nextAddress) return;
       const status = authorityTransferStatus('collecting-readiness');
+      const preparation = await coordinator.prepareAuthorityTransferTarget();
       const registration = state === 'target-only-staged'
         ? {
             credentialHash: 'a'.repeat(64),
@@ -2184,20 +2270,21 @@ describe('LanHostCoordinator production transport', () => {
             transferId: status.transferId,
           };
       const first = await coordinator.startAuthorityTransferRoute(registration);
+      await preparation.dispose();
 
       privateAddresses = [nextAddress];
-      await expect(checkHostAddress()).rejects.toMatchObject({
-        safeContext: { reason: 'authority-transfer-endpoint-pinned' },
-      });
+      await expect(checkHostAddress()).resolves.toBeUndefined();
       const repeated = await coordinator.startAuthorityTransferRoute(registration);
 
-      expect(repeated.endpoint).toBe(first.endpoint);
+      expect(new URL(repeated.endpoint).hostname).toBe(nextAddress);
+      expect(repeated.caFingerprint).toBe(first.caFingerprint);
+      expect(repeated.caCertificatePem).toBe(first.caCertificatePem);
     },
     30_000,
   );
 
   it.each(['target-only-staged', 'target-active', 'terminal-source'] as const)(
-    'fails closed instead of moving a reconstructed %s route to a fallback port',
+    'recovers the same %s identity when its historical port is occupied',
     async (state) => {
       const preparation = await coordinator.prepareAuthorityTransferTarget();
       const expectedEndpoint = preparation.endpoint;
@@ -2212,7 +2299,6 @@ describe('LanHostCoordinator production transport', () => {
       const registration = state === 'target-only-staged'
         ? {
             credentialHash: 'a'.repeat(64),
-            expectedEndpoint,
             projectId: PROJECT_ID,
             service: {
               acceptCloudToLanTransferTarget: jest.fn(async () => transferStatus),
@@ -2225,8 +2311,7 @@ describe('LanHostCoordinator production transport', () => {
           }
         : state === 'target-active'
           ? {
-              expectedEndpoint,
-              projectId: PROJECT_ID,
+                projectId: PROJECT_ID,
               service: {
                 claimTransferredMembership: jest.fn(),
                 expire: jest.fn(async () => undefined),
@@ -2236,8 +2321,7 @@ describe('LanHostCoordinator production transport', () => {
               transferId: transferStatus.transferId,
             }
           : {
-              expectedEndpoint,
-              projectId: PROJECT_ID,
+                projectId: PROJECT_ID,
               service: {
                 acknowledgeTransferredMembershipClaimRedemption: jest.fn(),
                 authenticateMemberCredential: jest.fn(async () => ({
@@ -2252,21 +2336,25 @@ describe('LanHostCoordinator production transport', () => {
               transferId: transferStatus.transferId,
             };
 
-      await expect(coordinator.startAuthorityTransferRoute(registration)).rejects.toMatchObject({
-        safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
-      });
-      await new Promise<void>(resolve => {
-        pinnedPortBlocker.close(() => resolve());
-        pinnedPortBlocker.closeAllConnections();
-      });
-      await expect(coordinator.startAuthorityTransferRoute(registration)).resolves.toMatchObject({
-        endpoint: expectedEndpoint,
-      });
+      try {
+        const recovered = await coordinator.startAuthorityTransferRoute(registration);
+        expect(recovered.endpoint).not.toBe(expectedEndpoint);
+        expect(recovered.caFingerprint).toBe(preparation.caFingerprint);
+        expect(recovered.caCertificatePem).toBe(preparation.caCertificatePem);
+        await expect(coordinator.startAuthorityTransferRoute(registration)).resolves.toMatchObject({
+          endpoint: recovered.endpoint,
+        });
+      } finally {
+        await new Promise<void>(resolve => {
+          pinnedPortBlocker.close(() => resolve());
+          pinnedPortBlocker.closeAllConnections();
+        });
+      }
     },
     30_000,
   );
 
-  it('retries Cloud-to-LAN recovery preparation on the exact durable endpoint', async () => {
+  it('recovers Cloud-to-LAN preparation under the same trust when its old port is occupied', async () => {
     const initial = await coordinator.prepareAuthorityTransferTarget();
     const expectedEndpoint = initial.endpoint;
     await initial.dispose();
@@ -2277,36 +2365,36 @@ describe('LanHostCoordinator production transport', () => {
       pinnedPortBlocker.listen(Number(expectedUrl.port), expectedUrl.hostname, resolve);
     });
 
-    await expect(
-      coordinator.prepareAuthorityTransferTarget(expectedEndpoint),
-    ).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
-    });
-    await new Promise<void>(resolve => {
-      pinnedPortBlocker.close(() => resolve());
-      pinnedPortBlocker.closeAllConnections();
-    });
-    const recovered = await coordinator.prepareAuthorityTransferTarget(expectedEndpoint);
-    expect(recovered.endpoint).toBe(expectedEndpoint);
-    await recovered.dispose();
+    try {
+      const recovered = await coordinator.prepareAuthorityTransferTarget();
+      expect(recovered.endpoint).not.toBe(expectedEndpoint);
+      expect(recovered.caFingerprint).toBe(initial.caFingerprint);
+      expect(recovered.caCertificatePem).toBe(initial.caCertificatePem);
+      await recovered.dispose();
+    } finally {
+      await new Promise<void>(resolve => {
+        pinnedPortBlocker.close(() => resolve());
+        pinnedPortBlocker.closeAllConnections();
+      });
+    }
   }, 30_000);
 
-  it('fails closed when recovered target Host endpoint is unavailable', async () => {
+  it('starts the recovered target Host at its current authenticated endpoint', async () => {
     const expectedEndpoint = `https://127.0.0.1:${occupiedPort}`;
 
     await expect(coordinator.startProjectAfterCloudToLanTargetRecovery({
-      expectedEndpoint,
+      acceptedTargetUrl: expectedEndpoint,
       operationIntentId: 'intent-target-host-recovery',
       projectId: PROJECT_ID,
       transferId: 'transfer-target-host-recovery',
-    })).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-expected-endpoint-unavailable' },
-    });
+    })).resolves.toMatchObject({ status: 'running' });
 
-    expect(coordinator.isProjectRunning(PROJECT_ID)).toBe(false);
-    await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
-      authority: { endpoint: null },
-    });
+    expect(coordinator.isProjectRunning(PROJECT_ID)).toBe(true);
+    const membership = await localProjects.loadMembership(PROJECT_ID);
+    expect(membership).toMatchObject({ authority: { kind: 'lan', authorityGeneration: 1 } });
+    if (!membership || !isCollabLocalLanMembership(membership)) throw new Error('LAN membership missing');
+    expect(new URL(membership.authority.endpoint!).hostname).toBe('127.0.0.1');
+    expect(membership.authority.endpoint).not.toBe(expectedEndpoint);
   }, 30_000);
 
   it('resolves Ticket numbers over authenticated LAN control for open, closed, and missing Tickets', async () => {
@@ -2565,7 +2653,7 @@ describe('LanHostCoordinator production transport', () => {
     });
   });
 
-  it('rebinds every hosted Project after the preferred LAN address changes', async () => {
+  it.each([false, true])('rebinds hosted Projects after address change despite advertisement stop failure: %s', async stopFails => {
     const nextAddress = listPrivateIpv4Addresses()[0];
     if (!nextAddress) return;
     const first = await coordinator.startProject(PROJECT_ID);
@@ -2575,6 +2663,7 @@ describe('LanHostCoordinator production transport', () => {
       : null;
     if (!ca) throw new Error('Stored Host CA missing');
 
+    if (stopFails) advertisementStop.mockRejectedValueOnce(new Error('injected-discovery-stop-failure'));
     privateAddresses = [nextAddress];
     await checkHostAddress();
 

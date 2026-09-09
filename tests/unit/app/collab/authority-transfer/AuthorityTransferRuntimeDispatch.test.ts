@@ -6,8 +6,8 @@ import {
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  AuthorityTransferRuntimeRegistry,
-} from '@/app/collab/authority-transfer/AuthorityTransferRuntimeRegistry';
+  AuthorityTransferRuntimeDispatch,
+} from '@/app/collab/authority-transfer/AuthorityTransferRuntimeDispatch';
 
 function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
   return {
@@ -29,7 +29,7 @@ function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
   };
 }
 
-describe('AuthorityTransferRuntimeRegistry', () => {
+describe('AuthorityTransferRuntimeDispatch', () => {
   it('requires exact owner-bound current records', () => {
     const current = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -60,11 +60,12 @@ describe('AuthorityTransferRuntimeRegistry', () => {
     })).toThrow(TypeError);
   });
 
-  it('reconstructs and retains a durable runtime on first startup recovery', async () => {
-    const resume = jest.fn(async () => undefined);
-    const resolve = jest.fn(async () => ({ resume }));
-    const registry = new AuthorityTransferRuntimeRegistry({ resolve });
-    const record = createAuthorityTransferRecord({
+  it('resumes the requested operation after a later generation replaces the same Project role', async () => {
+    const resumed: string[] = [];
+    const registry = new AuthorityTransferRuntimeDispatch({
+      resolve: async record => ({ resume: async () => { resumed.push(record.transferId); } }),
+    });
+    const first = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       lifecycleOwnership: 'owned',
       localRole: 'source',
@@ -72,19 +73,28 @@ describe('AuthorityTransferRuntimeRegistry', () => {
       stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime',
       status: status(),
     });
+    const next = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: 'intent-runtime-next',
+      stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime-next',
+      status: {
+        ...status(),
+        sourceAuthority: { generation: 3, kind: 'lan' },
+        targetAuthority: { generation: 4, kind: 'cloud' },
+        transferId: 'transfer-runtime-next',
+      },
+    });
 
-    const options = { signal: new AbortController().signal };
-    await registry.resume(record, options);
-    await registry.resume(record, {});
+    await registry.resume(first, {});
+    await registry.resume(next, {});
 
-    expect(resolve).toHaveBeenCalledTimes(1);
-    expect(resolve).toHaveBeenCalledWith(record, options);
-    expect(resume).toHaveBeenCalledTimes(2);
-    expect(resume).toHaveBeenNthCalledWith(1, 'project-runtime', options);
+    expect(resumed).toEqual(['transfer-runtime', 'transfer-runtime-next']);
   });
 
   it('fails closed when no production runtime can be reconstructed', async () => {
-    const registry = new AuthorityTransferRuntimeRegistry({
+    const registry = new AuthorityTransferRuntimeDispatch({
       resolve: async () => null,
     });
     const record = createAuthorityTransferRecord({
@@ -102,28 +112,4 @@ describe('AuthorityTransferRuntimeRegistry', () => {
     });
   });
 
-  it('forgets a reconstructed runtime after terminal cleanup', async () => {
-    const first = { resume: jest.fn(async () => undefined) };
-    const second = { resume: jest.fn(async () => undefined) };
-    const resolve = jest.fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second);
-    const registry = new AuthorityTransferRuntimeRegistry({ resolve });
-    const record = createAuthorityTransferRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      lifecycleOwnership: 'owned',
-      localRole: 'source',
-      operationIntentId: 'intent-runtime',
-      stagingDirectoryName: '.claudian-authority-transfer-transfer-runtime',
-      status: status(),
-    });
-
-    await registry.resume(record, {});
-    expect(registry.release(record.projectId, record.localRole)).toBe(true);
-    await registry.resume(record, {});
-
-    expect(resolve).toHaveBeenCalledTimes(2);
-    expect(first.resume).toHaveBeenCalledTimes(1);
-    expect(second.resume).toHaveBeenCalledTimes(1);
-  });
 });
