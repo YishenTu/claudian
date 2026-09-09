@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -37,6 +38,10 @@ import type {
   AuthorityTransferProjectCatalog,
   AuthorityTransferRecordStorePort,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistenceStores';
+import {
+  decodeRetainedAuthorityTransferRecord,
+  type RetainedAuthorityTransferRecord,
+} from '@/app/collab/authority-transfer/persistence/RetainedAuthorityTransferRecord';
 import {
   type CollabFilesystemDiagnosticSink,
   ensureCollabContainerGuard,
@@ -801,62 +806,34 @@ export class CollabLocalProjectRepository {
     };
     this.authorityTransferEntries = Object.freeze(authorityTransferEntries);
     const authorityTransferRecords: AuthorityTransferRecordStorePort = {
+      listRetained: projectId => this.#listRetainedAuthorityTransfers(projectId),
+      loadRetained: (projectId, transferId) => this.#operationQueue.run(
+        () => this.#readRetainedAuthorityTransfer(projectId, transferId),
+      ),
+      saveRetained: retained => this.#operationQueue.run(() => this.#writeRetainedAuthorityTransfer(retained)),
       listProjectIds: () => this.listAuthorityTransferProjectIds(),
       scanProjectCatalog: () => this.scanAuthorityTransferProjectCatalog(),
-      load: projectId => this.loadLifecycleProjectDocument(
-        projectId,
-        'authority-transfer',
-        decodeAuthorityTransferRecord,
-      ),
+      load: (projectId, transferId) => this.#loadAuthorityTransferComponent(projectId, 'authority-transfer', 'record', decodeAuthorityTransferRecord, transferId),
       remove: projectId => this.removeLifecycleProjectDocument(
         projectId,
         'authority-transfer',
       ),
       removeExact: record => this.#removeExactAuthorityTransferRecord(record),
-      save: record => this.saveLifecycleProjectDocument(
-        record.projectId,
-        'authority-transfer',
-        record,
-        decodeAuthorityTransferRecord,
-      ),
+      save: record => this.#saveAuthorityTransferComponent(record, 'authority-transfer', 'record', decodeAuthorityTransferRecord),
     };
     this.authorityTransferRecords = Object.freeze(authorityTransferRecords);
     const authorityTransferClaimCommitments: AuthorityTransferClaimCommitmentStorePort = {
-      load: projectId => this.loadLifecycleProjectDocument(
-        projectId,
-        'authority-transfer-claim-commitment',
-        decodeAuthorityTransferClaimBatchCommitmentRecord,
-      ),
-      remove: projectId => this.removeLifecycleProjectDocument(
-        projectId,
-        'authority-transfer-claim-commitment',
-      ),
-      save: record => this.saveLifecycleProjectDocument(
-        record.projectId,
-        'authority-transfer-claim-commitment',
-        record,
-        decodeAuthorityTransferClaimBatchCommitmentRecord,
-      ),
+      load: (projectId, transferId) => this.#loadAuthorityTransferComponent(projectId, 'authority-transfer-claim-commitment', 'commitment', decodeAuthorityTransferClaimBatchCommitmentRecord, transferId),
+      remove: (projectId, transferId) => this.#removeAuthorityTransferComponent(projectId, 'authority-transfer-claim-commitment', 'commitment', transferId),
+      save: record => this.#saveAuthorityTransferComponent(record, 'authority-transfer-claim-commitment', 'commitment', decodeAuthorityTransferClaimBatchCommitmentRecord),
     };
     this.authorityTransferClaimCommitments = Object.freeze(
       authorityTransferClaimCommitments,
     );
     const authorityTransferClaims: AuthorityTransferClaimCustodyStorePort = {
-      load: projectId => this.loadLifecycleProjectDocument(
-        projectId,
-        'authority-transfer-claims',
-        decodeAuthorityTransferClaimCustodyRecord,
-      ),
-      remove: projectId => this.removeLifecycleProjectDocument(
-        projectId,
-        'authority-transfer-claims',
-      ),
-      save: record => this.saveLifecycleProjectDocument(
-        record.projectId,
-        'authority-transfer-claims',
-        record,
-        decodeAuthorityTransferClaimCustodyRecord,
-      ),
+      load: (projectId, transferId) => this.#loadAuthorityTransferComponent(projectId, 'authority-transfer-claims', 'custody', decodeAuthorityTransferClaimCustodyRecord, transferId),
+      remove: (projectId, transferId) => this.#removeAuthorityTransferComponent(projectId, 'authority-transfer-claims', 'custody', transferId),
+      save: record => this.#saveAuthorityTransferComponent(record, 'authority-transfer-claims', 'custody', decodeAuthorityTransferClaimCustodyRecord),
     };
     this.authorityTransferClaims = Object.freeze(authorityTransferClaims);
     const authorityTransferClaimants: AuthorityTransferClaimantStore = {
@@ -1925,7 +1902,8 @@ export class CollabLocalProjectRepository {
         continue;
       }
       if (documentNames.some(name => (
-        name === 'authority-transfer-entry'
+        name === 'authority-transfer-history'
+        || name === 'authority-transfer-entry'
         || name === 'authority-transfer.json'
         || name === 'authority-transfer-claims.json'
         || name === 'authority-transfer-claim-commitment.json'
@@ -1972,6 +1950,109 @@ export class CollabLocalProjectRepository {
       this.#projectDocumentPath(projectId, kind),
       this.#onDiagnostic,
     ));
+  }
+
+  #retainedAuthorityTransferPath(projectId: CollabProjectId, transferId: string): string {
+    this.#requireProjectId(projectId);
+    const digest = createHash('sha256').update(transferId, 'utf8').digest('hex');
+    return `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}/authority-transfer-history/${digest}.json`;
+  }
+
+  async #readRetainedAuthorityTransfer(projectId: CollabProjectId, transferId: string): Promise<RetainedAuthorityTransferRecord | null> {
+    const value = await this.#readJson(this.#retainedAuthorityTransferPath(projectId, transferId), 'authority-transfer', projectId);
+    if (value === null) return null;
+    try {
+      const retained = decodeRetainedAuthorityTransferRecord(value);
+      if (retained.record.projectId !== projectId || retained.record.transferId !== transferId) throw new TypeError();
+      return retained;
+    } catch {
+      throw localRecordError('local-record-corrupt', 'authority-transfer', projectId);
+    }
+  }
+
+  async #writeRetainedAuthorityTransfer(value: RetainedAuthorityTransferRecord): Promise<void> {
+    const retained = decodeRetainedAuthorityTransferRecord(value);
+    const projectId = retained.record.projectId;
+    await this.#ensurePrivateProjectDirectory(projectId, true);
+    await ensureCollabVaultDirectory(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}/authority-transfer-history`, {
+      durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic,
+    });
+    await writeCollabFileAtomically(this.vaultRoot,
+      this.#retainedAuthorityTransferPath(projectId, retained.record.transferId), serializeJson(retained),
+      { mode: 0o600, onDiagnostic: this.#onDiagnostic });
+  }
+
+  #listRetainedAuthorityTransfers(projectId: CollabProjectId): Promise<readonly RetainedAuthorityTransferRecord[]> {
+    this.#requireProjectId(projectId);
+    return this.#operationQueue.run(async () => {
+      const directory = `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}/authority-transfer-history`;
+      const absolute = await resolveCollabVaultPath(this.vaultRoot, directory);
+      const entries = await readdir(absolute, { withFileTypes: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw localRecordError('local-record-read-failed', 'authority-transfer', projectId);
+      });
+      const retained: RetainedAuthorityTransferRecord[] = [];
+      for (const entry of entries) {
+        if (entry.isFile() && /^\.[a-f0-9]{64}\.json\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.tmp$/.test(entry.name)) continue;
+        if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/.test(entry.name)) {
+          throw localRecordError('local-record-corrupt', 'authority-transfer', projectId);
+        }
+        try {
+          const record = decodeRetainedAuthorityTransferRecord(await this.#readJson(`${directory}/${entry.name}`, 'authority-transfer', projectId));
+          if (record.record.projectId !== projectId
+            || this.#retainedAuthorityTransferPath(projectId, record.record.transferId) !== `${directory}/${entry.name}`) throw new TypeError();
+          retained.push(record);
+        } catch {
+          throw localRecordError('local-record-corrupt', 'authority-transfer', projectId);
+        }
+      }
+      return retained.sort((left, right) => left.record.status.targetAuthority.generation - right.record.status.targetAuthority.generation);
+    });
+  }
+
+  async #loadAuthorityTransferComponent<T extends CollabLocalProjectDocumentBase & { readonly transferId: string }>(
+    projectId: CollabProjectId, kind: CollabLifecycleProjectDocumentKind,
+    key: 'record' | 'custody' | 'commitment', decode: (value: unknown) => T, transferId?: string,
+  ): Promise<T | null> {
+    if (transferId !== undefined) {
+      const retained = await this.authorityTransferRecords.loadRetained(projectId, transferId);
+      if (retained) return retained[key] === null ? null : decode(retained[key]);
+    }
+    const current = await this.loadLifecycleProjectDocument(projectId, kind, decode);
+    return current && (transferId === undefined || current.transferId === transferId) ? current : null;
+  }
+
+  async #saveAuthorityTransferComponent<T extends CollabLocalProjectDocumentBase & { readonly transferId: string }>(
+    document: T, kind: CollabLifecycleProjectDocumentKind,
+    key: 'record' | 'custody' | 'commitment', decode: (value: unknown) => T,
+  ): Promise<void> {
+    const decoded = decode(document);
+    const updated = await this.#operationQueue.run(async () => {
+      const retained = await this.#readRetainedAuthorityTransfer(decoded.projectId, decoded.transferId);
+      if (!retained) return false;
+      await this.#writeRetainedAuthorityTransfer({ ...retained, [key]: decoded });
+      return true;
+    });
+    if (!updated) await this.saveLifecycleProjectDocument(decoded.projectId, kind, decoded, decode);
+  }
+
+  async #removeAuthorityTransferComponent(
+    projectId: CollabProjectId, kind: CollabLifecycleProjectDocumentKind,
+    key: 'custody' | 'commitment', transferId?: string,
+  ): Promise<boolean> {
+    if (transferId !== undefined) {
+      const result = await this.#operationQueue.run(async () => {
+        const retained = await this.#readRetainedAuthorityTransfer(projectId, transferId);
+        if (!retained) return null;
+        if (retained[key] === null) return false;
+        await this.#writeRetainedAuthorityTransfer({ ...retained, [key]: null });
+        return true;
+      });
+      if (result !== null) return result;
+      const current = await this.#readJson(this.#lifecycleDocumentPath(projectId, kind), kind, projectId) as { transferId?: string } | null;
+      if (!current || current.transferId !== transferId) return false;
+    }
+    return this.removeLifecycleProjectDocument(projectId, kind);
   }
 
   loadLifecycleProjectDocument<T extends CollabLocalProjectDocumentBase>(

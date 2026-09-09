@@ -811,6 +811,12 @@ export function createCollabFeatureSubcomposition(
     },
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
   });
+  const retainCommittedTargetRedemptions: NonNullable<
+    ConstructorParameters<typeof ProductionLanToCloudSourceEffects>[0]['retainCommittedTargetRedemptions']
+  > = (target, source, members) => new ProductionCloudToLanTargetEffects({
+    cloudSession: null, convergence: authorityTransferConvergence, foundation,
+    persistence: foundation.authorityTransfers, projectId: target.projectId,
+  }).retainCommittedRedemptions(target, source, members);
   const authorityTransfer = new AuthorityTransferModule({
     activateLanToCloudSourceRoute: (projectId, expectedEndpoint, operationOptions) => (
       foundation.activateAuthorityTransferSourceRoute(
@@ -859,6 +865,7 @@ export function createCollabFeatureSubcomposition(
     ),
     createLanToCloudSource: (projectId, cloudSession) => (
       new ProductionLanToCloudSourceEffects({
+                retainCommittedTargetRedemptions,
         cloudSession,
         convergence: authorityTransferConvergence,
         foundation,
@@ -884,6 +891,17 @@ export function createCollabFeatureSubcomposition(
       }, operationOptions);
     },
     recoverClaimant: record => claimantBindingResolver.resolve(record),
+    restoreRetained: async record => {
+      const effectsOptions = {
+        cloudSession: null, convergence: authorityTransferConvergence, foundation,
+        persistence: foundation.authorityTransfers, projectId: record.projectId,
+      };
+      if (record.localRole === 'source') {
+        await new ProductionLanToCloudSourceEffects(effectsOptions).restoreRetained(record);
+      } else {
+        await new ProductionCloudToLanTargetEffects(effectsOptions).restoreRetained(record);
+      }
+    },
     terminalResolver: {
       resolve: async record => {
         const sourceEntry = record.localRole === 'source'
@@ -907,6 +925,7 @@ export function createCollabFeatureSubcomposition(
           return {
             resume: async () => {
               const sourceEffects = new ProductionLanToCloudSourceEffects({
+                retainCommittedTargetRedemptions,
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
@@ -1009,6 +1028,7 @@ export function createCollabFeatureSubcomposition(
                 }, operationOptions);
             try {
               await new ProductionLanToCloudSourceEffects({
+                retainCommittedTargetRedemptions,
                 cloudSession,
                 convergence: authorityTransferConvergence,
                 foundation,

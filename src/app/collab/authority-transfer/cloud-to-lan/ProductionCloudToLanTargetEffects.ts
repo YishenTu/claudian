@@ -61,7 +61,6 @@ import type {
   CloudToLanTargetStageResult,
 } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
 import {
-  removeDurablePrivateFile,
   writeDurablePrivateFile,
 } from '@/app/collab/authority-transfer/DurablePrivateFile';
 import type { AuthorityTransferPersistence } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -89,7 +88,6 @@ const MANIFEST_FILE = 'checkpoint.json';
 const COORDINATION_FILE = 'coordination.ndjson';
 const BUNDLE_FILE = 'repository.bundle';
 const TARGET_STATE_FILE = 'target-private.json';
-const AUTHORITY_TARGET_STATE_FILE = 'authority-transfer-target.json';
 
 interface TargetReceiptKey {
   readonly privateKey: string;
@@ -104,7 +102,8 @@ interface TargetPrivateState {
   readonly importedIdentity: AuthorityTransferImportedTargetIdentity | null;
   readonly receiptKey: TargetReceiptKey;
   readonly receipts: Readonly<Record<string, CollabTransferredMembershipRedemptionReceipt>>;
-  readonly schemaVersion: 2;
+  readonly pendingReceipts: Readonly<Record<string, CollabTransferredMembershipRedemptionReceipt>>;
+  readonly schemaVersion: 3;
   readonly targetProof: string | null;
   readonly transferCredential: string;
   readonly transferId: string | null;
@@ -124,6 +123,7 @@ const TARGET_PRIVATE_STATE_KEYS = [
   'importedIdentity',
   'receiptKey',
   'receipts',
+  'pendingReceipts',
   'schemaVersion',
   'targetProof',
   'transferCredential',
@@ -288,7 +288,8 @@ function initialState(): TargetPrivateState {
     importedIdentity: null,
     receiptKey: receiptKey(),
     receipts: {},
-    schemaVersion: 2,
+    pendingReceipts: {},
+    schemaVersion: 3,
     targetProof: null,
     transferCredential: credential(),
     transferId: null,
@@ -302,7 +303,7 @@ function assertState(value: unknown): TargetPrivateState {
   const state = value as Partial<TargetPrivateState>;
   const schemaVersion = (value as { readonly schemaVersion?: unknown }).schemaVersion;
   if (
-    schemaVersion !== 2
+    schemaVersion !== 3
     || !hasExactKeys(value as Record<string, unknown>, TARGET_PRIVATE_STATE_KEYS)
     || typeof state.hostCredential !== 'string'
     || Buffer.from(state.hostCredential, 'base64url').byteLength !== 32
@@ -315,6 +316,7 @@ function assertState(value: unknown): TargetPrivateState {
     || !state.receipts
     || typeof state.receipts !== 'object'
     || Array.isArray(state.receipts)
+    || !state.pendingReceipts || typeof state.pendingReceipts !== 'object' || Array.isArray(state.pendingReceipts)
     || (state.transferId !== null && typeof state.transferId !== 'string')
     || (state.targetProof !== null && typeof state.targetProof !== 'string')
   ) throw targetError('authority-transfer-target-state-invalid');
@@ -361,7 +363,7 @@ function assertState(value: unknown): TargetPrivateState {
     ...(state as Omit<TargetPrivateState, 'cleanup' | 'importedIdentity' | 'schemaVersion'>),
     cleanup,
     importedIdentity,
-    schemaVersion: 2,
+    schemaVersion: 3,
   };
 }
 
@@ -849,13 +851,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         return;
       }
       const state = await readState(
-        path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
+        await this.#operationStatePath(record),
       );
       if (!state) {
         if (expired || emptyClaims) {
           await this.options.foundation.lanHost.stopAuthorityTransferRoute(
             record.projectId,
             'target-active',
+            record.transferId,
           );
           this.#activeRegistration = null;
           await this.#expireActiveRouteUnlocked(record);
@@ -870,6 +873,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         await this.options.foundation.lanHost.stopAuthorityTransferRoute(
           record.projectId,
           'target-active',
+          record.transferId,
         );
         this.#activeRegistration = null;
         await this.#expireActiveRouteUnlocked(record);
@@ -877,6 +881,26 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       } else {
         await this.#startActiveRoute(record, state);
       }
+    });
+  }
+
+  async restoreRetained(record: AuthorityTransferRecord): Promise<void> {
+    return this.queue.run(async () => {
+      const exact = await this.options.persistence.load(record.projectId, record.transferId);
+      if (!exact || exact.localRole !== 'target' || exact.status.state !== 'completed'
+        || exact.operationIntentId !== record.operationIntentId) {
+        throw targetError('authority-transfer-target-state-owner-mismatch');
+      }
+      if (exact.terminalCleanupCompleted) return;
+      if (this.now().getTime() >= Date.parse(exact.status.expiresAt)) {
+        await this.options.foundation.lanHost.stopAuthorityTransferRoute(record.projectId, 'target-active', record.transferId);
+        await this.#expireActiveRouteUnlocked(exact);
+        return;
+      }
+      const state = await readState(await this.#operationStatePath(exact));
+      if (!state || !exact.status.relinquishmentProof) throw targetError('authority-transfer-target-state-owner-mismatch');
+      await this.#validateStateBindings(exact, exact.status.relinquishmentProof, state);
+      await this.#startActiveRoute(exact, state);
     });
   }
 
@@ -935,6 +959,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       await this.options.foundation.lanHost.stopAuthorityTransferRoute(
         record.projectId,
         'target-only-staged',
+        record.transferId,
       );
       this.#stagedRegistration = null;
       const preparation = this.#preparation;
@@ -990,6 +1015,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     await this.options.foundation.lanHost.stopAuthorityTransferRoute(
       record.projectId,
       'target-only-staged',
+      record.transferId,
     );
     this.#stagedRegistration = null;
     const preparation = this.#preparation;
@@ -1013,6 +1039,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (!expected) throw targetError('authority-transfer-target-route-missing');
     const service = this.#activeService(record);
     const next: LanAuthorityTransferRouteRegistration = {
+      authorityGeneration: record.status.targetAuthority.generation,
       expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service,
@@ -1045,6 +1072,18 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
 
    async #expireActiveRouteUnlocked(record: AuthorityTransferRecord): Promise<void> {
     const current = await this.#assertExpiredRecordCurrent(record);
+    const active = await this.options.persistence.load(record.projectId);
+    if (active?.transferId !== record.transferId) {
+      if (!current.terminalCleanupCompleted) {
+        await this.options.persistence.expireClaims(record.projectId, record.transferId);
+        await this.#cleanupStaging(current);
+      }
+      await this.options.persistence.completeTerminalCleanup({
+        operationIntentId: current.operationIntentId, projectId: current.projectId,
+        stagingDirectoryName: current.stagingDirectoryName, transferId: current.transferId,
+      });
+      return;
+    }
     if (current.terminalCleanupCompleted) {
       await this.options.persistence.completeTerminalCleanup({
         operationIntentId: current.operationIntentId,
@@ -1059,7 +1098,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const authority = await this.options.foundation.inspectAuthority(current.projectId);
     if (!authority) throw targetError('authority-transfer-target-authority-missing');
     const state = await readState(
-      path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
+      await this.#operationStatePath(record),
     );
     if (!state) {
       const membership = await this.#assertCompletedTargetConvergence(
@@ -1077,7 +1116,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         transferId: current.transferId,
       });
       await this.#startConfiguredHost(current);
-      await this.#completeExpiredTargetCleanup(current, authority);
+      await this.#completeExpiredTargetCleanup(current);
       return;
     }
     const targetProof = await this.#assertActiveState(current, proof, state, authority);
@@ -1088,7 +1127,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       targetProof,
       true,
     );
-    await this.#completeExpiredTargetCleanup(current, authority);
+    await this.#completeExpiredTargetCleanup(current);
   }
 
    async #assertExpiredRecordCurrent(
@@ -1100,7 +1139,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     ) {
       throw targetError('authority-transfer-target-expiry-early');
     }
-    const current = await this.options.persistence.load(record.projectId);
+    const current = await this.options.persistence.load(record.projectId, record.transferId);
     if (
       !current
       || current.transferId !== record.transferId
@@ -1208,13 +1247,9 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
 
    async #completeExpiredTargetCleanup(
     record: AuthorityTransferRecord,
-    authority: CollabAuthorityFoundation,
   ): Promise<void> {
     await this.options.persistence.expireClaims(record.projectId, record.transferId);
-    await removeDurablePrivateFile(
-      path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE),
-      () => targetError('authority-transfer-target-state-remove-failed'),
-    );
+    await this.#cleanupStaging(record);
     await this.options.persistence.completeTerminalCleanup({
       operationIntentId: record.operationIntentId,
       projectId: record.projectId,
@@ -1229,6 +1264,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   ): Promise<void> {
     if (this.#activeRegistration) return;
     const registration: LanAuthorityTransferRouteRegistration = {
+      authorityGeneration: record.status.targetAuthority.generation,
       expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service: this.#activeService(record),
@@ -1255,7 +1291,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || proof.targetAuthority.kind !== 'lan'
     ) throw targetError('authority-transfer-target-relinquishment-mismatch');
     const { stagingPath } = await this.#prepareState(record);
-    let state = await this.#loadTargetState(record, stagingPath);
+    const state = await this.#loadTargetState(record, stagingPath);
     if (!state.claimBatch || !state.importedIdentity) {
       throw targetError('authority-transfer-target-stage-incomplete');
     }
@@ -1276,10 +1312,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         record.ownerInstallationKey,
       );
     }
-    const authorityStatePath = path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE);
-    const persistedAuthorityState = await readState(authorityStatePath);
-    if (persistedAuthorityState) state = persistedAuthorityState;
-    else await writeState(authorityStatePath, state);
     if (!state.claimBatch || !state.importedIdentity) {
       throw targetError('authority-transfer-target-stage-incomplete');
     }
@@ -1417,15 +1449,54 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     return targetProof;
   }
 
+  async retainCommittedRedemptions(
+    record: AuthorityTransferRecord,
+    source: AuthorityTransferRecord,
+    members: readonly { readonly memberId: string; readonly credentialHash: string }[],
+  ): Promise<void> {
+    if (record.localRole !== 'target' || record.status.direction !== 'cloud-to-lan'
+      || record.status.state !== 'completed' || !record.status.relinquishmentProof
+      || record.ownerInstallationKey !== this.options.foundation.installationKey
+      || source.ownerInstallationKey !== record.ownerInstallationKey
+      || source.projectId !== record.projectId || source.localRole !== 'source'
+      || source.status.direction !== 'lan-to-cloud' || source.restartFence === 'open'
+      || source.status.sourceAuthority.generation !== record.status.targetAuthority.generation) {
+      throw targetError('authority-transfer-target-generation-stale');
+    }
+    await this.queue.run(async () => {
+      const statePath = await this.#operationStatePath(record);
+      const state = await readState(statePath);
+      if (!state) throw targetError('authority-transfer-target-claims-missing');
+      await this.#validateStateBindings(record, record.status.relinquishmentProof!, state);
+      const pendingReceipts = { ...state.pendingReceipts };
+      const receipts = { ...state.receipts };
+      for (const [key, pending] of Object.entries(pendingReceipts)) {
+        const receipt = decodeCollabTransferredMembershipRedemptionReceipt(pending);
+        const member = members.find(member => member.memberId === receipt.memberId);
+        if (!member || key !== `${receipt.memberId}:${receipt.operationIntentId}:${member.credentialHash}`) continue;
+        if (receipt.projectId !== record.projectId || receipt.transferId !== record.transferId
+          || receipt.targetAuthorityGeneration !== record.status.targetAuthority.generation
+          || !state.claimBatch?.claims.some(claim => claim.memberId === receipt.memberId && sha256(claim.claim) === receipt.claimSha256)) {
+          throw targetError('authority-transfer-target-state-invalid');
+        }
+        receipts[key] = receipt;
+        delete pendingReceipts[key];
+      }
+      if (Object.keys(pendingReceipts).length !== Object.keys(state.pendingReceipts).length) {
+        await writeState(statePath, { ...state, pendingReceipts, receipts });
+      }
+    });
+  }
+
    async #bindClaim(
     record: AuthorityTransferRecord,
     request: LanClaimRequest,
   ): Promise<CollabTransferredMembershipRedemptionReceipt> {
     return this.queue.run(async () => {
-      const authority = await this.options.foundation.openAuthority(record.projectId);
-      const statePath = path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE);
-      let state = await readState(statePath);
-      if (!state?.claimBatch) throw targetError('authority-transfer-target-claims-missing');
+      const statePath = await this.#operationStatePath(record);
+      const state = await readState(statePath);
+      if (!state?.claimBatch || !record.status.relinquishmentProof) throw targetError('authority-transfer-target-claims-missing');
+      await this.#validateStateBindings(record, record.status.relinquishmentProof, state);
       if (this.now().getTime() >= Date.parse(state.claimBatch.expiresAt)) {
         throw new CollabError({ code: 'membership-claim-expired' });
       }
@@ -1436,8 +1507,12 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         return expected.byteLength === actual.byteLength && timingSafeEqual(expected, actual);
       });
       if (!item) throw new CollabError({ code: 'membership-claim-invalid' });
-      const receiptKeyId = `${item.memberId}:${request.idempotencyKey}`;
+      const receiptKeyId = `${item.memberId}:${request.idempotencyKey}:${request.credentialHash}`;
       const existing = state.receipts[receiptKeyId];
+      if (!existing && [...Object.values(state.receipts), ...Object.values(state.pendingReceipts)].some(receipt => (
+        receipt.memberId === item.memberId && receipt.operationIntentId === request.idempotencyKey
+        && !state.pendingReceipts[receiptKeyId]
+      ))) throw new CollabError({ code: 'authority-transfer-stale' });
       if (existing) {
         if (existing.claimSha256 !== claimDigest) {
           throw new CollabError({ code: 'authority-transfer-stale' });
@@ -1448,27 +1523,28 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (credentialHash.byteLength !== 32) {
         throw new CollabError({ code: 'membership-claim-invalid' });
       }
-      await authority.database.mutate(connection => (
-        new PendingMembershipRepository().bindImportedActive(
-          connection,
-          item.memberId,
-          credentialHash,
-        )
-      ));
+      const activeState = state;
+      return this.options.persistence.runWithAuthorityStartGuard(record.projectId, async () => {
+      const authority = await this.options.foundation.openAuthority(record.projectId);
+      const project = await authority.database.read(connection => authority.projects.get(connection));
+      if (!project || project.projectId !== record.projectId || project.state !== 'active'
+        || project.authorityGeneration !== record.status.targetAuthority.generation) {
+        throw targetError('authority-transfer-target-generation-stale');
+      }
       const payload = {
-        checkpointSha256: state.claimBatch.checkpointSha256,
+        checkpointSha256: activeState.claimBatch!.checkpointSha256,
         claimSha256: claimDigest,
         memberId: item.memberId,
         operationIntentId: request.idempotencyKey,
         projectId: record.projectId,
         receiptId: `receipt-${sha256(`${record.transferId}:${receiptKeyId}`).slice(0, 40)}`,
-        receiptKeyId: state.receiptKey.receiptKeyId,
+        receiptKeyId: activeState.receiptKey.receiptKeyId,
         redeemedAt: this.now().toISOString(),
         signatureAlgorithm: 'ed25519' as const,
         targetAuthorityGeneration: record.status.targetAuthority.generation,
         transferId: record.transferId,
       };
-      const receipt = decodeCollabTransferredMembershipRedemptionReceipt({
+      const receipt = activeState.pendingReceipts[receiptKeyId] ?? decodeCollabTransferredMembershipRedemptionReceipt({
         ...payload,
         signature: sign(
           null,
@@ -1478,14 +1554,26 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
           ),
           createPrivateKey({
             format: 'der',
-            key: Buffer.from(state.receiptKey.privateKey, 'base64url'),
+            key: Buffer.from(activeState.receiptKey.privateKey, 'base64url'),
             type: 'pkcs8',
           }),
         ).toString('base64url'),
       });
-      state = { ...state, receipts: { ...state.receipts, [receiptKeyId]: receipt } };
-      await writeState(statePath, state);
+      if (!activeState.pendingReceipts[receiptKeyId]) {
+        await writeState(statePath, { ...activeState, pendingReceipts: { ...activeState.pendingReceipts, [receiptKeyId]: receipt } });
+      }
+      await authority.database.mutate(connection => (
+        new PendingMembershipRepository().bindImportedActive(
+          connection,
+          item.memberId,
+          credentialHash,
+        )
+      ));
+      const pendingReceipts = { ...activeState.pendingReceipts };
+      delete pendingReceipts[receiptKeyId];
+      await writeState(statePath, { ...activeState, pendingReceipts, receipts: { ...activeState.receipts, [receiptKeyId]: receipt } });
       return receipt;
+      });
     });
   }
 
@@ -1504,6 +1592,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       },
     };
     const registration: LanAuthorityTransferRouteRegistration = {
+      authorityGeneration: record.status.targetAuthority.generation,
       credentialHash: sha256(Buffer.from(state.transferCredential, 'base64url')),
       expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
@@ -1531,6 +1620,18 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || current.localRole !== 'target'
     ) throw new CollabError({ code: 'authority-transfer-not-found' });
     return current.status;
+  }
+
+  async #operationStatePath(record: AuthorityTransferRecord): Promise<string> {
+    const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
+    if (!membership) throw targetError('authority-transfer-membership-missing');
+    const staging = await this.options.foundation.local.workspace.reserveProjectsFolderChild(
+      projectsFolder(membership.project.workspacePath), {
+        childName: record.stagingDirectoryName, operationId: record.transferId,
+        projectId: record.projectId, purpose: 'authority-transfer-staging',
+      },
+    );
+    return path.join(staging.absolutePath, TARGET_STATE_FILE);
   }
 
    async #prepareState(record: AuthorityTransferRecord): Promise<{
@@ -1573,14 +1674,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     record: AuthorityTransferRecord,
     stagingPath: string,
   ): Promise<TargetPrivateState> {
-    const staged = await readState(path.join(stagingPath, TARGET_STATE_FILE));
-    const authority = staged
-      ? null
-      : await this.options.foundation.inspectAuthority(record.projectId);
-    const active = authority
-      ? await readState(path.join(authority.authorityDirectory, AUTHORITY_TARGET_STATE_FILE))
-      : null;
-    const state = staged ?? active;
+    const state = await readState(path.join(stagingPath, TARGET_STATE_FILE));
     if (!state || state.transferId !== record.transferId) {
       throw targetError('authority-transfer-target-state-owner-mismatch');
     }
@@ -1689,7 +1783,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
     await this.#assertCompletedTargetMembership(record, authority, state, targetProof);
     await this.#startConfiguredHost(record);
-    await this.#cleanupStaging(record);
   }
 
    async #startConfiguredHost(record: AuthorityTransferRecord): Promise<void> {

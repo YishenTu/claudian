@@ -16,11 +16,15 @@ import type {
 import {
   type AuthorityTransferClaimCustodyRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimCustodyRecord';
+import type { RetainedAuthorityTransferRecord } from '@/app/collab/authority-transfer/persistence/RetainedAuthorityTransferRecord';
 
 export interface AuthorityTransferRecordStorePort {
+  listRetained(projectId: CollabProjectId): Promise<readonly RetainedAuthorityTransferRecord[]>;
+  loadRetained(projectId: CollabProjectId, transferId: string): Promise<RetainedAuthorityTransferRecord | null>;
+  saveRetained(retained: RetainedAuthorityTransferRecord): Promise<void>;
   listProjectIds(): Promise<readonly CollabProjectId[]>;
   scanProjectCatalog(): Promise<AuthorityTransferProjectCatalog>;
-  load(projectId: CollabProjectId): Promise<AuthorityTransferRecord | null>;
+  load(projectId: CollabProjectId, transferId?: string): Promise<AuthorityTransferRecord | null>;
   remove(projectId: CollabProjectId): Promise<boolean>;
   removeExact(record: AuthorityTransferRecord): Promise<boolean>;
   save(record: AuthorityTransferRecord): Promise<void>;
@@ -44,14 +48,14 @@ export interface AuthorityTransferProjectCatalog {
 }
 
 export interface AuthorityTransferClaimCustodyStorePort {
-  load(projectId: CollabProjectId): Promise<AuthorityTransferClaimCustodyRecord | null>;
-  remove(projectId: CollabProjectId): Promise<boolean>;
+  load(projectId: CollabProjectId, transferId?: string): Promise<AuthorityTransferClaimCustodyRecord | null>;
+  remove(projectId: CollabProjectId, transferId?: string): Promise<boolean>;
   save(record: AuthorityTransferClaimCustodyRecord): Promise<void>;
 }
 
 export interface AuthorityTransferClaimCommitmentStorePort {
-  load(projectId: CollabProjectId): Promise<AuthorityTransferClaimBatchCommitmentRecord | null>;
-  remove(projectId: CollabProjectId): Promise<boolean>;
+  load(projectId: CollabProjectId, transferId?: string): Promise<AuthorityTransferClaimBatchCommitmentRecord | null>;
+  remove(projectId: CollabProjectId, transferId?: string): Promise<boolean>;
   save(record: AuthorityTransferClaimBatchCommitmentRecord): Promise<void>;
 }
 

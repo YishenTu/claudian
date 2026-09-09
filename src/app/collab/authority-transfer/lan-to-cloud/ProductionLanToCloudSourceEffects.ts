@@ -4,6 +4,7 @@ import {
   createPrivateKey,
   generateKeyPairSync,
   sign,
+  timingSafeEqual,
   verify,
   X509Certificate,
 } from 'node:crypto';
@@ -27,9 +28,11 @@ import {
   encodeCollabAuthorityRelinquishmentProofSigningInput,
   encodeCollabProjectCheckpointManifestCanonicalJson,
   isCollabGitOid,
+  isCollabMemberId,
   isCollabOpaqueId,
 } from '@claudian-collab/protocol';
 
+import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import type { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import {
   type AuthorityTransferRecord,
@@ -63,9 +66,6 @@ import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepos
 import {
   PersistentLanAuthorityTransferTerminalSourceService,
 } from '@/app/collab/lan/authority-transfer/PersistentLanAuthorityTransferServices';
-import {
-  AuthorityMemberCredentialAuthenticator,
-} from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
 import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -78,6 +78,39 @@ const BUNDLE_FILE = 'repository.bundle';
 const SOURCE_PROOF_FILE = 'source-proof.json';
 const SOURCE_KEY_FILE = 'source-proof-key.json';
 const RELINQUISHMENT_FILE = 'relinquishment-proof.json';
+const SOURCE_MEMBERS_FILE = 'source-members.json';
+
+interface SourceMemberCredentials {
+  readonly schemaVersion: 1;
+  readonly projectId: string;
+  readonly transferId: string;
+  readonly sourceAuthorityGeneration: number;
+  readonly members: readonly { readonly memberId: string; readonly credentialHash: string }[];
+}
+
+function decodeSourceMemberCredentials(value: unknown, record: AuthorityTransferRecord): SourceMemberCredentials {
+  const input = exactRecord(value, new Set(['schemaVersion', 'projectId', 'transferId', 'sourceAuthorityGeneration', 'members']));
+  if (!input || input.schemaVersion !== 1 || input.projectId !== record.projectId
+    || input.transferId !== record.transferId || input.sourceAuthorityGeneration !== record.status.sourceAuthority.generation
+    || !Array.isArray(input.members)) {
+    throw effectsError('authority-transfer-source-credentials-invalid');
+  }
+  const memberIds = new Set<string>();
+  const credentialHashes = new Set<string>();
+  const members = input.members.map(value => {
+    const member = exactRecord(value, new Set(['memberId', 'credentialHash']));
+    if (!member || typeof member.memberId !== 'string' || !isCollabMemberId(member.memberId)
+      || typeof member.credentialHash !== 'string' || !/^[0-9a-f]{64}$/.test(member.credentialHash)
+      || memberIds.has(member.memberId) || credentialHashes.has(member.credentialHash)) {
+      throw effectsError('authority-transfer-source-credentials-invalid');
+    }
+    memberIds.add(member.memberId);
+    credentialHashes.add(member.credentialHash);
+    return { memberId: member.memberId, credentialHash: member.credentialHash };
+  });
+  return { schemaVersion: 1, projectId: record.projectId, transferId: record.transferId,
+    sourceAuthorityGeneration: record.status.sourceAuthority.generation, members };
+}
 
 interface SourceProofKey {
   readonly privateKey: string;
@@ -129,6 +162,11 @@ export interface ProductionLanToCloudSourceEffectsOptions {
   readonly foundation: ClaudianCollabService;
   readonly persistence: AuthorityTransferPersistence;
   readonly projectId: string;
+  readonly retainCommittedTargetRedemptions?: (
+    target: AuthorityTransferRecord,
+    source: AuthorityTransferRecord,
+    members: SourceMemberCredentials['members'],
+  ) => Promise<void>;
 }
 
 function effectsError(reason: string): CollabError {
@@ -385,10 +423,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       await this.options.foundation.lanHost.stopAuthorityTransferRoute(
         record.projectId,
         'terminal-source',
+        record.transferId,
       );
       return;
     }
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
+      authorityGeneration: record.status.sourceAuthority.generation,
       expectedEndpoint: this.#requireSourceEndpoint(record),
       projectId: record.projectId,
       service,
@@ -397,6 +437,62 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     });
     await this.#convergeHost(record, options);
     await this.#settleEmptyClaimBatch(record, service);
+  }
+
+  async restoreRetained(record: AuthorityTransferRecord): Promise<void> {
+    const exact = await this.options.persistence.load(record.projectId, record.transferId);
+    if (!exact || exact.localRole !== 'source' || exact.status.state !== 'completed'
+      || !exact.status.relinquishmentProof || exact.operationIntentId !== record.operationIntentId) {
+      throw effectsError('authority-transfer-terminal-record-mismatch');
+    }
+    if (exact.terminalCleanupCompleted) return;
+    const service = await this.#terminalService(exact);
+    if (isAuthorityTransferTerminalResponderExpired(exact, new Date())) {
+      await service.expire();
+      await this.options.foundation.lanHost.stopAuthorityTransferRoute(exact.projectId, 'terminal-source', exact.transferId);
+      return;
+    }
+    decodeSourceMemberCredentials(await readJsonFile(await this.#sourceMemberCredentialsPath(exact)), exact);
+    await this.options.foundation.lanHost.startAuthorityTransferRoute({
+      authorityGeneration: exact.status.sourceAuthority.generation,
+      expectedEndpoint: this.#requireSourceEndpoint(exact), projectId: exact.projectId,
+      service, state: 'terminal-source', transferId: exact.transferId,
+    });
+  }
+
+  async #sourceMemberCredentialsPath(record: AuthorityTransferRecord): Promise<string> {
+    const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
+    if (!membership) throw effectsError('authority-transfer-membership-missing');
+    const staging = await this.options.foundation.local.workspace.reserveProjectsFolderChild(
+      projectsFolder(membership.project.workspacePath), {
+        childName: record.stagingDirectoryName, operationId: record.transferId,
+        projectId: record.projectId, purpose: 'authority-transfer-staging',
+      },
+    );
+    return path.join(staging.absolutePath, SOURCE_MEMBERS_FILE);
+  }
+
+  async #retainSourceMemberCredentials(record: AuthorityTransferRecord, stagingPath: string, authority: CollabAuthorityFoundation): Promise<SourceMemberCredentials> {
+    const filePath = path.join(stagingPath, SOURCE_MEMBERS_FILE);
+    const existing = await readJsonFile(filePath);
+    if (existing) {
+      return decodeSourceMemberCredentials(existing, record);
+    }
+    const members = await authority.database.read(connection => {
+      const project = authority.projects.get(connection);
+      if (!project || project.projectId !== record.projectId
+        || project.authorityGeneration !== record.status.sourceAuthority.generation) {
+        throw effectsError('authority-transfer-source-generation-mismatch');
+      }
+      return new PendingMembershipRepository().listCredentialRecords(connection, ['active'])
+        .filter(member => member.accessState === 'bound' && member.credentialHash !== null)
+        .map(member => ({ memberId: member.member.id, credentialHash: Buffer.from(member.credentialHash!).toString('hex') }));
+    });
+    const retained = decodeSourceMemberCredentials({ schemaVersion: 1, projectId: record.projectId,
+      transferId: record.transferId, sourceAuthorityGeneration: record.status.sourceAuthority.generation,
+      members }, record);
+    await writePrivateJson(filePath, retained);
+    return retained;
   }
 
   async #settleEmptyClaimBatch(
@@ -412,23 +508,33 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     await this.options.foundation.lanHost.stopAuthorityTransferRoute(
       record.projectId,
       'terminal-source',
+      record.transferId,
     );
   }
 
   async #terminalService(
     record: AuthorityTransferRecord,
   ): Promise<PersistentLanAuthorityTransferTerminalSourceService> {
-    const authority = await this.options.foundation.inspectAuthority(record.projectId);
-    if (!authority) throw effectsError('authority-transfer-source-authority-missing');
-    const authenticator = new AuthorityMemberCredentialAuthenticator(authority.database);
     return new PersistentLanAuthorityTransferTerminalSourceService({
-      authenticate: async credential => ({
-        memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
-      }),
+      authenticate: async credential => {
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential)) throw new CollabError({ code: 'authentication-failed' });
+        const memberCredentials = decodeSourceMemberCredentials(
+          await readJsonFile(await this.#sourceMemberCredentialsPath(record)), record,
+        );
+        const actual = createHash('sha256').update(credential, 'utf8').digest();
+        const matched = memberCredentials.members.filter(member => timingSafeEqual(actual, Buffer.from(member.credentialHash, 'hex')));
+        if (matched.length !== 1) throw new CollabError({ code: 'authentication-failed' });
+        return { memberId: matched[0].memberId };
+      },
       cleanupStaging: current => this.#cleanupStaging(current),
       expiresAt: record.status.expiresAt,
       persistence: this.options.persistence,
-      prepareExpiry: () => this.options.convergence.lanToCloudHostOffline(record.status),
+      prepareExpiry: async () => {
+        const current = await this.options.persistence.load(record.projectId);
+        if (current?.transferId === record.transferId) {
+          await this.options.convergence.lanToCloudHostOffline(record.status);
+        }
+      },
       projectId: record.projectId,
       transferId: record.transferId,
     });
@@ -465,6 +571,15 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       );
     } else if (record.restartFence !== 'temporary') {
       throw effectsError('authority-transfer-source-capture-fence-invalid');
+    }
+    const sourceMembers = await this.#retainSourceMemberCredentials(record, stagingPath, authority);
+    for (const target of await this.options.persistence.listRetained(record.projectId)) {
+      if (target.localRole !== 'target' || target.terminalCleanupCompleted
+        || target.status.targetAuthority.generation !== record.status.sourceAuthority.generation) continue;
+      if (!this.options.retainCommittedTargetRedemptions) {
+        throw effectsError('authority-transfer-target-redemption-recovery-unavailable');
+      }
+      await this.options.retainCommittedTargetRedemptions(target, record, sourceMembers.members);
     }
     const existing = await readJsonFile<CollabProjectCheckpointManifest>(
       path.join(stagingPath, MANIFEST_FILE),

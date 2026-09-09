@@ -20,6 +20,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface LanToCloudRequesterCoordinatorOptions {
+  readonly authorityGeneration: number;
   readonly client: LanAuthorityTransferClient;
   readonly memberCredential: string;
   readonly memberId: CollabMemberId;
@@ -72,7 +73,13 @@ export class LanToCloudRequesterCoordinator {
     ) {
       throw requesterError('authority-transfer-requester-idempotency-key-reused');
     }
-    if (existing?.status && !sameRequest(existing.request, request)) {
+    if (existing && !sameRequest(existing.request, request)
+      && request.expectedAuthorityGeneration === this.options.authorityGeneration
+      && this.options.authorityGeneration > existing.request.expectedAuthorityGeneration + 1) {
+      await this.options.persistence.settleSupersededRequester(
+        existing, request, this.options.authorityGeneration,
+      );
+    } else if (existing?.status && !sameRequest(existing.request, request)) {
       const status = await this.options.client.requestWithMember(
         'getProjectAuthorityTransfer',
         {

@@ -152,6 +152,7 @@ describe('AuthorityTransferEntryService', () => {
       projectId: PROJECT_ID,
     });
     expect(subject.module.createLanToCloudRequester).toHaveBeenCalledWith({
+      authorityGeneration: lanMembership().authority.authorityGeneration,
       lanClient: { kind: 'lan-client' },
       memberCredential: lanMembership().member.credential,
       memberId: 'member-host',

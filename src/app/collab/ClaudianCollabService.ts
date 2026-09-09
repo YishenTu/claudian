@@ -495,6 +495,7 @@ export class ClaudianCollabService {
     }
     await this.lanHost.startAuthorityTransferRoute({
       ...(expectedEndpoint ? { expectedEndpoint } : {}),
+      authorityGeneration: project.authorityGeneration,
       hostMemberId: project.hostMemberId,
       projectId,
       service,

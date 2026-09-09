@@ -127,6 +127,7 @@ function recoveryHandler(
 ): AuthorityTransferRecoveryHandler {
   return {
     resume: jest.fn(async () => undefined),
+    resumeRetained: jest.fn(async () => undefined),
     resumeManager: jest.fn(async () => undefined),
     resumeTargetPreparation: jest.fn(async () => undefined),
     ...overrides,
@@ -163,6 +164,48 @@ describe('AuthorityTransferRecovery', () => {
     await expect(recovery.durableOwner.inspect(PROJECT_ID)).resolves.toBe('terminal');
   });
 
+  it('restores retained transfer routes before recovering the current generation', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    for (const generation of [1, 3]) {
+      const transferId = `retained-transfer-${generation}`;
+      const proof = {
+        batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
+        certificate: 'A'.repeat(86), certificateAlgorithm: 'ed25519' as const,
+        committedAt: '2026-08-26T00:03:00.000Z', operationIntentId: `retained-intent-${generation}`,
+        projectId: PROJECT_ID, sourceAuthority: { generation, kind: 'lan' as const },
+        sourceHostMemberId: 'member-alpha', targetAuthority: { generation: generation + 1, kind: 'cloud' as const }, transferId,
+      };
+      const record = createAuthorityTransferRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A, lifecycleOwnership: 'owned', localRole: 'source',
+        operationIntentId: proof.operationIntentId, stagingDirectoryName: `.claudian-authority-transfer-${transferId}`,
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        status: { ...status('source-quiesced'), transferId,
+          batchRevision: 1, batchSha256: proof.batchSha256, checkpointSha256: proof.checkpointSha256,
+          sourceAuthority: proof.sourceAuthority, targetAuthority: proof.targetAuthority,
+          phase: 'completed', state: 'completed', relinquishmentProof: proof, updatedAt: '2026-08-26T00:04:00.000Z' },
+      });
+      await repository.authorityTransferRecords.saveRetained({
+        schemaVersion: 1, record, custody: null, commitment: null, source: null, target: null,
+      });
+    }
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A, lifecycleOwnership: 'owned', localRole: 'source',
+      operationIntentId: 'current-intent', stagingDirectoryName: '.claudian-authority-transfer-current-transfer',
+      status: { ...status('collecting-readiness', PROJECT_ID, 'current-transfer'),
+        sourceAuthority: { generation: 5, kind: 'lan' }, targetAuthority: { generation: 6, kind: 'cloud' } },
+    }));
+    const persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), { isRecoveryOwner: () => true });
+    const recovered: string[] = [];
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
+      resumeRetained: async record => { recovered.push(`retained:${record.transferId}`); },
+      resume: async record => { recovered.push(`current:${record.transferId}`); },
+    }), () => undefined);
+    const subsystem = lifecycle();
+    recovery.register(subsystem);
+    await subsystem.lifecycleRecovery.resume();
+    expect(recovered).toEqual(['retained:retained-transfer-1', 'retained:retained-transfer-3', 'current:current-transfer']);
+  });
+
   it('enumerates startup state and reacquires the lifecycle arbiter for recovery', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
@@ -194,6 +237,7 @@ describe('AuthorityTransferRecovery', () => {
   it('recovers the transfer predecessor while a same-Project claimant is pending', async () => {
     const persistence = {
       inspectLifecycleOwner: jest.fn(async () => 'absent'),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],

@@ -81,6 +81,42 @@ function proof(
 }
 
 describe('LanAuthorityTransferRouteRegistry', () => {
+  it('keeps exact old claim routes alongside the next source and removes only the expired transfer', async () => {
+    const registry = new LanAuthorityTransferRouteRegistry();
+    const oldTarget = registration('target-active');
+    const source = registration('source-active');
+    await registry.install(oldTarget);
+    await registry.install(source);
+    expect(registry.resolve(PROJECT_ID)).toBe(source);
+    expect(registry.resolve(PROJECT_ID, TRANSFER_ID)).toBe(oldTarget);
+    const terminal = { ...registration('terminal-source'), transferId: 'next-transfer' };
+    await registry.transition({
+      expected: source,
+      next: terminal,
+      relinquishmentProof: { ...proof('lan-to-cloud'), transferId: 'next-transfer' },
+    });
+    expect(await registry.runIfCurrent(PROJECT_ID, oldTarget, async () => 'old-receipt'))
+      .toEqual({ admitted: true, value: 'old-receipt' });
+    expect(await registry.remove(PROJECT_ID, 'target-active', TRANSFER_ID)).toBe(true);
+    expect(registry.resolve(PROJECT_ID, 'next-transfer')).toBe(terminal);
+    expect(registry.size).toBe(1);
+    await registry.close();
+  });
+
+  it.each([false, true])('restores older terminal generations alongside the current source (source first: %s)', async sourceFirst => {
+    const registry = new LanAuthorityTransferRouteRegistry();
+    const source = { ...registration('source-active'), authorityGeneration: 5 };
+    const terminal = { ...registration('terminal-source'), authorityGeneration: 3 };
+    await registry.install(sourceFirst ? source : terminal);
+    await expect(registry.install(sourceFirst ? terminal : source)).resolves.toBeUndefined();
+    expect(registry.resolve(PROJECT_ID)).toBe(source);
+    expect(registry.resolve(PROJECT_ID, TRANSFER_ID)).toBe(terminal);
+    const sameGeneration = { ...terminal, transferId: 'same-generation', authorityGeneration: 5 };
+    await expect(registry.install(sameGeneration))
+      .rejects.toMatchObject({ safeContext: { reason: 'authority-transfer-route-conflict' } });
+    await registry.close();
+  });
+
   it('permits only the two proof-bound forward authority transitions', async () => {
     const sourceRegistry = new LanAuthorityTransferRouteRegistry();
     const source = registration('source-active');

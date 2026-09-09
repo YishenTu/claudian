@@ -1685,6 +1685,67 @@ describe('LanHostCoordinator production transport', () => {
     })).rejects.toMatchObject({ code: 'endpoint-unreachable' });
   });
 
+  it('serves a new source proposal while the prior target still retains claim routes', async () => {
+    const proposed = authorityTransferStatus('collecting-readiness');
+    sourceAuthorityTransfer = {
+      acceptLanToCloudTransferTarget: jest.fn(async () => proposed),
+      authenticateMemberCredential: jest.fn(async () => ({ memberId: 'member-host' as const })),
+      cancelProjectAuthorityTransfer: jest.fn(async () => proposed),
+      getProjectAuthorityTransfer: jest.fn(async () => proposed),
+      requestLanToCloudTransfer: jest.fn(async () => proposed),
+    };
+    const session = await coordinator.startAuthorityTransferRoute({
+      projectId: PROJECT_ID,
+      service: {
+        claimTransferredMembership: jest.fn(), expire: jest.fn(async () => undefined),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      state: 'target-active', transferId: 'previous-target-transfer',
+    });
+    await coordinator.startProject(PROJECT_ID);
+    const client = new LanAuthorityTransferClient({ ...session, projectId: PROJECT_ID });
+    await expect(client.requestWithMember('requestLanToCloudTransfer', {
+      expectedAuthorityGeneration: 1, idempotencyKey: 'next-proposal',
+      projectId: PROJECT_ID, targetUrl: 'https://cloud.example.test',
+    }, HOST_CREDENTIAL)).resolves.toEqual(proposed);
+  });
+
+  it('expires an earlier transfer without cancelling the next transfer timer', async () => {
+    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const callbacks: Array<() => void> = [];
+    authorityTransferNow = startedAt;
+    authorityTransferTimeoutOverride = callback => {
+      callbacks.push(callback);
+      return 10_000 + callbacks.length;
+    };
+    const firstExpired = jest.fn(async () => undefined);
+    const nextExpired = jest.fn(async () => undefined);
+    for (const [id, expire, delay] of [
+      ['earlier-transfer', firstExpired, 1_000],
+      ['next-transfer', nextExpired, 2_000],
+    ] as const) {
+      await coordinator.startAuthorityTransferRoute({
+        projectId: PROJECT_ID,
+        service: {
+          claimTransferredMembership: jest.fn(),
+          expire,
+          expiresAt: new Date(startedAt.getTime() + delay).toISOString(),
+        },
+        state: 'target-active',
+        transferId: id,
+      });
+    }
+    authorityTransferNow = new Date(startedAt.getTime() + 1_000);
+    callbacks[0]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(firstExpired).toHaveBeenCalledTimes(1);
+    expect(nextExpired).not.toHaveBeenCalled();
+    authorityTransferNow = new Date(startedAt.getTime() + 2_000);
+    callbacks[1]?.();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    expect(nextExpired).toHaveBeenCalledTimes(1);
+  });
+
   it('removes an expired target route before retrying terminal cleanup', async () => {
     const callbacks: Array<() => void> = [];
     const startedAt = new Date('2026-08-27T00:00:00.000Z');

@@ -115,6 +115,7 @@ export interface LanAuthorityTransferTerminalSourceService
 }
 
 interface RouteRegistrationBase {
+  readonly authorityGeneration?: number;
   readonly projectId: CollabProjectId;
 }
 
@@ -170,6 +171,7 @@ export type LanAuthorityTransferRouteAdmissionResult<T> =
 export interface LanAuthorityTransferRouteAccess {
   resolve(
     projectId: CollabProjectId,
+    transferId?: string,
   ): LanAuthorityTransferRouteRegistration | null;
 
   /**
@@ -463,7 +465,13 @@ export class LanAuthorityTransferRouter {
         );
       }
       const body = await readRequestBody(request);
-      const registration = this.routes.resolve(route.projectId);
+      const decodedRequest = route.operation === 'claimTransferredMembership'
+        ? requireLanClaimRequest(request, route.operation, body)
+        : decodeCollabAuthorityTransferOperationRequest(route.operation, parseJsonBody(body));
+      const registration = this.routes.resolve(
+        route.projectId,
+        'transferId' in decodedRequest ? decodedRequest.transferId : undefined,
+      ) ?? this.routes.resolve(route.projectId);
       if (
         !registration
         || registration.projectId !== route.projectId
@@ -512,16 +520,12 @@ export class LanAuthorityTransferRouter {
             throw routeError('project-not-found', 'authority-transfer-route-not-found');
           }
           const decoded = lanClaimRequest
-            ?? decodeCollabAuthorityTransferOperationRequest(
-              route.operation,
-              parseJsonBody(body),
-            );
+            ?? decodedRequest;
           if (decoded.projectId !== registration.projectId) {
             throw routeError('project-not-found', 'authority-transfer-project-mismatch');
           }
           if (
-            (registration.state === 'target-only-staged'
-              || registration.state === 'target-active')
+            registration.state !== 'source-active'
             && (
               !('transferId' in decoded)
               || decoded.transferId !== registration.transferId
