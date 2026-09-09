@@ -166,6 +166,7 @@ export interface AuthorityTransferModuleOptions {
     record: AuthorityTransferClaimantRecord,
   ) => Promise<RecoveredAuthorityTransferClaimantBinding>;
   readonly terminalResolver?: AuthorityTransferRuntimeResolver;
+  readonly restoreRetained?: (record: AuthorityTransferRecord, options: CollabOperationOptions) => Promise<void>;
 }
 
 export interface CloudToLanEntryConnection {
@@ -192,6 +193,7 @@ export interface BindLanToCloudSourceInput {
 }
 
 export interface CreateLanToCloudRequesterInput {
+  readonly authorityGeneration: number;
   readonly lanClient: LanAuthorityTransferClient;
   readonly memberCredential: string;
   readonly memberId: LanAuthorityTransferActor['memberId'];
@@ -444,6 +446,10 @@ export class AuthorityTransferModule {
         resume: (record, recoveryOptions) => (
           this.#resumeAuthorityTransferRecord(record, recoveryOptions)
         ),
+        resumeRetained: async (record, recoveryOptions) => {
+          if (!this.options.restoreRetained) throw moduleError('authority-transfer-retained-recovery-unavailable');
+          await this.options.restoreRetained(record, recoveryOptions);
+        },
         resumeManager: (projectId, recoveryOptions) => (
           this.#resumeCloudToLanManagerEntry(projectId, recoveryOptions)
         ),
@@ -544,6 +550,7 @@ export class AuthorityTransferModule {
     input: CreateLanToCloudRequesterInput,
   ): LanToCloudRequesterCoordinator {
     return new LanToCloudRequesterCoordinator({
+      authorityGeneration: input.authorityGeneration,
       client: input.lanClient,
       installationKey: this.options.installationKey,
       memberCredential: input.memberCredential,
@@ -1319,7 +1326,8 @@ export class AuthorityTransferModule {
       record?.localRole !== 'target'
       || record.status.direction !== 'cloud-to-lan'
       || record.status.state !== 'completed'
-      || !record.terminalCleanupCompleted
+      || record.status.relinquishmentProof === null
+      || record.restartFence !== 'open'
     ) return;
     if (!await this.#disposeCloudToLanTargetRuntime(projectId)) {
       throw durableOutcome(record.operationIntentId, 'authority-transfer-target-cleanup-incomplete');
@@ -1631,6 +1639,9 @@ export class AuthorityTransferModule {
     }
     await this.#releaseCompletedCloudToLanRuntime(record.projectId);
     const current = await this.options.persistence.load(record.projectId);
+    if (current?.localRole === 'source' && (current.status.state === 'completed' || current.status.state === 'cancelled')) {
+      await this.#disposeRecoveredRuntime(current);
+    }
     if (
       current
       && current.localRole === 'target'

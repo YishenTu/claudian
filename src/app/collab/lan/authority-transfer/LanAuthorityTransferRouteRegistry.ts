@@ -21,6 +21,10 @@ function transferId(registration: LanAuthorityTransferRouteRegistration): string
   return registration.state === 'source-active' ? null : registration.transferId;
 }
 
+function routeKey(projectId: CollabProjectId, id: string | null): string {
+  return `${projectId}\0${id ?? ''}`;
+}
+
 function assertTransition(input: LanAuthorityTransferRouteTransition): void {
   const { expected, next, relinquishmentProof: proof } = input;
   const directionMatches = expected.state === 'source-active' && next.state === 'terminal-source'
@@ -30,6 +34,12 @@ function assertTransition(input: LanAuthorityTransferRouteTransition): void {
       : false;
   if (
     !directionMatches
+    || (expected.authorityGeneration !== undefined && expected.authorityGeneration !== (
+      expected.state === 'source-active' ? proof.sourceAuthority.generation : proof.targetAuthority.generation
+    ))
+    || (next.authorityGeneration !== undefined && next.authorityGeneration !== (
+      next.state === 'terminal-source' ? proof.sourceAuthority.generation : proof.targetAuthority.generation
+    ))
     || expected.projectId !== next.projectId
     || proof.projectId !== next.projectId
     || proof.transferId !== transferId(next)
@@ -41,7 +51,7 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
   private closed = false;
   private readonly queues = new Map<CollabProjectId, SerialTaskQueue>();
   private readonly registrations = new Map<
-    CollabProjectId,
+    string,
     LanAuthorityTransferRouteRegistration
   >();
 
@@ -61,7 +71,7 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
     expectedEndpoint: string,
   ): LanAuthorityTransferRouteRegistration {
     if (this.closed) throw new Error('Authority-transfer routes are closed');
-    const current = this.registrations.get(projectId);
+    const current = this.registrations.get(routeKey(projectId, null));
     if (!current || current.state !== 'source-active') {
       throw routeStateError('authority-transfer-source-route-missing');
     }
@@ -70,25 +80,30 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
     }
     if (current.expectedEndpoint === expectedEndpoint) return current;
     const pinned = { ...current, expectedEndpoint };
-    this.registrations.set(projectId, pinned);
+    this.registrations.set(routeKey(projectId, null), pinned);
     return pinned;
   }
 
   unpinSourceActiveEndpoint(projectId: CollabProjectId, expectedEndpoint: string): void {
     if (this.closed) return;
-    const current = this.registrations.get(projectId);
+    const current = this.registrations.get(routeKey(projectId, null));
     if (
       !current
       || current.state !== 'source-active'
       || current.expectedEndpoint !== expectedEndpoint
     ) return;
     const { expectedEndpoint: _removed, ...unpinned } = current;
-    this.registrations.set(projectId, unpinned);
+    this.registrations.set(routeKey(projectId, null), unpinned);
   }
 
-  resolve(projectId: CollabProjectId): LanAuthorityTransferRouteRegistration | null {
+  resolve(projectId: CollabProjectId, id?: string): LanAuthorityTransferRouteRegistration | null {
     if (this.closed) return null;
-    return this.registrations.get(projectId) ?? null;
+    if (id !== undefined) {
+      return this.registrations.get(routeKey(projectId, id)) ?? null;
+    }
+    return this.registrations.get(routeKey(projectId, null))
+      ?? [...this.registrations.values()].reverse().find(route => route.projectId === projectId)
+      ?? null;
   }
 
   runIfCurrent<T>(
@@ -98,7 +113,7 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
   ): Promise<LanAuthorityTransferRouteAdmissionResult<T>> {
     if (this.closed) return Promise.resolve({ admitted: false });
     return this.queue(projectId).run(async () => {
-      if (this.closed || this.registrations.get(projectId) !== expected) {
+      if (this.closed || this.registrations.get(routeKey(projectId, transferId(expected))) !== expected) {
         return { admitted: false };
       }
       return { admitted: true, value: await operation() };
@@ -109,11 +124,34 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
     if (this.closed) return Promise.reject(new Error('Authority-transfer routes are closed'));
     return this.queue(registration.projectId).run(async () => {
       if (this.closed) throw new Error('Authority-transfer routes are closed');
-      const current = this.registrations.get(registration.projectId);
+      const key = routeKey(registration.projectId, transferId(registration));
+      const current = this.registrations.get(key);
       if (current && current !== registration) {
         throw routeStateError('authority-transfer-route-conflict');
       }
-      this.registrations.set(registration.projectId, registration);
+      if (registration.authorityGeneration !== undefined
+        && (!Number.isSafeInteger(registration.authorityGeneration) || registration.authorityGeneration < 1)) {
+        throw routeStateError('authority-transfer-route-conflict');
+      }
+      for (const route of this.registrations.values()) {
+        if (route.projectId !== registration.projectId) continue;
+        const source = registration.state === 'source-active' ? registration
+          : route.state === 'source-active' ? route : null;
+        const terminal = registration.state === 'terminal-source' ? registration
+          : route.state === 'terminal-source' ? route : null;
+        if (source && terminal && (source.authorityGeneration === undefined
+          || terminal.authorityGeneration === undefined
+          || terminal.authorityGeneration >= source.authorityGeneration)) {
+          throw routeStateError('authority-transfer-route-conflict');
+        }
+      }
+      if ([...this.registrations.values()].some(route => (
+        route.projectId === registration.projectId
+        && route !== registration
+        && (route.state === 'source-active' || route.state === 'target-only-staged')
+        && (registration.state === 'source-active' || registration.state === 'target-only-staged')
+      ))) throw routeStateError('authority-transfer-route-conflict');
+      this.registrations.set(key, registration);
     });
   }
 
@@ -122,22 +160,33 @@ export class LanAuthorityTransferRouteRegistry implements LanAuthorityTransferRo
     assertTransition(input);
     return this.queue(input.next.projectId).run(async () => {
       if (this.closed) throw new Error('Authority-transfer routes are closed');
-      if (this.registrations.get(input.next.projectId) !== input.expected) {
+      const previousKey = routeKey(input.expected.projectId, transferId(input.expected));
+      const nextKey = routeKey(input.next.projectId, transferId(input.next));
+      if (this.registrations.get(previousKey) !== input.expected) {
         throw routeStateError('authority-transfer-route-stale');
       }
-      this.registrations.set(input.next.projectId, input.next);
+      if (nextKey !== previousKey && this.registrations.has(nextKey)) {
+        throw routeStateError('authority-transfer-route-conflict');
+      }
+      this.registrations.delete(previousKey);
+      this.registrations.set(nextKey, input.next);
     });
   }
 
   remove(
     projectId: CollabProjectId,
     expectedState?: LanAuthorityTransferRouteRegistration['state'],
+    id?: string,
   ): Promise<boolean> {
     if (this.closed) return Promise.resolve(false);
     return this.queue(projectId).run(async () => {
-      const current = this.registrations.get(projectId);
+      const current = id !== undefined
+        ? this.registrations.get(routeKey(projectId, id))
+        : expectedState === 'source-active'
+          ? this.registrations.get(routeKey(projectId, null))
+          : this.resolve(projectId);
       if (!current || (expectedState && current.state !== expectedState)) return false;
-      this.registrations.delete(projectId);
+      this.registrations.delete(routeKey(projectId, transferId(current)));
       return true;
     });
   }

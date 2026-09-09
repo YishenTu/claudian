@@ -26,6 +26,7 @@ export interface AuthorityTransferRecoveryHandler {
     options: CollabOperationOptions,
   ): Promise<void>;
   resume(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
+  resumeRetained(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
   resumeManager(projectId: CollabProjectId, options: CollabOperationOptions): Promise<void>;
   resumeTargetPreparation(
     entry: CloudToLanTargetEntryRecord,
@@ -79,6 +80,11 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       await this.lifecycle.runAuthorityTransferRecovery(
         projectId,
         async () => {
+          for (const retained of await this.persistence.listRetained(projectId)) {
+            if (retained.terminalCleanupCompleted) continue;
+            await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);
+            await this.handler.resumeRetained(retained, options);
+          }
           await this.handler.resumeManager(projectId, options);
           let ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') return;

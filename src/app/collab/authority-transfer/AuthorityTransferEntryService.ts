@@ -117,6 +117,7 @@ export class AuthorityTransferEntryService {
     const membership = await this.#requireLanMembership(request.projectId, false);
     throwIfCancelled(options.signal);
     const requester = this.#module.createLanToCloudRequester({
+      authorityGeneration: membership.authority.authorityGeneration,
       lanClient: this.#createLanClient({
         caCertificatePem: membership.authority.hostCaCertificatePem!,
         caFingerprint: membership.authority.hostCaFingerprint!,

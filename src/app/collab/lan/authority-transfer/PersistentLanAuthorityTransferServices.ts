@@ -79,7 +79,7 @@ implements LanAuthorityTransferTerminalSourceService {
   }
 
   async expire(): Promise<void> {
-    const record = await this.options.persistence.load(this.options.projectId);
+    const record = await this.options.persistence.load(this.options.projectId, this.options.transferId);
     if (
       !record
       || record.transferId !== this.options.transferId
@@ -159,7 +159,7 @@ implements LanAuthorityTransferTerminalSourceService {
     if (projectId !== this.options.projectId) {
       throw serviceError('project-not-found', 'authority-transfer-route-not-found');
     }
-    const record = await this.options.persistence.load(projectId);
+    const record = await this.options.persistence.load(projectId, transferId);
     if (
       !record
       || record.transferId !== transferId

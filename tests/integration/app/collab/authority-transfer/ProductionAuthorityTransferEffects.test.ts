@@ -7,6 +7,7 @@ import {
   sign,
   verify,
 } from 'node:crypto';
+import fsPromises from 'node:fs/promises';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -421,7 +422,7 @@ describe('production authority-transfer effects', () => {
         operationIntentId: firstProof.operationIntentId,
         proof: null,
       },
-      schemaVersion: 2,
+      schemaVersion: 3,
       transferId: TRANSFER_ID,
     });
     expect(statesAtDiscard[1]).toMatchObject({ cleanup: { proof: firstProof } });
@@ -668,7 +669,7 @@ describe('production authority-transfer effects', () => {
       PROJECT_ID,
       TRANSFER_ID,
     );
-    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source');
+    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source', TRANSFER_ID);
     expect(events).toEqual([
       'relinquish',
       'activate-route',
@@ -768,7 +769,7 @@ describe('production authority-transfer effects', () => {
 
     expect(removeReservedProjectsFolderChild).toHaveBeenCalledTimes(2);
     expect(persistence.completeTerminalCleanup).toHaveBeenCalledTimes(1);
-    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source');
+    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source', TRANSFER_ID);
   });
 
   it('runs an ordinary LAN Member proposal and exact Host acceptance through production effects', async () => {
@@ -1057,6 +1058,29 @@ describe('production authority-transfer effects', () => {
             serverUrl: targetUrl,
           },
         });
+      const exact = await sourceFoundation.authorityTransfers.load(PROJECT_ID);
+      if (!exact) throw new Error('Missing completed source transfer');
+      const nextTarget = createCloudToLanTargetEntry({
+        createdAt: new Date().toISOString(), expiresAt: '2026-09-26T00:00:00.000Z',
+        operationIntentId: 'next-target-preparation', ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID, selectedTargetMemberId: MEMBER_ID,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ID}`,
+        sourceAuthorityGeneration: 2, sourceCloudUrl: targetUrl,
+      });
+      await sourceFoundation.authorityTransfers.prepareCloudToLanTargetEntry(nextTarget);
+      await sourceFoundation.closeAuthority(PROJECT_ID);
+      await sourceFoundation.hostInstallations.removeOwned(PROJECT_ID);
+      const terminalRequest = { projectId: PROJECT_ID, transferId: exact.transferId };
+      await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
+        .resolves.toEqual(completed);
+      await sourceFoundation.lanHost.stopAuthorityTransferRoute(PROJECT_ID, 'terminal-source', exact.transferId);
+      await new ProductionLanToCloudSourceEffects({
+        cloudSession: null, foundation: sourceFoundation, persistence: sourceFoundation.authorityTransfers,
+        convergence: {} as AuthorityTransferLocalConvergence, projectId: PROJECT_ID,
+      }).restoreRetained(exact);
+      await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
+        .resolves.toEqual(completed);
+      await expect(sourceFoundation.authorityTransfers.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(nextTarget);
     } finally {
       await sourceFeature.close();
       await sourceFoundation.close();
@@ -1822,7 +1846,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  it('captures LAN data, stages Cloud-to-LAN inertly, and activates exactly once', async () => {
+  it.each([false, true])('captures and activates Cloud-to-LAN with retained next-generation claims: %s', async retainNextGeneration => {
     const {
       artifactBytes,
       recoveryRecord,
@@ -2310,10 +2334,7 @@ describe('production authority-transfer effects', () => {
       projectId: PROJECT_ID,
     });
     if (!targetAuthority) throw new Error('Missing imported target authority');
-    const targetStatePath = path.join(
-      targetAuthority.authorityDirectory,
-      'authority-transfer-target.json',
-    );
+    const targetStatePath = path.join(targetStaging.absolutePath, 'target-private.json');
     const exactTargetState = await readFile(targetStatePath, 'utf8');
     const activeRegistration = activeRouteTransition.mock.calls[0]?.[0].next;
     if (activeRegistration?.state !== 'target-active') {
@@ -2624,6 +2645,90 @@ describe('production authority-transfer effects', () => {
         .update(claimantCredential, 'utf8')
         .digest(),
     });
+    const verifyRetainedNextGeneration = async () => {
+      const interruptedRequest = { ...claimRequest, idempotencyKey: 'claim-interrupted-before-receipt' };
+      const actualRename = fsPromises.rename;
+      const receiptWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        if (String(to).endsWith('/target-private.json')) {
+          const partial = JSON.parse(await readFile(from, 'utf8')) as { receipts: Record<string, { operationIntentId: string }> };
+          if (Object.values(partial.receipts).some(receipt => receipt.operationIntentId === interruptedRequest.idempotencyKey)) {
+            throw new Error('simulated receipt persistence failure');
+          }
+        }
+        return actualRename(from, to);
+      });
+      await expect(claimClient.claimTransferredMembership(interruptedRequest)).rejects.toMatchObject({ code: 'operation-failed' });
+      receiptWrite.mockRestore();
+
+      const nextStatus: CollabAuthorityTransferStatus = {
+        ...status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
+        sourceAuthority: { generation: 3, kind: 'lan' },
+        targetAuthority: { generation: 4, kind: 'cloud' },
+        transferId: 'transfer-next-cloud-generation',
+      };
+      const nextEntry = createAuthorityTransferEntryRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        proposedByMemberId: 'member-production-peer',
+        request: { projectId: PROJECT_ID, expectedAuthorityGeneration: 3,
+          idempotencyKey: 'intent-next-cloud-generation', targetUrl: nextStatus.targetUrl },
+        status: nextStatus,
+      });
+      await targetFoundation.authorityTransfers.proposeEntry(nextEntry);
+      const nextRecord = createAuthorityTransferRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A, lifecycleOwnership: 'owned', localRole: 'source',
+        operationIntentId: nextEntry.request.idempotencyKey,
+        sourceLanEndpoint: new URL(completedRecord.status.targetUrl).origin,
+        stagingDirectoryName: `.claudian-authority-transfer-${nextStatus.transferId}`,
+        status: { ...nextStatus, phase: 'source-quiesced' },
+      });
+      await targetFoundation.authorityTransfers.handoffEntry(nextEntry, createAuthorityTransferRecord({ ...nextRecord, status: nextStatus }));
+      await targetFoundation.authorityTransfers.advance(nextRecord, 'collecting-readiness');
+      await new ProductionLanToCloudSourceEffects({
+        retainCommittedTargetRedemptions: (target, source, members) => recoveringEffects().retainCommittedRedemptions(target, source, members),
+        cloudSession: { principalId: 'principal:next-host' } as CloudAuthorityConnection, convergence: recoveryConvergence, foundation: targetFoundation,
+        persistence: targetFoundation.authorityTransfers, projectId: PROJECT_ID,
+      }).capture(nextRecord);
+
+      await expect(recoveredRegistration.service.claimTransferredMembership({
+        ...claimRequest, idempotencyKey: 'late-claim-after-quiescence',
+      })).rejects.toMatchObject({
+        code: 'durable-progress-recovery-required',
+        safeContext: { reason: 'authority-transfer-authority-quiesced' },
+      });
+      await expect(claimClient.claimTransferredMembership({
+        ...claimRequest, idempotencyKey: 'late-claim-after-quiescence',
+      })).rejects.toMatchObject({ code: 'operation-failed' });
+      await expect(claimClient.claimTransferredMembership(claimRequest)).resolves.toEqual(firstReceipt);
+      await targetFoundation.closeAuthority(PROJECT_ID);
+      await targetFoundation.hostInstallations.removeOwned(PROJECT_ID);
+      await expect(claimClient.claimTransferredMembership(claimRequest)).resolves.toEqual(firstReceipt);
+      const recoveredReceipt = await claimClient.claimTransferredMembership(interruptedRequest);
+      expect(recoveredReceipt).toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey, targetAuthorityGeneration: 3 });
+      await expect(claimClient.claimTransferredMembership(interruptedRequest)).resolves.toEqual(recoveredReceipt);
+
+      await expect(claimClient.claimTransferredMembership({
+        ...claimRequest, credentialHash: 'a'.repeat(64),
+      })).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+      await expect(recoveringEffects().restoreRetained(completedRecord)).resolves.toBeUndefined();
+      targetNow = new Date('2026-10-01T00:00:00.000Z');
+      const expiredPersistence = new AuthorityTransferPersistence(targetFoundation.local.projects, {
+        isRecoveryOwner: owner => owner === TEST_INSTALLATION_A, now: () => targetNow,
+      });
+      await expect(new ProductionCloudToLanTargetEffects({
+        cloudSession: null, convergence: recoveryConvergence, foundation: targetFoundation,
+        now: () => targetNow, persistence: expiredPersistence, projectId: PROJECT_ID,
+      }).restoreRetained(completedRecord)).resolves.toBeUndefined();
+      await expiredPersistence.close();
+      await expect(targetFoundation.authorityTransfers.load(PROJECT_ID)).resolves.toEqual(nextRecord);
+      await expect(targetFoundation.authorityTransfers.load(PROJECT_ID, TRANSFER_ID)).resolves.toMatchObject({ terminalCleanupCompleted: true });
+      await restartedComposition.feature.close();
+      await sourceFeature.close();
+      await sourceFoundation.close();
+      await targetFoundation.close();
+      return;
+    };
+    if (retainNextGeneration) return verifyRetainedNextGeneration();
+
     expect(targetFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
     await expect(targetFoundation.lanHost.startProject(PROJECT_ID)).resolves.toMatchObject({
       projectId: PROJECT_ID,
@@ -2685,7 +2790,7 @@ describe('production authority-transfer effects', () => {
       'assertCloudToLanCompletedTargetIdentity',
     );
     await expect(recoveringEffects().restoreCompleted(completedRecord)).resolves.toBeUndefined();
-    expect(stopExpiredRoute).toHaveBeenCalledWith(PROJECT_ID, 'target-active');
+    expect(stopExpiredRoute).toHaveBeenCalledWith(PROJECT_ID, 'target-active', TRANSFER_ID);
     expect(assertTargetIdentity).toHaveBeenCalledWith({
       memberId: 'member-production-peer',
       operationIntentId: OPERATION_ID,
@@ -3150,14 +3255,12 @@ describe('production authority-transfer effects', () => {
       cloudAuthority.connectAuthorityTransfer.mockRejectedValue(new Error('completed retry must stay local'));
       await expect(target.composition.feature.acceptCloudToLanTransfer(begunResult.value))
         .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
-      const nextProposal = singleMember
-        ? await target.composition.feature.proposeLanToCloudTransfer({
+      const nextProposal = await target.composition.feature.proposeLanToCloudTransfer({
             projectId: PROJECT_ID,
             serverUrl: cloudServerUrl,
-          })
-        : null;
+          });
       expect({ proposal: nextProposal }).toMatchObject({
-        proposal: singleMember ? {
+        proposal: {
           status: 'success',
           value: {
             direction: 'lan-to-cloud',
@@ -3165,10 +3268,10 @@ describe('production authority-transfer effects', () => {
             sourceAuthority: { generation: 3, kind: 'lan' },
             targetAuthority: { generation: 4, kind: 'cloud' },
           },
-        } : null,
+        },
       });
       expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
-      if (singleMember) {
+      {
         const sourceBinding = await target.composition.authorityTransfer.bindLanToCloudSource({
           cloudSession: {
             projectId: PROJECT_ID,
@@ -3181,6 +3284,24 @@ describe('production authority-transfer effects', () => {
 
       }
 
+      const pendingSource = await target.foundation.authorityTransfers.loadSourceEntry(PROJECT_ID);
+      await target.composition.feature.close();
+      await target.foundation.close();
+      const nextFoundation = foundation(targetRoot, TEST_INSTALLATION_B);
+      target = {
+        foundation: nextFoundation,
+        composition: createCollabFeatureSubcomposition({
+          cloudAuthority: cloudAuthority as never, foundation: nextFoundation,
+          projectSetup: new CollabProjectSetupService(nextFoundation, {
+            installationKey: TEST_INSTALLATION_B, vaultRoot: targetRoot,
+          }), vaultRoot: targetRoot,
+        }),
+      };
+      await target.composition.feature.initialize();
+      await expect(target.composition.feature.restoreLifecycle()).resolves.toBeUndefined();
+      await expect(target.composition.feature.restoreHosts()).resolves.toBeUndefined();
+      await expect(target.foundation.authorityTransfers.loadSourceEntry(PROJECT_ID)).resolves.toEqual(pendingSource);
+      expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
     } finally {
       await Promise.all([
         manager.composition.feature.close(),

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -40,6 +40,7 @@ import {
   recordCloudToLanManagerStatus,
   rejectCloudToLanManagerEntry,
 } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import { LanToCloudRequesterCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
 import {
   createAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -50,6 +51,7 @@ import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
+import type { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import {
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
@@ -787,7 +789,7 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('retains completed target identity until a proposal at its LAN generation replaces it', async () => {
+  it.each([false, true])('retains completed target identity until a proposal replaces it (pending claims: %s)', async pendingClaims => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
@@ -852,21 +854,30 @@ describe('AuthorityTransferPersistence', () => {
       safeContext: { reason: 'authority-transfer-target-identity-mismatch' },
     });
 
-    await persistence.completeTerminalCleanup({
-      operationIntentId: OPERATION_INTENT_ID,
-      projectId: PROJECT_ID,
-      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      transferId: TRANSFER_ID,
-    });
+    if (pendingClaims) {
+      const stageIntent = authorityTransferChildIdempotencyKey(OPERATION_INTENT_ID, 'stage');
+      await persistence.retainClaimBatch({ batch: claimBatch(), operationIntentId: stageIntent, purpose: 'target-delivery' });
+      await persistence.acknowledgeClaimBatch({
+        batchRevision: 1, batchSha256: claimBatch().batchSha256, checkpointSha256: CHECKPOINT_SHA256,
+        committedAt: '2026-08-26T00:03:00.000Z', custodyAuthority: { generation: 1, kind: 'cloud' },
+        operationIntentId: stageIntent, projectId: PROJECT_ID, receiptId: 'custody-target-cycle',
+        submittedByMemberId: MEMBER_BOB, targetAuthorityGeneration: 2, transferId: TRANSFER_ID,
+      });
+    } else {
+      await persistence.completeTerminalCleanup({
+        operationIntentId: OPERATION_INTENT_ID, projectId: PROJECT_ID,
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`, transferId: TRANSFER_ID,
+      });
+    }
 
     await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
       target: { phase: 'handed-off', selectedTargetMemberId: MEMBER_BOB },
     });
     await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
-      terminalCleanupCompleted: true,
+      terminalCleanupCompleted: !pendingClaims,
       transferId: TRANSFER_ID,
     });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe(pendingClaims ? 'nonterminal' : 'terminal');
     const nextProposal = (generation: number) => createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
       request: {
@@ -888,6 +899,15 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.proposeEntry(next)).resolves.toEqual(next);
     await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(next);
     await expect(persistence.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toBeNull();
+    const historyDirectory = path.join(vaultRoot, '.claudian', 'collab', 'projects', PROJECT_ID, 'authority-transfer-history');
+    await mkdir(historyDirectory, { recursive: true });
+    await writeFile(path.join(historyDirectory, `.${'a'.repeat(64)}.json.00000000-0000-4000-8000-000000000000.tmp`), '{"incomplete":');
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await expect(reopened.loadRetainedClaimBatch(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(pendingClaims ? claimBatch() : null);
+    await expect(reopened.load(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(pendingClaims ? physical : null);
+    await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toEqual(next);
 
   });
 
@@ -1870,6 +1890,66 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
+  it.each([false, true])('allows the same requester at a proved later LAN generation (old response saved: %s)', async responseSaved => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+    });
+    const oldRequest = {
+      expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const oldEntry = await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z', proposedByMemberId: MEMBER_BOB, request: oldRequest,
+    }));
+    if (responseSaved) await persistence.completeRequesterEntry(oldEntry, proposalStatus());
+    const foreign = createOwnedAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_ALICE, request: oldRequest,
+    });
+    await repository.authorityTransferEntries.saveRequester(foreign);
+    const nextStatus: CollabAuthorityTransferStatus = {
+      ...proposalStatus(), sourceAuthority: { generation: 3, kind: 'lan' },
+      targetAuthority: { generation: 4, kind: 'cloud' }, transferId: 'transfer-next',
+    };
+    const requestWithMember = jest.fn(async (operation: string) => {
+      if (operation !== 'requestLanToCloudTransfer') throw new Error('Former authority credential no longer valid');
+      return nextStatus;
+    });
+    const requester = new LanToCloudRequesterCoordinator({
+      authorityGeneration: 3, client: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      installationKey: TEST_INSTALLATION_A, memberCredential: Buffer.alloc(32, 9).toString('base64url'),
+      memberId: MEMBER_BOB, now: () => new Date('2026-08-27T00:00:00.000Z'), persistence, projectId: PROJECT_ID,
+    });
+    await expect(requester.propose({ ...oldRequest, expectedAuthorityGeneration: 3 }))
+      .rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
+    const nextRequest = { ...oldRequest, expectedAuthorityGeneration: 3, idempotencyKey: 'intent-next' };
+    await expect(requester.propose(nextRequest)).resolves.toEqual(nextStatus);
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A)).resolves.toMatchObject({ request: nextRequest, status: nextStatus });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B)).resolves.toEqual(foreign);
+    await expect(requester.propose(nextRequest)).resolves.toEqual(nextStatus);
+  });
+
+  it('rejects foreign and unproved requester succession without removing its intent', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const entry = createOwnedAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB, request: {
+        expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
+      },
+    });
+    await repository.authorityTransferEntries.saveRequester(entry);
+    const nextRequest = { ...entry.request, expectedAuthorityGeneration: 3, idempotencyKey: 'intent-next' };
+    const foreign = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+    await expect(foreign.settleSupersededRequester(entry, nextRequest, 3)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    const owner = new AuthorityTransferPersistence(repository, { isRecoveryOwner: key => key === TEST_INSTALLATION_B });
+    await expect(owner.settleSupersededRequester(entry, nextRequest, 1)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    await expect(owner.settleSupersededRequester(entry, { ...nextRequest, expectedAuthorityGeneration: 2 }, 2)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    await expect(owner.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B)).resolves.toEqual(entry);
+  });
+
   it('settles an exact requester cancellation before admitting a replacement intent', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
@@ -2582,6 +2662,9 @@ describe('AuthorityTransferPersistence', () => {
       },
       authorityTransferRecords: {
         ...emptyStore,
+        listRetained: jest.fn().mockResolvedValue([]),
+        loadRetained: jest.fn().mockResolvedValue(null),
+        saveRetained: jest.fn().mockResolvedValue(undefined),
         listProjectIds: jest.fn().mockResolvedValue([]),
         removeExact: jest.fn().mockResolvedValue(false),
         scanProjectCatalog: jest.fn().mockResolvedValue({
@@ -2609,7 +2692,7 @@ describe('AuthorityTransferPersistence', () => {
       betaCompleted = true;
       return result;
     });
-    for (let index = 0; index < 10; index += 1) await Promise.resolve();
+    await beta;
     const projectsWereIsolated = betaCompleted;
 
     releaseAlpha();
@@ -3173,6 +3256,59 @@ describe('AuthorityTransferPersistence', () => {
     await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
   });
 
+  it('retains an unexpired source claim while preparing the next LAN generation', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-26T00:10:00.000Z'),
+    });
+    const predecessor = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    });
+    await repository.authorityTransferRecords.save(predecessor);
+    await persistence.retainClaimBatch({
+      batch: claimBatch(), operationIntentId: OPERATION_INTENT_ID, purpose: 'source-terminal',
+    });
+    await persistence.acknowledgeClaimBatch({
+      batchRevision: 1,
+      batchSha256: claimBatch().batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:10:00.000Z',
+      custodyAuthority: { generation: 1, kind: 'lan' },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-cycle',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    });
+    const next = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:11:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-next-lan-generation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_ALICE,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: predecessor.status.targetUrl,
+    });
+    await expect(persistence.prepareCloudToLanTargetEntry(next)).resolves.toEqual(next);
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-26T00:12:00.000Z'),
+    });
+    await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(next);
+    await expect(reopened.loadClaim(PROJECT_ID, TRANSFER_ID, MEMBER_BOB))
+      .resolves.toMatchObject({ memberId: MEMBER_BOB, claim: claimBatch().claims[1].claim });
+  });
+
   it.each(['none', 'after-remove', 'before-save', 'after-save'] as const)(
     'prepares a LAN target after a settled Cloud move and recovers %s', async fault => {
       const repository = new CollabLocalProjectRepository(vaultRoot);
@@ -3373,7 +3509,7 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('expires the terminal responder only after scrubbing every retained raw claim', async () => {
+  it.each(['none', 'custody-removal'] as const)('expires the terminal responder and recovers cleanup interruption: %s', async fault => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
@@ -3441,6 +3577,21 @@ describe('AuthorityTransferPersistence', () => {
       terminalResponder: { state: 'expired' },
     });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferClaims: {
+        ...repository.authorityTransferClaims,
+        remove: async (projectId, transferId) => {
+          if (fault === 'custody-removal') throw new Error('simulated custody removal failure');
+          return repository.authorityTransferClaims.remove(projectId, transferId);
+        },
+      },
+    }, { isRecoveryOwner: () => true, now: () => new Date(EXPIRES_AT) });
+    const firstCleanup = await completeTerminalCleanup().then(() => null, (error: Error) => error.message);
+    expect(firstCleanup).toBe(fault === 'none' ? null : 'simulated custody removal failure');
+    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true, now: () => new Date(EXPIRES_AT),
+    });
     await expect(completeTerminalCleanup()).resolves.toBeUndefined();
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toBeNull();

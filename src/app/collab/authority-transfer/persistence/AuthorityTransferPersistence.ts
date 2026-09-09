@@ -80,6 +80,7 @@ import {
   type AuthorityTransferPersistenceStores,
   type AuthorityTransferProjectCatalog,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistenceStores';
+import type { RetainedAuthorityTransferRecord } from '@/app/collab/authority-transfer/persistence/RetainedAuthorityTransferRecord';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
@@ -523,7 +524,17 @@ export class AuthorityTransferPersistence {
         this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
       ]);
       let record = loadedRecord;
-      const document = await this.#removeExpiredEntry(loadedEntry, record);
+      let document = await this.#removeExpiredEntry(loadedEntry, record);
+      if (record && !this.#isForeignPhysical(record)
+        && record.localRole === 'source' && record.status.direction === 'lan-to-cloud'
+        && record.status.state === 'completed' && record.restartFence === 'permanent'
+        && record.status.targetAuthority.generation === decoded.sourceAuthorityGeneration
+        && record.status.targetUrl === decoded.sourceCloudUrl
+        && custody !== null && commitment !== null) {
+        await this.#retainCompleted(record, custody);
+        record = null;
+        document = await this.stores.authorityTransferEntries.load(decoded.projectId);
+      }
       if (
         record
         && !this.#isForeignPhysical(record)
@@ -919,6 +930,28 @@ export class AuthorityTransferPersistence {
     });
   }
 
+  settleSupersededRequester(
+    entry: AuthorityTransferRequesterEntryRecord,
+    request: AuthorityTransferRequesterEntryRecord['request'],
+    admittedAuthorityGeneration: number,
+  ): Promise<void> {
+    return this.runProject(entry.projectId, async () => {
+      const decoded = decodeAuthorityTransferEntryComponent(entry);
+      const document = await this.stores.authorityTransferEntries.load(entry.projectId);
+      if (decoded.entryRole !== 'requester'
+        || !this.#isRecoveryOwner(decoded.requesterInstallationKey)
+        || request.projectId !== decoded.projectId
+        || request.expectedAuthorityGeneration !== admittedAuthorityGeneration
+        || !Number.isSafeInteger(admittedAuthorityGeneration)
+        || admittedAuthorityGeneration <= decoded.request.expectedAuthorityGeneration + 1
+        || request.idempotencyKey === decoded.request.idempotencyKey
+        || !sameValue(document?.requesters[decoded.requesterInstallationKey], decoded)
+        || !await this.stores.authorityTransferEntries.removeRequester(decoded)) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-requester-succession-invalid');
+      }
+    });
+  }
+
   settleRequesterCancellation(
     entry: AuthorityTransferRequesterEntryRecord,
     status: CollabAuthorityTransferStatus,
@@ -1049,18 +1082,21 @@ export class AuthorityTransferPersistence {
           && physical.status.direction === 'cloud-to-lan'
           && physical.status.state === 'completed'
           && physical.status.targetAuthority.generation === decoded.request.expectedAuthorityGeneration
-          && physical.terminalCleanupCompleted
           && physical.restartFence === 'open'
         ) {
           const [custody, commitment] = await Promise.all([
             this.stores.authorityTransferClaims.load(decoded.projectId),
             this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
           ]);
-          if (
-            custody
-            || commitment
-            || (document?.manager && this.#isRecoveryOwner(document.manager.ownerInstallationKey))
-          ) {
+          if (document?.manager && this.#isRecoveryOwner(document.manager.ownerInstallationKey)) {
+            throw transferError('durable-progress-recovery-required', 'authority-transfer-terminal-cleanup-incomplete');
+          }
+          if (custody && commitment) {
+            await this.#retainCompleted(physical, custody);
+            await this.stores.authorityTransferEntries.saveSource(decoded);
+            return decoded;
+          }
+          if (custody || commitment || !physical.terminalCleanupCompleted) {
             throw transferError('durable-progress-recovery-required', 'authority-transfer-terminal-cleanup-incomplete');
           }
           const target = document?.target;
@@ -1575,9 +1611,10 @@ export class AuthorityTransferPersistence {
     // the terminal fence before removing claim files so a crash can only
     // leave recoverable residual custody, never an uncommitted terminal.
     return this.runProject(input.projectId, async () => {
+      const retained = await this.stores.authorityTransferRecords.loadRetained(input.projectId, input.transferId);
       const [entry, record] = await Promise.all([
-        this.stores.authorityTransferEntries.load(input.projectId),
-        this.stores.authorityTransferRecords.load(input.projectId),
+        retained ? Promise.resolve(null) : this.stores.authorityTransferEntries.load(input.projectId),
+        this.stores.authorityTransferRecords.load(input.projectId, input.transferId),
       ]);
       if (
         !record
@@ -1615,17 +1652,26 @@ export class AuthorityTransferPersistence {
         );
       }
       const [custody, commitment] = await Promise.all([
-        this.stores.authorityTransferClaims.load(input.projectId),
-        this.stores.authorityTransferClaimCommitments.load(input.projectId),
+        this.stores.authorityTransferClaims.load(input.projectId, input.transferId),
+        this.stores.authorityTransferClaimCommitments.load(input.projectId, input.transferId),
       ]);
       await this.#assertTerminalCleanupClaimOwner(record, custody, commitment);
+      if (retained) {
+        await this.stores.authorityTransferRecords.saveRetained({
+          ...retained,
+          record: record.terminalCleanupCompleted ? record : markAuthorityTransferTerminalCleanupCompleted(record),
+          custody: null,
+          commitment: null,
+        });
+        return;
+      }
       if (!record.terminalCleanupCompleted) {
         await this.stores.authorityTransferRecords.save(
           markAuthorityTransferTerminalCleanupCompleted(record),
         );
       }
-      await this.stores.authorityTransferClaims.remove(input.projectId);
-      await this.stores.authorityTransferClaimCommitments.remove(input.projectId);
+      await this.stores.authorityTransferClaims.remove(input.projectId, input.transferId);
+      await this.stores.authorityTransferClaimCommitments.remove(input.projectId, input.transferId);
       for (const requester of Object.values(entry?.requesters ?? {})) {
         if (!this.#requesterMatchesPhysical(requester, record)) continue;
         if (!await this.stores.authorityTransferEntries.removeRequester(requester)) {
@@ -1659,8 +1705,17 @@ export class AuthorityTransferPersistence {
     });
   }
 
-  load(projectId: CollabProjectId): Promise<AuthorityTransferRecord | null> {
+  load(projectId: CollabProjectId, transferId?: string): Promise<AuthorityTransferRecord | null> {
     return this.runProject(projectId, async () => {
+      if (transferId !== undefined) {
+        const retained = await this.stores.authorityTransferRecords.loadRetained(projectId, transferId);
+        if (retained) {
+          if (retained.custody) await this.#assertClaimBatchOwner(retained.custody, retained.record);
+          return retained.record;
+        }
+        const current = await this.stores.authorityTransferRecords.load(projectId);
+        if (!current || current.transferId !== transferId) return null;
+      }
       const [loadedEntry, record, custody, commitment] = await Promise.all([
         this.stores.authorityTransferEntries.load(projectId),
         this.stores.authorityTransferRecords.load(projectId),
@@ -1707,7 +1762,7 @@ export class AuthorityTransferPersistence {
     verifier: CollabAuthorityTransferReceiptVerifier,
   ): Promise<AuthorityTransferRecord> {
     return this.runProject(projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(projectId);
+      const record = await this.stores.authorityTransferRecords.load(projectId, transferId);
       if (!record || record.transferId !== transferId) {
         throw transferError(
           'authority-transfer-not-found',
@@ -1946,7 +2001,7 @@ export class AuthorityTransferPersistence {
     }
     return this.runProject(receipt.projectId, async () => {
       const current = await this.#requireClaimCustody(receipt.projectId, receipt.transferId);
-      const record = await this.stores.authorityTransferRecords.load(receipt.projectId);
+      const record = await this.stores.authorityTransferRecords.load(receipt.projectId, receipt.transferId);
       if (!record || record.transferId !== receipt.transferId) {
         throw transferError('authority-transfer-stale', 'authority-transfer-custody-owner-stale');
       }
@@ -1987,7 +2042,7 @@ export class AuthorityTransferPersistence {
   ): Promise<CollabTransferredMembershipClaim> {
     return this.runProject(projectId, async () => {
       const current = await this.#requireClaimCustody(projectId, transferId);
-      const record = await this.stores.authorityTransferRecords.load(projectId);
+      const record = await this.stores.authorityTransferRecords.load(projectId, transferId);
       await this.#assertClaimBatchOwner(current, record ?? undefined);
       if (
         !record
@@ -2031,7 +2086,7 @@ export class AuthorityTransferPersistence {
     transferId: string,
   ): Promise<CollabTransferredMembershipClaimBatch | null> {
     return this.runProject(projectId, async () => {
-      const current = await this.stores.authorityTransferClaims.load(projectId);
+      const current = await this.stores.authorityTransferClaims.load(projectId, transferId);
       if (!current) return null;
       if (current.transferId !== transferId) {
         throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
@@ -2071,7 +2126,7 @@ export class AuthorityTransferPersistence {
     transferId: string,
   ): Promise<boolean> {
     return this.runProject(projectId, async () => {
-      const current = await this.stores.authorityTransferClaims.load(projectId);
+      const current = await this.stores.authorityTransferClaims.load(projectId, transferId);
       if (!current) return false;
       if (current.transferId !== transferId) {
         throw transferError('authority-transfer-stale', 'authority-transfer-claim-owner-stale');
@@ -2253,7 +2308,7 @@ export class AuthorityTransferPersistence {
   ): Promise<void> {
     return this.runProject(projectId, async () => {
       const current = await this.#requireClaimCustody(projectId, transferId);
-      const record = await this.stores.authorityTransferRecords.load(projectId);
+      const record = await this.stores.authorityTransferRecords.load(projectId, transferId);
       await this.#assertClaimBatchOwner(current, record ?? undefined);
       if (!record || !claimCustodyMatchesStatus(current, record.status)) {
         throw transferError(
@@ -2364,8 +2419,8 @@ export class AuthorityTransferPersistence {
   ): Promise<void> {
     const hasClaimState = await this.runProject(projectId, async () => {
       const [record, custody] = await Promise.all([
-        this.stores.authorityTransferRecords.load(projectId),
-        this.stores.authorityTransferClaims.load(projectId),
+        this.stores.authorityTransferRecords.load(projectId, transferId),
+        this.stores.authorityTransferClaims.load(projectId, transferId),
       ]);
       if (!record || record.transferId !== transferId) {
         throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
@@ -2381,8 +2436,8 @@ export class AuthorityTransferPersistence {
       }
       if (record.terminalResponder?.state === 'expired') {
         const [custody, commitment] = await Promise.all([
-          this.stores.authorityTransferClaims.load(projectId),
-          this.stores.authorityTransferClaimCommitments.load(projectId),
+          this.stores.authorityTransferClaims.load(projectId, transferId),
+          this.stores.authorityTransferClaimCommitments.load(projectId, transferId),
         ]);
         return custody !== null || commitment !== null;
       }
@@ -2398,7 +2453,7 @@ export class AuthorityTransferPersistence {
     });
     if (hasClaimState) await this.expireClaims(projectId, transferId);
     await this.runProject(projectId, async () => {
-      const record = await this.stores.authorityTransferRecords.load(projectId);
+      const record = await this.stores.authorityTransferRecords.load(projectId, transferId);
       if (!record || record.transferId !== transferId) {
         throw transferError('authority-transfer-not-found', 'authority-transfer-record-missing');
       }
@@ -2426,7 +2481,71 @@ export class AuthorityTransferPersistence {
       queue = new SerialTaskQueue();
       this.#projectQueues.set(projectId, queue);
     }
-    return queue.run(operation);
+    return queue.run(async () => {
+      for (const retained of await this.stores.authorityTransferRecords.listRetained(projectId)) {
+        if (!this.#isForeignPhysical(retained.record)) await this.#detachRetained(retained);
+      }
+      return operation();
+    });
+  }
+
+  listRetained(projectId: CollabProjectId): Promise<readonly AuthorityTransferRecord[]> {
+    return this.runProject(projectId, async () => (
+      await this.stores.authorityTransferRecords.listRetained(projectId)
+    ).filter(retained => !this.#isForeignPhysical(retained.record)).map(retained => retained.record));
+  }
+
+  async #retainCompleted(record: AuthorityTransferRecord, custody: AuthorityTransferClaimCustodyRecord): Promise<void> {
+    await this.#assertClaimBatchOwner(custody, record);
+    if (!claimCustodyMatchesStatus(custody, record.status)) {
+      throw transferError('durable-progress-recovery-required', 'authority-transfer-claim-custody-incomplete');
+    }
+    let entry = await this.stores.authorityTransferEntries.load(record.projectId);
+    if (entry?.source) await this.#reconcileEntrySuccessor(entry.source, record);
+    if (entry?.target) await this.#reconcileTargetEntrySuccessor(entry.target, record);
+    entry = await this.stores.authorityTransferEntries.load(record.projectId);
+    const retained: RetainedAuthorityTransferRecord = {
+      schemaVersion: 1, record, custody,
+      commitment: await this.stores.authorityTransferClaimCommitments.load(record.projectId),
+      source: entry?.source ?? null,
+      target: entry?.target ?? null,
+    };
+    await this.stores.authorityTransferRecords.saveRetained(retained);
+    await this.#detachRetained(retained);
+  }
+
+  async #detachRetained(retained: RetainedAuthorityTransferRecord): Promise<void> {
+    const { record } = retained;
+    const projectId = record.projectId;
+    const current = await this.stores.authorityTransferRecords.load(projectId);
+    if (!current || current.transferId !== record.transferId) return;
+    if (!sameValue(current, record)) {
+      throw transferError('durable-progress-recovery-required', 'authority-transfer-retained-record-conflict');
+    }
+    const custody = await this.stores.authorityTransferClaims.load(projectId);
+    const commitment = await this.stores.authorityTransferClaimCommitments.load(projectId);
+    if ((custody && !sameValue(custody, retained.custody))
+      || (commitment && !sameValue(commitment, retained.commitment))) {
+      throw transferError('durable-progress-recovery-required', 'authority-transfer-retained-custody-conflict');
+    }
+    const entry = await this.stores.authorityTransferEntries.load(projectId);
+    if (entry?.source && retained.source) {
+      if (!sameValue(entry.source, retained.source)
+        || !await this.stores.authorityTransferEntries.removeSource(retained.source)) {
+        throw transferError('durable-progress-recovery-required', 'authority-transfer-retained-source-conflict');
+      }
+    }
+    if (entry?.target && retained.target) {
+      if (!sameValue(entry.target, retained.target)
+        || !await this.stores.authorityTransferEntries.removeTarget(retained.target)) {
+        throw transferError('durable-progress-recovery-required', 'authority-transfer-retained-target-conflict');
+      }
+    }
+    await this.stores.authorityTransferClaims.remove(projectId);
+    await this.stores.authorityTransferClaimCommitments.remove(projectId);
+    if (!await this.stores.authorityTransferRecords.removeExact(record)) {
+      throw transferError('durable-progress-recovery-required', 'authority-transfer-retained-record-conflict');
+    }
   }
 
   async #removeExpiredEntry(
@@ -2693,7 +2812,7 @@ export class AuthorityTransferPersistence {
     requireCommitment = true,
   ): Promise<void> {
     const record = knownRecord
-      ?? await this.stores.authorityTransferRecords.load(custody.projectId);
+      ?? await this.stores.authorityTransferRecords.load(custody.projectId, custody.transferId);
     const checkpointMatches = record?.status.checkpointSha256 === null
       || record?.status.checkpointSha256 === custody.checkpointSha256;
     const expectedOperationIntentId = record?.localRole === 'target'
@@ -2715,7 +2834,7 @@ export class AuthorityTransferPersistence {
     }
     if (!requireCommitment) return;
     const commitment = await this.stores.authorityTransferClaimCommitments.load(
-      custody.projectId,
+      custody.projectId, custody.transferId,
     );
     const expected = createAuthorityTransferClaimBatchCommitmentRecord(custody);
     if (!commitment || !sameValue(commitment, expected)) {
@@ -2771,7 +2890,7 @@ export class AuthorityTransferPersistence {
   ): Promise<void> {
     const expected = createAuthorityTransferClaimBatchCommitmentRecord(custody);
     const existing = await this.stores.authorityTransferClaimCommitments.load(
-      custody.projectId,
+      custody.projectId, custody.transferId,
     );
     if (sameValue(existing, expected)) return;
     if (existing && !this.#isRotationPredecessorCommitment(existing, custody)) {
@@ -2829,7 +2948,7 @@ export class AuthorityTransferPersistence {
     projectId: CollabProjectId,
     transferId: string,
   ): Promise<AuthorityTransferClaimCustodyRecord> {
-    const current = await this.stores.authorityTransferClaims.load(projectId);
+    const current = await this.stores.authorityTransferClaims.load(projectId, transferId);
     if (!current || current.transferId !== transferId) {
       throw transferError('authority-transfer-not-found', 'authority-transfer-claim-custody-missing');
     }

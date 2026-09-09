@@ -431,6 +431,7 @@ describe('AuthorityTransferModule', () => {
       persistence,
     });
     const requester = module.createLanToCloudRequester({
+      authorityGeneration: 1,
       lanClient: { requestWithMember } as unknown as LanAuthorityTransferClient,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: 'member-requester',
@@ -519,6 +520,7 @@ describe('AuthorityTransferModule', () => {
       loadRequesterEntry: async () => requester,
     } as unknown as AuthorityTransferPersistence;
     const coordinator = new LanToCloudRequesterCoordinator({
+      authorityGeneration: 1,
       client: { requestWithMember } as unknown as LanAuthorityTransferClient,
       installationKey: TEST_INSTALLATION_A,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
@@ -3481,6 +3483,7 @@ describe('AuthorityTransferModule', () => {
         managerEntry = recordCloudToLanManagerStatus(entry, status);
         return managerEntry;
       }),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
@@ -3677,6 +3680,7 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       loadRecoveryOwnerRecord: jest.fn(async () => null),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
@@ -3841,6 +3845,7 @@ describe('AuthorityTransferModule', () => {
         loadCloudToLanTargetEntry: jest.fn(async () => null),
         loadRecoveryOwnerRecord: jest.fn(async () => null),
         recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
+        listRetained: jest.fn(async () => []),
         scanProjectCatalog: jest.fn(async () => ({
           invalidEntryCount: 0,
           projectIds: [PROJECT_ID],
@@ -4452,6 +4457,7 @@ describe('AuthorityTransferModule', () => {
         return managerEntry;
       }),
       recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
@@ -4685,6 +4691,7 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanTargetEntry: jest.fn(async () => handedOff),
       loadRecoveryOwnerRecord: jest.fn(async () => record),
       recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
@@ -4754,6 +4761,7 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanManagerEntry: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => published),
       loadRecoveryOwnerRecord: jest.fn(async () => null),
+      listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
         projectIds: [PROJECT_ID],
