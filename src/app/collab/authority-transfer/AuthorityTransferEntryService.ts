@@ -22,10 +22,6 @@ import {
   type LanAuthorityTransferTrustedHost,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import type { CloudMembershipClaimInvitation } from '@/app/collab/project/CloudProjectInvitation';
-import type {
-  CloudAuthorityConnection,
-  CloudAuthorityConnectionInput,
-} from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type {
   CollabBeginCloudToLanTransferRequest,
@@ -41,22 +37,12 @@ import type {
 } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-interface RetainedLanToCloudSource {
-  readonly connection: CloudAuthorityConnection;
-  readonly targetUrl: string;
-  readonly transferId: string;
-}
-
 interface PendingLanToCloudAcceptance {
   readonly promise: Promise<CollabAuthorityTransferStatus>;
   readonly transferId: string;
 }
 
 export interface AuthorityTransferEntryServiceOptions {
-  readonly connectCloud: (
-    input: CloudAuthorityConnectionInput & { readonly allowCredentialCreation: boolean },
-    options?: CollabOperationOptions,
-  ) => Promise<CloudAuthorityConnection>;
   readonly createIdempotencyKey?: () => string;
   readonly createLanClient?: (
     trust: LanAuthorityTransferTrustedHost,
@@ -79,27 +65,16 @@ function throwIfCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
 }
 
-function isTerminal(status: CollabAuthorityTransferStatus): boolean {
-  return status.state === 'cancelled' || status.state === 'completed';
-}
-
 export class AuthorityTransferEntryService {
-  readonly #connectCloud: AuthorityTransferEntryServiceOptions['connectCloud'];
   readonly #createIdempotencyKey: () => string;
   readonly #createLanClient: NonNullable<AuthorityTransferEntryServiceOptions['createLanClient']>;
   readonly #loadMembership: AuthorityTransferEntryServiceOptions['loadMembership'];
   readonly #module: AuthorityTransferModule;
   readonly #sharedAcceptController = new AbortController();
   readonly #pendingAccepts = new Map<CollabProjectId, PendingLanToCloudAcceptance>();
-  readonly #pendingSources = new Map<
-    CollabProjectId,
-    Promise<RetainedLanToCloudSource>
-  >();
-  readonly #retainedSources = new Map<CollabProjectId, RetainedLanToCloudSource>();
   #closed = false;
 
   constructor(options: AuthorityTransferEntryServiceOptions) {
-    this.#connectCloud = options.connectCloud;
     this.#createIdempotencyKey = options.createIdempotencyKey
       ?? (() => `lan-to-cloud-${randomUUID().replaceAll('-', '')}`);
     this.#createLanClient = options.createLanClient
@@ -119,6 +94,7 @@ export class AuthorityTransferEntryService {
     const requester = this.#module.createLanToCloudRequester({
       authorityGeneration: membership.authority.authorityGeneration,
       lanClient: this.#createLanClient({
+        authorityGeneration: membership.authority.authorityGeneration,
         caCertificatePem: membership.authority.hostCaCertificatePem!,
         caFingerprint: membership.authority.hostCaFingerprint!,
         endpoint: membership.authority.endpoint!,
@@ -222,7 +198,6 @@ export class AuthorityTransferEntryService {
       proposal.request.expectedAuthorityGeneration,
     );
     throwIfCancelled(options.signal);
-    const runtime = await this.#requireSourceRuntime(proposal, options);
     const result = await this.#module.acceptLanToCloudTransferTarget({
       expectedAuthorityGeneration: proposal.request.expectedAuthorityGeneration,
       idempotencyKey: authorityTransferChildIdempotencyKey(
@@ -232,13 +207,7 @@ export class AuthorityTransferEntryService {
       projectId: request.projectId,
       targetUrl: proposal.request.targetUrl,
       transferId: proposal.status.transferId,
-    }, {
-      cloudSession: runtime.connection,
-      expectedSourceEndpoint: membership.authority.endpoint!,
-      expectedTargetUrl: proposal.request.targetUrl,
-      projectId: request.projectId,
-    }, options);
-    if (isTerminal(result)) await this.#releaseSource(request.projectId, runtime);
+    }, undefined, options);
     return result;
   }
 
@@ -273,22 +242,54 @@ export class AuthorityTransferEntryService {
       projectId: request.projectId,
       transferId: proposal.status.transferId,
     });
-    if (isTerminal(result)) await this.#releaseSource(request.projectId);
     return result;
   }
 
+  async moveLanToCloud(
+    request: CollabLanToCloudTransferRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabAuthorityTransferStatus> {
+    const membership = await this.#requireLanMembership(request.projectId, true);
+    await this.#module.assertLanToCloudSourceInstallationOwner(
+      request.projectId, membership.authority.authorityGeneration,
+    );
+    const proposed = await this.proposeLanToCloudTransfer(request, options);
+    if (proposed.state === 'cancelled' || proposed.state === 'completed') return proposed;
+    return this.acceptLanToCloudTransfer({
+      projectId: request.projectId, transferId: proposed.transferId,
+    }, options);
+  }
+
+  async moveCloudToLan(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabAuthorityTransferStatus> {
+    throwIfCancelled(options.signal);
+    const current = await this.#module.readCloudToLanTransfer(projectId);
+    let handle = current?.target?.handle;
+    if (!handle) {
+      const descriptor = await this.prepareCloudToLanTarget({ projectId }, options);
+      handle = await this.beginCloudToLanTransfer({ descriptor }, options);
+    }
+    return this.acceptCloudToLanTransfer({ handle }, options);
+  }
+
   prepareCloudToLanTarget(
-    input: CollabPrepareCloudToLanTargetRequest & Readonly<{ readonly operationIntentId: string }>,
+    input: CollabPrepareCloudToLanTargetRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTargetPreparationDescriptor> {
-    return this.#module.prepareCloudToLanTarget(input, options);
+    return this.#module.prepareCloudToLanTarget({
+      ...input, operationIntentId: `cloud-to-lan-target-${randomUUID().replaceAll('-', '')}`,
+    }, options);
   }
 
   beginCloudToLanTransfer(
-    input: CollabBeginCloudToLanTransferRequest & Readonly<{ readonly operationIntentId: string }>,
+    input: CollabBeginCloudToLanTransferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferHandle> {
-    return this.#module.beginCloudToLanTransfer(input, options);
+    return this.#module.beginCloudToLanTransfer({
+      ...input, operationIntentId: `cloud-to-lan-manager-${randomUUID().replaceAll('-', '')}`,
+    }, options);
   }
 
   acceptCloudToLanTransfer(
@@ -334,14 +335,7 @@ export class AuthorityTransferEntryService {
   async close(): Promise<void> {
     this.beginClose();
     await Promise.allSettled([...this.#pendingAccepts.values()].map(({ promise }) => promise));
-    try {
-      await this.#module.close();
-    } finally {
-      await Promise.allSettled(this.#pendingSources.values());
-      const retained = [...this.#retainedSources.values()];
-      this.#retainedSources.clear();
-      for (const runtime of retained) runtime.connection.dispose();
-    }
+    await this.#module.close();
   }
 
   async #requireLanMembership(
@@ -366,68 +360,6 @@ export class AuthorityTransferEntryService {
     const proposal = await this.#module.readLanToCloudSourceProposal(projectId);
     if (!proposal) throw entryError('authority-transfer-source-proposal-missing');
     return proposal;
-  }
-
-  async #requireSourceRuntime(
-    proposal: LanToCloudSourceProposalView,
-    options: CollabOperationOptions,
-  ): Promise<RetainedLanToCloudSource> {
-    if (this.#closed) throw entryError('authority-transfer-entry-service-closed');
-    const retained = this.#retainedSources.get(proposal.request.projectId);
-    if (retained) return this.#validateSourceRuntime(proposal, retained);
-    const pending = this.#pendingSources.get(proposal.request.projectId);
-    if (pending) {
-      return this.#validateSourceRuntime(proposal, await pending);
-    }
-    const creation = this.#createSourceRuntime(proposal, options);
-    this.#pendingSources.set(proposal.request.projectId, creation);
-    try {
-      return await creation;
-    } finally {
-      if (this.#pendingSources.get(proposal.request.projectId) === creation) {
-        this.#pendingSources.delete(proposal.request.projectId);
-      }
-    }
-  }
-
-  async #createSourceRuntime(
-    proposal: LanToCloudSourceProposalView,
-    options: CollabOperationOptions,
-  ): Promise<RetainedLanToCloudSource> {
-    const connection = await this.#connectCloud({
-      allowCredentialCreation: proposal.beginSubmission !== 'possibly-sent',
-      projectId: proposal.request.projectId,
-      serverUrl: proposal.request.targetUrl,
-    }, options);
-    if (
-      this.#closed
-      || connection.projectId !== proposal.request.projectId
-      || connection.serverUrl !== proposal.request.targetUrl
-      || !connection.supports('authority-transfer')
-    ) {
-      connection.dispose();
-      throw entryError(this.#closed
-        ? 'authority-transfer-entry-service-closed'
-        : 'authority-transfer-cloud-capability-unavailable');
-    }
-    const runtime = {
-      connection,
-      targetUrl: proposal.request.targetUrl,
-      transferId: proposal.status.transferId,
-    };
-    this.#retainedSources.set(proposal.request.projectId, runtime);
-    return runtime;
-  }
-
-  #validateSourceRuntime(
-    proposal: LanToCloudSourceProposalView,
-    runtime: RetainedLanToCloudSource,
-  ): RetainedLanToCloudSource {
-    if (
-      runtime.targetUrl !== proposal.request.targetUrl
-      || runtime.transferId !== proposal.status.transferId
-    ) throw entryError('authority-transfer-source-runtime-stale');
-    return runtime;
   }
 
   #waitForAcceptance(
@@ -460,13 +392,4 @@ export class AuthorityTransferEntryService {
     );
   }
 
-  async #releaseSource(
-    projectId: CollabProjectId,
-    expected?: RetainedLanToCloudSource,
-  ): Promise<void> {
-    const retained = this.#retainedSources.get(projectId);
-    if (!retained || (expected && retained !== expected)) return;
-    this.#retainedSources.delete(projectId);
-    retained.connection.dispose();
-  }
 }

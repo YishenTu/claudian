@@ -318,7 +318,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       status: completed('cloud-to-lan'),
     };
 
-    await convergence.cloudToLanHost(input);
+    const convergeHost = (candidate: typeof input) => convergence.cloudToLanHost({
+      ...candidate,
+      withEndpoint: operation => operation(candidate.endpoint),
+    });
+    await convergeHost(input);
 
     expect(membership).toMatchObject({
       authority: {
@@ -336,16 +340,29 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...membership,
       hostOwnership: { autoStart: false, ownsAuthority: true },
     } as CollabLocalMembershipRecord;
-    await expect(convergence.cloudToLanHost(input)).resolves.toBeUndefined();
+    await expect(convergeHost(input)).resolves.toBeUndefined();
     expect(membership).toMatchObject({
       hostOwnership: { autoStart: false, ownsAuthority: true },
+    });
+
+    const relocated = { ...input, endpoint: 'https://192.168.2.20:54546' };
+    await expect(convergeHost(relocated)).resolves.toBeUndefined();
+    expect(membership).toMatchObject({
+      authority: {
+        authorityGeneration: 2,
+        endpoint: 'https://192.168.2.20:54546',
+        gitRemoteUrl: `https://192.168.2.20:54546/v1/git/${PROJECT_ID}/repository.git`,
+        hostCaFingerprint: 'e'.repeat(64),
+      },
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+      member: { credential: memberCredential, id: 'member-host' },
     });
 
     membership = {
       ...membership,
       hostOwnership: { ownsAuthority: true },
     } as CollabLocalMembershipRecord;
-    await expect(convergence.cloudToLanHost(input)).rejects.toMatchObject({
+    await expect(convergeHost(relocated)).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
     });
   });
@@ -453,7 +470,11 @@ describe('AuthorityTransferLocalConvergence', () => {
     });
     membership = {
       ...membership,
-      authority: { ...membership.authority, authorityGeneration: 2 },
+      authority: {
+        ...membership.authority, authorityGeneration: 2,
+        endpoint: 'https://192.168.2.20:54546',
+        gitRemoteUrl: `https://192.168.2.20:54546/v1/git/${PROJECT_ID}/repository.git`,
+      },
     } as CollabLocalMembershipRecord;
     await convergence.recoverConvertedClaimant(claimant);
 

@@ -76,6 +76,7 @@ import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-authority-transfer-module';
 const TRANSFER_ID = 'transfer-authority-transfer-module';
@@ -723,7 +724,6 @@ describe('AuthorityTransferModule', () => {
         activateTerminal: jest.fn(),
         capture,
         commitRelinquishmentFence: jest.fn(),
-        releaseSourceEndpoint: jest.fn(async () => undefined),
         reopenAfterCancellation,
         sourceEndpoint: jest.fn(async () => 'https://192.168.1.10:54545'),
       };
@@ -736,6 +736,7 @@ describe('AuthorityTransferModule', () => {
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem;
       const module = new AuthorityTransferModule({
+        createLanToCloudConnection: async () => connection as never,
         assertLanToCloudSourceOwner: () => undefined,
         assertRecoveryOwner: () => undefined,
         claimantStore: {
@@ -759,7 +760,6 @@ describe('AuthorityTransferModule', () => {
         supports: () => true,
       };
       const service = new AuthorityTransferEntryService({
-        connectCloud: async () => connection as never,
         createLanClient: () => ({}) as never,
         loadMembership: async () => ({
           ...managerClaimantMembership(),
@@ -772,6 +772,21 @@ describe('AuthorityTransferModule', () => {
       await expect(service.acceptLanToCloudTransfer(selection)).rejects.toThrow(
         'failure immediately after durable handoff',
       );
+      const laterOperation = createAuthorityTransferRecord({
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: 'intent-later-source-generation',
+        stagingDirectoryName: '.claudian-authority-transfer-transfer-later-generation',
+        status: proposal({
+          sourceAuthority: { generation: 3, kind: 'lan' },
+          targetAuthority: { generation: 4, kind: 'cloud' },
+          transferId: 'transfer-later-generation',
+        }),
+      });
+      await expect(module.runtimes.prepare(laterOperation)).rejects.toMatchObject({
+        safeContext: { reason: 'authority-transfer-runtime-owner-mismatch' },
+      });
       await expect(service.readLanToCloudTransfer(PROJECT_ID)).resolves.toMatchObject({
         serverUrl: request.targetUrl,
         status: { phase: 'collecting-readiness', transferId: TRANSFER_ID },
@@ -1085,7 +1100,6 @@ describe('AuthorityTransferModule', () => {
       transferId: proposed.transferId,
     }, {
       cloudSession,
-      expectedSourceEndpoint: 'https://192.168.1.10:54545',
       expectedTargetUrl: 'https://cloud.example.test/',
       projectId: PROJECT_ID,
     })).rejects.toBeDefined();
@@ -1113,7 +1127,7 @@ describe('AuthorityTransferModule', () => {
     let routeSignal: AbortSignal | undefined;
     const capture = jest.fn();
     const module = new AuthorityTransferModule({
-      activateLanToCloudSourceRoute: async (_projectId, _endpoint, options) => {
+      activateLanToCloudSourceRoute: async (_projectId, options) => {
         routeSignal = options.signal;
         enteredRoute();
         await routeGate;
@@ -1160,7 +1174,6 @@ describe('AuthorityTransferModule', () => {
       transferId: TRANSFER_ID,
     }, {
       cloudSession,
-      expectedSourceEndpoint: 'https://192.168.1.10:54545',
       expectedTargetUrl: request.targetUrl,
       projectId: PROJECT_ID,
     }, { signal: controller.signal });
@@ -1249,61 +1262,6 @@ describe('AuthorityTransferModule', () => {
     expect(closeSettled).toBe(false);
     releaseSecond();
     await expect(closing).rejects.toBe(firstFailure);
-  });
-
-  it('prepares a product-owned Cloud-to-LAN target without exposing raw effects', async () => {
-    const dispose = jest.fn()
-      .mockRejectedValueOnce(new Error('simulated target cleanup failure'))
-      .mockResolvedValue(undefined);
-    const prepareTarget = jest.fn(async () => ({
-      targetUrl: 'https://192.168.1.20:54545',
-    }));
-    const lifecycle = {
-      registerDurableOwner: jest.fn(),
-      registerRecoveryStage: jest.fn(),
-    } as unknown as CollabProjectLifecycleSubsystem;
-    const module = new AuthorityTransferModule({
-      assertLanToCloudSourceOwner: () => undefined,
-      assertRecoveryOwner: () => undefined,
-      installationKey: TEST_INSTALLATION_A,
-      claimantStore: {
-        listProjectIds: () => Promise.resolve([]),
-        load: () => Promise.resolve(null),
-        remove: () => Promise.resolve(false),
-        save: () => Promise.resolve(),
-      },
-      convergence: {} as never,
-      createCloudToLanTarget: () => ({
-        acceptanceRequest: jest.fn(),
-        activate: jest.fn(),
-        cancelStaging: jest.fn(),
-        invalidateStaging: jest.fn(),
-        dispose,
-        prepareTarget,
-        stage: jest.fn(),
-      }),
-      createLanToCloudSource: jest.fn() as never,
-      lifecycle,
-      persistence: {} as AuthorityTransferPersistence,
-    });
-    const cloudSession = { principalId: 'vault-' + 'a'.repeat(64),
-      projectId: PROJECT_ID,
-      supports: (capability: CollabCloudCapability) => (
-        capability === 'authority-transfer' || capability === 'project-snapshot'
-      ),
-    } as unknown as CloudAuthorityConnection;
-
-    const binding = await module.bindCloudToLanTarget({
-      cloudSession,
-      expectedTargetUrl: 'https://192.168.1.20:54545',
-      projectId: PROJECT_ID,
-    });
-
-    expect(binding.targetUrl).toBe('https://192.168.1.20:54545');
-    expect(prepareTarget).toHaveBeenCalledWith('https://192.168.1.20:54545');
-    await expect(binding.dispose()).rejects.toThrow('simulated target cleanup failure');
-    await expect(binding.dispose()).resolves.toBeUndefined();
-    expect(dispose).toHaveBeenCalledTimes(2);
   });
 
   it('rejects Cloud-to-LAN preparation before durable or listener effects when the fresh session lacks authority-transfer', async () => {
@@ -1827,13 +1785,9 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       transferId: TRANSFER_ID,
     })).resolves.toMatchObject({ state: 'cancelled' });
-
-    expect(() => module.runtimes.register(PROJECT_ID, 'source', {
-      resume: jest.fn(async () => undefined),
-    })).not.toThrow();
   });
 
-  it('releases the Cloud session and preserves the durable outcome when preparation cleanup fails', async () => {
+  it.each([false, true])('releases the Cloud session and preserves the durable outcome when preparation cleanup fails (safe cause: %s)', async safeFailure => {
     const connection = {
       authorityGeneration: 1,
       dispose: jest.fn(),
@@ -1879,11 +1833,17 @@ describe('AuthorityTransferModule', () => {
         cancelStaging: jest.fn(),
         invalidateStaging: jest.fn(),
         dispose: disposeTarget,
-        prepareTarget: jest.fn(async () => ({
-          caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
-          caFingerprint: 'c'.repeat(64),
-          targetUrl: 'https://192.168.1.20:54545',
-        })),
+        prepareTarget: jest.fn(async () => {
+          if (safeFailure) throw new CollabError({
+            code: 'endpoint-unreachable',
+            safeContext: { reason: 'private-ipv4-unavailable' },
+          });
+          return {
+            caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+            caFingerprint: 'c'.repeat(64),
+            targetUrl: 'https://192.168.1.20:54545',
+          };
+        }),
         stage: jest.fn(),
       }),
       createLanToCloudSource: jest.fn() as never,
@@ -1903,6 +1863,11 @@ describe('AuthorityTransferModule', () => {
     })).rejects.toMatchObject({
       result: {
         durableProgress: true,
+        ...(safeFailure ? { error: {
+          code: 'endpoint-unreachable',
+          safeContext: { reason: 'private-ipv4-unavailable' },
+          recoveryActions: ['resume', 'open-diagnostics'],
+        } } : {}),
         operationId: 'intent-failed-target-preparation',
         status: 'recovery-required',
       },
@@ -2339,7 +2304,7 @@ describe('AuthorityTransferModule', () => {
       createCloudToLanClaimantClient: () => ({ claimTransferredMembership }),
       createCloudToLanConnection: async () => connection as never,
       createCloudToLanTarget: jest.fn() as never,
-      createLanTargetSnapshotReader: () => ({ readSnapshot: readTargetSnapshot }) as never,
+      createLanTargetSnapshotReader: (_projectId, targetHost) => ({ currentEndpoint: targetHost.endpoint, readSnapshot: readTargetSnapshot }) as never,
       createLanToCloudSource: jest.fn() as never,
       installationKey: TEST_INSTALLATION_A,
       lifecycle,
@@ -2587,7 +2552,7 @@ describe('AuthorityTransferModule', () => {
       },
       convergence: { cloudToLanMember } as never,
       createCloudToLanConnection,
-      createLanTargetSnapshotReader: () => ({ readSnapshot }) as never,
+      createLanTargetSnapshotReader: (_projectId, targetHost) => ({ currentEndpoint: targetHost.endpoint, readSnapshot }) as never,
       createLanToCloudSource: jest.fn() as never,
       installationKey: TEST_INSTALLATION_A,
       lifecycle,
@@ -3571,7 +3536,7 @@ describe('AuthorityTransferModule', () => {
         }
         return connection as never;
       },
-      createLanTargetSnapshotReader: () => ({
+      createLanTargetSnapshotReader: (_projectId, targetHost) => ({ currentEndpoint: targetHost.endpoint,
         readSnapshot: async () => ({
           currentMember: {
             displayName: 'Manager',
@@ -4887,7 +4852,6 @@ describe('AuthorityTransferModule', () => {
     await module.runtimes.prepare(record);
 
     expect(recoverCloudSession).toHaveBeenCalledWith(record, {});
-    expect(sourceEndpoint).toHaveBeenCalledWith(record);
     expect(module.sourceActiveService({
       authorityGeneration: 1,
       authenticateMemberCredential: async () => ({ memberId: 'member-host' }),
@@ -5074,7 +5038,7 @@ describe('AuthorityTransferModule', () => {
           cloudToLanMember: jest.fn(async () => undefined),
           lanToCloudMember: jest.fn(async () => undefined),
         } as never,
-        createLanTargetSnapshotReader: () => ({
+        createLanTargetSnapshotReader: (_projectId, targetHost) => ({ currentEndpoint: targetHost.endpoint,
           readSnapshot: jest.fn(async () => ({
             currentMember: { id: 'member-host' },
             eventSequence: 1,
@@ -5813,7 +5777,7 @@ describe('AuthorityTransferModule', () => {
         save: async current => { record = current; },
       },
       convergence: { cloudToLanMember } as never,
-      createLanTargetSnapshotReader: () => ({ readSnapshot }),
+      createLanTargetSnapshotReader: (_projectId, targetHost) => ({ currentEndpoint: targetHost.endpoint, readSnapshot }),
       createLanToCloudSource: jest.fn() as never,
       lifecycle: {
         registerDurableOwner: jest.fn(),

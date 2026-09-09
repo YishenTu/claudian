@@ -285,7 +285,20 @@ describe('CollabGitOriginPolicy', () => {
     );
   });
 
-  it('rejects same-kind and cross-Project authority-transfer origins', async () => {
+  it('finishes Cloud-to-LAN convergence when origin changed before membership and the target moved again', async () => {
+    const repository = git([oldUrl]);
+    await expect(rotateAuthorityTransferOrigin(repository, {
+      newRemoteUrl: newUrl,
+      newServerUrl: null,
+      oldRemoteUrl: 'https://cloud.example.test/v6/projects/project-a/repository.git',
+      oldServerUrl: 'https://cloud.example.test',
+      projectId,
+      repositoryPath: '/vault/workspace/project-a',
+    })).resolves.toBeUndefined();
+    expect(repository.addRemote).toHaveBeenCalledWith('/vault/workspace/project-a', 'origin', newUrl);
+  });
+
+  it('recovers an authenticated LAN target location and rejects a different Project', async () => {
     const repository = git([oldUrl]);
 
     await expect(rotateAuthorityTransferOrigin(repository, {
@@ -295,7 +308,8 @@ describe('CollabGitOriginPolicy', () => {
       oldServerUrl: null,
       projectId,
       repositoryPath: '/vault/workspace/project-a',
-    })).rejects.toMatchObject({ code: 'repository-invalid' });
+    })).resolves.toBeUndefined();
+    expect(repository.addRemote).toHaveBeenCalledWith('/vault/workspace/project-a', 'origin', newUrl);
     await expect(rotateAuthorityTransferOrigin(repository, {
       newRemoteUrl: 'https://cloud.example.test/v6/projects/project-b/repository.git',
       newServerUrl: 'https://cloud.example.test',
@@ -304,6 +318,5 @@ describe('CollabGitOriginPolicy', () => {
       projectId,
       repositoryPath: '/vault/workspace/project-a',
     })).rejects.toMatchObject({ code: 'repository-invalid' });
-    expect(repository.listRemoteUrls).not.toHaveBeenCalled();
   });
 });

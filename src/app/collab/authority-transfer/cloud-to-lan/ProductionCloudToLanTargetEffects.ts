@@ -590,23 +590,19 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (this.#preparation === preparation) this.#preparation = null;
   }
 
-  async prepareTarget(expectedEndpoint?: string): Promise<Readonly<{
+  async prepareTarget(acceptedTargetUrl?: string): Promise<Readonly<{
     readonly caCertificatePem: string;
     readonly caFingerprint: string;
     readonly targetUrl: string;
   }>> {
     if (!this.#preparation) {
       this.#preparation = await this.options.foundation.lanHost.prepareAuthorityTransferTarget(
-        expectedEndpoint ?? null,
       );
-    }
-    if (expectedEndpoint && this.#preparation.endpoint !== expectedEndpoint) {
-      throw targetError('authority-transfer-target-url-mismatch');
     }
     return {
       caCertificatePem: this.#preparation.caCertificatePem,
       caFingerprint: this.#preparation.caFingerprint,
-      targetUrl: this.#preparation.endpoint,
+      targetUrl: acceptedTargetUrl ?? this.#preparation.endpoint,
     };
   }
 
@@ -1064,7 +1060,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const service = this.#activeService(record);
     const next: LanAuthorityTransferRouteRegistration = {
       authorityGeneration: record.status.targetAuthority.generation,
-      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service,
       state: 'target-active',
@@ -1225,14 +1220,15 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const credentialHash = membership && isCollabLocalLanMembership(membership)
       ? createHash('sha256').update(membership.member.credential, 'utf8').digest()
       : null;
-    const targetEndpoint = new URL(record.status.targetUrl).origin;
+    const targetEndpoint = membership && isCollabLocalLanMembership(membership)
+      ? membership.authority.endpoint : null;
     if (
       !membership
       || !isCollabLocalLanMembership(membership)
       || membership.project.id !== record.projectId
       || membership.authority.authorityGeneration
         !== record.status.targetAuthority.generation
-      || membership.authority.endpoint !== targetEndpoint
+      || targetEndpoint === null
       || membership.authority.gitRemoteUrl
         !== `${targetEndpoint}/v1/git/${record.projectId}/repository.git`
       || membership.authority.hostCaCertificatePem !== signer.caCertificatePem
@@ -1289,7 +1285,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     if (this.#activeRegistration) return;
     const registration: LanAuthorityTransferRouteRegistration = {
       authorityGeneration: record.status.targetAuthority.generation,
-      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service: this.#activeService(record),
       state: 'target-active',
@@ -1618,7 +1613,6 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const registration: LanAuthorityTransferRouteRegistration = {
       authorityGeneration: record.status.targetAuthority.generation,
       credentialHash: sha256(Buffer.from(state.transferCredential, 'base64url')),
-      expectedEndpoint: record.status.targetUrl,
       projectId: record.projectId,
       service,
       state: 'target-only-staged',
@@ -1794,19 +1788,23 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     authority: CollabAuthorityFoundation,
   ): Promise<void> {
     if (!state.importedIdentity) throw targetError('authority-transfer-target-stage-incomplete');
-    const preparation = this.#preparation;
-    this.#preparation = null;
-    await preparation?.dispose();
-    await this.options.convergence.cloudToLanHost({
-      endpoint: record.status.targetUrl,
-      hostCaCertificatePem: targetProof.caCertificatePem,
-      hostCaFingerprint: targetProof.caFingerprint,
-      memberCredential: state.hostCredential,
-      identity: state.importedIdentity,
-      status: record.status,
-    });
-    await this.#assertCompletedTargetMembership(record, authority, state, targetProof);
-    await this.#startConfiguredHost(record);
+    await this.prepareTarget(record.status.targetUrl);
+    const preparation = this.#preparation!;
+    try {
+      await this.options.convergence.cloudToLanHost({
+        withEndpoint: operation => preparation.withEndpoint(operation),
+        hostCaCertificatePem: targetProof.caCertificatePem,
+        hostCaFingerprint: targetProof.caFingerprint,
+        memberCredential: state.hostCredential,
+        identity: state.importedIdentity,
+        status: record.status,
+      });
+      await this.#assertCompletedTargetMembership(record, authority, state, targetProof);
+      await this.#startConfiguredHost(record);
+    } finally {
+      await preparation.dispose();
+      if (this.#preparation === preparation) this.#preparation = null;
+    }
   }
 
    async #startConfiguredHost(record: AuthorityTransferRecord): Promise<void> {
@@ -1825,7 +1823,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     }
     if (this.options.foundation.lanHost.isProjectRunning(projectId)) return;
     await this.options.foundation.lanHost.startProjectAfterCloudToLanTargetRecovery({
-      expectedEndpoint: record.status.targetUrl,
+      acceptedTargetUrl: record.status.targetUrl,
       operationIntentId: record.operationIntentId,
       projectId,
       transferId: record.transferId,

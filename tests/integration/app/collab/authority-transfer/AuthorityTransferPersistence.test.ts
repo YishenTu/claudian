@@ -2613,13 +2613,13 @@ describe('AuthorityTransferPersistence', () => {
     const start = jest.fn(async () => 'running');
 
     await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
-      expectedEndpoint: record.status.targetUrl,
+      acceptedTargetUrl: record.status.targetUrl,
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
       transferId: TRANSFER_ID,
     }, start)).resolves.toBe('running');
     await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
-      expectedEndpoint: record.status.targetUrl,
+      acceptedTargetUrl: record.status.targetUrl,
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
       transferId: 'transfer-stale',
@@ -2628,7 +2628,7 @@ describe('AuthorityTransferPersistence', () => {
       safeContext: { reason: 'authority-transfer-target-recovery-start-stale' },
     });
     await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
-      expectedEndpoint: 'https://192.168.1.30:27001',
+      acceptedTargetUrl: 'https://192.168.1.30:27001',
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
       transferId: TRANSFER_ID,

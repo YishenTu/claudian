@@ -72,7 +72,6 @@ export interface LanToCloudSourceEffects {
     record: AuthorityTransferRecord,
     options?: CollabOperationOptions,
   ): Promise<void>;
-  releaseSourceEndpoint?(record: AuthorityTransferRecord, endpoint: string): Promise<void>;
   sourceEndpoint?(record: AuthorityTransferRecord): Promise<string>;
 }
 
@@ -171,38 +170,8 @@ export class LanToCloudSourceCoordinator {
       stagingDirectoryName: stagingDirectory(entry.status.transferId),
       status: entry.status,
     });
-    try {
-      await this.options.persistence.handoffEntry(entry, owned);
-    } catch (error) {
-      let durable: AuthorityTransferRecord | null = null;
-      let durableReadSucceeded = false;
-      try {
-        durable = await this.options.persistence.load(entry.projectId);
-        if (durable) this.#assertOwnedRecord(durable);
-        durableReadSucceeded = true;
-      } catch {
-        // An ambiguous durable write must retain the runtime endpoint pin.
-      }
-      const proposalProven = durableReadSucceeded && durable === null;
-      if (proposalProven && this.options.source.releaseSourceEndpoint) {
-        await this.options.source.releaseSourceEndpoint(candidate, sourceLanEndpoint)
-          .catch(() => undefined);
-      }
-      throw error;
-    }
+    await this.options.persistence.handoffEntry(entry, owned);
     return this.#resumeRecord(owned, options);
-  }
-
-  async restoreSourceEndpoint(record: AuthorityTransferRecord): Promise<void> {
-    this.#assertOwnedRecord(record);
-    if (record.localRole !== 'source' || !record.sourceLanEndpoint) {
-      throw transferError('lan-to-cloud-source-endpoint-missing');
-    }
-    const restored = await this.options.source.sourceEndpoint?.(record);
-    if (!restored) throw transferError('lan-to-cloud-source-endpoint-missing');
-    if (restored === record.sourceLanEndpoint) return;
-    await this.options.source.releaseSourceEndpoint?.(record, restored).catch(() => undefined);
-    throw transferError('lan-to-cloud-source-endpoint-mismatch');
   }
 
   async resume(

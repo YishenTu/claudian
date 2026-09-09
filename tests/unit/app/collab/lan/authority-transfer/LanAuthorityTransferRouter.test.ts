@@ -127,10 +127,10 @@ describe('LanAuthorityTransferRouter', () => {
     operation: Parameters<typeof collabLanAuthorityTransferOperationPath>[1],
     body: unknown,
     authorization?: string,
-    version = 2,
+    version = 3,
   ): Promise<Response> {
     const path = collabLanAuthorityTransferOperationPath(PROJECT_ID, operation)
-      .replace('/v2/', `/v${version}/`);
+      .replace('/v3/', `/v${version}/`);
     return fetch(`${endpoint}${path}`, {
       body: JSON.stringify(body),
       headers: {
@@ -164,7 +164,7 @@ describe('LanAuthorityTransferRouter', () => {
     );
     expect(proposed.status).toBe(200);
     expect(await responseJson(proposed)).toMatchObject({
-      bindingVersion: 2,
+      bindingVersion: 3,
       data: { projectId: PROJECT_ID, transferId: 'transfer-alpha' },
       protocolVersion: 10,
       requestId: 'request-alpha',
@@ -218,10 +218,10 @@ describe('LanAuthorityTransferRouter', () => {
 
     expect(response.status).toBe(426);
     expect(await responseJson(response)).toMatchObject({
-      bindingVersion: 2,
+      bindingVersion: 3,
       error: {
         code: 'protocol-version-unsupported',
-        safeContext: { receivedVersion: 1, supportedVersion: 2 },
+        safeContext: { receivedVersion: 1, supportedVersion: 3 },
       },
       protocolVersion: 10,
     });
@@ -263,10 +263,10 @@ describe('LanAuthorityTransferRouter', () => {
     expect(result).toMatchObject({
       status: 426,
       body: {
-        bindingVersion: 2,
+        bindingVersion: 3,
         error: {
           code: 'protocol-version-unsupported',
-          safeContext: { receivedVersion: 1, supportedVersion: 2 },
+          safeContext: { receivedVersion: 1, supportedVersion: 3 },
         },
         protocolVersion: 10,
       },

@@ -75,13 +75,17 @@ type LanToCloudMemberProjection = Pick<
   'displayName' | 'id' | 'personalRef' | 'role'
 >;
 
-export interface CloudToLanHostConvergenceInput {
+export interface CloudToLanMemberConvergenceInput {
   readonly endpoint: string;
   readonly hostCaCertificatePem: string;
   readonly hostCaFingerprint: string;
   readonly identity: AuthorityTransferImportedTargetIdentity;
   readonly memberCredential: string;
   readonly status: CollabAuthorityTransferStatus;
+}
+
+export interface CloudToLanHostConvergenceInput extends Omit<CloudToLanMemberConvergenceInput, 'endpoint'> {
+  withEndpoint(operation: (endpoint: string) => Promise<void>): Promise<void>;
 }
 
 function convergenceError(reason: string): CollabError {
@@ -185,13 +189,15 @@ export class AuthorityTransferLocalConvergence {
 
   async cloudToLanHost(input: CloudToLanHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
-    return this.#transitionProject(
-      input.status.projectId,
-      () => this.#cloudToLan(input, true),
-    );
+    return this.options.activity.transitionProject(input.status.projectId, () => (
+      input.withEndpoint(endpoint => this.options.authorityProjectionTransitions.run(
+        input.status.projectId,
+        () => this.#cloudToLan({ ...input, endpoint }, true),
+      ))
+    ));
   }
 
-  async cloudToLanMember(input: CloudToLanHostConvergenceInput): Promise<void> {
+  async cloudToLanMember(input: CloudToLanMemberConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
     return this.#transitionProject(
       input.status.projectId,
@@ -232,11 +238,11 @@ export class AuthorityTransferLocalConvergence {
       if (!lanTarget || !targetCredential || !isCollabLocalLanMembership(membership)) {
         throw convergenceError('authority-transfer-lan-membership-conflict');
       }
-      const endpoint = new URL(lanTarget.endpoint).origin;
+      const endpoint = membership.authority.endpoint;
       if (
         membership.authority.authorityGeneration !== status.targetAuthority.generation
-        || membership.authority.endpoint !== endpoint
-        || membership.authority.gitRemoteUrl !== lanRemoteUrl(lanTarget.endpoint, record.projectId)
+        || endpoint === null
+        || membership.authority.gitRemoteUrl !== lanRemoteUrl(endpoint, record.projectId)
         || membership.authority.hostCaCertificatePem !== lanTarget.caCertificatePem
         || membership.authority.hostCaFingerprint !== lanTarget.caFingerprint
         || membership.member.credential !== targetCredential
@@ -330,7 +336,7 @@ export class AuthorityTransferLocalConvergence {
   }
 
   async #cloudToLan(
-    input: CloudToLanHostConvergenceInput,
+    input: CloudToLanMemberConvergenceInput,
     targetOwnsAuthority: boolean,
   ): Promise<void> {
     const membership = await this.#requireMembership(input.status.projectId);
@@ -373,19 +379,26 @@ export class AuthorityTransferLocalConvergence {
         updatedAt: this.timestamp(membership.updatedAt),
       };
       await this.options.projects.saveMembership(candidate);
-    } else if (
-      membership.authority.endpoint !== new URL(input.endpoint).origin
-      || membership.authority.authorityGeneration
+    } else {
+      if (membership.authority.authorityGeneration
         !== input.status.targetAuthority.generation
-      || membership.authority.gitRemoteUrl !== newRemoteUrl
       || membership.authority.hostCaCertificatePem !== input.hostCaCertificatePem
       || membership.authority.hostCaFingerprint !== input.hostCaFingerprint
       || membership.member.credential !== input.memberCredential
       || membership.hostOwnership.ownsAuthority !== targetOwnsAuthority
       || typeof membership.hostOwnership.autoStart !== 'boolean'
       || (!targetOwnsAuthority && membership.hostOwnership.autoStart !== false)
-    ) {
-      throw convergenceError('authority-transfer-lan-membership-conflict');
+      || membership.authority.endpoint === null
+      || membership.authority.gitRemoteUrl !== lanRemoteUrl(membership.authority.endpoint, input.status.projectId)
+      ) throw convergenceError('authority-transfer-lan-membership-conflict');
+      if (membership.authority.endpoint !== new URL(input.endpoint).origin) {
+        await this.#rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
+        await this.options.projects.saveMembership({
+          ...membership,
+          authority: { ...membership.authority, endpoint: new URL(input.endpoint).origin, gitRemoteUrl: newRemoteUrl },
+          updatedAt: this.timestamp(membership.updatedAt),
+        });
+      }
     }
     await this.finish(input.status.projectId, 'lan');
   }

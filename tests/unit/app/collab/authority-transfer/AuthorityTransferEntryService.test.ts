@@ -68,13 +68,11 @@ function createSubject(options: Readonly<{
       });
     }),
   };
-  const sourceBinding = { dispose: jest.fn(async () => undefined) };
   const module = {
     acceptCloudToLanTransfer: jest.fn(),
-    acceptLanToCloudTransferTarget: jest.fn(async () => status('completed')),
+    acceptLanToCloudTransferTarget: jest.fn(async (..._args: readonly unknown[]) => status('completed')),
     assertLanToCloudSourceInstallationOwner: jest.fn(async () => undefined),
     beginCloudToLanTransfer: jest.fn(),
-    bindLanToCloudSource: jest.fn(async () => sourceBinding),
     cancelCloudToLanTransfer: jest.fn(),
     cancelLanToCloudTransfer: jest.fn(async () => status('cancelled')),
     close: jest.fn(async () => undefined),
@@ -107,32 +105,18 @@ function createSubject(options: Readonly<{
     redeemManagerReissuedClaim: jest.fn(),
     withdrawCloudToLanTarget: jest.fn(),
   };
-  const connection = {
-    dispose: jest.fn(),
-    projectId: PROJECT_ID,
-    serverUrl: SERVER_URL,
-    supports: jest.fn(() => true),
-  };
   const createLanClient = jest.fn(() => ({ kind: 'lan-client' }));
-  const connectCloud = jest.fn(async (
-    _input?: unknown,
-    _options?: { readonly signal?: AbortSignal },
-  ) => connection);
   const service = new AuthorityTransferEntryService({
-    connectCloud: connectCloud as never,
     createIdempotencyKey: () => 'intent-new',
     createLanClient: createLanClient as never,
     loadMembership: options.loadMembership ?? (async () => lanMembership()),
     module: module as never,
   });
   return {
-    connection,
-    connectCloud,
     createLanClient,
     module,
     requester,
     service,
-    sourceBinding,
   };
 }
 
@@ -146,6 +130,7 @@ describe('AuthorityTransferEntryService', () => {
     })).resolves.toEqual(status());
 
     expect(subject.createLanClient).toHaveBeenCalledWith({
+      authorityGeneration: 7,
       caCertificatePem: 'test-ca',
       caFingerprint: 'a'.repeat(64),
       endpoint: 'https://192.168.1.10:54545',
@@ -219,7 +204,7 @@ describe('AuthorityTransferEntryService', () => {
     });
   });
 
-  it('retains and reuses the exact Cloud binding after an ambiguous accept', async () => {
+  it('replays the exact acceptance after ambiguous progress', async () => {
     const subject = createSubject();
     subject.module.acceptLanToCloudTransferTarget
       .mockRejectedValueOnce(new CollabError({ code: 'operation-failed' }))
@@ -229,14 +214,10 @@ describe('AuthorityTransferEntryService', () => {
     await expect(subject.service.acceptLanToCloudTransfer(selection)).rejects.toBeInstanceOf(
       CollabError,
     );
-    expect(subject.connection.dispose).not.toHaveBeenCalled();
-    expect(subject.sourceBinding.dispose).not.toHaveBeenCalled();
 
     await expect(subject.service.acceptLanToCloudTransfer(selection)).resolves.toEqual(
       status('completed'),
     );
-    expect(subject.connectCloud).toHaveBeenCalledTimes(1);
-    expect(subject.module.bindLanToCloudSource).not.toHaveBeenCalled();
     expect(subject.module.acceptLanToCloudTransferTarget).toHaveBeenLastCalledWith(
       {
         expectedAuthorityGeneration: 7,
@@ -245,16 +226,9 @@ describe('AuthorityTransferEntryService', () => {
         targetUrl: SERVER_URL,
         transferId: 'transfer-entry-service',
       },
-      {
-        cloudSession: subject.connection,
-        expectedSourceEndpoint: 'https://192.168.1.10:54545',
-        expectedTargetUrl: SERVER_URL,
-        projectId: PROJECT_ID,
-      },
+      undefined,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(subject.sourceBinding.dispose).not.toHaveBeenCalled();
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a copied foreign Host installation before opening a Cloud session', async () => {
@@ -268,34 +242,30 @@ describe('AuthorityTransferEntryService', () => {
       transferId: 'transfer-entry-service',
     })).rejects.toMatchObject({ code: 'authorization-denied' });
 
-    expect(subject.connectCloud).not.toHaveBeenCalled();
     expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
   });
 
-  it('coalesces concurrent source acceptance onto one retained Cloud session', async () => {
+  it('coalesces concurrent source acceptance onto one admitted move', async () => {
     const subject = createSubject();
     let release!: () => void;
     let entered!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const enteredCloud = new Promise<void>(resolve => { entered = resolve; });
-    subject.connectCloud.mockImplementation(async () => {
+    subject.module.acceptLanToCloudTransferTarget.mockImplementation(async () => {
       entered();
       await gate;
-      return subject.connection;
+      return status();
     });
-    subject.module.acceptLanToCloudTransferTarget.mockResolvedValue(status());
     const selection = { projectId: PROJECT_ID, transferId: 'transfer-entry-service' };
 
     const first = subject.service.acceptLanToCloudTransfer(selection);
     const second = subject.service.acceptLanToCloudTransfer(selection);
     await enteredCloud;
-    expect(subject.connectCloud).toHaveBeenCalledTimes(1);
 
     release();
     await expect(Promise.all([first, second])).resolves.toEqual([status(), status()]);
     expect(subject.module.acceptLanToCloudTransferTarget).toHaveBeenCalledTimes(1);
     await subject.service.close();
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('cancels only a follower wait without cancelling the shared acceptance', async () => {
@@ -304,12 +274,11 @@ describe('AuthorityTransferEntryService', () => {
     let entered!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const enteredCloud = new Promise<void>(resolve => { entered = resolve; });
-    subject.connectCloud.mockImplementation(async () => {
+    subject.module.acceptLanToCloudTransferTarget.mockImplementation(async () => {
       entered();
       await gate;
-      return subject.connection;
+      return status();
     });
-    subject.module.acceptLanToCloudTransferTarget.mockResolvedValue(status());
     const selection = { projectId: PROJECT_ID, transferId: 'transfer-entry-service' };
     const first = subject.service.acceptLanToCloudTransfer(selection);
     await enteredCloud;
@@ -321,7 +290,7 @@ describe('AuthorityTransferEntryService', () => {
 
     controller.abort();
     await expect(follower).rejects.toMatchObject({ code: 'cancelled' });
-    expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
+    expect(subject.module.acceptLanToCloudTransferTarget).toHaveBeenCalledTimes(1);
 
     release();
     await expect(first).resolves.toEqual(status());
@@ -354,7 +323,7 @@ describe('AuthorityTransferEntryService', () => {
     );
     await enteredAcceptance;
 
-    const serviceSignal = subject.connectCloud.mock.calls[0]?.[1]?.signal;
+    const serviceSignal = (subject.module.acceptLanToCloudTransferTarget.mock.calls[0]?.[2] as { readonly signal?: AbortSignal }).signal;
     expect(serviceSignal).toBeDefined();
     expect(serviceSignal).not.toBe(controller.signal);
     controller.abort();
@@ -369,7 +338,6 @@ describe('AuthorityTransferEntryService', () => {
     await expect(closing).resolves.toBeUndefined();
     expect(underlyingQuiesced).toBe(true);
     expect(subject.module.close).toHaveBeenCalledTimes(1);
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('does not cross the preflight read fence after close begins', async () => {
@@ -398,37 +366,9 @@ describe('AuthorityTransferEntryService', () => {
     });
     await expect(closing).resolves.toBeUndefined();
     expect(subject.module.assertLanToCloudSourceInstallationOwner).not.toHaveBeenCalled();
-    expect(subject.connectCloud).not.toHaveBeenCalled();
     expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
   });
 
-  it('closes a source session that finishes connecting during shutdown', async () => {
-    const subject = createSubject();
-    let release!: () => void;
-    let entered!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    const enteredCloud = new Promise<void>(resolve => { entered = resolve; });
-    subject.connectCloud.mockImplementation(async () => {
-      entered();
-      await gate;
-      return subject.connection;
-    });
-    const accepting = subject.service.acceptLanToCloudTransfer({
-      projectId: PROJECT_ID,
-      transferId: 'transfer-entry-service',
-    });
-    await enteredCloud;
-
-    const closing = subject.service.close();
-    release();
-
-    await expect(accepting).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-entry-service-closed' },
-    });
-    await expect(closing).resolves.toBeUndefined();
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
-    expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
-  });
 
   it('rejects an accept when the displayed proposal was replaced before the click', async () => {
     const subject = createSubject();
@@ -456,11 +396,10 @@ describe('AuthorityTransferEntryService', () => {
       safeContext: { reason: 'authority-transfer-source-proposal-stale' },
     });
 
-    expect(subject.connectCloud).not.toHaveBeenCalled();
     expect(subject.module.acceptLanToCloudTransferTarget).not.toHaveBeenCalled();
   });
 
-  it('cancels the exact durable proposal and releases a retained binding', async () => {
+  it('cancels the exact durable proposal after ambiguous acceptance', async () => {
     const subject = createSubject();
     subject.module.acceptLanToCloudTransferTarget.mockRejectedValue(
       new CollabError({ code: 'operation-failed' }),
@@ -479,8 +418,6 @@ describe('AuthorityTransferEntryService', () => {
       projectId: PROJECT_ID,
       transferId: 'transfer-entry-service',
     });
-    expect(subject.sourceBinding.dispose).not.toHaveBeenCalled();
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('retries the persisted cancellation after authoritative phase progress', async () => {
@@ -505,21 +442,8 @@ describe('AuthorityTransferEntryService', () => {
     expect(subject.module.cancelLanToCloudTransfer).toHaveBeenCalledWith(cancellation);
   });
 
-  it('fails closed when the Cloud endpoint did not negotiate authority transfer', async () => {
-    const subject = createSubject();
-    subject.connection.supports.mockReturnValue(false);
 
-    await expect(subject.service.acceptLanToCloudTransfer({
-      projectId: PROJECT_ID,
-      transferId: 'transfer-entry-service',
-    })).rejects.toMatchObject({
-      safeContext: { reason: 'authority-transfer-cloud-capability-unavailable' },
-    });
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
-    expect(subject.module.bindLanToCloudSource).not.toHaveBeenCalled();
-  });
-
-  it('closes the durable module before releasing retained Cloud sessions', async () => {
+  it('closes the durable module after failed acceptance', async () => {
     const subject = createSubject();
     subject.module.acceptLanToCloudTransferTarget.mockRejectedValue(
       new CollabError({ code: 'operation-failed' }),
@@ -532,6 +456,5 @@ describe('AuthorityTransferEntryService', () => {
     await subject.service.close();
 
     expect(subject.module.close).toHaveBeenCalledTimes(1);
-    expect(subject.connection.dispose).toHaveBeenCalledTimes(1);
   });
 });

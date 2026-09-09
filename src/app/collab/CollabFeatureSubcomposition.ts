@@ -28,6 +28,7 @@ import {
 import {
   ProductionLanToCloudSourceEffects,
 } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
+import { LanAuthorityTransferTargetSnapshotReader } from '@/app/collab/authority-transfer/LanAuthorityTransferTargetSnapshotReader';
 import type { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import {
   CollabFeatureService,
@@ -54,6 +55,7 @@ import { RetiredProjectFinalizer } from '@/app/collab/exit/RetiredProjectFinaliz
 import {
   rotateAuthorityTransferOrigin,
 } from '@/app/collab/git/CollabGitOriginPolicy';
+import { LanAuthorityTransferClient, type LanAuthorityTransferTrustedHost } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import {
   createCollabProjectLifecycleDurableOwners,
@@ -804,7 +806,11 @@ export function createCollabFeatureSubcomposition(
     projects: foundation.local.projects,
     workspace: foundation.local.workspace,
   });
+  const createLanTransferClient = (trust: LanAuthorityTransferTrustedHost) => (
+    new LanAuthorityTransferClient(trust, { discovery: foundation.discovery })
+  );
   const claimantBindingResolver = new AuthorityTransferClaimantBindingResolver({
+    createLanClient: createLanTransferClient,
     createCloudConnection: async ({ allowCredentialCreation, ...binding }) => {
       if (allowCredentialCreation) await cloudCredentials.getOrCreate(binding.projectId);
       return cloudAuthority.connect(binding);
@@ -818,10 +824,18 @@ export function createCollabFeatureSubcomposition(
     persistence: foundation.authorityTransfers, projectId: target.projectId,
   }).retainCommittedRedemptions(target, source, members);
   const authorityTransfer = new AuthorityTransferModule({
-    activateLanToCloudSourceRoute: (projectId, expectedEndpoint, operationOptions) => (
+    createLanToCloudConnection: async ({ allowCredentialCreation, ...input }, operationOptions) => {
+      if (allowCredentialCreation) await cloudCredentials.getOrCreate(input.projectId);
+      return cloudAuthority.connect(input, operationOptions);
+    },
+
+    createLanTargetSnapshotReader: (projectId, targetHost, authorityGeneration) => new LanAuthorityTransferTargetSnapshotReader(
+      { ...targetHost, authorityGeneration, projectId }, { discovery: foundation.discovery },
+    ),
+    createCloudToLanClaimantClient: createLanTransferClient,
+    activateLanToCloudSourceRoute: (projectId, operationOptions) => (
       foundation.activateAuthorityTransferSourceRoute(
         projectId,
-        expectedEndpoint,
         operationOptions,
       )
     ),
@@ -1045,10 +1059,7 @@ export function createCollabFeatureSubcomposition(
   });
   foundation.bindAuthorityTransferModule(authorityTransfer);
   const authorityTransferEntry = new AuthorityTransferEntryService({
-    connectCloud: async ({ allowCredentialCreation, ...input }, operationOptions) => {
-      if (allowCredentialCreation) await cloudCredentials.getOrCreate(input.projectId);
-      return cloudAuthority.connect(input, operationOptions);
-    },
+    createLanClient: createLanTransferClient,
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
     module: authorityTransfer,
   });

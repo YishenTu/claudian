@@ -13,12 +13,12 @@ describe('LAN authority-transfer binding', () => {
     for (const operation of COLLAB_AUTHORITY_TRANSFER_OPERATIONS) {
       const path = collabLanAuthorityTransferOperationPath('project-alpha', operation);
       expect(path).toBe(
-        `/authority-transfer/v2/projects/project-alpha/operations/${operation}`,
+        `/authority-transfer/v3/projects/project-alpha/operations/${operation}`,
       );
       expect(matchCollabLanAuthorityTransferRoute('POST', path)).toEqual({
         operation,
         projectId: 'project-alpha',
-        version: 2,
+        version: 3,
       });
     }
   });
@@ -34,7 +34,7 @@ describe('LAN authority-transfer binding', () => {
     expect(matchCollabLanAuthorityTransferRoute(method, path)).toBeNull();
   });
 
-  it('recognizes the prior binding version without treating it as v2', () => {
+  it('recognizes the prior binding version without treating it as v3', () => {
     expect(matchCollabLanAuthorityTransferRoute(
       'POST',
       '/authority-transfer/v1/projects/project-alpha/operations/getProjectAuthorityTransfer',

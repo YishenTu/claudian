@@ -587,6 +587,8 @@ export interface CollabFeaturePort {
   readCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTransferView | null>>;
   acceptLanToCloudTransfer(request: CollabLanToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   cancelLanToCloudTransfer(request: CollabLanToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  moveCloudToLan(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  moveLanToCloud(request: CollabLanToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   prepareCloudToLanTarget(request: CollabPrepareCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTargetPreparationDescriptor>>;
   beginCloudToLanTransfer(request: CollabBeginCloudToLanTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTransferHandle>>;
   acceptCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
