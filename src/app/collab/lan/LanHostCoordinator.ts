@@ -1016,7 +1016,6 @@ export class LanHostCoordinator {
     removeAuthorityTransferRoute: boolean,
   ): Promise<void> {
     return this.#operationQueue.run(async () => {
-      if (this.#transferredProjects.has(projectId)) return;
       const hosted = this.#hostedProjects.get(projectId);
       if (!hosted) return;
       hosted.admission.commitTerminal('transferred');
