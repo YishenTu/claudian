@@ -667,13 +667,27 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
-  async #removeSupersededLanAuthority(record: AuthorityTransferRecord): Promise<void> {
+  async #hasSupersededLanAuthority(record: AuthorityTransferRecord): Promise<boolean> {
     const foundation = this.options.foundation;
-    if (await foundation.hostInstallations.inspect(record.projectId) !== 'hosted-here') return;
+    if (await foundation.hostInstallations.inspect(record.projectId) !== 'hosted-here') return false;
     const [current, membership] = await Promise.all([
       this.options.persistence.load(record.projectId),
       foundation.local.projects.loadMembership(record.projectId),
     ]);
+    let sourceCloudUrl = this.options.cloudSession?.serverUrl;
+    if (sourceCloudUrl === undefined && record.status.state === 'cancelled') {
+      const entry = await this.options.persistence.loadCloudToLanTargetEntry(record.projectId);
+      if (
+        entry?.phase === 'handed-off'
+        && entry.ownerInstallationKey === record.ownerInstallationKey
+        && entry.successor?.operationIntentId === record.operationIntentId
+        && entry.successor.transferId === record.transferId
+        && entry.sourceAuthorityGeneration === record.status.sourceAuthority.generation
+        && entry.selectedTargetMemberId === membership?.member.id
+        && entry.selectedTargetPersonalRef === membership?.member.personalRef
+        && entry.descriptor?.targetUrl === record.status.targetUrl
+      ) sourceCloudUrl = entry.sourceCloudUrl;
+    }
     if (
       !current
       || current.localRole !== 'target'
@@ -681,13 +695,12 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || current.operationIntentId !== record.operationIntentId
       || current.transferId !== record.transferId
       || current.status.direction !== 'cloud-to-lan'
-      || current.status.phase !== 'checkpoint-captured'
+      || current.status.phase !== record.status.phase
       || current.status.checkpointSha256 !== record.status.checkpointSha256
       || current.status.sourceAuthority.generation !== record.status.sourceAuthority.generation
       || !membership
       || !isCollabLocalCloudMembership(membership)
-      || !this.options.cloudSession
-      || membership.authority.serverUrl !== this.options.cloudSession.serverUrl
+      || membership.authority.serverUrl !== sourceCloudUrl
       || membership.authority.authorityGeneration !== current.status.sourceAuthority.generation
       || foundation.lanHost.isProjectRunning(record.projectId)
     ) throw targetError('authority-transfer-former-source-not-replaceable');
@@ -700,8 +713,25 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || project.projectId !== record.projectId
       || project.authorityGeneration + 1 !== current.status.sourceAuthority.generation
     ) throw targetError('authority-transfer-former-source-not-replaceable');
+    return true;
+  }
+
+  async #removeSupersededLanAuthority(record: AuthorityTransferRecord): Promise<void> {
+    if (!await this.#hasSupersededLanAuthority(record)) return;
+    if (record.status.phase !== 'checkpoint-captured') {
+      throw targetError('authority-transfer-former-source-not-replaceable');
+    }
+    const foundation = this.options.foundation;
     await foundation.closeAuthority(record.projectId);
     await foundation.hostInstallations.removeOwned(record.projectId);
+  }
+
+  async #discardCancelledTargetAuthority(record: AuthorityTransferRecord): Promise<void> {
+    if (await this.#hasSupersededLanAuthority(record)) return;
+    await this.options.foundation.discardAuthorityTransferTarget(
+      record.projectId,
+      record.ownerInstallationKey,
+    );
   }
 
   async stage(
@@ -965,10 +995,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       const preparation = this.#preparation;
       await preparation?.dispose();
       if (this.#preparation === preparation) this.#preparation = null;
-      await this.options.foundation.discardAuthorityTransferTarget(
-        record.projectId,
-        record.ownerInstallationKey,
-      );
+      await this.#discardCancelledTargetAuthority(record);
 
       if (state.cleanup?.proof) return state.cleanup.proof;
       const payload = {
@@ -1021,10 +1048,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const preparation = this.#preparation;
     await preparation?.dispose();
     if (this.#preparation === preparation) this.#preparation = null;
-    await this.options.foundation.discardAuthorityTransferTarget(
-      record.projectId,
-      record.ownerInstallationKey,
-    );
+    await this.#discardCancelledTargetAuthority(record);
     await this.#cleanupStaging(record);
   }
 

@@ -1522,6 +1522,11 @@ export class AuthorityTransferModule {
   }
 
   async #disposeRecoveredRuntime(record: AuthorityTransferRecord): Promise<void> {
+    if (
+      record.localRole === 'target'
+      && record.status.direction === 'cloud-to-lan'
+      && !await this.#disposeCloudToLanTargetRuntime(record.projectId)
+    ) throw durableOutcome(record.operationIntentId, 'authority-transfer-target-cleanup-incomplete');
     const source = this.sourceBindings.get(record.projectId);
     if (source) {
       await source.cleanupRoute();
@@ -1639,7 +1644,10 @@ export class AuthorityTransferModule {
     }
     await this.#releaseCompletedCloudToLanRuntime(record.projectId);
     const current = await this.options.persistence.load(record.projectId);
-    if (current?.localRole === 'source' && (current.status.state === 'completed' || current.status.state === 'cancelled')) {
+    if (current && (
+      current.status.state === 'cancelled'
+      || (current.localRole === 'source' && current.status.state === 'completed')
+    )) {
       await this.#disposeRecoveredRuntime(current);
     }
     if (

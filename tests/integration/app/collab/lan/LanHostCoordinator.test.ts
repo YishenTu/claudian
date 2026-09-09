@@ -23,6 +23,7 @@ import { WebSocket } from 'ws';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
+import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
 import { ManagerResponsibilityService } from '@/app/collab/authority/ManagerResponsibilityService';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
@@ -1077,6 +1078,25 @@ describe('LanHostCoordinator production transport', () => {
     await expect(coordinator.reopenProjectBeforeHostTransfer(PROJECT_ID))
       .rejects.toMatchObject({ code: 'project-not-found' });
     await expect(coordinator.completeProjectHostTransfer(PROJECT_ID)).resolves.toBeUndefined();
+  });
+
+  it('relinquishes each returning LAN generation in the same running coordinator', async () => {
+    for (const generation of [1, 3, 5]) {
+      const membership = await localProjects.loadMembership(PROJECT_ID);
+      if (!membership || !isCollabLocalLanMembership(membership)) throw new Error('Missing LAN membership');
+      await authorityDatabase.mutate(connection => new AuthorityMetadataRepository().installGeneration(connection, generation));
+      await localProjects.saveMembership({
+        ...membership,
+        authority: { ...membership.authority, authorityGeneration: generation },
+      });
+      await coordinator.startProject(PROJECT_ID);
+      expect(coordinator.isProjectRunning(PROJECT_ID)).toBe(true);
+      await coordinator.quiesceProjectForAuthorityTransfer(PROJECT_ID);
+      await coordinator.relinquishProjectForAuthorityTransfer(PROJECT_ID);
+      await coordinator.relinquishProjectForAuthorityTransfer(PROJECT_ID);
+      expect(coordinator.isProjectRunning(PROJECT_ID)).toBe(false);
+      expect(coordinator.getActiveProjectRoute(PROJECT_ID)).toBeNull();
+    }
   });
 
   it('drains outgoing work after the old Host route has already closed', async () => {

@@ -53,10 +53,15 @@ import {
   expireAuthorityTransferTerminalResponder,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
+import { CloudToLanTargetCoordinator } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
 import {
+  cloudToLanTransferHandle,
+  createCloudToLanManagerEntry,
   createCloudToLanTargetEntry,
   handoffCloudToLanTargetEntry,
+  markCloudToLanManagerBeginPossiblySent,
   publishCloudToLanTargetEntry,
+  recordCloudToLanManagerStatus,
 } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
 import { LanToCloudSourceCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudSourceCoordinator';
@@ -245,6 +250,7 @@ describe('production authority-transfer effects', () => {
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: {
         discardAuthorityTransferTarget,
+        hostInstallations: { inspect: jest.fn(async () => 'absent') },
         lanHost: {
           prepareAuthorityTransferTarget: jest.fn(async () => ({
             caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
@@ -289,6 +295,200 @@ describe('production authority-transfer effects', () => {
     expect(removeReservedProjectsFolderChild).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { generation: 1, onlineRecovery: false },
+    { generation: 2, onlineRecovery: false },
+    { generation: 3, onlineRecovery: false },
+    { generation: 1, onlineRecovery: true },
+  ])('cancels a returning target with LAN generation $generation and online recovery $onlineRecovery', async ({ generation, onlineRecovery }) => {
+    const targetFoundation = foundation(targetRoot);
+    const cloudServerUrl = 'https://cloud.example.test/';
+    await targetFoundation.local.workspace.claimProjectsFolder('workspace');
+    await targetFoundation.local.projects.saveMembership({
+      authority: {
+        authorityGeneration: 2,
+        bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
+        gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+        kind: 'cloud',
+        serverUrl: cloudServerUrl,
+        wireVersion: COLLAB_PROTOCOL_VERSION,
+      },
+      createdAt: '2026-08-28T00:00:00.000Z',
+      lastEventSequence: 0,
+      member: {
+        displayName: 'Former Host',
+        id: MEMBER_ID,
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        role: 'manager',
+      },
+      project: { id: PROJECT_ID, name: 'Portable', workspacePath: 'workspace/portable' },
+      schemaVersion: 3,
+      updatedAt: '2026-08-28T00:00:00.000Z',
+    });
+    const formerAuthority = await targetFoundation.createAuthority(PROJECT_ID);
+    await formerAuthority.database.mutate(connection => {
+      formerAuthority.projects.initialize(connection, {
+        createdAt: '2026-08-08T00:00:00.000Z',
+        hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
+        hostDisplayName: 'Former Host',
+        hostMemberId: MEMBER_ID,
+        name: 'Portable',
+        projectId: PROJECT_ID,
+      });
+      new AuthorityMetadataRepository().installGeneration(connection, generation);
+    });
+    const repositoryPath = path.join(formerAuthority.authorityDirectory, 'repository.git');
+    git(formerAuthority.authorityDirectory, ['init', '--bare', 'repository.git']);
+    const formerRepositoryHead = await readFile(path.join(repositoryPath, 'HEAD'), 'utf8');
+    const effects = new ProductionCloudToLanTargetEffects({
+      cloudSession: { serverUrl: cloudServerUrl },
+      convergence: {} as AuthorityTransferLocalConvergence,
+      foundation: targetFoundation,
+      now: () => new Date('2026-08-28T00:02:00.000Z'),
+      persistence: targetFoundation.authorityTransfers,
+      projectId: PROJECT_ID,
+    });
+    try {
+      const prepared = await effects.prepareTarget();
+      const collecting = createAuthorityTransferRecord({
+        lifecycleOwnership: 'owned',
+        localRole: 'target',
+        operationIntentId: OPERATION_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+        status: status('cloud-to-lan', 'collecting-readiness', prepared.targetUrl),
+      });
+      await effects.acceptanceRequest(collecting);
+      const targetEntry = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+        createdAt: collecting.status.createdAt,
+        expiresAt: collecting.status.expiresAt,
+        operationIntentId: 'prepare-cancelled-return',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_ID,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ID}`,
+        sourceAuthorityGeneration: 2,
+        sourceCloudUrl: cloudServerUrl,
+      }), { ...prepared, publishedAt: collecting.status.createdAt });
+      await targetFoundation.local.projects.authorityTransferEntries.saveTarget(
+        handoffCloudToLanTargetEntry(targetEntry, collecting),
+      );
+      const cancelled = createAuthorityTransferRecord({
+        ...collecting,
+        status: status('cloud-to-lan', 'cancel-intent', prepared.targetUrl, 'a'.repeat(64)),
+      });
+      await targetFoundation.local.projects.authorityTransferRecords.save(cancelled);
+      const cancel = async () => {
+        const proof = await effects.invalidateStaging(cancelled);
+        const replay = await effects.invalidateStaging(cancelled);
+        const terminal = createAuthorityTransferRecord({
+          ...cancelled,
+          status: { ...cancelled.status, phase: 'cancelled', state: 'cancelled' },
+        });
+        if (!onlineRecovery) {
+          await targetFoundation.local.projects.authorityTransferRecords.save(terminal);
+        }
+        let observed = terminal.status;
+        const recovered = createCollabFeatureSubcomposition({
+          cloudAuthority: {
+            connectAuthorityTransfer: async (binding: object) => ({
+              ...binding,
+              dispose: () => undefined,
+              lifecycle: {
+                authorityTransfer: async (operation: string) => {
+                  if (operation === 'confirmCloudToLanTargetInvalidated'
+                    || operation === 'getProjectAuthorityTransfer') return observed;
+                  throw new Error(`Unexpected recovery operation ${operation}`);
+                },
+              },
+              readSnapshot: async () => ({
+                currentMember: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}` },
+                project: { authorityGeneration: 2, id: PROJECT_ID },
+              }),
+              supports: () => true,
+            }),
+          } as never,
+          foundation: targetFoundation,
+          projectSetup: new CollabProjectSetupService(targetFoundation, {
+            installationKey: TEST_INSTALLATION_A,
+            vaultRoot: targetRoot,
+          }),
+          vaultRoot: targetRoot,
+        });
+        await recovered.feature.initialize();
+        await recovered.feature.restoreLifecycle();
+        let nextAcceptance: unknown = null;
+        const nextCoordinator = new CloudToLanTargetCoordinator({
+          cloud: {} as never,
+          installationKey: TEST_INSTALLATION_A,
+          persistence: targetFoundation.authorityTransfers,
+          target: effects,
+        });
+        try {
+          const release = recovered.authorityTransfer.runtimes.register(PROJECT_ID, 'target', nextCoordinator);
+          release();
+          if (onlineRecovery) {
+            const descriptor = await recovered.authorityTransfer.prepareCloudToLanTarget({
+              operationIntentId: 'prepare-after-recovered-cancellation',
+              projectId: PROJECT_ID,
+            });
+            observed = {
+              ...status('cloud-to-lan', 'cancelled', descriptor.targetUrl),
+              createdAt: descriptor.publishedAt,
+              expiresAt: new Date(Date.parse(descriptor.publishedAt) + 60_000).toISOString(),
+              state: 'cancelled',
+              transferId: 'transfer-after-recovered-cancellation',
+              updatedAt: descriptor.publishedAt,
+            };
+            const handle = cloudToLanTransferHandle(recordCloudToLanManagerStatus(
+              markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+                createdAt: descriptor.publishedAt,
+                descriptor,
+                expiresAt: new Date(Date.parse(descriptor.publishedAt) + 60_000).toISOString(),
+                initiatingMemberId: MEMBER_ID,
+                initiatingPersonalRef: `refs/heads/members/${MEMBER_ID}`,
+                operationIntentId: 'begin-after-recovered-cancellation',
+                ownerInstallationKey: TEST_INSTALLATION_A,
+              })),
+              observed,
+            ));
+            nextAcceptance = await recovered.authorityTransfer.acceptCloudToLanTransfer({ handle })
+              .catch((error: unknown) => ({
+                error: (error as { safeContext?: { reason?: string } }).safeContext?.reason,
+              }));
+          }
+        } finally {
+          await recovered.feature.close();
+        }
+        return { nextAcceptance, proof, replayMatches: JSON.stringify(replay) === JSON.stringify(proof) };
+      };
+      const outcome = await cancel().catch((error: unknown) => {
+        if (generation === 1) throw error;
+        return { error: (error as { safeContext?: { reason?: string } }).safeContext?.reason };
+      });
+      expect(outcome).toMatchObject(generation === 1 ? {
+        nextAcceptance: onlineRecovery ? {
+          state: 'cancelled',
+          transferId: 'transfer-after-recovered-cancellation',
+        } : null,
+        proof: {
+          projectId: PROJECT_ID,
+          sourceAuthority: { generation: 2, kind: 'cloud' },
+          targetAuthority: { generation: 3, kind: 'lan' },
+          transferId: TRANSFER_ID,
+        },
+        replayMatches: true,
+      } : { error: 'authority-transfer-former-source-not-replaceable' });
+      expect(await targetFoundation.hostInstallations.inspect(PROJECT_ID)).toBe('hosted-here');
+      expect(await formerAuthority.database.read(connection => formerAuthority.projects.get(connection)?.authorityGeneration))
+        .toBe(generation);
+      expect(await readFile(path.join(repositoryPath, 'HEAD'), 'utf8')).toBe(formerRepositoryHead);
+    } finally {
+      await effects.dispose();
+      await targetFoundation.close();
+    }
+  });
+
   it('durably invalidates a staged Cloud-to-LAN target and replays one exact signed cleanup proof', async () => {
     const now = new Date('2026-08-28T00:02:00.000Z');
     const signer = await new LanTlsIdentity(targetRoot, {
@@ -315,6 +515,7 @@ describe('production authority-transfer effects', () => {
     };
     const foundation = {
       discardAuthorityTransferTarget,
+      hostInstallations: { inspect: jest.fn(async () => 'absent') },
       lanHost: {
         hostCaSigner: jest.fn(async () => signer),
         prepareAuthorityTransferTarget: jest.fn(async () => ({
