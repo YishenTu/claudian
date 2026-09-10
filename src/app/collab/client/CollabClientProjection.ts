@@ -211,12 +211,19 @@ function boundTicketCache(cache: CollabTicketCache): CollabTicketCache {
   const ticketDetails = [...cache.ticketDetails];
   const ticketPages = [...cache.ticketPages];
   const bounded = { ...cache, ticketDetails, ticketPages };
-  while (Buffer.byteLength(JSON.stringify(bounded, null, 2)) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
+  let bytes = Buffer.byteLength(JSON.stringify(bounded, null, 2));
+  const emptyArrayBytes = Buffer.byteLength(JSON.stringify({ entries: [] }, null, 2));
+  while (bytes > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
     const detail = ticketDetails.at(-1);
     const page = ticketPages.at(-1);
     if (!detail && !page) break;
-    if (detail && (!page || detail.cachedAt <= page.cachedAt)) ticketDetails.pop();
-    else ticketPages.pop();
+    const entries = detail && (!page || detail.cachedAt <= page.cachedAt) ? ticketDetails : ticketPages;
+    const removed = entries.pop();
+    // The wrapper preserves the entry's indentation inside a top-level array.
+    // Emptying an array also removes the two spaces before its closing bracket;
+    // otherwise the removed comma and newline take their place.
+    const singleEntryBytes = Buffer.byteLength(JSON.stringify({ entries: [removed] }, null, 2)) - emptyArrayBytes;
+    bytes -= singleEntryBytes - (entries.length > 0 ? 2 : 0);
   }
   return bounded;
 }

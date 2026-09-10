@@ -288,38 +288,46 @@ export class SqlJsProjectDatabase {
       throw authorityError('operation-failed', 'sql-js-initialize-failed');
     });
     const kinds: readonly SqlJsSnapshotKind[] = ['primary', 'temporary', 'backup'];
-    const rawCandidates = new Map<SqlJsSnapshotKind, Uint8Array>();
-    const validCandidates: ValidCandidate[] = [];
+    let foundSnapshot = false;
+    let selected: ValidCandidate | null = null;
+    let hasValidPrimary = false;
     let unsupportedVersion = false;
     for (const kind of kinds) {
-      let bytes: Uint8Array | null;
+      let candidate: ValidCandidate | 'absent' | 'invalid' | 'unsupported';
       try {
-        bytes = await this.snapshotStore.readCandidate(kind);
+        candidate = await this.#inspectCandidate(SQL, kind);
       } catch (error) {
-        for (const candidate of validCandidates) candidate.database.close();
+        selected?.database.close();
         throw error;
       }
-      if (bytes === null) continue;
-      rawCandidates.set(kind, bytes);
-      try {
-        validCandidates.push(this.#validateCandidate(SQL, kind, bytes));
-      } catch (error) {
-        if (
-          error instanceof CollabError
-          && error.code === 'schema-version-unsupported'
-        ) {
-          unsupportedVersion = true;
-        }
+      if (candidate === 'absent') continue;
+      foundSnapshot = true;
+      if (candidate === 'unsupported') {
+        unsupportedVersion = true;
+        continue;
+      }
+      if (candidate === 'invalid') continue;
+      if (kind === 'primary') hasValidPrimary = true;
+      if (
+        selected === null
+        || candidate.generation > selected.generation
+        || (candidate.generation === selected.generation
+          && CANDIDATE_PRIORITY[candidate.kind] > CANDIDATE_PRIORITY[selected.kind])
+      ) {
+        selected?.database.close();
+        selected = candidate;
+      } else {
+        candidate.database.close();
       }
     }
 
     if (unsupportedVersion) {
-      for (const candidate of validCandidates) candidate.database.close();
+      selected?.database.close();
       throw authorityError('schema-version-unsupported', 'authority-schema-newer');
     }
 
-    if (validCandidates.length === 0) {
-      if (rawCandidates.size > 0) {
+    if (selected === null) {
+      if (foundSnapshot) {
         throw authorityError('database-corrupt', 'no-valid-authority-snapshot');
       }
       const database = new SQL.Database();
@@ -336,15 +344,9 @@ export class SqlJsProjectDatabase {
       return this.openResult;
     }
 
-    validCandidates.sort((left, right) => (
-      right.generation - left.generation
-      || CANDIDATE_PRIORITY[right.kind] - CANDIDATE_PRIORITY[left.kind]
-    ));
-    const selected = validCandidates[0];
-    for (const candidate of validCandidates.slice(1)) candidate.database.close();
     this.database = selected.database;
     this.generationValue = selected.generation;
-    this.hasValidPrimary = validCandidates.some(candidate => candidate.kind === 'primary');
+    this.hasValidPrimary = hasValidPrimary;
 
     try {
       if (selected.migrated) {
@@ -376,6 +378,23 @@ export class SqlJsProjectDatabase {
       source: selected.kind,
     };
     return this.openResult;
+  }
+
+  async #inspectCandidate(
+    sqlJs: SqlJsStatic,
+    kind: SqlJsSnapshotKind,
+  ): Promise<ValidCandidate | 'absent' | 'invalid' | 'unsupported'> {
+    // Keep raw bytes out of the selection loop's async frame so a discarded
+    // image can be collected before the next candidate is allocated.
+    const bytes = await this.snapshotStore.readCandidate(kind);
+    if (bytes === null) return 'absent';
+    try {
+      return this.#validateCandidate(sqlJs, kind, bytes);
+    } catch (error) {
+      return error instanceof CollabError && error.code === 'schema-version-unsupported'
+        ? 'unsupported'
+        : 'invalid';
+    }
   }
 
   #validateCandidate(
