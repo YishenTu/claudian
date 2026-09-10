@@ -828,7 +828,7 @@ describe('CollabLocalProjectRepository', () => {
     await repository.upsertProject(indexEntry());
     await repository.selectProject(PROJECT_ID);
     await repository.saveMembership(membershipRecord());
-    for (const kind of ['cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
+    for (const kind of ['cache', 'ticket-cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
       await repository.saveProjectDocument(PROJECT_ID, kind, {
         projectId: PROJECT_ID,
         schemaVersion: 1,
@@ -871,7 +871,7 @@ describe('CollabLocalProjectRepository', () => {
       'retirement',
       decodeRetirementRecord,
     )).resolves.toEqual(record);
-    for (const kind of ['cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
+    for (const kind of ['cache', 'ticket-cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
       await expect(repository.loadProjectDocument(
         PROJECT_ID,
         kind,
@@ -1394,6 +1394,20 @@ describe('CollabLocalProjectRepository', () => {
       code: 'operation-failed',
       safeContext: { reason: 'local-membership-member-mismatch' },
     });
+  });
+
+  it.each(['cache', 'ticket-cache'] as const)('rejects an oversized %s file before decoding content', async kind => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const document = { projectId: PROJECT_ID, schemaVersion: 1 };
+    await repository.saveProjectDocument(PROJECT_ID, kind, document);
+    const cachePath = path.join(vaultRoot, repository.getProjectPaths(PROJECT_ID).cache);
+    const file = kind === 'cache' ? cachePath : path.join(path.dirname(cachePath), 'ticket-cache.json');
+    await writeFile(file, JSON.stringify({ ...document, body: 'x'.repeat(5 * 1024 * 1024) }));
+    const decode = jest.fn(() => document);
+    await expect(repository.loadProjectDocument(PROJECT_ID, kind, decode)).rejects.toMatchObject({
+      code: 'operation-failed', safeContext: { reason: 'local-record-corrupt' },
+    });
+    expect(decode).not.toHaveBeenCalled();
   });
 
   it('stores cache and pending-operation documents only in guarded private state', async () => {

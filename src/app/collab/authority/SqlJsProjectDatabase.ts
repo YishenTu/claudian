@@ -51,6 +51,13 @@ export interface SqlJsProjectDatabaseSubscription {
   dispose(): void;
 }
 
+interface PendingMutation {
+  readonly apply: (database: Database) => { readonly generation: number; readonly complete: () => void };
+  readonly reject: (error: unknown) => void;
+}
+
+const MAX_MUTATIONS_PER_SNAPSHOT = 16;
+
 interface ValidCandidate {
   readonly database: Database;
   readonly generation: number;
@@ -128,6 +135,7 @@ export class SqlJsProjectDatabase {
   private hasValidPrimary = false;
   private readonly loadSqlJs: () => Promise<SqlJsStatic>;
   private readonly mutationListeners = new Set<(generation: number) => void>();
+  private pendingMutationBatch: PendingMutation[] | null = null;
   private openResult: SqlJsProjectDatabaseOpenResult | null = null;
   private readonly queue = new SerialTaskQueue();
   private readonly snapshotStore: SqlJsSnapshotStore;
@@ -146,10 +154,12 @@ export class SqlJsProjectDatabase {
   }
 
   open(): Promise<SqlJsProjectDatabaseOpenResult> {
+    this.pendingMutationBatch = null;
     return this.queue.run(() => this.#openUnlocked());
   }
 
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T> {
+    this.pendingMutationBatch = null;
     return this.queue.run(async () => {
       const database = this.#requireDatabase();
       return reader(new SqlJsConnection(database));
@@ -157,58 +167,97 @@ export class SqlJsProjectDatabase {
   }
 
   exportSnapshot(): Promise<Uint8Array> {
+    this.pendingMutationBatch = null;
     return this.queue.run(async () => Uint8Array.from(this.#requireDatabase().export()));
   }
 
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
   ): Promise<SqlJsMutationResult<T>> {
-    return this.queue.run(async () => {
-      const database = this.#requireDatabase();
-      database.run('BEGIN IMMEDIATE');
-      let transactionCommitted = false;
-      let value: T;
-      try {
-        value = mutation(new SqlJsConnection(database));
-        if (value instanceof Promise) {
-          throw authorityError('operation-failed', 'authority-mutation-must-be-synchronous');
-        }
-        database.run(`
-          UPDATE project
-          SET snapshot_generation = snapshot_generation + 1
-          WHERE singleton = 1
-        `);
-        if (database.getRowsModified() !== 1) {
-          throw authorityError('authority-integrity-error', 'authority-project-row-missing');
-        }
-        const generation = assertAuthorityDatabaseIntegrity(database, {
-          full: false,
-          requireProject: true,
+    return new Promise((resolve, reject) => {
+      let batch = this.pendingMutationBatch;
+      if (batch === null || batch.length >= MAX_MUTATIONS_PER_SNAPSHOT) {
+        batch = [];
+        this.pendingMutationBatch = batch;
+        const scheduled = batch;
+        void this.queue.run(() => this.#commitMutationBatch(scheduled)).catch(error => {
+          for (const pending of scheduled) pending.reject(error);
         });
-        database.run('COMMIT');
-        transactionCommitted = true;
-        const bytes = database.export();
-        await this.#persistSnapshot(bytes, this.hasValidPrimary);
-        this.generationValue = generation;
-        this.hasValidPrimary = true;
-        this.#notifyMutationListeners(generation);
-        return { generation, value };
-      } catch (error) {
-        if (!transactionCommitted) {
-          try {
-            database.run('ROLLBACK');
-          } catch {
-            throw this.#blockForRecovery();
-          }
-        }
-        if (transactionCommitted) throw this.#blockForRecovery();
-        if (error instanceof CollabError) throw error;
-        throw authorityError('authority-integrity-error', 'authority-transaction-failed');
       }
+      batch.push({
+        apply: database => {
+          const result = this.#applyMutation(database, mutation);
+          return { generation: result.generation, complete: () => resolve(result) };
+        },
+        reject,
+      });
     });
   }
 
+  async #commitMutationBatch(batch: readonly PendingMutation[]): Promise<void> {
+    if (this.pendingMutationBatch === batch) this.pendingMutationBatch = null;
+    const database = this.#requireDatabase();
+    const committed: Array<{ readonly generation: number; readonly complete: () => void }> = [];
+    for (const pending of batch) {
+      try {
+        this.#requireDatabase();
+        committed.push(pending.apply(database));
+      } catch (error) {
+        pending.reject(error);
+      }
+    }
+    if (committed.length === 0) return;
+    try {
+      this.#requireDatabase();
+      await this.#persistSnapshot(database.export(), this.hasValidPrimary);
+    } catch {
+      throw this.#blockForRecovery();
+    }
+    this.hasValidPrimary = true;
+    this.generationValue = committed[committed.length - 1].generation;
+    for (const result of committed) {
+      this.#notifyMutationListeners(result.generation);
+      result.complete();
+    }
+  }
+
+  #applyMutation<T>(
+    database: Database,
+    mutation: (connection: AuthorityDatabaseConnection) => T,
+  ): SqlJsMutationResult<T> {
+    database.run('BEGIN IMMEDIATE');
+    try {
+      const value = mutation(new SqlJsConnection(database));
+      if (value instanceof Promise) {
+        throw authorityError('operation-failed', 'authority-mutation-must-be-synchronous');
+      }
+      database.run(`
+        UPDATE project
+        SET snapshot_generation = snapshot_generation + 1
+        WHERE singleton = 1
+      `);
+      if (database.getRowsModified() !== 1) {
+        throw authorityError('authority-integrity-error', 'authority-project-row-missing');
+      }
+      const generation = assertAuthorityDatabaseIntegrity(database, {
+        full: false,
+        requireProject: true,
+      });
+      database.run('COMMIT');
+      return { generation, value };
+    } catch (error) {
+      try {
+        database.run('ROLLBACK');
+      } catch {
+        throw this.#blockForRecovery();
+      }
+      if (error instanceof CollabError) throw error;
+      throw authorityError('authority-integrity-error', 'authority-transaction-failed');
+    }
+  }
+
   close(): Promise<void> {
+    this.pendingMutationBatch = null;
     return this.queue.run(async () => {
       this.mutationListeners.clear();
       this.database?.close();
