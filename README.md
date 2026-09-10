@@ -59,6 +59,12 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 Or install directly from the [community plugin page](https://community.obsidian.md/plugins/realclaudian).
 
+### Plugin size and Obsidian Sync
+
+Claudian's installed bundle is approximately 6 MB, and its main plugin file exceeds 5 MB. The Obsidian community plugin page may therefore display a large-plugin warning, and Obsidian Sync cannot sync the main plugin file because the service supports only files smaller than 5 MB.
+
+Considerable effort has gone into reducing the bundle size, but keeping it below 5 MB is no longer practical with the latest Claude Agent SDK. If you use Obsidian Sync across multiple desktop devices, install and update Claudian separately on each device instead of relying on Sync to copy the plugin files.
+
 ### From source (development)
 
 1. Clone this repository into your vault's plugins folder:
