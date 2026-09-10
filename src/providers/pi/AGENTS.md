@@ -1,49 +1,18 @@
 # Pi Provider
 
-`src/providers/pi/` adapts Pi through a `pi --mode rpc` subprocess.
-
-## Dependency Boundary
-
-- Pi RPC payloads, extension UI, session files, model metadata, commands, and provider state remain provider-owned until normalized into core contracts.
+`src/providers/pi/` is the Pi skin over the shared pi-family engine in `src/providers/pi-rpc/`. Facades in `settings.ts`, `models.ts`, `types.ts`, `env/`, and `app/` keep the historical export surface bound to the pi profile.
 
 ## Ownership
 
-| Component or area | Owns |
+| Component | Owns |
 | --- | --- |
-| `PiExecutionSession` | Provider execution binding, request/event lifecycle, provider snapshots, cancellation, and recovery |
-| `PiRpcSessionKernel` behind `PiExecutionKernel` | RPC turn coordination and live Pi execution mechanics |
-| `PiLaunchSpec` and `PiSubprocess` | Command-line, environment, subprocess, and transport construction |
-| `PiExtensionUiBridge` | Typed routing of provider extension UI requests to the Obsidian renderer |
-| `history/` | Native JSONL discovery, read-only replay and historical model recovery, and new fork-file materialization |
-| `PiModelDiscoveryService` and `PiCommandMetadataProbe` | Independent metadata subprocesses and their results |
+| `profile.ts` | Pi distribution facts: binary `pi`, package `@earendil-works/pi-coding-agent`, `.pi` data dirs, `pi:` model prefix, `PI_*` env keys |
+| `capabilities.ts`, `registration.ts` | provider registration, storage adapters, and workspace wiring |
+| `ui/PiChatUIConfig.ts` | chat UI binding via `definePiFamilyChatUIConfig` and `PI_PROVIDER_ICON` |
+| `ui/PiSettingsTab.ts` | settings presentation; labels here are provider-owned prose, not locale keys |
 
-## Protocol Rules
+## Rules
 
-- Launch arguments are built in `PiLaunchSpec.ts`. Keep command-line shape there instead of scattering flags across runtime code.
-- On Windows, treat an npm-family `pi.cmd` as an installation locator only: resolve the package-owned `bin.pi` target recorded by npm, pnpm, or Yarn shims and launch that entry through Node with structured arguments. Never serialize Pi prompts or session targets through `cmd.exe`; fail closed when the entrypoint cannot be established.
-- Live events are normalized through `normalizePiRpcEvent()` and `PiEventNormalizationState`.
-- Extension UI requests are routed through `PiExtensionUiBridge` and rendered by `ObsidianPiExtensionUiRenderer`; execution code must not manipulate Obsidian DOM directly.
-- Compact turns call the `compact` RPC request and emit a `context_compacted` stream chunk.
-
-## Session and History Rules
-
-- `PiProviderState` may store `sessionId`, `sessionFile`, `leafEntryId`, `parentSession`, `previousSessions`, and fork metadata. Do not infer these fields in feature code.
-- Pi can resume by session ID or absolute session file. Absolute session files can be switched in a live process; other target changes require process restart.
-- A relaunched kernel must prove that its initial `get_state` identity matches the requested resume file or ID before any prompt, steer request, or extension dialog response can carry user input. A mismatch fails the turn without replacing persisted session state.
-- History hydration reads Pi JSONL sessions from vault-local (`.pi/agent/sessions/`) and user-level (`~/.pi/agent/sessions/`) roots.
-- Forking creates a new Pi session file by copying the source branch up to `resumeAt` without altering or truncating the source. Keep fork materialization provider-owned.
-- Historical selected-model recovery walks the active JSONL branch to `leafEntryId` and preserves the last native provider/model pair. A missing persisted leaf must fail closed instead of using another branch; never promote `previousSessions` or a recovery-only locator into the live binding.
-- Environment keys that affect Pi data or package locations invalidate existing Pi sessions.
-- The runtime fingerprint includes `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR`, `PI_OFFLINE`, `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, `PI_CACHE_RETENTION`, `PATH`, and explicit/host CLI-path inputs.
-
-## Commands and Models
-
-- Runtime commands prefer the `get_commands` RPC and may fall back to a pushed `available_commands_update` catalog when compatibility shims omit `get_commands`; expose the normalized result through `PiCommandCatalog`.
-- Model discovery uses a separate subprocess and may receive extension UI requests. Keep model normalization in `models.ts`.
-- Use model-provided context windows when available; otherwise preserve the existing fallback behavior.
-
-## Gotchas
-
-- Images are passed as prompt image blocks only when attachment data is available.
-- `new_session` invalidates persisted session state until the provider reports a replacement session.
-- Tool mode can launch Pi with readonly tools or no tools. Keep that logic in launch-spec construction.
+- Runtime and protocol behavior is engine-owned; change it in `src/providers/pi-rpc/`, never by forking it here.
+- Engine files must not import this directory except through the injected profile and renderer objects.
+- The resume-proof, history, and fingerprint rules in the engine guide apply unchanged to Pi.

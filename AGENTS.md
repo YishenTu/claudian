@@ -17,7 +17,9 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/providers/codex/AGENTS.md`
   - `src/providers/grok/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
+  - `src/providers/pi-rpc/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
+  - `src/providers/omp/AGENTS.md`
   - `src/style/AGENTS.md`
 
 ## AGENTS.md Maintenance
@@ -61,6 +63,7 @@ Scoped guides define the source of truth and allowed mutators for state in their
 | `src/app/` | Application conversation, settings, provider-host, and storage services |
 | `src/core/` | Provider-neutral runtime, registry, storage, tool, and type contracts |
 | `src/providers/acp/` | Shared ACP transport, interaction, and session primitives without provider policy |
+| `src/providers/pi-rpc/` | Shared pi-family RPC engine (transport, execution, history, normalization) parameterized by `PiFamilyProfile`, used by the `pi` and `omp` skins |
 | `src/providers/*/` | Provider adaptors, provider-owned runtime protocol, history, storage, settings, and UI |
 | `src/features/chat/` | Sidebar chat orchestration against provider-neutral contracts |
 | `src/features/inline-edit/` | Inline edit modal and provider-backed edit services |
@@ -84,7 +87,7 @@ providers -> ProviderHost + core contracts + shared provider and UI primitives
 - Feature code must not import provider implementations. Resolve provider behavior through core registries and contracts.
 - Provider runtime and protocol code must not import chat views, feature controllers, or other feature orchestration.
 - Existing Claude compatibility re-exports that point into `src/app/` are migration seams, not an allowed general dependency direction. Do not add new provider-to-app imports; move shared contracts into `core/` when touching those seams materially.
-- `src/providers/acp/` may contain protocol primitives shared by ACP providers. Provider-specific launch policy, extensions, normalization, history, and state remain in the owning provider.
+- `src/providers/pi-rpc/` may contain pi-RPC protocol machinery shared by the `pi` and `omp` providers; distribution facts (binary, package, data dirs, model-id prefix, env keys) live only in each skin's `profile.ts`.
 - If a dependency does not fit these directions, introduce or extend an explicit contract at the owning boundary instead of reaching across layers.
 
 ### Cross-Layer Ownership

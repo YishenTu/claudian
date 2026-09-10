@@ -22,10 +22,11 @@ import {
 } from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
+import { sameDiscoveredModels, sameStringList } from '../../pi-rpc/internal/compareCollections';
+import { PiModelDiscoveryService } from '../../pi-rpc/runtime/PiModelDiscoveryService';
 import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
-import { sameDiscoveredModels, sameStringList } from '../internal/compareCollections';
 import { decodePiModelId, type PiDiscoveredModel } from '../models';
-import { PiModelDiscoveryService } from '../runtime/PiModelDiscoveryService';
+import { piFamilyProfile } from '../profile';
 import {
   getPiProviderSettings,
   normalizePiVisibleModels,
@@ -162,7 +163,7 @@ function renderPiModelPicker(
     failedCatalogText: 'Could not load the Pi model catalog. Check the CLI path and login state, then try again.',
     getState,
     async loadCatalog() {
-      const result = await new PiModelDiscoveryService(context.plugin).discoverModels();
+      const result = await new PiModelDiscoveryService(piFamilyProfile, context.plugin).discoverModels();
       if (result.kind === 'skipped') {
         return getPiProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
       }

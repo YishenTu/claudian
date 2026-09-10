@@ -11,12 +11,13 @@ import { codexProviderRegistration } from '@/providers/codex/registration';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
 import { grokProviderRegistration } from '@/providers/grok/registration';
+import { ompProviderRegistration } from '@/providers/omp/registration';
 import { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCommandCatalog';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { opencodeProviderRegistration } from '@/providers/opencode/registration';
-import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
-import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 import { piProviderRegistration } from '@/providers/pi/registration';
+import { PiCommandCatalog } from '@/providers/pi-rpc/commands/PiCommandCatalog';
+import { PiExecutionBackend } from '@/providers/pi-rpc/execution/PiExecutionBackend';
 
 function createHost(): any {
   const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
@@ -38,6 +39,7 @@ function createHost(): any {
         grok: { enabled: true },
         opencode: { enabled: true },
         pi: { enabled: true },
+        omp: { enabled: true },
       },
     },
   };
@@ -50,6 +52,7 @@ describe('provider execution registration', () => {
     ProviderWorkspaceRegistry.setServices('grok', undefined);
     ProviderWorkspaceRegistry.setServices('opencode', undefined);
     ProviderWorkspaceRegistry.setServices('pi', undefined);
+    ProviderWorkspaceRegistry.setServices('omp', undefined);
   });
 
   it('exposes exactly one execution factory per provider registration', () => {
@@ -59,6 +62,7 @@ describe('provider execution registration', () => {
       grokProviderRegistration,
       opencodeProviderRegistration,
       piProviderRegistration,
+      ompProviderRegistration,
     ]) {
       expect(registration).toHaveProperty('createExecutionBackend', expect.any(Function));
       expect(
@@ -85,7 +89,10 @@ describe('provider execution registration', () => {
       commandCatalog: new OpencodeCommandCatalog(),
     } as any);
     ProviderWorkspaceRegistry.setServices('pi', {
-      commandCatalog: new PiCommandCatalog(),
+      commandCatalog: new PiCommandCatalog('pi'),
+    } as any);
+    ProviderWorkspaceRegistry.setServices('omp', {
+      commandCatalog: new PiCommandCatalog('omp'),
     } as any);
 
     expect(ProviderRegistry.createExecutionBackend(host, 'claude'))
@@ -98,6 +105,8 @@ describe('provider execution registration', () => {
       .toBeInstanceOf(OpencodeExecutionBackend);
     expect(ProviderRegistry.createExecutionBackend(host, 'pi'))
       .toBeInstanceOf(PiExecutionBackend);
+    expect(ProviderRegistry.createExecutionBackend(host, 'omp'))
+      .toBeInstanceOf(PiExecutionBackend);
   });
 
   it('registers Claude transcript recovery without provider parity placeholders', () => {
@@ -109,5 +118,6 @@ describe('provider execution registration', () => {
     expect(ProviderRegistry.createSubagentHistoryService(host, 'grok')).toBeNull();
     expect(ProviderRegistry.createSubagentHistoryService(host, 'opencode')).toBeNull();
     expect(ProviderRegistry.createSubagentHistoryService(host, 'pi')).toBeNull();
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'omp')).toBeNull();
   });
 });

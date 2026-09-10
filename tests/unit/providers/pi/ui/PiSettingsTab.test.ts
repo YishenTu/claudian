@@ -132,7 +132,7 @@ jest.mock('@/providers/pi/app/PiWorkspaceServices', () => ({
     },
   })),
 }));
-jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
+jest.mock('@/providers/pi-rpc/runtime/PiModelDiscoveryService', () => ({
   PiModelDiscoveryService: jest.fn().mockImplementation(() => ({
     discoverModels: mockDiscoverModels,
   })),

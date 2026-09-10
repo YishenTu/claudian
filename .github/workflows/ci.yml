@@ -137,9 +137,9 @@ jobs:
               src/core/process/ManagedStdioProcess.ts | \
               tests/unit/utils/windowsCmdShim.test.ts | \
               tests/unit/core/process/ManagedStdioProcess.test.ts | \
-              src/providers/pi/runtime/PiSubprocess.ts | \
-              tests/unit/providers/pi/runtime/PiSubprocess.test.ts | \
-              tests/integration/providers/pi/PiSubprocess.windows.test.ts | \
+              src/providers/pi-rpc/runtime/PiSubprocess.ts | \
+              tests/unit/providers/pi-rpc/runtime/PiSubprocess.test.ts | \
+              tests/integration/providers/pi-rpc/PiSubprocess.windows.test.ts | \
               scripts/*collab* | \
               scripts/build* | \
               scripts/check-architecture-boundaries.test.mjs | \
@@ -194,7 +194,7 @@ jobs:
 
       - name: Run Windows Pi launch integration
         if: runner.os == 'Windows'
-        run: npm run test:unit -- --runInBand tests/integration/providers/pi/PiSubprocess.windows.test.ts
+        run: npm run test:unit -- --runInBand tests/integration/providers/pi-rpc/PiSubprocess.windows.test.ts
 
   build:
     needs: [quality, test]
