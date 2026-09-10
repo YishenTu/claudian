@@ -21,10 +21,11 @@ import type { RetirementClientHandler } from '@/app/collab/retirement/Retirement
 import type { CollabProjectSnapshot } from '@/core/collab';
 import { isCollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
+import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CACHE_SCHEMA_VERSION = 4 as const;
-const OBSOLETE_CACHE_SCHEMA_VERSIONS = new Set<unknown>([2, 3]);
+const CACHE_SCHEMA_VERSION = 5 as const;
+const OBSOLETE_CACHE_SCHEMA_VERSIONS = new Set<unknown>([2, 3, 4]);
 const MAX_CACHED_TICKET_PAGES = 16;
 const MAX_CACHED_TICKET_DETAILS = 32;
 
@@ -41,15 +42,19 @@ interface CachedTicketDetail {
 }
 
 interface CollabSnapshotCache extends CollabLocalProjectDocumentBase {
+  readonly authorityBinding: string;
   readonly cachedAt: string;
   readonly schemaVersion: typeof CACHE_SCHEMA_VERSION;
   readonly snapshot: CollabProjectSnapshot;
+}
+
+interface CollabTicketCache extends CollabSnapshotCache {
   readonly ticketDetails: readonly CachedTicketDetail[];
   readonly ticketPages: readonly CachedTicketPage[];
 }
 
 interface ObsoleteCollabSnapshotCache extends CollabLocalProjectDocumentBase {
-  readonly schemaVersion: 2 | 3;
+  readonly schemaVersion: 2 | 3 | 4;
 }
 
 type DecodedCollabSnapshotCache = CollabSnapshotCache | ObsoleteCollabSnapshotCache;
@@ -58,15 +63,15 @@ export interface CollabClientProjectionStore {
   loadMembership(projectId: string): Promise<CollabLocalMembershipRecord | null>;
   loadProjectDocument<T extends CollabLocalProjectDocumentBase>(
     projectId: string,
-    kind: 'cache',
+    kind: 'cache' | 'ticket-cache',
     decode: (value: unknown) => T,
   ): Promise<T | null>;
   saveProjectDocument<T extends CollabLocalProjectDocumentBase>(
     projectId: string,
-    kind: 'cache',
+    kind: 'cache' | 'ticket-cache',
     document: T,
   ): Promise<void>;
-  removeProjectDocument(projectId: string, kind: 'cache'): Promise<boolean>;
+  removeProjectDocument(projectId: string, kind: 'cache' | 'ticket-cache'): Promise<boolean>;
   updateMembershipProjection(
     projectId: string,
     memberId: string,
@@ -128,6 +133,13 @@ function projectionError(
   return new CollabError({ code, safeContext: { reason } });
 }
 
+function cacheAuthorityBinding(membership: CollabLocalMembershipRecord): string {
+  const authority = membership.authority;
+  return JSON.stringify(authority.kind === 'cloud'
+    ? [authority.kind, authority.authorityGeneration, authority.serverUrl, authority.gitRemoteUrl]
+    : [authority.kind, authority.authorityGeneration, authority.endpoint, authority.hostCaFingerprint, authority.gitRemoteUrl]);
+}
+
 function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Invalid Collab snapshot cache');
@@ -138,11 +150,12 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
     OBSOLETE_CACHE_SCHEMA_VERSIONS.has(source.schemaVersion)
     && typeof projectId === 'string'
   ) {
-    return { projectId, schemaVersion: source.schemaVersion as 2 | 3 };
+    return { projectId, schemaVersion: source.schemaVersion as 2 | 3 | 4 };
   }
   const cachedAt = source.cachedAt;
   if (
     source.schemaVersion !== CACHE_SCHEMA_VERSION
+    || typeof source.authorityBinding !== 'string'
     || typeof projectId !== 'string'
     || typeof cachedAt !== 'string'
     || Number.isNaN(Date.parse(cachedAt))
@@ -168,6 +181,16 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   if (snapshot.project.id !== projectId) {
     throw new TypeError('Invalid Collab snapshot cache');
   }
+  return { authorityBinding: source.authorityBinding, cachedAt, projectId, schemaVersion: CACHE_SCHEMA_VERSION, snapshot };
+}
+
+function decodeTicketCache(value: unknown): CollabTicketCache {
+  const base = decodeCache(value);
+  if (base.schemaVersion !== CACHE_SCHEMA_VERSION) throw new TypeError('Obsolete Ticket cache');
+  if (Buffer.byteLength(JSON.stringify(value, null, 2)) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
+    throw new TypeError('Oversized Ticket cache');
+  }
+  const source = value as Readonly<Record<string, unknown>>;
   if (!Array.isArray(source.ticketPages) || !Array.isArray(source.ticketDetails)) {
     throw new TypeError('Invalid Collab Ticket cache');
   }
@@ -181,14 +204,21 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   ) {
     throw new TypeError('Invalid Collab Ticket cache');
   }
-  return {
-    cachedAt,
-    projectId,
-    schemaVersion: CACHE_SCHEMA_VERSION,
-    snapshot,
-    ticketDetails,
-    ticketPages,
-  };
+  return { ...base, ticketDetails, ticketPages };
+}
+
+function boundTicketCache(cache: CollabTicketCache): CollabTicketCache {
+  const ticketDetails = [...cache.ticketDetails];
+  const ticketPages = [...cache.ticketPages];
+  const bounded = { ...cache, ticketDetails, ticketPages };
+  while (Buffer.byteLength(JSON.stringify(bounded, null, 2)) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
+    const detail = ticketDetails.at(-1);
+    const page = ticketPages.at(-1);
+    if (!detail && !page) break;
+    if (detail && (!page || detail.cachedAt <= page.cachedAt)) ticketDetails.pop();
+    else ticketPages.pop();
+  }
+  return bounded;
 }
 
 function decodeCachedTicketPage(value: unknown): CachedTicketPage {
@@ -436,14 +466,15 @@ export class CollabClientProjection {
     } catch (error) {
       throwIfCancelled(options.signal);
       if (!(error instanceof CollabError) || !canUseCache(error)) throw error;
-      const cache = await this.#loadCache(request.projectId);
+      const cache = await this.#loadTicketCache(request.projectId);
+      const snapshotCache = await this.#loadCache(request.projectId);
       throwIfCancelled(options.signal);
       this.#assertProjectGeneration(request.projectId, generation);
       const ticket = cache?.ticketDetails.find(
         entry => entry.detail.ticket.number === request.ticketNumber,
       )?.detail.ticket ?? cache?.ticketPages.flatMap(entry => entry.page.tickets).find(
         entry => entry.number === request.ticketNumber,
-      ) ?? cache?.snapshot.ticketHighlights.find(entry => entry.number === request.ticketNumber);
+      ) ?? snapshotCache?.snapshot.ticketHighlights.find(entry => entry.number === request.ticketNumber);
       if (!ticket) throw error;
       return { ticketId: ticket.id };
     }
@@ -480,7 +511,7 @@ export class CollabClientProjection {
       throwIfCancelled(options.signal);
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
-      const cache = await this.#loadCache(request.projectId);
+      const cache = await this.#loadTicketCache(request.projectId);
       throwIfCancelled(options.signal);
       const page = cache?.ticketPages.find(entry => entry.key === key)?.page;
       if (!page) throw error;
@@ -525,7 +556,7 @@ export class CollabClientProjection {
       throwIfCancelled(options.signal);
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
-      const cache = await this.#loadCache(projectId);
+      const cache = await this.#loadTicketCache(projectId);
       throwIfCancelled(options.signal);
       const detail = cache?.ticketDetails.find(entry => entry.ticketId === ticketId)?.detail;
       if (!detail) throw error;
@@ -757,17 +788,16 @@ export class CollabClientProjection {
         safeContext: { reason: 'projection-event-sequence-regressed' },
       });
     }
-    const writeSnapshotCache = async (cachedSnapshot: CollabProjectSnapshot): Promise<void> => {
-      await this.#updateTicketCache(projectId, cache => ({
+    await session.enqueueCacheUpdate(async () => {
+      session.assertGeneration(generation);
+      await this.store.saveProjectDocument(projectId, 'cache', {
+        authorityBinding: cacheAuthorityBinding(membership),
         cachedAt: this.now().toISOString(),
         projectId,
         schemaVersion: CACHE_SCHEMA_VERSION,
-        snapshot: cachedSnapshot,
-        ticketDetails: cache?.ticketDetails ?? [],
-        ticketPages: cache?.ticketPages ?? [],
-      }));
-    };
-    await writeSnapshotCache(snapshot);
+        snapshot,
+      });
+    });
     session.assertGeneration(generation);
     await this.store.updateMembershipProjection(
       projectId,
@@ -892,13 +922,31 @@ export class CollabClientProjection {
 
    #updateTicketCache(
     projectId: string,
-    update: (cache: CollabSnapshotCache | null) => CollabSnapshotCache | null,
+    update: (cache: CollabTicketCache | null) => CollabTicketCache | null,
   ): Promise<void> {
-    return this.sessions.acquire(projectId).enqueueCacheUpdate(async () => {
-      const cache = await this.#loadCache(projectId).catch(() => null);
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    return work.enqueueCacheUpdate(async () => {
+      const current = await this.#loadTicketCache(projectId).catch(() => null);
+      const snapshot = await this.#loadCache(projectId);
+      const cache = snapshot ? {
+        ...snapshot,
+        ticketDetails: current?.ticketDetails ?? [],
+        ticketPages: current?.ticketPages ?? [],
+      } : null;
       const next = update(cache);
-      if (next) await this.store.saveProjectDocument(projectId, 'cache', next);
+      work.assertGeneration(generation);
+      if (next) await this.store.saveProjectDocument(projectId, 'ticket-cache', boundTicketCache(next));
     });
+  }
+
+  async #loadTicketCache(projectId: string): Promise<CollabTicketCache | null> {
+    const cache = await this.store.loadProjectDocument(projectId, 'ticket-cache', decodeTicketCache);
+    if (cache && !await this.#cacheMatchesMembership(projectId, cache, false)) {
+      await this.store.removeProjectDocument(projectId, 'ticket-cache');
+      return null;
+    }
+    return cache;
   }
 
    async #loadCache(projectId: string): Promise<CollabSnapshotCache | null> {
@@ -907,22 +955,27 @@ export class CollabClientProjection {
       await this.store.removeProjectDocument(projectId, 'cache');
       return null;
     }
-    if (cache) {
-      const membership = await this.store.loadMembership(projectId);
-      if (
-        !membership
-        || membership.project.id !== cache.snapshot.project.id
-        || membership.member.id !== cache.snapshot.currentMember.id
-        || membership.member.displayName !== cache.snapshot.currentMember.displayName
-        || membership.member.personalRef !== cache.snapshot.currentMember.personalRef
-        || membership.member.role !== cache.snapshot.currentMember.role
-        || membership.authority.kind !== cache.snapshot.project.authorityKind
-        || cache.snapshot.eventSequence < membership.lastEventSequence
-      ) {
-        await this.store.removeProjectDocument(projectId, 'cache');
-        return null;
-      }
+    if (cache && !await this.#cacheMatchesMembership(projectId, cache, true)) {
+      await this.store.removeProjectDocument(projectId, 'cache');
+      return null;
     }
     return cache;
+  }
+
+  async #cacheMatchesMembership(
+    projectId: string,
+    cache: CollabSnapshotCache,
+    requireCurrentSequence: boolean,
+  ): Promise<boolean> {
+    const membership = await this.store.loadMembership(projectId);
+    return membership !== null
+      && cache.authorityBinding === cacheAuthorityBinding(membership)
+      && membership.project.id === cache.snapshot.project.id
+      && membership.member.id === cache.snapshot.currentMember.id
+      && membership.member.displayName === cache.snapshot.currentMember.displayName
+      && membership.member.personalRef === cache.snapshot.currentMember.personalRef
+      && membership.member.role === cache.snapshot.currentMember.role
+      && membership.authority.kind === cache.snapshot.project.authorityKind
+      && (!requireCurrentSequence || cache.snapshot.eventSequence >= membership.lastEventSequence);
   }
 }

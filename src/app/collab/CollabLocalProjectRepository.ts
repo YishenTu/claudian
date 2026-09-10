@@ -81,6 +81,7 @@ import {
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import type { CollabAuthorityKind } from '@/core/collab';
 import { type CollabLocalCleanupStatus, type CollabProjectLifecycle, parseCollabProjectsFolder } from '@/core/collab';
+import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   type InstallationKey,
@@ -224,6 +225,7 @@ export type CollabLocalProjectDocumentKind =
   | 'cloud-management-intent'
   | 'cloud-retirement-intent'
   | 'cache'
+  | 'ticket-cache'
   | 'pending-operation'
   | 'publication-state'
   | 'request-draft';
@@ -1267,6 +1269,7 @@ export class CollabLocalProjectRepository {
       const activeDocuments = [
         this.getProjectPaths(projectId).membership,
         this.getProjectPaths(projectId).cache,
+        this.#projectDocumentPath(projectId, 'ticket-cache'),
         this.getProjectPaths(projectId).cloudManagementIntent,
         this.getProjectPaths(projectId).cloudRetirementIntent,
         this.getProjectPaths(projectId).pendingOperation,
@@ -1934,6 +1937,9 @@ export class CollabLocalProjectRepository {
       return Promise.reject(localRecordError('local-record-corrupt', kind, projectId));
     }
     const serialized = serializeJson(document);
+    if (kind === 'ticket-cache' && Buffer.byteLength(serialized) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
+      return Promise.reject(localRecordError('local-record-corrupt', kind, projectId));
+    }
     return this.#operationQueue.run(async () => {
       await this.#ensurePrivateProjectDirectory(projectId);
       await writeCollabFileAtomically(
@@ -2881,6 +2887,24 @@ export class CollabLocalProjectRepository {
     let absolutePath: string;
     try {
       absolutePath = await resolveCollabVaultPath(this.vaultRoot, relativePath);
+      if (recordKind === 'cache' || recordKind === 'ticket-cache') {
+        const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+        const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow);
+        try {
+          const maximum = recordKind === 'ticket-cache' ? CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes : 2 * 1024 * 1024;
+          const stat = await handle.stat();
+          if (!stat.isFile() || stat.size > maximum) throw localRecordError('local-record-corrupt', recordKind, projectId);
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          for await (const chunk of handle.createReadStream({ autoClose: false })) {
+            const buffer = Buffer.from(chunk as Uint8Array);
+            bytes += buffer.byteLength;
+            if (bytes > maximum) throw localRecordError('local-record-corrupt', recordKind, projectId);
+            chunks.push(buffer);
+          }
+          return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+        } finally { await handle.close(); }
+      }
       return JSON.parse(await readFile(absolutePath, 'utf8')) as unknown;
     } catch (error) {
       if (error instanceof CollabError) throw error;
@@ -2900,6 +2924,7 @@ export class CollabLocalProjectRepository {
     const paths = this.getProjectPaths(projectId);
     if (kind === 'authority-transfer-claimant') return paths.authorityTransferClaimant;
     if (kind === 'cache') return paths.cache;
+    if (kind === 'ticket-cache') return path.posix.join(path.posix.dirname(paths.cache), 'ticket-cache.json');
     if (kind === 'cloud-management-intent') return paths.cloudManagementIntent;
     if (kind === 'cloud-retirement-intent') return paths.cloudRetirementIntent;
     if (kind === 'pending-operation') return paths.pendingOperation;

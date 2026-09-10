@@ -61,6 +61,89 @@ describe('CollabClientProjection', () => {
     registries.clear();
   });
 
+  it('refreshes coordination without reading or rewriting cached Ticket details', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    await store.saveMembership(cloudMembership());
+    const control = controlPort();
+    control.readSnapshot.mockResolvedValue(cloudSnapshot());
+    control.readTicket.mockResolvedValue(ticketDetail());
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await projection.readSnapshot('project-a');
+    await projection.readTicket('project-a', 'ticket-a');
+    const first = await store.loadProjectDocument('project-a', 'cache', value => (
+      value as { projectId: string; schemaVersion: number; ticketDetails?: unknown }
+    ));
+    expect(first?.ticketDetails).toBeUndefined();
+    const summaryBytes = JSON.stringify(first).length;
+    expect(summaryBytes).toBeLessThan(8_192);
+    control.readSnapshot.mockResolvedValue({ ...cloudSnapshot(), eventSequence: 8 });
+    await projection.readSnapshot('project-a');
+    control.readTicket.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toMatchObject({
+      detail: ticketDetail(), source: 'cache', stale: true,
+    });
+  });
+
+  it('resolves a newer snapshot highlight even when older Ticket details exist', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    control.readTicket.mockResolvedValue(ticketDetail());
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await projection.readSnapshot('project-a');
+    await projection.readTicket('project-a', 'ticket-a');
+    control.readSnapshot.mockResolvedValue({
+      ...snapshot(), eventSequence: 6, openTicketCount: 1,
+      ticketHighlights: [{ ...ticketDetail().ticket, id: 'ticket-b', number: 2 }],
+    });
+    await projection.readSnapshot('project-a');
+    control.resolveTicketNumber.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    await expect(projection.resolveTicketNumber({ projectId: 'project-a', ticketNumber: 2 }))
+      .resolves.toEqual({ ticketId: 'ticket-b' });
+  });
+
+  it.each(['generation', 'origin'] as const)('rejects Ticket cache after authority %s changes', async change => {
+    const store = new MemoryProjectionStore();
+    store.membership = cloudMembership();
+    const control = controlPort();
+    control.readSnapshot.mockResolvedValue(cloudSnapshot());
+    control.readTicket.mockResolvedValue(ticketDetail());
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await projection.readSnapshot('project-a');
+    await projection.readTicket('project-a', 'ticket-a');
+    store.membership = {
+      ...cloudMembership(), lastEventSequence: 8,
+      authority: {
+        ...cloudMembership().authority,
+        ...(change === 'generation' ? { authorityGeneration: 9 } : { serverUrl: 'https://new.example.test' }),
+      },
+    };
+    projection.resetProjectConnection('project-a');
+    const offline = new CollabError({ code: 'endpoint-unreachable' });
+    control.readTicket.mockRejectedValue(offline);
+    await expect(projection.readTicket('project-a', 'ticket-a')).rejects.toBe(offline);
+  });
+
+  it('does not retain a complete Ticket exceeding the offline cache byte budget', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    const detail = ticketDetailWithComments(500);
+    const large = {
+      ...detail,
+      comments: { comments: detail.comments.comments.map(comment => ({
+        ...comment, body: 'x'.repeat(16_384),
+      })) },
+    };
+    control.readTicket.mockResolvedValue(large);
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await projection.readSnapshot('project-a');
+    await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toMatchObject({
+      source: 'online', stale: false,
+    });
+    const offline = new CollabError({ code: 'endpoint-unreachable' });
+    control.readTicket.mockRejectedValue(offline);
+    await expect(projection.readTicket('project-a', 'ticket-a')).rejects.toBe(offline);
+  });
+
   it('resolves cached Ticket numbers only when online lookup is unavailable', async () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();
@@ -111,7 +194,8 @@ describe('CollabClientProjection', () => {
     expect(store.documents.get('project-a')).toMatchObject({
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 4,
+      schemaVersion: 5,
+      authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: { eventSequence: 5 },
     });
     expect(store.membership.lastEventSequence).toBe(5);
@@ -259,7 +343,8 @@ describe('CollabClientProjection', () => {
     const cached = {
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 4,
+      schemaVersion: 5,
+      authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: { ...snapshot(), eventSequence: 6 },
       ticketDetails: [],
       ticketPages: [],
@@ -407,15 +492,14 @@ describe('CollabClientProjection', () => {
     });
     expect(store.documents.get('project-a')).toMatchObject({
       projectId: 'project-a',
-      schemaVersion: 4,
+      schemaVersion: 5,
+      authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: {
         project: {
           id: 'project-a',
           managerSetGeneration: 0,
         },
       },
-      ticketDetails: [],
-      ticketPages: [],
     });
     expect(store.documents.get('project-a')).not.toHaveProperty(
       'snapshot.project.managerMemberId',
@@ -1305,7 +1389,7 @@ function ticketDetailWithComments(count: number): CollabTicketDetail {
 
 class MemoryProjectionStore implements CollabClientProjectionStore {
   readonly documents = new Map<string, unknown>();
-  readonly removedDocuments: Array<[string, 'cache']> = [];
+  readonly removedDocuments: Array<[string, 'cache' | 'ticket-cache']> = [];
   membership: CollabLocalMembershipRecord = membership();
 
   async loadMembership(): Promise<CollabLocalMembershipRecord | null> {
@@ -1314,24 +1398,24 @@ class MemoryProjectionStore implements CollabClientProjectionStore {
 
   async loadProjectDocument<T>(
     projectId: string,
-    _kind: 'cache',
+    kind: 'cache' | 'ticket-cache',
     decode: (value: unknown) => T,
   ): Promise<T | null> {
-    const value = this.documents.get(projectId);
+    const value = this.documents.get(kind === 'cache' ? projectId : `${projectId}:${kind}`);
     return value === undefined ? null : decode(value);
   }
 
   async saveProjectDocument(
     projectId: string,
-    _kind: 'cache',
+    kind: 'cache' | 'ticket-cache',
     document: unknown,
   ): Promise<void> {
-    this.documents.set(projectId, document);
+    this.documents.set(kind === 'cache' ? projectId : `${projectId}:${kind}`, document);
   }
 
-  async removeProjectDocument(projectId: string, kind: 'cache'): Promise<boolean> {
+  async removeProjectDocument(projectId: string, kind: 'cache' | 'ticket-cache'): Promise<boolean> {
     this.removedDocuments.push([projectId, kind]);
-    return this.documents.delete(projectId);
+    return this.documents.delete(kind === 'cache' ? projectId : `${projectId}:${kind}`);
   }
 
   async updateMembershipProjection(
