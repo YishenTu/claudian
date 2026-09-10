@@ -248,7 +248,7 @@ export interface LanHostCoordinatorOptions {
 }
 
 export interface LanHostConnectionProjectionPort {
-  resetProjectConnection(projectId: CollabProjectId): void;
+  resetProjectConnection(projectId: CollabProjectId, options?: { readonly resumeEvents?: boolean }): void;
 }
 
 export interface LanHostProjectLifecycleAdmissions {
@@ -1327,7 +1327,7 @@ export class LanHostCoordinator {
       const hostedMembership: CollabLocalLanMembershipRecord = {
         ...membership,
         authority: {
-          authorityGeneration: membership.authority.authorityGeneration,
+          ...membership.authority,
           endpoint: listener.endpoint,
           gitRemoteUrl: `${listener.endpoint}/v1/git/${projectId}/repository.git`,
           hostCaCertificatePem: listener.caCertificatePem,
@@ -1472,7 +1472,7 @@ export class LanHostCoordinator {
       });
       await this.#syncAdvertisements();
       this.#assertOpen();
-      this.#connectionProjection?.resetProjectConnection(projectId);
+      this.#connectionProjection?.resetProjectConnection(projectId, { resumeEvents: true });
       if (openedRuntime.outgoingHostTransfer?.resume) {
         queueMicrotask(() => {
           void openedRuntime.outgoingHostTransfer!.resume!().catch(() => undefined);
@@ -2187,6 +2187,7 @@ export class LanHostCoordinator {
       throw hostError('endpoint-unreachable', 'private-ipv4-unavailable');
     }
     if (preferred === previous.address) {
+      await this.#syncAdvertisements();
       this.#listenerFailure = null;
       return;
     }
@@ -2208,7 +2209,7 @@ export class LanHostCoordinator {
         const updated: CollabLocalLanMembershipRecord = {
           ...membership,
           authority: {
-            authorityGeneration: membership.authority.authorityGeneration,
+            ...membership.authority,
             endpoint: next.endpoint,
             gitRemoteUrl: `${next.endpoint}/v1/git/${projectId}/repository.git`,
             hostCaCertificatePem: next.caCertificatePem,
@@ -2227,7 +2228,7 @@ export class LanHostCoordinator {
       await this.#syncAdvertisements();
       this.#assertOpen();
       for (const projectId of this.#hostedProjects.keys()) {
-        this.#connectionProjection?.resetProjectConnection(projectId);
+        this.#connectionProjection?.resetProjectConnection(projectId, { resumeEvents: true });
       }
     } catch (error) {
       for (const projection of [...committed].reverse()) {
@@ -2260,7 +2261,8 @@ export class LanHostCoordinator {
       ...this.#authorityTransferRoutes.listProjectIds(),
     ] : []);
     for (const [projectId, advertisement] of this.#advertisements) {
-      if (desired.has(projectId) && advertisement.endpoint === listener?.endpoint) continue;
+      if (desired.has(projectId) && advertisement.endpoint === listener?.endpoint
+        && advertisement.publication.active) continue;
       await advertisement.publication.stop().catch(() => undefined);
       if (this.#advertisements.get(projectId) === advertisement) this.#advertisements.delete(projectId);
     }

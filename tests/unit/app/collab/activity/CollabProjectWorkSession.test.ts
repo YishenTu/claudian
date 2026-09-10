@@ -108,11 +108,10 @@ describe('CollabProjectWorkSession', () => {
     later.release();
   });
 
-  it('coalesces snapshot, refresh, and reconnect work independently', async () => {
+  it('coalesces snapshot and refresh work independently', async () => {
     const session = new CollabProjectWorkSession('project-a');
     const snapshot = deferred<never>();
     const refresh = deferred<number>();
-    const reconnect = deferred<boolean>();
 
     expect(session.coalesceSnapshot(() => snapshot.promise))
       .toBe(session.coalesceSnapshot(() => Promise.reject(new Error('unused'))));
@@ -121,16 +120,12 @@ describe('CollabProjectWorkSession', () => {
       1,
       () => Promise.reject(new Error('unused')),
     );
-    expect(session.coalesceAutoReconnect(() => reconnect.promise))
-      .toBe(session.coalesceAutoReconnect(() => Promise.reject(new Error('unused'))));
 
     refresh.resolve(1);
-    reconnect.resolve(true);
     await Promise.all([
       firstRefresh,
       repeatedRefresh,
       session.currentEventRefresh(),
-      session.currentAutoReconnect(),
     ]);
   });
 

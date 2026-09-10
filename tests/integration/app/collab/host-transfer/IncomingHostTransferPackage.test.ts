@@ -121,7 +121,7 @@ describe('IncomingHostTransferPackage', () => {
       manifestDigest: certificate.manifestDigest,
       record,
     })).resolves.toEqual({
-      eventSequence: 12,
+      eventSequence: 12, proofChainDigest: '3'.repeat(64),
     });
     await expect(readFile(path.join(authorityDirectory, 'collab.db')))
       .resolves.toEqual(activated);
@@ -235,7 +235,7 @@ describe('IncomingHostTransferPackage', () => {
       activationCertificate: certificate,
       manifestDigest,
       record,
-    })).resolves.toEqual({ eventSequence: 12 });
+    })).resolves.toEqual({ eventSequence: 12, proofChainDigest: '3'.repeat(64) });
     await expect(readFile(path.join(authorityDirectory, 'collab.db')))
       .resolves.toEqual(migratedActivated);
 
@@ -251,7 +251,7 @@ describe('IncomingHostTransferPackage', () => {
       activationCertificate: certificate,
       manifestDigest,
       record,
-    })).resolves.toEqual({ eventSequence: 12 });
+    })).resolves.toEqual({ eventSequence: 12, proofChainDigest: '3'.repeat(64) });
     await expect(readFile(
       path.join(authorityDirectory, '.host-transfer-install-owner.json'),
       'utf8',

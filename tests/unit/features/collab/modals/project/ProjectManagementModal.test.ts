@@ -163,6 +163,14 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('identifies the Project and groups management into named sections', async () => {
     const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
     const modal = new ProjectManagementModal({} as never, port, { project: project() });

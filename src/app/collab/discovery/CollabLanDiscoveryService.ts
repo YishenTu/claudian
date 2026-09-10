@@ -22,6 +22,7 @@ export interface CollabDiscoveredHost {
 }
 
 export interface CollabLanAdvertisement {
+  readonly active: boolean;
   stop(): Promise<void>;
 }
 
@@ -168,13 +169,16 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
   }
 
   async advertiseProject(host: CollabDiscoveredHost): Promise<CollabLanAdvertisement> {
-    if (this.closed) return { stop: () => Promise.resolve() };
+    if (this.closed) return { active: false, stop: () => Promise.resolve() };
     let endpoint: string;
     try {
       endpoint = this.#validateHost(host).endpoint;
     } catch {
-      return { stop: () => Promise.resolve() };
+      return { active: false, stop: () => Promise.resolve() };
     }
+    let failed = false;
+    const onError = () => { failed = true; };
+    this.errorListeners.add(onError);
     let publication: DnsSdPublication;
     try {
       publication = this.#requireRuntime().publish({
@@ -188,20 +192,32 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
         },
       });
     } catch {
+      this.errorListeners.delete(onError);
       await this.#releaseRuntimeIfIdle();
-      return { stop: () => Promise.resolve() };
+      return { active: false, stop: () => Promise.resolve() };
     }
     this.activePublications += 1;
     let stopped = false;
     return {
+      get active() { return !stopped && !failed; },
       stop: async () => {
         if (stopped) return;
         stopped = true;
-        await new Promise<void>(resolve => {
-          publication.stop(() => resolve());
-        });
-        this.activePublications -= 1;
-        await this.#releaseRuntimeIfIdle();
+        this.errorListeners.delete(onError);
+        try {
+          await new Promise<void>(resolve => {
+            const timeout = window.setTimeout(resolve, 1_000);
+            try {
+              publication.stop(() => { window.clearTimeout(timeout); resolve(); });
+            } catch {
+              window.clearTimeout(timeout);
+              resolve();
+            }
+          });
+        } finally {
+          this.activePublications -= 1;
+          await this.#releaseRuntimeIfIdle();
+        }
       },
     };
   }

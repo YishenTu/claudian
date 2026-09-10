@@ -128,6 +128,7 @@ export interface CloudProjectEventClientOptions {
 }
 
 export interface CloudProjectEventClientInput {
+  readonly onConnectionResult?: (error?: CollabError) => void;
   readonly headers: Readonly<Record<string, string>>;
   readonly afterSequence: number;
   readonly projectId: string;
@@ -921,6 +922,7 @@ export class CloudProjectEventClient {
     socket.onOpen(() => {
       if (this.#socket !== socket) return;
       this.#reconnectAttempt = 0;
+      this.input.onConnectionResult?.();
       this.request({ kind: 'snapshot', sequence: this.#acknowledgedSequence });
     });
     socket.onMessage(data => {
@@ -932,6 +934,9 @@ export class CloudProjectEventClient {
     socket.onClose(code => {
       if (this.#socket !== socket) return;
       this.#socket = null;
+      this.input.onConnectionResult?.(new CollabError({
+        code: code === 1008 ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
       if (code === 1008) {
         this.#pendingInvalidation = null;
       } else {
@@ -1151,12 +1156,13 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
         eventConnection?.dispose();
       },
       events: {
-        connect: ({ afterSequence, onInvalidation }: CollabAuthorityEventConnectionInput) => {
+        connect: ({ afterSequence, onInvalidation, onConnectionResult }: CollabAuthorityEventConnectionInput) => {
           control.assertActive();
           if (!collabCloudCapabilitySupported(document, 'project-events')) {
             throw cloudAuthorityOperationError('cloud-authority-capability-unavailable');
           }
           const client = this.#createEventClient({
+            onConnectionResult,
             afterSequence,
             headers,
             projectId,

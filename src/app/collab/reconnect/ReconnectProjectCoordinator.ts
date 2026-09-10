@@ -24,6 +24,8 @@ import {
   rotateTrustedCollabOrigin,
 } from '@/app/collab/git/CollabGitOriginPolicy';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
+import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
+import type { HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type { HostTransitionProofClientPort } from '@/app/collab/HostTransitionCandidateResolver';
 import {
@@ -100,6 +102,7 @@ interface DiscoveredCandidateValidation {
 
 interface HostTrustTransitionVerifierPort {
   verifyChain(input: {
+    readonly checkpoint?: HostTrustCheckpoint;
     readonly expectedCurrentCaFingerprint?: string;
     readonly pinnedCaCertificatePem: string;
     readonly projectId: string;
@@ -362,12 +365,10 @@ export class ReconnectProjectCoordinator {
         throw reconnectError('project-not-found', 'reconnect-project-mismatch');
       }
       const membership = await this.#loadReconnectMembership(request.projectId, invitation);
-      if (membership.authority.hostCaFingerprint !== invitation.caFingerprint) {
-        throw reconnectError('tls-ca-mismatch', 'reconnect-ca-mismatch');
-      }
+      const trustedMembership = await this.#resolveCandidateTrust(membership, invitation, options);
       throwIfCancelled(options.signal);
       const http = this.createHttpClient(new ReconnectTrustStore(
-        membership,
+        trustedMembership,
         invitation,
       ));
       const pinned = await http.bootstrapInvitation(invitation, options);
@@ -383,7 +384,7 @@ export class ReconnectProjectCoordinator {
       ) {
         throw reconnectError('operation-failed', 'reconnect-response-mismatch');
       }
-      return await this.#commitReconnect(membership, membership, invitation, options);
+      return await this.#commitReconnect(membership, trustedMembership, invitation, options);
     } catch (error) {
       return this.failure(error);
     }
@@ -787,6 +788,7 @@ export class ReconnectProjectCoordinator {
     });
     throwIfCancelled(options.signal);
     const currentCaCertificatePem = this.hostTrustTransitionVerifier.verifyChain({
+      ...(authority.hostTrustCheckpoint ? { checkpoint: authority.hostTrustCheckpoint } : {}),
       expectedCurrentCaFingerprint: candidate.caFingerprint,
       pinnedCaCertificatePem: authority.hostCaCertificatePem,
       projectId: membership.project.id,
@@ -798,6 +800,10 @@ export class ReconnectProjectCoordinator {
         ...authority,
         hostCaCertificatePem: currentCaCertificatePem,
         hostCaFingerprint: candidate.caFingerprint,
+        ...(proofs.length ? { hostTrustCheckpoint: {
+          transferId: proofs[proofs.length - 1].transferId,
+          proofChainDigest: digestHostTransitionProofChain(proofs),
+        } } : {}),
       },
     };
   }

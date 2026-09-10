@@ -1,3 +1,5 @@
+import * as timers from 'node:timers';
+
 import { type CollabProjectId, isCollabOpaqueId } from '@claudian-collab/protocol';
 import { type RawData,WebSocket } from 'ws';
 
@@ -9,6 +11,7 @@ import {
 import type {
   CollabAuthorityEventInvalidation,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const MIN_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -16,6 +19,7 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
 export type ProjectEventInvalidation = CollabAuthorityEventInvalidation;
 
 export interface ProjectEventClientInput {
+  readonly onConnectionResult?: (error?: CollabError) => void;
   readonly caCertificatePem: string;
   readonly endpoint: string;
   readonly lastSequence: number;
@@ -46,9 +50,23 @@ export interface ProjectEventClientScheduler {
 }
 
 class NodeProjectEventClientSocket implements ProjectEventClientSocket {
-  constructor(private readonly socket: WebSocket) {}
+  private heartbeat: ReturnType<typeof timers.setTimeout> | undefined;
+
+  constructor(private readonly socket: WebSocket) {
+    socket.on('open', () => this.#resetHeartbeat());
+    socket.on('ping', () => this.#resetHeartbeat());
+    socket.once('close', () => timers.clearTimeout(this.heartbeat));
+  }
+
+  #resetHeartbeat(): void {
+    timers.clearTimeout(this.heartbeat);
+    // The LAN Host sends a ping every 30 seconds; tolerate one missed ping.
+    this.heartbeat = timers.setTimeout(() => this.socket.terminate(), 60_000);
+    this.heartbeat.unref();
+  }
 
   close(code: number, reason: string): void {
+    timers.clearTimeout(this.heartbeat);
     this.socket.close(code, reason);
   }
 
@@ -75,6 +93,7 @@ function createDefaultSocket(input: ProjectEventClientInput): ProjectEventClient
   endpoint.pathname = `${COLLAB_CONTROL_ROUTE_PREFIX}/${input.projectId}/events`;
   const socket = new WebSocket(endpoint, {
     ca: input.caCertificatePem,
+    handshakeTimeout: 10_000,
     headers: {
       authorization: `Bearer ${input.memberCredential}`,
       'x-collab-event-sequence': String(input.lastSequence),
@@ -128,6 +147,7 @@ export class ProjectEventClient {
     socket.onOpen(() => {
       if (this.socket !== socket) return;
       this.reconnectAttempt = 0;
+      this.input.onConnectionResult?.();
       this.#requestSnapshot(this.acknowledgedSequence);
     });
     socket.onMessage(data => {
@@ -139,7 +159,10 @@ export class ProjectEventClient {
     socket.onClose(code => {
       if (this.socket !== socket) return;
       this.socket = null;
-      if (code !== 1000 && code !== 1008) this.#scheduleReconnect();
+      this.input.onConnectionResult?.(new CollabError({
+        code: code === 1008 ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
+      if (code !== 1008) this.#scheduleReconnect();
     });
   }
 

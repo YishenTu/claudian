@@ -629,6 +629,7 @@ export class IncomingHostTransferCoordinator {
       autoStart: true,
       endpoint: record.targetEndpoint!,
       eventSequence: activated.eventSequence,
+      proofChainDigest: activated.proofChainDigest,
       ownsAuthority: true,
       projectId: record.projectId,
       targetCaCertificatePem: record.targetCaCertificatePem!,

@@ -79,7 +79,7 @@ function snapshot(overrides: Partial<PublishRepositorySnapshot> = {}): PublishRe
 class FakeProjectPort {
   selectedProjectId: string | null = PROJECT.projectId;
 
-  async load(): Promise<PublishProjectContext> {
+  async load(_projectId?: string): Promise<PublishProjectContext> {
     return PROJECT;
   }
 
@@ -263,6 +263,36 @@ function createSubject(overrides: {
 }
 
 describe('PublishCoordinator', () => {
+  it('allows another Project to finish while preserving order within a blocked Project', async () => {
+    const fixture = createSubject();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const entries: string[] = [];
+    fixture.projects.load = async projectId => {
+      entries.push(projectId!);
+      if (projectId === 'project-a') { entered(); await gate; }
+      throw new CollabError({ code: 'cancelled' });
+    };
+    const run = (projectId: string) => fixture.subject.publish({ ...PUBLISH_REQUEST, projectId });
+    const first = run('project-a');
+    await started;
+    const sameProject = run('project-a');
+    let otherFinished = false;
+    const other = run('project-b').then(result => { otherFinished = true; return result; });
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(otherFinished).toBe(true);
+      expect(entries).toEqual(['project-a', 'project-b']);
+    } finally {
+      release();
+      await Promise.all([first, sameProject, other]);
+    }
+    expect(entries).toEqual(['project-a', 'project-b', 'project-a']);
+  });
+
+
   it('publishes directly when the contribution base is current', async () => {
     const fixture = createSubject();
     fixture.repository.current = snapshot({

@@ -59,6 +59,7 @@ import {
   ReconciliationMutationSafety,
 } from '@/app/collab/reconciliation/ReconciliationMutationSafety';
 import { ReconciliationRepository } from '@/app/collab/reconciliation/ReconciliationRepository';
+import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import type {
   ReconnectDiscoveredProjectRequest,
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
@@ -85,7 +86,7 @@ import {
   NativeGitWorkingTreeReviewRepository,
 } from '@/app/collab/review/NativeGitWorkingTreeReviewRepository';
 import { WorkingTreeReviewService } from '@/app/collab/review/WorkingTreeReviewService';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabConnectionStatus, CollabProjectSnapshot } from '@/core/collab';
 import type { CollabChangedFile } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictDescriptor, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateTicketRequest, type CollabGitStatus, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectCapabilities, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRequestReview, type CollabResult, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -101,7 +102,7 @@ export interface CollabPublicationFoundationPort {
 
 export interface CollabPublicationServiceOptions {
   readonly cloudAuthority: CollabAuthorityAdapter;
-  readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidates'>;
+  readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidatesForTrustTransition'>;
   readonly inspectHostInstallation: (
     projectId: CollabProjectId,
   ) => Promise<CollabAuthorityInstallationStatus>;
@@ -202,10 +203,14 @@ export class CollabPublicationService {
       foundation.local.projects,
       this.sessions,
       this.authoritySessions,
-      { tryReconnect: (projectId, options) => this.tryAutoReconnect(projectId, options) },
+      {
+        tryReconnect: (projectId, options) => this.tryAutoReconnect(projectId, options),
+        onConnectionResult: (projectId, error) => this.#observeConnection(projectId, error),
+      },
     );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
       authoritySessions: this.authoritySessions,
+      onConnectionResult: (projectId, error) => this.#observeConnection(projectId, error),
       managerResponsibility: options.managerResponsibility,
       retirement: options.retirement,
       retirementAdmission: options.retirementAdmission,
@@ -692,9 +697,20 @@ export class CollabPublicationService {
     return close;
   }
 
-  resetProjectConnection(projectId: CollabProjectId): void {
+  resetProjectConnection(
+    projectId: CollabProjectId,
+    options: { readonly resumeEvents?: boolean } = {},
+  ): void {
     if (this.disposed) return;
-    this.projection.resetProjectConnection(projectId);
+    const subscribed = this.projection.resetProjectConnection(projectId);
+    if (!subscribed || !options.resumeEvents) return;
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    void this.#ensureEventSubscription(projectId).catch(error => {
+      if (work.generation === generation && error instanceof CollabError) {
+        this.#observeConnection(projectId, error);
+      }
+    });
   }
 
   closeProject(projectId: CollabProjectId): void {
@@ -826,7 +842,8 @@ export class CollabPublicationService {
     const reconnect = async (): Promise<CollabResult<CollabLocalProjectSummary>> => {
       const result = await this.options.reconnect.reconnectProject(request, options);
       if (result.status === 'success' && result.value.authorityKind === 'lan') {
-        this.resetProjectConnection(request.projectId);
+        this.resetProjectConnection(request.projectId, { resumeEvents: true });
+        this.#connection(request.projectId).observeSuccess();
       }
       return result;
     };
@@ -835,48 +852,55 @@ export class CollabPublicationService {
       : reconnect();
   }
 
-  tryAutoReconnect(
+  readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus {
+    return this.sessions.readConnectionStatus(projectId);
+  }
+
+  async tryAutoReconnect(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<boolean> {
-    const discovery = this.options.discovery;
-    const reconnect = this.options.reconnect;
-    if (this.disposed) return Promise.resolve(false);
-    const session = this.sessions.acquire(projectId);
-    return session.coalesceAutoReconnect(async () => {
-      const membership = await this.foundation.local.projects.loadMembership(projectId);
-      if (
-        !membership
-        || !isCollabLocalLanMembership(membership)
-        || !membership.authority.hostCaFingerprint
-      ) {
-        return false;
-      }
-      const candidates = await discovery.discoverProjectCandidates(
-        projectId,
-        membership.authority.hostCaFingerprint,
-        options,
-      );
-      if (candidates.length === 0) return false;
-      const result = await reconnect.reconnectDiscoveredProject({
-        candidates,
-        projectId,
-      }, options);
-      if (result.status !== 'success') {
-        if (
-          result.status === 'failure'
-          && (
-            result.error.code === 'authority-integrity-error'
-            || result.error.group === 'authorization'
-          )
-        ) {
-          throw result.error;
-        }
-        return false;
-      }
-      this.resetProjectConnection(projectId);
-      return true;
-    });
+    if (this.disposed || options.signal?.aborted) return false;
+    const reconnected = await this.#connection(projectId).reconnect();
+    return !options.signal?.aborted && reconnected;
+  }
+
+  #observeConnection(projectId: CollabProjectId, error?: CollabError): void {
+    if (this.disposed) return;
+    const connection = this.#connection(projectId);
+    if (error) connection.observeFailure(error);
+    else connection.observeSuccess();
+  }
+
+  #connection(projectId: CollabProjectId): CollabProjectConnection {
+    return this.sessions.acquire(projectId).ensureConnection(() => new CollabProjectConnection({
+      onStatusChange: () => this.#notifyCoordination(projectId, 'coordination-changed'),
+      reconnect: signal => this.#reconnectLanProject(projectId, { signal }),
+    }));
+  }
+
+  async #reconnectLanProject(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+  ): Promise<'connected' | 'retry' | 'unavailable'> {
+    const membership = await this.foundation.local.projects.loadMembership(projectId);
+    if (options.signal?.aborted || !membership || !isCollabLocalLanMembership(membership)
+      || !membership.authority.hostCaFingerprint) return 'unavailable';
+    const candidates = await this.options.discovery.discoverProjectCandidatesForTrustTransition(
+      projectId, options,
+    );
+    if (options.signal?.aborted) return 'unavailable';
+    if (candidates.length === 0) return 'retry';
+    const result = await this.options.reconnect.reconnectDiscoveredProject({
+      candidates, projectId,
+    }, options);
+    if (options.signal?.aborted) return 'unavailable';
+    if (result.status !== 'success') {
+      if (result.status === 'failure') throw result.error;
+      return 'unavailable';
+    }
+    this.resetProjectConnection(projectId, { resumeEvents: true });
+    return 'connected';
   }
 
   async synchronizeAcceptedMain(

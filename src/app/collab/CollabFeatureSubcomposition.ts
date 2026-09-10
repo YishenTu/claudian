@@ -481,7 +481,7 @@ export function createCollabFeatureSubcomposition(
     },
   );
   foundation.lanHost.bindConnectionProjection({
-    resetProjectConnection: projectId => requirePublication().resetProjectConnection(projectId),
+    resetProjectConnection: (projectId, options) => requirePublication().resetProjectConnection(projectId, options),
   });
   const hostTransfer = foundation.createHostTransferService(
     {

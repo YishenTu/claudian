@@ -79,6 +79,9 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
           gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
+          hostTrustCheckpoint: {
+            transferId: input.transferId, proofChainDigest: input.proofChainDigest,
+          },
         },
         hostOwnership: { autoStart: true, ownsAuthority: true },
         lastEventSequence: input.eventSequence,
@@ -101,6 +104,9 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
           gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
+          hostTrustCheckpoint: {
+            transferId: input.transferId, proofChainDigest: input.proofChainDigest,
+          },
         },
         hostOwnership: { autoStart: false, ownsAuthority: false },
         updatedAt: this.now().toISOString(),

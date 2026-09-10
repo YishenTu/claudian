@@ -5,10 +5,42 @@ import {
 } from '@/app/collab/client/ProjectEventClient';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LanCollabEvent';
+import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
+import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 
 describe('ProjectEventClient', () => {
+  it('reports idle disconnects to the Project connection owner and suppresses teardown signals', async () => {
+    jest.useFakeTimers();
+    const socket = new FakeClientSocket();
+    const connection = new CollabProjectConnection({
+      reconnect: async () => 'connected', onStatusChange: jest.fn(),
+    });
+    const client = new ProjectEventClient({
+      caCertificatePem: 'certificate', endpoint: 'https://host.test',
+      lastSequence: 0, memberCredential: 'credential', projectId: 'project-a',
+      onConnectionResult: (error?: CollabError) => error
+        ? connection.observeFailure(error) : connection.observeSuccess(),
+    }, async () => 0, { createSocket: () => socket });
+    try {
+      client.start();
+      socket.emitOpen();
+      expect(connection.status).toBe('connected');
+      socket.emitClose(1000);
+      expect(connection.status).toBe('offline');
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(connection.status).toBe('connected');
+      client.dispose();
+      socket.emitClose(1006);
+      expect(connection.status).toBe('connected');
+    } finally {
+      client.dispose();
+      await connection.close();
+      jest.useRealTimers();
+    }
+  });
+
   it('keeps LAN event decoder authority immutable', () => {
     expect(Object.isFrozen(LAN_COLLAB_EVENT_KINDS)).toBe(true);
     expect(() => (LAN_COLLAB_EVENT_KINDS as unknown as string[]).push('future-kind'))
