@@ -216,7 +216,7 @@ export class CollabAuthorityControlRouter implements
       return initialSnapshot === undefined
         ? session.control.readSnapshot(projectId, options)
         : Promise.resolve(initialSnapshot);
-    });
+    }, false);
   }
 
   readTicket(
@@ -292,6 +292,7 @@ export class CollabAuthorityControlRouter implements
       session: CollabAuthoritySession,
       initialSnapshot?: CollabProjectSnapshot,
     ) => Promise<T>,
+    replayAfterRecovery = true,
   ): Promise<T> {
     const attempt = async (): Promise<T> => {
       const work = this.sessions.acquire(projectId);
@@ -300,7 +301,9 @@ export class CollabAuthorityControlRouter implements
         let initialSnapshot: CollabProjectSnapshot | undefined;
         const session = await this.session(projectId, snapshot => { initialSnapshot = snapshot; });
         const result = await operation(session, initialSnapshot);
-        if (work.generation === generation) this.options.onConnectionResult?.(projectId);
+        if (replayAfterRecovery && work.generation === generation) {
+          this.options.onConnectionResult?.(projectId);
+        }
         return result;
       } catch (error) {
         if (work.generation === generation && error instanceof CollabError) {
@@ -315,7 +318,8 @@ export class CollabAuthorityControlRouter implements
       const reconnectable = error instanceof CollabError
         && (error.group === 'connectivity' || error.code === 'operation-timeout');
       if (
-        !reconnectable
+        !replayAfterRecovery
+        || !reconnectable
         || options?.signal?.aborted
         || !await this.options.tryReconnect?.(projectId, options ?? {})
       ) throw error;

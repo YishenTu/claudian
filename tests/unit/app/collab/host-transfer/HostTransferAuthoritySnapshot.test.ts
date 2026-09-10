@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
@@ -277,7 +278,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     })).rejects.toMatchObject({ code: 'authority-integrity-error' });
   });
 
-  it('validates a bound raw v8 snapshot before migrating and activating it as current', async () => {
+  it.each([8, 12] as const)('validates a bound raw v%s snapshot before migrating and activating it as current', async legacyVersion => {
     const codec = new HostTransferAuthoritySnapshot({
       loadSqlJs: async () => SQL,
       trust: { verifyChain: jest.fn().mockReturnValue(proof.nextCaCertificatePem) },
@@ -290,7 +291,8 @@ describe('HostTransferAuthoritySnapshot', () => {
       targetHostMemberId: 'member-target',
       transferId: 'transfer-alpha',
     });
-    const inertV8 = downgradeInertToV8(new SQL.Database(inertV9));
+    const inertV8 = legacyVersion === 8 ? downgradeInertToV8(new SQL.Database(inertV9))
+      : Uint8Array.from(gunzipSync(await readFile('tests/fixtures/collab/authority-v12-inert.sqlite.gz')));
     const manifest = {
       ...createHostTransferPackageManifest({
         authorityMainOid: '1'.repeat(40),
@@ -305,7 +307,7 @@ describe('HostTransferAuthoritySnapshot', () => {
         targetHostMemberId: 'member-target',
         transferId: 'transfer-alpha',
       }),
-      authoritySchemaVersion: 8 as const,
+      authoritySchemaVersion: legacyVersion,
     };
 
     await expect(codec.inspectInert({
@@ -383,7 +385,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     });
     expect(activated.legacyActivatedBytes).toBeInstanceOf(Uint8Array);
     const legacy = new SQL.Database(activated.legacyActivatedBytes!);
-    expect(legacy.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(8);
+    expect(legacy.exec('PRAGMA user_version')[0]?.values[0]?.[0]).toBe(legacyVersion);
     legacy.close();
     const current = new SQL.Database(activated.bytes);
     expect(current.exec('PRAGMA user_version')[0]?.values[0]?.[0])

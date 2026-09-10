@@ -310,7 +310,23 @@ function publication(): jest.Mocked<CollabPublicationPort> {
     readPublicationReviewFile: jest.fn(),
     readWorkingTreeReviewFile: jest.fn(),
     findConflict: jest.fn().mockResolvedValue({ status: 'success', value: null }),
-    inspectPersonalChanges: jest.fn().mockResolvedValue({
+    inspectLocalChanges: jest.fn().mockResolvedValue({
+      gitStatus: {
+      acceptedMainOid: 'a'.repeat(40),
+      aheadBy: 1,
+      behindBy: 0,
+      changedFiles: [{
+        binary: false,
+        kind: 'modified',
+        largeForReview: false,
+        path: 'note.md',
+      }],
+      headOid: 'b'.repeat(40),
+      includesAcceptedMain: false,
+      personalRemoteOid: 'a'.repeat(40),
+      workingTreeClean: false,
+    },
+      personalChanges: {
       action: 'publish',
       hasContribution: true,
       unpublishedReview: {
@@ -322,6 +338,7 @@ function publication(): jest.Mocked<CollabPublicationPort> {
         snapshotId: 'd'.repeat(64),
       },
       updateAvailable: true,
+      },
     }),
     resolveTicketNumber: jest.fn(),
     listTickets: jest.fn(),
@@ -372,6 +389,17 @@ function publication(): jest.Mocked<CollabPublicationPort> {
       includesAcceptedMain: false,
       personalRemoteOid: 'a'.repeat(40),
       workingTreeClean: false,
+    }),
+    readPresentationSnapshot: jest.fn().mockResolvedValue({
+      snapshot: authoritySnapshot(),
+      source: 'online',
+      stale: false,
+      syncState: {
+        eventSequence: 2,
+        generation: 1,
+        projectId: 'project-alpha',
+        status: 'synchronized',
+      },
     }),
     readCoordinationSnapshot: jest.fn().mockResolvedValue({
       snapshot: authoritySnapshot(),
@@ -2739,11 +2767,12 @@ describe('CollabFeatureService', () => {
         project: { id: 'project-alpha' },
       },
     });
-    expect(publish.readGitStatus).toHaveBeenCalledWith(
+    expect(publish.inspectLocalChanges).toHaveBeenCalledWith(
       'project-alpha',
+      expect.objectContaining({ source: 'online', stale: false }),
       {},
     );
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
+    expect(publish.readPresentationSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('does not publish feature state while reading Project inspection', async () => {
@@ -2766,7 +2795,7 @@ describe('CollabFeatureService', () => {
   it('leaves a final connectivity failure from publication visible as offline', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot.mockRejectedValueOnce(
+    publish.readPresentationSnapshot.mockRejectedValueOnce(
       new CollabError({ code: 'endpoint-unreachable' }),
     );
     const service = createService({
@@ -2779,13 +2808,13 @@ describe('CollabFeatureService', () => {
       value: { project: { id: 'project-alpha' } },
     });
     expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
+    expect(publish.readPresentationSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('leaves a final operation timeout from publication visible as offline', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot.mockRejectedValueOnce(
+    publish.readPresentationSnapshot.mockRejectedValueOnce(
       new CollabError({ code: 'operation-timeout' }),
     );
     const service = createService({
@@ -2798,13 +2827,13 @@ describe('CollabFeatureService', () => {
       value: { project: { id: 'project-alpha' } },
     });
     expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
+    expect(publish.readPresentationSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('accepts the publication session offline projection without reconnecting again', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(true);
-    publish.readCoordinationSnapshot.mockResolvedValueOnce({
+    publish.readPresentationSnapshot.mockResolvedValueOnce({
       snapshot: authoritySnapshot(),
       source: 'cache',
       stale: true,
@@ -2828,13 +2857,13 @@ describe('CollabFeatureService', () => {
       },
     });
     expect(publish.tryAutoReconnect).not.toHaveBeenCalled();
-    expect(publish.readCoordinationSnapshot).toHaveBeenCalledTimes(1);
+    expect(publish.readPresentationSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('keeps an old-endpoint TLS failure visible when discovery cannot verify a Host', async () => {
     const publish = publication();
     publish.tryAutoReconnect = jest.fn().mockResolvedValue(false);
-    publish.readCoordinationSnapshot.mockRejectedValue(
+    publish.readPresentationSnapshot.mockRejectedValue(
       new CollabError({ code: 'tls-untrusted' }),
     );
     const service = createService({
@@ -2857,7 +2886,7 @@ describe('CollabFeatureService', () => {
       code: 'authority-integrity-error',
       recoveryActions: ['open-diagnostics'],
     });
-    publish.readCoordinationSnapshot.mockRejectedValue(integrityError);
+    publish.readPresentationSnapshot.mockRejectedValue(integrityError);
     const service = createService({
       publication: publish,
     });
@@ -2976,7 +3005,7 @@ describe('CollabFeatureService', () => {
     }
 
     expect(publish.findConflict).not.toHaveBeenCalled();
-    expect(publish.readGitStatus).not.toHaveBeenCalled();
+    expect(publish.inspectLocalChanges).not.toHaveBeenCalled();
     synchronization.resolve({
       status: 'success',
       value: {
@@ -2987,7 +3016,7 @@ describe('CollabFeatureService', () => {
     });
     await expect(inspection).resolves.toMatchObject({ status: 'success' });
     expect(publish.findConflict).toHaveBeenCalledWith('project-alpha', {});
-    expect(publish.readGitStatus).toHaveBeenCalledWith('project-alpha', {});
+    expect(publish.inspectLocalChanges).toHaveBeenCalledWith('project-alpha', expect.anything(), {});
   });
 
   it('registers selection synchronization before notifying inspection subscribers', async () => {
@@ -3238,7 +3267,7 @@ describe('CollabFeatureService', () => {
 
   it('keeps cached coordination visible while marking the Project offline', async () => {
     const publish = publication();
-    publish.readCoordinationSnapshot.mockResolvedValue({
+    publish.readPresentationSnapshot.mockResolvedValue({
       snapshot: authoritySnapshot(),
       source: 'cache',
       stale: true,

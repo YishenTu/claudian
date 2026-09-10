@@ -218,12 +218,11 @@ export interface CollabPublicationPort {
     options?: CollabOperationOptions,
     idempotencyKey?: string,
   ): Promise<CollabTicketDetail>;
-  inspectPersonalChanges(
+  inspectLocalChanges(
     projectId: CollabProjectId,
-    gitStatus: CollabGitStatus,
     coordination: CollabCoordinationSnapshot | undefined,
     options?: CollabOperationOptions,
-  ): Promise<CollabPersonalChangesInspection>;
+  ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection }>;
   resolveTicketNumber(
     request: ResolveTicketNumberRequest,
     options?: CollabOperationOptions,
@@ -249,6 +248,10 @@ export interface CollabPublicationPort {
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
   ): Promise<CollabGitStatus>;
+  readPresentationSnapshot(
+    projectId: CollabProjectId,
+    options?: CollabOperationOptions,
+  ): Promise<CollabCoordinationSnapshot>;
   readCoordinationSnapshot(
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
@@ -340,6 +343,7 @@ export interface CollabPublicationPort {
     listener: (
       projectId: CollabProjectId,
       reason: 'accepted-main-changed' | 'coordination-changed',
+      coordination?: CollabCoordinationSnapshot,
     ) => void,
   ): { dispose(): void };
   readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus;
@@ -521,6 +525,8 @@ class CollabFeatureServiceCore {
    #closing = false;
   private disposed = false;
    #refreshGeneration = 0;
+   #coordinationRefreshGeneration = 0;
+   #publishedCoordinationRefreshGeneration = 0;
    #stateValue: CollabFeatureState = cloneState({
     lifecycle: 'uninitialized',
     projects: [],
@@ -536,13 +542,14 @@ class CollabFeatureServiceCore {
     this.#publicationSubscription = options.publication.subscribeCoordination((
       projectId,
       reason,
+      coordination,
     ) => {
       if (reason === 'accepted-main-changed') {
         this.scheduleAcceptedMainSynchronization(projectId);
       }
       if (this.#stateValue.selectedProjectId === projectId) {
         void this.operationAdmission.runGlobal(async () => {
-          await this.#refreshProjects().catch(error => {
+          await this.#refreshProjects({ coordination, projectId }).catch(error => {
             this.#publishState({
               ...this.#stateValue,
               error: error instanceof CollabError
@@ -796,7 +803,7 @@ class CollabFeatureServiceCore {
     }
     try {
       throwIfCancelled(options.signal);
-      const projection = await this.#readProjectProjection();
+      const projection = await this.#readProjectProjection(projectId);
       throwIfCancelled(options.signal);
       const project = projection.projects.find(candidate => candidate.id === projectId);
       return project?.lifecycle === 'retired'
@@ -815,7 +822,7 @@ class CollabFeatureServiceCore {
     let projection: CollabProjectProjection;
     try {
       throwIfCancelled(options.signal);
-      projection = await this.#readProjectProjection();
+      projection = await this.#readProjectProjection(projectId);
       throwIfCancelled(options.signal);
     } catch (error) {
       return this.#failureResult(error);
@@ -836,11 +843,10 @@ class CollabFeatureServiceCore {
       }
       const conflictResult = await this.options.publication.findConflict(projectId, options);
       if (conflictResult.status !== 'success') return conflictResult;
-      const gitStatus = await this.options.publication.readGitStatus(projectId, options);
       throwIfCancelled(options.signal);
       let coordination: CollabCoordinationSnapshot | undefined;
       try {
-        coordination = await this.options.publication.readCoordinationSnapshot(
+        coordination = await this.options.publication.readPresentationSnapshot(
           projectId,
           options,
         );
@@ -866,9 +872,8 @@ class CollabFeatureServiceCore {
               : 'needs-attention',
         };
       }
-      const inspectedPersonalChanges = await this.options.publication.inspectPersonalChanges(
+      const { gitStatus, personalChanges: inspectedPersonalChanges } = await this.options.publication.inspectLocalChanges(
         projectId,
-        gitStatus,
         coordination,
         options,
       );
@@ -2177,31 +2182,54 @@ class CollabFeatureServiceCore {
   }
 
    async #refreshProjects(
-    options: { readonly publish?: boolean } = {},
+    options: {
+      readonly publish?: boolean;
+      readonly projectId?: CollabProjectId;
+      readonly coordination?: CollabCoordinationSnapshot;
+    } = {},
   ): Promise<readonly CollabLocalProjectSummary[]> {
-    const generation = ++this.#refreshGeneration;
-    const projection = await this.#readProjectProjection();
+    const generation = options.projectId ? this.#refreshGeneration : ++this.#refreshGeneration;
+    const coordinationGeneration = options.projectId
+      ? ++this.#coordinationRefreshGeneration
+      : this.#coordinationRefreshGeneration;
+    const projection = await this.#readProjectProjection(options.projectId);
+    // A newer selected-Project event cannot replace the coverage of a full refresh.
+    const currentSelected = this.#stateValue.projects.find(
+      project => project.id === this.#stateValue.selectedProjectId,
+    );
+    const projects = options.projectId
+      ? this.#stateValue.projects.flatMap(project => project.id === options.projectId
+        ? projection.projects
+        : [project])
+      : projection.projects.map(project => (
+        project.id === currentSelected?.id
+        && this.#publishedCoordinationRefreshGeneration > coordinationGeneration
+          ? currentSelected
+          : project
+      ));
     if (
       options.publish !== false
       && generation === this.#refreshGeneration
+      && (!options.projectId || coordinationGeneration === this.#coordinationRefreshGeneration)
       && this.#activeProjectSelections === 0
     ) {
+      if (options.projectId) this.#publishedCoordinationRefreshGeneration = coordinationGeneration;
       this.#publishState({
         ...this.#stateValue,
-        projects: projection.projects,
+        projects,
         selectedProjectId: projection.selectedProjectId,
-      });
+      }, options.projectId === this.#stateValue.selectedProjectId ? options.coordination : undefined);
     }
-    return projection.projects;
+    return projects;
   }
 
-   async #readProjectProjection(): Promise<CollabProjectProjection> {
+   async #readProjectProjection(onlyProjectId?: CollabProjectId): Promise<CollabProjectProjection> {
     const [index, pendingLeaveProjectIds, cloudRetirementProjectIds] = await Promise.all([
       this.foundation.local.projects.loadIndex(),
       this.options.pendingLeaves.listProjectIds(),
       this.options.cloudRetirementIntents.listProjectIds(),
     ]);
-    const pendingLeaves = await Promise.all(pendingLeaveProjectIds.map(async projectId => {
+    const pendingLeaves = await Promise.all(pendingLeaveProjectIds.filter(projectId => !onlyProjectId || projectId === onlyProjectId).map(async projectId => {
       try {
         return { corrupt: false as const, projectId, record: await this.options.pendingLeaves.load(projectId) };
       } catch {
@@ -2210,7 +2238,7 @@ class CollabFeatureServiceCore {
     }));
     const pendingByProject = new Map(pendingLeaves.map(entry => [entry.projectId, entry]));
     const cloudRetirementProjects = new Set(cloudRetirementProjectIds);
-    const projects = await Promise.all(index.projects.map(async project => {
+    const projects = await Promise.all(index.projects.filter(project => !onlyProjectId || project.id === onlyProjectId).map(async project => {
       const pendingLeave = pendingByProject.get(project.id) ?? null;
       const hasCloudRetirementIntent = cloudRetirementProjects.has(project.id);
       const [membership, pending, workingCopyHealthy] = await Promise.all([
@@ -2460,12 +2488,12 @@ class CollabFeatureServiceCore {
     return result;
   }
 
-   #publishState(state: CollabFeatureState): void {
+   #publishState(state: CollabFeatureState, coordination?: CollabCoordinationSnapshot): void {
     if (this.disposed) return;
     this.#stateValue = cloneState(state);
     for (const listener of this.listeners) {
       try {
-        listener(this.#stateValue);
+        listener(this.#stateValue, coordination);
       } catch {
         // Presentation subscribers cannot invalidate application state.
       }

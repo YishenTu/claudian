@@ -65,14 +65,14 @@ export class WorkingTreeReviewService {
     baseOid: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabWorkingTreeReview> {
-    return (await this.capture(projectId, baseOid, options)).review;
+    return (await this.inspect(projectId, () => baseOid, options)).review;
   }
 
   async readFile(
     request: CollabWorkingTreeReviewFileRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabReviewFileContent> {
-    const captured = await this.capture(request.projectId, request.baseOid, options);
+    const captured = await this.inspect(request.projectId, () => request.baseOid, options);
     const review = captured.review;
     if (
       review.headOid !== request.headOid
@@ -88,11 +88,15 @@ export class WorkingTreeReviewService {
     return this.files.readFile(captured.repositoryPath, request, options.signal);
   }
 
-  private async capture(
+  async inspect(
     projectId: CollabProjectId,
-    baseOid: string,
-    options: CollabOperationOptions,
-  ): Promise<{ readonly repositoryPath: string; readonly review: CollabWorkingTreeReview }> {
+    selectBase: (snapshot: PublishRepositorySnapshot) => string,
+    options: CollabOperationOptions = {},
+  ): Promise<{
+    readonly repositoryPath: string;
+    readonly snapshot: PublishRepositorySnapshot;
+    readonly review: CollabWorkingTreeReview;
+  }> {
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     const context = await this.projects.load(projectId);
     const snapshot = await this.snapshots.inspect(context, options.signal);
@@ -100,6 +104,7 @@ export class WorkingTreeReviewService {
     if (!snapshot.headOid) {
       throw reviewError('repository-invalid', 'working-tree-review-head-missing');
     }
+    const baseOid = selectBase(snapshot);
     const files = await this.files.listChanges(
       context.repositoryPath,
       baseOid,
@@ -109,6 +114,7 @@ export class WorkingTreeReviewService {
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     return {
       repositoryPath: context.repositoryPath,
+      snapshot,
       review: {
         baseOid,
         files,

@@ -1,6 +1,6 @@
 import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian-collab/protocol';
 
-import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
+import type { CollabCoordinationSnapshot, CollabFeatureState, CollabFeatureStateListener, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import {
   collabReviewSourceKey,
@@ -22,7 +22,7 @@ export interface TeamChangesPanelPort extends TeamReviewLoaderPort {
     projectId: string,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabCoordinationSnapshot>>;
-  subscribe(listener: (state: CollabFeatureState) => void): { dispose(): void };
+  subscribe(listener: CollabFeatureStateListener): { dispose(): void };
 }
 
 export interface TeamChangesPanelOptions {
@@ -106,12 +106,16 @@ export class TeamChangesPanel {
     this.reviewLoader = new TeamReviewLoader(options.port, options.preparedReviews);
     this.rootEl = containerEl.createDiv({ cls: 'claudian-collab-team' });
     let observedState = options.port.state;
-    this.subscription = options.port.subscribe(state => {
+    this.subscription = options.port.subscribe((state, coordination) => {
       if (state === observedState) return;
       observedState = state;
       if (this.destroyed || state.selectedProjectId !== this.project.id) return;
       if (!this.active) {
         this.refreshOnResume = true;
+        return;
+      }
+      if (coordination) {
+        this.adoptSnapshot(coordination);
         return;
       }
       this.#queueRefresh();
@@ -151,6 +155,7 @@ export class TeamChangesPanel {
   ): void {
     if (this.destroyed || snapshot.snapshot.project.id !== this.project.id) return;
     this.refreshOnResume = false;
+    this.refreshQueued = false;
     this.snapshotTasks.cancel();
     this.#applySnapshot(
       snapshot,
@@ -233,6 +238,25 @@ export class TeamChangesPanel {
     snapshot: CollabCoordinationSnapshot,
     ownRequestActivity: OwnRequestActivity | null,
   ): void {
+    const current = this.viewState.snapshot;
+    if (current && snapshot.source === 'online' && current.source === 'online'
+      && snapshot.syncState.generation === current.syncState.generation
+      && snapshot.snapshot.eventSequence < current.snapshot.eventSequence
+    ) {
+      const ownRequest = snapshot.snapshot.openRequests.find(
+        request => request.memberId === snapshot.snapshot.currentMember.id,
+      );
+      const currentOwnRequest = current.snapshot.openRequests.find(
+        request => request.memberId === current.snapshot.currentMember.id,
+      );
+      if (snapshot.snapshot.project.mainOid !== current.snapshot.project.mainOid
+        || snapshot.snapshot.currentMember.id !== current.snapshot.currentMember.id
+        || ownRequest?.id !== currentOwnRequest?.id
+        || ownRequest?.firstBaseOid !== currentOwnRequest?.firstBaseOid
+        || ownRequest?.latestHeadOid !== currentOwnRequest?.latestHeadOid
+      ) ownRequestActivity = this.ownRequestActivity;
+      snapshot = current;
+    }
     this.reviewOnResume = false;
     this.viewState = { kind: 'ready', snapshot };
     this.ownRequestActivity = ownRequestActivity
@@ -675,6 +699,7 @@ export class TeamChangesPanel {
     if (this.refreshQueued) return;
     this.refreshQueued = true;
     queueMicrotask(() => {
+      if (!this.refreshQueued) return;
       this.refreshQueued = false;
       if (!this.destroyed) void this.refresh();
     });

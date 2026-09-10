@@ -12,6 +12,16 @@ const HEAD = '2'.repeat(40);
 const BASE = '1'.repeat(40);
 
 describe('WorkingTreeReviewService', () => {
+  it('selects the review base from the same capture returned to local inspection', async () => {
+    const first = { ...snapshot(), personalRemoteOid: BASE };
+    const snapshots = snapshotPort(first);
+    snapshots.inspect.mockResolvedValueOnce(first).mockResolvedValue({ ...first, headOid: '3'.repeat(40) });
+    const service = new WorkingTreeReviewService(projectPort(), snapshots, reviewFiles());
+    const inspected = await service.inspect('project-a', captured => captured.personalRemoteOid!);
+    expect(inspected.snapshot).toEqual(first);
+    expect(inspected.review).toMatchObject({ baseOid: BASE, headOid: HEAD });
+  });
+
   it('derives a local review through read-only ports', async () => {
     const projects = projectPort();
     const snapshots = snapshotPort(snapshot());

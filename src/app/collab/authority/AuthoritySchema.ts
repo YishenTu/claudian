@@ -1,6 +1,7 @@
 import { COLLAB_LIMITS, COLLAB_MEMBER_REF_PREFIX } from '@claudian-collab/protocol';
 import type { Database, SqlValue } from 'sql.js';
 
+import { assertAuthorityProjectIntegrity, assertAuthorityRecordIntegrity, finiteCollectionCapacityIsValid } from '@/app/collab/authority/authorityIntegrityChecks';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
@@ -701,6 +702,57 @@ const AUTHORITY_SCHEMA_V12_METADATA_SQL = `
   );
 `;
 
+// Replay is an invalidation tail. Canonical collaboration records live in their
+// own tables; retained sequence values must never be renumbered or emptied.
+const AUTHORITY_SCHEMA_V13_OBJECTS = [
+  {
+    type: 'index', name: 'tickets_updated',
+    sql: 'CREATE INDEX tickets_updated ON tickets(updated_at DESC, ticket_number DESC)',
+  },
+  {
+    type: 'index', name: 'comments_request',
+    sql: 'CREATE INDEX comments_request ON comments(request_id)',
+  },
+  {
+    type: 'index', name: 'members_active_managers',
+    sql: "CREATE INDEX members_active_managers ON members(member_id) WHERE role = 'manager' AND status = 'active'",
+  },
+  {
+    type: 'trigger', name: 'events_immutable_delete',
+    sql: `CREATE TRIGGER events_immutable_delete BEFORE DELETE ON events
+      WHEN OLD.sequence >= COALESCE((SELECT sequence FROM events ORDER BY sequence DESC LIMIT 1 OFFSET 499), 0)
+      BEGIN SELECT RAISE(ABORT, 'retained authority event is immutable'); END`,
+  },
+  {
+    type: 'trigger', name: 'events_prune_tail',
+    sql: `CREATE TRIGGER events_prune_tail AFTER INSERT ON events
+      BEGIN DELETE FROM events WHERE sequence < COALESCE(
+        (SELECT sequence FROM events ORDER BY sequence DESC LIMIT 1 OFFSET 499), 0
+      ); END`,
+  },
+] as const;
+
+function assertAuthorityV13Schema(database: Database): void {
+  repairAndAssertAuthorityV12Schema(database);
+  for (const object of AUTHORITY_SCHEMA_V13_OBJECTS) {
+    if (!hasExactSchemaSql(database, object.type, object.name, object.sql)) {
+      throw new Error('Authority V13 transaction and replay schema is incomplete');
+    }
+  }
+}
+
+function applyAuthoritySchemaV13(database: Database): void {
+  repairAndAssertAuthorityV12Schema(database);
+  database.run('DROP TRIGGER IF EXISTS events_immutable_delete');
+  for (const object of AUTHORITY_SCHEMA_V13_OBJECTS) {
+    if (schemaSql(database, object.type, object.name) === null) database.run(object.sql);
+  }
+  database.run(`DELETE FROM events WHERE sequence < COALESCE(
+    (SELECT sequence FROM events ORDER BY sequence DESC LIMIT 1 OFFSET 499), 0
+  )`);
+  assertAuthorityV13Schema(database);
+}
+
 function pragmaNumber(database: Database, pragma: string): number {
   const result = database.exec(pragma);
   const value = result[0]?.values[0]?.[0];
@@ -975,24 +1027,6 @@ function repairAndAssertAuthorityV10Schema(database: Database): boolean {
     throw new Error('Authority V10 Manager schema is incomplete');
   }
   return repaired;
-}
-
-function finiteCollectionCapacityIsValid(database: Database): boolean {
-  return firstColumn(database, `
-    SELECT request_id
-    FROM comments
-    GROUP BY request_id
-    HAVING COUNT(*) > ${COLLAB_LIMITS.maxRequestComments}
-    LIMIT 1
-  `).length === 0
-    && firstColumn(database, `
-      SELECT ticket_id
-      FROM request_ticket_relations
-      WHERE state = 'accepted'
-      GROUP BY ticket_id
-      HAVING COUNT(*) > ${COLLAB_LIMITS.maxTicketAcceptedRelations}
-      LIMIT 1
-    `).length === 0;
 }
 
 function authorityV11SchemaIsComplete(database: Database): boolean {
@@ -1393,6 +1427,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
     database.run('BEGIN IMMEDIATE');
     try {
       const repaired = repairAndAssertAuthorityV12Schema(database);
+      assertAuthorityV13Schema(database);
       database.run('COMMIT');
       return repaired;
     } catch (error) {
@@ -1416,7 +1451,8 @@ export function applyAuthorityMigrations(database: Database): boolean {
     if (version < 10) applyAuthoritySchemaV10(database);
     if (version < 11) applyAuthoritySchemaV11(database);
     if (version < 12) applyAuthoritySchemaV12(database);
-    repairAndAssertAuthorityV12Schema(database);
+    if (version < 13) applyAuthoritySchemaV13(database);
+    assertAuthorityV13Schema(database);
     database.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION}`);
     database.run('COMMIT');
     transactionStarted = false;
@@ -1426,6 +1462,9 @@ export function applyAuthorityMigrations(database: Database): boolean {
   } finally {
     if (restoreForeignKeys) database.run('PRAGMA foreign_keys = ON');
   }
+  // Admission owns this isolated image; compact freed historical event pages
+  // once during migration before its first durable promotion.
+  database.run('VACUUM');
   return true;
 }
 
@@ -1435,7 +1474,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
  */
 export function migrateLegacyAuthorityDatabaseToCurrent(database: Database): number {
   const version = pragmaNumber(database, 'PRAGMA user_version');
-  if (version !== 8 && version !== 9 && version !== 10 && version !== 11) {
+  if (version !== 8 && version !== 9 && version !== 10 && version !== 11 && version !== 12) {
     throw new RangeError('Host transfer authority schema is not a supported legacy version');
   }
   applyAuthorityMigrations(database);
@@ -1459,133 +1498,6 @@ export function assertAuthorityDatabaseIntegrity(
     throw new Error('Authority foreign key check failed');
   }
 
-  if (!finiteCollectionCapacityIsValid(database)) {
-    throw new Error('Authority finite collection invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT singleton FROM authority_metadata
-    WHERE singleton != 1
-      OR typeof(authority_generation) != 'integer'
-      OR authority_generation < 1
-  `).length > 0 || firstColumn(database, `
-    SELECT singleton FROM authority_metadata
-  `).length !== 1) {
-    throw new Error('Authority generation invariant failed');
-  }
-
-  if (firstColumn(database, `
-    SELECT request_id FROM change_requests
-    WHERE typeof(revision) != 'integer' OR revision < 0
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority request revision invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT offer_id FROM manager_responsibility_offers
-    WHERE
-      expires_at <= offered_at
-      OR (status = 'offered' AND acknowledged_at IS NOT NULL)
-      OR (status = 'acknowledged' AND acknowledged_at IS NULL)
-      OR (status = 'consumed' AND (acknowledged_at IS NULL OR consumed_at IS NULL))
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Manager responsibility invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT participant_id
-    FROM (
-      SELECT source_manager_member_id AS participant_id
-      FROM manager_responsibility_offers
-      WHERE status IN ('offered', 'acknowledged')
-      UNION ALL
-      SELECT target_member_id AS participant_id
-      FROM manager_responsibility_offers
-      WHERE status IN ('offered', 'acknowledged')
-    )
-    GROUP BY participant_id
-    HAVING COUNT(*) > 1
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Manager responsibility participant invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT transfer_id FROM host_transition_proofs
-    WHERE previous_ca_fingerprint = next_ca_fingerprint
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Host transition invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT ticket_id FROM tickets
-    WHERE
-      typeof(revision) != 'integer'
-      OR revision < 1
-      OR typeof(comment_count) != 'integer'
-      OR comment_count < 0
-      OR (status = 'open' AND (closed_at IS NOT NULL OR closed_by_member_id IS NOT NULL))
-      OR (status = 'closed' AND (closed_at IS NULL OR closed_by_member_id IS NULL))
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Ticket invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT relation_id FROM request_ticket_relations r
-    JOIN change_requests q ON q.request_id = r.request_id
-    WHERE
-      (r.state = 'pending' AND q.status != 'open')
-      OR (r.state = 'accepted' AND (
-        r.accepted_at IS NULL OR r.accepted_merge_oid IS NULL
-      ))
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Ticket relation invariant failed');
-  }
-  if (firstColumn(database, `
-    SELECT m.source_id FROM ticket_mentions m
-    JOIN members target ON target.member_id = m.mentioned_member_id
-    WHERE
-      target.status != 'active'
-      OR (m.source_kind = 'description' AND m.source_id != m.ticket_id)
-      OR (m.source_kind = 'comment' AND NOT EXISTS (
-        SELECT 1 FROM ticket_comments c
-        WHERE c.comment_id = m.source_id AND c.ticket_id = m.ticket_id
-      ))
-    LIMIT 1
-  `).length > 0) {
-    throw new Error('Authority Ticket mention invariant failed');
-  }
-
-  const projectRows = database.exec(`
-    SELECT
-      p.snapshot_generation,
-      p.manager_set_generation,
-      (
-        SELECT COUNT(*) FROM members
-        WHERE role = 'manager' AND status = 'active'
-      ) AS active_manager_count
-    FROM project p
-    WHERE p.singleton = 1
-  `);
-  const rows = projectRows[0]?.values ?? [];
-  if (rows.length === 0 && !options.requireProject) return 0;
-  if (rows.length !== 1) throw new Error('Authority project row is invalid');
-  const [
-    generation,
-    managerGeneration,
-    activeManagerCount,
-  ] = rows[0];
-  if (
-    typeof generation !== 'number'
-    || !Number.isSafeInteger(generation)
-    || generation < 0
-    || typeof managerGeneration !== 'number'
-    || !Number.isSafeInteger(managerGeneration)
-    || managerGeneration < 0
-    || typeof activeManagerCount !== 'number'
-    || !Number.isSafeInteger(activeManagerCount)
-    || activeManagerCount < 1
-  ) {
-    throw new Error('Authority manager or generation invariant failed');
-  }
-  return generation;
+  assertAuthorityRecordIntegrity(database);
+  return assertAuthorityProjectIntegrity(database, options.requireProject);
 }

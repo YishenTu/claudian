@@ -596,6 +596,41 @@ describe('LanHostCoordinator production transport', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('serves control requests beside 100 authenticated event sockets', async () => {
+    const host = await coordinator.startProject(PROJECT_ID);
+    const membership = await localProjects.loadMembership(PROJECT_ID);
+    if (!membership || !isCollabLocalLanMembership(membership) || !membership.authority.hostCaCertificatePem) throw new Error('LAN trust missing');
+    const ca = membership.authority.hostCaCertificatePem;
+    const sockets: WebSocket[] = [];
+    const control = async () => new Promise<{ statusCode?: number; errorCode?: string }>(resolve => {
+      const request = httpsRequest(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
+        agent: false, ca, rejectUnauthorized: true,
+        headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
+      }, response => {
+        response.resume(); response.once('end', () => resolve({ statusCode: response.statusCode }));
+      });
+      request.once('error', (error: NodeJS.ErrnoException) => resolve({ errorCode: error.code ?? error.name }));
+      request.setTimeout(3000, () => request.destroy(Object.assign(new Error('Probe timeout'), { code: 'PROBE_TIMEOUT' })));
+      request.end();
+    });
+    try {
+      expect(await control()).toEqual({ statusCode: 200 });
+      for (const target of [20, 60, 100]) {
+        while (sockets.length < target) {
+          const socket = new WebSocket(`${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`, {
+            ca, rejectUnauthorized: true, handshakeTimeout: 3000,
+            headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
+          });
+          sockets.push(socket);
+          await new Promise<void>((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+        }
+        expect(await control()).toEqual({ statusCode: 200 });
+      }
+    } finally {
+      await Promise.all(sockets.map(socket => new Promise<void>(resolve => { if (socket.readyState === WebSocket.CLOSED) { resolve(); return; } socket.once('close', () => resolve()); socket.terminate(); })));
+    }
+  }, 60000);
+
   it('starts explicitly, selects the next port, and completes pending activation', async () => {
     expect(coordinator.getProjectState(PROJECT_ID)).toEqual({
       projectId: PROJECT_ID,

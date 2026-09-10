@@ -1,6 +1,6 @@
 import { type CollabChangedFile } from '@claudian-collab/protocol';
 
-import { type CollabFeatureState, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabFeatureStateListener, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabPublicationReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { renderCollabChangedFileList } from '@/features/collab/shared/CollabChangedFileList';
 import { t } from '@/i18n/i18n';
@@ -16,7 +16,7 @@ export interface PersonalChangesPanelPort {
     options?: { readonly signal?: AbortSignal },
   ): Promise<CollabResult<CollabProjectInspection>>;
   subscribe(
-    listener: (state: CollabFeatureState) => void,
+    listener: CollabFeatureStateListener,
   ): { dispose(): void };
 }
 
@@ -68,8 +68,21 @@ const EMPTY_STATE: PersonalChangesViewState = {
 
 const WORKING_TREE_REFRESH_DELAY_MS = 200;
 
+function personalCoordinationKey(coordination: CollabCoordinationSnapshot): string {
+  const { currentMember, project, openRequests } = coordination.snapshot;
+  const ownRequest = openRequests.find(request => request.memberId === currentMember.id);
+  return JSON.stringify([
+    project.id, project.authorityKind, project.mainOid,
+    currentMember.id, currentMember.personalRef, currentMember.role, currentMember.status,
+    ownRequest?.id, ownRequest?.firstBaseOid, ownRequest?.latestHeadOid,
+    coordination.source, coordination.stale, coordination.syncState.generation,
+    coordination.syncState.status,
+  ]);
+}
+
 export class PersonalChangesPanel {
   private active = true;
+  private coordinationKey: string | null = null;
   private destroyed = false;
   private readonly inspectionTasks = new LatestTaskScope();
   private project: CollabLocalProjectSummary;
@@ -92,15 +105,19 @@ export class PersonalChangesPanel {
   ) {
     this.project = options.project;
     this.rootEl = containerEl.createDiv({ cls: 'claudian-collab-publish' });
-    this.subscription = options.port.subscribe(state => {
+    this.subscription = options.port.subscribe((state, coordination) => {
       if (this.destroyed || state.selectedProjectId !== this.project.id) return;
+      if (coordination && (
+        coordination.snapshot.project.id !== this.project.id
+        || personalCoordinationKey(coordination) === this.coordinationKey
+      )) return;
       if (!this.active) {
         this.refreshOnResume = true;
         return;
       }
       if (state.activeOperation?.kind === 'publish') {
         this.#setView({ ...this.viewState, kind: 'publishing' });
-      } else if (this.viewState.kind !== 'loading') {
+      } else if (coordination || this.viewState.kind !== 'loading') {
         this.#queueRefresh();
       }
     });
@@ -144,6 +161,7 @@ export class PersonalChangesPanel {
     this.inspectionTasks.cancel();
     this.project = project;
     this.selectedPath = null;
+    this.coordinationKey = null;
     this.workingTreeInspectionVersion = -1;
     this.workingTreeInvalidationVersion = 0;
     this.viewState = EMPTY_STATE;
@@ -205,6 +223,9 @@ export class PersonalChangesPanel {
         signal: task.signal,
       });
       if (!this.isCurrent(task, projectId)) return;
+      this.coordinationKey = result.status === 'success' && result.value.coordination
+        ? personalCoordinationKey(result.value.coordination)
+        : null;
       if (result.status === 'success') {
         this.workingTreeInspectionVersion = Math.max(
           this.workingTreeInspectionVersion,
@@ -215,6 +236,7 @@ export class PersonalChangesPanel {
       this.#setView(this.#viewFromInspection(result));
     } catch {
       if (this.isCurrent(task, projectId)) {
+        this.coordinationKey = null;
         this.options.onInspection?.({
           error: new CollabError({ code: 'operation-failed' }),
           status: 'failure',

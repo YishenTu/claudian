@@ -344,7 +344,7 @@ describe('CloudAuthorityAdapter', () => {
     },
   );
 
-  it('uses only the new attempt preflight after reconnecting an initial snapshot failure', async () => {
+  it('uses only the next attempt preflight after an initial snapshot failure settles', async () => {
     const store = new CollabLocalProjectRepository(cloudVaultRoot);
     await store.saveMembership(membership());
     const sessions = new CollabProjectWorkSessionRegistry();
@@ -364,13 +364,9 @@ describe('CloudAuthorityAdapter', () => {
     };
     const router = new CollabAuthorityControlRouter(store, sessions, new CollabAuthoritySessionFactory([
       new CloudAuthorityAdapter(cloudVaultRoot, { request }),
-    ]), {
-      tryReconnect: async projectId => {
-        sessions.resetProject(projectId);
-        return true;
-      },
-    });
+    ]));
     try {
+      await expect(router.readSnapshot(PROJECT_ID)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
       await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 7 });
       await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 8 });
     } finally {
@@ -2428,6 +2424,56 @@ describe('CloudAuthorityAdapter', () => {
 });
 
 describe('CloudProjectEventClient', () => {
+  it('preserves native TLS validation failure as terminal connection evidence', () => {
+    const socket = new FakeSocket();
+    const result = jest.fn();
+    const client = new CloudProjectEventClient({
+      headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+      onConnectionResult: result,
+    }, () => Promise.resolve(0), { createSocket: () => socket });
+    client.start();
+    socket.error(Object.assign(new Error('private-certificate-details'), { code: 'CERT_HAS_EXPIRED' }));
+    expect(result).toHaveBeenCalledWith(expect.objectContaining({ code: 'tls-untrusted' }));
+    expect(JSON.stringify(result.mock.calls)).not.toContain('private-certificate-details');
+    client.dispose();
+  });
+
+  it('publishes connection success only after the authoritative snapshot is applied', async () => {
+    const socket = new FakeSocket();
+    let apply!: (value: number) => void;
+    const applied = new Promise<number>(resolve => { apply = resolve; });
+    const result = jest.fn();
+    const client = new CloudProjectEventClient({
+      headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+      onConnectionResult: result,
+    }, () => applied, { createSocket: () => socket });
+    client.start();
+    socket.open();
+    expect(result).not.toHaveBeenCalled();
+    apply(1);
+    await flush();
+    expect(result).toHaveBeenCalledWith();
+    client.dispose();
+  });
+
+  it.each(['authorization-denied', 'authority-integrity-error', 'operation-failed'] as const)(
+    'retains %s from snapshot application rather than replacing it with a socket error',
+    async code => {
+      const socket = new FakeSocket();
+      const failure = new CollabError({ code });
+      const result = jest.fn();
+      const client = new CloudProjectEventClient({
+        headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+        onConnectionResult: result,
+      }, () => Promise.reject(failure), { createSocket: () => socket });
+      client.start();
+      socket.open();
+      await flush();
+      expect(result).toHaveBeenCalledWith(failure);
+      client.dispose();
+    },
+  );
+
   it('preserves the terminal retirement identity instead of degrading it to a snapshot', async () => {
     const socket = new FakeSocket();
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
@@ -2467,7 +2513,6 @@ describe('CloudProjectEventClient', () => {
 
   it('refreshes snapshot first, detects a gap, and reconnects after the applied cursor', async () => {
     const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
       headers: {},
@@ -2486,11 +2531,6 @@ describe('CloudProjectEventClient', () => {
         });
         return socket;
       },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
-      },
     });
 
     client.start();
@@ -2507,61 +2547,10 @@ describe('CloudProjectEventClient', () => {
 
     sockets[0]!.closed(1000);
     await flush();
-    scheduled.shift()?.();
-    expect(sockets).toHaveLength(2);
-  });
-
-  it('waits for a slow applied cursor before reconnecting while server backpressure stays server-owned', async () => {
-    const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
-    const firstApplication = deferred<number>();
-    const onInvalidation = jest.fn()
-      .mockImplementationOnce(() => firstApplication.promise)
-      .mockImplementation(async invalidation => invalidation.sequence);
-    const client = new CloudProjectEventClient({
-      headers: {},
-      afterSequence: 3,
-      projectId: PROJECT_ID,
-      serverUrl: 'https://cloud.example.test',
-    }, onInvalidation, {
-      createSocket: input => {
-        const socket = new FakeSocket();
-        sockets.push(socket);
-        expect(input.url).toBe(
-          `wss://cloud.example.test/v6/projects/${PROJECT_ID}/events?afterSequence=${
-            sockets.length === 1 ? 3 : 4
-          }`,
-        );
-        return socket;
-      },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
-      },
-    });
-
     client.start();
-    sockets[0]!.open();
-    sockets[0]!.message(JSON.stringify({
-      kind: 'request.updated',
-      occurredAt: '2026-08-22T00:00:00.000Z',
-      payload: { requestId: 'request-one' },
-      projectId: PROJECT_ID,
-      protocolVersion: 10,
-      sequence: 4,
-    }));
-    sockets[0]!.closed(1006);
-    await flush();
-    expect(scheduled).toHaveLength(0);
-
-    firstApplication.resolve(4);
-    await flush();
-    await flush();
-    expect(scheduled).toHaveLength(1);
-    scheduled.shift()?.();
     expect(sockets).toHaveLength(2);
   });
+
 
   it('bounds a slow event flood to one active and one coalesced refresh', async () => {
     const socket = new FakeSocket();
@@ -2638,56 +2627,22 @@ describe('CloudProjectEventClient', () => {
     expect(socket.close).toHaveBeenCalledWith(1000, 'Client stopped');
   });
 
-  it('cancels a pending reconnect during client shutdown', async () => {
-    const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
-    const clearTimeout = jest.fn();
-    const client = new CloudProjectEventClient({
-      headers: {},
-      afterSequence: 3,
-      projectId: PROJECT_ID,
-      serverUrl: 'https://cloud.example.test',
-    }, async invalidation => invalidation.sequence, {
-      clearTimeout,
-      createSocket: () => {
-        const socket = new FakeSocket();
-        sockets.push(socket);
-        return socket;
-      },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return 42;
-      },
-    });
 
-    client.start();
-    sockets[0]!.open();
-    await flush();
-    sockets[0]!.closed(1006);
-    await flush();
-    expect(scheduled).toHaveLength(1);
-
-    client.dispose();
-    expect(clearTimeout).toHaveBeenCalledWith(42);
-    scheduled[0]?.();
-    expect(sockets).toHaveLength(1);
-  });
 });
 
 class FakeSocket implements CloudProjectEventSocket {
   private closeListener: ((code: number) => void) | undefined;
-  private errorListener: (() => void) | undefined;
+  private errorListener: ((error?: unknown) => void) | undefined;
   private messageListener: ((data: string) => void) | undefined;
   private openListener: (() => void) | undefined;
 
   close = jest.fn();
   onClose(listener: (code: number) => void): void { this.closeListener = listener; }
-  onError(listener: () => void): void { this.errorListener = listener; }
+  onError(listener: (error?: unknown) => void): void { this.errorListener = listener; }
   onMessage(listener: (data: string) => void): void { this.messageListener = listener; }
   onOpen(listener: () => void): void { this.openListener = listener; }
   closed(code: number): void { this.closeListener?.(code); }
-  error(): void { this.errorListener?.(); }
+  error(error?: unknown): void { this.errorListener?.(error); }
   message(data: string): void { this.messageListener?.(data); }
   open(): void { this.openListener?.(); }
 }

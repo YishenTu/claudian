@@ -11,10 +11,8 @@ import {
 import type {
   CollabAuthorityEventInvalidation,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
+import { isTlsValidationError } from '@/app/collab/tlsErrors';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-
-const MIN_RECONNECT_DELAY_MS = 1_000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
 
 export type ProjectEventInvalidation = CollabAuthorityEventInvalidation;
 
@@ -30,7 +28,7 @@ export interface ProjectEventClientInput {
 export interface ProjectEventClientSocket {
   close(code: number, reason: string): void;
   onClose(listener: (code: number) => void): void;
-  onError(listener: () => void): void;
+  onError(listener: (error?: unknown) => void): void;
   onMessage(listener: (data: string) => void): void;
   onOpen(listener: () => void): void;
 }
@@ -41,12 +39,6 @@ export type ProjectEventClientSocketFactory = (
 
 export interface ProjectEventClientOptions {
   readonly createSocket?: ProjectEventClientSocketFactory;
-}
-
-export interface ProjectEventClientScheduler {
-  readonly clearTimeout?: (handle: number) => void;
-  readonly random?: () => number;
-  readonly setTimeout?: (callback: () => void, milliseconds: number) => number;
 }
 
 class NodeProjectEventClientSocket implements ProjectEventClientSocket {
@@ -74,8 +66,15 @@ class NodeProjectEventClientSocket implements ProjectEventClientSocket {
     this.socket.on('close', code => listener(code));
   }
 
-  onError(listener: () => void): void {
+  onError(listener: (error?: unknown) => void): void {
     this.socket.on('error', listener);
+    this.socket.on('unexpected-response', (_request, response) => {
+      listener(new CollabError({
+        code: response.statusCode === 401 || response.statusCode === 403
+          ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
+      response.destroy();
+    });
   }
 
   onMessage(listener: (data: string) => void): void {
@@ -106,14 +105,9 @@ function createDefaultSocket(input: ProjectEventClientInput): ProjectEventClient
 
 export class ProjectEventClient {
   private acknowledgedSequence: number;
-  private readonly clearTimeout: (handle: number) => void;
   private readonly createSocket: ProjectEventClientSocketFactory;
   private disposed = false;
   private observedSequence: number;
-  private readonly random: () => number;
-  private reconnectAttempt = 0;
-  private reconnectHandle: number | null = null;
-  private readonly setTimeout: (callback: () => void, milliseconds: number) => number;
   private socket: ProjectEventClientSocket | null = null;
 
   constructor(
@@ -122,15 +116,10 @@ export class ProjectEventClient {
       invalidation: ProjectEventInvalidation,
     ) => Promise<number>,
     options: ProjectEventClientOptions = {},
-    scheduler: ProjectEventClientScheduler = {},
   ) {
     this.acknowledgedSequence = input.lastSequence;
     this.observedSequence = input.lastSequence;
-    this.clearTimeout = scheduler.clearTimeout ?? (handle => window.clearTimeout(handle));
     this.createSocket = options.createSocket ?? createDefaultSocket;
-    this.random = scheduler.random ?? Math.random;
-    this.setTimeout = scheduler.setTimeout
-      ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
   }
 
   get lastSequence(): number {
@@ -144,17 +133,19 @@ export class ProjectEventClient {
       lastSequence: this.acknowledgedSequence,
     });
     this.socket = socket;
+    this.observedSequence = this.acknowledgedSequence;
     socket.onOpen(() => {
       if (this.socket !== socket) return;
-      this.reconnectAttempt = 0;
-      this.input.onConnectionResult?.();
       this.#requestSnapshot(this.acknowledgedSequence);
     });
     socket.onMessage(data => {
       if (this.socket === socket) this.#handleMessage(data);
     });
-    socket.onError(() => {
-      if (this.socket === socket) socket.close(1011, 'Event connection failed');
+    socket.onError(error => {
+      if (this.socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
+      }), 'Event connection failed');
     });
     socket.onClose(code => {
       if (this.socket !== socket) return;
@@ -162,17 +153,12 @@ export class ProjectEventClient {
       this.input.onConnectionResult?.(new CollabError({
         code: code === 1008 ? 'authorization-denied' : 'endpoint-unreachable',
       }));
-      if (code !== 1008) this.#scheduleReconnect();
     });
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.reconnectHandle !== null) {
-      this.clearTimeout(this.reconnectHandle);
-      this.reconnectHandle = null;
-    }
     const socket = this.socket;
     this.socket = null;
     socket?.close(1000, 'Client stopped');
@@ -238,33 +224,33 @@ export class ProjectEventClient {
   }
 
   #requestInvalidation(invalidation: ProjectEventInvalidation): void {
-    void this.onInvalidation(invalidation).then(sequence => {
+    const socket = this.socket;
+    if (!socket || this.disposed) return;
+    void Promise.resolve().then(() => {
+      if (this.disposed || this.socket !== socket) throw new CollabError({ code: 'cancelled' });
+      return this.onInvalidation(invalidation);
+    }).then(sequence => {
+      if (this.disposed || this.socket !== socket) return;
       if (!Number.isSafeInteger(sequence) || sequence < invalidation.sequence) {
-        throw new RangeError('Invalid authoritative event sequence');
+        throw new CollabError({ code: 'authority-integrity-error' });
       }
       this.acknowledgedSequence = Math.max(this.acknowledgedSequence, sequence);
       this.observedSequence = Math.max(this.observedSequence, sequence);
       if (invalidation.kind === 'retired') this.dispose();
-    }).catch(() => {
-      const socket = this.socket;
-      if (socket) socket.close(1011, 'Event refresh failed');
+      else this.input.onConnectionResult?.();
+    }).catch(error => {
+      if (this.socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: 'operation-failed',
+      }), 'Event refresh failed');
     });
   }
 
-  #scheduleReconnect(): void {
-    if (this.disposed || this.reconnectHandle !== null) return;
-    const base = Math.min(
-      MIN_RECONNECT_DELAY_MS * (2 ** this.reconnectAttempt),
-      MAX_RECONNECT_DELAY_MS,
-    );
-    const delay = Math.min(
-      Math.round(base + base * 0.25 * this.random()),
-      MAX_RECONNECT_DELAY_MS,
-    );
-    this.reconnectAttempt += 1;
-    this.reconnectHandle = this.setTimeout(() => {
-      this.reconnectHandle = null;
-      this.start();
-    }, delay);
+  #fail(error: CollabError, reason: string): void {
+    const socket = this.socket;
+    if (!socket || this.disposed) return;
+    this.socket = null;
+    socket.close(1011, reason);
+    this.input.onConnectionResult?.(error);
   }
 }
