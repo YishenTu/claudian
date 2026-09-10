@@ -2007,6 +2007,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
+  // Each variant includes real Git/TLS I/O and multiple crash-recovery/restart cycles.
   it.each([
     { retainNextGeneration: false, moveAddress: false },
     { retainNextGeneration: true, moveAddress: false },
@@ -3026,7 +3027,7 @@ describe('production authority-transfer effects', () => {
     await sourceFeature.close();
     await sourceFoundation.close();
     await targetFoundation.close();
-  });
+  }, 60_000);
 
   it.each([false, true])('moves Cloud authority through the composed feature facade (single Member: %s)', async (singleMember) => {
     const {
