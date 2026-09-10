@@ -601,6 +601,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
       const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent);
 
       expect(lines).toContain('Query: obsidian plugin API');
@@ -621,6 +622,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
       const links = toolEl.querySelectorAll('.claudian-tool-link');
       const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent);
 
@@ -651,6 +653,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
       const headers = Array.from(toolEl.querySelectorAll('.claudian-tool-patch-header')).map(el => el.textContent);
       const statusEl = toolEl.querySelector('.claudian-tool-status');
       const diffTexts = Array.from(toolEl.querySelectorAll('.claudian-diff-text')).map(el => el.textContent);
@@ -737,6 +740,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
       const headers = Array.from(toolEl.querySelectorAll('.claudian-tool-patch-header')).map(el => el.textContent);
       const statusEl = toolEl.querySelector('.claudian-tool-status');
       const diffTexts = Array.from(toolEl.querySelectorAll('.claudian-diff-text')).map(el => el.textContent);
@@ -855,6 +859,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
       const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(el => el.textContent);
 
       expect(lines).toContain('src/main.ts');

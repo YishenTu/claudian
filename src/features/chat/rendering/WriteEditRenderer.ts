@@ -207,24 +207,32 @@ export function renderStoredWriteEdit(
   // Content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-content' });
 
-  // Render diff if available
-  const row = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
+  let contentRendered = false;
+  const renderContentOnce = () => {
+    if (contentRendered) return;
+    const row = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
 
-  if (toolCall.diffData && toolCall.diffData.diffLines.length > 0) {
-    const diffEl = row.createDiv({ cls: 'claudian-write-edit-diff' });
-    renderDiffContent(diffEl, toolCall.diffData.diffLines);
-  } else if (isError && toolCall.result) {
-    const errorEl = row.createDiv({ cls: 'claudian-write-edit-error' });
-    errorEl.setText(toolCall.result);
-  } else {
-    const doneEl = row.createDiv({ cls: 'claudian-write-edit-done-text' });
-    doneEl.setText(isError ? 'ERROR' : 'DONE');
-  }
+    if (toolCall.diffData && toolCall.diffData.diffLines.length > 0) {
+      const diffEl = row.createDiv({ cls: 'claudian-write-edit-diff' });
+      renderDiffContent(diffEl, toolCall.diffData.diffLines);
+    } else if (isError && toolCall.result) {
+      const errorEl = row.createDiv({ cls: 'claudian-write-edit-error' });
+      errorEl.setText(toolCall.result);
+    } else {
+      const doneEl = row.createDiv({ cls: 'claudian-write-edit-done-text' });
+      doneEl.setText(isError ? 'ERROR' : 'DONE');
+    }
+    contentRendered = true;
+  };
+  if (toolCall.status === 'running' || options.initiallyExpanded) renderContentOnce();
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
   const state = { isExpanded: false };
   setupCollapsible(wrapperEl, headerEl, contentEl, state, {
     initiallyExpanded: options.initiallyExpanded ?? false,
+    onToggle: (expanded) => {
+      if (expanded) renderContentOnce();
+    },
     baseAriaLabel,
   });
 
