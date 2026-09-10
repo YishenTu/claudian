@@ -33,6 +33,14 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectInvitationModal', () => {
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('owns invitation creation, copy, and revoke without changing its parent layout', async () => {
     const port: jest.Mocked<ProjectInvitationModalPort> = {
       completeManagementOperation: jest.fn(),

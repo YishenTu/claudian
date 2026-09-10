@@ -27,6 +27,7 @@ export interface CollabAuthorityMembershipStore {
 }
 
 export interface CollabAuthorityControlRouterOptions {
+  readonly onConnectionResult?: (projectId: string, error?: CollabError) => void;
   readonly tryReconnect?: (
     projectId: CollabProjectId,
     options: CollabOperationOptions,
@@ -293,9 +294,20 @@ export class CollabAuthorityControlRouter implements
     ) => Promise<T>,
   ): Promise<T> {
     const attempt = async (): Promise<T> => {
-      let initialSnapshot: CollabProjectSnapshot | undefined;
-      const session = await this.session(projectId, snapshot => { initialSnapshot = snapshot; });
-      return operation(session, initialSnapshot);
+      const work = this.sessions.acquire(projectId);
+      const generation = work.generation;
+      try {
+        let initialSnapshot: CollabProjectSnapshot | undefined;
+        const session = await this.session(projectId, snapshot => { initialSnapshot = snapshot; });
+        const result = await operation(session, initialSnapshot);
+        if (work.generation === generation) this.options.onConnectionResult?.(projectId);
+        return result;
+      } catch (error) {
+        if (work.generation === generation && error instanceof CollabError) {
+          this.options.onConnectionResult?.(projectId, error);
+        }
+        throw error;
+      }
     };
     try {
       return await attempt();

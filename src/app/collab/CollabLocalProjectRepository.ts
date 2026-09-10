@@ -64,6 +64,7 @@ import type {
 import {
   decodeHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
+import { decodeHostTrustCheckpoint, type HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
 import {
   canonicalCloudUrl,
   cloudProjectGitRemoteUrl,
@@ -154,6 +155,7 @@ export interface CollabLocalLanMembershipRecord
     readonly gitRemoteUrl: string | null;
     readonly hostCaCertificatePem: string | null;
     readonly hostCaFingerprint: string | null;
+    readonly hostTrustCheckpoint?: HostTrustCheckpoint;
   };
   readonly member: {
     readonly id: CollabMemberId;
@@ -658,7 +660,7 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
   requireExactKeys(value.authority, [
     'endpoint', 'gitRemoteUrl', 'hostCaCertificatePem',
     'hostCaFingerprint', 'kind',
-  ], ['authorityGeneration']);
+  ], ['authorityGeneration', 'hostTrustCheckpoint']);
   requireExactKeys(value.member, [
     'credential', 'displayName', 'id', 'personalRef', 'role',
   ]);
@@ -707,6 +709,9 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
       gitRemoteUrl,
       hostCaCertificatePem,
       hostCaFingerprint,
+      ...(value.authority.hostTrustCheckpoint === undefined ? {} : {
+        hostTrustCheckpoint: decodeHostTrustCheckpoint(value.authority.hostTrustCheckpoint),
+      }),
       kind: 'lan',
     },
     hostOwnership: {

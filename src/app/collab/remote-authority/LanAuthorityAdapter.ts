@@ -108,8 +108,9 @@ export class LanAuthorityAdapter implements CollabAuthorityAdapter {
       control,
       dispose: () => undefined,
       events: {
-        connect: ({ afterSequence, onInvalidation }: CollabAuthorityEventConnectionInput) => {
+        connect: ({ afterSequence, onInvalidation, onConnectionResult }: CollabAuthorityEventConnectionInput) => {
           const event = this.createEvent({
+            onConnectionResult,
             caCertificatePem: hostCaCertificatePem,
             endpoint: effectiveEndpoint,
             lastSequence: afterSequence,

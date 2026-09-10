@@ -1,7 +1,8 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
+import type { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabConnectionStatus, CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabProjectResource {
@@ -41,7 +42,7 @@ function generationChangedError(): CollabError {
 
 export class CollabProjectWorkSession {
    #authoritySession: Promise<CollabProjectResource> | null = null;
-   #autoReconnectTask: Promise<boolean> | null = null;
+   #connection: CollabProjectConnection | null = null;
    #backgroundSynchronization: BackgroundSynchronization | null = null;
    readonly #cacheUpdateQueue = new SerialTaskQueue();
   private closed = false;
@@ -106,21 +107,13 @@ export class CollabProjectWorkSession {
     this.#backgroundSynchronization?.controller.abort();
   }
 
-  coalesceAutoReconnect(start: () => Promise<boolean>): Promise<boolean> {
+  ensureConnection(create: () => CollabProjectConnection): CollabProjectConnection {
     this.#assertOpen();
-    if (this.#autoReconnectTask) return this.#autoReconnectTask;
-    const pending = start();
-    this.#autoReconnectTask = pending;
-    this.#clearWhenSettled(
-      pending,
-      () => this.#autoReconnectTask === pending,
-      () => { this.#autoReconnectTask = null; },
-    );
-    return pending;
+    return this.#connection ??= create();
   }
 
-  currentAutoReconnect(): Promise<boolean> | null {
-    return this.#autoReconnectTask;
+  get connectionStatus(): CollabConnectionStatus {
+    return this.#connection?.status ?? 'offline';
   }
 
   coalesceEventRefresh(
@@ -232,8 +225,9 @@ export class CollabProjectWorkSession {
     return pending;
   }
 
-  resetProjection(): void {
+  resetProjection(): boolean {
     this.#assertOpen();
+    const subscribed = this.#eventConnection !== null || this.#coordinationSubscription !== null;
     this.#projectionGeneration += 1;
     this.observedAcceptedMainOid = null;
     this.#eventConnection?.dispose();
@@ -252,6 +246,7 @@ export class CollabProjectWorkSession {
     if (this.#eventRefresh) this.#trackDetached(this.#eventRefresh);
     this.#snapshotRead = null;
     this.#eventRefresh = null;
+    return subscribed;
   }
 
   assertGeneration(generation: number): void {
@@ -278,7 +273,7 @@ export class CollabProjectWorkSession {
       this.#mutationQueue.drain(),
       this.#cacheUpdateQueue.drain(),
       this.#backgroundSynchronization?.settled ?? Promise.resolve(),
-      this.#autoReconnectTask ?? Promise.resolve(),
+      this.#connection?.close() ?? Promise.resolve(),
       this.#eventRefresh ?? Promise.resolve(),
       this.#snapshotRead ?? Promise.resolve(),
       coordinationSubscription ?? Promise.resolve(),
@@ -399,11 +394,15 @@ export class CollabProjectWorkSessionRegistry {
     this.sessions.get(projectId)?.abortBackgroundSynchronization();
   }
 
-  resetProject(projectId: CollabProjectId): void {
+  readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus {
+    return this.sessions.get(projectId)?.connectionStatus ?? 'offline';
+  }
+
+  resetProject(projectId: CollabProjectId): boolean {
     if (this.closed || this.#closedProjects.has(projectId) || this.#suspensions.has(projectId)) {
-      return;
+      return false;
     }
-    this.sessions.get(projectId)?.resetProjection();
+    return this.sessions.get(projectId)?.resetProjection() ?? false;
   }
 
   async suspendProject(

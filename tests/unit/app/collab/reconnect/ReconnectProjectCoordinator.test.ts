@@ -6,14 +6,17 @@ import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
   CollabLocalCloudMembershipRecord,
+  CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 import type {
   CollabHostTrustStore,
@@ -27,6 +30,7 @@ import {
   type LanCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
   decodeCloudRelocationRecord,
 } from '@/app/collab/reconnect/CloudRelocationRecord';
@@ -42,7 +46,7 @@ const fingerprint = 'ab'.repeat(32);
 const credential = Buffer.alloc(32, 9).toString('base64url');
 const certificate = '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n';
 
-function membership(): CollabLocalMembershipRecord {
+function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
@@ -858,6 +862,61 @@ describe('ReconnectProjectCoordinator', () => {
     }));
   });
 
+  it.each(['discovered', 'invitation'] as const)(
+    'persists authenticated handoff history when reconnecting through %s', async mode => {
+      await mkdir(path.join(vaultRoot, 'source'));
+      await mkdir(path.join(vaultRoot, 'target'));
+      const source = new LanTlsIdentity(path.join(vaultRoot, 'source'), {
+        installationKey: TEST_INSTALLATION_A, now: () => now,
+      });
+      const target = new LanTlsIdentity(path.join(vaultRoot, 'target'), {
+        installationKey: TEST_INSTALLATION_A, now: () => now,
+      });
+      const sourceCa = await source.loadOrCreate();
+      const targetCa = await target.loadOrCreate();
+      const verifier = new HostTrustTransitionService();
+      const proof = await verifier.signTransition(await source.hostCaSigner(), {
+        issuedAt: now.toISOString(), nextCaCertificatePem: targetCa.caCertificatePem,
+        projectId: 'project-a', transferId: 'transfer-verified',
+      });
+      const base = membership();
+      if (base.authority.kind !== 'lan') throw new Error('Expected LAN membership');
+      currentMembership = {
+        ...base, authority: {
+          ...base.authority, hostCaCertificatePem: sourceCa.caCertificatePem,
+          hostCaFingerprint: sourceCa.caFingerprint,
+        },
+      };
+      const reconnect = coordinator({
+        hostTransitionProofClient: { fetchHostTransitions: async () => [proof] },
+      });
+      requestWithMember.mockImplementation(async request => request.decode({
+        data: { caFingerprint: targetCa.caFingerprint, endpoint: newEndpoint },
+        protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION, requestId: 'refresh-verified',
+      }));
+      const candidate = {
+        caFingerprint: targetCa.caFingerprint, endpoint: newEndpoint, projectId: 'project-a',
+      };
+      const result = mode === 'discovered'
+        ? await reconnect.reconnectDiscoveredProject({ candidates: [candidate], projectId: 'project-a' })
+        : await reconnect.reconnectProject({
+          encodedInvitation: codec.encode(invitation(codec, candidate)), projectId: 'project-a',
+        });
+      expect(result.status).toBe('success');
+      expect(currentMembership).toMatchObject({ authority: {
+        hostCaFingerprint: targetCa.caFingerprint,
+        hostTrustCheckpoint: { transferId: 'transfer-verified', proofChainDigest: expect.any(String) },
+      } });
+      const saved = currentMembership as ReturnType<typeof membership>;
+      if (saved.authority.kind !== 'lan') throw new Error('Expected LAN membership');
+      expect(() => verifier.verifyChain({
+        checkpoint: saved.authority.hostTrustCheckpoint,
+        pinnedCaCertificatePem: targetCa.caCertificatePem,
+        projectId: 'project-a', proofs: [],
+      })).toThrow();
+    },
+  );
+
   it('rejects an invalid Host transition chain before sending a credential', async () => {
     const hostTransitionProofClient = {
       fetchHostTransitions: jest.fn(async () => [{ transferId: 'forked' }]),
@@ -1061,6 +1120,7 @@ describe('ReconnectProjectCoordinator', () => {
       autoStart: true,
       endpoint: transferredEndpoint,
       eventSequence: 8,
+      proofChainDigest: 'c'.repeat(64),
       ownsAuthority: true,
       projectId: 'project-a',
       targetCaCertificatePem: 'transferred-ca',

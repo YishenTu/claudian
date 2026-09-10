@@ -42,14 +42,17 @@ describe('LocalHostTransferProjection', () => {
       autoStart: true, endpoint: 'https://192.168.1.20:27000', eventSequence: 12,
       ownsAuthority: true, projectId: 'project-alpha', targetCaCertificatePem: 'target-ca',
       targetCaFingerprint: 'b'.repeat(64), targetHostMemberId: 'member-target',
-      transferId: 'transfer-alpha',
+      proofChainDigest: 'c'.repeat(64), transferId: 'transfer-alpha',
     });
 
     expect(rotateOrigin).toHaveBeenCalledWith(expect.objectContaining({
       newRemoteUrl: 'https://192.168.1.20:27000/v1/git/project-alpha/repository.git',
     }));
     expect(saveMembership).toHaveBeenCalledWith(expect.objectContaining({
-      authority: expect.objectContaining({ endpoint: 'https://192.168.1.20:27000' }),
+      authority: expect.objectContaining({
+        endpoint: 'https://192.168.1.20:27000',
+        hostTrustCheckpoint: { transferId: 'transfer-alpha', proofChainDigest: 'c'.repeat(64) },
+      }),
       hostOwnership: { autoStart: true, ownsAuthority: true },
       lastEventSequence: 12,
     }));
@@ -74,12 +77,15 @@ describe('LocalHostTransferProjection', () => {
 
     await projection.demoteSourceHost({
       autoStart: false, endpoint: 'https://192.168.1.20:27000', ownsAuthority: false,
-      projectId: 'project-alpha', proof: {} as never,
+      projectId: 'project-alpha', proof: {} as never, proofChainDigest: 'c'.repeat(64),
       targetCaCertificatePem: 'target-ca', targetCaFingerprint: 'b'.repeat(64),
       targetHostMemberId: 'member-target', transferId: 'transfer-alpha',
     });
 
     expect(saveMembership).toHaveBeenCalledWith(expect.objectContaining({
+      authority: expect.objectContaining({
+        hostTrustCheckpoint: { transferId: 'transfer-alpha', proofChainDigest: 'c'.repeat(64) },
+      }),
       hostOwnership: { autoStart: false, ownsAuthority: false },
     }));
   });

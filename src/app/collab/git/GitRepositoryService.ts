@@ -1501,18 +1501,19 @@ export class GitRepositoryService {
     });
   }
 
-  async pushToUrl(
+  async pushCommitToUrl(
     repositoryPath: string,
     remoteUrl: string,
-    refspec: string,
+    input: { readonly commitOid: string; readonly targetRef: string },
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
     await this.#inspectRepository(repositoryPath);
     assertRemoteUrl(remoteUrl);
-    assertRefspec(refspec);
+    assertOid(input.commitOid);
+    assertRef(input.targetRef);
     await this.runner.run({
-      args: ['push', '--porcelain', remoteUrl, refspec],
+      args: ['push', '--porcelain', remoteUrl, `${input.commitOid}:${input.targetRef}`],
       cwd: repositoryPath,
       network,
       signal,

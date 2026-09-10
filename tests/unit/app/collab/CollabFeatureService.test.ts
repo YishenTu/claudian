@@ -424,6 +424,7 @@ function publication(): jest.Mocked<CollabPublicationPort> {
     reconnectProject: jest.fn(),
     reopenTicket: jest.fn(),
     subscribeCoordination: jest.fn().mockReturnValue(coordinationSubscription),
+    readConnectionStatus: () => 'connected',
     tryAutoReconnect: jest.fn().mockResolvedValue(false),
     updateRequestMetadata: jest.fn(),
     updateTicketContent: jest.fn(),
@@ -523,6 +524,22 @@ describe('CollabFeatureService', () => {
 
   afterEach(async () => {
     await rm(vaultRoot, { force: true, recursive: true });
+  });
+
+  it('projects observed connection health for a remote member even when an endpoint is saved', async () => {
+    const publish = publication();
+    const observed = jest.fn(() => 'offline' as const);
+    const member = membership();
+    (foundation.local.projects.loadMembership as jest.Mock).mockResolvedValue({
+      ...member, authority: { ...member.authority, endpoint: 'https://192.168.1.10:54545' },
+    });
+    const service = createService({
+      hostInstallation: { inspect: async () => 'absent' },
+      publication: { ...publish, readConnectionStatus: observed },
+    });
+    await expect(service.listProjects()).resolves.toMatchObject({
+      status: 'success', value: [{ connectionStatus: 'offline' }],
+    });
   });
 
   it('shares initialization and publishes the durable local Project projection', async () => {
@@ -1284,6 +1301,7 @@ describe('CollabFeatureService', () => {
     'projects a Host Member with %s authority independently from Member identity',
     async (installationStatus, hostStatus, connectionStatus) => {
       const service = createService({
+        publication: { readConnectionStatus: () => 'offline' },
         hostInstallation: {
           inspect: jest.fn().mockResolvedValue(installationStatus),
         },
@@ -1452,6 +1470,7 @@ describe('CollabFeatureService', () => {
       },
     }));
     const service = createService({
+      publication: { readConnectionStatus: () => 'offline' },
       hostInstallation: {
         inspect: jest.fn(async projectId => {
           if (projectId === 'project-alpha') throw new Error('corrupt marker');

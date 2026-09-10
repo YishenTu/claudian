@@ -36,7 +36,7 @@ import {
   type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
 import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabRevokeInvitationRequest } from '@/core/collab';
-import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConnectionStatus, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabBeginCloudToLanTransferRequest,
@@ -342,6 +342,7 @@ export interface CollabPublicationPort {
       reason: 'accepted-main-changed' | 'coordination-changed',
     ) => void,
   ): { dispose(): void };
+  readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus;
   tryAutoReconnect(
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
@@ -2329,11 +2330,7 @@ class CollabFeatureServiceCore {
           : hostInstallationStatus === 'hosted-here'
             || hostInstallationStatus === 'legacy-unbound'
           ? 'host-stopped'
-          : membership?.authority.kind === 'cloud'
-            ? 'connected'
-            : lanMembership?.authority.endpoint
-            ? 'connected'
-            : 'offline',
+          : membership ? this.options.publication.readConnectionStatus(project.id) : 'offline',
       health: project.cleanupStatus === 'failed' || installationInspectionFailed
         ? 'needs-attention'
         : effectiveLifecycle === 'retired'

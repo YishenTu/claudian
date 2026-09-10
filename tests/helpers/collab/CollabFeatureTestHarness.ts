@@ -350,6 +350,7 @@ function defaultPublication(): CollabPublicationPort {
       status: 'success',
       value: { headOid: OID_A, projectId, state: 'already-current' },
     }),
+    readConnectionStatus: () => 'connected',
     tryAutoReconnect: () => Promise.resolve(false),
     updateRequestMetadata: () => unexpected('updateRequestMetadata'),
     updateTicketContent: () => unexpected('updateTicketContent'),
@@ -420,7 +421,7 @@ export function completeCollabPublicationOptions(
   return {
     cloudAuthority: overrides.cloudAuthority ?? new CloudAuthorityAdapter(overrides.vaultRoot),
     discovery: {
-      discoverProjectCandidates: () => Promise.resolve([]),
+      discoverProjectCandidatesForTrustTransition: () => Promise.resolve([]),
       ...overrides.discovery,
     },
     inspectHostInstallation: overrides.inspectHostInstallation

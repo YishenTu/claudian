@@ -294,13 +294,15 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     expected: PublishRepositorySnapshot,
     signal?: AbortSignal,
   ): Promise<void> {
+    const commitOid = expected.headOid;
+    if (!commitOid) throw repositoryError('repository-invalid', 'publish-head-missing');
     await this.#assertExpected(context, expected, signal);
     await ensureTrustedCollabOrigin(this.git, context, 'publish-origin-mismatch');
     await this.network.withNetwork(context, async (network, remoteUrl) => {
-      await this.git.pushToUrl(
+      await this.git.pushCommitToUrl(
         context.repositoryPath,
         remoteUrl,
-        `${context.personalRef}:${context.personalRef}`,
+        { commitOid, targetRef: context.personalRef },
         network,
         signal,
       );

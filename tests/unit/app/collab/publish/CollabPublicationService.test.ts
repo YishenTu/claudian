@@ -381,7 +381,7 @@ describe('CollabPublicationService reconnect', () => {
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
       discovery: {
-        discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+        discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
       },
       inspectHostInstallation: async () => 'hosted-elsewhere',
       reconnect: {
@@ -402,7 +402,7 @@ describe('CollabPublicationService reconnect', () => {
       expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
         candidates: [candidate],
         projectId: LAN_PROJECT_ID,
-      }, {});
+      }, { signal: expect.any(AbortSignal) });
     } finally {
       request.mockRestore();
       await service.close();
@@ -478,6 +478,54 @@ describe('CollabPublicationService reconnect', () => {
       await eventConnected.promise;
     } finally {
       await Promise.all(services.map(service => service.close()));
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reopens an existing event subscription after explicit endpoint rotation without another read', async () => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)
+        : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ server });
+    let connected = 0;
+    sockets.on('connection', () => { connected += 1; });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing server address');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'collab-event-rotation-'));
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(cloudMembership(`http://127.0.0.1:${address.port}`));
+    await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} }, requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+      cloudAuthority: new CloudAuthorityAdapter(vaultRoot, { requestIdFactory: () => 'response-snapshot' }),
+      vaultRoot,
+    }));
+    const waitForConnections = async (count: number) => {
+      const deadline = Date.now() + 2_000;
+      while (connected < count && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      return connected;
+    };
+    try {
+      await service.readCoordinationSnapshot(CLOUD_PROJECT_ID);
+      expect(await waitForConnections(1)).toBe(1);
+      service.resetProjectConnection(CLOUD_PROJECT_ID, { resumeEvents: true });
+      expect(await waitForConnections(2)).toBe(2);
+      service.resetProjectConnection(CLOUD_PROJECT_ID);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(connected).toBe(2);
+    } finally {
+      await service.close();
       for (const socket of sockets.clients) socket.terminate();
       await new Promise<void>(resolve => sockets.close(() => resolve()));
       server.closeAllConnections();
@@ -610,14 +658,14 @@ describe('CollabPublicationService reconnect', () => {
     expect(retirement.handle).toHaveBeenCalledWith(result, 'terminal-fallback');
   });
 
-  it('discovers and reconnects an offline Member under its stored CA', async () => {
+  it('discovers a successor Host for proof verification when the old CA is no longer advertised', async () => {
     const candidate = {
-      caFingerprint: 'ab'.repeat(32),
+      caFingerprint: 'cd'.repeat(32),
       endpoint: 'https://192.168.1.20:54545',
       projectId: 'project-a',
     };
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
     };
     const reconnect = {
       reconnectDiscoveredProject: jest.fn().mockResolvedValue({
@@ -653,15 +701,14 @@ describe('CollabPublicationService reconnect', () => {
 
     await expect(service.tryAutoReconnect('project-a')).resolves.toBe(true);
 
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalledWith(
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalledWith(
       'project-a',
-      'ab'.repeat(32),
-      {},
+      { signal: expect.any(AbortSignal) },
     );
     expect(reconnect.reconnectDiscoveredProject).toHaveBeenCalledWith({
       candidates: [candidate],
       projectId: 'project-a',
-    }, {});
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('uses ordinary trusted discovery for a hosted-here Host Member', async () => {
@@ -671,7 +718,7 @@ describe('CollabPublicationService reconnect', () => {
       projectId: 'project-a',
     };
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
     };
     const reconnectDiscoveredProject = jest.fn().mockResolvedValue({
       status: 'success',
@@ -698,11 +745,11 @@ describe('CollabPublicationService reconnect', () => {
     }));
 
     await expect(service.tryAutoReconnect('project-a')).resolves.toBe(true);
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalled();
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalled();
     expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
       candidates: [candidate],
       projectId: 'project-a',
-    }, {});
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('coalesces concurrent automatic reconnect attempts for one Project', async () => {
@@ -712,7 +759,7 @@ describe('CollabPublicationService reconnect', () => {
       projectId: string;
     }[]>();
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockReturnValue(candidate.promise),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockReturnValue(candidate.promise),
     };
     const reconnect = {
       reconnectDiscoveredProject: jest.fn().mockResolvedValue({
@@ -755,13 +802,43 @@ describe('CollabPublicationService reconnect', () => {
       projectId: 'project-a',
     }]);
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalledTimes(1);
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalledTimes(1);
     expect(reconnect.reconnectDiscoveredProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels discovery and drains it before Project activity closes', async () => {
+    const candidate = deferred<readonly []>();
+    const started = deferred<void>();
+    let discoverySignal: AbortSignal | undefined;
+    const service = new CollabPublicationService({
+      local: { projects: {
+        loadMembership: async () => lanMembership(false),
+      } },
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({
+      discovery: {
+        discoverProjectCandidatesForTrustTransition: async (_projectId, options) => {
+          discoverySignal = options?.signal;
+          started.resolve();
+          return candidate.promise;
+        },
+      },
+    }));
+    const pending = service.tryAutoReconnect(LAN_PROJECT_ID);
+    await started.promise;
+    const draining = service.drainProject(LAN_PROJECT_ID);
+    try {
+      expect(discoverySignal?.aborted).toBe(true);
+    } finally {
+      candidate.resolve([]);
+      await draining;
+      await service.close();
+    }
+    await expect(pending).resolves.toBe(false);
   });
 
   it('surfaces a discovered authority split instead of hiding it as offline', async () => {
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([{
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([{
         caFingerprint: 'ab'.repeat(32),
         endpoint: 'https://192.168.1.20:54545',
         projectId: 'project-a',
@@ -861,6 +938,7 @@ describe('CollabPublicationService reconnect', () => {
       },
     });
     await expect(firstResult).resolves.toMatchObject({ status: 'success' });
+    expect(service.readConnectionStatus('project-a')).toBe('connected');
     await expect(secondResult).resolves.toMatchObject({ status: 'success' });
     expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
   });

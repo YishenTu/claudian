@@ -9,6 +9,7 @@ import type {
   CollabAuthorityMembershipControlPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthorityKind, CollabProjectSnapshot } from '@/core/collab';
+import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export type CollabAuthorityEventInvalidation =
   | {
@@ -25,6 +26,7 @@ export type CollabAuthorityEventInvalidation =
   };
 
 export interface CollabAuthorityEventConnectionInput {
+  readonly onConnectionResult?: (error?: CollabError) => void;
   readonly afterSequence: number;
   readonly onInvalidation: (
     invalidation: CollabAuthorityEventInvalidation,

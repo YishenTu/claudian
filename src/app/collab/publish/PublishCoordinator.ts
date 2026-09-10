@@ -2,12 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { type CollabChangeRequest, type CollabFileChangeKind, type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
+import { ProjectTaskQueue } from '@/app/collab/ProjectTaskQueue';
 import {
   type CollabPublicationOperationRecord,
   type CollabPublicationStateRecord,
   decodeCollabPublicationStateRecord,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
-import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabConfirmPublishRequest, type CollabConflictDescriptor, type CollabOperationPhase, type CollabPublicationReview, type CollabPublishOutcome, type CollabPublishRequest, type CollabResult } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError, type CollabRecoveryAction } from '@/core/collab/ClaudianCollabError';
@@ -325,7 +325,7 @@ function conflictDescriptorFingerprint(descriptor: CollabConflictDescriptor): st
 export class PublishCoordinator {
    readonly #createOperationId: () => CollabOperationId;
   private readonly now: () => Date;
-   readonly #operationQueue = new SerialTaskQueue();
+   readonly #operationQueue = new ProjectTaskQueue();
 
   constructor(
     private readonly projects: PublishProjectPort,
@@ -345,7 +345,7 @@ export class PublishCoordinator {
     request: CollabPublishRequest,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.#operationQueue.run(() => this.#publishExclusive(
+    return this.#operationQueue.run(request.projectId, () => this.#publishExclusive(
       request.projectId,
       normalizeCollabPublishDescription(request.description),
       options.signal,
@@ -357,7 +357,7 @@ export class PublishCoordinator {
     conflict: CollabConflictDescriptor,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.#operationQueue.run(() => this.#publishConflictResolutionExclusive(
+    return this.#operationQueue.run(request.projectId, () => this.#publishConflictResolutionExclusive(
       request,
       conflict,
       options.signal,
@@ -368,14 +368,14 @@ export class PublishCoordinator {
     request: CollabConfirmPublishRequest,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabResult<CollabPublishOutcome>> {
-    return this.#operationQueue.run(() => this.#confirmExclusive(request, options.signal));
+    return this.#operationQueue.run(request.projectId, () => this.#confirmExclusive(request, options.signal));
   }
 
   captureConflict(
     descriptor: CollabConflictDescriptor,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<void> {
-    return this.#operationQueue.run(() => this.#captureConflictExclusive(descriptor, options.signal));
+    return this.#operationQueue.run(descriptor.projectId, () => this.#captureConflictExclusive(descriptor, options.signal));
   }
 
   prepareReview(
@@ -383,7 +383,7 @@ export class PublishCoordinator {
     operationId: CollabOperationId,
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<CollabPublicationReview> {
-    return this.#operationQueue.run(() => this.#prepareReviewExclusive(
+    return this.#operationQueue.run(projectId, () => this.#prepareReviewExclusive(
       projectId,
       operationId,
       options.signal,

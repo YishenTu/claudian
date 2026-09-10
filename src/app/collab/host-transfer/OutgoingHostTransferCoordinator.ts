@@ -386,6 +386,7 @@ export class OutgoingHostTransferCoordinator {
             ownsAuthority: false,
             projectId,
             proof: prepared.proof,
+            proofChainDigest: prepared.manifest.proofChainDigest,
             targetCaCertificatePem: record.targetCaCertificatePem!,
             targetCaFingerprint: record.targetCaFingerprint!,
             targetHostMemberId: record.targetHostMemberId,

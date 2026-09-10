@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
+import { ProjectTaskQueue } from '@/app/collab/ProjectTaskQueue';
 import type { CollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { classifyLocalContribution } from '@/app/collab/publish/LocalContributionClassifier';
 import type {
   PublishProjectContext,
   PublishRepositorySnapshot,
 } from '@/app/collab/publish/PublishCoordinator';
-import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabConflictDescriptor, type CollabOperationOptions, type CollabProjectSnapshot, type CollabReconciliationOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -137,7 +137,7 @@ function assertPersonalRemoteReachable(snapshot: PublishRepositorySnapshot): voi
 
 export class ReconciliationCoordinator {
   private readonly createOperationId: () => CollabOperationId;
-  private readonly operationQueue = new SerialTaskQueue();
+  private readonly operationQueue = new ProjectTaskQueue();
 
   constructor(
     private readonly projects: ReconciliationProjectPort,
@@ -154,7 +154,7 @@ export class ReconciliationCoordinator {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabReconciliationOutcome>> {
-    return this.operationQueue.run(() => this.#reconcileExclusive(projectId, options.signal));
+    return this.operationQueue.run(projectId, () => this.#reconcileExclusive(projectId, options.signal));
   }
 
   async #reconcileExclusive(

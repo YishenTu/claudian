@@ -17,6 +17,7 @@ import {
   COLLAB_LIMITS,
   type CollabAuthorityTransferStatus,
 } from '@claudian-collab/protocol';
+import { completeCollabPublicationOptions } from '@test/helpers/collab/CollabFeatureTestHarness';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 
@@ -40,7 +41,12 @@ import {
   CollabLocalProjectRepository,
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
+import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
+import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import {
   createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
@@ -81,6 +87,7 @@ import { LocalMembershipControlPort } from '@/app/collab/membership/LocalMembers
 import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
 import { LocalProjectControlPort } from '@/app/collab/publish/LocalProjectControlPort';
 import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -357,7 +364,7 @@ describe('LanHostCoordinator production transport', () => {
     authorityTransferTimeoutOverride = null;
     sourceAuthorityTransfer = null;
     advertisementStop = jest.fn(async () => undefined);
-    advertiseProject = jest.fn(async () => ({ stop: advertisementStop }));
+    advertiseProject = jest.fn(async () => ({ active: true, stop: advertisementStop }));
     addressMonitorClose = jest.fn();
     checkHostAddress = async () => undefined;
     createAddressMonitor = jest.fn((check: () => Promise<void>) => {
@@ -612,7 +619,7 @@ describe('LanHostCoordinator production transport', () => {
       endpoint: host.endpoint,
       projectId: PROJECT_ID,
     });
-    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID);
+    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID, { resumeEvents: true });
     const localMembership = await localProjects.loadMembership(PROJECT_ID);
     if (!localMembership || !isCollabLocalLanMembership(localMembership)) {
       throw new Error('Stored LAN membership missing');
@@ -884,7 +891,7 @@ describe('LanHostCoordinator production transport', () => {
     });
     await coordinator.stopProject(PROJECT_ID);
     expect(coordinator.getActiveProjectRoute(PROJECT_ID)).toBeNull();
-    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID);
+    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID, { resumeEvents: true });
   });
 
   it('rejects explicit stop on a foreign installation before changing stop intent', async () => {
@@ -1391,7 +1398,7 @@ describe('LanHostCoordinator production transport', () => {
       const published = new Map<string, { caFingerprint: string; endpoint: string; projectId: string }>();
       advertiseProject.mockImplementation(async host => {
         published.set(host.projectId, host);
-        return { stop: async () => { if (published.get(host.projectId) === host) published.delete(host.projectId); } };
+        return { active: true, stop: async () => { if (published.get(host.projectId) === host) published.delete(host.projectId); } };
       });
       await coordinator.startProject(PROJECT_ID);
       const retainedProjectId = 'project-retained-responder';
@@ -2653,6 +2660,18 @@ describe('LanHostCoordinator production transport', () => {
     });
   });
 
+  it('retries failed advertisements at the same IP while the Host route stays available', async () => {
+    let active = true;
+    advertiseProject.mockImplementationOnce(async () => ({
+      get active() { return active; }, stop: advertisementStop,
+    }));
+    await coordinator.startProject(PROJECT_ID);
+    active = false;
+    await checkHostAddress();
+    expect(advertiseProject).toHaveBeenCalledTimes(2);
+    expect(coordinator.getProjectState(PROJECT_ID).status).toBe('running');
+  });
+
   it.each([false, true])('rebinds hosted Projects after address change despite advertisement stop failure: %s', async stopFails => {
     const nextAddress = listPrivateIpv4Addresses()[0];
     if (!nextAddress) return;
@@ -2696,7 +2715,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
     });
     expect(advertisementStop).toHaveBeenCalledTimes(1);
-    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID);
+    expect(resetProjectConnection).toHaveBeenCalledWith(PROJECT_ID, { resumeEvents: true });
   }, 30_000);
 
   it('closes cleanly when unload begins during an address rebind', async () => {
@@ -2755,7 +2774,7 @@ describe('LanHostCoordinator production transport', () => {
     // replacement listener has already been promoted at that point.
     advertiseProject.mockImplementation(() => {
       rebindAdvertiseReached();
-      return gate.then(() => ({ stop: advertisementStop }));
+      return gate.then(() => ({ active: true, stop: advertisementStop }));
     });
 
     const rebind = checkHostAddress();
@@ -3041,6 +3060,180 @@ describe('LanHostCoordinator production transport', () => {
       });
     }
   });
+
+  it('automatically reconnects three idle Members after a Host IP change and resumes events', async () => {
+    const nextAddress = listPrivateIpv4Addresses()[0];
+    if (!nextAddress) throw new Error('A private address is required for listener replacement');
+    const published = new Map<string, { caFingerprint: string; endpoint: string; projectId: string }>();
+    advertiseProject.mockImplementation(async host => {
+      published.set(host.projectId, host);
+      return { active: true, stop: async () => {
+        if (published.get(host.projectId) === host) published.delete(host.projectId);
+      } };
+    });
+    const firstHost = await coordinator.startProject(PROJECT_ID);
+    const host = await localProjects.loadMembership(PROJECT_ID);
+    if (!host || !isCollabLocalLanMembership(host)) throw new Error('LAN Host membership missing');
+    const hostCa = host.authority.hostCaCertificatePem!;
+    const hostFingerprint = host.authority.hostCaFingerprint!;
+    const codec = new InvitationCodec({
+      isAddressAllowed: address => address === '127.0.0.1' || address === nextAddress,
+    });
+    const resolution = await new GitRuntimeResolver().resolve();
+    if (resolution.status !== 'available') throw new Error('Native Git is required');
+    const emptyConfigPath = path.join(root, 'empty.gitconfig');
+    await writeFile(emptyConfigPath, '');
+    const runner = new GitCommandRunner({ emptyConfigPath, executablePath: resolution.runtime.executablePath });
+    const git = new GitRepositoryService(runner);
+    const members: Array<{
+      service: CollabPublicationService;
+      projects: CollabLocalProjectRepository;
+      repositoryPath: string;
+      identity: { id: string; personalRef: string; credential: string };
+    }> = [];
+    async function until(predicate: () => Promise<boolean>): Promise<void> {
+      const deadline = Date.now() + 15_000;
+      while (!await predicate()) {
+        if (Date.now() >= deadline) throw new Error('Members did not converge before the deadline');
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        const firstInvitationView = await coordinator.createInvitation(PROJECT_ID);
+        const firstInvitation = codec.decode(firstInvitationView.encodedInvitation);
+        const firstClient = await new CollabHttpClient(new MemoryTrustStore(), {
+          invitationCodec: codec,
+        }).bootstrapInvitation(firstInvitation);
+        const joined = await firstClient.requestWithInvitation({
+          body: {
+            displayName: 'Member',
+            joinAttemptId: `join-roaming-member-${index}`,
+            projectId: PROJECT_ID,
+          },
+          decode: value => envelopeData<{ joinAttempt: {
+            member: { id: string; personalRef: string };
+            memberCredential: string;
+          } }>(value),
+          method: 'POST',
+          path: `/v9/projects/${PROJECT_ID}/join-attempts`,
+        }, firstInvitation.invitationSecret);
+        await firstClient.requestWithMember({
+          body: {
+            idempotencyKey: `activate-roaming-member-${index}`,
+            joinAttemptId: `join-roaming-member-${index}`,
+            projectId: PROJECT_ID,
+          },
+          decode: value => envelopeData(value),
+          idempotencyKey: `activate-roaming-member-${index}`,
+          method: 'POST',
+          path: `/v9/projects/${PROJECT_ID}/join-attempts/join-roaming-member-${index}/activate`,
+        }, joined.joinAttempt.memberCredential);
+
+        const memberRoot = path.join(root, `roaming-member-${index}`);
+        const memberProjects = new CollabLocalProjectRepository(memberRoot);
+        await mkdir(memberRoot);
+        const workspace = new CollabWorkspaceService(memberRoot);
+        await workspace.ensureWorkspaceContainer();
+        const repositoryPath = path.join(memberRoot, 'workspace', PROJECT_ID);
+        await mkdir(repositoryPath);
+        await git.initializeWorkingRepository(repositoryPath);
+        await git.configureLocalRepository(repositoryPath, {
+          memberId: joined.joinAttempt.member.id, personalRef: joined.joinAttempt.member.personalRef,
+          projectId: PROJECT_ID, userDisplayName: 'Member',
+        });
+        await git.addRemote(repositoryPath, 'origin', `${firstHost.endpoint}/v1/git/${PROJECT_ID}/repository.git`);
+        await memberProjects.saveMembership({
+          authority: {
+            authorityGeneration: 1,
+            endpoint: firstHost.endpoint,
+            gitRemoteUrl: `${firstHost.endpoint}/v1/git/${PROJECT_ID}/repository.git`,
+            hostCaCertificatePem: hostCa,
+            hostCaFingerprint: hostFingerprint,
+            kind: 'lan',
+          },
+          createdAt: '2026-08-08T00:00:00.000Z',
+          hostOwnership: { ownsAuthority: false },
+          lastEventSequence: 0,
+          member: {
+            credential: joined.joinAttempt.memberCredential,
+            displayName: 'Member',
+            id: joined.joinAttempt.member.id,
+            personalRef: joined.joinAttempt.member.personalRef,
+            role: 'member',
+          },
+          project: {
+            id: PROJECT_ID,
+            name: 'Alpha',
+            workspacePath: `workspace/${PROJECT_ID}`,
+          },
+          schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+          updatedAt: '2026-08-08T00:00:00.000Z',
+        });
+
+        const foundation = {
+          local: { projects: memberProjects, workspace, pathPolicy: new CollabPathPolicy() },
+          requireGitFoundation: async () => ({ repositories: git, runner, runtime: resolution.runtime }),
+        };
+        const reconnect = new ReconnectProjectCoordinator(foundation, {
+          authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
+          hostInstallation: { inspect: async () => 'absent' },
+          invitationCodec: codec, vaultRoot: memberRoot,
+        });
+        const service = new CollabPublicationService(foundation, {
+          ...completeCollabPublicationOptions({ vaultRoot: memberRoot }),
+          reconnect,
+          discovery: { discoverProjectCandidatesForTrustTransition: async projectId => (
+            [...published.values()].filter(candidate => candidate.projectId === projectId)
+          ) },
+        });
+        members.push({ service, projects: memberProjects, repositoryPath, identity: {
+          id: joined.joinAttempt.member.id, personalRef: joined.joinAttempt.member.personalRef,
+          credential: joined.joinAttempt.memberCredential,
+        } });
+        await service.readCoordinationSnapshot(PROJECT_ID);
+      }
+      await until(async () => members.every(member => member.service.readConnectionStatus(PROJECT_ID) === 'connected'));
+      privateAddresses = [nextAddress];
+      await checkHostAddress();
+      const nextEndpoint = published.get(PROJECT_ID)!.endpoint;
+      expect(new URL(nextEndpoint).hostname).toBe(nextAddress);
+      expect(nextEndpoint).not.toBe(firstHost.endpoint);
+      // No Member query, manual reconnect, or fresh invitation drives this recovery.
+      await until(async () => (await Promise.all(members.map(async member => {
+        const membership = await member.projects.loadMembership(PROJECT_ID);
+        return membership && isCollabLocalLanMembership(membership)
+          && membership.authority.endpoint === nextEndpoint
+          && member.service.readConnectionStatus(PROJECT_ID) === 'connected';
+      }))).every(Boolean));
+      for (const member of members) {
+        await expect(git.listRemoteUrls(member.repositoryPath, 'origin')).resolves.toEqual([
+          `${nextEndpoint}/v1/git/${PROJECT_ID}/repository.git`,
+        ]);
+        await expect(member.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+          authority: { hostCaFingerprint: hostFingerprint }, member: member.identity,
+        });
+      }
+      const control = new LocalProjectControlPort(localProjects);
+      const created = await control.createTicket({
+        body: 'Delivered after IP recovery', projectId: PROJECT_ID, title: 'Recovered event stream',
+      }, 'ticket-after-ip-recovery');
+      const expectedSequence = (await control.readSnapshot(PROJECT_ID)).eventSequence;
+      await until(async () => (await Promise.all(members.map(async member => (
+        (await member.projects.loadMembership(PROJECT_ID))!.lastEventSequence >= expectedSequence
+      )))).every(Boolean));
+      for (const member of members) {
+        await expect(member.service.readCoordinationSnapshot(PROJECT_ID)).resolves.toMatchObject({
+          stale: false, snapshot: { openTicketCount: 1 },
+        });
+        await expect(member.service.readTicket(PROJECT_ID, created.ticket.id)).resolves.toMatchObject({
+          stale: false, detail: { ticket: { title: 'Recovered event stream' } },
+        });
+      }
+    } finally {
+      await Promise.all(members.map(member => member.service.close()));
+    }
+  }, 30_000);
 
   it('holds one exclusive Vault Host lock before opening another authority', async () => {
     await coordinator.startProject(PROJECT_ID);

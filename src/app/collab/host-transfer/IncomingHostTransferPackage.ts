@@ -223,7 +223,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
 
   installAndActivate(
     input: Parameters<IncomingHostTransferPackagePort['installAndActivate']>[0],
-  ): Promise<{ readonly eventSequence: number }> {
+  ): Promise<{ readonly eventSequence: number; readonly proofChainDigest: string }> {
     return this.operationQueue.run(() => this.#installUnlocked(input));
   }
 
@@ -308,7 +308,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
 
   async #installUnlocked(
     input: Parameters<IncomingHostTransferPackagePort['installAndActivate']>[0],
-  ): Promise<{ readonly eventSequence: number }> {
+  ): Promise<{ readonly eventSequence: number; readonly proofChainDigest: string }> {
     const directory = await this.#requireStaging(input.record);
     const manifest = await this.#loadManifest(directory);
     this.#assertInstallRecordManifest(input.record, manifest, input.manifestDigest);
@@ -416,7 +416,9 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       path.join(authorityDirectory, INSTALL_COMPLETE_FILE),
       JSON.stringify(owner),
     );
-    return Object.freeze({ eventSequence: activated.eventSequence });
+    return Object.freeze({
+      eventSequence: activated.eventSequence, proofChainDigest: manifest.proofChainDigest,
+    });
   }
 
   async #installDatabase(

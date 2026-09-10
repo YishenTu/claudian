@@ -85,6 +85,7 @@ export interface CollabClientCommentInput {
 }
 
 interface CollabClientProjectionBaseOptions {
+  readonly onConnectionResult?: (projectId: string, error?: CollabError) => void;
   readonly authoritySessions: CollabAuthoritySessionFactory;
   readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   readonly now?: () => Date;
@@ -367,7 +368,7 @@ export class CollabClientProjection {
   constructor(
     private readonly store: CollabClientProjectionStore,
     private readonly control: CollabClientProjectionControlPort,
-    options: CollabClientProjectionOptions,
+    private readonly options: CollabClientProjectionOptions,
   ) {
     this.#authoritySessions = options.authoritySessions;
     this.managerResponsibility = options.managerResponsibility;
@@ -660,6 +661,9 @@ export class CollabClientProjection {
       work.assertGeneration(generation);
       const client = authority.events.connect({
         afterSequence: membership.lastEventSequence,
+        onConnectionResult: error => {
+          if (work.generation === generation) this.options.onConnectionResult?.(projectId, error);
+        },
         onInvalidation: invalidation => this.#refreshFromEvent(projectId, invalidation),
       });
       session = { client, dispose: () => client.dispose(), listeners };
@@ -690,9 +694,9 @@ export class CollabClientProjection {
     await this.sessions.acquire(projectId).drainCacheUpdates();
   }
 
-  resetProjectConnection(projectId: string): void {
+  resetProjectConnection(projectId: string): boolean {
     this.#assertOpen();
-    this.sessions.resetProject(projectId);
+    return this.sessions.resetProject(projectId);
   }
 
   async handleRetirement(

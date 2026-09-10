@@ -382,6 +382,21 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
+  it('retains the verified Host history checkpoint across reopening membership storage', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const base = membershipRecord();
+    const record = {
+      ...base,
+      authority: {
+        ...base.authority,
+        hostTrustCheckpoint: { transferId: 'transfer-alpha', proofChainDigest: 'b'.repeat(64) },
+      },
+    };
+    await repository.saveMembership(record);
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadMembership(PROJECT_ID))
+      .resolves.toEqual(record);
+  });
+
   it('persists a strict Cloud membership without LAN authority or Host fields', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = cloudMembershipRecord();
