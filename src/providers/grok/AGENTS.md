@@ -26,7 +26,8 @@
 - Use Grok's native history under `~/.grok/sessions/` read-only.
 - Send image attachments as ACP image content blocks and rehydrate their persisted native blocks. Use Grok's `_x.ai/interject` and `_x.ai/session/fork` extensions behind typed provider-owned boundaries for steering and forks.
 - Grok's `_x.ai/session/fork` request does not carry system-prompt metadata. After adopting the child, load that child with the current complete Grok/Claudian system-prompt replacement before its first prompt, and record the configuration as applied only after that load succeeds.
-- Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
+- Keep Grok/xAI tools enabled except native plan entry/exit, which Claudian blocks without replacing native or user agent profiles. Preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
+- Grok client-hook errors and timeouts fail open. Answer plan-hook callbacks with a native denial directly, including during cancellation; do not route them through user approval or throw on malformed callbacks.
 
 ## Models and Settings
 

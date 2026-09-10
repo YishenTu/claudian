@@ -16,6 +16,7 @@ describe('buildOpencodeManagedConfig', () => {
     expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md', 'Yishen')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
+        plan: { disable: true },
         build: {
           prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
@@ -61,6 +62,7 @@ describe('buildOpencodeManagedConfig', () => {
     )).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
+        plan: { disable: true },
         'claudian-aux-readonly': {
           mode: 'primary',
           permission: {
@@ -72,6 +74,33 @@ describe('buildOpencodeManagedConfig', () => {
       },
       default_agent: 'claudian-aux-readonly',
     });
+  });
+
+  it.each([
+    undefined,
+    [{ id: 'claudian-aux-readonly', definition: { permission: { '*': 'deny' } } }],
+  ])('disables the native plan agent while preserving user agent configuration', (managedAgents) => {
+    const baseConfig = {
+      agent: {
+        plan: { disable: false, model: 'anthropic/claude-sonnet-4' },
+        reviewer: { description: 'Review changes', mode: 'subagent' },
+      },
+      command: { discuss: { agent: 'plan', template: 'Discuss the change' } },
+    };
+
+    const config = buildOpencodeManagedConfig(
+      baseConfig,
+      '/vault/.claudian/opencode/system.md',
+      undefined,
+      managedAgents,
+    );
+
+    expect(config.agent).toMatchObject({
+      plan: { disable: true, model: 'anthropic/claude-sonnet-4' },
+      reviewer: { description: 'Review changes', mode: 'subagent' },
+    });
+    expect(config.command).toEqual(baseConfig.command);
+    expect(baseConfig.agent.plan.disable).toBe(false);
   });
 
   it('merges the user config instead of replacing it', () => {
@@ -95,6 +124,7 @@ describe('buildOpencodeManagedConfig', () => {
     }, '/vault/.claudian/opencode/system.md')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
+        plan: { disable: true },
         build: {
           model: 'openai/gpt-5',
           permission: {

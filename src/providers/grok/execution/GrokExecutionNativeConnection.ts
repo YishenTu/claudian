@@ -86,6 +86,14 @@ implements GrokExecutionNativeConnection {
         params => options.requestExtension(method, params),
       ));
     }
+    for (const method of ['x.ai/hooks/run', '_x.ai/hooks/run']) {
+      // This client registers only plan-mode hooks. Always return a denial:
+      // Grok fails open on callback errors, even during cancellation.
+      this.unsubscribers.push(this.transport.onRequest(method, () => ({
+        decision: 'deny',
+        systemMessage: 'Plan mode is unavailable in Claudian. Continue in normal mode.',
+      })));
+    }
     for (const method of GROK_EXTENSION_NOTIFICATION_METHODS) {
       this.unsubscribers.push(this.transport.onNotification(method, params => {
         if (!isRecord(params) || typeof params.yolo_mode !== 'boolean') return;
@@ -115,7 +123,18 @@ implements GrokExecutionNativeConnection {
   );
 
   async initialize(): Promise<void> {
-    await this.connection.initialize();
+    const response = await this.connection.initialize();
+    const meta = isRecord(response.agentCapabilities) ? response.agentCapabilities._meta : undefined;
+    const hooks = isRecord(meta) ? meta['x.ai/hooks'] : undefined;
+    if (
+      !isRecord(hooks)
+      || !Array.isArray(hooks.blockingEvents)
+      || !hooks.blockingEvents.includes('pre_tool_use')
+      || !Array.isArray(hooks.decisions)
+      || !hooks.decisions.includes('deny')
+    ) {
+      throw new Error('Grok does not support blocking tool hooks. Update Grok to the latest version.');
+    }
   }
 
   isAlive(): boolean {
@@ -130,7 +149,7 @@ implements GrokExecutionNativeConnection {
   }
 
   loadSession: GrokExecutionNativeConnection['loadSession'] = request => (
-    this.connection.loadSession(request)
+    this.connection.loadSession({ ...request, _meta: withPlanModeHooks(request._meta) })
   );
 
   async listCommands(
@@ -149,7 +168,7 @@ implements GrokExecutionNativeConnection {
   }
 
   newSession: GrokExecutionNativeConnection['newSession'] = request => (
-    this.connection.newSession(request)
+    this.connection.newSession({ ...request, _meta: withPlanModeHooks(request._meta) })
   );
 
   onNotification(
@@ -203,6 +222,18 @@ implements GrokExecutionNativeConnection {
   ): void {
     for (const listener of this.listeners) listener(notification, source);
   }
+}
+
+function withPlanModeHooks(meta: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  return {
+    ...meta,
+    'x.ai/hooks': {
+      PreToolUse: [{
+        matcher: '^(enter_plan_mode|exit_plan_mode)$',
+        hookCallbackIds: ['claudian-block-plan'],
+      }],
+    },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

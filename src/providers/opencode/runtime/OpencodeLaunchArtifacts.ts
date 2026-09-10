@@ -169,6 +169,10 @@ export function buildOpencodeManagedConfig(
     };
   }
 
+  nextAgents.plan = {
+    ...(isPlainObject(nextAgents.plan) ? nextAgents.plan : {}),
+    disable: true,
+  };
   config.agent = nextAgents;
   const trimmedDefaultAgentId = defaultAgentId?.trim();
   if (trimmedDefaultAgentId) {

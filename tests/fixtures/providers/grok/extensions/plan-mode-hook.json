@@ -1,0 +1,40 @@
+{
+  "grokVersion": "1.0.13",
+  "evidence": "Real ACP runtime with deterministic localhost Responses API tool output; paths and session identifiers sanitized.",
+  "initializeResult": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "_meta": {
+        "x.ai/hooks": {
+          "blockingEvents": ["pre_tool_use", "stop", "subagent_stop"],
+          "decisions": ["deny", "block"],
+          "stopSignals": ["continue", "stopReason", "additionalContext"]
+        }
+      }
+    }
+  },
+  "sessionMeta": {
+    "x.ai/hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "^(enter_plan_mode|exit_plan_mode)$",
+          "hookCallbackIds": ["claudian-block-plan"]
+        }
+      ]
+    }
+  },
+  "request": {
+    "method": "_x.ai/hooks/run",
+    "params": {
+      "hookCallbackId": "claudian-block-plan",
+      "hookEventName": "pre_tool_use",
+      "sessionId": "session-native",
+      "permissionMode": "default",
+      "toolName": "enter_plan_mode",
+      "toolUseId": "call-plan",
+      "toolInput": {},
+      "toolInputTruncated": false
+    }
+  }
+}
