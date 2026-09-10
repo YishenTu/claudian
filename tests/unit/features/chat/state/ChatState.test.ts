@@ -60,7 +60,6 @@ describe('ChatState', () => {
       expect(state.pendingTools).toBeInstanceOf(Map);
       expect(state.usage).toBeNull();
       expect(state.ignoreUsageUpdates).toBe(false);
-      expect(state.currentTodos).toBeNull();
       expect(state.attention).toBeNull();
       expect(state.autoScrollEnabled).toBe(true);
       expect(state.responseStartTime).toBeNull();
@@ -282,43 +281,6 @@ describe('ChatState', () => {
       const chatState = new ChatState();
       chatState.ignoreUsageUpdates = true;
       expect(chatState.ignoreUsageUpdates).toBe(true);
-    });
-  });
-
-  describe('currentTodos', () => {
-    it('fires onTodosChanged when todos change', () => {
-      const onTodosChanged = jest.fn();
-      const chatState = new ChatState({ onTodosChanged });
-      const todos = [{ content: 'Test', status: 'pending' as const, activeForm: 'Testing' }];
-
-      chatState.currentTodos = todos;
-
-      expect(onTodosChanged).toHaveBeenCalledWith(todos);
-    });
-
-    it('normalizes empty array to null', () => {
-      const onTodosChanged = jest.fn();
-      const chatState = new ChatState({ onTodosChanged });
-
-      chatState.currentTodos = [];
-
-      expect(onTodosChanged).toHaveBeenCalledWith(null);
-    });
-
-    it('returns a copy of todos', () => {
-      const chatState = new ChatState();
-      const todos = [{ content: 'Test', status: 'pending' as const, activeForm: 'Testing' }];
-      chatState.currentTodos = todos;
-
-      const retrieved = chatState.currentTodos!;
-      retrieved.push({ content: 'Other', status: 'pending' as const, activeForm: 'Othering' });
-
-      expect(chatState.currentTodos).toHaveLength(1);
-    });
-
-    it('returns null when not set', () => {
-      const chatState = new ChatState();
-      expect(chatState.currentTodos).toBeNull();
     });
   });
 
@@ -621,12 +583,10 @@ describe('ChatState', () => {
     it('resets all conversation state', () => {
       const onMessagesChanged = jest.fn();
       const onUsageChanged = jest.fn();
-      const onTodosChanged = jest.fn();
       const onAutoScrollChanged = jest.fn();
       const chatState = new ChatState({
         onMessagesChanged,
         onUsageChanged,
-        onTodosChanged,
         onAutoScrollChanged,
       });
 
@@ -638,7 +598,6 @@ describe('ChatState', () => {
       chatState.toolCallElements.set('a', {} as HTMLElement);
       chatState.queuedMessage = { content: 'queued', editorContext: null, canvasContext: null };
       chatState.usage = { inputTokens: 100, outputTokens: 50 } as any;
-      chatState.currentTodos = [{ content: 'Test', status: 'pending' as const, activeForm: 'Testing' }];
       chatState.beginActionRequired('approval-1');
       // autoScrollEnabled defaults to true, set to false first so reset triggers change
       chatState.autoScrollEnabled = false;
@@ -657,14 +616,12 @@ describe('ChatState', () => {
       expect(chatState.pendingTools.size).toBe(0);
       expect(chatState.queuedMessage).toBeNull();
       expect(chatState.usage).toBeNull();
-      expect(chatState.currentTodos).toBeNull();
       expect(chatState.attention).toBeNull();
       expect(chatState.autoScrollEnabled).toBe(true);
 
       // Verify callbacks were fired
       expect(onMessagesChanged).toHaveBeenCalled();
       expect(onUsageChanged).toHaveBeenCalledWith(null);
-      expect(onTodosChanged).toHaveBeenCalledWith(null);
       expect(onAutoScrollChanged).toHaveBeenCalledWith(true);
     });
   });

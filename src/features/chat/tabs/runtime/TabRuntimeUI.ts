@@ -21,7 +21,6 @@ import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../../ui/InstructionModeManager';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
-import { StatusPanel } from '../../ui/StatusPanel';
 import { installTextareaSizing } from '../../ui/textareaSizing';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
@@ -133,7 +132,7 @@ function buildInstructionComponents(
   composerDropdown: MainChatComposerDropdown,
 ): Pick<
   TabUIComponents,
-  'instructionModeManager' | 'statusPanel'
+  'instructionModeManager'
 > {
   const { dom } = shell;
   const instructionModeManager = new InstructionModeManagerClass(
@@ -154,11 +153,7 @@ function buildInstructionComponents(
     () => instructionModeManager.destroy(),
   );
 
-  const statusPanel = new StatusPanel();
-  options.registerCleanup('tab status panel', () => statusPanel.destroy());
-  statusPanel.mount(dom.statusPanelContainerEl);
-
-  return { instructionModeManager, statusPanel };
+  return { instructionModeManager };
 }
 
 function buildInputToolbar(

@@ -872,7 +872,6 @@ describe('ToolCallRenderer', () => {
         ],
       };
       renderTodoWriteResult(container as unknown as HTMLElement, input);
-      expect(container.hasClass('claudian-todo-panel-content')).toBe(true);
       expect(container.hasClass('claudian-todo-list-container')).toBe(true);
     });
 

@@ -336,7 +336,6 @@ function installTransitionController(
     getImageContextManager: () => null,
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
-    getStatusPanel: () => null,
     getExecutionCoordinator: () => tab.executionCoordinator,
     awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
     ensureExecutionForConversation: async (conversation) => {
@@ -808,7 +807,9 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.composerDropdown).not.toBeNull();
       expect(tab?.ui.instructionModeManager).not.toBeNull();
       expect(tab?.ui.contextUsageMeter).not.toBeNull();
-      expect(tab?.ui.statusPanel).not.toBeNull();
+      const contentChildren = Array.from(tab!.dom.contentEl.children);
+      const messagesIndex = contentChildren.indexOf(tab!.dom.messagesWrapperEl);
+      expect(contentChildren[messagesIndex + 1]).toBe(tab!.dom.inputComposerEl);
       expect(tab?.hydrationState).toBe('ready');
       expect(tab?.lifecycleState).toBe('cold');
       expect(onTabCreated).toHaveBeenCalledWith(tab);
@@ -2268,7 +2269,6 @@ describe('Tab provider execution ownership', () => {
       const controllers = tab!.controllers;
       const titleGenerationService = tab!.services.titleGenerationService;
       const contextTray = tab!.ui.contextTray;
-      const statusPanel = tab!.ui.statusPanel;
 
       await destroyTab(tab!);
       await destroyTab(tab!);
@@ -2279,7 +2279,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab!.controllers).toBe(controllers);
       expect(tab!.services.titleGenerationService).toBe(titleGenerationService);
       expect(tab!.ui.contextTray).toBe(contextTray);
-      expect(tab!.ui.statusPanel).toBe(statusPanel);
       expect(coordinator.dispose).toHaveBeenCalledTimes(1);
     } finally {
       await manager.destroy();

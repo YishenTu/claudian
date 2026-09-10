@@ -37,7 +37,6 @@ function createController(): ConversationController {
     getImageContextManager: () => ({}),
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
-    getStatusPanel: () => ({}),
     getExecutionCoordinator: () => null,
   } as unknown as ConversationControllerDeps);
 }

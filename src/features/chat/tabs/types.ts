@@ -33,7 +33,6 @@ import type {
 } from '../ui/InputToolbar';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
-import type { StatusPanel } from '../ui/StatusPanel';
 import type { TabSession } from './TabSession';
 
 /**
@@ -124,7 +123,6 @@ export interface TabUIComponents {
   readonly composerDropdown: MainChatComposerDropdown;
   readonly instructionModeManager: InstructionModeManager;
   readonly contextUsageMeter: ContextUsageMeter;
-  readonly statusPanel: StatusPanel;
   readonly navigationSidebar: NavigationSidebar;
 }
 
@@ -136,9 +134,6 @@ export interface TabDOMElements {
   readonly messagesWrapperEl: HTMLElement;
   readonly messagesEl: HTMLElement;
   welcomeEl: HTMLElement | null;
-
-  /** Container for status panel (fixed between messages and input). */
-  readonly statusPanelContainerEl: HTMLElement;
 
   /** Per-tab composer root. Inline prompts render here as siblings of the input container. */
   readonly inputComposerEl: HTMLElement;

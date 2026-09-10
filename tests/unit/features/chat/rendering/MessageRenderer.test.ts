@@ -610,7 +610,11 @@ describe('MessageRenderer', () => {
 
     expect(renderStoredThinkingBlock).toHaveBeenCalled();
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Text block');
-    // TodoWrite is not rendered inline - only in bottom panel
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'todo', name: 'TodoWrite' }),
+      { initiallyExpanded: false },
+    );
     expect(renderStoredWriteEdit).toHaveBeenCalled();
     expect(renderStoredToolCall).toHaveBeenCalled();
     expect(renderStoredAsyncSubagent).toHaveBeenCalled();

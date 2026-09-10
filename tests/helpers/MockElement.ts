@@ -85,8 +85,6 @@ const CLASS_DISPLAY: Record<string, string> = {
   'claudian-mode-selector': 'flex',
   'claudian-permission-toggle': 'flex',
   'claudian-service-tier-toggle': 'flex',
-  'claudian-status-panel-content': 'block',
-  'claudian-status-panel-todos': 'block',
   'claudian-tab-content': 'flex',
   'claudian-thinking-budget': 'flex',
   'claudian-thinking-effort': 'flex',

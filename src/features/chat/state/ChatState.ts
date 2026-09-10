@@ -8,7 +8,6 @@ import type {
   TabAttention,
   TabReviewOutcome,
   ThinkingBlockState,
-  TodoItem,
   WriteEditState,
 } from './types';
 
@@ -36,7 +35,6 @@ function createInitialState(): ChatStateData {
     pendingTools: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
-    currentTodos: null,
     attention: null,
     autoScrollEnabled: true, // Default; controllers will override based on settings
     responseStartTime: null,
@@ -287,21 +285,6 @@ export class ChatState {
   }
 
   // ============================================
-  // Current Todos (for persistent bottom panel)
-  // ============================================
-
-  get currentTodos(): TodoItem[] | null {
-    return this.state.currentTodos ? [...this.state.currentTodos] : null;
-  }
-
-  set currentTodos(value: TodoItem[] | null) {
-    // Normalize empty arrays to null for consistency
-    const normalizedValue = (value && value.length > 0) ? value : null;
-    this.state.currentTodos = normalizedValue;
-    this._callbacks.onTodosChanged?.(normalizedValue);
-  }
-
-  // ============================================
   // Runtime-only Attention State
   // ============================================
 
@@ -468,7 +451,6 @@ export class ChatState {
     this.clearMaps();
     this.state.queuedMessage = null;
     this.usage = null;
-    this.currentTodos = null;
     this.clearAttention();
     this.autoScrollEnabled = true;
   }

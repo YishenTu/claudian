@@ -793,7 +793,6 @@ export function renderTodoWriteResult(
   input: Record<string, unknown>
 ): void {
   container.empty();
-  container.addClass('claudian-todo-panel-content');
   container.addClass('claudian-todo-list-container');
 
   const todos = input.todos as TodoItem[] | undefined;

@@ -67,7 +67,7 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.226",
+    "@anthropic-ai/claude-agent-sdk": "0.3.267",
     "@claudian-collab/protocol": "3.3.2",
     "@codemirror/commands": "6.10.0",
     "@codemirror/lang-markdown": "^6.5.2",
@@ -93,9 +93,9 @@
     "@hono/node-server": "2.0.11",
     "body-parser": "2.3.0",
     "fast-uri": "3.1.6",
-    "hono": "4.12.34",
+    "hono": "4.13.7",
     "ip-address": "10.3.1",
-    "js-yaml": "4.3.1",
+    "js-yaml": "4.3.2",
     "qs": "6.16.0"
   }
 }

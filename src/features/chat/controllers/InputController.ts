@@ -49,7 +49,6 @@ import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
-import type { StatusPanel } from '../ui/StatusPanel';
 import type { BrowserSelectionController } from './BrowserSelectionController';
 import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
@@ -110,7 +109,6 @@ export interface InputControllerDeps {
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
-  getStatusPanel: () => StatusPanel | null;
   getInputContainerEl: () => HTMLElement;
   generateId: () => string;
   getAuxiliaryModel?: () => string | null;
@@ -630,12 +628,6 @@ export class InputController {
           await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
           renderer.finalizeResponse(finalAssistantMsg, state.messages, !didCancelThisTurn && !hadExecutionError);
           this.deps.getSubagentManager().resetStreamingState();
-
-          // Auto-hide completed todo panel on response end
-          // Panel reappears only when new TodoWrite tool is called
-          if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
-            state.currentTodos = null;
-          }
           this.syncScrollToBottomAfterRenderUpdates();
 
           const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;

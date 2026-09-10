@@ -1,6 +1,5 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { TodoItem } from '../../../core/tools/todo';
 import type {
   ChatMessage,
   ImageAttachment,
@@ -113,9 +112,6 @@ export interface ChatStateData {
   // Flag to ignore usage updates (during session reset)
   ignoreUsageUpdates: boolean;
 
-  // Current todo items for the persistent bottom panel
-  currentTodos: TodoItem[] | null;
-
   // Runtime-only attention state
   attention: TabAttention;
 
@@ -134,7 +130,6 @@ export interface ChatStateCallbacks {
   onRewindingStateChanged?: (isRewinding: boolean) => void;
   onConversationChanged?: (id: string | null) => void;
   onUsageChanged?: (usage: UsageInfo | null) => void;
-  onTodosChanged?: (todos: TodoItem[] | null) => void;
   onAttentionChanged?: (attention: TabAttention) => void;
   onAutoScrollChanged?: (enabled: boolean) => void;
 }
@@ -146,7 +141,6 @@ export type {
   ImageAttachment,
   SubagentInfo,
   ThinkingBlockState,
-  TodoItem,
   ToolCallInfo,
   UsageInfo,
   WriteEditState,

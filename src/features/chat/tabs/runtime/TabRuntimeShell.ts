@@ -50,7 +50,6 @@ export function buildTabRuntimeShell(
       options.onConversationIdChanged?.(runtimeRef.requirePublished(), conversationId);
     },
     onUsageChanged: usage => runtimeRef.requirePublished().ui.contextUsageMeter.update(usage),
-    onTodosChanged: todos => runtimeRef.requirePublished().ui.statusPanel.updateTodos(todos),
     onAutoScrollChanged: () => runtimeRef.requirePublished().ui.navigationSidebar.updateVisibility(),
   });
   state.queueIndicatorEl = dom.queueIndicatorEl;
@@ -159,7 +158,6 @@ function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionCont
   const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
   const welcomeEl = createWelcomeElement(messagesEl);
-  const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
   const inputComposerEl = contentEl.createDiv({ cls: 'claudian-input-composer' });
   const inputContainerEl = inputComposerEl.createDiv({ cls: 'claudian-input-container' });
   const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
@@ -185,7 +183,6 @@ function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionCont
     messagesWrapperEl,
     messagesEl,
     welcomeEl,
-    statusPanelContainerEl,
     inputComposerEl,
     inputContainerEl,
     queueIndicatorEl,

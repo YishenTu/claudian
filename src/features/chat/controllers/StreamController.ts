@@ -12,7 +12,6 @@ import {
   type ProviderSubagentAdapter,
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
-import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   isEditTool,
@@ -20,7 +19,6 @@ import {
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_SUBAGENT,
-  TOOL_TODO_WRITE,
 } from '../../../core/tools/toolNames';
 import {
   extractToolProviderPayload,
@@ -353,14 +351,6 @@ export class StreamController {
       }
 
       if (nameChanged || inputChanged) {
-        // Re-parse TodoWrite on input updates (streaming may complete the input)
-        if (existingToolCall.name === TOOL_TODO_WRITE) {
-          const todos = parseTodoInput(existingToolCall.input);
-          if (todos) {
-            this.deps.state.currentTodos = todos;
-          }
-        }
-
         const rendererRebuilt = nameChanged
           && this.rebuildRenderedToolRenderer(existingToolCall);
 
@@ -400,14 +390,6 @@ export class StreamController {
     // Add to contentBlocks for ordering
     msg.contentBlocks = msg.contentBlocks || [];
     msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
-
-    // TodoWrite: update panel state immediately (side effect), but still buffer render
-    if (chunk.name === TOOL_TODO_WRITE) {
-      const todos = parseTodoInput(chunk.input);
-      if (todos) {
-        this.deps.state.currentTodos = todos;
-      }
-    }
 
     // Buffer the tool call instead of rendering immediately
     if (state.currentContentEl) {

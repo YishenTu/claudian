@@ -41,6 +41,7 @@ import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
   DISABLED_BUILTIN_SUBAGENTS,
+  DISABLED_BUILTIN_TASK_TOOLS,
   UNSUPPORTED_SDK_TOOLS,
 } from '../runtime/types';
 import {
@@ -146,7 +147,11 @@ export class ClaudeExecutionRequestEncoder {
       });
     const options: Options = {
       cwd: sessionConfig.vaultWorkingDirectory,
-      systemPrompt,
+      systemPrompt: {
+        type: 'custom',
+        prompt: systemPrompt,
+        snapshot: false,
+      },
       model,
       effort,
       thinking: { type: 'adaptive' },
@@ -168,6 +173,7 @@ export class ClaudeExecutionRequestEncoder {
       canUseTool,
       disallowedTools: [
         ...UNSUPPORTED_SDK_TOOLS,
+        ...DISABLED_BUILTIN_TASK_TOOLS,
         ...DISABLED_BUILTIN_SUBAGENTS,
       ],
       ...(policy.tools !== undefined ? { tools: policy.tools } : {}),

@@ -37,7 +37,6 @@ import {
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention } from '../state/types';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { StatusPanel } from '../ui/StatusPanel';
 
 function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
   void action().catch(() => {
@@ -81,7 +80,6 @@ export interface ConversationControllerDeps {
   getImageContextManager: () => ImageContextManager | null;
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
-  getStatusPanel: () => StatusPanel | null;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
   getProviderId?: () => ProviderId;
@@ -247,7 +245,6 @@ export class ConversationController {
       state.currentConversationId = null;
       state.clearMessages();
       state.usage = null;
-      state.currentTodos = null;
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
@@ -256,12 +253,8 @@ export class ConversationController {
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
 
-      // Recreate welcome element first (before StatusPanel for consistent ordering)
       const welcomeEl = createWelcomeElement(messagesEl, this.getGreeting());
       this.deps.setWelcomeEl(welcomeEl);
-
-      // Remount StatusPanel to restore state for new conversation
-      this.deps.getStatusPanel()?.remount();
 
       this.deps.getInputEl().value = '';
 
@@ -293,7 +286,6 @@ export class ConversationController {
       state.currentConversationId = null;
       state.clearMessages();
       state.usage = null;
-      state.currentTodos = null;
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
@@ -638,9 +630,6 @@ export class ConversationController {
     state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.hasPendingConversationSave = false;
-
-    // Clear status panels (auto-hide: panels reappear when agent creates new todos)
-    state.currentTodos = null;
 
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
 

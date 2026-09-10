@@ -241,7 +241,6 @@ export function buildTabRuntimeControllers(
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
       ),
       getTitleGenerationService: () => services.titleGenerationService,
-      getStatusPanel: () => ui.statusPanel,
       getExecutionCoordinator: () => shell.executionCoordinator,
       ensureExecutionInitialized,
       getProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),
@@ -334,7 +333,6 @@ export function buildTabRuntimeControllers(
     getInstructionModeManager: () => ui.instructionModeManager,
     getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,
-    getStatusPanel: () => ui.statusPanel,
     generateId: createTabMessageId,
     getAuxiliaryModel: () => getTabSelectedModel(runtimeRef.requirePublished(), plugin),
     getExecutionCoordinator: () => shell.executionCoordinator,

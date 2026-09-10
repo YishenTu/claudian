@@ -174,7 +174,7 @@ describe('ClaudeExecutionBackend', () => {
     jest.restoreAllMocks();
   });
 
-  it('disables native mode-switching tools in the SDK execution policy', async () => {
+  it('disables native mode-switching and task-list tools in the SDK execution policy', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
@@ -188,6 +188,11 @@ describe('ClaudeExecutionBackend', () => {
     expect(sdkMock.getLastOptions()?.disallowedTools).toEqual([
       'EnterPlanMode',
       'ExitPlanMode',
+      'TodoWrite',
+      'TaskCreate',
+      'TaskGet',
+      'TaskList',
+      'TaskUpdate',
       'Task(statusline-setup)',
     ]);
   });
@@ -460,7 +465,7 @@ describe('ClaudeExecutionBackend', () => {
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
   });
 
-  it('includes provider-default dynamic sections in the complete system prompt', async () => {
+  it('passes provider-default dynamic sections through a non-snapshotted custom system prompt', async () => {
     const { services } = createServices();
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
@@ -477,10 +482,17 @@ describe('ClaudeExecutionBackend', () => {
       },
     })).events);
 
-    const systemPrompt = String(sdkMock.getLastOptions()?.systemPrompt);
-    expect(systemPrompt).toContain('## Runtime Context');
-    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
-    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
+    const systemPrompt = sdkMock.getLastOptions()?.systemPrompt;
+    expect(systemPrompt).toEqual({
+      type: 'custom',
+      prompt: expect.stringContaining('## Runtime Context'),
+      snapshot: false,
+    });
+    expect((systemPrompt as { prompt: string }).prompt).toContain(
+      '## Collab Mode\nRuntime guidance.',
+    );
+    expect((systemPrompt as { prompt: string }).prompt.match(/## Collab Mode/g))
+      .toHaveLength(1);
   });
 
   it('encodes structured context with escaped XML paths and bodies', async () => {

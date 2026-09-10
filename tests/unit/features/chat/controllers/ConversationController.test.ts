@@ -89,9 +89,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     }) as any,
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
-    getStatusPanel: () => ({
-      remount: jest.fn(),
-    }) as any,
     getExecutionCoordinator: () => null,
     ...overrides,
   } as ConversationControllerDeps;
@@ -167,17 +164,6 @@ describe('ConversationController', () => {
         expect(welcomeEl.querySelector('.claudian-welcome-brand')?.textContent)
           .toBe('Claudian');
         expect(welcomeEl.querySelector('.claudian-welcome-greeting')).not.toBeNull();
-      });
-
-      it('should clear todos for new conversation', async () => {
-        deps.state.currentTodos = [
-          { content: 'Existing todo', status: 'pending', activeForm: 'Doing existing todo' }
-        ];
-        expect(deps.state.currentTodos).not.toBeNull();
-
-        await controller.createNew();
-
-        expect(deps.state.currentTodos).toBeNull();
       });
 
       it('should reset to entry point state (null conversationId) instead of creating conversation', async () => {

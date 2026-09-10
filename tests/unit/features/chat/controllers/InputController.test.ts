@@ -189,7 +189,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,
     getTitleGenerationService: () => null,
-    getStatusPanel: () => null,
     generateId: () => `id-${++id}`,
     getAuxiliaryModel: () => 'claude-model',
     getExecutionCoordinator: () => coordinator,
