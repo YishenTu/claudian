@@ -13,6 +13,7 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import type { CollabEventConnectionState } from '@/app/collab/reconnect/CollabProjectConnection';
 import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type { CollabAuthorityEventInvalidation, CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
@@ -90,7 +91,8 @@ export interface CollabClientCommentInput {
 }
 
 interface CollabClientProjectionBaseOptions {
-  readonly onConnectionResult?: (projectId: string, error?: CollabError) => void;
+  readonly onSnapshotResult?: (projectId: string, error?: CollabError) => void;
+  readonly onEventConnectionState?: (projectId: string, state: CollabEventConnectionState) => void;
   readonly authoritySessions: CollabAuthoritySessionFactory;
   readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
   readonly now?: () => Date;
@@ -121,6 +123,8 @@ export interface CollabManagerResponsibilityProjectionPort {
 }
 
 interface ProjectionEventSession {
+  readonly ready: Promise<void>;
+  readonly failed: boolean;
   readonly client: CollabProjectResource;
   readonly listeners: Set<(snapshot: CollabProjectSnapshot) => void>;
   dispose(): void;
@@ -415,22 +419,50 @@ export class CollabClientProjection {
     this.sessions = options.sessions;
   }
 
+  async readPresentationSnapshot(
+    projectId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCoordinationSnapshot> {
+    this.#assertOpen();
+    throwIfCancelled(options.signal);
+    const work = this.sessions.acquire(projectId);
+    const snapshot = work.retainedSnapshot;
+    if (!snapshot) return this.readSnapshot(projectId, options);
+    const failure = work.connectionFailure;
+    if (failure && !canUseCache(failure)) throw failure;
+    const stale = work.retainedSnapshotSource === 'cache' || work.connectionStatus !== 'connected';
+    return {
+      snapshot,
+      source: stale ? 'cache' : 'online',
+      stale,
+      syncState: {
+        eventSequence: snapshot.eventSequence,
+        generation: work.generation,
+        projectId,
+        status: stale ? 'offline' : 'synchronized',
+      },
+    };
+  }
+
   async readSnapshot(
     projectId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
     this.#assertOpen();
     throwIfCancelled(options.signal);
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
     try {
       const snapshot = await this.#readOnlineCoalesced(projectId);
       throwIfCancelled(options.signal);
+      work.assertGeneration(generation);
       return {
         snapshot,
         source: 'online',
         stale: false,
         syncState: {
           eventSequence: snapshot.eventSequence,
-          generation: this.#projectGeneration(projectId),
+          generation,
           projectId,
           status: 'synchronized',
         },
@@ -440,14 +472,17 @@ export class CollabClientProjection {
       const collabError = error instanceof CollabError ? error : null;
       if (!collabError || !canUseCache(collabError)) throw error;
       const cached = await this.#loadCache(projectId);
+      throwIfCancelled(options.signal);
       if (!cached) throw error;
+      work.assertGeneration(generation);
+      work.retainSnapshot(cached.snapshot, generation, 'cache');
       return {
         snapshot: cached.snapshot,
         source: 'cache',
         stale: true,
         syncState: {
           eventSequence: cached.snapshot.eventSequence,
-          generation: this.#projectGeneration(projectId),
+          generation,
           projectId,
           status: 'offline',
         },
@@ -683,30 +718,7 @@ export class CollabClientProjection {
     this.#assertOpen();
     const work = this.sessions.acquire(projectId);
     let session = work.getEventConnection<ProjectionEventSession>();
-    if (!session) {
-      const generation = work.generation;
-      const membership = await this.store.loadMembership(projectId);
-      this.#assertOpen();
-      work.assertGeneration(generation);
-      if (!membership) {
-        throw projectionError('project-not-found', 'projection-membership-missing');
-      }
-      const listeners = new Set<(snapshot: CollabProjectSnapshot) => void>();
-      const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
-        () => this.#authoritySessions.create(membership),
-      );
-      this.#assertOpen();
-      work.assertGeneration(generation);
-      const client = authority.events.connect({
-        afterSequence: membership.lastEventSequence,
-        onConnectionResult: error => {
-          if (work.generation === generation) this.options.onConnectionResult?.(projectId, error);
-        },
-        onInvalidation: invalidation => this.#refreshFromEvent(projectId, invalidation),
-      });
-      session = { client, dispose: () => client.dispose(), listeners };
-      work.adoptEventConnection(session, generation);
-    }
+    if (!session) session = await this.#connectEvents(projectId, new Set());
     session.listeners.add(listener);
     let disposed = false;
     return {
@@ -717,9 +729,94 @@ export class CollabClientProjection {
         current?.listeners.delete(listener);
         if (current && current.listeners.size === 0) {
           work.clearEventConnection(current);
+          this.options.onEventConnectionState?.(projectId, 'unsubscribed');
         }
       },
     };
+  }
+
+  async reconnectProject(projectId: string, options: CollabOperationOptions = {}): Promise<void> {
+    this.#assertOpen();
+    throwIfCancelled(options.signal);
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    await work.currentEventRefresh()?.catch(() => undefined);
+    work.assertGeneration(generation);
+    throwIfCancelled(options.signal);
+    const previous = work.getEventConnection<ProjectionEventSession>();
+    if (previous?.failed) {
+      work.clearEventConnection(previous);
+      const connected = await this.#connectEvents(projectId, previous.listeners);
+      await connected.ready;
+    } else {
+      await this.#readOnlineCoalesced(projectId);
+      await previous?.ready;
+    }
+    work.assertGeneration(generation);
+    throwIfCancelled(options.signal);
+  }
+
+  async #connectEvents(
+    projectId: string,
+    listeners: Set<(snapshot: CollabProjectSnapshot) => void>,
+  ): Promise<ProjectionEventSession> {
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    let current = true;
+    let failed = false;
+    let resolveReady!: () => void;
+    let rejectReady!: (error: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    // Subscription is nonblocking; a later recovery attempt can await readiness.
+    void ready.catch(() => undefined);
+    this.options.onEventConnectionState?.(projectId, 'connecting');
+    try {
+      const membership = await this.store.loadMembership(projectId);
+      this.#assertOpen();
+      work.assertGeneration(generation);
+      if (!membership) throw projectionError('project-not-found', 'projection-membership-missing');
+      const authority = await work.ensureAuthoritySession<CollabAuthoritySession>(
+        () => this.#authoritySessions.create(membership),
+      );
+      this.#assertOpen();
+      work.assertGeneration(generation);
+      const client = authority.events.connect({
+        afterSequence: membership.lastEventSequence,
+        onConnectionResult: error => {
+          if (!current || work.generation !== generation) return;
+          failed = error !== undefined;
+          if (error) rejectReady(error);
+          else resolveReady();
+          this.options.onEventConnectionState?.(projectId, error ?? 'connected');
+        },
+        onInvalidation: invalidation => {
+          work.assertGeneration(generation);
+          return this.#refreshFromEvent(projectId, invalidation);
+        },
+      });
+      const session: ProjectionEventSession = {
+        client, listeners, ready,
+        get failed() { return failed; },
+        dispose: () => {
+          current = false;
+          rejectReady(new CollabError({ code: 'cancelled' }));
+          client.dispose();
+        },
+      };
+      work.adoptEventConnection(session, generation);
+      return session;
+    } catch (error) {
+      current = false;
+      rejectReady(error);
+      if (!this.disposed && work.generation === generation) {
+        this.options.onEventConnectionState?.(projectId, error instanceof CollabError ? error
+          : new CollabError({ code: 'operation-failed' }));
+      }
+      throw error;
+    }
   }
 
   dispose(): void {
@@ -732,9 +829,12 @@ export class CollabClientProjection {
     await this.sessions.acquire(projectId).drainCacheUpdates();
   }
 
-  resetProjectConnection(projectId: string): boolean {
+  resetProjectConnection(
+    projectId: string,
+    options: { readonly preserveConnectionAttempt?: boolean } = {},
+  ): boolean {
     this.#assertOpen();
-    return this.sessions.resetProject(projectId);
+    return this.sessions.resetProject(projectId, options);
   }
 
   async handleRetirement(
@@ -751,9 +851,20 @@ export class CollabClientProjection {
 
    #readOnlineCoalesced(projectId: string): Promise<CollabProjectSnapshot> {
     const session = this.sessions.acquire(projectId);
-    return session.coalesceSnapshot(() => (
-      this.#readOnlineSnapshot(projectId, session.generation)
-    ));
+    return session.coalesceSnapshot(() => {
+      const generation = session.generation;
+      return this.#readOnlineSnapshot(projectId, generation).then(snapshot => {
+        session.assertGeneration(generation);
+        this.options.onSnapshotResult?.(projectId);
+        return snapshot;
+      }, error => {
+        if (session.generation === generation) {
+          this.options.onSnapshotResult?.(projectId, error instanceof CollabError
+            ? error : new CollabError({ code: 'operation-failed' }));
+        }
+        throw error;
+      });
+    });
   }
 
    async #readOnlineSnapshot(
@@ -827,6 +938,7 @@ export class CollabClientProjection {
         () => session.assertGeneration(generation),
       );
     }
+    session.retainSnapshot(snapshot, generation);
     return snapshot;
   }
 

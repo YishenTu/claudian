@@ -23,6 +23,7 @@ import {
   buildGitReceiveHookEnvironment,
   createProtectedReceiveHook,
 } from '@/app/collab/lan/git/GitReceiveHookPolicy';
+import type { GitHttpBackendAdmission } from '@/app/collab/lan/GitHttpBackendAdmission';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
@@ -33,7 +34,7 @@ import {
 
 const MAX_CGI_HEADER_BYTES = 32 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
-const DEFAULT_GLOBAL_CHILD_LIMIT = 8;
+const DEFAULT_PROJECT_CHILD_LIMIT = 8;
 const DEFAULT_MEMBER_CHILD_LIMIT = 2;
 const DEFAULT_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
@@ -52,6 +53,7 @@ export interface GitHttpBackendProxyOptions {
   readonly authenticateMemberCredential:
     GitMembershipAuthenticator['authenticateMemberCredential'];
   readonly baseEnvironment?: NodeJS.ProcessEnv;
+  readonly childAdmission?: Pick<GitHttpBackendAdmission, 'tryAcquire'>;
   readonly emptyConfigPath: string;
   readonly gitExecutablePath: string;
   readonly gitHttpBackendPath: string;
@@ -269,7 +271,7 @@ export class GitHttpBackendProxy {
 
   constructor(private readonly options: GitHttpBackendProxyOptions) {
     this.#maxConcurrentChildren = options.maxConcurrentChildren
-      ?? DEFAULT_GLOBAL_CHILD_LIMIT;
+      ?? DEFAULT_PROJECT_CHILD_LIMIT;
     this.#maxConcurrentChildrenPerMember = options.maxConcurrentChildrenPerMember
       ?? DEFAULT_MEMBER_CHILD_LIMIT;
     this.#maxHostRepositoryBytes = options.maxHostRepositoryBytes
@@ -393,8 +395,16 @@ export class GitHttpBackendProxy {
       return true;
     }
     let reserved = true;
+    let releaseHostChild: (() => void) | null = null;
     let receiveReservationBytes = 0;
     try {
+      if (this.options.childAdmission) {
+        releaseHostChild = this.options.childAdmission.tryAcquire();
+        if (!releaseHostChild) {
+          responseForError(response, 429, 'Too many Git operations.');
+          return true;
+        }
+      }
       await this.options.prepareMemberRef(memberId);
       if (this.closed || !this.enabled) {
         throw proxyError('operation-failed', 'git-proxy-disabled');
@@ -441,6 +451,7 @@ export class GitHttpBackendProxy {
     } finally {
       this.#releaseReceiveStorage(receiveReservationBytes);
       if (reserved) this.#releaseReservation(memberId);
+      releaseHostChild?.();
     }
     return true;
   }
@@ -557,6 +568,7 @@ export class GitHttpBackendProxy {
       GIT_EXEC_PATH: path.dirname(this.options.gitHttpBackendPath),
       GIT_HTTP_EXPORT_ALL: '1',
       GIT_PROJECT_ROOT: enabled.authorityDirectory,
+      HTTP_CONTENT_ENCODING: singleHeader(request, 'content-encoding')?.toLowerCase() ?? '',
       LANG: 'C',
       LC_ALL: 'C',
       PATH_INFO: `/repository.git${route.pathSuffix}`,

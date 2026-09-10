@@ -81,7 +81,10 @@ export interface CollabFeatureSubscription {
   dispose(): void;
 }
 
-export type CollabFeatureStateListener = (state: CollabFeatureState) => void;
+export type CollabFeatureStateListener = (
+  state: CollabFeatureState,
+  coordination?: CollabCoordinationSnapshot,
+) => void;
 
 export interface CollabProjectInspection {
   project: CollabLocalProjectSummary;

@@ -280,7 +280,18 @@ function defaultPublication(): CollabPublicationPort {
     confirmPublish: () => unexpected('confirmPublish'),
     createTicket: () => unexpected('createTicket'),
     findConflict: () => Promise.resolve({ status: 'success', value: null }),
-    inspectPersonalChanges: projectId => Promise.resolve({
+    inspectLocalChanges: projectId => Promise.resolve({
+      gitStatus: {
+      acceptedMainOid: OID_A,
+      aheadBy: 0,
+      behindBy: 0,
+      changedFiles: [],
+      headOid: OID_B,
+      includesAcceptedMain: true,
+      personalRemoteOid: OID_B,
+      workingTreeClean: true,
+    },
+      personalChanges: {
       action: 'publish',
       hasContribution: false,
       unpublishedReview: {
@@ -292,6 +303,7 @@ function defaultPublication(): CollabPublicationPort {
         snapshotId: SNAPSHOT_ID,
       },
       updateAvailable: false,
+      },
     }),
     listRequestComments: () => unexpected('listRequestComments'),
     listTicketAcceptedRelations: () => unexpected('listTicketAcceptedRelations'),
@@ -305,6 +317,17 @@ function defaultPublication(): CollabPublicationPort {
     publish: () => unexpected('publish'),
     readConflict: () => unexpected('readConflict'),
     readConflictFile: () => unexpected('readConflictFile'),
+    readPresentationSnapshot: projectId => Promise.resolve({
+      snapshot: { ...projectSnapshot(), project: { ...projectSnapshot().project, id: projectId } },
+      source: 'online',
+      stale: false,
+      syncState: {
+        eventSequence: 1,
+        generation: 1,
+        projectId,
+        status: 'synchronized',
+      },
+    }),
     readCoordinationSnapshot: projectId => Promise.resolve({
       snapshot: { ...projectSnapshot(), project: { ...projectSnapshot().project, id: projectId } },
       source: 'online',

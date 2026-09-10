@@ -54,6 +54,8 @@ export class CollabProjectWorkSession {
    #inspections = new Set<Promise<void>>();
    readonly #mutationQueue = new SerialTaskQueue();
    #projectionGeneration = 0;
+   #retainedSnapshot: CollabProjectSnapshot | null = null;
+   #retainedSnapshotSource: 'online' | 'cache' | null = null;
    #snapshotRead: Promise<CollabProjectSnapshot> | null = null;
 
   observedAcceptedMainOid: string | null = null;
@@ -114,6 +116,26 @@ export class CollabProjectWorkSession {
 
   get connectionStatus(): CollabConnectionStatus {
     return this.#connection?.status ?? 'offline';
+  }
+
+  get retainedSnapshot(): CollabProjectSnapshot | null {
+    return this.#retainedSnapshot;
+  }
+
+  get retainedSnapshotSource(): 'online' | 'cache' | null {
+    return this.#retainedSnapshotSource;
+  }
+
+  get connectionFailure(): CollabError | null {
+    return this.#connection?.failure ?? null;
+  }
+
+  retainSnapshot(snapshot: CollabProjectSnapshot, generation: number, source: 'online' | 'cache' = 'online'): void {
+    this.assertGeneration(generation);
+    if (source === 'cache' && this.#retainedSnapshotSource === 'online'
+      && this.#retainedSnapshot && this.#retainedSnapshot.eventSequence >= snapshot.eventSequence) return;
+    this.#retainedSnapshot = snapshot;
+    this.#retainedSnapshotSource = source;
   }
 
   coalesceEventRefresh(
@@ -225,10 +247,13 @@ export class CollabProjectWorkSession {
     return pending;
   }
 
-  resetProjection(): boolean {
+  resetProjection(options: { readonly preserveConnectionAttempt?: boolean } = {}): boolean {
     this.#assertOpen();
     const subscribed = this.#eventConnection !== null || this.#coordinationSubscription !== null;
     this.#projectionGeneration += 1;
+    this.#retainedSnapshot = null;
+    this.#retainedSnapshotSource = null;
+    this.#connection?.invalidate(options.preserveConnectionAttempt);
     this.observedAcceptedMainOid = null;
     this.#eventConnection?.dispose();
     this.#eventConnection = null;
@@ -269,6 +294,8 @@ export class CollabProjectWorkSession {
       void coordinationSubscription.then(value => value.dispose(), () => undefined);
     }
     this.#projectionGeneration += 1;
+    this.#retainedSnapshot = null;
+    this.#retainedSnapshotSource = null;
     const close = Promise.allSettled([
       this.#mutationQueue.drain(),
       this.#cacheUpdateQueue.drain(),
@@ -398,11 +425,14 @@ export class CollabProjectWorkSessionRegistry {
     return this.sessions.get(projectId)?.connectionStatus ?? 'offline';
   }
 
-  resetProject(projectId: CollabProjectId): boolean {
+  resetProject(
+    projectId: CollabProjectId,
+    options: { readonly preserveConnectionAttempt?: boolean } = {},
+  ): boolean {
     if (this.closed || this.#closedProjects.has(projectId) || this.#suspensions.has(projectId)) {
       return false;
     }
-    return this.sessions.get(projectId)?.resetProjection() ?? false;
+    return this.sessions.get(projectId)?.resetProjection(options) ?? false;
   }
 
   async suspendProject(

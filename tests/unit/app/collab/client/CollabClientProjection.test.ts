@@ -26,6 +26,7 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventClientOptions } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
@@ -61,6 +62,70 @@ describe('CollabClientProjection', () => {
     registries.clear();
   });
 
+  it('recovers Cloud snapshot failures through one backoff owner despite healthy HTTP observations', async () => {
+    const store = new MemoryProjectionStore();
+    store.membership = cloudMembership();
+    const options = projectionOptions();
+    const sockets: FakeEventSocket[] = [];
+    let failSnapshot = false;
+    const authoritySessions = cloudEventSessions(() => {
+      const socket = new FakeEventSocket();
+      sockets.push(socket);
+      return socket;
+    }, async input => {
+      if (input.method === 'GET') return cloudCapabilities();
+      if (failSnapshot) throw new CollabError({ code: 'operation-failed' });
+      return cloudSnapshotResponse(input);
+    });
+    const router = new CollabAuthorityControlRouter(store, options.sessions, authoritySessions, {
+      tryReconnect: () => connection.reconnect(),
+      onConnectionResult: (_projectId, error) => error
+        ? connection.observeFailure(error) : connection.observeControlSuccess(),
+    });
+    const projection = new CollabClientProjection(store, router, {
+      ...options, authoritySessions,
+      onEventConnectionState: (_projectId, state) => connection.observeEvents(state),
+    });
+    const connection = options.sessions.acquire('project-a').ensureConnection(() => (
+      new CollabProjectConnection({
+        onStatusChange: () => undefined,
+        reconnect: async signal => {
+          await projection.reconnectProject('project-a', { signal });
+          return 'connected';
+        },
+      })
+    ));
+    await projection.subscribe('project-a', () => undefined);
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      failSnapshot = true;
+      sockets[0].open();
+      await flushEvents();
+      expect(connection.status).toBe('offline');
+      failSnapshot = false;
+      await router.readSnapshot('project-a');
+      expect(connection.status).toBe('offline');
+      failSnapshot = true;
+      await jest.advanceTimersByTimeAsync(1_000);
+      sockets[1].open();
+      await flushEvents();
+      expect(connection.status).toBe('offline');
+      await jest.advanceTimersByTimeAsync(1_999);
+      expect(sockets).toHaveLength(2);
+      await jest.advanceTimersByTimeAsync(1);
+      failSnapshot = false;
+      sockets[2].open();
+      await flushEvents();
+      expect(connection.status).toBe('connected');
+      expect(store.membership.lastEventSequence).toBe(cloudSnapshot().eventSequence);
+      expect(store.documents.has('project-a')).toBe(true);
+    } finally {
+      await options.sessions.close();
+      projection.dispose();
+      jest.useRealTimers();
+    }
+  });
+
   it('refreshes coordination without reading or rewriting cached Ticket details', async () => {
     const store = new CollabLocalProjectRepository(cloudVaultRoot);
     await store.saveMembership(cloudMembership());
@@ -81,6 +146,162 @@ describe('CollabClientProjection', () => {
     control.readTicket.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
     await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toMatchObject({
       detail: ticketDetail(), source: 'cache', stale: true,
+    });
+  });
+
+  it.each(['membership', 'negotiation'] as const)('recovers event setup after a transient %s failure', async boundary => {
+    const store = new MemoryProjectionStore();
+    store.membership = cloudMembership();
+    let fault = false;
+    store.loadMembership = async () => {
+      if (fault && boundary === 'membership') throw new Error('Synthetic filesystem failure');
+      return store.membership;
+    };
+    const sockets: FakeEventSocket[] = [];
+    const socketCreated = deferred<void>();
+    const options = projectionOptions();
+    const control = controlPort();
+    control.readSnapshot.mockResolvedValue(cloudSnapshot());
+    const projection = new CollabClientProjection(store, control, {
+      ...options,
+      authoritySessions: cloudEventSessions(() => {
+        const socket = new FakeEventSocket();
+        sockets.push(socket);
+        socketCreated.resolve();
+        return socket;
+      }, async input => {
+        if (fault && boundary === 'negotiation') throw new CollabError({ code: 'endpoint-unreachable' });
+        return input.method === 'GET' ? cloudCapabilities() : cloudSnapshotResponse(input);
+      }),
+      onEventConnectionState: (_projectId, state) => connection.observeEvents(state),
+    });
+    const connection = options.sessions.acquire('project-a').ensureConnection(() => new CollabProjectConnection({
+      onStatusChange: () => undefined,
+      reconnect: async signal => {
+        await projection.subscribe('project-a', () => undefined);
+        await projection.reconnectProject('project-a', { signal });
+        return 'connected';
+      },
+    }));
+    connection.requireEvents();
+    await projection.readSnapshot('project-a');
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      fault = true;
+      await expect(projection.subscribe('project-a', () => undefined)).rejects.toThrow();
+      expect(connection.failure).toMatchObject({
+        code: boundary === 'membership' ? 'operation-failed' : 'endpoint-unreachable',
+      });
+      fault = false;
+      await jest.advanceTimersByTimeAsync(1_000);
+      await socketCreated.promise;
+      expect(sockets).toHaveLength(1);
+      sockets[0].open();
+      await flushEvents();
+      expect(connection.status).toBe('connected');
+      await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({ stale: false });
+    } finally {
+      await options.sessions.close();
+      jest.useRealTimers();
+    }
+  });
+
+  it('presents the retained generation without network waits and rejects terminal connection failures', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    const options = projectionOptions();
+    const projection = new CollabClientProjection(store, control, {
+      ...options,
+      onSnapshotResult: (_projectId, error) => error ? connection.observeFailure(error) : connection.observeSuccess(),
+    });
+    const connection = options.sessions.acquire('project-a').ensureConnection(() => new CollabProjectConnection({
+      onStatusChange: () => undefined, reconnect: async () => 'retry',
+    }));
+    await projection.readSnapshot('project-a');
+    connection.observeSuccess();
+    control.readSnapshot.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({
+      source: 'online', stale: false, snapshot: { eventSequence: 5 },
+    });
+    connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({
+      source: 'cache', stale: true, syncState: { generation: 0, status: 'offline' },
+    });
+    control.readSnapshot.mockResolvedValue({ ...snapshot(), eventSequence: 4 });
+    await expect(projection.readSnapshot('project-a')).rejects.toMatchObject({ code: 'authority-integrity-error' });
+    await expect(projection.readPresentationSnapshot('project-a')).rejects.toMatchObject({ code: 'authority-integrity-error' });
+    connection.observeFailure(new CollabError({ code: 'authorization-denied' }));
+    await expect(projection.readPresentationSnapshot('project-a')).rejects.toMatchObject({ code: 'authorization-denied' });
+    projection.resetProjectConnection('project-a');
+    control.readSnapshot.mockResolvedValue({ ...snapshot(), eventSequence: 6 });
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({
+      snapshot: { eventSequence: 6 }, syncState: { generation: 1 },
+    });
+    await options.sessions.close();
+  });
+
+  it('settles a cancelled cache read before returning retained presentation', async () => {
+    const store = new MemoryProjectionStore();
+    await new CollabClientProjection(store, controlPort(), projectionOptions()).readSnapshot('project-a');
+    const control = controlPort();
+    control.readSnapshot.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    const controller = new AbortController();
+    store.loadMembership = async () => { controller.abort(); return store.membership; };
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await expect(projection.readPresentationSnapshot('project-a', { signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'cancelled' });
+  });
+
+  it('retains a cold offline cache as stale across local presentation reads', async () => {
+    const store = new MemoryProjectionStore();
+    await new CollabClientProjection(store, controlPort(), projectionOptions()).readSnapshot('project-a');
+    const control = controlPort();
+    control.readSnapshot.mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
+      .mockResolvedValue({ ...snapshot(), eventSequence: 6 });
+    const options = projectionOptions();
+    const projection = new CollabClientProjection(store, control, options);
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({ source: 'cache', stale: true });
+    const connection = options.sessions.acquire('project-a').ensureConnection(() => new CollabProjectConnection({
+      onStatusChange: () => undefined, reconnect: async () => 'retry',
+    }));
+    connection.observeControlSuccess();
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({
+      source: 'cache', stale: true, snapshot: { eventSequence: 5 },
+    });
+    await expect(projection.readSnapshot('project-a')).resolves.toMatchObject({
+      source: 'online', stale: false, snapshot: { eventSequence: 6 },
+    });
+  });
+
+  it('preserves online presentation when an equal-sequence cache fallback finishes after recovery', async () => {
+    const store = new MemoryProjectionStore();
+    await new CollabClientProjection(store, controlPort(), projectionOptions()).readSnapshot('project-a');
+    const loadDocument = store.loadProjectDocument.bind(store);
+    const cacheStarted = deferred<void>();
+    const releaseCache = deferred<void>();
+    store.loadProjectDocument = async (...args) => {
+      const cached = await loadDocument(...args);
+      cacheStarted.resolve();
+      await releaseCache.promise;
+      return cached;
+    };
+    const control = controlPort();
+    control.readSnapshot.mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }));
+    const options = projectionOptions();
+    const projection = new CollabClientProjection(store, control, options);
+    const connection = options.sessions.acquire('project-a').ensureConnection(() => new CollabProjectConnection({
+      onStatusChange: () => undefined, reconnect: async () => 'retry',
+    }));
+    const fallback = projection.readSnapshot('project-a');
+    await cacheStarted.promise;
+    await expect(projection.readSnapshot('project-a')).resolves.toMatchObject({
+      source: 'online', stale: false, snapshot: { eventSequence: 5 },
+    });
+    connection.observeSuccess();
+    releaseCache.resolve();
+    await fallback;
+    await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({
+      source: 'online', stale: false, snapshot: { eventSequence: 5 },
     });
   });
 
@@ -1326,6 +1547,7 @@ class FakeEventSocket implements ProjectEventClientSocket {
   readonly closed: Array<{ code: number; reason: string }> = [];
   private closeListener?: (code: number) => void;
   private messageListener?: (data: string) => void;
+  private openListener?: () => void;
 
   close(code: number, reason: string): void {
     this.closed.push({ code, reason });
@@ -1335,7 +1557,8 @@ class FakeEventSocket implements ProjectEventClientSocket {
   onClose(listener: (code: number) => void): void { this.closeListener = listener; }
   onError(_listener: () => void): void {}
   onMessage(listener: (data: string) => void): void { this.messageListener = listener; }
-  onOpen(_listener: () => void): void {}
+  onOpen(listener: () => void): void { this.openListener = listener; }
+  open(): void { this.openListener?.(); }
   message(value: unknown): void { this.messageListener?.(JSON.stringify(value)); }
 }
 

@@ -289,6 +289,12 @@ function createPort(initialState: CollabFeatureState) {
         },
         source: 'online',
         stale: false,
+        syncState: {
+          eventSequence: 1,
+          generation: 0,
+          projectId: 'project-alpha',
+          status: 'synchronized',
+        },
       },
     }),
     selectProject: jest.fn(async (projectId: string) => {

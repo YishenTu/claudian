@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
+  readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -13,6 +14,7 @@ import {
 } from 'node:https';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { collabMemberRef, type CollabMemberStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
@@ -65,6 +67,7 @@ describe('GitHttpBackendProxy integration', () => {
   let caCertificatePem: string;
   let emptyConfigPath: string;
   let forceBackpressure: boolean;
+  let gzipRequests: number;
   let memberStatus: CollabMemberStatus;
   let network: {
     authorizationHeader: string;
@@ -86,6 +89,7 @@ describe('GitHttpBackendProxy integration', () => {
     authenticationCalls = 0;
     backpressureCount = 0;
     forceBackpressure = false;
+    gzipRequests = 0;
     prepareBarrier = null;
     prepareStarted = false;
     authorityDirectory = path.join(root, 'authority');
@@ -176,6 +180,7 @@ describe('GitHttpBackendProxy integration', () => {
       cert: identity.certificateChainPem,
       key: identity.privateKeyPem,
     }, (request, response) => {
+      if (request.headers['content-encoding'] === 'gzip') gzipRequests += 1;
       const originalWrite = response.write;
       response.write = ((...args: unknown[]) => {
         const result = Reflect.apply(originalWrite, response, args) as boolean;
@@ -285,6 +290,28 @@ describe('GitHttpBackendProxy integration', () => {
     expect(receiveFsck.stdout.toString('utf8').trim()).toBe('true');
   }));
 
+  it('clones and refetches all Member refs through native gzip requests', async () => {
+    const mainOid = await service.resolveRef(bareRepositoryPath, 'refs/heads/main');
+    expect(mainOid).not.toBeNull();
+    const memberRefs = Array.from({ length: 20 }, (_, index) => collabMemberRef(`member-${index}`));
+    for (const ref of memberRefs) await service.createRef(bareRepositoryPath, ref, mainOid!);
+
+    const clonePath = path.join(root, 'all-refs-clone');
+    await runner.run({ args: ['clone', '--quiet', url, clonePath], cwd: root, network });
+    expect(gzipRequests).toBeGreaterThan(0);
+    const cloneRequests = gzipRequests;
+    await runner.run({ args: ['fetch', '--refetch', 'origin'], cwd: clonePath, network });
+    expect(gzipRequests).toBeGreaterThan(cloneRequests);
+
+    for (const ref of memberRefs) {
+      expect(await service.resolveRef(clonePath, ref.replace('refs/heads/', 'refs/remotes/origin/')))
+        .toBe(mainOid);
+    }
+    expect(await readFile(path.join(clonePath, 'note.md'), 'utf8')).toBe('initial\n');
+    await service.assertHealthy(bareRepositoryPath);
+    expect(proxy.activeChildCount).toBe(0);
+  });
+
   it('re-authenticates after asynchronous preparation before starting a Git child', async () => {
     memberStatus = 'active';
     let releasePreparation!: () => void;
@@ -306,6 +333,26 @@ describe('GitHttpBackendProxy integration', () => {
     });
     expect(authenticationCalls).toBe(2);
     expect(proxy.activeChildCount).toBe(0);
+  });
+
+  it('handles gzip casing and closes failed compressed requests before releasing children', async () => {
+    const requestPath = `/v1/git/${PROJECT_ID}/repository.git/git-upload-pack`;
+    const headers = {
+      authorization: network.authorizationHeader,
+      'content-encoding': 'GZip',
+      'content-type': 'application/x-git-upload-pack-request',
+      'git-protocol': 'version=2',
+    };
+    const body = gzipSync('0014command=ls-refs\n00010000');
+    const result = await requestStatus(requestPath, headers, 'POST', body);
+    expect(result.statusCode).toBe(200);
+    expect(result.body.toString('utf8')).toContain('refs/heads/main');
+    await waitFor(() => proxy.activeChildCount === 0);
+
+    await expect(requestStatus(requestPath, headers, 'POST', Buffer.from('invalid gzip')))
+      .resolves.toMatchObject({ body: Buffer.alloc(0) });
+    await waitFor(() => proxy.activeChildCount === 0);
+    await expect(service.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
   });
 
   it('rejects Host startup when the existing repository exceeds its storage quota', async () => {
@@ -511,7 +558,8 @@ describe('GitHttpBackendProxy integration', () => {
     requestPath: string,
     headers: Readonly<Record<string, string>> = {},
     method = 'GET',
-  ): Promise<{ statusCode: number; wwwAuthenticate?: string }> {
+    body?: Buffer,
+  ): Promise<{ body: Buffer; statusCode: number; wwwAuthenticate?: string }> {
     return new Promise((resolve, reject) => {
       const request = httpsRequest({
         ca: caCertificatePem,
@@ -520,9 +568,13 @@ describe('GitHttpBackendProxy integration', () => {
         method,
         path: requestPath,
         port: Number(new URL(url).port),
+        signal: AbortSignal.timeout(5_000),
       }, response => {
-        response.resume();
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.once('error', reject);
         response.once('end', () => resolve({
+          body: Buffer.concat(chunks),
           statusCode: response.statusCode ?? 0,
           ...(typeof response.headers['www-authenticate'] === 'string'
             ? { wwwAuthenticate: response.headers['www-authenticate'] }
@@ -530,7 +582,7 @@ describe('GitHttpBackendProxy integration', () => {
         }));
       });
       request.once('error', reject);
-      request.end();
+      request.end(body);
     });
   }
 
@@ -539,6 +591,7 @@ describe('GitHttpBackendProxy integration', () => {
       ca: caCertificatePem,
       headers: {
         authorization: network.authorizationHeader,
+        'content-encoding': 'gzip',
         'content-length': '100',
         'content-type': 'application/x-git-upload-pack-request',
       },

@@ -6,11 +6,61 @@ import {
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LanCollabEvent';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
-import type { CollabError } from '@/core/collab/ClaudianCollabError';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 
 describe('ProjectEventClient', () => {
+  it('preserves native TLS validation failure as terminal connection evidence', () => {
+    const socket = new FakeClientSocket();
+    const result = jest.fn();
+    const client = new ProjectEventClient({
+      caCertificatePem: 'certificate', endpoint: 'https://host.test', lastSequence: 0, memberCredential: 'credential', projectId: 'project-a',
+      onConnectionResult: result,
+    }, () => Promise.resolve(0), { createSocket: () => socket });
+    client.start();
+    socket.emitError(Object.assign(new Error('private-certificate-details'), { code: 'CERT_HAS_EXPIRED' }));
+    expect(result).toHaveBeenCalledWith(expect.objectContaining({ code: 'tls-untrusted' }));
+    expect(JSON.stringify(result.mock.calls)).not.toContain('private-certificate-details');
+    client.dispose();
+  });
+
+  it('publishes connection success only after the authoritative snapshot is applied', async () => {
+    const socket = new FakeClientSocket();
+    let apply!: (value: number) => void;
+    const applied = new Promise<number>(resolve => { apply = resolve; });
+    const result = jest.fn();
+    const client = new ProjectEventClient({
+      caCertificatePem: 'certificate', endpoint: 'https://host.test', lastSequence: 0, memberCredential: 'credential', projectId: 'project-a',
+      onConnectionResult: result,
+    }, () => applied, { createSocket: () => socket });
+    client.start();
+    socket.emitOpen();
+    expect(result).not.toHaveBeenCalled();
+    apply(1);
+    await flushTasks();
+    expect(result).toHaveBeenCalledWith();
+    client.dispose();
+  });
+
+  it.each(['authorization-denied', 'authority-integrity-error', 'operation-failed'] as const)(
+    'retains %s from snapshot application rather than replacing it with a socket error',
+    async code => {
+      const socket = new FakeClientSocket();
+      const failure = new CollabError({ code });
+      const result = jest.fn();
+      const client = new ProjectEventClient({
+        caCertificatePem: 'certificate', endpoint: 'https://host.test', lastSequence: 0, memberCredential: 'credential', projectId: 'project-a',
+        onConnectionResult: result,
+      }, () => Promise.reject(failure), { createSocket: () => socket });
+      client.start();
+      socket.emitOpen();
+      await flushTasks();
+      expect(result).toHaveBeenCalledWith(failure);
+      client.dispose();
+    },
+  );
+
   it('reports idle disconnects to the Project connection owner and suppresses teardown signals', async () => {
     jest.useFakeTimers();
     const socket = new FakeClientSocket();
@@ -26,6 +76,7 @@ describe('ProjectEventClient', () => {
     try {
       client.start();
       socket.emitOpen();
+      await jest.advanceTimersByTimeAsync(0);
       expect(connection.status).toBe('connected');
       socket.emitClose(1000);
       expect(connection.status).toBe('offline');
@@ -104,70 +155,12 @@ describe('ProjectEventClient', () => {
     client.dispose();
   });
 
-  it('reconnects with bounded exponential delay and resets after opening', () => {
-    const sockets = [new FakeClientSocket(), new FakeClientSocket(), new FakeClientSocket()];
-    const createSocket = jest.fn(() => sockets.shift()!);
-    const scheduled: Array<{ callback: () => void; delay: number }> = [];
-    const client = createClient(createSocket, jest.fn().mockResolvedValue(0), 0, {
-      random: () => 0,
-      setTimeout: (callback, delay) => {
-        scheduled.push({ callback, delay });
-        return scheduled.length;
-      },
-    });
 
-    client.start();
-    createSocket.mock.results[0].value.emitClose(1006);
-    expect(scheduled[0].delay).toBe(1_000);
-    scheduled.shift()!.callback();
-    createSocket.mock.results[1].value.emitClose(1006);
-    expect(scheduled[0].delay).toBe(2_000);
-    scheduled.shift()!.callback();
-    createSocket.mock.results[2].value.emitOpen();
-    createSocket.mock.results[2].value.emitClose(1006);
-    expect(scheduled[0].delay).toBe(1_000);
-    client.dispose();
-  });
-
-  it('does not reconnect revoked access and cancels reconnect on teardown', () => {
-    const socket = new FakeClientSocket();
-    const scheduled: Array<() => void> = [];
-    const clearTimeout = jest.fn();
-    const createSocket = jest.fn(() => socket);
-    const client = createClient(createSocket, jest.fn().mockResolvedValue(0), 0, {
-      clearTimeout,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return 9;
-      },
-    });
-    client.start();
-    socket.emitClose(1008);
-    expect(scheduled).toEqual([]);
-
-    const retrying = createClient(createSocket, jest.fn().mockResolvedValue(0), 0, {
-      clearTimeout,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return 9;
-      },
-    });
-    retrying.start();
-    socket.emitClose(1006);
-    retrying.dispose();
-    expect(clearTimeout).toHaveBeenCalledWith(9);
-  });
 
   it('delivers retirement once and permanently stops the event connection', async () => {
     const socket = new FakeClientSocket();
-    const scheduled: Array<() => void> = [];
     const onInvalidation = jest.fn().mockResolvedValue(4);
-    const client = createClient(() => socket, onInvalidation, 3, {
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
-      },
-    });
+    const client = createClient(() => socket, onInvalidation, 3);
     client.start();
 
     socket.emitMessage(JSON.stringify(event(4, 'project-retired', {
@@ -182,21 +175,13 @@ describe('ProjectEventClient', () => {
       sequence: 4,
     });
     expect(socket.close).toHaveBeenCalledWith(1000, 'Client stopped');
-    expect(scheduled).toEqual([]);
   });
 
   it('reconnects from the prior cursor when terminal retirement delivery rejects', async () => {
     const sockets = [new FakeClientSocket(), new FakeClientSocket()];
     const createSocket = jest.fn(() => sockets.shift()!);
-    const scheduled: Array<() => void> = [];
     const onInvalidation = jest.fn().mockRejectedValue(new Error('lifecycle owner pending'));
-    const client = createClient(createSocket, onInvalidation, 3, {
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
-      },
-    });
+    const client = createClient(createSocket, onInvalidation, 3);
     client.start();
 
     createSocket.mock.results[0].value.emitMessage(JSON.stringify(event(
@@ -210,7 +195,7 @@ describe('ProjectEventClient', () => {
     expect(client.lastSequence).toBe(3);
 
     createSocket.mock.results[0].value.emitClose(1011);
-    scheduled.shift()?.();
+    client.start();
     expect(createSocket).toHaveBeenLastCalledWith(expect.objectContaining({
       lastSequence: 3,
     }));
@@ -222,7 +207,6 @@ function createClient(
   createSocket: ProjectEventClientSocketFactory,
   onInvalidation: ConstructorParameters<typeof ProjectEventClient>[1],
   lastSequence: number,
-  scheduler: ConstructorParameters<typeof ProjectEventClient>[3] = {},
 ) {
   return new ProjectEventClient({
     caCertificatePem: 'certificate',
@@ -230,7 +214,7 @@ function createClient(
     lastSequence,
     memberCredential: 'A'.repeat(43),
     projectId: 'project-a',
-  }, onInvalidation, { createSocket }, scheduler);
+  }, onInvalidation, { createSocket });
 }
 
 function event(
@@ -255,9 +239,11 @@ function flushTasks(): Promise<void> {
 class FakeClientSocket implements ProjectEventClientSocket {
   close = jest.fn();
   private closeListener: ((code: number) => void) | null = null;
-  private errorListener: (() => void) | null = null;
+  private errorListener: ((error?: unknown) => void) | null = null;
   private messageListener: ((data: string) => void) | null = null;
   private openListener: (() => void) | null = null;
+
+  emitError(error: unknown): void { this.errorListener?.(error); }
 
   emitClose(code: number): void {
     this.closeListener?.(code);
@@ -275,7 +261,7 @@ class FakeClientSocket implements ProjectEventClientSocket {
     this.closeListener = listener;
   }
 
-  onError(listener: () => void): void {
+  onError(listener: (error?: unknown) => void): void {
     this.errorListener = listener;
   }
 

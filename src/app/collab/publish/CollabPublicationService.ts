@@ -130,6 +130,7 @@ export interface CollabPublicationReconnectPort {
 export type CollabCoordinationInvalidationListener = (
   projectId: CollabProjectId,
   reason: 'accepted-main-changed' | 'coordination-changed',
+  coordination?: CollabCoordinationSnapshot,
 ) => void;
 
 interface PublicationRuntime {
@@ -210,7 +211,9 @@ export class CollabPublicationService {
     );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
       authoritySessions: this.authoritySessions,
-      onConnectionResult: (projectId, error) => this.#observeConnection(projectId, error),
+      onSnapshotResult: (projectId, error) => error
+        ? this.#connection(projectId).observeFailure(error) : this.#connection(projectId).observeSuccess(),
+      onEventConnectionState: (projectId, state) => this.#connection(projectId).observeEvents(state),
       managerResponsibility: options.managerResponsibility,
       retirement: options.retirement,
       retirementAdmission: options.retirementAdmission,
@@ -279,10 +282,22 @@ export class CollabPublicationService {
     });
   }
 
+  async readPresentationSnapshot(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCoordinationSnapshot> {
+    this.#connection(projectId).requireEvents();
+    const snapshot = await this.projection.readPresentationSnapshot(projectId, options);
+    this.sessions.acquire(projectId).observedAcceptedMainOid ??= snapshot.snapshot.project.mainOid;
+    if (!snapshot.stale) await this.#ensureEventSubscription(projectId);
+    return snapshot;
+  }
+
   async readCoordinationSnapshot(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
+    this.#connection(projectId).requireEvents();
     const snapshot = await this.projection.readSnapshot(projectId, options);
     this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
     if (!snapshot.stale) await this.#ensureEventSubscription(projectId);
@@ -400,12 +415,11 @@ export class CollabPublicationService {
     });
   }
 
-  async inspectPersonalChanges(
+  async inspectLocalChanges(
     projectId: CollabProjectId,
-    gitStatus: CollabGitStatus,
     coordination: CollabCoordinationSnapshot | undefined,
     options: CollabOperationOptions = {},
-  ): Promise<CollabPersonalChangesInspection> {
+  ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection }> {
     return this.#enqueueProjectMutation(projectId, async () => {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       const runtime = await this.runtime();
@@ -415,27 +429,27 @@ export class CollabPublicationService {
         : coordination?.snapshot.openRequests.find(
           request => request.memberId === currentMemberId,
         );
-      const reviewBaseOid = personalChangesReviewBaseOid({
-        coordinationAuthoritative: coordination?.source === 'online' && !coordination.stale,
-        headOid: gitStatus.headOid,
-        ...(ownRequest ? { openRequestHeadOid: ownRequest.latestHeadOid } : {}),
-        personalRemoteOid: gitStatus.personalRemoteOid,
-      });
-      if (!reviewBaseOid) {
-        throw new CollabError({
-          code: 'repository-invalid',
-          recoveryActions: ['open-diagnostics'],
-          safeContext: { reason: 'personal-changes-review-base-missing' },
+      const captured = await runtime.workingTreeReview.inspect(projectId, snapshot => {
+        const baseOid = personalChangesReviewBaseOid({
+          coordinationAuthoritative: coordination?.source === 'online' && !coordination.stale,
+          headOid: snapshot.headOid,
+          ...(ownRequest ? { openRequestHeadOid: ownRequest.latestHeadOid } : {}),
+          personalRemoteOid: snapshot.personalRemoteOid,
         });
-      }
-      const unpublishedReview = await runtime.workingTreeReview.prepare(
-        projectId,
-        reviewBaseOid,
-        options,
-      );
-      const inspected = (
-        value: Omit<CollabPersonalChangesInspection, 'unpublishedReview'>,
-      ): CollabPersonalChangesInspection => ({ ...value, unpublishedReview });
+        if (!baseOid) {
+          throw new CollabError({
+            code: 'repository-invalid',
+            recoveryActions: ['open-diagnostics'],
+            safeContext: { reason: 'personal-changes-review-base-missing' },
+          });
+        }
+        return baseOid;
+      }, options);
+      const gitStatus = toCollabGitStatus(captured.snapshot);
+      const inspected = (value: Omit<CollabPersonalChangesInspection, 'unpublishedReview'>) => ({
+        gitStatus,
+        personalChanges: { ...value, unpublishedReview: captured.review },
+      });
       const state = await runtime.publicationState.load(projectId);
       if (state.operation?.phase === 'review-ready') {
         try {
@@ -699,10 +713,10 @@ export class CollabPublicationService {
 
   resetProjectConnection(
     projectId: CollabProjectId,
-    options: { readonly resumeEvents?: boolean } = {},
+    options: { readonly resumeEvents?: boolean; readonly preserveConnectionAttempt?: boolean } = {},
   ): void {
     if (this.disposed) return;
-    const subscribed = this.projection.resetProjectConnection(projectId);
+    const subscribed = this.projection.resetProjectConnection(projectId, options);
     if (!subscribed || !options.resumeEvents) return;
     const work = this.sessions.acquire(projectId);
     const generation = work.generation;
@@ -843,7 +857,6 @@ export class CollabPublicationService {
       const result = await this.options.reconnect.reconnectProject(request, options);
       if (result.status === 'success' && result.value.authorityKind === 'lan') {
         this.resetProjectConnection(request.projectId, { resumeEvents: true });
-        this.#connection(request.projectId).observeSuccess();
       }
       return result;
     };
@@ -869,14 +882,48 @@ export class CollabPublicationService {
     if (this.disposed) return;
     const connection = this.#connection(projectId);
     if (error) connection.observeFailure(error);
-    else connection.observeSuccess();
+    else connection.observeControlSuccess();
   }
 
   #connection(projectId: CollabProjectId): CollabProjectConnection {
     return this.sessions.acquire(projectId).ensureConnection(() => new CollabProjectConnection({
-      onStatusChange: () => this.#notifyCoordination(projectId, 'coordination-changed'),
-      reconnect: signal => this.#reconnectLanProject(projectId, { signal }),
+      onStatusChange: status => {
+        const work = this.sessions.acquire(projectId);
+        const snapshot = status === 'connected' && work.retainedSnapshotSource === 'online'
+          ? work.retainedSnapshot : null;
+        this.#notifyCoordination(projectId, 'coordination-changed', snapshot ? {
+          snapshot, source: 'online', stale: false,
+          syncState: { eventSequence: snapshot.eventSequence, generation: work.generation, projectId, status: 'synchronized' },
+        } : undefined);
+      },
+      reconnect: (signal, eventsRequired) => this.#recoverConnection(projectId, signal, eventsRequired),
     }));
+  }
+
+  async #recoverConnection(
+    projectId: CollabProjectId,
+    signal: AbortSignal,
+    eventsRequired: boolean,
+  ): Promise<'connected' | 'retry' | 'unavailable'> {
+    try {
+      if (eventsRequired) await this.#ensureEventSubscription(projectId);
+      await this.projection.reconnectProject(projectId, { signal });
+      return 'connected';
+    } catch (error) {
+      if (signal.aborted) return 'unavailable';
+      if (!(error instanceof CollabError)
+        || (error.group !== 'connectivity' && error.code !== 'operation-timeout')
+        || error.code === 'tls-untrusted' || error.code === 'tls-ca-mismatch') throw error;
+      const membership = await this.foundation.local.projects.loadMembership(projectId);
+      if (!membership || !isCollabLocalLanMembership(membership)) throw error;
+      const restored = await this.#reconnectLanProject(projectId, { signal });
+      if (restored !== 'connected') return restored;
+      // The trusted route was persisted before reset. Capture and apply the new
+      // generation before declaring this recovery attempt successful.
+      if (eventsRequired) await this.#ensureEventSubscription(projectId);
+      await this.projection.reconnectProject(projectId, { signal });
+      return 'connected';
+    }
   }
 
   async #reconnectLanProject(
@@ -899,7 +946,7 @@ export class CollabPublicationService {
       if (result.status === 'failure') throw result.error;
       return 'unavailable';
     }
-    this.resetProjectConnection(projectId, { resumeEvents: true });
+    this.resetProjectConnection(projectId, { preserveConnectionAttempt: true });
     return 'connected';
   }
 
@@ -974,6 +1021,17 @@ export class CollabPublicationService {
       this.#notifyCoordination(
         projectId,
         acceptedMainChanged ? 'accepted-main-changed' : 'coordination-changed',
+        {
+          snapshot,
+          source: 'online',
+          stale: false,
+          syncState: {
+            eventSequence: snapshot.eventSequence,
+            generation: session.generation,
+            projectId,
+            status: 'synchronized',
+          },
+        },
       );
       },
     ));
@@ -1184,10 +1242,11 @@ export class CollabPublicationService {
   #notifyCoordination(
     projectId: CollabProjectId,
     reason: 'accepted-main-changed' | 'coordination-changed',
+    coordination?: CollabCoordinationSnapshot,
   ): void {
     for (const listener of this.coordinationListeners) {
       try {
-        listener(projectId, reason);
+        listener(projectId, reason, coordination);
       } catch {
         // Presentation invalidation observers cannot own projection state.
       }

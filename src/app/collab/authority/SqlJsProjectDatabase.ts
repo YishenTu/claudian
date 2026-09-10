@@ -14,6 +14,7 @@ import {
   applyAuthorityMigrations,
   assertAuthorityDatabaseIntegrity,
 } from '@/app/collab/authority/AuthoritySchema';
+import { assertAuthorityTransactionIntegrity, beginAuthorityTransaction } from '@/app/collab/authority/AuthorityTransactionIntegrity';
 import {
   NodeSqlJsSnapshotStore,
   type SqlJsSnapshotKind,
@@ -225,7 +226,7 @@ export class SqlJsProjectDatabase {
     database: Database,
     mutation: (connection: AuthorityDatabaseConnection) => T,
   ): SqlJsMutationResult<T> {
-    database.run('BEGIN IMMEDIATE');
+    beginAuthorityTransaction(database);
     try {
       const value = mutation(new SqlJsConnection(database));
       if (value instanceof Promise) {
@@ -239,10 +240,7 @@ export class SqlJsProjectDatabase {
       if (database.getRowsModified() !== 1) {
         throw authorityError('authority-integrity-error', 'authority-project-row-missing');
       }
-      const generation = assertAuthorityDatabaseIntegrity(database, {
-        full: false,
-        requireProject: true,
-      });
+      const generation = assertAuthorityTransactionIntegrity(database);
       database.run('COMMIT');
       return { generation, value };
     } catch (error) {

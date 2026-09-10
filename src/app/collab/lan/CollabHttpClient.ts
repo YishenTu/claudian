@@ -8,7 +8,7 @@ import {
   type CollabControlOperationBinding,
   matchCollabControlOperation,
 } from '@/app/collab/lan/CollabControlOperationBindings';
-import { HttpsRequestError, isTlsValidationError, requestHttpsBytes } from '@/app/collab/lan/httpsRequest';
+import { HttpsRequestError, requestHttpsBytes } from '@/app/collab/lan/httpsRequest';
 import {
   InvitationCodec,
   type LanCollabInvitation,
@@ -18,6 +18,7 @@ import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
 } from '@/app/collab/lan/LanCollabConstants';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
+import { isTlsValidationError } from '@/app/collab/tlsErrors';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const DEFAULT_TIMEOUT_MS = 10_000;

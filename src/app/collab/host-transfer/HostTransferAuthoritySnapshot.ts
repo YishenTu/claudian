@@ -114,7 +114,7 @@ function decodeProofChain(
   });
 }
 
-function assertSchema(database: Database, expectedVersion: 8 | 9 | 10 | 11 | 12): void {
+function assertSchema(database: Database, expectedVersion: 8 | 9 | 10 | 11 | 12 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION): void {
   const version = one(database, 'PRAGMA user_version').user_version;
   if (version !== expectedVersion) {
     throw snapshotError('host-transfer-authority-schema-mismatch');
@@ -383,7 +383,7 @@ export class HostTransferAuthoritySnapshot {
 
   async #openRaw(
     bytes: Uint8Array,
-    expectedSchemaVersion: 8 | 9 | 10 | 11 | 12,
+    expectedSchemaVersion: 8 | 9 | 10 | 11 | 12 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION,
   ): Promise<Database> {
     if (bytes.byteLength < 16 || Buffer.from(bytes.subarray(0, 16)).toString('binary') !== 'SQLite format 3\u0000') {
       throw snapshotError('host-transfer-authority-header-invalid');
@@ -421,7 +421,7 @@ export class HostTransferAuthoritySnapshot {
              receiver_credential, manifest_digest, activation_certificate
       FROM host_transfer_operations WHERE transfer_id = ?
     `, [input.manifest.transferId]);
-    const invalidCredential = query(database, input.manifest.authoritySchemaVersion === 12
+    const invalidCredential = query(database, input.manifest.authoritySchemaVersion >= 12
       ? `
         SELECT member_id FROM members
         WHERE status = 'active' AND (

@@ -75,11 +75,10 @@ import {
   type CloudAuthorityHttpTransport,
   NodeCloudAuthorityHttpTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { isTlsValidationError } from '@/app/collab/tlsErrors';
 import type { CollabCloudProjectSnapshot, CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const MIN_RECONNECT_DELAY_MS = 1_000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
 const IMPLEMENTED_CLOUD_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new Set([
   'accept',
   'authority-transfer',
@@ -110,7 +109,7 @@ import { type CloudProjectCredential,CloudProjectCredentialStore } from '@/app/c
 export interface CloudProjectEventSocket {
   close(code: number, reason: string): void;
   onClose(listener: (code: number) => void): void;
-  onError(listener: () => void): void;
+  onError(listener: (error?: unknown) => void): void;
   onMessage(listener: (data: string) => void): void;
   onOpen(listener: () => void): void;
 }
@@ -121,10 +120,7 @@ export interface CloudProjectEventSocketInput {
 }
 
 export interface CloudProjectEventClientOptions {
-  readonly clearTimeout?: (handle: number) => void;
   readonly createSocket?: (input: CloudProjectEventSocketInput) => CloudProjectEventSocket;
-  readonly random?: () => number;
-  readonly setTimeout?: (callback: () => void, milliseconds: number) => number;
 }
 
 export interface CloudProjectEventClientInput {
@@ -267,7 +263,16 @@ class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
   onClose(listener: (code: number) => void): void {
     this.socket.on('close', code => listener(code));
   }
-  onError(listener: () => void): void { this.socket.on('error', listener); }
+  onError(listener: (error?: unknown) => void): void {
+    this.socket.on('error', listener);
+    this.socket.on('unexpected-response', (_request, response) => {
+      listener(new CollabError({
+        code: response.statusCode === 401 || response.statusCode === 403
+          ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
+      response.destroy();
+    });
+  }
   onMessage(listener: (data: string) => void): void {
     this.socket.on('message', (data: RawData) => listener(data.toString()));
   }
@@ -876,17 +881,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
 export class CloudProjectEventClient {
    #activeRefresh: Promise<void> | null = null;
    #acknowledgedSequence: number;
-  private readonly clearTimeout: (handle: number) => void;
    readonly #createSocket: NonNullable<CloudProjectEventClientOptions['createSocket']>;
   private disposed = false;
    #observedSequence: number;
   private readonly origin: string;
-   readonly #random: () => number;
-   #reconnectAfterRefresh = false;
-   #reconnectAttempt = 0;
-   #reconnectHandle: number | null = null;
    #pendingInvalidation: CollabAuthorityEventInvalidation | null = null;
-  private readonly setTimeout: (callback: () => void, milliseconds: number) => number;
    #socket: CloudProjectEventSocket | null = null;
 
   constructor(
@@ -899,11 +898,7 @@ export class CloudProjectEventClient {
     this.#acknowledgedSequence = input.afterSequence;
     this.#observedSequence = input.afterSequence;
     this.origin = validateCloudServerUrl(input.serverUrl, 'serverUrl');
-    this.clearTimeout = options.clearTimeout ?? (handle => window.clearTimeout(handle));
     this.#createSocket = options.createSocket ?? createDefaultEventSocket;
-    this.#random = options.random ?? Math.random;
-    this.setTimeout = options.setTimeout
-      ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
   }
 
   start(): void {
@@ -919,17 +914,19 @@ export class CloudProjectEventClient {
       url: url.toString(),
     });
     this.#socket = socket;
+    this.#observedSequence = this.#acknowledgedSequence;
     socket.onOpen(() => {
       if (this.#socket !== socket) return;
-      this.#reconnectAttempt = 0;
-      this.input.onConnectionResult?.();
       this.request({ kind: 'snapshot', sequence: this.#acknowledgedSequence });
     });
     socket.onMessage(data => {
       if (this.#socket === socket) this.#handleMessage(data);
     });
-    socket.onError(() => {
-      if (this.#socket === socket) socket.close(1011, 'Event connection failed');
+    socket.onError(error => {
+      if (this.#socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
+      }), 'Event connection failed');
     });
     socket.onClose(code => {
       if (this.#socket !== socket) return;
@@ -937,12 +934,7 @@ export class CloudProjectEventClient {
       this.input.onConnectionResult?.(new CollabError({
         code: code === 1008 ? 'authorization-denied' : 'endpoint-unreachable',
       }));
-      if (code === 1008) {
-        this.#pendingInvalidation = null;
-      } else {
-        this.#reconnectAfterRefresh = true;
-        this.#scheduleReconnectWhenIdle();
-      }
+      this.#pendingInvalidation = null;
     });
   }
 
@@ -950,11 +942,6 @@ export class CloudProjectEventClient {
     if (this.disposed) return;
     this.disposed = true;
     this.#pendingInvalidation = null;
-    this.#reconnectAfterRefresh = false;
-    if (this.#reconnectHandle !== null) {
-      this.clearTimeout(this.#reconnectHandle);
-      this.#reconnectHandle = null;
-    }
     const socket = this.#socket;
     this.#socket = null;
     socket?.close(1000, 'Client stopped');
@@ -1013,20 +1000,23 @@ export class CloudProjectEventClient {
   }
 
    #startRefresh(invalidation: CollabAuthorityEventInvalidation): void {
+    const socket = this.#socket;
     const refresh = Promise.resolve().then(async () => {
-      if (this.disposed) return;
+      if (this.disposed || this.#socket !== socket) return;
       const applied = await this.onInvalidation(invalidation);
-      if (this.disposed) return;
+      if (this.disposed || this.#socket !== socket) return;
       if (!Number.isSafeInteger(applied) || applied < invalidation.sequence) {
-        throw cloudAuthorityOperationError('cloud-event-cursor-not-applied');
+        throw controlIntegrityError('cloud-event-cursor-not-applied');
       }
       this.#acknowledgedSequence = Math.max(this.#acknowledgedSequence, applied);
       this.#observedSequence = Math.max(this.#observedSequence, applied);
-    }).catch(() => {
-      if (this.disposed) return;
-      this.#pendingInvalidation = null;
-      const socket = this.#socket;
-      if (socket) socket.close(1011, 'Event refresh failed');
+      if (invalidation.kind === 'retired') this.dispose();
+      else this.input.onConnectionResult?.();
+    }).catch(error => {
+      if (this.disposed || this.#socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: 'operation-failed',
+      }), 'Event refresh failed');
     }).finally(() => {
       if (this.#activeRefresh !== refresh) return;
       this.#activeRefresh = null;
@@ -1040,7 +1030,6 @@ export class CloudProjectEventClient {
         this.#startRefresh(pending);
         return;
       }
-      this.#scheduleReconnectWhenIdle();
     });
     this.#activeRefresh = refresh;
   }
@@ -1058,24 +1047,15 @@ export class CloudProjectEventClient {
     };
   }
 
-   #scheduleReconnectWhenIdle(): void {
-    if (!this.#reconnectAfterRefresh || this.#activeRefresh) return;
-    this.#reconnectAfterRefresh = false;
-    this.#scheduleReconnect();
+  #fail(error: CollabError, reason: string): void {
+    const socket = this.#socket;
+    if (!socket || this.disposed) return;
+    this.#socket = null;
+    this.#pendingInvalidation = null;
+    socket.close(1011, reason);
+    this.input.onConnectionResult?.(error);
   }
 
-   #scheduleReconnect(): void {
-    if (this.disposed || this.#reconnectHandle !== null) return;
-    const ceiling = Math.min(
-      MAX_RECONNECT_DELAY_MS,
-      MIN_RECONNECT_DELAY_MS * (2 ** this.#reconnectAttempt),
-    );
-    this.#reconnectAttempt += 1;
-    this.#reconnectHandle = this.setTimeout(() => {
-      this.#reconnectHandle = null;
-      this.start();
-    }, Math.floor(this.#random() * ceiling));
-  }
 }
 
 export class CloudAuthorityAdapter implements CollabAuthorityAdapter {

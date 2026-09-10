@@ -45,6 +45,7 @@ import {
   isGitHttpRoute,
   parseGitHttpRoute,
 } from '@/app/collab/lan/git/GitHttpRoute';
+import { GitHttpBackendAdmission } from '@/app/collab/lan/GitHttpBackendAdmission';
 import {
   GitHttpBackendProxy,
   type GitHttpBackendProxyOptions,
@@ -482,6 +483,7 @@ export class LanHostCoordinator {
    #closePromise: Promise<void> | null = null;
    #addressCheckTask: Promise<void> | null = null;
    #addressMonitor: HostAddressMonitor | null = null;
+   readonly #gitChildAdmission = new GitHttpBackendAdmission();
    readonly #hostedProjects = new Map<CollabProjectId, HostedProject>();
    readonly #advertisements = new Map<CollabProjectId, {
     readonly endpoint: string;
@@ -1576,7 +1578,8 @@ export class LanHostCoordinator {
       server.headersTimeout = 10_000;
       server.keepAliveTimeout = 5_000;
       server.requestTimeout = 15_000;
-      server.maxConnections = 100;
+      // Leave room for 100 event streams, reconnect overlap, and ordinary requests.
+      server.maxConnections = 256;
       server.on('upgrade', (request, socket, head) => {
         void this.handleUpgrade(webSocketServer, request, socket, head);
       });
@@ -1624,6 +1627,7 @@ export class LanHostCoordinator {
       authorityDirectory: runtime.authorityDirectory,
       authenticateMemberCredential: service.authenticateMemberCredential.bind(service),
       ...(git.baseEnvironment ? { baseEnvironment: git.baseEnvironment } : {}),
+      childAdmission: this.#gitChildAdmission,
       emptyConfigPath: git.emptyConfigPath,
       gitExecutablePath: git.gitExecutablePath,
       gitHttpBackendPath: git.gitHttpBackendPath,
