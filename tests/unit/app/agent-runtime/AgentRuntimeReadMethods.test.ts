@@ -119,6 +119,7 @@ const COORDINATION: CollabCoordinationSnapshot = {
       id: PROJECT.id,
       mainOid: 'main-oid',
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 11,
       name: PROJECT.name,
     },

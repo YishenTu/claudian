@@ -152,7 +152,7 @@ describe('JoinProjectCoordinator', () => {
     });
   });
 
-  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v9', async () => {
+  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v10', async () => {
     const legacyInvitation = {
       ...createInvitation('project-alpha'),
       protocolVersion: 7 as const,
@@ -190,9 +190,9 @@ describe('JoinProjectCoordinator', () => {
     await expect(recovering.coordinator.resumeJoin({ operationId: 'join-alpha' }))
       .resolves.toMatchObject({ status: 'success' });
     expect(recovering.controlPaths).toEqual([
-      '/v9/projects/project-alpha/join-attempts',
-      '/v9/projects/project-alpha/join-attempts',
-      '/v9/projects/project-alpha/join-attempts/join-alpha/activate',
+      '/v10/projects/project-alpha/join-attempts',
+      '/v10/projects/project-alpha/join-attempts',
+      '/v10/projects/project-alpha/join-attempts/join-alpha/activate',
     ]);
   });
 
@@ -486,6 +486,7 @@ describe('JoinProjectCoordinator', () => {
       seedTrustedPendingJoin: async encodedInvitation => {
         await workspace.claimProjectsFolder('workspace');
         const record: JoinProjectRecord = {
+          authorityGeneration: null,
           createdAt: NOW.toISOString(),
           encodedInvitation,
           endpoint: 'https://127.0.0.1:54545',
@@ -622,7 +623,7 @@ function fakePinnedClient(
   const request = async <T>(definition: CollabJsonRequest<T>): Promise<T> => {
     controlPaths.push(definition.path);
     const id = projectId();
-    if (definition.path.endsWith('/activate')) {
+    if (definition.path.endsWith('/activate') || definition.path.endsWith('/snapshot')) {
       return definition.decode(envelope({
         currentMember: member('active'),
         eventSequence: 3,
@@ -636,6 +637,7 @@ function fakePinnedClient(
           id,
           mainOid: OID,
           mainRef: COLLAB_MAIN_REF,
+          authorityGeneration: 1,
           managerSetGeneration: 0,
           name: id === 'project-alpha'
             ? 'Alpha'

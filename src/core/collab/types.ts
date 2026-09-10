@@ -28,6 +28,7 @@ export interface CollabProjectBase {
 }
 
 export interface CollabLanProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'lan';
   hostMemberId: CollabMemberId;
   managerSetGeneration: number;

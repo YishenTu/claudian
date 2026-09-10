@@ -188,6 +188,7 @@ function projectSnapshot(): CollabLanProjectSnapshot {
       id: 'project-alpha',
       mainOid: OID_A,
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },

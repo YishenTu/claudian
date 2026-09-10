@@ -393,6 +393,7 @@ function snapshot(): CollabLanProjectSnapshot {
       createdAt: '2026-08-12T00:00:00.000Z',
       hostMemberId: 'member-host',
       id: 'project-alpha',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',

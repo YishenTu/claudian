@@ -441,6 +441,7 @@ function snapshot(
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       authorityKind: 'lan',
       createdAt: NOW,
       hostMemberId: 'member-host',

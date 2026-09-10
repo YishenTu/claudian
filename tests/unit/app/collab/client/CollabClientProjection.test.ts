@@ -557,7 +557,7 @@ describe('CollabClientProjection', () => {
     expect(store.documents.get('project-a')).toMatchObject({
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 5,
+      schemaVersion: 6,
       authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: { eventSequence: 5 },
     });
@@ -706,7 +706,7 @@ describe('CollabClientProjection', () => {
     const cached = {
       cachedAt: CREATED_AT,
       projectId: 'project-a',
-      schemaVersion: 5,
+      schemaVersion: 6,
       authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: { ...snapshot(), eventSequence: 6 },
       ticketDetails: [],
@@ -821,6 +821,31 @@ describe('CollabClientProjection', () => {
     });
   });
 
+  it('treats old LAN snapshot and Ticket caches as misses after the identity upgrade', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    const retained = membership();
+    await store.saveMembership({ ...retained, authority: { ...retained.authority, hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n' } });
+    const { authorityGeneration: _generation, ...legacyProject } = snapshot().project;
+    const legacyCache = {
+      authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
+      cachedAt: CREATED_AT, projectId: 'project-a', schemaVersion: 5,
+      snapshot: { ...snapshot(), project: legacyProject },
+      ticketDetails: [], ticketPages: [],
+    };
+    await store.saveProjectDocument('project-a', 'cache', legacyCache);
+    await store.saveProjectDocument('project-a', 'ticket-cache', legacyCache);
+    const control = controlPort();
+    control.readSnapshot.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    control.readTicket.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    const projection = new CollabClientProjection(store, control, projectionOptions());
+    await expect(projection.readSnapshot('project-a')).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+    await expect(projection.readTicket('project-a', 'ticket-a')).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+    await expect(store.loadProjectDocument('project-a', 'cache', value => value as { projectId: string; schemaVersion: number }))
+      .resolves.toBeNull();
+    await expect(store.loadProjectDocument('project-a', 'ticket-cache', value => value as { projectId: string; schemaVersion: number }))
+      .resolves.toBeNull();
+  });
+
   it('removes an obsolete schema-3 cache as a miss and replaces it on the next online read', async () => {
     const store = new MemoryProjectionStore();
     store.documents.set('project-a', {
@@ -855,7 +880,7 @@ describe('CollabClientProjection', () => {
     });
     expect(store.documents.get('project-a')).toMatchObject({
       projectId: 'project-a',
-      schemaVersion: 5,
+      schemaVersion: 6,
       authorityBinding: JSON.stringify(['lan', 1, membership().authority.endpoint, membership().authority.hostCaFingerprint, membership().authority.gitRemoteUrl]),
       snapshot: {
         project: {
@@ -1536,7 +1561,7 @@ function cloudSnapshotResponse(input: CloudAuthorityHttpRequest): CloudAuthority
 }
 
 function lanEvent(kind: string, payload: Readonly<Record<string, unknown>>, sequence: number) {
-  return { kind, occurredAt: CREATED_AT, payload, projectId: 'project-a', protocolVersion: 9, sequence };
+  return { kind, occurredAt: CREATED_AT, payload, projectId: 'project-a', protocolVersion: 10, sequence };
 }
 
 async function flushEvents(): Promise<void> {
@@ -1644,6 +1669,7 @@ function snapshot(): CollabLanProjectSnapshot {
       id: 'project-a',
       mainOid: HEAD,
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },

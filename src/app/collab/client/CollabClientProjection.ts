@@ -25,8 +25,8 @@ import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type Co
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CACHE_SCHEMA_VERSION = 5 as const;
-const OBSOLETE_CACHE_SCHEMA_VERSIONS = new Set<unknown>([2, 3, 4]);
+const CACHE_SCHEMA_VERSION = 6 as const;
+const OBSOLETE_CACHE_SCHEMA_VERSIONS = new Set<unknown>([2, 3, 4, 5]);
 const MAX_CACHED_TICKET_PAGES = 16;
 const MAX_CACHED_TICKET_DETAILS = 32;
 
@@ -55,7 +55,7 @@ interface CollabTicketCache extends CollabSnapshotCache {
 }
 
 interface ObsoleteCollabSnapshotCache extends CollabLocalProjectDocumentBase {
-  readonly schemaVersion: 2 | 3 | 4;
+  readonly schemaVersion: 2 | 3 | 4 | 5;
 }
 
 type DecodedCollabSnapshotCache = CollabSnapshotCache | ObsoleteCollabSnapshotCache;
@@ -154,7 +154,7 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
     OBSOLETE_CACHE_SCHEMA_VERSIONS.has(source.schemaVersion)
     && typeof projectId === 'string'
   ) {
-    return { projectId, schemaVersion: source.schemaVersion as 2 | 3 | 4 };
+    return { projectId, schemaVersion: source.schemaVersion as 2 | 3 | 4 | 5 };
   }
   const cachedAt = source.cachedAt;
   if (
@@ -188,9 +188,9 @@ function decodeCache(value: unknown): DecodedCollabSnapshotCache {
   return { authorityBinding: source.authorityBinding, cachedAt, projectId, schemaVersion: CACHE_SCHEMA_VERSION, snapshot };
 }
 
-function decodeTicketCache(value: unknown): CollabTicketCache {
+function decodeTicketCache(value: unknown): CollabTicketCache | ObsoleteCollabSnapshotCache {
   const base = decodeCache(value);
-  if (base.schemaVersion !== CACHE_SCHEMA_VERSION) throw new TypeError('Obsolete Ticket cache');
+  if (base.schemaVersion !== CACHE_SCHEMA_VERSION) return base;
   if (Buffer.byteLength(JSON.stringify(value, null, 2)) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
     throw new TypeError('Oversized Ticket cache');
   }
@@ -1061,6 +1061,10 @@ export class CollabClientProjection {
 
   async #loadTicketCache(projectId: string): Promise<CollabTicketCache | null> {
     const cache = await this.store.loadProjectDocument(projectId, 'ticket-cache', decodeTicketCache);
+    if (cache && cache.schemaVersion !== CACHE_SCHEMA_VERSION) {
+      await this.store.removeProjectDocument(projectId, 'ticket-cache');
+      return null;
+    }
     if (cache && !await this.#cacheMatchesMembership(projectId, cache, false)) {
       await this.store.removeProjectDocument(projectId, 'ticket-cache');
       return null;

@@ -26,6 +26,7 @@ describe('Collab authority projection', () => {
     const lan: CollabProject = {
       ...commonProject('lan'),
       hostMemberId: 'member-a',
+      authorityGeneration: 1,
       managerSetGeneration: 3,
     };
     const cloud: CollabProject = { ...commonProject('cloud'), authorityGeneration: 7 };
