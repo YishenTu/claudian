@@ -61,9 +61,9 @@ Or install directly from the [community plugin page](https://community.obsidian.
 
 ### Plugin size and Obsidian Sync
 
-Claudian's installed bundle is approximately 6 MB, and its main plugin file exceeds 5 MB. The Obsidian community plugin page may therefore display a large-plugin warning, and Obsidian Sync cannot sync the main plugin file because the service supports only files smaller than 5 MB.
+Despite considerable effort to reduce the bundle size, keeping it below 5 MB is no longer practical with the latest Claude Agent SDK. The Obsidian community plugin page may therefore display a large-plugin warning, and Obsidian's official Sync service cannot sync the main plugin file because it supports only files smaller than 5 MB.
 
-Considerable effort has gone into reducing the bundle size, but keeping it below 5 MB is no longer practical with the latest Claude Agent SDK. If you use Obsidian Sync across multiple desktop devices, install and update Claudian separately on each device instead of relying on Sync to copy the plugin files.
+If you use Obsidian Sync across multiple desktop devices, install and update Claudian separately on each device instead of relying on Sync to copy the plugin files.
 
 ### From source (development)
 
