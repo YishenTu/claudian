@@ -180,14 +180,14 @@ function route(
 }
 
 describe('handleLifecycleRoute', () => {
-  it('covers the complete v9 lifecycle operation inventory', () => {
+  it('covers the complete v10 lifecycle operation inventory', () => {
     expect([
       ...cases.map(testCase => testCase.operation),
       'getHostTransitions',
     ]).toEqual(LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS);
   });
 
-  it.each(cases)('dispatches $operation with the exact v9 contract', async testCase => {
+  it.each(cases)('dispatches $operation with the exact v10 contract', async testCase => {
     const request = route(testCase);
 
     await expect(handleLifecycleRoute(request)).resolves.toEqual({

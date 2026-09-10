@@ -694,6 +694,7 @@ function snapshot(options: {
         id: 'project-a',
         mainOid: MAIN,
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Alpha',
       },

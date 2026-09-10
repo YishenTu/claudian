@@ -176,6 +176,7 @@ function lanSnapshot() {
       id: LAN_PROJECT_ID,
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main' as const,
+      authorityGeneration: 1,
       managerSetGeneration: 1,
       name: 'LAN Project',
     },

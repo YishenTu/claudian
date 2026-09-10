@@ -207,6 +207,7 @@ function project(value: unknown): CollabLanProject {
     throw decodeError('project');
   }
   return {
+    authorityGeneration: positiveInteger(source, 'authorityGeneration'),
     authorityKind: 'lan',
     createdAt: timestamp(source, 'createdAt'),
     hostMemberId: string(source, 'hostMemberId', 64, isCollabMemberId),

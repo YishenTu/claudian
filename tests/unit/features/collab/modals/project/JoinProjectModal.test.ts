@@ -83,7 +83,7 @@ describe('JoinProjectModal', () => {
   });
 
   it.each([
-    ['claudian-collab:v9:payload', 'LAN invitation'],
+    ['claudian-collab:v10:payload', 'LAN invitation'],
     ['claudian-cloud:v1:payload', 'Cloud invitation'],
     ['claudian-cloud-claim:v1:payload', 'Imported membership claim'],
   ])('identifies %s as %s without decoding authority data in the UI', (

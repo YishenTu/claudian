@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { collabMemberRef, type CollabOperationId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
@@ -12,9 +13,10 @@ import {
   resolveCollabVaultPath,
   writeCollabFileAtomically,
 } from '@/app/collab/CollabFilesystemBoundary';
-import type {
-  CollabLocalMembershipRecord,
-  CollabLocalProjectRepository,
+import {
+  type CollabLocalLanMembershipRecord,
+  type CollabLocalProjectRepository,
+  isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -41,6 +43,7 @@ import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import { type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
 import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
+import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabInvitationJoinRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -307,6 +310,7 @@ export class JoinProjectCoordinator {
         );
         const timestamp = this.now().toISOString();
         record = {
+          authorityGeneration: null,
           createdAt: timestamp,
           encodedInvitation: request.encodedInvitation.trim(),
           endpoint: invitation.endpoint,
@@ -417,11 +421,15 @@ export class JoinProjectCoordinator {
     if (record.phase === 'clone-completed') {
       record = await this.#placeWorkingCopy(record, signal);
     }
-    if (record.phase === 'placed') {
+    if (record.phase === 'placed' || (record.phase === 'activated' && record.authorityGeneration === null)) {
       throwIfCancelled(signal);
       httpClient = this.#httpClientFor(record.projectId);
       pinnedClient = await httpClient.fromStoredTrust(record.projectId);
-      const snapshot = await new JoinControlClient(pinnedClient).activateJoinAttempt({
+      const snapshot = record.phase === 'activated'
+        ? await new ProjectControlClient(pinnedClient).readSnapshot(
+          record.projectId, record.memberCredential!, { signal },
+        )
+        : await new JoinControlClient(pinnedClient).activateJoinAttempt({
         joinAttemptId: record.joinAttemptId,
         memberCredential: record.memberCredential!,
         projectId: record.projectId,
@@ -435,14 +443,18 @@ export class JoinProjectCoordinator {
       ) {
         throw joinError('repository-invalid', 'activation-response-mismatch');
       }
+      if (record.phase === 'activated') {
+        await this.#recoverLegacyMembership(record, snapshot.project.authorityGeneration, signal);
+      }
       record = await this.#updateRecord(record, {
+        authorityGeneration: snapshot.project.authorityGeneration,
         lastEventSequence: snapshot.eventSequence,
         memberRole: snapshot.currentMember.role,
         phase: 'activated',
         projectName: snapshot.project.name,
       });
     }
-    if (record.phase !== 'activated') {
+    if (record.phase !== 'activated' || record.authorityGeneration === null) {
       throw joinError('repository-invalid', 'join-phase-invalid');
     }
     return this.finish(record, signal);
@@ -491,10 +503,63 @@ export class JoinProjectCoordinator {
     signal: AbortSignal,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     throwIfCancelled(signal);
+    const membership = this.#membership(record, record.authorityGeneration!);
+    await this.#workingCopy.finalize(membership, signal);
+    await this.foundation.local.projects.removeProjectDocument(
+      record.projectId,
+      'pending-operation',
+    );
+    await this.#removeTemporaryCa(record).catch(() => undefined);
+    this.#remoteMembershipMayExist.delete(record.operationId);
+    return {
+      status: 'success',
+      value: {
+        authorityKind: 'lan',
+        connectionStatus: 'connected',
+        health: 'healthy',
+        hostInstallationStatus: 'not-host',
+        hostStatus: 'not-host',
+        id: record.projectId,
+        name: record.projectName!,
+        role: record.memberRole!,
+        workspacePath: `${record.projectsFolder}/${record.slug}`,
+      },
+    };
+  }
+
+  async #recoverLegacyMembership(
+    record: JoinProjectRecord,
+    authorityGeneration: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const existing = await this.foundation.local.projects.loadMembership(record.projectId);
+    if (!existing) return;
+    const expected = this.#membership(record, 1);
+    if (!isCollabLocalLanMembership(existing)
+      || (existing.authority.authorityGeneration !== 1 && existing.authority.authorityGeneration !== authorityGeneration)
+      || existing.createdAt !== expected.createdAt
+      || existing.lifecycle === 'leaving'
+      || !isDeepStrictEqual(existing.project, expected.project)
+      || !isDeepStrictEqual(existing.member, expected.member)
+      || !isDeepStrictEqual(existing.hostOwnership, expected.hostOwnership)
+      || !isDeepStrictEqual({ ...existing.authority, authorityGeneration: 1 }, expected.authority)
+    ) {
+      throw joinError('repository-invalid', 'legacy-join-binding-mismatch');
+    }
+    throwIfCancelled(signal);
+    // Repair before recording the identity so either interruption still has the legacy Join proof.
+    await this.foundation.local.projects.saveMembership({
+      ...existing,
+      authority: { ...existing.authority, authorityGeneration },
+      updatedAt: this.now().toISOString(),
+    });
+  }
+
+  #membership(record: JoinProjectRecord, authorityGeneration: number): CollabLocalLanMembershipRecord {
     const timestamp = this.now().toISOString();
-    const membership: CollabLocalMembershipRecord = {
+    return {
       authority: {
-        authorityGeneration: 1,
+        authorityGeneration,
         endpoint: record.endpoint,
         gitRemoteUrl: gitRemoteUrl(record),
         hostCaCertificatePem: record.hostCaCertificatePem!,
@@ -518,27 +583,6 @@ export class JoinProjectCoordinator {
       },
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
       updatedAt: timestamp,
-    };
-    await this.#workingCopy.finalize(membership, signal);
-    await this.foundation.local.projects.removeProjectDocument(
-      record.projectId,
-      'pending-operation',
-    );
-    await this.#removeTemporaryCa(record).catch(() => undefined);
-    this.#remoteMembershipMayExist.delete(record.operationId);
-    return {
-      status: 'success',
-      value: {
-        authorityKind: 'lan',
-        connectionStatus: 'connected',
-        health: 'healthy',
-        hostInstallationStatus: 'not-host',
-        hostStatus: 'not-host',
-        id: record.projectId,
-        name: record.projectName!,
-        role: record.memberRole!,
-        workspacePath: `${record.projectsFolder}/${record.slug}`,
-      },
     };
   }
 

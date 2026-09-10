@@ -90,6 +90,7 @@ function snapshot() {
       id: 'project-a',
       mainOid: HEAD,
       mainRef: 'refs/heads/main' as const,
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -139,7 +140,7 @@ describe('LocalProjectControlPort', () => {
     expect(observed).toEqual([123, 9001].map(ticketNumber => ({
       credential: membership().member.credential,
       endpoint: membership().authority.endpoint,
-      path: `/v9/projects/project-a/tickets/by-number/${ticketNumber}`,
+      path: `/v10/projects/project-a/tickets/by-number/${ticketNumber}`,
       signal,
     })));
   });
@@ -191,9 +192,9 @@ describe('LocalProjectControlPort', () => {
     expect(detail.comments).toEqual({ comments: [firstComment, secondComment] });
     for (const request of requests) expect(request.signal).toBe(signal);
     expect(requests.map(({ credential, endpoint, path }) => ({ credential, endpoint, path }))).toEqual([
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v9/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v10/projects/project-a/requests/request-a' },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v10/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v10/projects/project-a/requests/request-a' },
     ]);
   });
 

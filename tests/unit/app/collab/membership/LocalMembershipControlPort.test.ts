@@ -52,7 +52,7 @@ describe('LocalMembershipControlPort', () => {
               status: 'acknowledged',
               targetMemberId,
             },
-            protocolVersion: 9,
+            protocolVersion: 10,
             requestId: 'acknowledge-response',
           });
         },
@@ -82,7 +82,7 @@ describe('LocalMembershipControlPort', () => {
               managerSetGeneration: 3,
               projectId: PROJECT_ID,
             },
-            protocolVersion: 9,
+            protocolVersion: 10,
             requestId: 'demote-response',
           });
         },
@@ -100,7 +100,7 @@ describe('LocalMembershipControlPort', () => {
         targetMemberId: 'member-peer',
       },
       credential: 'c'.repeat(43),
-      path: '/v9/projects/project-membership-port/managers/member-peer/demote',
+      path: '/v10/projects/project-membership-port/managers/member-peer/demote',
     }]);
   });
 });

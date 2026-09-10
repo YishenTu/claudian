@@ -440,14 +440,16 @@ export class PendingMembershipService {
         active.member.id,
         mainOid,
       );
-      return this.authority.idempotency.store(connection, {
+      this.authority.idempotency.store(connection, {
         actorMemberId: active.member.id,
         createdAt: now.toISOString(),
         key: request.idempotencyKey,
         operationKind: 'join-project',
         requestFingerprint: requestFingerprint(request),
         response: snapshot,
-      }).response;
+      });
+      // Activation is idempotent; its acknowledgement carries the current authenticated snapshot.
+      return snapshot;
     })).value;
   }
 
@@ -698,6 +700,7 @@ export class PendingMembershipService {
       openRequests: this.repository.listOpenRequests(connection),
       openTicketCount: this.tickets.countOpen(connection),
       project: {
+        authorityGeneration: project.authorityGeneration,
         authorityKind: 'lan',
         createdAt: project.createdAt,
         hostMemberId: project.hostMemberId,

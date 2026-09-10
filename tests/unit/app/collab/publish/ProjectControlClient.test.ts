@@ -52,7 +52,7 @@ function envelope(data: unknown): unknown {
   };
 }
 
-function snapshotEnvelope(): unknown {
+function snapshotEnvelope(authorityGeneration: unknown = 1): unknown {
   return envelope({
     currentMember: member(),
     eventSequence: 2,
@@ -76,6 +76,7 @@ function snapshotEnvelope(): unknown {
       id: 'project-a',
       mainOid: HEAD,
       mainRef: 'refs/heads/main',
+      authorityGeneration,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -104,6 +105,17 @@ function detailEnvelope(): unknown {
 }
 
 describe('ProjectControlClient', () => {
+  it.each([null, 0, -1, 1.5, '3', Number.MAX_SAFE_INTEGER + 1])(
+    'rejects an incomplete or invalid authority generation: %s', async generation => {
+      const client = new ProjectControlClient({
+        requestWithMember: async request => request.decode(snapshotEnvelope(generation)),
+      });
+      await expect(client.readSnapshot('project-a', CREDENTIAL)).rejects.toMatchObject({
+        code: 'protocol-payload-invalid',
+      });
+    },
+  );
+
   it('reads the full Project snapshot and ensures the exact personal head', async () => {
     const transport: ProjectControlTransport = {
       requestWithMember: jest.fn(async <T>(
@@ -134,7 +146,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v9/projects/project-a/snapshot',
+        path: '/v10/projects/project-a/snapshot',
       }),
       CREDENTIAL,
       {},
@@ -151,7 +163,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'publish-head',
         method: 'PUT',
-        path: '/v9/projects/project-a/requests/mine',
+        path: '/v10/projects/project-a/requests/mine',
       }),
       CREDENTIAL,
       {},
@@ -194,7 +206,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v9/projects/project-a/requests/request-a',
+        path: '/v10/projects/project-a/requests/request-a',
       }),
       CREDENTIAL,
       {},
@@ -210,7 +222,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'comment-key',
         method: 'POST',
-        path: '/v9/projects/project-a/requests/request-a/comments',
+        path: '/v10/projects/project-a/requests/request-a/comments',
       }),
       CREDENTIAL,
       {},
@@ -259,7 +271,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'accept-key',
         method: 'POST',
-        path: '/v9/projects/project-a/requests/request-a/accept',
+        path: '/v10/projects/project-a/requests/request-a/accept',
       }),
       CREDENTIAL,
       {},

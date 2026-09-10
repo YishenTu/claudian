@@ -5,6 +5,7 @@ import {
 } from '@/app/collab/join/JoinProjectRecord';
 
 const baseRecord: JoinProjectRecord = {
+  authorityGeneration: null,
   createdAt: '2026-08-08T00:00:00.000Z',
   encodedInvitation: 'claudian-collab:v2:payload',
   endpoint: 'https://192.168.1.10:54545',
@@ -47,6 +48,7 @@ describe('JoinProjectRecord', () => {
     };
     const activated = {
       ...membership,
+      authorityGeneration: 3,
       lastEventSequence: 4,
       memberRole: 'member' as const,
       phase: 'activated' as const,
@@ -63,6 +65,7 @@ describe('JoinProjectRecord', () => {
       phase: 'membership-created',
     }));
     expect(decodeJoinProjectRecord(activated)).toEqual(expect.objectContaining({
+      authorityGeneration: 3,
       lastEventSequence: 4,
       memberRole: 'member',
       phase: 'activated',
@@ -78,6 +81,11 @@ describe('JoinProjectRecord', () => {
     { ...baseRecord, phase: 'membership-created', hostCaCertificatePem: 'x' },
     { ...baseRecord, encodedInvitation: null },
     { ...baseRecord, updatedAt: 'not-a-date' },
+    { ...baseRecord, authorityGeneration: 0 },
+    { ...baseRecord, authorityGeneration: -1 },
+    { ...baseRecord, authorityGeneration: 1.5 },
+    { ...baseRecord, authorityGeneration: '3' },
+    { ...baseRecord, authorityGeneration: 3 },
   ])('rejects corrupt or phase-incomplete records', value => {
     expect(() => decodeJoinProjectRecord(value)).toThrow();
   });

@@ -2943,6 +2943,7 @@ function coordination(review: CollabRequestReview): CollabCoordinationSnapshot {
         id: 'project-a',
         mainOid: MAIN,
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Project A',
       },

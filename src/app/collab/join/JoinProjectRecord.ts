@@ -15,6 +15,8 @@ export type JoinProjectPhase =
   | 'activated';
 
 export interface JoinProjectRecord {
+  /** Null until activation, or while recovering a record written before authority identity was captured. */
+  readonly authorityGeneration: number | null;
   readonly createdAt: string;
   readonly encodedInvitation: string | null;
   readonly endpoint: string;
@@ -188,6 +190,15 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   const projectName = nullableString(value, 'projectName', 200);
   const memberRole = value.memberRole;
   const lastEventSequence = value.lastEventSequence;
+  const authorityGeneration = value.authorityGeneration ?? null;
+  if (authorityGeneration !== null && (
+    typeof authorityGeneration !== 'number'
+    || !Number.isSafeInteger(authorityGeneration)
+    || authorityGeneration < 1
+    || decodedPhase !== 'activated'
+  )) {
+    throw new TypeError('Invalid Join authority generation');
+  }
 
   if (
     (memberRole !== null && memberRole !== 'manager' && memberRole !== 'member')
@@ -234,6 +245,7 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   }
 
   return {
+    authorityGeneration,
     createdAt: timestamp(value, 'createdAt')!,
     encodedInvitation,
     endpoint: endpoint(value),

@@ -200,6 +200,7 @@ function authoritySnapshot(): CollabLanProjectSnapshot {
       id: 'project-alpha',
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
