@@ -144,6 +144,148 @@ describe('CollabClientProjection', () => {
     await expect(projection.readTicket('project-a', 'ticket-a')).rejects.toBe(offline);
   });
 
+  it('evicts older details and pages before dropping an oversized newest Ticket', async () => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    let time = Date.parse(CREATED_AT);
+    const projection = new CollabClientProjection(store, control, {
+      ...projectionOptions(), now: () => new Date(time++),
+    });
+    await projection.readSnapshot('project-a');
+    for (let index = 0; index < 31; index++) {
+      const detail = ticketDetail();
+      control.readTicket.mockResolvedValue({
+        ...detail,
+        comments: { comments: detail.comments.comments.map(comment => ({ ...comment, ticketId: `ticket-${index}` })) },
+        ticket: { ...detail.ticket, id: `ticket-${index}`, number: index + 1 },
+      });
+      await projection.readTicket('project-a', `ticket-${index}`);
+    }
+    for (let index = 0; index < 16; index++) {
+      control.listTickets.mockResolvedValue({ tickets: [ticketDetail().ticket] });
+      await projection.listTickets({ projectId: 'project-a', status: 'open', limit: index + 1 });
+    }
+    const offline = new CollabError({ code: 'endpoint-unreachable' });
+    control.readTicket.mockRejectedValue(offline);
+    control.listTickets.mockRejectedValue(offline);
+    await expect(projection.readTicket('project-a', 'ticket-0')).resolves.toMatchObject({ source: 'cache' });
+    await expect(projection.readTicket('project-a', 'ticket-30')).resolves.toMatchObject({ source: 'cache' });
+    await expect(projection.listTickets({ projectId: 'project-a', status: 'open', limit: 16 })).resolves.toMatchObject({ source: 'cache' });
+    const large = ticketDetailWithComments(260);
+    control.readTicket.mockResolvedValue({
+      ...large,
+      comments: { comments: large.comments.comments.map(comment => ({ ...comment, body: 'x'.repeat(16_384) })) },
+    });
+    await expect(projection.readTicket('project-a', 'ticket-a')).resolves.toMatchObject({ source: 'online' });
+    control.readTicket.mockRejectedValue(offline);
+    control.listTickets.mockRejectedValue(offline);
+    await expect(projection.readTicket('project-a', 'ticket-a')).rejects.toBe(offline);
+    await expect(projection.readTicket('project-a', 'ticket-30')).rejects.toBe(offline);
+    await expect(projection.listTickets({ projectId: 'project-a', status: 'open', limit: 16 })).rejects.toBe(offline);
+  });
+
+  it.each([0, 1])('preserves the exact UTF-8 cache boundary with %s excess bytes', async excessBytes => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    const projection = new CollabClientProjection(store, control, {
+      ...projectionOptions(), now: () => new Date(CREATED_AT),
+    });
+    await projection.readSnapshot('project-a');
+    control.readTicket.mockResolvedValue(ticketDetail());
+    await projection.readTicket('project-a', 'ticket-a');
+    const request = { projectId: 'project-a', status: 'open' as const, limit: 1 };
+    control.listTickets.mockResolvedValue({ tickets: [ticketDetail().ticket] });
+    await projection.listTickets(request);
+
+    const previous = store.documents.get('project-a:ticket-cache') as {
+      ticketDetails: unknown[]; ticketPages: unknown[];
+    };
+    const detail = ticketDetailWithComments(260);
+    const comments = detail.comments.comments.map(comment => ({
+      ...comment, ticketId: 'ticket-new', body: '中😀"\\\n',
+    }));
+    const incoming = { ...detail, comments: { comments }, ticket: { ...detail.ticket, id: 'ticket-new', number: 18 } };
+    const expectedCache = {
+      ...previous,
+      ticketDetails: [{ cachedAt: CREATED_AT, detail: incoming, ticketId: 'ticket-new' }, ...previous.ticketDetails],
+    };
+    const byteBudget = 4 * 1024 * 1024;
+    let remaining = byteBudget + excessBytes - Buffer.byteLength(JSON.stringify(expectedCache, null, 2));
+    for (const comment of comments) {
+      const added = Math.min(remaining, 16_384 - Buffer.byteLength(comment.body));
+      comment.body += 'x'.repeat(added);
+      remaining -= added;
+    }
+    expect(remaining).toBe(0);
+    expect(Buffer.byteLength(JSON.stringify(expectedCache, null, 2))).toBe(byteBudget + excessBytes);
+    control.readTicket.mockResolvedValue(incoming);
+    await projection.readTicket('project-a', 'ticket-new');
+    const saved = store.documents.get('project-a:ticket-cache');
+    expect(saved).toEqual(excessBytes === 0 ? expectedCache : {
+      ...expectedCache, ticketDetails: expectedCache.ticketDetails.slice(0, 1),
+    });
+    const offline = new CollabError({ code: 'endpoint-unreachable' });
+    control.readTicket.mockRejectedValue(offline);
+    control.listTickets.mockRejectedValue(offline);
+    await expect(projection.readTicket('project-a', 'ticket-new')).resolves.toMatchObject({ source: 'cache', detail: incoming });
+    await expect(projection.listTickets(request)).resolves.toMatchObject({ source: 'cache' });
+    const previousResult = await projection.readTicket('project-a', 'ticket-a').then(result => result.source, error => error);
+    expect(previousResult).toBe(excessBytes > 0 ? offline : 'cache');
+  });
+
+  it.each([
+    { first: 'detail', excessBytes: 0 }, { first: 'detail', excessBytes: 1 },
+    { first: 'page', excessBytes: 0 }, { first: 'page', excessBytes: 1 },
+  ])('stops at the byte boundary after evicting $first with $excessBytes excess bytes', async ({ first, excessBytes }) => {
+    const store = new MemoryProjectionStore();
+    const control = controlPort();
+    let time = Date.parse(CREATED_AT);
+    const projection = new CollabClientProjection(store, control, {
+      ...projectionOptions(), now: () => new Date(time),
+    });
+    await projection.readSnapshot('project-a');
+    const request = { projectId: 'project-a', status: 'open' as const, limit: 1 };
+    control.readTicket.mockResolvedValue(ticketDetail());
+    control.listTickets.mockResolvedValue({ tickets: [ticketDetail().ticket] });
+    const seedDetail = () => projection.readTicket('project-a', 'ticket-a');
+    const seedPage = () => projection.listTickets(request);
+    await (first === 'detail' ? seedDetail() : seedPage());
+    time += 1000;
+    await (first === 'detail' ? seedPage() : seedDetail());
+    time += 1000;
+    const previous = store.documents.get('project-a:ticket-cache') as {
+      ticketDetails: unknown[]; ticketPages: unknown[];
+    };
+    const detail = ticketDetailWithComments(260);
+    const comments = detail.comments.comments.map(comment => ({
+      ...comment, ticketId: 'ticket-new', body: '中😀"\\\n',
+    }));
+    const incoming = { ...detail, comments: { comments }, ticket: { ...detail.ticket, id: 'ticket-new', number: 18 } };
+    const entry = { cachedAt: new Date(time).toISOString(), detail: incoming, ticketId: 'ticket-new' };
+    const afterFirstEviction = {
+      ...previous,
+      ticketDetails: first === 'detail' ? [entry] : [entry, ...previous.ticketDetails],
+      ticketPages: first === 'page' ? [] : previous.ticketPages,
+    };
+    const byteBudget = 4 * 1024 * 1024;
+    let remaining = byteBudget + excessBytes - Buffer.byteLength(JSON.stringify(afterFirstEviction, null, 2));
+    for (const comment of comments) {
+      const added = Math.min(remaining, 16_384 - Buffer.byteLength(comment.body));
+      comment.body += 'x'.repeat(added);
+      remaining -= added;
+    }
+    expect(remaining).toBe(0);
+    expect(Buffer.byteLength(JSON.stringify(afterFirstEviction, null, 2))).toBe(byteBudget + excessBytes);
+    control.readTicket.mockResolvedValue(incoming);
+    await projection.readTicket('project-a', 'ticket-new');
+    const expectedCache = excessBytes === 0 ? afterFirstEviction : {
+      ...afterFirstEviction, ticketDetails: [entry], ticketPages: [],
+    };
+    expect(store.documents.get('project-a:ticket-cache')).toEqual(expectedCache);
+    control.readTicket.mockRejectedValue(new CollabError({ code: 'endpoint-unreachable' }));
+    await expect(projection.readTicket('project-a', 'ticket-new')).resolves.toMatchObject({ source: 'cache', detail: incoming });
+  });
+
   it('resolves cached Ticket numbers only when online lookup is unavailable', async () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();

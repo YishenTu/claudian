@@ -1,0 +1,773 @@
+{
+  "recordedOn": "2026-09-10",
+  "machine": {
+    "cpu": "Apple M5 Max",
+    "totalMemoryMiB": 131072
+  },
+  "beforeCommit": "f0d79f53f43516f2ee9177ce63452e1de6df2422",
+  "afterSourceSha256": {
+    "src/app/collab/authority/SqlJsProjectDatabase.ts": "335b486b834343cd6244768a37fb91b70a9dafe3ff5a1e23b8618cc24a8ed63d",
+    "src/app/collab/client/CollabClientProjection.ts": "ccf34171094c2bd20e096e5d69cd4ee5923026cdf76da958f31571ba8aa71c51"
+  },
+  "storageBefore": {
+    "node": "v24.16.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "eventLoopControl": {
+      "workload": "event-loop-control",
+      "durationMs": 100.04620800000001,
+      "peakRssMiB": 75.5625,
+      "sampledArrayBuffersMiB": 1.6662416458129883,
+      "eventLoopMaxMs": 101.515263
+    },
+    "samples": [
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 23.210250000000002,
+        "peakRssMiB": 120.703125,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 14.778367
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 24.17345900000001,
+        "peakRssMiB": 121.046875,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 15.286271
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 23.743041000000005,
+        "peakRssMiB": 120.875,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 14.983167
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 30.96775000000001,
+        "peakRssMiB": 120.90625,
+        "sampledArrayBuffersMiB": 4.756781578063965,
+        "eventLoopMaxMs": 17.317887
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 29.395875000000004,
+        "peakRssMiB": 120.953125,
+        "sampledArrayBuffersMiB": 4.756781578063965,
+        "eventLoopMaxMs": 16.539647
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 31.524166000000008,
+        "peakRssMiB": 121.53125,
+        "sampledArrayBuffersMiB": 4.756781578063965,
+        "eventLoopMaxMs": 17.793023
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 151.152333,
+        "peakRssMiB": 121,
+        "sampledArrayBuffersMiB": 18.643160820007324,
+        "eventLoopMaxMs": 3.504127
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 148.13075,
+        "peakRssMiB": 121.21875,
+        "sampledArrayBuffersMiB": 18.643160820007324,
+        "eventLoopMaxMs": 3.520511
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 148.200375,
+        "peakRssMiB": 114.421875,
+        "sampledArrayBuffersMiB": 12.32898998260498,
+        "eventLoopMaxMs": 3.571711
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 16.414249999999996,
+        "peakRssMiB": 113.640625,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 7.696383
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 16.594707999999997,
+        "peakRssMiB": 113.59375,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 8.044543
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 16.527208,
+        "peakRssMiB": 114.140625,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 7.753727
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 150.357459,
+        "peakRssMiB": 224.921875,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 55.050239
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 150.809542,
+        "peakRssMiB": 226.328125,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 54.755327
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 127.33254199999999,
+        "peakRssMiB": 224.625,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 46.956543
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 121.370209,
+        "peakRssMiB": 228.96875,
+        "sampledArrayBuffersMiB": 101.26166439056396,
+        "eventLoopMaxMs": 45.318143
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 125.37595900000001,
+        "peakRssMiB": 228.328125,
+        "sampledArrayBuffersMiB": 101.26166439056396,
+        "eventLoopMaxMs": 47.382527
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 129.4345,
+        "peakRssMiB": 228.578125,
+        "sampledArrayBuffersMiB": 101.26166439056396,
+        "eventLoopMaxMs": 48.168959
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 385.675709,
+        "peakRssMiB": 215.3125,
+        "sampledArrayBuffersMiB": 101.27969646453857,
+        "eventLoopMaxMs": 10.739711
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 385.23970800000006,
+        "peakRssMiB": 214.578125,
+        "sampledArrayBuffersMiB": 101.28029155731201,
+        "eventLoopMaxMs": 10.510335
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 390.176834,
+        "peakRssMiB": 215.546875,
+        "sampledArrayBuffersMiB": 101.27890300750732,
+        "eventLoopMaxMs": 10.567679
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 99.58291700000001,
+        "peakRssMiB": 182.265625,
+        "sampledArrayBuffersMiB": 67.87536907196045,
+        "eventLoopMaxMs": 80.478207
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 106.58208300000001,
+        "peakRssMiB": 181.171875,
+        "sampledArrayBuffersMiB": 67.86090755462646,
+        "eventLoopMaxMs": 81.330175
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 98.27362500000001,
+        "peakRssMiB": 181.296875,
+        "sampledArrayBuffersMiB": 67.86070919036865,
+        "eventLoopMaxMs": 79.429631
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 399.18066699999997,
+        "peakRssMiB": 519.59375,
+        "sampledArrayBuffersMiB": 400.1733617782593,
+        "eventLoopMaxMs": 131.399679
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 405.148291,
+        "peakRssMiB": 519.265625,
+        "sampledArrayBuffersMiB": 400.1755437850952,
+        "eventLoopMaxMs": 131.989503
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 375.813209,
+        "peakRssMiB": 519.21875,
+        "sampledArrayBuffersMiB": 400.17455196380615,
+        "eventLoopMaxMs": 124.518399
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 399.800209,
+        "peakRssMiB": 520.609375,
+        "sampledArrayBuffersMiB": 400.175742149353,
+        "eventLoopMaxMs": 130.285567
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 410.539,
+        "peakRssMiB": 519.09375,
+        "sampledArrayBuffersMiB": 400.175742149353,
+        "eventLoopMaxMs": 133.431295
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 393.342083,
+        "peakRssMiB": 520.1875,
+        "sampledArrayBuffersMiB": 400.175742149353,
+        "eventLoopMaxMs": 130.023423
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 1104.2669999999998,
+        "peakRssMiB": 515.46875,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 29.900799
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 1099.524625,
+        "peakRssMiB": 514.765625,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 29.343743
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 1091.3405420000001,
+        "peakRssMiB": 516.875,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 28.475391
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 330.7305,
+        "peakRssMiB": 382.171875,
+        "sampledArrayBuffersMiB": 267.232871055603,
+        "eventLoopMaxMs": 285.999103
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 331.774708,
+        "peakRssMiB": 381.640625,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 286.523391
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 333.782417,
+        "peakRssMiB": 383.546875,
+        "sampledArrayBuffersMiB": 267.2340612411499,
+        "eventLoopMaxMs": 285.999103
+      }
+    ]
+  },
+  "storageAfter": {
+    "node": "v24.16.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "eventLoopControl": {
+      "workload": "event-loop-control",
+      "durationMs": 100.02358399999999,
+      "peakRssMiB": 75.734375,
+      "sampledArrayBuffersMiB": 2.2954092025756836,
+      "eventLoopMaxMs": 101.449727
+    },
+    "samples": [
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 24.298666999999995,
+        "peakRssMiB": 119.703125,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 14.475263
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 24.206583999999992,
+        "peakRssMiB": 119.5,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 14.360575
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 24.120790999999997,
+        "peakRssMiB": 119.03125,
+        "sampledArrayBuffersMiB": 4.759955406188965,
+        "eventLoopMaxMs": 14.581759
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 30.593167000000008,
+        "peakRssMiB": 118.640625,
+        "sampledArrayBuffersMiB": 3.514594078063965,
+        "eventLoopMaxMs": 17.678335
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 30.456834,
+        "peakRssMiB": 119.078125,
+        "sampledArrayBuffersMiB": 3.514594078063965,
+        "eventLoopMaxMs": 16.670719
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 30.008499999999998,
+        "peakRssMiB": 118.890625,
+        "sampledArrayBuffersMiB": 3.514594078063965,
+        "eventLoopMaxMs": 17.317887
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 150.03695900000002,
+        "peakRssMiB": 122.234375,
+        "sampledArrayBuffersMiB": 18.643160820007324,
+        "eventLoopMaxMs": 3.633151
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 147.20808399999999,
+        "peakRssMiB": 126.046875,
+        "sampledArrayBuffersMiB": 22.420844078063965,
+        "eventLoopMaxMs": 3.790847
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 148.50579199999999,
+        "peakRssMiB": 121.375,
+        "sampledArrayBuffersMiB": 18.643160820007324,
+        "eventLoopMaxMs": 3.813375
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 17.039541,
+        "peakRssMiB": 113.3125,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 8.187903
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 16.666292,
+        "peakRssMiB": 113.515625,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 7.962623
+      },
+      {
+        "payloadMiB": 1,
+        "snapshotBytes": 1302528,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 17.158749999999998,
+        "peakRssMiB": 113.765625,
+        "sampledArrayBuffersMiB": 3.752326011657715,
+        "eventLoopMaxMs": 8.249343
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 148.331792,
+        "peakRssMiB": 222.65625,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 54.296575
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 120.6885,
+        "peakRssMiB": 222.578125,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 46.563327
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 148.414,
+        "peakRssMiB": 222.03125,
+        "sampledArrayBuffersMiB": 101.26186275482178,
+        "eventLoopMaxMs": 54.558719
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 152.13470800000002,
+        "peakRssMiB": 191.9375,
+        "sampledArrayBuffersMiB": 67.85541439056396,
+        "eventLoopMaxMs": 55.574527
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 152.163542,
+        "peakRssMiB": 195.484375,
+        "sampledArrayBuffersMiB": 67.85541439056396,
+        "eventLoopMaxMs": 56.131583
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 153.692584,
+        "peakRssMiB": 193.421875,
+        "sampledArrayBuffersMiB": 67.85541439056396,
+        "eventLoopMaxMs": 55.672831
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 382.94216700000004,
+        "peakRssMiB": 214.78125,
+        "sampledArrayBuffersMiB": 101.27910137176514,
+        "eventLoopMaxMs": 10.387455
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 395.03166699999997,
+        "peakRssMiB": 215,
+        "sampledArrayBuffersMiB": 101.27969646453857,
+        "eventLoopMaxMs": 10.543103
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 390.804958,
+        "peakRssMiB": 215.640625,
+        "sampledArrayBuffersMiB": 101.27910137176514,
+        "eventLoopMaxMs": 10.207231
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 96.23125000000002,
+        "peakRssMiB": 181.515625,
+        "sampledArrayBuffersMiB": 67.8606481552124,
+        "eventLoopMaxMs": 78.118911
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 97.61712500000002,
+        "peakRssMiB": 183.484375,
+        "sampledArrayBuffersMiB": 67.86005306243896,
+        "eventLoopMaxMs": 78.512127
+      },
+      {
+        "payloadMiB": 32,
+        "snapshotBytes": 35028992,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 97.032666,
+        "peakRssMiB": 182.140625,
+        "sampledArrayBuffersMiB": 67.86124324798584,
+        "eventLoopMaxMs": 78.839807
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "recovery",
+        "durationMs": 423.43379200000004,
+        "peakRssMiB": 519,
+        "sampledArrayBuffersMiB": 400.12535762786865,
+        "eventLoopMaxMs": 135.528447
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "recovery",
+        "durationMs": 370.409458,
+        "peakRssMiB": 516.796875,
+        "sampledArrayBuffersMiB": 400.12555599212646,
+        "eventLoopMaxMs": 122.028031
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "recovery",
+        "durationMs": 363.672042,
+        "peakRssMiB": 517.90625,
+        "sampledArrayBuffersMiB": 267.14310359954834,
+        "eventLoopMaxMs": 121.044991
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "recovery-retention",
+        "durationMs": 366.920208,
+        "peakRssMiB": 382.921875,
+        "sampledArrayBuffersMiB": 267.144492149353,
+        "eventLoopMaxMs": 121.831423
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "recovery-retention",
+        "durationMs": 374.4325,
+        "peakRssMiB": 385.03125,
+        "sampledArrayBuffersMiB": 267.144492149353,
+        "eventLoopMaxMs": 124.190719
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "recovery-retention",
+        "durationMs": 400.575958,
+        "peakRssMiB": 384.203125,
+        "sampledArrayBuffersMiB": 267.144492149353,
+        "eventLoopMaxMs": 131.661823
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "serial",
+        "durationMs": 1083.467792,
+        "peakRssMiB": 516,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 28.508159
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "serial",
+        "durationMs": 1093.378167,
+        "peakRssMiB": 516.59375,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 28.491775
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "serial",
+        "durationMs": 1087.145375,
+        "peakRssMiB": 515.921875,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 29.163519
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 1,
+        "workload": "burst",
+        "durationMs": 329.808375,
+        "peakRssMiB": 382.546875,
+        "sampledArrayBuffersMiB": 267.2338628768921,
+        "eventLoopMaxMs": 283.377663
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 2,
+        "workload": "burst",
+        "durationMs": 327.62362499999995,
+        "peakRssMiB": 383.84375,
+        "sampledArrayBuffersMiB": 267.1460790634155,
+        "eventLoopMaxMs": 282.853375
+      },
+      {
+        "payloadMiB": 128,
+        "snapshotBytes": 139493376,
+        "repetition": 3,
+        "workload": "burst",
+        "durationMs": 329.36474999999996,
+        "peakRssMiB": 382.90625,
+        "sampledArrayBuffersMiB": 267.2338628768921,
+        "eventLoopMaxMs": 283.901951
+      }
+    ]
+  },
+  "cacheScenario": {
+    "name": "evicts older details and pages before dropping an oversized newest Ticket",
+    "beforeDurationMs": [
+      160,
+      170,
+      158
+    ],
+    "afterDurationMs": [
+      60,
+      56,
+      56
+    ]
+  }
+}

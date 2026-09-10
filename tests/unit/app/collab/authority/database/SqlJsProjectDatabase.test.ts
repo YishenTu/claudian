@@ -567,6 +567,63 @@ describe('SqlJsProjectDatabase', () => {
       .toEqual(Buffer.from('SQLite format 3\0'));
   });
 
+  it.each([
+    { generations: [1, 2, 3], source: 'backup', generation: 3 },
+    { generations: [2, 3, 1], source: 'temporary', generation: 3 },
+    { generations: [3, 1, 2], source: 'primary', generation: 3 },
+    { generations: [3, 3, 3], source: 'primary', generation: 3 },
+    { generations: [1, 3, 3], source: 'temporary', generation: 3 },
+  ])('recovers $source from candidate generations $generations', async ({ generations, source, generation }) => {
+    const seed = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await seed.open();
+    await seed.mutate(connection => new ProjectAuthorityRepository().initialize(connection, projectInput()));
+    const bytes = await seed.exportSnapshot();
+    await seed.close();
+    const candidates = [
+      ['primary', 'collab.db'], ['temporary', 'collab.db.tmp'], ['backup', 'collab.db.bak'],
+    ];
+    for (const [index, [kind, filename]] of candidates.entries()) {
+      const image = new SQL.Database(bytes);
+      image.run('UPDATE project SET name = ?, snapshot_generation = ?', [kind, generations[index]]);
+      await writeFile(path.join(authorityDirectory, filename), image.export());
+      image.close();
+    }
+    const recovered = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    try {
+      await expect(recovered.open()).resolves.toEqual({ source, generation, migrated: false });
+      await expect(recovered.read(connection => connection.get('SELECT name FROM project')?.name)).resolves.toBe(source);
+      const backup = new SQL.Database(await readFile(path.join(authorityDirectory, 'collab.db.bak')));
+      try {
+        expect(backup.exec('SELECT name, snapshot_generation FROM project')[0].values).toEqual([
+          source === 'primary' ? ['backup', generations[2]] : ['primary', generations[0]],
+        ]);
+      } finally {
+        backup.close();
+      }
+    } finally {
+      await recovered.close();
+    }
+  });
+
+  it.each(['collab.db.tmp', 'collab.db.bak'])('rejects a newer schema in %s after finding a valid primary', async filename => {
+    const seed = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await seed.open();
+    await seed.mutate(connection => new ProjectAuthorityRepository().initialize(connection, projectInput()));
+    const bytes = await seed.exportSnapshot();
+    await seed.close();
+    const newer = new SQL.Database(bytes);
+    newer.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION + 1}`);
+    await writeFile(path.join(authorityDirectory, filename), newer.export());
+    newer.close();
+    const recovered = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    try {
+      await expect(recovered.open()).rejects.toMatchObject({ code: 'schema-version-unsupported' });
+      expect(await readFile(path.join(authorityDirectory, 'collab.db'))).toEqual(Buffer.from(bytes));
+    } finally {
+      await recovered.close();
+    }
+  });
+
   it('blocks corrupt authority state instead of creating a blank database beside it', async () => {
     const primaryPath = path.join(authorityDirectory, 'collab.db');
     await writeFile(primaryPath, 'not a sqlite database');
