@@ -98,9 +98,18 @@ export class CollabProjectConnection {
     if (!this.controller.signal.aborted) this.eventsRequired = true;
   }
 
+  releaseEvents(): void {
+    this.eventsRequired = false;
+    this.eventsConverged = false;
+    this.retryRequested = false;
+    this.#clearRetry();
+    this.attemptController?.abort();
+  }
+
   observeEvents(state: CollabEventConnectionState): void {
     if (this.controller.signal.aborted) return;
-    this.eventsRequired = state !== 'unsubscribed';
+    if (state === 'unsubscribed') { this.releaseEvents(); return; }
+    this.eventsRequired = true;
     this.eventsConverged = state === 'connected';
     if (state instanceof CollabError) this.observeFailure(state);
     else if (state === 'connected') this.observeSuccess();
@@ -114,7 +123,6 @@ export class CollabProjectConnection {
       this.attemptController?.abort();
     }
     this.lastFailure = null;
-    this.eventsRequired = false;
     this.eventsConverged = false;
     this.retryRequested = true;
     this.#clearRetry();
@@ -153,7 +161,7 @@ export class CollabProjectConnection {
   }
 
   #scheduleRetry(): void {
-    if (this.pending || this.retryTimer !== null || this.controller.signal.aborted) return;
+    if (!this.eventsRequired || this.pending || this.retryTimer !== null || this.controller.signal.aborted) return;
     const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.retryAttempt++, 5));
     this.retryTimer = window.setTimeout(() => {
       this.retryTimer = null;

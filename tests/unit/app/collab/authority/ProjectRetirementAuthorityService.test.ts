@@ -73,7 +73,7 @@ describe('ProjectRetirementAuthorityService', () => {
       now: () => NOW,
     });
     const service = new ProjectRetirementAuthorityService(database, tombstones, {
-      installationKey: TEST_INSTALLATION_A,
+      resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A,
       now: () => NOW,
       onTombstoneCommitted: () => order.push('tombstone'),
       onAuthorityCommitted: () => order.push('authority'),
@@ -119,7 +119,7 @@ describe('ProjectRetirementAuthorityService', () => {
     const service = new ProjectRetirementAuthorityService(
       database,
       new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-      { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+      { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
     );
 
     await expect(service.retire('member-host', request())).resolves.toEqual({
@@ -140,7 +140,7 @@ describe('ProjectRetirementAuthorityService', () => {
     const service = new ProjectRetirementAuthorityService(
       database,
       new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-      { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+      { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
     );
 
     await expect(service.retire('member-second', request('member-second'))).resolves.toEqual({
@@ -175,7 +175,7 @@ describe('ProjectRetirementAuthorityService', () => {
       const service = new ProjectRetirementAuthorityService(
         database,
         new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-        { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+        { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
       );
 
       await expect(service.retire('member-second', legacyRequest)).resolves.toEqual({
@@ -209,7 +209,7 @@ describe('ProjectRetirementAuthorityService', () => {
     const service = new ProjectRetirementAuthorityService(
       database,
       new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-      { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+      { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
     );
 
     await service.retire('member-host', request());
@@ -233,7 +233,7 @@ describe('ProjectRetirementAuthorityService', () => {
     const service = new ProjectRetirementAuthorityService(
       database,
       new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-      { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+      { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
     );
 
     const first = await service.retire('member-host', request());
@@ -253,7 +253,7 @@ describe('ProjectRetirementAuthorityService', () => {
       now: () => current,
     });
     const interrupted = new ProjectRetirementAuthorityService(database, tombstones, {
-      installationKey: TEST_INSTALLATION_A,
+      resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A,
       now: () => current,
       onTombstoneCommitted: () => {
         if (failAfterTombstone) throw new Error('simulated crash');
@@ -275,7 +275,7 @@ describe('ProjectRetirementAuthorityService', () => {
     const service = new ProjectRetirementAuthorityService(
       database,
       new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }),
-      { installationKey: TEST_INSTALLATION_A, now: () => NOW },
+      { resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A, now: () => NOW },
     );
 
     await expect(service.retire('member-third', request('member-third')))

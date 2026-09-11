@@ -216,8 +216,8 @@ describe('M6 publish conflict gate', () => {
       installationKey: TEST_INSTALLATION_A,
       ...(ownsAuthority
         ? {
-          createAuthorityDatabase: (authorityDirectory: string) => (
-            new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+          createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
+            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

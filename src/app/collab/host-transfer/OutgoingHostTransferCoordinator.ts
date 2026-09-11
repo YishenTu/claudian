@@ -16,7 +16,7 @@ import {
   createHostTransferRecoveryRecord,
   parseHostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
-import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
+import { bindHostTransferSourceResource, type HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -24,6 +24,7 @@ import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface OutgoingHostTransferCoordinatorOptions {
   readonly installationKey: InstallationKey | string;
+  readonly sourceResourceId?: string;
   readonly now?: () => Date;
   readonly syncProjection?: (projectId: CollabProjectId) => void;
   readonly trust?: HostTrustTransitionService;
@@ -456,7 +457,10 @@ export class OutgoingHostTransferCoordinator {
       if (existing.transferId !== transferId) {
         throw outgoingError('host-transfer-outgoing-operation-mismatch');
       }
-      return this.#reconcileRecovery(existing, authorityRecord);
+      const bound = this.options.sourceResourceId === undefined ? existing
+        : bindHostTransferSourceResource(existing, this.options.sourceResourceId);
+      if (bound !== existing) await this.recovery.save(bound);
+      return this.#reconcileRecovery(bound, authorityRecord);
     }
     if (
       (authorityRecord.phase !== 'accepted'
@@ -480,8 +484,10 @@ export class OutgoingHostTransferCoordinator {
       targetHostMemberId: authorityRecord.targetHostMemberId,
       transferId,
     });
-    await this.recovery.save(record);
-    return this.#reconcileRecovery(record, authorityRecord);
+    const bound = this.options.sourceResourceId === undefined ? record
+      : bindHostTransferSourceResource(record, this.options.sourceResourceId);
+    await this.recovery.save(bound);
+    return this.#reconcileRecovery(bound, authorityRecord);
   }
 
   async #reconcileRecovery(

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -19,6 +20,7 @@ import { gzipSync } from 'node:zlib';
 import { collabMemberRef, type CollabMemberStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
+import { CollabLocalProjectRepository, type OwnedAuthorityDirectoryCapability } from '@/app/collab/CollabLocalProjectRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { type GitRuntime,GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
@@ -61,6 +63,8 @@ async function withGitDiagnostics(
 
 describe('GitHttpBackendProxy integration', () => {
   let authorityDirectory: string;
+  let resources: CollabLocalProjectRepository;
+  let resource: OwnedAuthorityDirectoryCapability;
   let authenticationCalls: number;
   let backpressureCount: number;
   let bareRepositoryPath: string;
@@ -92,10 +96,11 @@ describe('GitHttpBackendProxy integration', () => {
     gzipRequests = 0;
     prepareBarrier = null;
     prepareStarted = false;
-    authorityDirectory = path.join(root, 'authority');
+    resources = new CollabLocalProjectRepository(root, { installationKey: TEST_INSTALLATION_A });
+    resource = await resources.createOwnedAuthorityDirectory(PROJECT_ID);
+    authorityDirectory = resource.authorityDirectory;
     bareRepositoryPath = path.join(authorityDirectory, 'repository.git');
     emptyConfigPath = path.join(root, 'empty.gitconfig');
-    await mkdir(authorityDirectory);
     await writeFile(emptyConfigPath, '');
     const resolution = await new GitRuntimeResolver().resolve();
     if (resolution.status !== 'available' || !resolution.runtime.httpBackendPath) {
@@ -138,6 +143,7 @@ describe('GitHttpBackendProxy integration', () => {
 
     memberStatus = 'pending';
     proxy = new GitHttpBackendProxy({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory,
       authenticateMemberCredential: async (credential, statuses) => {
         authenticationCalls += 1;
@@ -221,6 +227,17 @@ describe('GitHttpBackendProxy integration', () => {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
     await rm(root, { force: true, recursive: true });
+  });
+
+  it('rejects Git serving and enablement retained across authority replacement', async () => {
+    const backup = path.join(root, 'old-repository.git');
+    await cp(bareRepositoryPath, backup, { recursive: true });
+    await resources.removeOwnedAuthorityDirectory(resource);
+    await resources.createOwnedAuthorityDirectory(PROJECT_ID);
+    await cp(backup, bareRepositoryPath, { recursive: true });
+    await expect(runner.run({ args: ['clone', url, path.join(root, 'stale-clone')], cwd: root, network })).rejects.toBeDefined();
+    await expect(proxy.enable()).rejects.toBeDefined();
+    expect(proxy.activeChildCount).toBe(0);
   });
 
   it('allows pending clone, requires activation for push, and accepts own fast-forward', () => withGitDiagnostics(async setStage => {
@@ -358,6 +375,7 @@ describe('GitHttpBackendProxy integration', () => {
   it('rejects Host startup when the existing repository exceeds its storage quota', async () => {
     await proxy.close();
     proxy = new GitHttpBackendProxy({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory,
       authenticateMemberCredential: async () => ({ member: { id: MEMBER_ID } }),
       emptyConfigPath,
@@ -381,6 +399,7 @@ describe('GitHttpBackendProxy integration', () => {
     const baseline = await service.measureStorageBytes(bareRepositoryPath);
     await proxy.close();
     proxy = new GitHttpBackendProxy({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory,
       authenticateMemberCredential: async (credential, statuses) => {
         const actual = createHash('sha256').update(credential).digest();
@@ -543,6 +562,10 @@ describe('GitHttpBackendProxy integration', () => {
       { authorization: network.authorizationHeader },
     )).resolves.toMatchObject({ statusCode: 429 });
 
+    await expect(resources.removeOwnedAuthorityDirectory(resource)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-resource-busy' },
+    });
+
     hanging.destroy();
     await waitFor(() => proxy.activeChildCount === 0);
 
@@ -552,6 +575,7 @@ describe('GitHttpBackendProxy integration', () => {
     hostAborted.destroy();
     expect(proxy.activeChildCount).toBe(0);
     await expect(service.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
+    await expect(resources.removeOwnedAuthorityDirectory(resource)).resolves.toBe(true);
   });
 
   function requestStatus(

@@ -24,6 +24,7 @@ export interface ProjectRetirementAuthorityRequest {
 
 export interface ProjectRetirementAuthorityServiceOptions {
   readonly installationKey: InstallationKey;
+  readonly resourceId: string;
   readonly now?: () => Date;
   readonly onAuthorityCommitted?: () => void;
   readonly onTombstoneCommitted?: () => void;
@@ -92,6 +93,19 @@ export class ProjectRetirementAuthorityService {
     return { projectId: committed.projectId, retiredAt: committed.retiredAt };
   }
 
+  async assertCleanupResource(tombstone: RetirementTombstoneRecord): Promise<void> {
+    const retirement = await this.database.read(connection => this.repository.get(connection));
+    if ((tombstone.sourceResourceId !== undefined && tombstone.sourceResourceId !== this.options.resourceId)
+      || !retirement || retirement.projectId !== tombstone.projectId
+      || (retirement.retiredAt !== null && retirement.retiredAt !== tombstone.retiredAt)
+      || retirement.idempotencyKey !== tombstone.replay.idempotencyKey
+      || retirement.actorMemberId !== tombstone.replay.actorMemberId
+      || retirement.requestFingerprint !== tombstone.replay.requestFingerprint) {
+      throw new CollabError({ code: 'operation-failed', safeContext: { reason: 'retirement-authority-resource-mismatch' } });
+    }
+    // The exact persisted tombstone is already irreversible even if SQL still says quiescing.
+  }
+
   async inspectDurableResult(
     actorMemberId: CollabMemberId,
     request: ProjectRetirementAuthorityRequest,
@@ -131,7 +145,8 @@ export class ProjectRetirementAuthorityService {
       },
       result: { projectId: prepared.projectId, retiredAt },
       retiredAt,
-      schemaVersion: 2,
+      schemaVersion: 3,
+      sourceResourceId: this.options.resourceId,
     };
   }
 }

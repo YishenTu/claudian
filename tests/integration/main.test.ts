@@ -423,11 +423,11 @@ describe('ClaudianPlugin', () => {
       );
       const port = (
         plugin as unknown as {
-          createCollabDetailViewPort(): { subscribe(listener: () => void): { dispose(): void } };
+          createCollabDetailViewPort(): { observeProject(projectId: string, listener: () => void): { dispose(): void } };
         }
       ).createCollabDetailViewPort();
 
-      const subscription = port.subscribe(jest.fn());
+      const subscription = port.observeProject('project-a', jest.fn());
       await new Promise(resolve => setImmediate(resolve));
 
       expect(requireCollabFeatureService).not.toHaveBeenCalled();

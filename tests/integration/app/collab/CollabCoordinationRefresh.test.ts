@@ -23,7 +23,7 @@ class Socket implements CloudProjectEventSocket {
   close(_code: number, _reason: string): void {}
   onClose(_listener: (code: number) => void): void {}
   onError(_listener: () => void): void {}
-  onOpen(_listener: () => void): void {}
+  onOpen(listener: () => void): void { queueMicrotask(listener); }
   onMessage(listener: (data: string) => void): void {
     this.listener = listener;
   }
@@ -181,17 +181,17 @@ it.each(['unrelated-filesystem-fault', 'overlapping-lifecycle-refresh'])(
     });
     try {
       let forwardedSnapshot: CollabCoordinationSnapshot | undefined;
-      let initial = true;
       let resolveEvent!: () => void;
       const event = new Promise<void>(resolve => { resolveEvent = resolve; });
-      const subscription = service.subscribe((_state, coordination) => {
-        if (initial) {
-          initial = false;
-          return;
-        }
+      const subscription = service.observeProject('project-alpha', coordination => {
         if (coordination?.snapshot.eventSequence !== 2) return;
         forwardedSnapshot = coordination;
         resolveEvent();
+      });
+      let catalogChanged!: () => void;
+      const catalogChange = new Promise<void>(resolve => { catalogChanged = resolve; });
+      const catalogSubscription = service.subscribe(state => {
+        if (state.projects.find(project => project.id === 'project-alpha')?.role === 'member') catalogChanged();
       });
       let receivedEvent!: () => void;
       const publicationEvent = new Promise<void>(resolve => { receivedEvent = resolve; });
@@ -201,10 +201,15 @@ it.each(['unrelated-filesystem-fault', 'overlapping-lifecycle-refresh'])(
       sequence = 2;
       socket.snapshotRequired(sequence);
       await bounded(publicationEvent, 'Publication event did not arrive');
-      if (overlapping) await bounded(event, 'Feature event did not arrive');
+      if (overlapping) {
+        await bounded(event, 'Project event did not arrive');
+        await bounded(catalogChange, 'Catalog update did not arrive');
+      }
       releaseBeta();
       await lifecycleRefresh;
-      await bounded(event, 'Feature event did not arrive');
+      await bounded(event, 'Project event did not arrive');
+      await bounded(catalogChange, 'Catalog update did not arrive');
+      catalogSubscription.dispose();
       publicationSubscription.dispose();
       expect(service.state.projects.find(project => project.id === 'project-beta')?.name)
         .toBe(overlapping ? 'Recovered beta' : 'beta');

@@ -427,7 +427,7 @@ export class CollabClientProjection {
     throwIfCancelled(options.signal);
     const work = this.sessions.acquire(projectId);
     const snapshot = work.retainedSnapshot;
-    if (!snapshot) return this.readSnapshot(projectId, options);
+    if (!snapshot || !work.hasObservers) return this.readSnapshot(projectId, options);
     const failure = work.connectionFailure;
     if (failure && !canUseCache(failure)) throw failure;
     const stale = work.retainedSnapshotSource === 'cache' || work.connectionStatus !== 'connected';
@@ -726,7 +726,7 @@ export class CollabClientProjection {
         if (disposed) return;
         disposed = true;
         const current = work.getEventConnection<ProjectionEventSession>();
-        current?.listeners.delete(listener);
+        if (!current?.listeners.delete(listener)) return;
         if (current && current.listeners.size === 0) {
           work.clearEventConnection(current);
           this.options.onEventConnectionState?.(projectId, 'unsubscribed');
@@ -762,6 +762,7 @@ export class CollabClientProjection {
   ): Promise<ProjectionEventSession> {
     const work = this.sessions.acquire(projectId);
     const generation = work.generation;
+    const observationRevision = work.observationRevision;
     let current = true;
     let failed = false;
     let resolveReady!: () => void;
@@ -786,7 +787,7 @@ export class CollabClientProjection {
       const client = authority.events.connect({
         afterSequence: membership.lastEventSequence,
         onConnectionResult: error => {
-          if (!current || work.generation !== generation) return;
+          if (!current || work.generation !== generation || work.observationRevision !== observationRevision) return;
           failed = error !== undefined;
           if (error) rejectReady(error);
           else resolveReady();
@@ -794,6 +795,7 @@ export class CollabClientProjection {
         },
         onInvalidation: invalidation => {
           work.assertGeneration(generation);
+          if (!current || work.observationRevision !== observationRevision) throw new CollabError({ code: 'cancelled' });
           return this.#refreshFromEvent(projectId, invalidation);
         },
       });
@@ -806,12 +808,12 @@ export class CollabClientProjection {
           client.dispose();
         },
       };
-      work.adoptEventConnection(session, generation);
+      work.adoptEventConnection(session, generation, observationRevision);
       return session;
     } catch (error) {
       current = false;
       rejectReady(error);
-      if (!this.disposed && work.generation === generation) {
+      if (!this.disposed && work.generation === generation && work.observationRevision === observationRevision) {
         this.options.onEventConnectionState?.(projectId, error instanceof CollabError ? error
           : new CollabError({ code: 'operation-failed' }));
       }

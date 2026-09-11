@@ -49,9 +49,9 @@ describe('M3 secure LAN repository gate', () => {
     });
     host = new ClaudianCollabService({
       installationKey: TEST_INSTALLATION_A,
-      createAuthorityDatabase: authorityDirectory => new SqlJsProjectDatabase(
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(
         authorityDirectory,
-        { loadSqlJs: async () => SQL },
+        { resourceAdmission, loadSqlJs: async () => SQL },
       ),
       getConfiguredGitPath: () => '',
       lanHost: {

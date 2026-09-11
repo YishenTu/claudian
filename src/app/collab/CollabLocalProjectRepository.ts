@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, open, readdir, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabIsoTimestamp, type CollabMemberId, collabMemberRef, type CollabProjectId, type CollabRole, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
@@ -92,8 +92,10 @@ import {
 const PRIVATE_STATE_DIRECTORY = '.claudian/collab';
 const RETIREMENT_ACKNOWLEDGEMENT_DIRECTORY = `${PRIVATE_STATE_DIRECTORY}/retirement-acknowledgements`;
 const AUTHORITY_OWNERSHIP_MARKER = '.claudian-authority.json';
+const PROVISIONAL_AUTHORITY_MARKER = '.claudian-authority-resource.json';
 const LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION = 1 as const;
-const AUTHORITY_OWNERSHIP_SCHEMA_VERSION = 2 as const;
+const INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION = 2 as const;
+const AUTHORITY_OWNERSHIP_SCHEMA_VERSION = 3 as const;
 const AUTHORITY_OWNERSHIP_MARKER_MAX_BYTES = 1_024;
 const LEGACY_AUTHORITY_ROOT_ENTRIES = new Set([
   'collab.db',
@@ -256,12 +258,46 @@ export type CollabAuthorityInstallationStatus =
   | 'hosted-elsewhere'
   | 'legacy-unbound';
 
+export interface AuthorityResourceOperation {
+  readonly kind: 'setup' | 'host-transfer' | 'authority-transfer' | 'retirement';
+  readonly operationId: string;
+  readonly transferId: string | null;
+  readonly sourceGeneration: number | null;
+  readonly targetGeneration: number | null;
+}
+
+function decodeAuthorityResourceOperation(value: unknown): AuthorityResourceOperation {
+  if (!isRecord(value)) throw new TypeError('Invalid authority resource operation');
+  requireExactKeys(value, ['kind', 'operationId', 'transferId', 'sourceGeneration', 'targetGeneration']);
+  if ((value.kind !== 'setup' && value.kind !== 'host-transfer' && value.kind !== 'authority-transfer' && value.kind !== 'retirement')
+    || typeof value.operationId !== 'string' || value.operationId.length < 1 || value.operationId.length > 192
+    || (value.transferId !== null && (typeof value.transferId !== 'string' || value.transferId.length < 1 || value.transferId.length > 192))
+    || (value.sourceGeneration !== null && (!Number.isSafeInteger(value.sourceGeneration) || (value.sourceGeneration as number) < 1))
+    || (value.targetGeneration !== null && (!Number.isSafeInteger(value.targetGeneration) || (value.targetGeneration as number) < 1))) {
+    throw new TypeError('Invalid authority resource operation');
+  }
+  return Object.freeze({
+    kind: value.kind, operationId: value.operationId, transferId: value.transferId,
+    sourceGeneration: value.sourceGeneration as number | null, targetGeneration: value.targetGeneration as number | null,
+  });
+}
+
+function sameAuthorityResourceOperation(left: AuthorityResourceOperation | null, right: AuthorityResourceOperation | null): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export interface OwnedAuthorityDirectoryCapability {
+  readonly resourceId: string;
+  readonly operation: AuthorityResourceOperation | null;
+  readonly ownerInstallationKey: InstallationKey;
   readonly authorityDirectory: string;
   readonly projectId: CollabProjectId;
 }
 
 export interface ProvisionalAuthorityDirectoryCapability {
+  readonly resourceId: string;
+  readonly operation: AuthorityResourceOperation | null;
+  readonly ownerInstallationKey: InstallationKey;
   readonly authorityDirectory: string;
   readonly projectId: CollabProjectId;
 }
@@ -271,7 +307,15 @@ interface LegacyAuthorityOwnershipMarker {
   readonly schemaVersion: typeof LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION;
 }
 
+interface InstallationAuthorityOwnershipMarker {
+  readonly ownerInstallationKey: InstallationKey;
+  readonly projectId: CollabProjectId;
+  readonly schemaVersion: typeof INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION;
+}
+
 interface AuthorityOwnershipMarker {
+  readonly resourceId: string;
+  readonly operation: AuthorityResourceOperation | null;
   readonly ownerInstallationKey: InstallationKey;
   readonly projectId: CollabProjectId;
   readonly schemaVersion: typeof AUTHORITY_OWNERSHIP_SCHEMA_VERSION;
@@ -279,7 +323,53 @@ interface AuthorityOwnershipMarker {
 
 type AnyAuthorityOwnershipMarker =
   | LegacyAuthorityOwnershipMarker
+  | InstallationAuthorityOwnershipMarker
   | AuthorityOwnershipMarker;
+
+interface AuthorityDirectoryRemovalRecord {
+  readonly operation: AuthorityResourceOperation | null;
+  readonly schemaVersion: 1;
+  readonly resource: AuthorityOwnershipMarker;
+  readonly device: string;
+  readonly inode: string;
+}
+
+function decodeAuthorityOwnershipMarker(value: unknown): AnyAuthorityOwnershipMarker {
+      if (!isRecord(value) || !isCollabProjectId(value.projectId)) {
+        throw new TypeError('invalid');
+      }
+      if (value.schemaVersion === LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
+        requireExactKeys(value, ['projectId', 'schemaVersion']);
+        return {
+          projectId: value.projectId,
+          schemaVersion: LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
+        };
+      }
+      if (value.schemaVersion === INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
+        requireExactKeys(value, ['ownerInstallationKey', 'projectId', 'schemaVersion']);
+        if (!isInstallationKey(value.ownerInstallationKey)) {
+          throw new TypeError('invalid');
+        }
+        return {
+          ownerInstallationKey: value.ownerInstallationKey,
+          projectId: value.projectId,
+          schemaVersion: INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
+        };
+      }
+      if (value.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
+        requireExactKeys(value, ['ownerInstallationKey', 'projectId', 'resourceId', 'operation', 'schemaVersion']);
+        if (!isInstallationKey(value.ownerInstallationKey)
+          || typeof value.resourceId !== 'string'
+          || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.resourceId)) {
+          throw new TypeError('invalid');
+        }
+        return {
+          ownerInstallationKey: value.ownerInstallationKey, projectId: value.projectId,
+          resourceId: value.resourceId, operation: value.operation === null ? null : decodeAuthorityResourceOperation(value.operation), schemaVersion: AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
+        };
+      }
+      throw new TypeError('invalid');
+}
 
 interface DecodeResult<T> {
   readonly value: T;
@@ -787,6 +877,7 @@ export class CollabLocalProjectRepository {
   private readonly now: () => Date;
    readonly #onDiagnostic?: CollabFilesystemDiagnosticSink;
    readonly #operationQueue = new SerialTaskQueue();
+   readonly #activeAuthorityEffects = new Map<string, number>();
    readonly #ownedAuthorityCapabilities = new WeakSet<object>();
    readonly #provisionalAuthorityCapabilities = new WeakSet<object>();
    readonly #installationKey?: InstallationKey;
@@ -2266,9 +2357,12 @@ export class CollabLocalProjectRepository {
 
   createOwnedAuthorityDirectory(
     projectId: CollabProjectId,
+    operation: AuthorityResourceOperation | null = null,
   ): Promise<OwnedAuthorityDirectoryCapability> {
     this.#requireProjectId(projectId);
+    operation = operation === null ? null : decodeAuthorityResourceOperation(operation);
     return this.#operationQueue.run(async () => {
+      this.#assertAuthorityResourceIdle(projectId);
       const installationKey = this.#requireInstallationKey();
       await this.ensurePrivateStateContainer();
       const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
@@ -2288,11 +2382,12 @@ export class CollabLocalProjectRepository {
           `${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`,
         );
         if (
-          marker?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+          (marker?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+            || marker?.schemaVersion === INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION)
           && marker.projectId === projectId
           && marker.ownerInstallationKey === installationKey
         ) {
-          return this.#issueOwnedAuthorityCapability(projectId, unresolvedDirectory);
+          return this.#issueOwnedAuthorityCapability(projectId, unresolvedDirectory, operation);
         }
         if (marker !== null || !await this.#isEmptyDirectory(unresolvedDirectory)) {
           throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
@@ -2301,25 +2396,28 @@ export class CollabLocalProjectRepository {
       const authorityDirectory = await ensureCollabVaultDirectory(
         this.vaultRoot,
         relativeDirectory,
-        { mode: 0o700, onDiagnostic: this.#onDiagnostic },
+        { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic },
       );
-      await this.#writeCurrentAuthorityOwnershipMarker(projectId, installationKey);
+      await this.#writeCurrentAuthorityOwnershipMarker(projectId, installationKey, randomUUID(), AUTHORITY_OWNERSHIP_MARKER, operation);
       return this.#issueOwnedAuthorityCapability(projectId, authorityDirectory);
     });
   }
 
   prepareProvisionalAuthorityDirectory(
     projectId: CollabProjectId,
+    operation: AuthorityResourceOperation,
   ): Promise<ProvisionalAuthorityDirectoryCapability> {
     this.#requireProjectId(projectId);
+    operation = decodeAuthorityResourceOperation(operation);
     return this.#operationQueue.run(async () => {
+      this.#assertAuthorityResourceIdle(projectId);
       this.#requireInstallationKey();
       await this.ensurePrivateStateContainer();
       const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
       const authorityDirectory = await ensureCollabVaultDirectory(
         this.vaultRoot,
         relativeDirectory,
-        { mode: 0o700, onDiagnostic: this.#onDiagnostic },
+        { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic },
       );
       const marker = await this.#loadAuthorityOwnershipMarker(
         `${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`,
@@ -2328,14 +2426,25 @@ export class CollabLocalProjectRepository {
         throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
       }
       await this.#assertProvisionalAuthorityDirectory(authorityDirectory, projectId);
-      return this.#issueProvisionalAuthorityCapability(projectId, authorityDirectory);
+      const provisional = await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${PROVISIONAL_AUTHORITY_MARKER}`);
+      if (provisional === null) {
+        if (!await this.#isEmptyDirectory(authorityDirectory)) {
+          throw localRecordError('authority-provisional-owner-missing', 'index', projectId);
+        }
+        await this.#writeCurrentAuthorityOwnershipMarker(
+          projectId, this.#requireInstallationKey(), randomUUID(), PROVISIONAL_AUTHORITY_MARKER, operation,
+        );
+      }
+      return this.#issueProvisionalAuthorityCapability(projectId, authorityDirectory, operation);
     });
   }
 
   recoverProvisionalAuthorityDirectory(
     projectId: CollabProjectId,
+    operation: AuthorityResourceOperation,
   ): Promise<ProvisionalAuthorityDirectoryCapability | null> {
     this.#requireProjectId(projectId);
+    operation = decodeAuthorityResourceOperation(operation);
     return this.#operationQueue.run(async () => {
       this.#requireInstallationKey();
       const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
@@ -2354,8 +2463,55 @@ export class CollabLocalProjectRepository {
       if (marker !== null) {
         throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
       }
-      await this.#assertProvisionalAuthorityDirectory(authorityDirectory, projectId, true);
-      return this.#issueProvisionalAuthorityCapability(projectId, authorityDirectory);
+      await this.#assertProvisionalAuthorityDirectory(authorityDirectory, projectId);
+      return this.#issueProvisionalAuthorityCapability(projectId, authorityDirectory, operation);
+    });
+  }
+
+  async adoptLegacyProvisionalAuthorityDirectory(
+    projectId: CollabProjectId,
+    operation: AuthorityResourceOperation,
+    validateLegacy: (authorityDirectory: string) => Promise<void>,
+  ): Promise<ProvisionalAuthorityDirectoryCapability | null> {
+    this.#requireProjectId(projectId);
+    operation = decodeAuthorityResourceOperation(operation);
+    const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
+    const observation = await this.#operationQueue.run(async () => {
+      const directory = await resolveCollabVaultPath(this.vaultRoot, relativeDirectory);
+      const info = await lstat(directory, { bigint: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
+      });
+      if (info === null) return null;
+      if (!info.isDirectory() || info.isSymbolicLink()
+        || await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`) !== null) {
+        throw localRecordError('authority-provisional-owner-mismatch', 'index', projectId);
+      }
+      await this.#assertProvisionalAuthorityDirectory(directory, projectId);
+      const marker = await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${PROVISIONAL_AUTHORITY_MARKER}`);
+      return {
+        directory, device: info.dev, inode: info.ino,
+        capability: marker === null ? null : await this.#issueProvisionalAuthorityCapability(projectId, directory, operation),
+      };
+    });
+    if (observation === null) return null;
+    if (observation.capability !== null) return observation.capability;
+    await validateLegacy(observation.directory);
+    return this.#operationQueue.run(async () => {
+      this.#assertAuthorityResourceIdle(projectId);
+      const directory = await resolveCollabVaultPath(this.vaultRoot, relativeDirectory, { mustExist: true });
+      const info = await lstat(directory, { bigint: true });
+      if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== observation.device || info.ino !== observation.inode
+        || await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`) !== null) {
+        throw localRecordError('authority-provisional-owner-mismatch', 'index', projectId);
+      }
+      await this.#assertProvisionalAuthorityDirectory(directory, projectId);
+      const marker = await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${PROVISIONAL_AUTHORITY_MARKER}`);
+      if (marker === null) {
+        await ensureCollabVaultDirectory(this.vaultRoot, relativeDirectory, { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic });
+        await this.#writeCurrentAuthorityOwnershipMarker(projectId, this.#requireInstallationKey(), randomUUID(), PROVISIONAL_AUTHORITY_MARKER, operation);
+      }
+      return this.#issueProvisionalAuthorityCapability(projectId, directory, operation);
     });
   }
 
@@ -2363,7 +2519,8 @@ export class CollabLocalProjectRepository {
     capability: ProvisionalAuthorityDirectoryCapability,
   ): Promise<OwnedAuthorityDirectoryCapability> {
     return this.#operationQueue.run(async () => {
-      this.#assertIssuedProvisionalAuthorityCapability(capability);
+      this.#assertAuthorityResourceIdle(capability.projectId);
+      await this.#validateProvisionalAuthorityDirectoryUnlocked(capability);
       const marker = await this.#loadAuthorityOwnershipMarker(
         `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
       );
@@ -2382,7 +2539,13 @@ export class CollabLocalProjectRepository {
       await this.#writeCurrentAuthorityOwnershipMarker(
         capability.projectId,
         this.#requireInstallationKey(),
+        capability.resourceId,
+        AUTHORITY_OWNERSHIP_MARKER,
+        capability.operation,
       );
+      await removeCollabFileDurably(this.vaultRoot,
+        `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${PROVISIONAL_AUTHORITY_MARKER}`,
+        this.#onDiagnostic);
       return this.#issueOwnedAuthorityCapability(
         capability.projectId,
         capability.authorityDirectory,
@@ -2395,6 +2558,8 @@ export class CollabLocalProjectRepository {
   ): Promise<boolean> {
     return this.#operationQueue.run(async () => {
       this.#assertIssuedProvisionalAuthorityCapability(capability);
+      if (await this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId)) return true;
+      await this.#validateProvisionalAuthorityDirectoryUnlocked(capability);
       const marker = await this.#loadAuthorityOwnershipMarker(
         `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
       );
@@ -2409,20 +2574,14 @@ export class CollabLocalProjectRepository {
         capability.authorityDirectory,
         capability.projectId,
       );
-      await rm(capability.authorityDirectory, { recursive: true }).catch(error => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-        throw localRecordError(
-          'authority-directory-remove-failed',
-          'index',
-          capability.projectId,
-        );
-      });
-      return true;
+      return this.#detachAuthorityDirectoryUnlocked(capability);
     });
   }
 
   assertOwnedAuthorityDirectory(
     projectId: CollabProjectId,
+    operation?: AuthorityResourceOperation,
+    expectedResourceId?: string,
   ): Promise<OwnedAuthorityDirectoryCapability> {
     this.#requireProjectId(projectId);
     return this.#operationQueue.run(async () => {
@@ -2443,13 +2602,18 @@ export class CollabLocalProjectRepository {
         `${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`,
       );
       if (
-        marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+        (marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+          && marker?.schemaVersion !== INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION)
         || marker.projectId !== projectId
         || marker.ownerInstallationKey !== installationKey
       ) {
         throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
       }
-      return this.#issueOwnedAuthorityCapability(projectId, authorityDirectory);
+      if (expectedResourceId !== undefined && (marker.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+        || marker.resourceId !== expectedResourceId)) {
+        throw localRecordError('authority-resource-mismatch', 'index', projectId);
+      }
+      return this.#issueOwnedAuthorityCapability(projectId, authorityDirectory, operation);
     });
   }
 
@@ -2458,6 +2622,7 @@ export class CollabLocalProjectRepository {
   ): Promise<OwnedAuthorityDirectoryCapability> {
     this.#requireProjectId(projectId);
     return this.#operationQueue.run(async () => {
+      this.#assertAuthorityResourceIdle(projectId);
       const installationKey = this.#requireInstallationKey();
       const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
       const authorityDirectory = await resolveCollabVaultPath(this.vaultRoot, relativeDirectory);
@@ -2472,7 +2637,8 @@ export class CollabLocalProjectRepository {
         `${relativeDirectory}/${AUTHORITY_OWNERSHIP_MARKER}`,
       );
       if (
-        marker?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+        (marker?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+            || marker?.schemaVersion === INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION)
         && marker.projectId === projectId
         && marker.ownerInstallationKey === installationKey
       ) {
@@ -2490,44 +2656,126 @@ export class CollabLocalProjectRepository {
     });
   }
 
-  removeOwnedAuthorityDirectory(
+  bindOwnedAuthorityOperation(
     capability: OwnedAuthorityDirectoryCapability,
-  ): Promise<boolean> {
+    operation: AuthorityResourceOperation,
+  ): Promise<OwnedAuthorityDirectoryCapability> {
+    operation = decodeAuthorityResourceOperation(operation);
+    return this.#operationQueue.run(async () => {
+      await this.#validateOwnedAuthorityDirectoryUnlocked(capability);
+      if (capability.operation !== null && !sameAuthorityResourceOperation(capability.operation, operation)) {
+        throw localRecordError('authority-resource-operation-mismatch', 'index', capability.projectId);
+      }
+      if (capability.operation === null) {
+        await this.#writeCurrentAuthorityOwnershipMarker(capability.projectId, capability.ownerInstallationKey,
+          capability.resourceId, AUTHORITY_OWNERSHIP_MARKER, operation);
+      }
+      return this.#issueOwnedAuthorityCapability(capability.projectId, capability.authorityDirectory, operation);
+    });
+  }
+
+  removeOwnedAuthorityDirectory(capability: OwnedAuthorityDirectoryCapability, operation: AuthorityResourceOperation | null = capability.operation): Promise<boolean> {
     return this.#operationQueue.run(async () => {
       this.#assertIssuedAuthorityCapability(capability);
-      const current = await this.#inspectAuthorityInstallationUnlocked(capability.projectId);
-      if (current !== 'hosted-here') {
-        throw localRecordError(
-          'authority-ownership-marker-mismatch',
-          'index',
-          capability.projectId,
-        );
-      }
-      const directoryStat = await lstat(capability.authorityDirectory).catch(error => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-        throw localRecordError(
-          'authority-directory-inspection-failed',
-          'index',
-          capability.projectId,
-        );
-      });
-      if (directoryStat === null) return false;
-      if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
-        throw localRecordError(
-          'authority-directory-boundary-invalid',
-          'index',
-          capability.projectId,
-        );
-      }
-      await rm(capability.authorityDirectory, { recursive: true }).catch(() => {
-        throw localRecordError(
-          'authority-directory-remove-failed',
-          'index',
-          capability.projectId,
-        );
-      });
-      return true;
+      if (await this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId)) return true;
+      await this.#validateOwnedAuthorityDirectoryUnlocked(capability);
+      return this.#detachAuthorityDirectoryUnlocked(capability, operation);
     });
+  }
+
+  resumeAuthorityDirectoryRemovals(projectId: CollabProjectId, operation: AuthorityResourceOperation): Promise<void> {
+    this.#requireProjectId(projectId);
+    operation = decodeAuthorityResourceOperation(operation);
+    return this.#operationQueue.run(async () => {
+      const relativeDirectory = `${PRIVATE_STATE_DIRECTORY}/authority-removals/${projectId}`;
+      const directory = await resolveCollabVaultPath(this.vaultRoot, relativeDirectory);
+      const entries = await readdir(directory).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
+      });
+      for (const entry of entries) {
+        if (!entry.endsWith('.json')) continue;
+        const record = await this.#loadAuthorityRemovalRecord(`${relativeDirectory}/${entry}`);
+        if (record !== null && sameAuthorityResourceOperation(record.operation, operation)) {
+          if (entry !== `${record.resource.resourceId}.json`) throw localRecordError('authority-removal-record-invalid', 'index', projectId);
+          await this.#resumeAuthorityDirectoryRemovalUnlocked(projectId, record.resource.resourceId);
+        }
+      }
+    });
+  }
+
+  resumeAuthorityDirectoryRemoval(projectId: CollabProjectId, resourceId: string): Promise<boolean> {
+    this.#requireProjectId(projectId);
+    return this.#operationQueue.run(() => this.#resumeAuthorityDirectoryRemovalUnlocked(projectId, resourceId));
+  }
+
+  async #detachAuthorityDirectoryUnlocked(
+    capability: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability,
+    operation: AuthorityResourceOperation | null = capability.operation,
+  ): Promise<boolean> {
+    this.#assertAuthorityResourceIdle(capability.projectId);
+    const removalDirectory = `${PRIVATE_STATE_DIRECTORY}/authority-removals/${capability.projectId}`;
+    await ensureCollabVaultDirectory(this.vaultRoot, removalDirectory, { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic });
+    const directory = await lstat(capability.authorityDirectory, { bigint: true });
+    if (!directory.isDirectory() || directory.isSymbolicLink()) {
+      throw localRecordError('authority-directory-boundary-invalid', 'index', capability.projectId);
+    }
+    await writeCollabFileAtomically(this.vaultRoot, `${removalDirectory}/${capability.resourceId}.json`,
+      `${JSON.stringify({ schemaVersion: 1, operation, device: directory.dev.toString(), inode: directory.ino.toString(), resource: {
+        projectId: capability.projectId, ownerInstallationKey: capability.ownerInstallationKey,
+        resourceId: capability.resourceId, operation: capability.operation, schemaVersion: AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
+      } })}\n`, { mode: 0o600, onDiagnostic: this.#onDiagnostic });
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
+    return this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId);
+  }
+
+  async #resumeAuthorityDirectoryRemovalUnlocked(projectId: CollabProjectId, resourceId: string): Promise<boolean> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resourceId)) {
+      throw localRecordError('authority-resource-mismatch', 'index', projectId);
+    }
+    const removalDirectory = `${PRIVATE_STATE_DIRECTORY}/authority-removals/${projectId}`;
+    const recordPath = `${removalDirectory}/${resourceId}.json`;
+    const removal = await this.#loadAuthorityRemovalRecord(recordPath);
+    if (removal === null) return false;
+    this.#assertAuthorityResourceIdle(projectId);
+    const record = removal.resource;
+    if (record.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION || record.projectId !== projectId
+      || record.resourceId !== resourceId || record.ownerInstallationKey !== this.#requireInstallationKey()) {
+      throw localRecordError('authority-resource-mismatch', 'index', projectId);
+    }
+    const detachedPath = `${removalDirectory}/${resourceId}.tree`;
+    const detachedDirectory = await resolveCollabVaultPath(this.vaultRoot, detachedPath);
+    const detached = await lstat(detachedDirectory, { bigint: true }).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw localRecordError('authority-directory-inspection-failed', 'index', projectId);
+    });
+    if (detached === null) {
+      const canonicalPath = `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`;
+      const active = await this.#loadAuthorityOwnershipMarker(`${canonicalPath}/${AUTHORITY_OWNERSHIP_MARKER}`);
+      const provisional = await this.#loadAuthorityOwnershipMarker(`${canonicalPath}/${PROVISIONAL_AUTHORITY_MARKER}`);
+      const current = active ?? provisional;
+      if (current?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION && current.resourceId === resourceId
+        && current.projectId === projectId && current.ownerInstallationKey === record.ownerInstallationKey) {
+        const canonicalDirectory = await resolveCollabVaultPath(this.vaultRoot, canonicalPath, { mustExist: true });
+        const original = await lstat(canonicalDirectory, { bigint: true });
+        if (!original.isDirectory() || original.isSymbolicLink()
+          || original.dev.toString() !== removal.device || original.ino.toString() !== removal.inode) {
+          throw localRecordError('authority-resource-mismatch', 'index', projectId);
+        }
+        await rename(canonicalDirectory, detachedDirectory);
+        await syncCollabVaultDirectoryDurably(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities`);
+        await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
+      }
+      // If the old tree was already removed, a new incarnation at the canonical path is unrelated.
+    } else if (!detached.isDirectory() || detached.isSymbolicLink()
+      || detached.dev.toString() !== removal.device || detached.ino.toString() !== removal.inode) {
+      throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
+    }
+    await removeCollabDirectoryDurably(this.vaultRoot, detachedPath, this.#onDiagnostic);
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
+    await removeCollabFileDurably(this.vaultRoot, recordPath, this.#onDiagnostic);
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
+    return true;
   }
 
   async ensureGitEmptyConfig(): Promise<string> {
@@ -2609,8 +2857,14 @@ export class CollabLocalProjectRepository {
     );
     if (marker === null) {
       await this.#assertProvisionalAuthorityDirectory(authorityDirectory, projectId);
+      const provisional = await this.#loadAuthorityOwnershipMarker(`${relativeDirectory}/${PROVISIONAL_AUTHORITY_MARKER}`);
+      if (provisional !== null && (provisional.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+        || provisional.projectId !== projectId || provisional.ownerInstallationKey !== installationKey)) {
+        return 'hosted-elsewhere';
+      }
       return 'absent';
     }
+    await this.#assertAuthorityMarkerPair(projectId, marker);
     if (marker.projectId !== projectId) {
       throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
     }
@@ -2629,22 +2883,158 @@ export class CollabLocalProjectRepository {
     return this.#installationKey;
   }
 
-   #issueOwnedAuthorityCapability(
+   async #issueOwnedAuthorityCapability(
     projectId: CollabProjectId,
     authorityDirectory: string,
-  ): OwnedAuthorityDirectoryCapability {
-    const capability = Object.freeze({ authorityDirectory, projectId });
+    operation?: AuthorityResourceOperation | null,
+  ): Promise<OwnedAuthorityDirectoryCapability> {
+    let marker = await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
+    );
+    if (!marker || marker.schemaVersion === LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || marker.projectId !== projectId || marker.ownerInstallationKey !== this.#requireInstallationKey()) {
+      throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
+    }
+    if (marker.schemaVersion === INSTALLATION_AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
+      await this.#writeCurrentAuthorityOwnershipMarker(projectId, marker.ownerInstallationKey);
+      marker = await this.#loadAuthorityOwnershipMarker(
+        `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
+      );
+    }
+    if (marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
+      throw localRecordError('authority-ownership-marker-mismatch', 'index', projectId);
+    }
+    if (operation !== undefined && !sameAuthorityResourceOperation(marker.operation, operation === null ? null : decodeAuthorityResourceOperation(operation))) {
+      throw localRecordError('authority-resource-operation-mismatch', 'index', projectId);
+    }
+    if (await this.#assertAuthorityMarkerPair(projectId, marker)) {
+      await removeCollabFileDurably(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${PROVISIONAL_AUTHORITY_MARKER}`, this.#onDiagnostic);
+    }
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`);
+    const capability = Object.freeze({
+      authorityDirectory, projectId, resourceId: marker.resourceId, operation: marker.operation,
+      ownerInstallationKey: marker.ownerInstallationKey,
+    });
     this.#ownedAuthorityCapabilities.add(capability);
     return capability;
   }
 
-   #issueProvisionalAuthorityCapability(
+  async #assertAuthorityMarkerPair(projectId: CollabProjectId, active: AnyAuthorityOwnershipMarker): Promise<boolean> {
+    const provisional = await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${PROVISIONAL_AUTHORITY_MARKER}`,
+    );
+    if (provisional === null) return false;
+    if (active.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || provisional.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || active.projectId !== provisional.projectId || active.ownerInstallationKey !== provisional.ownerInstallationKey
+      || active.resourceId !== provisional.resourceId || !sameAuthorityResourceOperation(active.operation, provisional.operation)) {
+      throw localRecordError('authority-resource-state-mismatch', 'index', projectId);
+    }
+    return true;
+  }
+
+  validateOwnedAuthorityDirectory(capability: OwnedAuthorityDirectoryCapability): Promise<void> {
+    return this.#operationQueue.run(() => this.#validateOwnedAuthorityDirectoryUnlocked(capability));
+  }
+
+  async #validateOwnedAuthorityDirectoryUnlocked(capability: OwnedAuthorityDirectoryCapability): Promise<void> {
+    this.#assertIssuedAuthorityCapability(capability);
+    const directory = await resolveCollabVaultPath(
+      this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}`,
+    );
+    const marker = await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
+    );
+    if (marker !== null) await this.#assertAuthorityMarkerPair(capability.projectId, marker);
+    if (directory !== capability.authorityDirectory
+      || marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || marker.projectId !== capability.projectId
+      || marker.ownerInstallationKey !== capability.ownerInstallationKey
+      || marker.resourceId !== capability.resourceId
+      || !sameAuthorityResourceOperation(marker.operation, capability.operation)) {
+      throw localRecordError('authority-resource-mismatch', 'index', capability.projectId);
+    }
+  }
+
+   async #issueProvisionalAuthorityCapability(
     projectId: CollabProjectId,
     authorityDirectory: string,
-  ): ProvisionalAuthorityDirectoryCapability {
-    const capability = Object.freeze({ authorityDirectory, projectId });
+    operation: AuthorityResourceOperation,
+  ): Promise<ProvisionalAuthorityDirectoryCapability> {
+    const marker = await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${PROVISIONAL_AUTHORITY_MARKER}`,
+    );
+    if (marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || marker.projectId !== projectId || marker.ownerInstallationKey !== this.#requireInstallationKey()) {
+      throw localRecordError('authority-provisional-owner-mismatch', 'index', projectId);
+    }
+    if (!sameAuthorityResourceOperation(marker.operation, operation)) {
+      throw localRecordError('authority-resource-operation-mismatch', 'index', projectId);
+    }
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`);
+    const capability = Object.freeze({
+      authorityDirectory, projectId, resourceId: marker.resourceId, operation: marker.operation,
+      ownerInstallationKey: marker.ownerInstallationKey,
+    });
     this.#provisionalAuthorityCapabilities.add(capability);
     return capability;
+  }
+
+  withAuthorityDirectory<T>(
+    capability: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const admitted = this.#operationQueue.run(async () => {
+      if (this.#ownedAuthorityCapabilities.has(capability)) await this.#validateOwnedAuthorityDirectoryUnlocked(capability);
+      else await this.#validateProvisionalAuthorityDirectoryUnlocked(capability);
+      this.#activeAuthorityEffects.set(capability.projectId, (this.#activeAuthorityEffects.get(capability.projectId) ?? 0) + 1);
+    });
+    return admitted.then(async () => {
+      try { return await operation(); }
+      finally {
+        const remaining = this.#activeAuthorityEffects.get(capability.projectId)! - 1;
+        if (remaining === 0) this.#activeAuthorityEffects.delete(capability.projectId);
+        else this.#activeAuthorityEffects.set(capability.projectId, remaining);
+      }
+    });
+  }
+
+  #assertAuthorityResourceIdle(projectId: CollabProjectId): void {
+    if ((this.#activeAuthorityEffects.get(projectId) ?? 0) > 0) {
+      throw new CollabError({
+        code: 'operation-failed', recoveryActions: ['retry', 'resume'],
+        safeContext: { reason: 'authority-resource-busy', projectId },
+      });
+    }
+  }
+
+  validateAuthorityDirectory(
+    capability: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability,
+  ): Promise<void> {
+    return this.#operationQueue.run(() => this.#ownedAuthorityCapabilities.has(capability)
+      ? this.#validateOwnedAuthorityDirectoryUnlocked(capability)
+      : this.#validateProvisionalAuthorityDirectoryUnlocked(capability));
+  }
+
+  async #validateProvisionalAuthorityDirectoryUnlocked(capability: ProvisionalAuthorityDirectoryCapability): Promise<void> {
+    this.#assertIssuedProvisionalAuthorityCapability(capability);
+    const directory = await resolveCollabVaultPath(
+      this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}`,
+    );
+    if (await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
+    ) !== null) throw localRecordError('authority-resource-state-mismatch', 'index', capability.projectId);
+    const marker = await this.#loadAuthorityOwnershipMarker(
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${capability.projectId}/${PROVISIONAL_AUTHORITY_MARKER}`,
+    );
+    if (directory !== capability.authorityDirectory
+      || marker?.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+      || marker.projectId !== capability.projectId
+      || marker.ownerInstallationKey !== capability.ownerInstallationKey
+      || marker.resourceId !== capability.resourceId
+      || !sameAuthorityResourceOperation(marker.operation, capability.operation)) {
+      throw localRecordError('authority-resource-mismatch', 'index', capability.projectId);
+    }
   }
 
    #assertIssuedAuthorityCapability(
@@ -2670,25 +3060,53 @@ export class CollabLocalProjectRepository {
     return entries.length === 0;
   }
 
-   #writeCurrentAuthorityOwnershipMarker(
+   async #writeCurrentAuthorityOwnershipMarker(
     projectId: CollabProjectId,
     installationKey: InstallationKey,
+    resourceId: string = randomUUID(),
+    markerName = AUTHORITY_OWNERSHIP_MARKER,
+    operation: AuthorityResourceOperation | null = null,
   ): Promise<void> {
-    return writeCollabFileAtomically(
+    this.#assertAuthorityResourceIdle(projectId);
+    await writeCollabFileAtomically(
       this.vaultRoot,
-      `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${AUTHORITY_OWNERSHIP_MARKER}`,
+      `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}/${markerName}`,
       `${JSON.stringify({
         ownerInstallationKey: installationKey,
         projectId,
+        resourceId,
+        operation,
         schemaVersion: AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
       })}\n`,
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
+    await syncCollabVaultDirectoryDurably(this.vaultRoot, `${PRIVATE_STATE_DIRECTORY}/authorities/${projectId}`);
   }
 
-   async #loadAuthorityOwnershipMarker(
+  async #loadAuthorityOwnershipMarker(relativePath: string): Promise<AnyAuthorityOwnershipMarker | null> {
+    const value = await this.#readAuthorityResourceJson(relativePath);
+    try { return value === null ? null : decodeAuthorityOwnershipMarker(value); }
+    catch { throw localRecordError('authority-ownership-marker-invalid', 'index'); }
+  }
+
+  async #loadAuthorityRemovalRecord(relativePath: string): Promise<AuthorityDirectoryRemovalRecord | null> {
+    const value = await this.#readAuthorityResourceJson(relativePath, 4096);
+    if (value === null) return null;
+    try {
+      if (!isRecord(value)) throw new TypeError('invalid');
+      requireExactKeys(value, ['schemaVersion', 'resource', 'operation', 'device', 'inode']);
+      const resource = decodeAuthorityOwnershipMarker(value.resource);
+      if (value.schemaVersion !== 1 || resource.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION
+        || typeof value.device !== 'string' || !/^[0-9]+$/.test(value.device)
+        || typeof value.inode !== 'string' || !/^[0-9]+$/.test(value.inode)) throw new TypeError('invalid');
+      return { schemaVersion: 1, resource, operation: value.operation === null ? null : decodeAuthorityResourceOperation(value.operation), device: value.device, inode: value.inode };
+    } catch { throw localRecordError('authority-removal-record-invalid', 'index'); }
+  }
+
+   async #readAuthorityResourceJson(
     relativePath: string,
-  ): Promise<AnyAuthorityOwnershipMarker | null> {
+    maxBytes = AUTHORITY_OWNERSHIP_MARKER_MAX_BYTES,
+  ): Promise<unknown> {
     const absolutePath = await resolveCollabVaultPath(this.vaultRoot, relativePath);
     const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
     const handle = await open(absolutePath, fsConstants.O_RDONLY | noFollow).catch(error => {
@@ -2709,31 +3127,10 @@ export class CollabLocalProjectRepository {
         || pathStat.isSymbolicLink()
         || handleStat.dev !== pathStat.dev
         || handleStat.ino !== pathStat.ino
-        || handleStat.size > AUTHORITY_OWNERSHIP_MARKER_MAX_BYTES
+        || handleStat.size > maxBytes
       ) throw localRecordError('authority-ownership-marker-invalid', 'index');
       const value: unknown = JSON.parse(await handle.readFile('utf8'));
-      if (!isRecord(value) || !isCollabProjectId(value.projectId)) {
-        throw new TypeError('invalid');
-      }
-      if (value.schemaVersion === LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
-        requireExactKeys(value, ['projectId', 'schemaVersion']);
-        return {
-          projectId: value.projectId,
-          schemaVersion: LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
-        };
-      }
-      if (value.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION) {
-        requireExactKeys(value, ['ownerInstallationKey', 'projectId', 'schemaVersion']);
-        if (!isInstallationKey(value.ownerInstallationKey)) {
-          throw new TypeError('invalid');
-        }
-        return {
-          ownerInstallationKey: value.ownerInstallationKey,
-          projectId: value.projectId,
-          schemaVersion: AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
-        };
-      }
-      throw new TypeError('invalid');
+      return value;
     } catch (error) {
       if (error instanceof CollabError) throw error;
       throw localRecordError('authority-ownership-marker-invalid', 'index');
@@ -2775,8 +3172,9 @@ export class CollabLocalProjectRepository {
     });
     if (entries.some(entry => (
       entry.isSymbolicLink()
-      || (entry.name !== 'collab.db' && entry.name !== 'repository.git')
-      || (entry.name === 'collab.db' ? !entry.isFile() : !entry.isDirectory())
+      || (entry.name !== 'collab.db' && entry.name !== 'collab.db.tmp' && entry.name !== 'collab.db.bak'
+        && entry.name !== 'repository.git' && entry.name !== PROVISIONAL_AUTHORITY_MARKER)
+      || (entry.name === 'repository.git' ? !entry.isDirectory() : !entry.isFile())
     ))) {
       throw localRecordError('authority-provisional-directory-invalid', 'index', projectId);
     }

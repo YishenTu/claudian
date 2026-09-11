@@ -14,6 +14,7 @@ export type CollabProjectSetupPhase =
 export interface CollabProjectSetupRecord {
   readonly schemaVersion: 2 | typeof COLLAB_PROJECT_SETUP_SCHEMA_VERSION;
   readonly ownerInstallationKey?: InstallationKey;
+  readonly authorityResourceId?: string;
   readonly projectId: CollabProjectId;
   readonly operationId: CollabOperationId;
   readonly phase: CollabProjectSetupPhase;
@@ -85,6 +86,12 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
   const ownerInstallationKey = value.schemaVersion === COLLAB_PROJECT_SETUP_SCHEMA_VERSION
     ? parseInstallationKey(value.ownerInstallationKey)
     : undefined;
+  const authorityResourceId = value.authorityResourceId;
+  if (authorityResourceId !== undefined && (value.schemaVersion !== COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+    || typeof authorityResourceId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(authorityResourceId))) {
+    throw new TypeError('Invalid Project setup resource');
+  }
   const phase = value.phase;
   if (
     phase !== 'planned'
@@ -150,6 +157,7 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       return operationId;
     })(),
     ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
+    ...(authorityResourceId === undefined ? {} : { authorityResourceId }),
     phase,
     projectId,
     projectsFolder,

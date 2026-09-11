@@ -83,7 +83,6 @@ export interface CollabFeatureSubscription {
 
 export type CollabFeatureStateListener = (
   state: CollabFeatureState,
-  coordination?: CollabCoordinationSnapshot,
 ) => void;
 
 export interface CollabProjectInspection {
@@ -598,6 +597,7 @@ export interface CollabFeaturePort {
   withdrawCloudToLanTarget(request: CollabWithdrawCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   observeCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   cancelCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  observeProject(projectId: CollabProjectId, listener: (coordination?: CollabCoordinationSnapshot) => void): CollabFeatureSubscription;
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription;
 }
 

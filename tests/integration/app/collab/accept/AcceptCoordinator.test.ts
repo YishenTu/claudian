@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { cpSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -12,6 +14,7 @@ import {
   writeGitFixtureBlob,
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {
@@ -24,6 +27,7 @@ import {
   type AuthorityDatabaseConnection,
   SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
@@ -39,6 +43,8 @@ jest.setTimeout(30_000);
 describe('AcceptCoordinator Native Git integration', () => {
   let SQL: SqlJsStatic;
   let authorityDirectory: string;
+  let resources: CollabLocalProjectRepository;
+  let resource: Awaited<ReturnType<CollabLocalProjectRepository['createOwnedAuthorityDirectory']>>;
   let database: SqlJsProjectDatabase;
   let git: GitRepositoryService;
   let repository: AcceptGitRepository;
@@ -54,9 +60,11 @@ describe('AcceptCoordinator Native Git integration', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-accept-integration-'));
-    authorityDirectory = path.join(root, 'authority');
+    resources = new CollabLocalProjectRepository(root, { installationKey: TEST_INSTALLATION_A });
+    resource = await resources.createOwnedAuthorityDirectory('project-alpha');
+    authorityDirectory = resource.authorityDirectory;
     repositoryPath = path.join(authorityDirectory, 'repository.git');
-    await mkdir(authorityDirectory);
+
     await mkdir(repositoryPath);
     const emptyConfigPath = path.join(root, 'empty.gitconfig');
     await writeFile(emptyConfigPath, '');
@@ -93,7 +101,7 @@ describe('AcceptCoordinator Native Git integration', () => {
     });
     await git.createRef(repositoryPath, COLLAB_MAIN_REF, mainOid);
     await git.createRef(repositoryPath, MEMBER_REF, headOid);
-    repository = new AcceptGitRepository(repositoryPath, git);
+    repository = new AcceptGitRepository(repositoryPath, git, undefined, operation => resources.withAuthorityDirectory(resource, operation));
     database = await openDatabase();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
@@ -112,6 +120,24 @@ describe('AcceptCoordinator Native Git integration', () => {
   afterEach(async () => {
     await database.close();
     await rm(root, { force: true, recursive: true });
+  });
+
+  it('rejects a stale Accept before changing replacement authority main', async () => {
+    const stale = new AcceptCoordinator(database, repository, {
+      createOperationId: () => 'accept-one',
+      failAfter: point => {
+        if (point !== 'after-result-persisted') return;
+        renameSync(authorityDirectory, authorityDirectory + '.old');
+        cpSync(authorityDirectory + '.old', authorityDirectory, { recursive: true });
+        const markerPath = path.join(authorityDirectory, '.claudian-authority.json');
+        const marker = JSON.parse(readFileSync(markerPath, 'utf8'));
+        marker.resourceId = randomUUID();
+        writeFileSync(markerPath, JSON.stringify(marker));
+      },
+      now: () => new Date(ACCEPTED_AT),
+    });
+    await expect(stale.accept('member-host', input())).rejects.toBeDefined();
+    expect(await git.resolveRef(repositoryPath, COLLAB_MAIN_REF)).toBe(mainOid);
   });
 
   it('creates the exact merge commit and leaves the Member ref untouched', async () => {
@@ -280,6 +306,7 @@ describe('AcceptCoordinator Native Git integration', () => {
   async function openDatabase(): Promise<SqlJsProjectDatabase> {
     const opened = new SqlJsProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });
     await opened.open();
     return opened;
@@ -310,6 +337,7 @@ describe('AcceptCoordinator Native Git integration', () => {
     }
     database = new SqlJsProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });
     return database.open();
   }

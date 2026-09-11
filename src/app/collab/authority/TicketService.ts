@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type ChangeTicketStatusRequest, type CollabMemberId, type CollabRole, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type ListTicketsRequest, type ResolveTicketNumberRequest, type ResolveTicketNumberResponse, type UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import { type ChangeTicketStatusRequest, collabControlOperationCodec, type CollabMemberId, type CollabRole, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketSummary, type CreateTicketCommentRequest, type CreateTicketCommentResponse, type CreateTicketRequest, type ListTicketsRequest, type ResolveTicketNumberRequest, type ResolveTicketNumberResponse, type UpdateTicketContentRequest } from '@claudian-collab/protocol';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
@@ -12,8 +12,6 @@ import type {
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketMentionRepository } from '@/app/collab/authority/TicketMentionRepository';
 import {
-  decodeTicketComment,
-  decodeTicketSummary,
   type TicketListCursor,
   TicketRepository,
 } from '@/app/collab/authority/TicketRepository';
@@ -86,71 +84,12 @@ function fingerprint(value: Readonly<Record<string, unknown>>): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function storedSummary(value: unknown): CollabTicketSummary {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw ticketError('protocol-payload-invalid', 'stored-ticket-invalid');
+function decodeStoredResponse<T>(decode: () => T, reason: string): T {
+  try {
+    return decode();
+  } catch {
+    throw ticketError('protocol-payload-invalid', reason);
   }
-  const row = value as Readonly<Record<string, unknown>>;
-  return decodeTicketSummary({
-    accepted_relation_count: row.acceptedRelationCount,
-    author_member_id: row.authorMemberId,
-    closed_at: row.closedAt ?? null,
-    closed_by_member_id: row.closedByMemberId ?? null,
-    comment_count: row.commentCount,
-    created_at: row.createdAt,
-    revision: row.revision,
-    status: row.status,
-    ticket_id: row.id,
-    ticket_number: row.number,
-    title: row.title,
-    updated_at: row.updatedAt,
-  });
-}
-
-function storedComment(value: unknown): CollabTicketComment {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw ticketError('protocol-payload-invalid', 'stored-ticket-comment-invalid');
-  }
-  const row = value as Readonly<Record<string, unknown>>;
-  return decodeTicketComment({
-    author_member_id: row.authorMemberId,
-    body: row.body,
-    comment_id: row.id,
-    created_at: row.createdAt,
-    ticket_id: row.ticketId,
-  });
-}
-
-function storedDetail(value: unknown): CollabTicketDetail {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw ticketError('protocol-payload-invalid', 'stored-ticket-detail-invalid');
-  }
-  const record = value as Readonly<Record<string, unknown>>;
-  const comments = record.comments as Readonly<Record<string, unknown>> | undefined;
-  const acceptedRelations = record.acceptedRelations as
-    | Readonly<Record<string, unknown>>
-    | undefined;
-  if (
-    typeof record.body !== 'string'
-    || !comments
-    || Array.isArray(comments)
-    || !Array.isArray(comments.comments)
-    || comments.comments.length !== 0
-    || comments.nextCursor !== undefined
-    || !acceptedRelations
-    || Array.isArray(acceptedRelations)
-    || !Array.isArray(acceptedRelations.acceptedRelations)
-    || acceptedRelations.acceptedRelations.length !== 0
-    || acceptedRelations.nextCursor !== undefined
-  ) {
-    throw ticketError('protocol-payload-invalid', 'stored-ticket-detail-invalid');
-  }
-  return {
-    acceptedRelations: { acceptedRelations: [] },
-    body: record.body,
-    comments: { comments: [] },
-    ticket: storedSummary(record.ticket),
-  };
 }
 
 function encodeCursor(cursor: TicketListCursor): string {
@@ -336,7 +275,10 @@ export class TicketService {
       'create-ticket',
       request.idempotencyKey,
       fingerprint({ body, title }),
-      storedDetail,
+      value => decodeStoredResponse(
+        () => collabControlOperationCodec('createTicket').decodeResponse({ ticket: value }).ticket,
+        'stored-ticket-detail-invalid',
+      ),
       (connection, actor, createdAt) => {
         const detail = this.tickets.create(connection, {
           authorMemberId: actor.memberId,
@@ -378,7 +320,10 @@ export class TicketService {
         ticketId: request.ticketId,
         title,
       }),
-      storedSummary,
+      value => decodeStoredResponse(
+        () => collabControlOperationCodec('updateTicketContent').decodeResponse({ ticket: value }).ticket,
+        'stored-ticket-invalid',
+      ),
       (connection, actor, updatedAt) => {
         const current = this.#requireTicket(connection, request.ticketId);
         if (actor.role !== 'manager' && current.ticket.authorMemberId !== actor.memberId) {
@@ -423,16 +368,10 @@ export class TicketService {
       'comment-ticket',
       request.idempotencyKey,
       fingerprint({ body, ticketId: request.ticketId }),
-      value => {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) {
-          throw ticketError('protocol-payload-invalid', 'stored-ticket-comment-invalid');
-        }
-        const record = value as Readonly<Record<string, unknown>>;
-        return {
-          comment: storedComment(record.comment),
-          ticket: storedSummary(record.ticket),
-        };
-      },
+      value => decodeStoredResponse(
+        () => collabControlOperationCodec('createTicketComment').decodeResponse(value),
+        'stored-ticket-comment-invalid',
+      ),
       (connection, actor, createdAt) => {
         const current = this.#requireTicket(connection, request.ticketId).ticket;
         this.#requireNoIncompleteAcceptance(connection, current.id);
@@ -493,7 +432,11 @@ export class TicketService {
         status,
         ticketId: request.ticketId,
       }),
-      storedSummary,
+      value => decodeStoredResponse(
+        () => collabControlOperationCodec(status === 'open' ? 'reopenTicket' : 'closeTicket')
+          .decodeResponse({ ticket: value }).ticket,
+        'stored-ticket-invalid',
+      ),
       (connection, actor, updatedAt) => {
         const current = this.#requireTicket(connection, request.ticketId).ticket;
         this.#requireRevision(current, request.expectedRevision);

@@ -90,8 +90,8 @@ describe('CollabProjectSetupService', () => {
 
   function createFoundation(getProjectsFolder?: () => string): ClaudianCollabService {
     return new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,
@@ -100,6 +100,92 @@ describe('CollabProjectSetupService', () => {
       vaultRoot,
     });
   }
+
+  it.each(['replacement-setup', OPERATION_ID])('rejects setup recovery against a recreated resource owned by %s', async replacementOperation => {
+    const first = createFoundation();
+    const port: CollabProjectFoundationPort = {
+      local: first.local,
+      createAuthority: (projectId, operationId) => first.createAuthority(projectId, operationId),
+      inspectAuthority: projectId => first.inspectAuthority(projectId),
+      discardProvisionalAuthority: (projectId, operationId) => first.discardProvisionalAuthority(projectId, operationId),
+      requireGitFoundation: () => first.requireGitFoundation(),
+      openAuthority: async () => { throw new Error('crash after SQL commit'); },
+    };
+    const interrupted = await new CollabProjectSetupService(port, setupOptions(vaultRoot))
+      .createProject({ name: 'Alpha', memberDisplayName: 'Host' });
+    expect(interrupted.status).toBe('recovery-required');
+    const source = await first.openAuthority(PROJECT_ID);
+    const bytes = await readFile(path.join(source.authorityDirectory, 'collab.db'));
+    await first.close();
+    const reopened = createFoundation();
+    await reopened.local.projects.removeOwnedAuthorityDirectory(await reopened.local.projects.assertOwnedAuthorityDirectory(PROJECT_ID));
+    const replacement = await reopened.local.projects.createOwnedAuthorityDirectory(PROJECT_ID, {
+      kind: 'setup', operationId: replacementOperation, transferId: null, sourceGeneration: null, targetGeneration: 1,
+    });
+    await writeFile(path.join(replacement.authorityDirectory, 'collab.db'), bytes);
+    const result = await new CollabProjectSetupService(reopened, setupOptions(vaultRoot)).resumeSetup({ operationId: OPERATION_ID });
+    try {
+      expect(result.status).toBe('recovery-required');
+      await expect(stat(path.join(replacement.authorityDirectory, 'repository.git'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { await reopened.close(); }
+  });
+
+  it('preserves a replacement resource when setup retains an earlier authority capability', async () => {
+    const foundation = createFoundation();
+    let replacementDirectory = '';
+    const port: CollabProjectFoundationPort = {
+      local: foundation.local,
+      createAuthority: (projectId, operationId) => foundation.createAuthority(projectId, operationId),
+      inspectAuthority: projectId => foundation.inspectAuthority(projectId),
+      discardProvisionalAuthority: (projectId, operationId) => foundation.discardProvisionalAuthority(projectId, operationId),
+      requireGitFoundation: () => foundation.requireGitFoundation(),
+      openAuthority: async projectId => {
+        const authority = await foundation.openAuthority(projectId);
+        await foundation.local.projects.removeOwnedAuthorityDirectory(authority.resource);
+        const replacement = await foundation.local.projects.createOwnedAuthorityDirectory(projectId);
+        replacementDirectory = replacement.authorityDirectory;
+        await writeFile(path.join(replacementDirectory, 'keep.txt'), 'replacement');
+        return authority;
+      },
+    };
+    try {
+      const service = new CollabProjectSetupService(port, setupOptions(vaultRoot));
+      const result = await service.createProject({ name: 'Alpha', memberDisplayName: 'Host' });
+      expect(result.status).toBe('recovery-required');
+      expect(await readdir(replacementDirectory)).toEqual(expect.arrayContaining(['keep.txt']));
+      await expect(stat(path.join(replacementDirectory, 'repository.git'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { await foundation.close(); }
+  });
+
+  it('preserves setup authority when another setup operation attempts rollback', async () => {
+    const foundation = createFoundation();
+    await foundation.createAuthority(PROJECT_ID, OPERATION_ID);
+    try {
+      await expect(foundation.discardProvisionalAuthority(PROJECT_ID, 'another-setup')).rejects.toMatchObject({ code: 'operation-failed' });
+      expect(await foundation.inspectAuthority(PROJECT_ID)).not.toBeNull();
+      await foundation.discardProvisionalAuthority(PROJECT_ID, OPERATION_ID);
+      expect(await foundation.inspectAuthority(PROJECT_ID)).toBeNull();
+    } finally {
+      await foundation.close();
+    }
+  });
+
+  it('rejects cached authority access after its physical resource was replaced', async () => {
+    const foundation = createFoundation();
+    const authority = await foundation.createAuthority(PROJECT_ID);
+    const capability = await foundation.local.projects.assertOwnedAuthorityDirectory(PROJECT_ID);
+    await authority.database.close();
+    await foundation.local.projects.removeOwnedAuthorityDirectory(capability);
+    const replacement = await foundation.local.projects.createOwnedAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(replacement.authorityDirectory, 'keep.txt'), 'replacement');
+    try {
+      await expect(foundation.openAuthority(PROJECT_ID)).rejects.toMatchObject({ code: 'operation-failed' });
+      await expect(foundation.inspectAuthority(PROJECT_ID)).rejects.toMatchObject({ code: 'operation-failed' });
+      expect(await readFile(path.join(replacement.authorityDirectory, 'keep.txt'), 'utf8')).toBe('replacement');
+    } finally {
+      await foundation.close();
+    }
+  });
 
   it('creates an empty Project in the captured Projects folder', async () => {
     git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
@@ -226,12 +312,12 @@ describe('CollabProjectSetupService', () => {
       local: foundation.local,
       createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
-        foundation.discardProvisionalAuthority(projectId)
+        foundation.discardProvisionalAuthority(projectId, OPERATION_ID)
       ),
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
         controller.abort();
-        return foundation.createAuthority(projectId);
+        return foundation.createAuthority(projectId, OPERATION_ID);
       },
       requireGitFoundation: () => foundation.requireGitFoundation(),
     };
@@ -279,7 +365,7 @@ describe('CollabProjectSetupService', () => {
     await foundation.close();
   });
 
-  it('preserves discoverable setup state when provisional authority cleanup fails', async () => {
+  it.each([false, true])('preserves discoverable setup state when provisional cleanup fails (legacy marker: %s)', async legacyMarker => {
     git(vaultRoot, ['init', '--quiet', '--initial-branch=main']);
     const foundation = createFoundation();
     const controller = new AbortController();
@@ -292,7 +378,7 @@ describe('CollabProjectSetupService', () => {
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
         controller.abort();
-        return foundation.createAuthority(projectId);
+        return foundation.createAuthority(projectId, OPERATION_ID);
       },
       requireGitFoundation: () => foundation.requireGitFoundation(),
     };
@@ -328,12 +414,25 @@ describe('CollabProjectSetupService', () => {
       `.claudian-seed-${PROJECT_ID}`,
     ))).resolves.toBeDefined();
 
-    await expect(service.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
+    let recovery = service;
+    let reopened: ClaudianCollabService | null = null;
+    if (legacyMarker) {
+      const pending = await foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCollabProjectSetupRecord);
+      const { authorityResourceId: _resourceId, ...legacyPending } = pending!;
+      await foundation.local.projects.saveProjectDocument(PROJECT_ID, 'pending-operation', legacyPending);
+      await foundation.close();
+      await writeFile(path.join(vaultRoot, '.claudian', 'collab', 'authorities', PROJECT_ID, '.claudian-authority.json'),
+        JSON.stringify({ schemaVersion: 2, projectId: PROJECT_ID, ownerInstallationKey: TEST_INSTALLATION_A }));
+      reopened = createFoundation();
+      recovery = new CollabProjectSetupService(reopened, setupOptions(vaultRoot));
+    }
+    await expect(recovery.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
       status: 'success',
       value: { id: PROJECT_ID },
     });
     await expect(stat(path.join(vaultRoot, 'workspace', 'cleanup-failure')))
       .resolves.toBeDefined();
+    await reopened?.close();
     await foundation.close();
   });
 
@@ -369,11 +468,11 @@ describe('CollabProjectSetupService', () => {
       local: firstFoundation.local,
       createAuthority: projectId => abortingPort.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
-        firstFoundation.discardProvisionalAuthority(projectId)
+        firstFoundation.discardProvisionalAuthority(projectId, OPERATION_ID)
       ),
       inspectAuthority: projectId => firstFoundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
-        const authority = await firstFoundation.createAuthority(projectId);
+        const authority = await firstFoundation.createAuthority(projectId, OPERATION_ID);
         if (wrappedAuthority) return wrappedAuthority;
         wrappedAuthority = {
           ...authority,
@@ -615,11 +714,11 @@ describe('CollabProjectSetupService', () => {
       local: foundation.local,
       createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
-        foundation.discardProvisionalAuthority(projectId)
+        foundation.discardProvisionalAuthority(projectId, OPERATION_ID)
       ),
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: async projectId => {
-        const authority = await foundation.createAuthority(projectId);
+        const authority = await foundation.createAuthority(projectId, OPERATION_ID);
         return {
           ...authority,
           database: {
@@ -665,7 +764,7 @@ describe('CollabProjectSetupService', () => {
       local: foundation.local,
       createAuthority: projectId => port.openAuthority(projectId),
       discardProvisionalAuthority: projectId => (
-        foundation.discardProvisionalAuthority(projectId)
+        foundation.discardProvisionalAuthority(projectId, OPERATION_ID)
       ),
       inspectAuthority: projectId => foundation.inspectAuthority(projectId),
       openAuthority: projectId => foundation.openAuthority(projectId),

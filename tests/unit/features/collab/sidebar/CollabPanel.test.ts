@@ -354,6 +354,16 @@ function createPort(initialState: CollabFeatureState) {
       for (const listener of listeners) listener(state);
       return { status: 'success', value: { projectId, status: 'stopped' } };
     }),
+    observeProject: jest.fn((_projectId: string, observer: () => void) => {
+      let previous = state;
+      const listener = (next: CollabFeatureState) => {
+        if (next === previous) return;
+        previous = next;
+        observer();
+      };
+      listeners.add(listener);
+      return { dispose: jest.fn(() => listeners.delete(listener)) };
+    }),
     subscribe: jest.fn((listener: (next: CollabFeatureState) => void) => {
       listeners.add(listener);
       listener(state);
@@ -364,6 +374,7 @@ function createPort(initialState: CollabFeatureState) {
     resumeSetup: jest.Mock;
     selectProject: jest.Mock;
     subscribe: jest.Mock;
+    observeProject: jest.Mock;
   };
   return port;
 }
@@ -1321,7 +1332,7 @@ describe('CollabPanel', () => {
     expect(container.querySelector('[data-request-id="request-maya"]')).toBe(request);
     expect(port.inspectProject).toHaveBeenCalledTimes(inspectionCount);
     expect(port.readSnapshot).toHaveBeenCalledTimes(snapshotCount);
-    expect(port.subscribe).toHaveBeenCalledTimes(4);
+    expect(port.observeProject).toHaveBeenCalledTimes(3);
   });
 
   it('restores a pending setup action that resolves while Collab is hidden', async () => {

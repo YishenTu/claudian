@@ -259,7 +259,7 @@ describe('Project exit foundation gate', () => {
       now: () => new Date('2026-08-13T01:04:00.000Z'),
     });
     const retirement = new ProjectRetirementAuthorityService(database, tombstones, {
-      installationKey: TEST_INSTALLATION_A,
+      resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A,
       now: () => new Date('2026-08-13T01:04:00.000Z'),
     });
     const retired = await retirement.retire('member-successor', {

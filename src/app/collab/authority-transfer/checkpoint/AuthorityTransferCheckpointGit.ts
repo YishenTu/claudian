@@ -276,22 +276,20 @@ export class AuthorityTransferCheckpointGit {
     objectFormat: 'sha1' | 'sha256',
     signal?: AbortSignal,
   ): Promise<void> {
-    const [head, actualObjectFormat] = await Promise.all([
-      this.runner.run({
-        args: ['symbolic-ref', 'HEAD'],
-        cwd: repositoryPath,
-        maxStdoutBytes: 64 * 1024,
-        signal,
-        suppressHooks: true,
-      }),
-      this.runner.run({
-        args: ['rev-parse', '--show-object-format'],
-        cwd: repositoryPath,
-        maxStdoutBytes: 64 * 1024,
-        signal,
-        suppressHooks: true,
-      }),
-    ]);
+    const head = await this.runner.run({
+      args: ['symbolic-ref', 'HEAD'],
+      cwd: repositoryPath,
+      maxStdoutBytes: 64 * 1024,
+      signal,
+      suppressHooks: true,
+    });
+    const actualObjectFormat = await this.runner.run({
+      args: ['rev-parse', '--show-object-format'],
+      cwd: repositoryPath,
+      maxStdoutBytes: 64 * 1024,
+      signal,
+      suppressHooks: true,
+    });
     if (
       head.stdout.toString('utf8').trim() !== COLLAB_MAIN_REF
       || actualObjectFormat.stdout.toString('utf8').trim() !== objectFormat

@@ -1,6 +1,6 @@
 import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian-collab/protocol';
 
-import type { CollabCoordinationSnapshot, CollabFeatureState, CollabFeatureStateListener, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
+import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import {
   collabReviewSourceKey,
@@ -22,7 +22,7 @@ export interface TeamChangesPanelPort extends TeamReviewLoaderPort {
     projectId: string,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabCoordinationSnapshot>>;
-  subscribe(listener: CollabFeatureStateListener): { dispose(): void };
+  observeProject(projectId: string, listener: (coordination?: CollabCoordinationSnapshot) => void): { dispose(): void };
 }
 
 export interface TeamChangesPanelOptions {
@@ -95,7 +95,7 @@ export class TeamChangesPanel {
   private readonly reviewLoader: TeamReviewLoader;
   private readonly rootEl: HTMLDivElement;
   private readonly snapshotTasks = new LatestTaskScope();
-  private readonly subscription: { dispose(): void };
+  private subscription: { dispose(): void };
   private viewState: TeamViewState = { kind: 'loading' };
 
   constructor(
@@ -105,23 +105,18 @@ export class TeamChangesPanel {
     this.project = options.project;
     this.reviewLoader = new TeamReviewLoader(options.port, options.preparedReviews);
     this.rootEl = containerEl.createDiv({ cls: 'claudian-collab-team' });
-    let observedState = options.port.state;
-    this.subscription = options.port.subscribe((state, coordination) => {
-      if (state === observedState) return;
-      observedState = state;
-      if (this.destroyed || state.selectedProjectId !== this.project.id) return;
-      if (!this.active) {
-        this.refreshOnResume = true;
-        return;
-      }
-      if (coordination) {
-        this.adoptSnapshot(coordination);
-        return;
-      }
-      this.#queueRefresh();
-    });
+    this.subscription = this.observeProject();
     this.render();
     if (!options.deferInitialRefresh) void this.refresh();
+  }
+
+  private observeProject(): { dispose(): void } {
+    return this.options.port.observeProject(this.project.id, coordination => {
+      if (this.destroyed) return;
+      if (!this.active) { this.refreshOnResume = true; return; }
+      if (coordination) this.adoptSnapshot(coordination);
+      else this.#queueRefresh();
+    });
   }
 
   setActive(active: boolean, refreshOnResume = true): void {
@@ -197,7 +192,9 @@ export class TeamChangesPanel {
     this.expandedReviewState = null;
     this.reviewOnResume = false;
     this.ownRequestActivity = null;
+    this.subscription.dispose();
     this.project = project;
+    this.subscription = this.observeProject();
     this.viewState = { kind: 'loading' };
     this.render();
     void this.refresh();

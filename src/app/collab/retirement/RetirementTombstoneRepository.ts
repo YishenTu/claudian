@@ -119,6 +119,22 @@ export class RetirementTombstoneRepository {
     });
   }
 
+  bindSourceResource(expected: RetirementTombstoneRecord, sourceResourceId: string): Promise<void> {
+    return this.queue.run(async () => {
+      const current = await this.store.loadRetirementTombstone(expected.projectId);
+      if (!current || !this.isRecoveryOwner(current.ownerInstallationKey)
+        || current.retiredAt !== expected.retiredAt || current.ownerInstallationKey !== expected.ownerInstallationKey
+        || JSON.stringify(current.replay) !== JSON.stringify(expected.replay)
+        || (current.sourceResourceId !== undefined && current.sourceResourceId !== sourceResourceId)) {
+        throw retirementError('durable-progress-recovery-required', 'retirement-tombstone-conflict');
+      }
+      if (current.sourceResourceId === sourceResourceId) return;
+      await this.store.saveRetirementTombstone(decodeRetirementTombstoneRecord({
+        ...current, schemaVersion: 3, sourceResourceId,
+      }));
+    });
+  }
+
   authenticate(
     projectId: CollabProjectId,
     memberCredential: string,

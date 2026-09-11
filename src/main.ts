@@ -959,13 +959,13 @@ export default class ClaudianPlugin extends Plugin {
       reopenTicket: async (...args) => (
         (await this.requireCollabFeatureService()).reopenTicket(...args)
       ),
-      subscribe: listener => {
+      observeProject: (projectId, listener) => {
         if (!this.isCollabEnabled()) return { dispose: () => undefined };
         let disposed = false;
         let subscription: { dispose(): void } | null = null;
         void this.requireCollabFeatureService().then(feature => {
           if (disposed) return;
-          subscription = feature.subscribe(listener);
+          subscription = feature.observeProject(projectId, listener);
         }).catch(() => undefined);
         return {
           dispose: () => {

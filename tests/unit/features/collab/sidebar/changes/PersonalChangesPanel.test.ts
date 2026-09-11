@@ -147,6 +147,13 @@ function createPort(
     get state() { return state; },
     inspectProject: jest.fn().mockResolvedValue(inspectResult),
     publish: jest.fn(),
+    observeProject: jest.fn((projectId: string, observer: (coordination?: CollabCoordinationSnapshot) => void) => {
+      const listener = (next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => {
+        if (next.selectedProjectId === projectId) observer(coordination);
+      };
+      listeners.add(listener);
+      return { dispose: jest.fn(() => listeners.delete(listener)) };
+    }),
     subscribe: jest.fn((listener: (next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => void) => {
       listeners.add(listener);
       return { dispose: jest.fn(() => listeners.delete(listener)) };
@@ -155,6 +162,7 @@ function createPort(
     inspectProject: jest.Mock;
     publish: jest.Mock;
     subscribe: jest.Mock;
+    observeProject: jest.Mock;
   };
   return {
     port,
@@ -780,7 +788,7 @@ describe('PersonalChangesPanel', () => {
 
     expect(signal.aborted).toBe(true);
     expect(container.querySelector('.claudian-collab-publish')).toBeNull();
-    const subscription = fixture.port.subscribe.mock.results[0]?.value as { dispose: jest.Mock };
+    const subscription = fixture.port.observeProject.mock.results[0]?.value as { dispose: jest.Mock };
     expect(subscription.dispose).toHaveBeenCalledTimes(1);
   });
 });

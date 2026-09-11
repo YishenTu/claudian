@@ -146,7 +146,7 @@ export interface CollabDetailViewPort
     request: CollabUpdateTicketContentRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabTicketSummary>>;
-  subscribe(listener: () => void): { dispose(): void };
+  observeProject(projectId: string, listener: () => void): { dispose(): void };
 }
 
 export interface CollabDetailConflictPanel {

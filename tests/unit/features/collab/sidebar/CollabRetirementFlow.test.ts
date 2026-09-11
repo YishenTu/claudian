@@ -45,6 +45,11 @@ it('finishes Cloud Retire in one confirmation and presents local file choices wi
   const port = {
     get state() { return state; },
     initialize: async () => ({ status: 'success', value: state }),
+    observeProject: (_projectId: string, observer: () => void) => {
+      const listener = () => observer();
+      listeners.add(listener);
+      return { dispose: () => listeners.delete(listener) };
+    },
     subscribe: (listener: (state: CollabFeatureState) => void) => {
       listeners.add(listener);
       return { dispose: () => listeners.delete(listener) };

@@ -13,6 +13,7 @@ import {
   type AuthorityDatabaseConnection,
   SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 
@@ -209,6 +210,17 @@ describe('HostTransferAuthorityService', () => {
     });
     expect(completed.phase).toBe('completed');
     expect(completed.receiverCredential).toBeNull();
+    await expect(service.assertSourceCleanupResource(decodeHostTransferRecoveryRecord({
+      schemaVersion: 2, ownerInstallationKey: TEST_INSTALLATION_A,
+      kind: 'host-transfer-recovery', direction: 'outgoing', projectId: 'project-alpha',
+      transferId: 'transfer-one', sourceHostMemberId: 'member-host', targetHostMemberId: 'member-target',
+      phase: 'completed', targetEndpoint: 'https://192.168.1.9:54545',
+      targetCaCertificatePem: targetCa.caCertificatePem, targetCaFingerprint: targetCa.caFingerprint,
+      receiverCredential: Buffer.alloc(32, 4).toString('base64url'), receiverCredentialHash: null,
+      targetTerminalResponseReceived: true, stagingDirectoryName: null,
+      manifestDigest: 'a'.repeat(64), activationCertificate: JSON.stringify(activation),
+      createdAt: CREATED_AT, updatedAt: CREATED_AT,
+    }))).resolves.toBeUndefined();
   });
 
   it('allows the source Host to cancel after staging but before relinquishment', async () => {

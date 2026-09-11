@@ -78,6 +78,7 @@ describe('CollabProjectConnection', () => {
 
   it('retains a scheduled recovery when another control request succeeds', async () => {
     const connection = new CollabProjectConnection({ onStatusChange: jest.fn(), reconnect: async () => 'connected' });
+    connection.observeEvents('connected');
     connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
     connection.observeControlSuccess();
     expect(connection.status).toBe('offline');
@@ -92,6 +93,7 @@ describe('CollabProjectConnection', () => {
       onStatusChange: jest.fn(),
       reconnect: async () => { recovered = true; return 'connected'; },
     });
+    connection.observeEvents('connected');
     connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
     await jest.advanceTimersByTimeAsync(500);
     connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
@@ -108,6 +110,7 @@ describe('CollabProjectConnection', () => {
       .mockResolvedValueOnce('connected');
     const status = jest.fn();
     const connection = new CollabProjectConnection({ onStatusChange: status, reconnect });
+    connection.observeEvents('connected');
     const pending = connection.reconnect();
     expect(connection.reconnect()).toBe(pending);
     first.resolve('retry');
@@ -127,6 +130,7 @@ describe('CollabProjectConnection', () => {
         .mockResolvedValueOnce('connected'),
       onStatusChange: jest.fn(),
     });
+    connection.observeEvents('connected');
     await expect(connection.reconnect()).resolves.toBe(false);
     await jest.advanceTimersByTimeAsync(1_000);
     expect(connection.status).toBe('connected');
@@ -139,6 +143,7 @@ describe('CollabProjectConnection', () => {
       reconnect: jest.fn().mockReturnValueOnce(attempt.promise).mockResolvedValueOnce('connected'),
       onStatusChange: jest.fn(),
     });
+    connection.observeEvents('connected');
     const pending = connection.reconnect();
     await Promise.resolve();
     connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
@@ -209,4 +214,17 @@ describe('CollabProjectConnection', () => {
     expect(jest.getTimerCount()).toBe(0);
     await connection.close();
   });
+});
+
+
+it('does not schedule continuing work from an unobserved one-shot failure', async () => {
+  jest.useFakeTimers();
+  const reconnect = jest.fn(async () => 'connected' as const);
+  const connection = new CollabProjectConnection({ onStatusChange: jest.fn(), reconnect });
+  try {
+    connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { await connection.close(); jest.useRealTimers(); }
 });

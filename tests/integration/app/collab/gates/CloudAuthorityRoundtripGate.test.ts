@@ -33,7 +33,7 @@ describeWithServer('real Cloud authority roundtrip gate', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-authority-roundtrip-client-'));
     const SQL = await initSqlJs();
     const foundation = new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL }),
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL }),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',

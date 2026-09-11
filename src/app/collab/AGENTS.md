@@ -3,9 +3,10 @@
 ## Installation and trust
 
 - Host Member identity is not local Host authority. A synchronized installation with a foreign marker remains a client. Local authority access, TLS, locks, recovery, and deletion require installation admission; marker inspection itself is read-only.
+- Physical effects retain the admitted resource incarnation through queued work and complete child/stream settlement. A matching Project, installation, generation, or copied database cannot authorize a replacement directory; cleanup must persist its exact resource before detaching it. Resource admission permits nested SQL/Git work; detach and marker changes fail retryably while effects remain active, without waiting inside the repository queue.
 - Legacy global CA files are claim-time migration input, never runtime ownership evidence. Marker failures block Host control but must not break unrelated Projects or ordinary client routing.
 - Installation ownership applies to physical effects, not ordinary synchronized client state. The different-device Cloud-to-LAN Manager and its exact claimant successor are the nonphysical exception; synchronization must not transfer that cleanup authority.
-- Persist owner-bound target intent before TLS/listener/staging effects. Cloud-to-LAN canonical authority stays markerless until relinquishment proof; never bind an incomplete import.
+- Persist owner-bound target intent before TLS/listener/staging effects. Cloud-to-LAN canonical authority retains only provisional resource ownership until relinquishment proof; never activate an incomplete import.
 - Published/removed/rebound Host routes invalidate retained local clients after visibility changes. All origin/membership writers share one per-Project transition lane and revalidate membership inside it; parallel LAN/Cloud queues would permit conflicting writes.
 - Reconnect proves one uniquely trusted same-Project endpoint before credentials. Discovery is not trust; ambiguous candidates, proof forks, or mixed success/authority rejection block. Persist endpoint/origin rotation before resetting clients, then retry only the same idempotent operation.
 - Invitation/Member secrets never enter URLs, process arguments, logs, events, or diagnostics.
@@ -28,6 +29,7 @@
 - A session-owned snapshot/event/inspection must never await lifecycle work that closes or drains that same session. Schedule it outside the read and revalidate generation. Shutdown still owns both admitted operations and scheduled transitions.
 - Projection reset detaches stale results but does not abandon their settlement. Leave drains before cleanup; terminal Retirement must separate close from drain to avoid reentrant deadlock.
 - Persist membership changes before invalidating its authority session. Cache, Member role/cursor, and responsibility receipt publish in that order; reject lower-sequence or wrong-Member snapshots before any of those writes.
+- Project observation is explicit and independent of selection. One-shot reads cannot retain event/retry demand; closing a view releases only that view’s demand. Background maintenance for selected Projects survives subsequent selection/visibility changes, and suspension preserves demand for the resumed session.
 - Queries must not publish feature state: subscribers can issue queries and create refresh loops. Register accepted-state maintenance before announcing selection/readiness, without making the ready shell await maintenance.
 - Inspection and accepted-state synchronization share a per-Project read/write fence. Aborting work cannot release the fence before underlying settlement; never combine Git and publication snapshots from opposite sides of synchronization.
 - Offline cache is a stale read projection only. Authorization/integrity failures cannot fall back to it. Cache complete finite details, never partial pages or mutation intent; Runtime paging remains online-only.

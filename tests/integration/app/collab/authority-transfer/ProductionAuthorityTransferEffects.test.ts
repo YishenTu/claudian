@@ -8,7 +8,7 @@ import {
   verify,
 } from 'node:crypto';
 import fsPromises from 'node:fs/promises';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -1231,7 +1231,7 @@ describe('production authority-transfer effects', () => {
       });
       await sourceFoundation.authorityTransfers.prepareCloudToLanTargetEntry(nextTarget);
       await sourceFoundation.closeAuthority(PROJECT_ID);
-      await sourceFoundation.hostInstallations.removeOwned(PROJECT_ID);
+      await sourceFoundation.hostInstallations.removeOwned(await sourceFoundation.hostInstallations.assertOwned(PROJECT_ID, 'cleanup'));
       const terminalRequest = { projectId: PROJECT_ID, transferId: exact.transferId };
       await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
         .resolves.toEqual(completed);
@@ -2400,7 +2400,9 @@ describe('production authority-transfer effects', () => {
     ), 'utf8'))).toEqual({
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: { kind: 'authority-transfer', operationId: OPERATION_ID, transferId: TRANSFER_ID, sourceGeneration: 2, targetGeneration: 3 },
+      schemaVersion: 3,
     });
     return Object.assign(target, { targetAuthority });
   }
@@ -2573,6 +2575,26 @@ describe('production authority-transfer effects', () => {
 
   });
 
+  it.each(['collab.db', 'collab.db.tmp', 'collab.db.bak'])('preserves a markerless SQL collision in %s during legacy target import recovery', async fileName => {
+    const target = await prepareCloudToLanTarget();
+    await target.foundation.local.projects.authorityTransferRecords.save(target.stagedRecord);
+    const unrelated = await target.foundation.createAuthority(PROJECT_ID);
+    await unrelated.database.mutate(connection => unrelated.projects.initialize(connection, {
+      createdAt: '2026-08-08T00:00:00.000Z', hostCredentialHash: new Uint8Array(32).fill(7),
+      hostDisplayName: 'Other Host', hostMemberId: 'member-other', name: 'Other', projectId: 'project-other',
+    }));
+    await target.foundation.closeAuthority(PROJECT_ID);
+    await rm(path.join(unrelated.authorityDirectory, '.claudian-authority.json'));
+    await rm(path.join(unrelated.authorityDirectory, 'collab.db.bak'), { force: true });
+    if (fileName !== 'collab.db') await rename(path.join(unrelated.authorityDirectory, 'collab.db'), path.join(unrelated.authorityDirectory, fileName));
+    const original = await readFile(path.join(unrelated.authorityDirectory, fileName));
+    await expect(target.targetEffects.stage(target.stagedRecord, target.stageArtifacts())).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-state-owner-mismatch' },
+    });
+    expect(await readFile(path.join(unrelated.authorityDirectory, fileName))).toEqual(original);
+    await expect(access(path.join(unrelated.authorityDirectory, '.claudian-authority-resource.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('rejects changed target ownership and imported identity before staging', async () => {
     const target = await prepareCloudToLanTarget();
     const exactPreparedMembership = await target.foundation.local.projects.loadMembership(
@@ -2713,10 +2735,7 @@ describe('production authority-transfer effects', () => {
       hostCredential: string;
     }).hostCredential;
     const writeStagedCredential = async (credentialHash: Uint8Array) => {
-      const authority = await target.foundation.openAuthorityTransferTarget(
-        PROJECT_ID,
-        TEST_INSTALLATION_A,
-      );
+      const authority = await target.foundation.openAuthorityTransferTarget(target.completedRecord);
       try {
         await authority.database.mutate(connection => connection.run(
           'UPDATE members SET credential_hash = ? WHERE member_id = ?',
@@ -2992,7 +3011,7 @@ describe('production authority-transfer effects', () => {
     })).rejects.toMatchObject({ code: 'operation-failed' });
     await expect(claimClient.claimTransferredMembership(claimRequest)).resolves.toEqual(firstReceipt);
     await target.foundation.closeAuthority(PROJECT_ID);
-    await target.foundation.hostInstallations.removeOwned(PROJECT_ID);
+    await target.foundation.hostInstallations.removeOwned(await target.foundation.hostInstallations.assertOwned(PROJECT_ID, 'cleanup'));
     await expect(claimClient.claimTransferredMembership(claimRequest)).resolves.toEqual(firstReceipt);
     const recoveredReceipt = await claimClient.claimTransferredMembership(interruptedRequest);
     expect(recoveredReceipt).toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey, targetAuthorityGeneration: 3 });
@@ -3638,8 +3657,8 @@ describe('production authority-transfer effects', () => {
     lanHost?: ConstructorParameters<typeof ClaudianCollabService>[0]['lanHost'],
   ): ClaudianCollabService {
     const service = new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey,

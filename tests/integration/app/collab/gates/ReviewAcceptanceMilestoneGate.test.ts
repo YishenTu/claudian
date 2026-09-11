@@ -417,8 +417,8 @@ describe('M5 review and Accept gate', () => {
     const foundation = new ClaudianCollabService({
       ...(ownsAuthority
         ? {
-          createAuthorityDatabase: (authorityDirectory: string) => (
-            new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+          createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
+            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

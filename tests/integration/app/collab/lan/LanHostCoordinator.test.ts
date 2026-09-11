@@ -3226,6 +3226,7 @@ describe('LanHostCoordinator production transport', () => {
           id: joined.joinAttempt.member.id, personalRef: joined.joinAttempt.member.personalRef,
           credential: joined.joinAttempt.memberCredential,
         } });
+        service.observeProject(PROJECT_ID);
         await service.readCoordinationSnapshot(PROJECT_ID);
       }
       await until(async () => members.every(member => member.service.readConnectionStatus(PROJECT_ID) === 'connected'));

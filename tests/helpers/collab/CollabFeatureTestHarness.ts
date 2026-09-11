@@ -369,6 +369,7 @@ function defaultPublication(): CollabPublicationPort {
     reconnectProject: () => unexpected('reconnectProject'),
     reopenTicket: () => unexpected('reopenTicket'),
     scheduleAcceptedMainSynchronization: () => undefined,
+    observeProject: () => ({ dispose: () => undefined }),
     subscribeCoordination: () => ({ dispose: () => undefined }),
     synchronizeAcceptedMain: projectId => Promise.resolve({
       status: 'success',

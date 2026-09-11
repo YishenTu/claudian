@@ -126,6 +126,7 @@ export type LanHostGitRuntime = Pick<
   | 'gitHttpBackendPath'
   | 'prepareMemberRef'
   | 'repository'
+  | 'resourceAdmission'
 >;
 
 export interface LanHostProjectRuntime {
@@ -1637,6 +1638,7 @@ export class LanHostCoordinator {
       prepareMemberRef: git.prepareMemberRef,
       projectId,
       repository: git.repository,
+      resourceAdmission: git.resourceAdmission,
     };
     return this.options.createGitProxy?.(proxyOptions)
       ?? new GitHttpBackendProxy(proxyOptions);

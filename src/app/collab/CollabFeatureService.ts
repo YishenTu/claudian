@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { lstat } from 'node:fs/promises';
-import path from 'node:path';
 
 import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import { type CollabAuthorityTransferStatus, type CollabChangeRequest, type CollabComment, type CollabCommentPage, type CollabGitOid, type CollabOperationId, type CollabProjectId, type CollabRequestId, type CollabTicketAcceptedRelationPage, type CollabTicketComment, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketSummary } from '@claudian-collab/protocol';
@@ -9,12 +7,10 @@ import type { CollabProjectInspectionLease } from '@/app/collab/activity/CollabP
 import { CollabAuthorityTransferOutcomeError } from '@/app/collab/authority-transfer/CollabAuthorityTransferOutcomeError';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
-  CollabAuthorityInstallationStatus,
-  CollabLocalMembershipRecord,
-  CollabLocalProjectIndex,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabProjectCatalog, type CollabProjectProjection } from '@/app/collab/CollabProjectCatalog';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
@@ -339,6 +335,7 @@ export interface CollabPublicationPort {
     request: CollabReconnectProjectRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>>;
+  observeProject(projectId: CollabProjectId): { dispose(): void };
   subscribeCoordination(
     listener: (
       projectId: CollabProjectId,
@@ -488,11 +485,6 @@ function isHostRestoreLockConflict(error: unknown): boolean {
     && error.safeContext.reason === 'vault-host-already-running';
 }
 
-function isUnsupportedLocalMembership(error: unknown): boolean {
-  return error instanceof CollabError
-    && error.code === 'schema-version-unsupported'
-    && error.safeContext.recordKind === 'membership';
-}
 
 function waitForHostLockRelease(): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, 750));
@@ -505,28 +497,21 @@ function cloneState(state: CollabFeatureState): CollabFeatureState {
   });
 }
 
-interface CollabProjectProjection {
-  readonly projects: readonly CollabLocalProjectSummary[];
-  readonly selectedProjectId: CollabProjectId | null;
-}
 
 class CollabFeatureServiceCore {
+   readonly #catalog: CollabProjectCatalog;
+   readonly #maintenance = new Map<CollabProjectId, { dispose(): void }>();
    #activeOperationController: AbortController | null = null;
    #activeOperationProjectId: CollabProjectId | null = null;
-   #activeProjectSelections = 0;
-   #selectionGeneration = 0;
-   #committedSelectionGeneration = 0;
    #initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
   private readonly listeners = new Set<CollabFeatureStateListener>();
+  readonly #projectListeners = new Map<CollabProjectId, Set<(coordination?: CollabCoordinationSnapshot) => void>>();
    #lifecycleRecoveryController: AbortController | null = null;
    #lifecycleRecoveryPromise: Promise<void> | null = null;
    readonly #publicationSubscription: { dispose(): void };
    #closePromise: Promise<void> | null = null;
    #closing = false;
   private disposed = false;
-   #refreshGeneration = 0;
-   #coordinationRefreshGeneration = 0;
-   #publishedCoordinationRefreshGeneration = 0;
    #stateValue: CollabFeatureState = cloneState({
     lifecycle: 'uninitialized',
     projects: [],
@@ -539,6 +524,22 @@ class CollabFeatureServiceCore {
     private readonly options: CollabFeatureServiceOptions,
     private readonly operationAdmission: ProjectOperationAdmission,
   ) {
+    this.#catalog = new CollabProjectCatalog({
+      projects: foundation.local.projects,
+      workspace: foundation.local.workspace,
+      pendingLeaves: options.pendingLeaves,
+      cloudRetirementIntents: options.cloudRetirementIntents,
+      hostInstallation: options.hostInstallation,
+      lanHost: options.lanHost,
+      readConnectionStatus: projectId => options.publication.readConnectionStatus(projectId),
+      beforeSelectionPublished: project => {
+        if (this.#stateValue.lifecycle === 'initializing') return;
+        if (project.lifecycle === 'retired' || project.health !== 'healthy') return;
+        this.#retainProjectMaintenance(project.id);
+        this.scheduleAcceptedMainSynchronization(project.id);
+      },
+      onPublish: projection => this.#publishState({ ...this.#stateValue, ...projection }),
+    });
     this.#publicationSubscription = options.publication.subscribeCoordination((
       projectId,
       reason,
@@ -547,9 +548,9 @@ class CollabFeatureServiceCore {
       if (reason === 'accepted-main-changed') {
         this.scheduleAcceptedMainSynchronization(projectId);
       }
-      if (this.#stateValue.selectedProjectId === projectId) {
-        void this.operationAdmission.runGlobal(async () => {
-          await this.#refreshProjects({ coordination, projectId }).catch(error => {
+      this.#notifyProject(projectId, coordination);
+      void this.operationAdmission.runGlobal(async () => {
+          await this.#refreshProjects({ projectId }).catch(error => {
             this.#publishState({
               ...this.#stateValue,
               error: error instanceof CollabError
@@ -557,8 +558,7 @@ class CollabFeatureServiceCore {
                 : operationError('collab-project-refresh-failed'),
             });
           });
-        }).catch(() => undefined);
-      }
+      }).catch(() => undefined);
     });
   }
 
@@ -702,7 +702,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<readonly CollabLocalProjectSummary[]>> {
     try {
       throwIfCancelled(options.signal);
-      const projects = await this.#refreshProjects();
+      const { projects } = await this.#catalog.read();
       throwIfCancelled(options.signal);
       return { status: 'success', value: projects };
     } catch (error) {
@@ -715,19 +715,12 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<CollabProjectSelectionProjection>> {
     try {
       throwIfCancelled(options.signal);
-      const index = await this.foundation.local.projects.loadIndex();
+      const projection = await this.#catalog.read();
       throwIfCancelled(options.signal);
-      const projects = index.projects.map(project => ({ id: project.id, name: project.name }));
-      return {
-        status: 'success',
-        value: {
-          projects,
-          selectedProjectId: resolveEffectiveCollabProjectId(
-            projects,
-            index.selectedProjectId,
-          ),
-        },
-      };
+      return { status: 'success', value: {
+        projects: projection.projects.map(project => ({ id: project.id, name: project.name })),
+        selectedProjectId: resolveEffectiveCollabProjectId(projection.projects, projection.selectedProjectId),
+      } };
     } catch (error) {
       return this.#failureResult(error);
     }
@@ -737,38 +730,16 @@ class CollabFeatureServiceCore {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabProjectInspection>> {
-    const generation = ++this.#selectionGeneration;
-    this.#activeProjectSelections += 1;
     try {
       this.#throwIfDisposed();
       throwIfCancelled(options.signal);
       if (this.#activeOperationProjectId !== null && this.#activeOperationProjectId !== projectId) {
         this.#activeOperationController?.abort();
       }
-      const projects = await this.#refreshProjects({ publish: false });
-      this.#throwIfDisposed();
-      const project = projects.find(candidate => candidate.id === projectId);
-      if (!project) {
-        return {
-          error: new CollabError({ code: 'project-not-found', safeContext: { projectId } }),
-          status: 'failure',
-        };
-      }
-      throwIfCancelled(options.signal);
-      if (generation !== this.#selectionGeneration) throw new CollabError({ code: 'cancelled' });
-      await this.foundation.local.projects.selectProject(projectId);
-      this.#committedSelectionGeneration = generation;
-      this.#throwIfDisposed();
-      const inspection = await this.inspectProject(projectId, options);
-      this.#throwIfDisposed();
-      if (generation !== this.#committedSelectionGeneration) throw new CollabError({ code: 'cancelled' });
-      this.scheduleAcceptedMainSynchronization(projectId);
-      this.#publishState({ ...this.#stateValue, projects, selectedProjectId: projectId });
-      return inspection;
+      const project = await this.#catalog.select(projectId, options);
+      return { status: 'success', value: { project } };
     } catch (error) {
       return this.#failureResult(error);
-    } finally {
-      this.#activeProjectSelections -= 1;
     }
   }
 
@@ -803,7 +774,7 @@ class CollabFeatureServiceCore {
     }
     try {
       throwIfCancelled(options.signal);
-      const projection = await this.#readProjectProjection(projectId);
+      const projection = await this.#catalog.read(projectId);
       throwIfCancelled(options.signal);
       const project = projection.projects.find(candidate => candidate.id === projectId);
       return project?.lifecycle === 'retired'
@@ -822,7 +793,7 @@ class CollabFeatureServiceCore {
     let projection: CollabProjectProjection;
     try {
       throwIfCancelled(options.signal);
-      projection = await this.#readProjectProjection(projectId);
+      projection = await this.#catalog.read(projectId);
       throwIfCancelled(options.signal);
     } catch (error) {
       return this.#failureResult(error);
@@ -850,6 +821,7 @@ class CollabFeatureServiceCore {
           projectId,
           options,
         );
+        project = { ...project, name: coordination.snapshot.project.name, role: coordination.snapshot.currentMember.role };
         if (coordination.stale) {
           project = {
             ...project,
@@ -2052,6 +2024,38 @@ class CollabFeatureServiceCore {
     this.options.publication.abortProjectBackgroundWork(projectId);
   }
 
+  observeProject(
+    projectId: CollabProjectId,
+    listener: (coordination?: CollabCoordinationSnapshot) => void,
+  ): CollabFeatureSubscription {
+    if (this.#closing || this.disposed) return { dispose: () => undefined };
+    const listeners = this.#projectListeners.get(projectId) ?? new Set();
+    listeners.add(listener);
+    this.#projectListeners.set(projectId, listeners);
+    const remove = () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.#projectListeners.delete(projectId);
+    };
+    try {
+      const demand = this.options.publication.observeProject(projectId);
+      return { dispose: () => { remove(); demand.dispose(); } };
+    } catch (error) {
+      remove();
+      throw error;
+    }
+  }
+
+  #notifyProject(projectId: CollabProjectId, coordination?: CollabCoordinationSnapshot): void {
+    for (const listener of this.#projectListeners.get(projectId) ?? []) {
+      try { listener(coordination); } catch { /* Observers cannot invalidate application state. */ }
+    }
+  }
+
+  #retainProjectMaintenance(projectId: CollabProjectId): void {
+    if (this.#closing || this.disposed || this.#maintenance.has(projectId)) return;
+    this.#maintenance.set(projectId, this.options.publication.observeProject(projectId));
+  }
+
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription {
     if (this.#closing || this.disposed) return { dispose: () => undefined };
     this.listeners.add(listener);
@@ -2066,6 +2070,9 @@ class CollabFeatureServiceCore {
   close(): Promise<void> {
     if (this.#closePromise) return this.#closePromise;
     this.#closing = true;
+    this.#catalog.beginClose();
+    for (const demand of this.#maintenance.values()) demand.dispose();
+    this.#maintenance.clear();
     this.operationAdmission.beginClose();
     this.options.authorityTransfer.beginClose();
     this.#activeOperationController?.abort();
@@ -2103,6 +2110,7 @@ class CollabFeatureServiceCore {
         closeErrors.push(error);
       } finally {
         this.listeners.clear();
+        this.#projectListeners.clear();
       }
       if (closeErrors.length > 0) throw closeErrors[0];
     })();
@@ -2135,6 +2143,7 @@ class CollabFeatureServiceCore {
         && selected.lifecycle !== 'retired'
         && selected.health === 'healthy'
       ) {
+        this.#retainProjectMaintenance(selected.id);
         this.scheduleAcceptedMainSynchronization(selected.id);
       }
       this.#publishState({ ...this.#stateValue, error: undefined, lifecycle: 'ready' });
@@ -2182,206 +2191,9 @@ class CollabFeatureServiceCore {
   }
 
    async #refreshProjects(
-    options: {
-      readonly publish?: boolean;
-      readonly projectId?: CollabProjectId;
-      readonly coordination?: CollabCoordinationSnapshot;
-    } = {},
+    options: { readonly projectId?: CollabProjectId; readonly coordination?: CollabCoordinationSnapshot } = {},
   ): Promise<readonly CollabLocalProjectSummary[]> {
-    const generation = options.projectId ? this.#refreshGeneration : ++this.#refreshGeneration;
-    const coordinationGeneration = options.projectId
-      ? ++this.#coordinationRefreshGeneration
-      : this.#coordinationRefreshGeneration;
-    const projection = await this.#readProjectProjection(options.projectId);
-    // A newer selected-Project event cannot replace the coverage of a full refresh.
-    const currentSelected = this.#stateValue.projects.find(
-      project => project.id === this.#stateValue.selectedProjectId,
-    );
-    const projects = options.projectId
-      ? this.#stateValue.projects.flatMap(project => project.id === options.projectId
-        ? projection.projects
-        : [project])
-      : projection.projects.map(project => (
-        project.id === currentSelected?.id
-        && this.#publishedCoordinationRefreshGeneration > coordinationGeneration
-          ? currentSelected
-          : project
-      ));
-    if (
-      options.publish !== false
-      && generation === this.#refreshGeneration
-      && (!options.projectId || coordinationGeneration === this.#coordinationRefreshGeneration)
-      && this.#activeProjectSelections === 0
-    ) {
-      if (options.projectId) this.#publishedCoordinationRefreshGeneration = coordinationGeneration;
-      this.#publishState({
-        ...this.#stateValue,
-        projects,
-        selectedProjectId: projection.selectedProjectId,
-      }, options.projectId === this.#stateValue.selectedProjectId ? options.coordination : undefined);
-    }
-    return projects;
-  }
-
-   async #readProjectProjection(onlyProjectId?: CollabProjectId): Promise<CollabProjectProjection> {
-    const [index, pendingLeaveProjectIds, cloudRetirementProjectIds] = await Promise.all([
-      this.foundation.local.projects.loadIndex(),
-      this.options.pendingLeaves.listProjectIds(),
-      this.options.cloudRetirementIntents.listProjectIds(),
-    ]);
-    const pendingLeaves = await Promise.all(pendingLeaveProjectIds.filter(projectId => !onlyProjectId || projectId === onlyProjectId).map(async projectId => {
-      try {
-        return { corrupt: false as const, projectId, record: await this.options.pendingLeaves.load(projectId) };
-      } catch {
-        return { corrupt: true as const, projectId, record: null };
-      }
-    }));
-    const pendingByProject = new Map(pendingLeaves.map(entry => [entry.projectId, entry]));
-    const cloudRetirementProjects = new Set(cloudRetirementProjectIds);
-    const projects = await Promise.all(index.projects.filter(project => !onlyProjectId || project.id === onlyProjectId).map(async project => {
-      const pendingLeave = pendingByProject.get(project.id) ?? null;
-      const hasCloudRetirementIntent = cloudRetirementProjects.has(project.id);
-      const [membership, pending, workingCopyHealthy] = await Promise.all([
-        this.foundation.local.projects.loadMembership(project.id).catch(error => {
-          if (isUnsupportedLocalMembership(error)) return null;
-          throw error;
-        }),
-        this.foundation.local.projects.loadProjectDocument(
-          project.id,
-          'pending-operation',
-          decodeCollabPendingProjectOperation,
-        ),
-        this.#hasWorkingCopy(project.workspacePath),
-      ]);
-      const summary = await this.#projectSummary(
-        project,
-        membership,
-        pending !== null || pendingLeave !== null || hasCloudRetirementIntent,
-        workingCopyHealthy,
-      );
-      pendingByProject.delete(project.id);
-      return pendingLeave
-        ? {
-          ...summary,
-          cleanupStatus: pendingLeave.corrupt
-            ? 'failed' as const
-            : pendingLeave.record?.localCleanupComplete
-            ? 'complete' as const
-            : pendingLeave.record?.phase === 'recovery-required'
-              ? 'failed' as const
-              : 'pending' as const,
-          health: 'needs-attention' as const,
-          lifecycle: 'leaving' as const,
-        }
-        : summary;
-    }));
-    const journalOnly = [...pendingByProject.values()]
-      .flatMap(entry => entry.record ? [entry.record] : [])
-      .map(record => ({
-        authorityKind: 'authorityKind' in record ? 'cloud' as const : 'lan' as const,
-        cleanupStatus: record.localCleanupComplete
-          ? 'complete' as const
-          : record.phase === 'recovery-required'
-            ? 'failed' as const
-            : 'pending' as const,
-        connectionStatus: 'needs-attention' as const,
-        health: 'needs-attention' as const,
-        hostInstallationStatus: 'not-host' as const,
-        hostStatus: 'not-host' as const,
-        id: record.projectId,
-        lifecycle: 'leaving' as const,
-        name: record.projectName,
-        role: record.localRole,
-        workspacePath: record.workspacePath,
-      }));
-    return { projects: [...projects, ...journalOnly], selectedProjectId: index.selectedProjectId };
-  }
-
-   async #hasWorkingCopy(workspacePath: string): Promise<boolean> {
-    try {
-      const absolutePath = await this.foundation.local.workspace.resolveManagedProjectPath(
-        workspacePath,
-      );
-      const gitDirectory = path.join(absolutePath, '.git');
-      const [workingCopyStat, gitDirectoryStat] = await Promise.all([
-        lstat(absolutePath),
-        lstat(gitDirectory),
-      ]);
-      return workingCopyStat.isDirectory()
-        && !workingCopyStat.isSymbolicLink()
-        && gitDirectoryStat.isDirectory()
-        && !gitDirectoryStat.isSymbolicLink();
-    } catch {
-      return false;
-    }
-  }
-
-   async #projectSummary(
-    project: CollabLocalProjectIndex['projects'][number],
-    membership: CollabLocalMembershipRecord | null,
-    pending: boolean,
-    workingCopyExists: boolean,
-  ): Promise<CollabLocalProjectSummary> {
-    const lifecycle = project.lifecycle ?? membership?.lifecycle;
-    const effectiveLifecycle = lifecycle ?? 'active';
-    const lanMembership = membership && isCollabLocalLanMembership(membership)
-      ? membership
-      : null;
-    const ownsAuthority = lanMembership?.hostOwnership.ownsAuthority === true;
-    let installationInspectionFailed = false;
-    let inspectedInstallationStatus: CollabAuthorityInstallationStatus = 'absent';
-    if (effectiveLifecycle !== 'retired' && ownsAuthority) {
-      try {
-        inspectedInstallationStatus = await this.options.hostInstallation.inspect(project.id);
-      } catch {
-        installationInspectionFailed = true;
-      }
-    }
-    const hostInstallationStatus = inspectedInstallationStatus === 'absent'
-      ? 'not-host'
-      : inspectedInstallationStatus;
-    const hostStatus = effectiveLifecycle === 'retired'
-      ? 'not-host'
-      : hostInstallationStatus === 'hosted-here'
-      ? this.options.lanHost.getProjectState(project.id).status
-      : hostInstallationStatus === 'legacy-unbound'
-        ? 'stopped'
-      : 'not-host';
-    return {
-      authorityKind: project.authorityKind,
-      connectionStatus: effectiveLifecycle === 'retired'
-        ? 'offline'
-        : hostStatus === 'running'
-        ? 'connected'
-        : hostStatus === 'needs-attention'
-          ? 'needs-attention'
-          : hostInstallationStatus === 'hosted-here'
-            || hostInstallationStatus === 'legacy-unbound'
-          ? 'host-stopped'
-          : membership ? this.options.publication.readConnectionStatus(project.id) : 'offline',
-      health: project.cleanupStatus === 'failed' || installationInspectionFailed
-        ? 'needs-attention'
-        : effectiveLifecycle === 'retired'
-          ? 'healthy'
-          : pending
-        ? 'needs-attention'
-        : workingCopyExists && membership
-          ? 'healthy'
-          : workingCopyExists
-            ? 'needs-attention'
-            : 'missing',
-      hostStatus,
-      hostInstallationStatus,
-      id: project.id,
-      name: project.name,
-      ...(lifecycle === undefined ? {} : { lifecycle }),
-      ...(project.cleanupStatus === undefined
-        ? {}
-        : { cleanupStatus: project.cleanupStatus }),
-      ...(project.retiredAt === undefined ? {} : { retiredAt: project.retiredAt }),
-      ...(membership ? { role: membership.member.role } : {}),
-      workspacePath: project.workspacePath,
-    };
+    return (await this.#catalog.refresh(options.projectId)).projects;
   }
 
    async #refreshAfterMutation<T>(result: CollabResult<T>): Promise<void> {
@@ -2488,12 +2300,27 @@ class CollabFeatureServiceCore {
     return result;
   }
 
-   #publishState(state: CollabFeatureState, coordination?: CollabCoordinationSnapshot): void {
+   #publishState(state: CollabFeatureState): void {
     if (this.disposed) return;
+    const previous = new Map(this.#stateValue.projects.map(project => [project.id, project]));
     this.#stateValue = cloneState(state);
+    for (const project of state.projects) {
+      const old = previous.get(project.id);
+      previous.delete(project.id);
+      if (project.lifecycle === 'retired' || project.lifecycle === 'leaving') {
+        this.#maintenance.get(project.id)?.dispose();
+        this.#maintenance.delete(project.id);
+      }
+      if (JSON.stringify(old) !== JSON.stringify(project)) this.#notifyProject(project.id);
+    }
+    for (const projectId of previous.keys()) {
+      this.#maintenance.get(projectId)?.dispose();
+      this.#maintenance.delete(projectId);
+      this.#notifyProject(projectId);
+    }
     for (const listener of this.listeners) {
       try {
-        listener(this.#stateValue, coordination);
+        listener(this.#stateValue);
       } catch {
         // Presentation subscribers cannot invalidate application state.
       }
@@ -2848,6 +2675,7 @@ export class CollabFeatureService implements CollabFeaturePort {
   cancelCloudToLanTransfer: CollabFeaturePort['cancelCloudToLanTransfer'] = (...args) => (
     this.runGlobal(() => this.core.cancelCloudToLanTransfer(...args))
   );
+  observeProject: CollabFeaturePort['observeProject'] = (...args) => this.core.observeProject(...args);
   subscribe: CollabFeaturePort['subscribe'] = (...args) => this.core.subscribe(...args);
 
   getPendingSetupOperationId(projectId: CollabProjectId): Promise<CollabOperationId | null> {

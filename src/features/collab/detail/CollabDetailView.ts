@@ -211,6 +211,7 @@ export class CollabDetailView extends ItemView {
   private conflictSession: ConflictDetailSession | null = null;
   private readonly conflictPanelFactory: CollabDetailConflictPanelFactory;
   private readonly diffSession: ReviewDiffSession;
+  private observedProjectId: string | null = null;
   private featureSubscription: { dispose(): void } | null = null;
   private readonly openTicketInNewTab: CollabDetailViewOptions['openTicketInNewTab'];
   private readonly preparedReviews: CollabPreparedReviewCache | null;
@@ -272,6 +273,7 @@ export class CollabDetailView extends ItemView {
       this.state = state;
       return;
     }
+    this.observeState(state);
     if (state.kind === 'conflict') {
       this.activateMode('conflict');
       this.state = state;
@@ -289,11 +291,7 @@ export class CollabDetailView extends ItemView {
 
   async onOpen(): Promise<void> {
     if (!this.port.isDetailAdmissionOpen()) return;
-    this.featureSubscription ??= this.port.subscribe(() => {
-      const state = this.state;
-      if (state?.kind === 'ticket') void this.loadTicket(state);
-      if (state?.kind === 'request') void this.reviewSession?.refresh();
-    });
+    this.observeState(this.state);
     this.contentEl.replaceChildren();
     this.contentEl.classList.add('claudian-collab-review');
     if (this.state) {
@@ -307,6 +305,20 @@ export class CollabDetailView extends ItemView {
     } else {
       this.renderMessage(t('collab.review.openRequest'));
     }
+  }
+
+  private observeState(state: CollabDetailViewState | null): void {
+    const projectId = state && 'projectId' in state ? state.projectId : null;
+    if (this.observedProjectId === projectId) return;
+    this.featureSubscription?.dispose();
+    this.featureSubscription = null;
+    this.observedProjectId = projectId;
+    if (!projectId) return;
+    this.featureSubscription = this.port.observeProject(projectId, () => {
+      const current = this.state;
+      if (current?.kind === 'ticket') void this.loadTicket(current);
+      if (current?.kind === 'request') void this.reviewSession?.refresh();
+    });
   }
 
   private async loadTicket(state: CollabTicketDetailViewState): Promise<void> {

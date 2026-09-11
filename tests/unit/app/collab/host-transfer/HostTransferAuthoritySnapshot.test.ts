@@ -266,6 +266,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     expect(inspected.exec(
       `SELECT phase, manifest_digest FROM host_transfer_operations`,
     )[0]?.values[0]).toEqual(['completed', activation.manifestDigest]);
+    expect(activated.authorityGeneration).toBe(1);
     expect(activated.eventSequence).toBeGreaterThan(0);
     inspected.close();
 
