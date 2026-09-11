@@ -190,7 +190,8 @@ function getExtraBinaryPaths(): string[] {
   }
 }
 
-export function findNodeDirectory(additionalPaths?: string): string | null {
+function* findNodeDirectories(additionalPaths?: string): Generator<string, undefined> {
+  const executables = new Set<string>();
   const searchPaths = getExtraBinaryPaths();
 
   const currentPath = process.env.PATH || '';
@@ -204,24 +205,28 @@ export function findNodeDirectory(additionalPaths?: string): string | null {
       const nodePath = path.join(dir, NODE_EXECUTABLE);
       if (fs.existsSync(nodePath)) {
         const stat = fs.statSync(nodePath);
-        if (stat.isFile()) {
-          return dir;
+        if (stat.isFile() && !executables.has(nodePath)) {
+          executables.add(nodePath);
+          yield dir;
         }
       }
     } catch {
       // Inaccessible directory
     }
   }
+}
 
-  return null;
+export function findNodeExecutables(additionalPaths?: string): string[] {
+  return [...findNodeDirectories(additionalPaths)].map(dir => path.join(dir, NODE_EXECUTABLE));
+}
+
+export function findNodeDirectory(additionalPaths?: string): string | null {
+  return findNodeDirectories(additionalPaths).next().value ?? null;
 }
 
 export function findNodeExecutable(additionalPaths?: string): string | null {
   const nodeDir = findNodeDirectory(additionalPaths);
-  if (nodeDir) {
-    return path.join(nodeDir, NODE_EXECUTABLE);
-  }
-  return null;
+  return nodeDir ? path.join(nodeDir, NODE_EXECUTABLE) : null;
 }
 
 export function cliPathRequiresNode(cliPath: string): boolean {

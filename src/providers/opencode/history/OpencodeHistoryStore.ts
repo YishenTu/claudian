@@ -20,6 +20,7 @@ import type { OpencodeProviderState } from '../types';
 import {
   loadOpencodeSessionRows,
   type StoredRow,
+  type StoredSessionRows,
 } from './OpencodeSqliteReader';
 
 export { OPENCODE_MESSAGE_ROW_SQL } from './OpencodeSqliteReader';
@@ -39,17 +40,20 @@ const OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX = 'opencode-hydration-error';
 export async function loadOpencodeSessionMessages(
   sessionId: string,
   providerState?: OpencodeProviderState,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<ChatMessage[]> {
-  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath);
+  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath, environment);
   if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
     return [];
   }
 
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId);
-  if (!rows) {
+  let rows: StoredSessionRows;
+  try {
+    rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment });
+  } catch (error) {
     return [createOpencodeHydrationDiagnosticMessage({
       databasePath,
-      reason: 'Could not read OpenCode session rows from SQLite.',
+      reason: formatUnknownError(error),
       sessionId,
     })];
   }
@@ -63,13 +67,14 @@ export async function loadOpencodeSessionMessages(
 export async function loadOpencodeSessionModel(
   sessionId: string,
   providerState?: OpencodeProviderState,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<string | null> {
-  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath);
+  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath, environment);
   if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
     return null;
   }
 
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId);
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment }).catch(() => null);
   let rawModelId: string | null = null;
   for (const row of rows?.messageRows ?? []) {
     const data = parseJsonObject(row.data);
@@ -299,7 +304,10 @@ function createOpencodeHydrationDiagnosticMessage(params: {
     ...(params.messageId ? [`messageId: ${params.messageId}`] : []),
     `reason: ${params.reason}`,
   ];
-  const content = detailLines.join('\n');
+  const details = detailLines.join('\n');
+  const fenceLength = (details.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length + 1), 3);
+  const fence = '`'.repeat(fenceLength);
+  const content = `${fence}text\n${details}\n${fence}`;
 
   return {
     assistantMessageId: undefined,

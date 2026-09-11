@@ -1,3 +1,4 @@
+import type * as childProcessType from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -17,6 +18,40 @@ describe('OpencodeConversationHistoryService', () => {
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     rmSync(tmpRoot, { force: true, recursive: true });
+  });
+
+  it('passes the configured environment to the external history reader', async () => {
+    const dbPath = path.join(tmpRoot, 'opencode.db');
+    seedDatabase(dbPath, 'session-env', 'Configured history');
+    const conversation = createConversation('session-env', dbPath);
+    const childProcess = jest.requireActual<typeof childProcessType>('node:child_process');
+    const realSpawn = childProcess.spawn;
+    const environmentMarkers: Array<string | undefined> = [];
+    jest.spyOn(childProcess, 'spawn').mockImplementation((command, args, options) => {
+      environmentMarkers.push(options?.env?.CLAUDIAN_HISTORY_TEST);
+      return realSpawn(command, args, options!);
+    });
+    jest.doMock('node:sqlite', () => ({}));
+    try {
+      await jest.isolateModulesAsync(async () => {
+        const { OpencodeConversationHistoryService: HistoryService } = await import(
+          '../../../../src/providers/opencode/history/OpencodeConversationHistoryService'
+        );
+        await new HistoryService().hydrateConversationHistory(conversation, null, {
+          environment: {
+            ...process.env,
+            OPENCODE_DB: dbPath,
+            CLAUDIAN_HISTORY_TEST: 'configured',
+            PATH: path.dirname(process.execPath),
+          },
+        });
+      });
+      expect(conversation.messages.map(message => message.content)).toEqual(['Configured history']);
+      expect(environmentMarkers).toContain('configured');
+    } finally {
+      jest.dontMock('node:sqlite');
+      jest.restoreAllMocks();
+    }
   });
 
   it('retries after a session-level hydration diagnostic', async () => {

@@ -5,11 +5,27 @@ import { DatabaseSync } from 'node:sqlite';
 
 import {
   loadOpencodeSessionMessages,
+  loadOpencodeSessionModel,
   mapOpencodeMessages,
   OPENCODE_MESSAGE_ROW_SQL,
 } from '../../../../src/providers/opencode/history/OpencodeHistoryStore';
 
 describe('mapOpencodeMessages', () => {
+  it('preserves Windows paths as literal code in hydration diagnostics', () => {
+    const [message] = mapOpencodeMessages([
+      { info: { id: 'msg-bad', data_valid: 0 }, parts: [] },
+    ], { databasePath: String.raw`C:\Users\cylix\.local\share\opencode\opencode.db` });
+    expect(message.content).toBe([
+      '```text',
+      'Failed to hydrate OpenCode session.',
+      'provider: OpenCode',
+      String.raw`databasePath: C:\Users\cylix\.local\share\opencode\opencode.db`,
+      'messageId: msg-bad',
+      'reason: OpenCode message metadata is not valid JSON.',
+      '```',
+    ].join('\n'));
+  });
+
   it('maps stored OpenCode messages into Claudian chat messages', () => {
     const messages = mapOpencodeMessages([
       {
@@ -378,10 +394,12 @@ describe('mapOpencodeMessages', () => {
     expect(messages).toEqual([
       expect.objectContaining({
         content: [
+          '```text',
           'Failed to hydrate OpenCode session.',
           'provider: OpenCode',
           'messageId: msg-bad',
           'reason: OpenCode message metadata is not valid JSON.',
+          '```',
         ].join('\n'),
         id: 'opencode-hydration-error-message-msg-bad',
         role: 'assistant',
@@ -409,6 +427,17 @@ describe('loadOpencodeSessionMessages', () => {
 
   afterEach(() => {
     rmSync(tmpRoot, { force: true, recursive: true });
+  });
+
+  it('shows the underlying SQLite failure as a history diagnostic', async () => {
+    const dbPath = path.join(tmpRoot, 'empty.db');
+    new DatabaseSync(dbPath).close();
+    const messages = await loadOpencodeSessionMessages('ses-empty', { databasePath: dbPath });
+    expect(messages).toEqual([expect.objectContaining({
+      id: 'opencode-hydration-error-session-ses-empty',
+      content: expect.stringContaining('no such table: message'),
+    })]);
+    await expect(loadOpencodeSessionModel('ses-empty', { databasePath: dbPath })).resolves.toBeNull();
   });
 
   it('loads conversation content without selecting raw message metadata', async () => {

@@ -33,7 +33,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const state = getOpencodeState(conversation.providerState);
     const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
     if (!databasePath) return null;
-    return loadOpencodeSessionModel(conversation.sessionId, { databasePath });
+    return loadOpencodeSessionModel(conversation.sessionId, { databasePath }, pathContext?.environment);
   }
 
   async hydrateConversationHistory(
@@ -69,7 +69,11 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       return;
     }
 
-    const messages = await loadOpencodeSessionMessages(sessionId, { databasePath: databasePath ?? undefined });
+    const messages = await loadOpencodeSessionMessages(
+      sessionId,
+      { databasePath: databasePath ?? undefined },
+      pathContext?.environment,
+    );
     if (messages.length === 0) {
       this.hydratedKeys.delete(conversation.id);
       return;

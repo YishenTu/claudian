@@ -1,6 +1,6 @@
-import type { spawn as nodeSpawn } from 'node:child_process';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,9 +9,10 @@ import { PassThrough } from 'node:stream';
 import {
   loadOpencodeSessionRows,
   OPENCODE_MESSAGE_ROW_SQL,
+  type OpencodeSqliteReaderDependencies,
 } from '../../../../src/providers/opencode/history/OpencodeSqliteReader';
 
-type Spawn = typeof nodeSpawn;
+type Spawn = NonNullable<OpencodeSqliteReaderDependencies['spawn']>;
 
 describe('loadOpencodeSessionRows', () => {
   let tmpRoot: string;
@@ -25,11 +26,66 @@ describe('loadOpencodeSessionRows', () => {
     jest.restoreAllMocks();
   });
 
+  it('never creates a missing history database through in-process SQLite', async () => {
+    const dbPath = path.join(tmpRoot, 'missing.db');
+    await loadOpencodeSessionRows(dbPath, 'ses-missing', {
+      requireSqliteModule: () => ({ DatabaseSync }),
+      findNodeExecutables: () => [],
+      spawn: createSpawnMock([]),
+    }).catch(() => undefined);
+    expect(existsSync(dbPath)).toBe(false);
+  });
+
+  it('tries a compatible Node after an installed Node fails', async () => {
+    const dbPath = createFixtureDatabase(tmpRoot);
+    const nodeWithoutSqlite = path.join(tmpRoot, 'old-node');
+    const spawn: Spawn = (command, args, options) => nodeSpawn(
+      process.execPath,
+      command === process.execPath ? args : ['--no-experimental-sqlite', ...args],
+      options,
+    );
+    await expect(loadOpencodeSessionRows(dbPath, 'ses-child', {
+      requireSqliteModule: () => null,
+      findNodeExecutables: () => [nodeWithoutSqlite, process.execPath],
+      spawn,
+    })).resolves.toMatchObject({ partRows: [{ id: 'part-user' }] });
+  });
+
+  it('reports backend errors when SQLite cannot read the database', async () => {
+    const dbPath = path.join(tmpRoot, 'empty.db');
+    new DatabaseSync(dbPath).close();
+    const spawn: Spawn = (command, args, options) => nodeSpawn(
+      command === 'sqlite3' ? path.join(tmpRoot, 'missing-sqlite3') : command,
+      args,
+      options,
+    );
+    await expect(loadOpencodeSessionRows(dbPath, 'ses-missing', {
+      requireSqliteModule: () => null,
+      findNodeExecutables: () => [process.execPath],
+      spawn,
+    })).rejects.toThrow('no such table: message');
+  });
+
+  it('uses the supplied environment for external SQLite readers', async () => {
+    const dbPath = createFixtureDatabase(tmpRoot);
+    const spawn: Spawn = (command, args, options) => nodeSpawn(
+      command === 'sqlite3' ? path.join(tmpRoot, 'missing-sqlite3') : command,
+      args,
+      options,
+    );
+    await expect(loadOpencodeSessionRows(dbPath, 'ses-child', {
+      environment: { ...process.env, NODE_OPTIONS: '--no-experimental-sqlite' },
+      requireSqliteModule: () => null,
+      findNodeExecutables: () => [process.execPath],
+      spawn,
+    })).rejects.toThrow('No such built-in module: node:sqlite');
+  });
+
   it('loads rows through a Node child process when in-process SQLite is unavailable', async () => {
     const dbPath = createFixtureDatabase(tmpRoot);
 
     await expect(loadOpencodeSessionRows(dbPath, 'ses-child', {
-      findNodeExecutable: () => process.execPath,
+      findNodeExecutables: () => [process.execPath],
       requireSqliteModule: () => null,
     })).resolves.toEqual({
       messageRows: [{
@@ -60,7 +116,7 @@ describe('loadOpencodeSessionRows', () => {
     }]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-node', {
-      findNodeExecutable: () => '/usr/local/bin/node',
+      findNodeExecutables: () => ['/usr/local/bin/node'],
       requireSqliteModule: () => null,
       spawn,
     })).resolves.toEqual({
@@ -80,7 +136,7 @@ describe('loadOpencodeSessionRows', () => {
         expect.stringContaining('from part'),
       ],
       expect.objectContaining({
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       }),
     );
@@ -99,7 +155,7 @@ describe('loadOpencodeSessionRows', () => {
     ]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-with-quote\'s', {
-      findNodeExecutable: () => null,
+      findNodeExecutables: () => [],
       requireSqliteModule: () => null,
       spawn,
     })).resolves.toEqual({
@@ -112,12 +168,13 @@ describe('loadOpencodeSessionRows', () => {
       1,
       'sqlite3',
       [
+        '-readonly',
         '-json',
         '/tmp/opencode.db',
         expect.stringContaining("where session_id = 'ses-with-quote''s'"),
       ],
       expect.objectContaining({
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       }),
     );
@@ -125,12 +182,13 @@ describe('loadOpencodeSessionRows', () => {
       2,
       'sqlite3',
       [
+        '-readonly',
         '-json',
         '/tmp/opencode.db',
         expect.stringContaining("where session_id = 'ses-with-quote''s'"),
       ],
       expect.objectContaining({
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       }),
     );
