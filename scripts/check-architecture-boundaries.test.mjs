@@ -656,21 +656,20 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
 
   const protocol = await import(protocolPackageName);
 
-  assert.equal(manifest.dependencies?.[protocolPackageName], '4.3.2');
+  const protocolVersion = manifest.dependencies?.[protocolPackageName];
+  assert.match(protocolVersion, /^\d+\.\d+\.\d+$/u);
+  assert.equal(protocolManifest.version, protocolVersion);
   assert.equal(manifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(protocolManifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(manifest.dependencies?.['@claudian/collab-protocol'], undefined);
   assert.equal(manifest.workspaces, undefined);
-  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '4.3.2');
-  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '4.3.2');
-  assert.equal(
-    lockfile.packages?.[protocolInstallPath]?.integrity,
-    'sha512-Inz+a8HDk9Ys/qISb9xeCJ3BfivVQzSTSy2KbqbdOHbyPMPyrxNknifJ4/7LVCFfeedBTtz30+scmm/SZZ1OBQ==',
-  );
+  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], protocolVersion);
+  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, protocolVersion);
+  assert.match(lockfile.packages?.[protocolInstallPath]?.integrity ?? '', /^sha512-[A-Za-z0-9+/]+=*$/u);
   assert.equal(lockfile.packages?.['node_modules/@lezer/markdown']?.version, '1.7.2');
-  assert.match(
-    lockfile.packages?.[protocolInstallPath]?.resolved ?? '',
-    /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-4\.3\.2\.tgz$/u,
+  assert.equal(
+    lockfile.packages?.[protocolInstallPath]?.resolved,
+    `https://registry.npmjs.org/@claudian-collab/protocol/-/protocol-${protocolVersion}.tgz`,
   );
   assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 10);
   assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 6);

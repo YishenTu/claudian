@@ -73,7 +73,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     if (detail.request.latestHeadOid !== detail.reviewedHeadOid) {
       throw reviewError('authority-integrity-error', 'review-request-head-mismatch');
     }
-    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-mismatch');
+    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-mismatch', signal);
     const memberRef = collabMemberRef(detail.request.memberId);
     const memberRemoteRef = remoteMemberRef(detail.request.memberId);
     const localReview = await this.git.withReadSession(
@@ -88,6 +88,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
         }
         return this.#prepareInSession(session, context, detail, signal);
       },
+      signal,
     );
     if (localReview) return localReview;
 
@@ -106,7 +107,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
       await this.#assertAuthoritativeRefs(session, detail, memberRemoteRef);
       return this.#prepareInSession(session, context, detail, signal);
-    });
+    }, signal);
   }
 
   async #readRefAuthority(

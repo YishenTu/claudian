@@ -51,6 +51,60 @@ describe('GitRepositoryService integration', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('retains parallel read operations until every cancelled native child settles', async () => {
+    const repositoryPath = path.join(root, 'working');
+    await mkdir(repositoryPath);
+    await service.initializeWorkingRepository(repositoryPath);
+    const script = path.join(root, 'delayed-git.cjs');
+    await writeFile(script, '#!/usr/bin/env node\n' + [
+      "const fs = require('node:fs');",
+      "const command = process.argv[2];",
+      "if (command === 'status' || command === 'cat-file') {",
+      "  if (command === 'status') process.on('SIGTERM', () => setTimeout(() => process.exit(0), 700));",
+      `  fs.writeFileSync(require('node:path').join(${JSON.stringify(root)}, command + '.started'), 'ready');`,
+      "  setTimeout(() => process.exit(0), 10000);",
+      "} else {",
+      `  const result = require('node:child_process').spawnSync(${JSON.stringify(gitExecutablePath)}, process.argv.slice(2), { stdio: 'inherit' });`,
+      "  process.exit(result.status ?? 1);",
+      "}",
+    ].join('\n'), { mode: 0o700 });
+    let shim = script;
+    if (process.platform === 'win32') {
+      shim = path.join(root, 'delayed-git.cmd');
+      await writeFile(shim, `@"${process.execPath}" "${script}" %*\r\n`);
+    }
+    const delayedRunner = new GitCommandRunner({
+      emptyConfigPath: path.join(root, 'empty.gitconfig'), executablePath: shim,
+    });
+    const delayedGit = new GitRepositoryService(delayedRunner);
+    const controller = new AbortController();
+    let operations: readonly Promise<unknown>[] = [];
+    const result = delayedGit.withReadSession(repositoryPath, 'working', async session => {
+      operations = [session.resolveRefs(['HEAD']), session.getWorkingTreeStatus()];
+      return Promise.all(operations);
+    }, controller.signal).then(
+      () => ({ code: 'success', activeProcesses: delayedRunner.activeProcessCount }),
+      error => ({ code: error.code, activeProcesses: delayedRunner.activeProcessCount }),
+    );
+    try {
+      const deadline = Date.now() + 5000;
+      for (const command of ['cat-file', 'status']) {
+        const marker = path.join(root, command + '.started');
+        while (Date.now() < deadline) {
+          try { await access(marker); break; }
+          catch { await new Promise(resolve => setTimeout(resolve, 10)); }
+        }
+        await access(marker);
+      }
+      controller.abort();
+      expect(await result).toEqual({ code: 'cancelled', activeProcesses: 0 });
+    } finally {
+      controller.abort();
+      await result;
+      await Promise.allSettled(operations);
+    }
+  });
+
   it('rejects an initial Git HTTP redirect without contacting its destination', async () => {
     let destinationRequests = 0;
     let sourceRequests = 0;

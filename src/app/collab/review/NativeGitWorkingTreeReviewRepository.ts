@@ -57,6 +57,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
         }
         return session.listWorkingTreeChangedFiles(baseOid);
       },
+      signal,
     );
     const projected: CollabChangedFile[] = [];
     for (const change of changes) {
@@ -101,7 +102,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
           repositoryRelativePath: oldPath,
           treeish: request.baseOid,
         }]))[0] ?? null
-      ));
+      ), signal);
     if (request.file.kind !== 'added' && oldContents === null) {
       throw reviewError('working-tree-busy', 'working-tree-review-old-file-missing');
     }

@@ -332,7 +332,8 @@ export class CollabPublicationService {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
-    return (await this.runtime()).review.prepare(projectId, requestId, options);
+    return this.#enqueueProjectMutation(projectId, async () =>
+      (await this.runtime()).review.prepare(projectId, requestId, options));
   }
 
   async prepareReviewPage(
@@ -340,7 +341,8 @@ export class CollabPublicationService {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
-    return (await this.runtime()).review.preparePage(projectId, requestId, options);
+    return this.#enqueueProjectMutation(projectId, async () =>
+      (await this.runtime()).review.preparePage(projectId, requestId, options));
   }
 
   async readReviewFile(

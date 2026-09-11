@@ -31,6 +31,7 @@
 - Persist membership changes before invalidating its authority session. Cache, Member role/cursor, and responsibility receipt publish in that order; reject lower-sequence or wrong-Member snapshots before any of those writes.
 - Project observation is explicit and independent of selection. One-shot reads cannot retain event/retry demand; closing a view releases only that view’s demand. Background maintenance for selected Projects survives subsequent selection/visibility changes, and suspension preserves demand for the resumed session.
 - Queries must not publish feature state: subscribers can issue queries and create refresh loops. Register accepted-state maintenance before announcing selection/readiness, without making the ready shell await maintenance.
+- Review preparation can fetch refs and must share Project mutation ordering with accepted-state synchronization and publication.
 - Inspection and accepted-state synchronization share a per-Project read/write fence. Aborting work cannot release the fence before underlying settlement; never combine Git and publication snapshots from opposite sides of synchronization.
 - Offline cache is a stale read projection only. Authorization/integrity failures cannot fall back to it. Cache complete finite details, never partial pages or mutation intent; Runtime paging remains online-only.
 

@@ -241,12 +241,37 @@ describe('GitCommandRunner', () => {
       code: 'operation-failed',
       safeContext: {
         exitCode: 7,
-        status: expect.any(String),
+        reason: 'git-command-failed',
       },
     });
     expect(JSON.stringify(failure)).not.toContain(secret);
     expect(JSON.stringify(failure)).not.toContain(workingDirectory);
   });
+
+  it.each(['bare', 'encoded', 'content'] as const)(
+    'serializes only owned failure facts when stderr contains %s private data',
+    async diagnosticKind => {
+      const credential = 'abcdef0123456789'.repeat(4);
+      const runner = new GitCommandRunner({ emptyConfigPath, executablePath: process.execPath });
+      const failure = await runner.run({
+        args: ['-e', [
+          "const header = Object.entries(process.env).find(([key, value]) => key.startsWith('GIT_CONFIG_VALUE_') && value?.startsWith('Author' + 'ization:'))[1];",
+          "const secret = header.split(' ').at(-1);",
+          "const value = process.argv[1] === 'bare' ? secret : process.argv[1] === 'encoded' ? Buffer.from(secret).toString('base64') : 'private-collaboration-body';",
+          "process.stderr.write('fatal: ' + value + ' at ' + process.cwd()); process.exit(7);",
+        ].join(' '), diagnosticKind],
+        cwd: workingDirectory,
+        network: { headers: [{ name: 'Authorization', value: `Bearer ${credential}` }] },
+      }).then(() => { throw new Error('Expected child failure'); }, error => error);
+
+      const serialized = JSON.stringify(failure);
+      expect(JSON.parse(serialized).safeContext).toEqual({ exitCode: 7, reason: 'git-command-failed' });
+      expect(serialized).not.toContain(credential);
+      expect(serialized).not.toContain('private-collaboration-body');
+      expect(serialized).not.toContain(workingDirectory);
+      expect(runner.activeProcessCount).toBe(0);
+    },
+  );
 
   it('never places a network authorization value in process arguments', async () => {
     const authorizationHeader = 'Basic another-member-secret';

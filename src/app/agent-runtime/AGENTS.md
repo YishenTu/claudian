@@ -1,5 +1,6 @@
 # Agent Runtime constraints
 
+- Loopback binding alone does not exclude web-origin callers. Admit only the actual listener authority and, when present, its exact Origin before dispatch; native callers may omit Origin. Forwarded headers cannot establish this authority.
 - Discovery/health and listener startup must stay independent from lazy Collab initialization. Only an actual Collab operation may resolve its application port; the advertised endpoint is the actual binding, not persisted configuration.
 - Operation names, parameter/result meaning, and retry semantics are a versioned compatibility surface. Package/registry additions do not implicitly authorize new Agent operations.
 - Lifecycle is projection-only at this boundary. Do not expose lifecycle mutations, caller-supplied identities, internal operation IDs, private hashes/snapshots, credentials, binary previews, or generic filesystem/Git/database calls.

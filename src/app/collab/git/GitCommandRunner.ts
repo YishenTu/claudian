@@ -225,21 +225,6 @@ function redactGitDiagnostic(
   return redacted;
 }
 
-function summarizeGitFailure(diagnostic: string): string {
-  const firstLine = diagnostic
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(line => line.length > 0) ?? '';
-  const token = firstLine
-    .replace(/https?:\/\/[^\s'"]+/gi, 'url')
-    .replace(/\[[^\]]+\]/g, 'redacted')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9._:-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 128);
-  return token || 'git-command-failed';
-}
-
 function commandFailure(
   code: 'cancelled' | 'operation-failed' | 'operation-timeout' | 'quota-exceeded',
   reason: string,
@@ -488,8 +473,6 @@ export class GitCommandRunner {
           if (!(request.acceptedExitCodes ?? [0]).includes(exitCode)) {
             reject(commandFailure('operation-failed', 'git-command-failed', {
               exitCode,
-              status: summarizeGitFailure(stderr),
-              stderr,
             }));
             return;
           }
