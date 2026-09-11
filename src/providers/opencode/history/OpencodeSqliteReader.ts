@@ -116,10 +116,9 @@ export async function loadOpencodeSessionRows(
 }
 
 function requireSqliteModule(): SqliteModule | null {
-  if (typeof module === 'undefined' || typeof module.require !== 'function') {
-    return null;
-  }
-  const sqlite = module.require('node:sqlite') as unknown;
+  // Obsidian supplies require separately from its plain { exports } module object.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Load optional SQLite lazily through Obsidian's injected require.
+  const sqlite = require('node:sqlite') as unknown;
   return isPlainObject(sqlite) && typeof sqlite.DatabaseSync === 'function'
     ? sqlite as unknown as SqliteModule
     : null;
