@@ -45,6 +45,8 @@ export type CollabAgentPort = Pick<
   | 'addTicketComment'
   | 'acceptRequest'
   | 'closeTicket'
+  | 'confirmUpdate'
+  | 'updateProject'
   | 'confirmPublish'
   | 'createTicket'
   | 'listProjects'
@@ -337,6 +339,31 @@ const METHOD_DEFINITIONS = {
         inspection => ({ project: toProjectDetail(inspection) }),
       ),
     ),
+  },
+  'collab.projects.update': {
+    access: 'write',
+    description: 'Apply accepted Project updates to the local working copy while preserving personal work. Continue an Update conflict after editing the real Project files. Does not publish personal changes or modify a Request.',
+    parameters: Object.freeze([projectIdParam()]),
+    resultDescription: 'Observed Update state after at most one exact candidate confirmation. A further review-required result needs another explicit Update call.',
+    execute: (params, context, signal) => withCollab(context, signal, async collab => {
+      const projectId = stringParam(params, 'projectId');
+      const prepared = await collab.updateProject(projectId, operationOptions(signal));
+      if (prepared.status !== 'success') return mapProjectUpdateFailure(projectId, prepared);
+      let outcome = prepared.value;
+      if (outcome.state === 'review-required' && outcome.review?.canConfirm && outcome.review.intent === 'update') {
+        const confirmed = await collab.confirmUpdate({
+          projectId,
+          operationId: outcome.review.operationId,
+          expectedMainOid: outcome.review.currentMainOid,
+          expectedCandidateOid: outcome.review.candidateOid,
+        }, operationOptions(signal));
+        if (confirmed.status !== 'success') return mapProjectUpdateFailure(projectId, confirmed);
+        outcome = confirmed.value;
+      }
+      return success({ projectId, state: outcome.state, nextAction: outcome.state === 'review-required' ? 'update' : null,
+        ...(outcome.review ? { files: outcome.review.files.map(toChangedFile) } : {}),
+      });
+    }),
   },
   'collab.tickets.list': {
     description: 'List one page of open or closed Tickets.',
@@ -700,7 +727,7 @@ const METHOD_DEFINITIONS = {
   'collab.tickets.reopen': ticketStatusDefinition('reopen'),
   'collab.changes.publish': {
     access: 'write',
-    description: 'Publish all current Member unpublished changes, including a local-file resolution of an active conflict.',
+    description: 'Publish all current Member unpublished changes, including a local-file resolution of a Publish conflict.',
     parameters: Object.freeze([
       projectIdParam(),
       param('description', 'Nonblank change Request Markdown description.', true, PUBLISH_DESCRIPTION),
@@ -1076,6 +1103,12 @@ function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProje
     .map(member => member.id);
   return {
     ...toProjectSummary(inspection.project),
+    update: {
+      state: inspection.projectUpdate?.state ?? 'unknown',
+      ...(inspection.projectUpdate?.state === 'unknown' ? { reason: inspection.projectUpdate.reason } : {}),
+      nextAction: !inspection.projectUpdate || inspection.projectUpdate.state === 'unknown' || inspection.projectUpdate.state === 'current'
+        ? null : inspection.projectUpdate.state === 'conflict' ? 'resolve-conflicts' : 'update',
+    },
     authorityKind: inspection.project.authorityKind,
     coordination: !coordination || !currentMember
       ? null
@@ -1179,6 +1212,7 @@ function conflictOwnership(inspection: CollabProjectInspection): {
   readonly location: AgentRuntimeConflictLocation;
   readonly requestId?: string;
 } {
+  if (inspection.conflict?.intent === 'update') return { location: 'update' };
   const snapshot = inspection.coordination?.snapshot;
   const ownRequest = snapshot?.openRequests.find(
     request => request.memberId === snapshot.currentMember.id,
@@ -1420,6 +1454,23 @@ function mapCollabResult<T>(
 ): AgentRuntimeMethodOutcome {
   if (result.status !== 'success') return mapCollabFailure(result);
   return success(mapper(result.value));
+}
+
+function mapProjectUpdateFailure(
+  projectId: string,
+  result: Exclude<CollabResult<unknown>, { readonly status: 'success' }>,
+): AgentRuntimeMethodOutcome {
+  if (result.status === 'cancelled') return error(cancelledError());
+  return error({
+    code: result.error.code,
+    data: {
+      projectId,
+      group: result.error.group,
+      recoveryActions: result.error.recoveryActions,
+      status: result.status,
+    },
+    message: result.error.message,
+  });
 }
 
 function mapCollabFailure(

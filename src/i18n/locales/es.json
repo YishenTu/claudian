@@ -312,6 +312,17 @@
       "startFailed": "No se pudo iniciar el Host. Revisa el diagnóstico y reintenta.",
       "stopFailed": "No se pudo detener correctamente el Host. Revisa el diagnóstico y reintenta."
     },
+    "update": {
+      "available": "Actualización disponible",
+      "action": "Actualizar",
+      "updating": "Actualizando…",
+      "continue": "Continuar actualización",
+      "review": "Revisar actualización",
+      "reviewTitle": "Revisar actualización del proyecto",
+      "failed": "Error al actualizar. Reintentar",
+      "conflictTitle": "Conflictos de actualización del proyecto",
+      "editAndContinue": "Edita los archivos del proyecto y continúa la actualización desde la barra lateral del proyecto."
+    },
     "publish": {
       "title": "Mis cambios",
       "loading": "Comprobando cambios…",

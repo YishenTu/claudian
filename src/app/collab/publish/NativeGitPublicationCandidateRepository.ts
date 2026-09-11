@@ -219,6 +219,7 @@ export class NativeGitPublicationCandidateRepository {
       args: [
         'merge',
         '--ff-only',
+        '--no-overwrite-ignore',
         '--no-edit',
         '--no-stat',
         '--no-verify',

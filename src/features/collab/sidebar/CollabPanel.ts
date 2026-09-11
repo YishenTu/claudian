@@ -23,6 +23,7 @@ import {
   GitSetupPanel,
   type GitSetupResolution,
 } from '@/features/collab/sidebar/GitSetupPanel';
+import { ProjectUpdatePanel } from '@/features/collab/sidebar/ProjectUpdatePanel';
 import {
   type TicketFocusPort,
   TicketListPanel,
@@ -46,7 +47,7 @@ export interface CollabPanelOptions {
   readonly onOpenConflict?: (
     project: CollabLocalProjectSummary,
     operationId: CollabOperationId,
-    location: 'my-changes' | 'request',
+    location: 'my-changes' | 'request' | 'update',
     requestId?: string,
   ) => void;
   readonly onOpenRequest?: (
@@ -117,6 +118,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
   private fallbackProjectSelection: FallbackProjectSelectionState | null = null;
   private initialGitResolution: Promise<GitSetupResolution> | null;
   private initializationPromise: Promise<void> | null = null;
+  private updatePanel: ProjectUpdatePanel | null = null;
   private personalPanel: PersonalChangesPanel | null = null;
   private pendingRecoveryAction: PendingRecoveryAction | null = null;
   private retiredAction: RetiredActionState | null = null;
@@ -155,6 +157,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     this.active = active;
     this.rootEl.classList.toggle('claudian-collab-panel--inactive', !active);
     if (!active) {
+      this.updatePanel?.setActive(false);
       this.personalPanel?.setActive(false);
       this.teamPanel?.setActive(false);
       this.ticketPanel?.setActive(false);
@@ -168,6 +171,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     const state = this.#readState();
     if (this.#shellSignature(state) === this.shellStateSignature) {
       this.#renderPendingRecoveryAction();
+      this.updatePanel?.setActive(true);
       const personalRefreshScheduled = this.personalPanel?.setActive(true) ?? false;
       this.teamPanel?.setActive(true, !personalRefreshScheduled);
       this.ticketPanel?.setActive(true);
@@ -541,9 +545,18 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         text: t('collab.panel.workingCopyMissing'),
       });
     } else {
+      this.updatePanel = new ProjectUpdatePanel(home.createDiv(), {
+        projectId: project.id,
+        port: this.options.port,
+        onReview: review => this.options.onOpenPublicationReview?.(project, review),
+        onConflict: operationId => this.options.onOpenConflict?.(project, operationId, 'update'),
+        refresh: () => { void this.personalPanel?.refresh(); },
+      });
+      this.updatePanel.setActive(this.active);
       const personal = home.createDiv({ cls: 'claudian-collab-personal-home' });
       this.personalPanel = new PersonalChangesPanel(personal, {
         onInspection: result => {
+          this.updatePanel?.adopt(result.status === 'success' ? result.value.projectUpdate : undefined);
           if (result.status === 'success' && result.value.coordination) {
             const coordination = result.value.coordination;
             const operationId = result.value.personalChanges?.action === 'resolve-changes'
@@ -908,6 +921,8 @@ export class CollabPanel implements CollabSidebarSurfaceController {
 
   #clearRoot(): void {
     this.pendingRecoveryAction = null;
+    this.updatePanel?.destroy();
+    this.updatePanel = null;
     this.#destroyPersonalPanel();
     this.#destroyTeamPanel();
     this.#destroyTicketPanel();

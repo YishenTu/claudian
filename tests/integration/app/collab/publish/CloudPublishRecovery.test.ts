@@ -130,6 +130,7 @@ describe('Cloud Publish recovery integration', () => {
       state,
       unusedCandidates(),
       { compare: async () => [] },
+      { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
       { createOperationId: () => 'cloud-publish' },
     );
 

@@ -312,6 +312,17 @@
       "startFailed": "無法啟動 Host，請查看診斷後重試。",
       "stopFailed": "無法正常停止 Host，請查看診斷後重試。"
     },
+    "update": {
+      "available": "有可用更新",
+      "action": "更新",
+      "updating": "正在更新…",
+      "continue": "繼續更新",
+      "review": "檢閱更新",
+      "reviewTitle": "檢閱專案更新",
+      "failed": "更新失敗，請重試",
+      "conflictTitle": "專案更新衝突",
+      "editAndContinue": "編輯專案檔案，然後從專案側欄繼續更新。"
+    },
     "publish": {
       "title": "我的變更",
       "loading": "正在檢查變更…",

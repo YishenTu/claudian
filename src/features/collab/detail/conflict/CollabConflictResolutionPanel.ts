@@ -11,7 +11,7 @@ import {
   LatestTaskScope,
 } from '@/shared/async/LatestTaskScope';
 
-export type CollabConflictLocation = 'my-changes' | 'request';
+export type CollabConflictLocation = 'my-changes' | 'request' | 'update';
 
 export type CollabConflictResolutionPort = Pick<
   CollabFeaturePort,
@@ -148,7 +148,7 @@ export class CollabConflictResolutionPanel {
     appendText(
       header,
       'h2',
-      this.location === 'request'
+      session.intent === 'update' ? t('collab.update.conflictTitle') : this.location === 'request'
         ? t('collab.conflict.requestTitle')
         : t('collab.conflict.myChangesTitle'),
     );
@@ -159,7 +159,7 @@ export class CollabConflictResolutionPanel {
     appendText(
       this.rootEl,
       'p',
-      t('collab.conflict.editAndPublish'),
+      session.intent === 'update' ? t('collab.update.editAndContinue') : t('collab.conflict.editAndPublish'),
       'claudian-collab-conflict-guidance',
     );
 

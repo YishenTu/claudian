@@ -777,13 +777,13 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     entries,
     /\[0-9a-f\]\{40\}\(\?:\[0-9a-f\]\{24\}\)\?/,
     new Map([
-      ['src/app/collab/conflicts/ConflictScratchGitRepository.ts', 1],
+      ['src/app/collab/git/gitConflictPaths.ts', 1],
       ['src/app/collab/git/GitRepositoryService.ts', 10],
       ['src/app/collab/project/CollabWorkingCopySetup.ts', 1],
     ]),
   ), []);
 
-  // Agent Runtime v5 owns a frozen declarative JSON-schema descriptor, not a runtime validator.
+  // Agent Runtime owns a frozen declarative JSON-schema descriptor, not a runtime validator.
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /\(\?:\[0-9a-f\]\{40\}\|\[0-9a-f\]\{64\}\)/,
     new Map([['src/app/agent-runtime/AgentRuntimeMethodRegistry.ts', 1]]),

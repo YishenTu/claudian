@@ -22,6 +22,7 @@ export interface CollabPreparedReviewEntry {
 
 export type CollabPreparedPublicationReviewIdentity = Pick<
   CollabPublicationReview,
+  | 'intent'
   | 'candidateOid'
   | 'comparisonBaseOid'
   | 'comparisonTargetOid'
@@ -82,6 +83,7 @@ function requestSourceKey(
 function publicationIdentityKey(identity: CollabPreparedPublicationReviewIdentity): string {
   return [
     identity.projectId,
+    identity.intent ?? 'publish',
     identity.operationId,
     identity.currentMainOid,
     identity.candidateOid,

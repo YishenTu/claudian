@@ -206,3 +206,28 @@
 .claudian-collab-panel-status--warning {
   color: var(--text-warning);
 }
+
+.claudian-collab-project-update {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.claudian-collab-project-update[hidden] { display: none; }
+.claudian-collab-project-update > span { flex: 1; }
+.claudian-collab-project-update > button,
+.claudian-collab-project-update > button:hover,
+.claudian-collab-project-update > button:focus-visible,
+.claudian-collab-project-update > button:disabled {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 4px;
+}
+.claudian-collab-project-update > button:hover,
+.claudian-collab-project-update > button:focus-visible { color: var(--text-normal); }
+.claudian-collab-project-update > button:disabled { color: var(--text-faint); cursor: default; }

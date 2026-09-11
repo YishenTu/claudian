@@ -102,6 +102,7 @@ export function reviewsShareIdentity(
     return isPublicationReview(first)
       && isPublicationReview(second)
       && first.projectId === second.projectId
+      && (first.intent ?? 'publish') === (second.intent ?? 'publish')
       && first.operationId === second.operationId
       && first.currentMainOid === second.currentMainOid
       && first.candidateOid === second.candidateOid

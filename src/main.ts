@@ -911,6 +911,9 @@ export default class ClaudianPlugin extends Plugin {
       closeTicket: async (...args) => (
         (await this.requireCollabFeatureService()).closeTicket(...args)
       ),
+      confirmUpdate: async (...args) => (
+        (await this.requireCollabFeatureService()).confirmUpdate(...args)
+      ),
       confirmPublish: async (...args) => (
         (await this.requireCollabFeatureService()).confirmPublish(...args)
       ),
@@ -1000,7 +1003,7 @@ export default class ClaudianPlugin extends Plugin {
   private async openCollabConflict(
     projectId: string,
     operationId: string,
-    location: 'my-changes' | 'request',
+    location: 'my-changes' | 'request' | 'update',
     requestId?: string,
   ): Promise<void> {
     try {
@@ -1091,6 +1094,7 @@ export default class ClaudianPlugin extends Plugin {
       const selected = review.files.find(file => file.path === selectedPath) ?? review.files[0];
       this.collabPreparedReviews.storePublication(review);
       await this.getCollabDetailViewCoordinator().open({
+        ...(review.intent ? { intent: review.intent } : {}),
         candidateOid: review.candidateOid,
         comparisonBaseOid: review.comparisonBaseOid,
         comparisonTargetOid: review.comparisonTargetOid,

@@ -7,7 +7,7 @@ import {
   type WorkspaceLeaf,
 } from 'obsidian';
 
-import { type CollabAcceptRequest, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabPublicationReview, type CollabRequestReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
+import { type CollabAcceptRequest, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabProjectUpdateOutcome, type CollabPublicationReview, type CollabPublishOutcome, type CollabRequestReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabConflictDetailViewState,
@@ -47,6 +47,7 @@ export type ReviewDetailSessionPort = Pick<
   | 'addComment'
   | 'addTicketComment'
   | 'closeTicket'
+  | 'confirmUpdate'
   | 'confirmPublish'
   | 'createTicket'
   | 'resolveTicketNumber'
@@ -125,6 +126,7 @@ export class ReviewDetailSession {
   }
 
   get displayText(): string {
+    if (this.state?.kind === 'publication' && this.state.intent === 'update') return t('collab.update.reviewTitle');
     return this.state?.kind === 'publication' || this.state?.kind === 'working-tree'
       ? t('collab.review.publicationTitle')
       : t('collab.review.title');
@@ -223,7 +225,7 @@ export class ReviewDetailSession {
     const controller = new AbortController();
     this.reviewController = controller;
     try {
-      this.publishDescription = await this.port.readPublishDescription(
+      this.publishDescription = state.kind === 'publication' && state.intent === 'update' ? null : await this.port.readPublishDescription(
         state.projectId,
         { signal: controller.signal },
       ).then(result => result.status === 'success' ? result.value : null, () => null);
@@ -313,12 +315,14 @@ export class ReviewDetailSession {
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-review-header' });
     if (isRequestReview(review)) header.classList.add('is-request');
     header.createEl('h2', {
-      text: !isRequestReview(review)
+      text: isPublicationReview(review) && review.intent === 'update' ? t('collab.update.reviewTitle') : !isRequestReview(review)
         ? t('collab.review.publicationTitle')
         : `${t('collab.review.title')} @${memberNames.get(review.detail.request.memberId)
           ?? t('collab.team.unknownMember')}`,
     });
-    if (!isRequestReview(review)) {
+    if (isPublicationReview(review) && review.intent === 'update') {
+      this.#renderReviewDisplayControls(header);
+    } else if (!isRequestReview(review)) {
       this.#renderDescriptionEditor(header, review, coordination);
     }
     if (isRequestReview(review)) {
@@ -326,11 +330,11 @@ export class ReviewDetailSession {
     } else if (isPublicationReview(review) && review.canConfirm) {
       header.classList.add('has-primary-action');
       const confirm = header.createEl('button', {
-        attr: { 'data-collab-action': 'confirm-publish', type: 'button' },
+        attr: { 'data-collab-action': review.intent === 'update' ? 'confirm-update' : 'confirm-publish', type: 'button' },
         cls: 'claudian-collab-review-accept',
-        text: t('collab.publish.action'),
+        text: review.intent === 'update' ? t('collab.update.action') : t('collab.publish.action'),
       });
-      this.#requireDescription(confirm);
+      if (review.intent !== 'update') this.#requireDescription(confirm);
       confirm.addEventListener('click', () => {
         void this.confirmPublish(review, confirm);
       });
@@ -1113,19 +1117,21 @@ export class ReviewDetailSession {
     const controller = new AbortController();
     this.acceptController = controller;
     button.disabled = true;
-    button.textContent = t('collab.review.confirmingPublish');
+    button.textContent = review.intent === 'update' ? t('collab.update.updating') : t('collab.review.confirmingPublish');
     try {
-      const result = await this.port.confirmPublish({
-        description: this.#currentDescription(),
+      const confirmation = {
         expectedCandidateOid: review.candidateOid,
         expectedMainOid: review.currentMainOid,
         operationId: review.operationId,
         projectId: review.projectId,
-      }, { signal: controller.signal });
+      };
+      const result = review.intent === 'update'
+        ? await this.port.confirmUpdate(confirmation, { signal: controller.signal })
+        : await this.port.confirmPublish({ ...confirmation, description: this.#currentDescription() }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 'conflict') {
         this.preparedReviews?.discardPublication(review);
-        const conflictState = await this.#conflictState(result.conflict, controller.signal);
+        const conflictState = await this.#conflictState(result.conflict, controller.signal, review.intent);
         if (controller.signal.aborted) return;
         await this.leaf.setViewState({
           active: true,
@@ -1134,7 +1140,7 @@ export class ReviewDetailSession {
         });
         return;
       }
-      const outcome = requireSuccess(result);
+      const outcome = requireSuccess<CollabPublishOutcome | CollabProjectUpdateOutcome>(result);
       if (outcome.state === 'review-required' && outcome.review) {
         this.preparedReviews?.discardPublication(review);
         this.preparedReviews?.storePublication(outcome.review);
@@ -1150,7 +1156,7 @@ export class ReviewDetailSession {
     } catch {
       if (controller.signal.aborted) return;
       button.disabled = false;
-      button.textContent = t('collab.review.confirmPublishFailed');
+      button.textContent = review.intent === 'update' ? t('collab.update.failed') : t('collab.review.confirmPublishFailed');
     } finally {
       if (this.acceptController === controller) this.acceptController = null;
     }
@@ -1211,7 +1217,9 @@ export class ReviewDetailSession {
   async #conflictState(
     conflict: CollabConflictDescriptor,
     signal: AbortSignal,
+    intent?: 'publish' | 'update',
   ): Promise<CollabConflictDetailViewState> {
+    if (intent === 'update') return { kind: 'conflict', location: 'update', projectId: conflict.projectId, operationId: conflict.operationId };
     let coordination = this.coordination;
     if (coordination?.snapshot.project.id !== conflict.projectId) {
       try {
@@ -1438,6 +1446,7 @@ export function reviewMatchesState(
   if (state.kind === 'publication') {
     return isPublicationReview(review)
       && review.projectId === state.projectId
+      && (review.intent ?? 'publish') === (state.intent ?? 'publish')
       && review.operationId === state.operationId
       && review.currentMainOid === state.currentMainOid
       && review.candidateOid === state.candidateOid
@@ -1465,6 +1474,7 @@ export function publicationState(
   selectedPath?: string,
 ): CollabPublicationDetailViewState {
   return {
+    ...(review.intent ? { intent: review.intent } : {}),
     candidateOid: review.candidateOid,
     comparisonBaseOid: review.comparisonBaseOid,
     comparisonTargetOid: review.comparisonTargetOid,

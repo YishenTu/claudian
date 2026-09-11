@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { getByRole } from '@testing-library/dom';
+import { getByRole, queryByRole } from '@testing-library/dom';
 import { type App, Menu } from 'obsidian';
 
 import { type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
@@ -434,6 +434,35 @@ describe('CollabPanel', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('places Update above My changes and removes it after the Project observer reports confirmation', async () => {
+    const currentProject = project({ connectionStatus: 'connected', hostStatus: 'running' });
+    const port = createPort({ lifecycle: 'ready', projects: [currentProject], selectedProjectId: currentProject.id });
+    const originalInspection = await port.inspectProject(currentProject.id);
+    if (originalInspection.status !== 'success') throw new Error('Inspection required');
+    let updateState: 'available' | 'current' = 'available';
+    jest.spyOn(port, 'inspectProject').mockImplementation(async () => ({ status: 'success', value: { ...originalInspection.value, projectUpdate: { state: updateState } } }));
+    const onOpenPublicationReview = jest.fn();
+    const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [], canConfirm: true };
+    port.updateProject = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: currentProject.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
+    const container = document.body.createDiv();
+    const panel = new CollabPanel(container, {} as never, { app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, projectSetup: { getPendingSetupOperationId: jest.fn() }, resolveGit: async () => AVAILABLE, onOpenPublicationReview });
+    panel.setActive(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const update = getByRole(container, 'button', { name: 'Update' });
+    const personal = container.querySelector('.claudian-collab-personal-home')!;
+    expect(update.compareDocumentPosition(personal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    update.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onOpenPublicationReview).toHaveBeenCalledWith(currentProject, review);
+    updateState = 'current';
+    for (const [, observer] of port.observeProject.mock.calls) observer();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(queryByRole(container, 'button', { name: 'Update' })).toBeNull();
+    expect(container.querySelector('.claudian-collab-project-update')?.textContent).toBe('');
+    panel.destroy();
+    container.remove();
   });
 
   it('reuses Git resolution started while the Collab chunk is loading', async () => {

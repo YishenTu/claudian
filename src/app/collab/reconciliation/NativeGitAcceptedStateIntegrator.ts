@@ -18,6 +18,7 @@ import {
   type GitCommandRunner,
   parseGitNulFields,
 } from '@/app/collab/git/GitCommandRunner';
+import { canonicalConflictStagePaths, parseGitConflictStages } from '@/app/collab/git/gitConflictPaths';
 import type {
   GitRepositoryReadSession,
   GitRepositoryService,
@@ -164,6 +165,7 @@ export class NativeGitAcceptedStateIntegrator implements
 
     throwIfCancelled(signal);
     const analysis = await this.#analyzeMerge(
+      session,
       context.repositoryPath,
       personalOid,
       acceptedMainOid,
@@ -235,7 +237,7 @@ export class NativeGitAcceptedStateIntegrator implements
     throwIfCancelled(signal);
 
     await this.runner.run({
-      args: ['merge', '--ff-only', '--no-edit', '--no-stat', '--no-verify', acceptedMainOid],
+      args: ['merge', '--ff-only', '--no-overwrite-ignore', '--no-edit', '--no-stat', '--no-verify', acceptedMainOid],
       cwd: context.repositoryPath,
       suppressHooks: true,
     });
@@ -348,6 +350,7 @@ export class NativeGitAcceptedStateIntegrator implements
   }
 
   async #analyzeMerge(
+    session: GitRepositoryReadSession,
     repositoryPath: string,
     personalOid: string,
     acceptedMainOid: string,
@@ -358,7 +361,6 @@ export class NativeGitAcceptedStateIntegrator implements
       args: [
         'merge-tree',
         '--write-tree',
-        '--name-only',
         '--no-messages',
         '-z',
         personalOid,
@@ -372,7 +374,13 @@ export class NativeGitAcceptedStateIntegrator implements
     if (!isCollabGitOid(fields[0])) {
       throw integrationError('repository-invalid', 'reconciliation-merge-output-invalid');
     }
-    const conflictPaths = [...new Set(fields.slice(1).filter(Boolean))].sort();
+    const stages = parseGitConflictStages(fields.slice(1));
+    const trees = stages.length > 0 ? await Promise.all([
+      session.listTreeRecursive(personalOid),
+      session.listTreeRecursive(acceptedMainOid),
+    ]) : [[], []];
+    const relocatedPaths = canonicalConflictStagePaths(stages, trees[0], trees[1]);
+    const conflictPaths = [...new Set(stages.map(stage => relocatedPaths.get(stage.path) ?? stage.path))].sort();
     if (result.exitCode === 0) {
       if (conflictPaths.length !== 0) {
         throw integrationError('repository-invalid', 'reconciliation-merge-output-invalid');

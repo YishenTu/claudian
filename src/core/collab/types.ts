@@ -236,7 +236,10 @@ export interface CollabRequestReview {
   canAccept: boolean;
 }
 
+export type CollabContributionIntent = 'publish' | 'update';
+
 export interface CollabPublicationReview {
+  intent?: CollabContributionIntent;
   kind: 'publication';
   projectId: CollabProjectId;
   operationId: CollabOperationId;

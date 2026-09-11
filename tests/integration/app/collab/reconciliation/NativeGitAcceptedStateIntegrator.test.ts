@@ -12,6 +12,7 @@ import path from 'node:path';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
+import { NativeGitPublicationCandidateRepository } from '@/app/collab/publish/NativeGitPublicationCandidateRepository';
 import type { PublishRepositorySnapshot } from '@/app/collab/publish/PublishCoordinator';
 import {
   NativeGitAcceptedStateIntegrator,
@@ -219,8 +220,48 @@ describe('NativeGitAcceptedStateIntegrator', () => {
       .toBe(harness.personalOid);
   });
 
+  it.each(['background', 'candidate'] as const)(
+    'preserves ignored local content when %s integration starts tracking its path',
+    async mode => {
+      const harness = await createHarness('ignored-collision');
+      const draftPath = path.join(harness.repositoryPath, 'private.md');
+      await writeFile(draftPath, 'Unpublished local draft\n');
+      let personalOid = harness.personalOid;
+      if (mode === 'candidate') {
+        await writeFile(path.join(harness.repositoryPath, 'note.md'), 'Personal contribution\n');
+        await harness.git.stageAll(harness.repositoryPath);
+        personalOid = await harness.git.createCommitFromIndex(harness.repositoryPath, {
+          expectedRefOid: personalOid,
+          message: 'Personal contribution',
+          parents: [personalOid],
+          ref: PERSONAL_REF,
+        });
+      }
+      const snapshot = { ...harness.snapshot, headOid: personalOid };
+      const candidate = new NativeGitPublicationCandidateRepository(harness.git, harness.runner);
+      const input = {
+        contributionHeadOid: personalOid,
+        currentMainOid: harness.mainOid,
+        operationId: 'ignored-collision',
+      };
+      await expect(harness.git.getWorkingTreeStatus(harness.repositoryPath)).resolves.toEqual([]);
+      const outcome = mode === 'background'
+        ? harness.integrator.fastForward(harness.context, snapshot)
+        : candidate.apply(harness.context, snapshot, {
+          ...input,
+          candidateOid: await candidate.prepare(harness.context, input),
+        });
+
+      await expect(outcome).rejects.toBeDefined();
+      await expect(readFile(draftPath, 'utf8')).resolves.toBe('Unpublished local draft\n');
+      await expect(harness.git.resolveRef(harness.repositoryPath, PERSONAL_REF))
+        .resolves.toBe(personalOid);
+      await expect(harness.git.getWorkingTreeStatus(harness.repositoryPath)).resolves.toEqual([]);
+    },
+  );
+
   async function createHarness(
-    scenario: 'conflicting' | 'delete-modify-space' | 'divergent-clean' | 'fast-forward',
+    scenario: 'conflicting' | 'delete-modify-space' | 'divergent-clean' | 'fast-forward' | 'ignored-collision',
   ) {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-reconciliation-'));
     const repositoryPath = path.join(root, 'project');
@@ -245,6 +286,9 @@ describe('NativeGitAcceptedStateIntegrator', () => {
       ? 'note with spaces.md'
       : 'note.md';
     await writeFile(path.join(repositoryPath, conflictPath), 'base\n');
+    if (scenario === 'ignored-collision') {
+      await writeFile(path.join(repositoryPath, '.gitignore'), 'private.md\n');
+    }
     await git.stageAll(repositoryPath);
     const baseOid = await git.createCommitFromIndex(repositoryPath, {
       expectedRefOid: null,
@@ -254,7 +298,10 @@ describe('NativeGitAcceptedStateIntegrator', () => {
     });
     await git.createRef(repositoryPath, PERSONAL_REF, baseOid);
 
-    if (scenario === 'conflicting') {
+    if (scenario === 'ignored-collision') {
+      await writeFile(path.join(repositoryPath, '.gitignore'), '');
+      await writeFile(path.join(repositoryPath, 'private.md'), 'Accepted content\n');
+    } else if (scenario === 'conflicting') {
       await writeFile(path.join(repositoryPath, conflictPath), 'accepted\n');
     } else if (scenario === 'delete-modify-space') {
       await rm(path.join(repositoryPath, conflictPath));
@@ -274,7 +321,7 @@ describe('NativeGitAcceptedStateIntegrator', () => {
     });
 
     let personalOid = baseOid;
-    if (scenario !== 'fast-forward') {
+    if (scenario !== 'fast-forward' && scenario !== 'ignored-collision') {
       if (scenario === 'conflicting' || scenario === 'delete-modify-space') {
         await writeFile(path.join(repositoryPath, conflictPath), 'personal\n');
       } else {

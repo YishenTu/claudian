@@ -312,6 +312,17 @@
       "startFailed": "Der Host konnte nicht gestartet werden. Prüfe die Diagnose und versuche es erneut.",
       "stopFailed": "Der Host konnte nicht ordnungsgemäß gestoppt werden. Prüfe die Diagnose und versuche es erneut."
     },
+    "update": {
+      "available": "Update verfügbar",
+      "action": "Aktualisieren",
+      "updating": "Wird aktualisiert…",
+      "continue": "Update fortsetzen",
+      "review": "Update prüfen",
+      "reviewTitle": "Projektupdate prüfen",
+      "failed": "Update fehlgeschlagen. Erneut versuchen",
+      "conflictTitle": "Konflikte beim Projektupdate",
+      "editAndContinue": "Bearbeite die Projektdateien und setze das Update dann in der Projektseitenleiste fort."
+    },
     "publish": {
       "title": "Meine Änderungen",
       "loading": "Änderungen werden geprüft…",

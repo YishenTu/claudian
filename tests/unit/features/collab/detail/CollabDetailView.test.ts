@@ -3,6 +3,8 @@
 import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { getByRole } from '@testing-library/dom';
+import { configureAxe } from 'jest-axe';
 import { MarkdownRenderer, setIcon, type WorkspaceLeaf } from 'obsidian';
 
 import { type CollabAcceptOutcome, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabPublicationReview, type CollabRequestReview, type CollabReviewFileContent, type CollabWorkingTreeReview } from '@/core/collab';
@@ -912,6 +914,28 @@ describe('CollabDetailView', () => {
       },
       type: COLLAB_DETAIL_VIEW_TYPE,
     });
+  });
+
+  it('reviews an Update and confirms the local candidate without a description', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    port.confirmUpdate.mockResolvedValue({ status: 'success', value: { localHeadOid: review.candidateOid, projectId: review.projectId, state: 'updated' } });
+    const leaf = { detach: jest.fn(), setViewState: jest.fn() } as unknown as WorkspaceLeaf;
+    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    expect(view.getDisplayText()).toBe('Review project update');
+    expect(view.contentEl.querySelector('[data-collab-description]')).toBeNull();
+    const confirm = getByRole(view.contentEl, 'button', { name: 'Update' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+    expect(await configureAxe({ rules: { region: { enabled: false } } })(view.contentEl)).toHaveNoViolations();
+    confirm.click();
+    await nextTurn();
+    expect(port.confirmUpdate).toHaveBeenCalledWith({ projectId: review.projectId, operationId: review.operationId, expectedMainOid: review.currentMainOid, expectedCandidateOid: review.candidateOid }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(port.confirmPublish).not.toHaveBeenCalled();
+    expect(leaf.detach).toHaveBeenCalledTimes(1);
   });
 
   it('renders publication review without comments and confirms the exact candidate', async () => {
@@ -2496,7 +2520,7 @@ describe('CollabDetailView', () => {
   it('keeps conflict detail read-only and preserves its owner location', async () => {
     const port = detailPort(requestReview());
     const panel = { destroy: jest.fn(), open: jest.fn().mockResolvedValue(undefined) };
-    let location: 'my-changes' | 'request' | undefined;
+    let location: 'my-changes' | 'request' | 'update' | undefined;
     const leaf = { setViewState: jest.fn().mockResolvedValue(undefined) };
     const view = new CollabDetailView(leaf as unknown as WorkspaceLeaf, port, {
       conflictPanelFactory: (_root, _conflictPort, options) => {
@@ -2851,6 +2875,7 @@ function detailPort(review: CollabRequestReview) {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
     createTicket: jest.fn(),
     resolveTicketNumber: jest.fn(),
     prepareWorkingTreeReview: jest.fn(),

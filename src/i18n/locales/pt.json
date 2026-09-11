@@ -312,6 +312,17 @@
       "startFailed": "Não foi possível iniciar o Host. Verifique o diagnóstico e tente novamente.",
       "stopFailed": "Não foi possível parar o Host corretamente. Verifique o diagnóstico e tente novamente."
     },
+    "update": {
+      "available": "Atualização disponível",
+      "action": "Atualizar",
+      "updating": "Atualizando…",
+      "continue": "Continuar atualização",
+      "review": "Revisar atualização",
+      "reviewTitle": "Revisar atualização do projeto",
+      "failed": "Falha na atualização. Tentar novamente",
+      "conflictTitle": "Conflitos na atualização do projeto",
+      "editAndContinue": "Edite os arquivos do projeto e continue a atualização pela barra lateral do projeto."
+    },
     "publish": {
       "title": "Minhas alterações",
       "loading": "Verificando alterações…",

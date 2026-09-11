@@ -141,6 +141,8 @@ function port(): jest.Mocked<CollabAgentPort> {
     acceptRequest: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn(),
     listProjects: jest.fn(),
