@@ -32,7 +32,7 @@ import {
   type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
 import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabRevokeInvitationRequest } from '@/core/collab';
-import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConnectionStatus, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConnectionStatus, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabProjectUpdateInspection, type CollabProjectUpdateOutcome, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabBeginCloudToLanTransferRequest,
@@ -205,6 +205,8 @@ export interface CollabPublicationPort {
     options?: CollabOperationOptions,
     idempotencyKey?: string,
   ): Promise<CollabTicketSummary>;
+  updateProject(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
+  confirmUpdate(request: CollabConfirmUpdateRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
   confirmPublish(
     request: CollabConfirmPublishRequest,
     options?: CollabOperationOptions,
@@ -218,7 +220,7 @@ export interface CollabPublicationPort {
     projectId: CollabProjectId,
     coordination: CollabCoordinationSnapshot | undefined,
     options?: CollabOperationOptions,
-  ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection }>;
+  ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection; readonly projectUpdate?: CollabProjectUpdateInspection }>;
   resolveTicketNumber(
     request: ResolveTicketNumberRequest,
     options?: CollabOperationOptions,
@@ -844,12 +846,12 @@ class CollabFeatureServiceCore {
               : 'needs-attention',
         };
       }
-      const { gitStatus, personalChanges: inspectedPersonalChanges } = await this.options.publication.inspectLocalChanges(
+      const { gitStatus, projectUpdate, personalChanges: inspectedPersonalChanges } = await this.options.publication.inspectLocalChanges(
         projectId,
         coordination,
         options,
       );
-      const personalChanges = conflictResult.value
+      const personalChanges = conflictResult.value && conflictResult.value.intent !== 'update'
         ? {
           ...inspectedPersonalChanges,
           action: 'resolve-changes' as const,
@@ -864,6 +866,9 @@ class CollabFeatureServiceCore {
           ...(conflictResult.value ? { conflict: conflictResult.value } : {}),
           ...(coordination ? { coordination } : {}),
           gitStatus,
+          projectUpdate: projectUpdate?.state !== 'unknown' && conflictResult.value?.intent === 'update'
+            ? { state: 'conflict', conflictOperationId: conflictResult.value.descriptor.operationId }
+            : projectUpdate,
           personalChanges,
           project,
         },
@@ -1192,6 +1197,28 @@ class CollabFeatureServiceCore {
         const { activeOperation: _activeOperation, ...state } = this.#stateValue;
         this.#publishState(state);
       }
+    }
+  }
+
+  async updateProject(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabResult<CollabProjectUpdateOutcome>> {
+    try {
+      throwIfCancelled(options.signal);
+      return await this.options.publication.updateProject(projectId, options);
+    } catch (error) {
+      return this.#failureResult(error);
+    } finally {
+      this.#notifyProject(projectId);
+    }
+  }
+
+  async confirmUpdate(request: CollabConfirmUpdateRequest, options: CollabOperationOptions = {}): Promise<CollabResult<CollabProjectUpdateOutcome>> {
+    try {
+      throwIfCancelled(options.signal);
+      return await this.options.publication.confirmUpdate(request, options);
+    } catch (error) {
+      return this.#failureResult(error);
+    } finally {
+      this.#notifyProject(request.projectId);
     }
   }
 
@@ -2456,6 +2483,12 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   readPublishDescription: CollabFeaturePort['readPublishDescription'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.readPublishDescription(...args))
+  );
+  updateProject: CollabFeaturePort['updateProject'] = (...args) => (
+    this.project(() => args[0], 'active', () => this.core.updateProject(...args))
+  );
+  confirmUpdate: CollabFeaturePort['confirmUpdate'] = (...args) => (
+    this.project(() => args[0].projectId, 'active', () => this.core.confirmUpdate(...args))
   );
   publish: CollabFeaturePort['publish'] = (...args) => (
     this.project(() => args[0].projectId, 'active', () => this.core.publish(...args))

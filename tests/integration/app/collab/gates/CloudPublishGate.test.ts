@@ -454,6 +454,7 @@ describe('Cloud Publish gate', () => {
           state,
           unusedCandidates(),
           { compare: async () => [] },
+          { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
           { createOperationId: () => `operation-${actor}` },
         );
 

@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -54,7 +55,9 @@ describe('M4 resumable publication gate', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('commits offline once, resumes after reconstruction, and ensures one request', async () => {
+  it.each(['unchanged', 'later edits', 'later commit'] as const)(
+    'resumes offline publication with %s after reconstruction and ensures one request',
+    async laterWork => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-m4-gate-'));
     const hostRoot = path.join(root, 'host-vault');
     const memberRoot = path.join(root, 'member-vault');
@@ -138,14 +141,38 @@ describe('M4 resumable publication gate', () => {
       value: { state: 'committed-locally' },
     });
     await expect(offline.readPublishDescription(projectId)).resolves.toBe('Offline note');
-    const committedOid = committed.value.localHeadOid;
-    expect(committedOid).not.toBe(initialOid);
+    const capturedOid = committed.value.localHeadOid;
+    expect(capturedOid).not.toBe(initialOid);
+
+    if (laterWork !== 'unchanged') {
+      await writeFile(path.join(workingCopy, 'offline-note.md'), 'offline change\ncontinued work\n');
+      await writeFile(path.join(workingCopy, 'later-note.md'), 'another unpublished note\n');
+      if (laterWork === 'later commit') {
+        await memberGit.repositories.stageAll(workingCopy);
+        await memberGit.repositories.createCommitFromIndex(workingCopy, {
+          expectedRefOid: capturedOid,
+          message: 'Continue offline work',
+          parents: [capturedOid],
+          ref: membership.member.personalRef,
+        });
+      }
+    }
 
     await offline.close();
     await host.lanHost.startProject(projectId);
     const resumed = new CollabPublicationService(member, publicationOptions);
     publications.push(resumed);
     const published = await resumed.publish(publishRequest);
+    expect(published).toMatchObject({ status: 'success', value: { state: 'request-synchronized' } });
+    if (published.status !== 'success' || !published.value.request) {
+      throw new Error('Resumed Publish did not create a request');
+    }
+    const committedOid = published.value.localHeadOid;
+    expect(committedOid === capturedOid).toBe(laterWork === 'unchanged');
+    await expect(readFile(path.join(workingCopy, 'offline-note.md'), 'utf8'))
+      .resolves.toBe(laterWork === 'unchanged' ? 'offline change\n' : 'offline change\ncontinued work\n');
+    await expect(readFile(path.join(workingCopy, 'later-note.md'), 'utf8').catch(() => null))
+      .resolves.toBe(laterWork === 'unchanged' ? null : 'another unpublished note\n');
     expect(published).toMatchObject({
       status: 'success',
       value: {
@@ -159,9 +186,6 @@ describe('M4 resumable publication gate', () => {
         state: 'request-synchronized',
       },
     });
-    if (published.status !== 'success' || !published.value.request) {
-      throw new Error('Resumed Publish did not create a request');
-    }
     await expect(resumed.readPublishDescription(projectId)).resolves.toBeNull();
     const repeated = await resumed.publish(publishRequest);
     expect(repeated).toMatchObject({
@@ -198,9 +222,10 @@ describe('M4 resumable publication gate', () => {
       workingCopy,
       initialOid,
       committedOid,
-    )).toEqual({ leftOnly: 0, rightOnly: 1 });
+    )).toEqual({ leftOnly: 0, rightOnly: laterWork === 'unchanged' ? 1 : 2 });
     await expect(hostGit.repositories.assertHealthy(bareRepository)).resolves.toBeUndefined();
     expect(hostGit.runner.activeProcessCount).toBe(0);
     expect(memberGit.runner.activeProcessCount).toBe(0);
-  });
+    },
+  );
 });

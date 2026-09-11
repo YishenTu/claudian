@@ -21,6 +21,8 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn(),
     listProjects: jest.fn().mockResolvedValue({ status: 'success', value: [] }),
@@ -104,7 +106,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       result: {
         access: 'read-write',
         name: 'claudian-agent-runtime',
-        protocolVersion: 5,
+        protocolVersion: 6,
       },
     });
 
@@ -114,7 +116,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       params: {},
     })).json()).resolves.toEqual({
       id: 'health-1',
-      result: { ok: true, protocolVersion: 5 },
+      result: { ok: true, protocolVersion: 6 },
     });
     await expect((await post(endpoint, {
       id: 'operation-1',
@@ -124,7 +126,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       id: 'operation-1',
       result: {
         operation: { name: 'collab.projects.get' },
-        protocolVersion: 5,
+        protocolVersion: 6,
       },
     });
   });

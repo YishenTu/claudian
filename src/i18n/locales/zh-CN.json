@@ -312,6 +312,17 @@
       "startFailed": "无法启动 Host，请查看诊断后重试。",
       "stopFailed": "无法正常停止 Host，请查看诊断后重试。"
     },
+    "update": {
+      "available": "有可用更新",
+      "action": "更新",
+      "updating": "正在更新…",
+      "continue": "继续更新",
+      "review": "审阅更新",
+      "reviewTitle": "审阅项目更新",
+      "failed": "更新失败，请重试",
+      "conflictTitle": "项目更新冲突",
+      "editAndContinue": "编辑项目文件，然后从项目侧栏继续更新。"
+    },
     "publish": {
       "title": "我的修改",
       "loading": "正在检查修改…",

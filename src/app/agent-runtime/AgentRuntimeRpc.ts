@@ -3,7 +3,7 @@ import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTic
 import type { CollabAuthorityKind, CollabAuthoritySyncStatus, CollabConflictKind, CollabConnectionStatus, CollabHostStatus, CollabLocalCleanupStatus, CollabPersonalAction, CollabProjectHealth, CollabProjectLifecycle, CollabReviewComparisonKind } from '@/core/collab';
 import type { CollabErrorCode } from '@/core/collab/ClaudianCollabError';
 
-export const AGENT_RUNTIME_PROTOCOL_VERSION = 5 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION = 6 as const;
 
 export type AgentRuntimeRpcOwnedErrorCode =
   | 'invalid_request'
@@ -109,7 +109,14 @@ export interface AgentRuntimeSyncState {
   readonly eventSequence: number;
 }
 
+export interface AgentRuntimeProjectUpdateState {
+  readonly state: 'unknown' | 'current' | 'available' | 'review-required' | 'conflict' | 'recovery-required';
+  readonly reason?: 'offline' | 'not-fetched';
+  readonly nextAction: 'update' | 'resolve-conflicts' | null;
+}
+
 export interface AgentRuntimeProjectDetail extends AgentRuntimeProjectSummary {
+  readonly update: AgentRuntimeProjectUpdateState;
   readonly workspacePath: string;
   readonly authorityKind: CollabAuthorityKind;
   readonly hostStatus: CollabHostStatus;
@@ -472,7 +479,14 @@ export interface AgentRuntimeChangesPublishResult {
   readonly review?: AgentRuntimePublicationReview;
 }
 
-export type AgentRuntimeConflictLocation = 'my-changes' | 'request';
+export interface AgentRuntimeProjectUpdateResult {
+  readonly projectId: string;
+  readonly state: 'already-current' | 'updated' | 'review-required';
+  readonly nextAction: 'update' | null;
+  readonly files?: readonly AgentRuntimeChangedFile[];
+}
+
+export type AgentRuntimeConflictLocation = 'my-changes' | 'request' | 'update';
 
 export interface AgentRuntimeConflictGetResult {
   readonly projectId: string;
@@ -501,6 +515,7 @@ export type AgentRuntimeRpcResult =
   | AgentRuntimeHealthCheckResult
   | AgentRuntimeProjectsListResult
   | AgentRuntimeProjectGetResult
+  | AgentRuntimeProjectUpdateResult
   | AgentRuntimePersonalChangesResult
   | AgentRuntimePersonalChangeFileResult
   | AgentRuntimeRequestsListResult

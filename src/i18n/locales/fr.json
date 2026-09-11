@@ -312,6 +312,17 @@
       "startFailed": "Impossible de démarrer le Host. Consultez le diagnostic et réessayez.",
       "stopFailed": "Le Host n’a pas pu être arrêté correctement. Consultez le diagnostic et réessayez."
     },
+    "update": {
+      "available": "Mise à jour disponible",
+      "action": "Mettre à jour",
+      "updating": "Mise à jour…",
+      "continue": "Poursuivre la mise à jour",
+      "review": "Examiner la mise à jour",
+      "reviewTitle": "Examiner la mise à jour du projet",
+      "failed": "Échec de la mise à jour. Réessayer",
+      "conflictTitle": "Conflits de mise à jour du projet",
+      "editAndContinue": "Modifiez les fichiers du projet, puis poursuivez la mise à jour depuis la barre latérale du projet."
+    },
     "publish": {
       "title": "Mes modifications",
       "loading": "Vérification des modifications…",

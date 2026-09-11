@@ -571,6 +571,18 @@ describe('CollabFeatureService', () => {
     });
   });
 
+  it('invalidates Project views after Update confirmation without a file watcher event', async () => {
+    const confirmUpdate = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: 'project-alpha', localHeadOid: 'b'.repeat(40), state: 'updated' } });
+    const service = createService({ publication: { confirmUpdate } });
+    const observed = jest.fn();
+    const subscription = service.observeProject('project-alpha', observed);
+    await service.confirmUpdate({ projectId: 'project-alpha', operationId: 'update-a', expectedMainOid: 'a'.repeat(40), expectedCandidateOid: 'b'.repeat(40) });
+    expect(confirmUpdate).toHaveBeenCalledTimes(1);
+    expect(observed).toHaveBeenCalledTimes(1);
+    subscription.dispose();
+    await service.close();
+  });
+
   it('shares initialization and publishes the durable local Project projection', async () => {
     const service = createService();
     const states: string[] = [];
@@ -2609,6 +2621,8 @@ describe('CollabFeatureService', () => {
       ['readPublishDescription', ['project-alpha']],
       ['publish', [projectRequest]],
       ['confirmPublish', [projectRequest]],
+      ['updateProject', ['project-alpha']],
+      ['confirmUpdate', [projectRequest]],
       ['prepareWorkingTreeReview', ['project-alpha']],
       ['readWorkingTreeReviewFile', [projectRequest]],
       ['preparePublicationReview', ['project-alpha']],

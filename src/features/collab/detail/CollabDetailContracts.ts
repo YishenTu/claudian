@@ -1,7 +1,7 @@
 import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
-import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabOperationOptions, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
+import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabConfirmUpdateRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabOperationOptions, CollabProjectUpdateOutcome, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
 import type {
   CollabConflictResolutionPanelOptions,
   CollabConflictResolutionPort,
@@ -21,13 +21,14 @@ export interface CollabRequestDetailViewState {
 
 export interface CollabConflictDetailViewState {
   readonly kind: 'conflict';
-  readonly location: 'my-changes' | 'request';
+  readonly location: 'my-changes' | 'request' | 'update';
   readonly operationId: string;
   readonly projectId: string;
   readonly requestId?: string;
 }
 
 export interface CollabPublicationDetailViewState {
+  readonly intent?: 'publish' | 'update';
   readonly candidateOid: string;
   readonly comparisonBaseOid: string;
   readonly comparisonTargetOid: string;
@@ -91,6 +92,7 @@ export interface CollabDetailViewPort
     request: { readonly description: string; readonly projectId: string },
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabPublishOutcome>>;
+  confirmUpdate(request: CollabConfirmUpdateRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
   confirmPublish(
     request: {
       readonly expectedCandidateOid: string;

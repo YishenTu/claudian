@@ -312,6 +312,17 @@
       "startFailed": "Host を起動できませんでした。診断を確認して再試行してください。",
       "stopFailed": "Host を正常に停止できませんでした。診断を確認して再試行してください。"
     },
+    "update": {
+      "available": "更新があります",
+      "action": "更新",
+      "updating": "更新中…",
+      "continue": "更新を続ける",
+      "review": "更新を確認",
+      "reviewTitle": "プロジェクトの更新を確認",
+      "failed": "更新に失敗しました。再試行",
+      "conflictTitle": "プロジェクト更新の競合",
+      "editAndContinue": "プロジェクトのファイルを編集してから、プロジェクトのサイドバーで更新を続けてください。"
+    },
     "publish": {
       "title": "自分の変更",
       "loading": "変更を確認しています…",

@@ -329,6 +329,7 @@ describeWithServer('Cloud localhost client milestone gate', () => {
         bob.publicationState,
         unusedCandidates(),
         { compare: async () => [] },
+        { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
         { createOperationId: () => 'local-milestone-publish' },
       );
       await expect(publish.publish({

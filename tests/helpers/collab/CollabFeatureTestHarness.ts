@@ -40,6 +40,8 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'readPublishDescription',
   'publish',
   'confirmPublish',
+  'updateProject',
+  'confirmUpdate',
   'prepareWorkingTreeReview',
   'readWorkingTreeReviewFile',
   'readConflict',
@@ -268,6 +270,8 @@ function defaultMembership(): CollabMembershipPort {
 
 function defaultPublication(): CollabPublicationPort {
   return {
+    updateProject: () => unexpected('updateProject'),
+    confirmUpdate: () => unexpected('confirmUpdate'),
     abortProjectBackgroundWork: () => undefined,
     acceptRequest: () => unexpected('acceptRequest'),
     addComment: () => unexpected('addComment'),

@@ -87,6 +87,7 @@ export type CollabFeatureStateListener = (
 
 export interface CollabProjectInspection {
   project: CollabLocalProjectSummary;
+  projectUpdate?: CollabProjectUpdateInspection;
   gitStatus?: CollabGitStatus;
   coordination?: CollabCoordinationSnapshot;
   conflict?: CollabConflictSession;
@@ -201,6 +202,26 @@ export interface CollabConfirmPublishRequest {
   description: string;
 }
 
+export interface CollabConfirmUpdateRequest {
+  projectId: CollabProjectId;
+  operationId: CollabOperationId;
+  expectedMainOid: CollabGitOid;
+  expectedCandidateOid: CollabGitOid;
+}
+
+export interface CollabProjectUpdateOutcome {
+  projectId: CollabProjectId;
+  localHeadOid: CollabGitOid;
+  state: 'already-current' | 'updated' | 'review-required';
+  review?: CollabPublicationReview;
+}
+
+export type CollabProjectUpdateInspection =
+  | { readonly state: 'unknown'; readonly reason: 'offline' | 'not-fetched' }
+  | { readonly state: 'current' | 'available' | 'recovery-required' }
+  | { readonly state: 'review-required'; readonly review: CollabPublicationReview }
+  | { readonly state: 'conflict'; readonly conflictOperationId: CollabOperationId };
+
 export type CollabReconciliationState =
   | 'already-current'
   | 'fast-forwarded'
@@ -213,6 +234,7 @@ export interface CollabReconciliationOutcome {
 }
 
 export interface CollabConflictSession {
+  intent?: 'publish' | 'update';
   descriptor: CollabConflictDescriptor;
   publicationReview?: CollabPublicationReview;
 }
@@ -536,6 +558,8 @@ export interface CollabFeaturePort {
   readSnapshot(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabCoordinationSnapshot>>;
   readProjectCapabilities(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectCapabilities>>;
   readPublishDescription(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<string | null>>;
+  updateProject(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
+  confirmUpdate(request: CollabConfirmUpdateRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
   publish(request: CollabPublishRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabPublishOutcome>>;
   confirmPublish(request: CollabConfirmPublishRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabPublishOutcome>>;
   prepareWorkingTreeReview(projectId: CollabProjectId, baseOid: CollabGitOid, options?: CollabOperationOptions): Promise<CollabResult<CollabWorkingTreeReview>>;

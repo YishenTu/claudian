@@ -312,6 +312,17 @@
       "startFailed": "Host를 시작하지 못했습니다. 진단을 확인하고 다시 시도하세요.",
       "stopFailed": "Host를 정상적으로 중지하지 못했습니다. 진단을 확인하고 다시 시도하세요."
     },
+    "update": {
+      "available": "사용 가능한 업데이트",
+      "action": "업데이트",
+      "updating": "업데이트 중…",
+      "continue": "업데이트 계속",
+      "review": "업데이트 검토",
+      "reviewTitle": "프로젝트 업데이트 검토",
+      "failed": "업데이트 실패. 다시 시도",
+      "conflictTitle": "프로젝트 업데이트 충돌",
+      "editAndContinue": "프로젝트 파일을 편집한 다음 프로젝트 사이드바에서 업데이트를 계속하세요."
+    },
     "publish": {
       "title": "내 변경 사항",
       "loading": "변경 사항 확인 중…",

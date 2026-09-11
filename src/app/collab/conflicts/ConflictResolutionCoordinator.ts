@@ -85,15 +85,22 @@ export interface ConflictScratchGitPort {
   ): Promise<readonly CollabConflictTextSegment[]>;
 }
 
+export interface ConflictPublicationInput {
+  readonly candidateOid: string;
+  readonly contributionHeadOid: string;
+  readonly currentMainOid: string;
+  readonly operationId: CollabOperationId;
+}
+
 export interface ConflictPublicationPort {
+  isResolutionRetained(
+    context: PublishProjectContext,
+    input: ConflictPublicationInput,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   prepareResolvedReview(
     context: PublishProjectContext,
-    input: {
-      readonly candidateOid: string;
-      readonly contributionHeadOid: string;
-      readonly currentMainOid: string;
-      readonly operationId: CollabOperationId;
-    },
+    input: ConflictPublicationInput,
     signal?: AbortSignal,
   ): Promise<CollabPublicationReview>;
 }
@@ -198,6 +205,38 @@ export class ConflictResolutionCoordinator {
       descriptor,
       options.signal,
     ));
+  }
+
+  resumeCommitted(
+    operationId: CollabOperationId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabConflictSession | null>> {
+    return this.operationQueue.run(async () => {
+      let record: ConflictResolutionRecord | null = null;
+      try {
+        throwIfCancelled(options.signal);
+        record = await this.store.load(operationId);
+        if (!record || record.phase !== 'committed') return { status: 'success', value: null };
+        const context = await this.#loadContext(record, options.signal);
+        if (record.resultCommitOid && await this.publication.isResolutionRetained(context, {
+          candidateOid: record.resultCommitOid,
+          contributionHeadOid: record.descriptor.startingPersonalOid,
+          currentMainOid: record.descriptor.startingMainOid,
+          operationId: record.operationId,
+        }, options.signal)) {
+          await this.safety.assertSafe(context);
+          throwIfCancelled(options.signal);
+          await this.store.remove(record.operationId);
+          return { status: 'success', value: this.session(record) };
+        }
+        return {
+          status: 'success',
+          value: await this.#completeCommitted(record, context, options.signal),
+        };
+      } catch (error) {
+        return this.failure(error, record, record?.phase === 'committed');
+      }
+    });
   }
 
   discard(

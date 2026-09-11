@@ -124,11 +124,11 @@ function parseState(value: unknown): CollabDetailViewState {
     if (
       !isCollabProjectId(state.projectId)
       || !isCollabOpaqueId(state.operationId)
-      || (state.location !== 'my-changes' && state.location !== 'request')
+      || (state.location !== 'my-changes' && state.location !== 'request' && state.location !== 'update')
       || (state.location === 'request' && (
         !isCollabOpaqueId(state.requestId)
       ))
-      || (state.location === 'my-changes' && state.requestId !== undefined)
+      || (state.location !== 'request' && state.requestId !== undefined)
     ) {
       throw viewError('review-view-state-invalid');
     }
@@ -142,7 +142,8 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (state.kind === 'publication') {
     if (
-      !isCollabProjectId(state.projectId)
+      (state.intent !== undefined && state.intent !== 'publish' && state.intent !== 'update')
+      || !isCollabProjectId(state.projectId)
       || !isCollabOpaqueId(state.operationId)
       || !isCollabGitOid(state.currentMainOid)
       || !isCollabGitOid(state.candidateOid)
@@ -153,6 +154,7 @@ function parseState(value: unknown): CollabDetailViewState {
       throw viewError('review-view-state-invalid');
     }
     return {
+      ...(state.intent === undefined ? {} : { intent: state.intent }),
       candidateOid: state.candidateOid,
       comparisonBaseOid: state.comparisonBaseOid,
       comparisonTargetOid: state.comparisonTargetOid,

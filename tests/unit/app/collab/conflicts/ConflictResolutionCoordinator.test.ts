@@ -222,6 +222,7 @@ function createSubject() {
     assertSafe: jest.fn(async () => undefined),
   } satisfies ConflictResolutionSafetyPort;
   const publication = {
+    isResolutionRetained: jest.fn(async () => false),
     prepareResolvedReview: jest.fn(async (_context, input) => ({
       baseMainOid: BASE,
       candidateOid: input.candidateOid,

@@ -90,7 +90,7 @@ export class WorkingTreeReviewService {
 
   async inspect(
     projectId: CollabProjectId,
-    selectBase: (snapshot: PublishRepositorySnapshot) => string,
+    selectBase: (snapshot: PublishRepositorySnapshot) => string | Promise<string>,
     options: CollabOperationOptions = {},
   ): Promise<{
     readonly repositoryPath: string;
@@ -104,7 +104,7 @@ export class WorkingTreeReviewService {
     if (!snapshot.headOid) {
       throw reviewError('repository-invalid', 'working-tree-review-head-missing');
     }
-    const baseOid = selectBase(snapshot);
+    const baseOid = await selectBase(snapshot);
     const files = await this.files.listChanges(
       context.repositoryPath,
       baseOid,

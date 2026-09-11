@@ -254,6 +254,7 @@ function createSubject(overrides: {
     state,
     candidates,
     comparison,
+    { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
     {
       createOperationId: () => operationIds.shift() ?? 'operation-c',
       now: () => new Date(NOW),
@@ -263,6 +264,21 @@ function createSubject(overrides: {
 }
 
 describe('PublishCoordinator', () => {
+  it.each(['publish', 'update'] as const)('preserves explicit %s intent when the opposite entry point is called', async intent => {
+    const f = createSubject();
+    f.state.current = { ...f.state.current, operation: { intent, phase: 'captured', candidateOid: null, currentMainOid: null, contributionHeadOid: LOCAL, operationId: 'operation-a', createdAt: NOW, updatedAt: NOW } };
+    const before = structuredClone(f.state.current);
+    const result = intent === 'update' ? await f.subject.publish(PUBLISH_REQUEST) : await f.subject.update(PROJECT.projectId);
+    expect(result.status).toBe('stale');
+    expect(f.state.current).toEqual(before);
+    const continuation = intent === 'update'
+      ? await f.subject.publishConflictResolution(PUBLISH_REQUEST, conflict())
+      : await f.subject.updateConflictResolution(PROJECT.projectId, conflict());
+    expect(continuation.status).toBe('stale');
+    expect(f.state.current).toEqual(before);
+    expect(f.requests.calls).toEqual([]);
+  });
+
   it('allows another Project to finish while preserving order within a blocked Project', async () => {
     const fixture = createSubject();
     let release!: () => void;

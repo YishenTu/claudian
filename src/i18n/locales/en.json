@@ -334,6 +334,17 @@
       "startFailed": "Host could not be started. Check diagnostics and retry.",
       "stopFailed": "Host could not be stopped cleanly. Check diagnostics and retry."
     },
+    "update": {
+      "available": "Update available",
+      "action": "Update",
+      "updating": "Updating…",
+      "continue": "Continue update",
+      "review": "Review update",
+      "reviewTitle": "Review project update",
+      "failed": "Update failed. Retry",
+      "conflictTitle": "Project update conflicts",
+      "editAndContinue": "Edit the project files, then continue Update from the project sidebar."
+    },
     "publish": {
       "title": "My changes",
       "loading": "Checking changes…",

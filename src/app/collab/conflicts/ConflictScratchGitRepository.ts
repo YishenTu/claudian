@@ -19,6 +19,7 @@ import {
   type GitCommandRunner,
   parseGitNulFields,
 } from '@/app/collab/git/GitCommandRunner';
+import { canonicalConflictStagePaths, type GitConflictStage, parseGitConflictStages } from '@/app/collab/git/gitConflictPaths';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { publicationCandidateRef } from '@/app/collab/publish/NativeGitPublicationCandidateRepository';
 import type { PublishProjectContext } from '@/app/collab/publish/PublishCoordinator';
@@ -26,7 +27,6 @@ import { type CollabConflictDescriptor, type CollabConflictEntry, type CollabCon
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const STAGE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) ([123])\t(.+)$/;
 const SCRATCH_BRANCH = 'refs/heads/resolution';
 const RESULT_REF = 'refs/heads/resolved';
 const RESOLUTION_IDENTITY = Object.freeze({
@@ -36,12 +36,7 @@ const RESOLUTION_IDENTITY = Object.freeze({
 const CONFLICT_MARKER_SIZE = 64;
 const MERGE_FILE_EXIT_CODES = Object.freeze(Array.from({ length: 128 }, (_, index) => index));
 
-export interface ConflictIndexStage {
-  readonly mode: '100644' | '100755';
-  readonly oid: string;
-  readonly path: string;
-  readonly stage: 1 | 2 | 3;
-}
+export type ConflictIndexStage = GitConflictStage;
 
 export interface ConflictScratchInspection {
   readonly acceptedMainOid: string;
@@ -188,8 +183,19 @@ export class ConflictScratchGitRepository {
     const stagePaths = new Set(stages.map(stage => stage.path));
     const resolved = new Set(resolvedPaths);
     const representedPaths = new Set<string>();
+    const directoryConflicts = descriptor.conflicts.some(conflict => conflict.kind === 'directory-file');
+    const trees = directoryConflicts ? await Promise.all([
+      this.git.listTreeRecursive(scratchPath, personalOid),
+      this.git.listTreeRecursive(scratchPath, acceptedMainOid),
+    ]) : null;
+    const relocatedPaths = trees ? canonicalConflictStagePaths(stages, trees[0], trees[1]) : new Map<string, string>();
     for (const conflict of descriptor.conflicts) {
-      const paths = this.#conflictPaths(conflict);
+      const paths = [...this.#conflictPaths(conflict)];
+      if (conflict.kind === 'directory-file') {
+        for (const [stagePath, originalPath] of relocatedPaths) {
+          if (originalPath === conflict.path) paths.push(stagePath);
+        }
+      }
       paths.forEach(conflictPath => representedPaths.add(conflictPath));
       const hasStage = paths.some(conflictPath => stagePaths.has(conflictPath));
       if (resolved.has(conflict.path) ? hasStage : !hasStage) {
@@ -536,21 +542,7 @@ export class ConflictScratchGitRepository {
     if (records.length > CLAUDIAN_COLLAB_LIMITS.maxChangedPaths * 3) {
       throw scratchError('quota-exceeded', 'conflict-index-stage-limit');
     }
-    const stages = records.map(record => {
-      const match = STAGE_PATTERN.exec(record);
-      if (!match) {
-        throw scratchError('repository-invalid', 'conflict-index-stage-invalid');
-      }
-      const repositoryPath = match[4];
-      const validation = this.pathPolicy.validateRepositoryPath(repositoryPath);
-      if (!validation.ok) throw validation.error;
-      return {
-        mode: match[1] as ConflictIndexStage['mode'],
-        oid: match[2],
-        path: repositoryPath,
-        stage: Number(match[3]) as ConflictIndexStage['stage'],
-      };
-    });
+    const stages = [...parseGitConflictStages(records)];
     stages.sort((left, right) => (
       left.path < right.path
         ? -1

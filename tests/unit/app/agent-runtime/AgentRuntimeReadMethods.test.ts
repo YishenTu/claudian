@@ -298,6 +298,8 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn().mockResolvedValue(success(INSPECTION)),
     listProjects: jest.fn().mockResolvedValue(success([PROJECT])),
