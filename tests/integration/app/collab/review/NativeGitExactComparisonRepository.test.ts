@@ -28,6 +28,13 @@ describe('NativeGitExactComparisonRepository resource bounds', () => {
     runner = new GitCommandRunner({ emptyConfigPath, executablePath });
     git = new GitRepositoryService(runner);
     await git.initializeWorkingRepository(root);
+    await runner.run({ args: ['config', '--local', 'user.useConfigOnly', 'true'], cwd: root });
+    await git.configureLocalRepository(root, {
+      memberId: 'member-reviewer',
+      personalRef: 'refs/heads/members/member-reviewer',
+      projectId: 'project-review',
+      userDisplayName: 'Review Fixture',
+    });
   });
 
   afterEach(async () => {
