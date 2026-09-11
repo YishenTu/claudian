@@ -178,6 +178,10 @@ export class LocalAgentRuntimeHttpServer {
     response: ServerResponse,
   ): Promise<void> {
     try {
+      if (!hasLocalRequestAuthority(request)) {
+        sendTransportError(response, 403, 'RPC request authority is not allowed.');
+        return;
+      }
       if (request.url !== RPC_PATH) {
         sendTransportError(response, 404, 'RPC route not found.');
         return;
@@ -293,6 +297,19 @@ export class LocalAgentRuntimeHttpServer {
     const release = () => this.activeWriteInvocations.delete(execution);
     void execution.then(release, release);
   }
+}
+
+function hasLocalRequestAuthority(request: IncomingMessage): boolean {
+  const port = request.socket.localPort;
+  const hosts = request.headersDistinct.host;
+  const origins = request.headersDistinct.origin;
+  if (port === undefined || hosts?.length !== 1) return false;
+  const authority = `${LOOPBACK_HOST}:${port}`;
+  if (hosts[0] !== authority && !(port === 80 && hosts[0] === LOOPBACK_HOST)) return false;
+  return origins === undefined || (
+    origins.length === 1
+    && origins[0] === (port === 80 ? `http://${LOOPBACK_HOST}` : `http://${authority}`)
+  );
 }
 
 function listen(server: Server, port: number): Promise<void> {

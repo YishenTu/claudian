@@ -135,7 +135,7 @@ export class NativeGitAcceptedStateIntegrator implements
   ): Promise<ReconciliationPlan> {
     return this.git.withReadSession(context.repositoryPath, 'working', session => (
       this.#planInSession(session, context, snapshot, operationId, signal)
-    ));
+    ), signal);
   }
 
   async #planInSession(
@@ -150,6 +150,7 @@ export class NativeGitAcceptedStateIntegrator implements
       session,
       context,
       snapshot,
+      signal,
     );
     if (
       personalOid === acceptedMainOid
@@ -228,7 +229,8 @@ export class NativeGitAcceptedStateIntegrator implements
     const { acceptedMainOid } = await this.git.withReadSession(
       context.repositoryPath,
       'working',
-      session => this.#assertExpectedState(session, context, expected),
+      session => this.#assertExpectedState(session, context, expected, signal),
+      signal,
     );
     throwIfCancelled(signal);
 
@@ -270,14 +272,15 @@ export class NativeGitAcceptedStateIntegrator implements
     session: GitRepositoryReadSession,
     context: PublishProjectContext,
     expected: PublishRepositorySnapshot,
+    signal?: AbortSignal,
   ): Promise<{ acceptedMainOid: string; personalOid: string }> {
     this.#assertCurrentMemberRef(context);
     if (!expected.workingTreeClean || expected.changedFiles.length !== 0) {
       throw integrationError('working-tree-busy', 'reconciliation-working-tree-dirty');
     }
     const remotePersonal = remotePersonalRef(context.personalRef);
-    const [symbolicHead, refs, status] = await Promise.all([
-      this.#readSymbolicHead(context),
+    const symbolicHead = await this.#readSymbolicHead(context, signal);
+    const [refs, status] = await Promise.all([
       session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
       session.getWorkingTreeStatus(),
     ]);
@@ -330,11 +333,15 @@ export class NativeGitAcceptedStateIntegrator implements
     }
   }
 
-  async #readSymbolicHead(context: PublishProjectContext): Promise<string | null> {
+  async #readSymbolicHead(
+    context: PublishProjectContext,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const result = await this.runner.run({
       acceptedExitCodes: [0, 1],
       args: ['symbolic-ref', '--quiet', 'HEAD'],
       cwd: context.repositoryPath,
+      signal,
       maxStdoutBytes: 512,
     });
     return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : null;
@@ -436,8 +443,8 @@ export class NativeGitAcceptedStateIntegrator implements
   ): Promise<PublishRepositorySnapshot> {
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
       const remotePersonal = remotePersonalRef(context.personalRef);
-      const [symbolicHead, refs, status] = await Promise.all([
-        this.#readSymbolicHead(context),
+      const symbolicHead = await this.#readSymbolicHead(context);
+      const [refs, status] = await Promise.all([
         session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
         session.getWorkingTreeStatus(),
       ]);

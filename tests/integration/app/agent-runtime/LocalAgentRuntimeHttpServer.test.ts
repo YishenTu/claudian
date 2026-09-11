@@ -192,6 +192,47 @@ describe('LocalAgentRuntimeHttpServer', () => {
     expect(resolveCollab).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['foreign Host', 'rebind.example.test', undefined],
+    ['foreign Origin', undefined, 'http://rebind.example.test'],
+    ['opaque Origin', undefined, 'null'],
+    ['different local port', undefined, 'http://127.0.0.1:1'],
+    ['duplicate Origin', undefined, ['http://rebind.example.test', 'http://127.0.0.1:1']],
+  ] as const)('rejects %s before RPC dispatch', async (_label, host, origin) => {
+    const endpoint = await runtime(async () => null).start();
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      const request = createRequest(endpoint.rpcUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(host === undefined ? {} : { Host: host }),
+          ...(origin === undefined ? {} : { Origin: typeof origin === 'string' ? origin : [...origin] }),
+        },
+        method: 'POST',
+      }, response => {
+        response.resume();
+        response.once('end', () => resolve(response.statusCode));
+      });
+      request.once('error', reject);
+      request.end(JSON.stringify({ id: 'untrusted-request', method: 'runtime.health.check', params: {} }));
+    });
+    expect(status).toBe(403);
+  });
+
+  it('accepts the actual local Origin and ignores forwarded authority assertions', async () => {
+    const endpoint = await runtime(async () => null).start();
+    const response = await fetch(endpoint.rpcUrl, {
+      body: JSON.stringify({ id: 'local-origin', method: 'runtime.health.check', params: {} }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: endpoint.origin,
+        'X-Forwarded-Host': 'foreign.example.test',
+      },
+      method: 'POST',
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ result: { ok: true } });
+  });
+
   it('returns a correlated timeout and fences non-cooperative late work', async () => {
     let markStarted: (() => void) | undefined;
     const started = new Promise<void>(resolve => {

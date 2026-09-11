@@ -187,8 +187,11 @@ export async function ensureTrustedCollabOrigin(
   git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
   context: CollabGitOriginContext,
   mismatchReason: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const urls = await git.listRemoteUrls(context.repositoryPath, 'origin');
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+  const urls = await git.listRemoteUrls(context.repositoryPath, 'origin', signal);
+  if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
   if (urls.length === 0) {
     if (context.remoteUrl === null) return;
     await writeVerifiedOrigin(git, context.repositoryPath, context.remoteUrl);

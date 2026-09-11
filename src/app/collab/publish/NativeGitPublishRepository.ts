@@ -138,7 +138,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
 
   async inspect(
     context: PublishProjectContext,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<PublishRepositorySnapshot> {
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
       const workingTree = await session.getWorkingTreeState();
@@ -177,7 +177,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
         personalRemoteOid,
         workingTreeClean: entries.length === 0,
       };
-    });
+    }, signal);
   }
 
   async validateChangedFiles(
