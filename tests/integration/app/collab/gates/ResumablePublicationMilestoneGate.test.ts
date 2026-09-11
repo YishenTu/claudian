@@ -65,9 +65,9 @@ describe('M4 resumable publication gate', () => {
     const hostPort = await availablePort();
     host = new ClaudianCollabService({
       installationKey: TEST_INSTALLATION_A,
-      createAuthorityDatabase: authorityDirectory => new SqlJsProjectDatabase(
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(
         authorityDirectory,
-        { loadSqlJs: async () => SQL },
+        { resourceAdmission, loadSqlJs: async () => SQL },
       ),
       getConfiguredGitPath: () => '',
       lanHost: {

@@ -51,6 +51,7 @@ interface PackageOwner {
 }
 
 export interface NativeHostTransferPackagePreparationOptions {
+  readonly resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly authorityDirectory: string;
   readonly database: Pick<SqlJsProjectDatabase, 'exportSnapshot' | 'generation' | 'read'>;
   readonly now?: () => Date;
@@ -95,10 +96,10 @@ async function readRegularUtf8FileIfPresent(filePath: string): Promise<string | 
   });
   if (handle === null) return null;
   try {
-    const [handleStat, pathStat] = await Promise.all([
-      handle.stat(),
-      lstat(filePath),
-    ]).catch(() => {
+    const handleStat = await handle.stat().catch(() => {
+      throw preparationError('host-transfer-package-metadata-invalid');
+    });
+    const pathStat = await lstat(filePath).catch(() => {
       throw preparationError('host-transfer-package-metadata-invalid');
     });
     if (
@@ -143,13 +144,13 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
   prepare(
     input: Parameters<HostTransferPackagePreparationPort['prepare']>[0],
   ): Promise<PreparedHostTransferPackage> {
-    return this.operationQueue.run(() => this.#prepareUnlocked(input));
+    return this.operationQueue.run(() => this.#withResource(() => this.#prepareUnlocked(input)));
   }
 
   restore(
     input: Parameters<HostTransferPackagePreparationPort['restore']>[0],
   ): Promise<PreparedHostTransferPackage> {
-    return this.operationQueue.run(() => this.#restoreUnlocked(input));
+    return this.operationQueue.run(() => this.#withResource(() => this.#restoreUnlocked(input)));
   }
 
   async #prepareUnlocked(
@@ -176,24 +177,20 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
       return restored;
     }
 
-    await Promise.all([
-      rm(path.join(directory, BUNDLE_FILE), { force: true }),
-      rm(path.join(directory, SNAPSHOT_FILE), { force: true }),
-      rm(path.join(directory, PROOF_FILE), { force: true }),
-    ]);
+    for (const file of [BUNDLE_FILE, SNAPSHOT_FILE, PROOF_FILE]) {
+      await rm(path.join(directory, file), { force: true });
+    }
     const sourceAuthorityGeneration = this.options.database.generation;
-    const [mainOid, objectFormatResult, existingProofs, sourceSnapshot] = await Promise.all([
-      this.options.repositories.resolveRef(this.options.repositoryPath, COLLAB_MAIN_REF),
-      this.options.runner.run({
-        args: ['rev-parse', '--show-object-format'],
-        cwd: this.options.repositoryPath,
-        maxStdoutBytes: 128,
-        signal: input.signal,
-        suppressHooks: true,
-      }),
-      this.options.database.read(connection => new HostTransferRepository().listProofs(connection)),
-      this.options.database.exportSnapshot(),
-    ]);
+    const mainOid = await this.options.repositories.resolveRef(this.options.repositoryPath, COLLAB_MAIN_REF);
+    const objectFormatResult = await this.options.runner.run({
+      args: ['rev-parse', '--show-object-format'],
+      cwd: this.options.repositoryPath,
+      maxStdoutBytes: 128,
+      signal: input.signal,
+      suppressHooks: true,
+    });
+    const existingProofs = await this.options.database.read(connection => new HostTransferRepository().listProofs(connection));
+    const sourceSnapshot = await this.options.database.exportSnapshot();
     if (!mainOid) throw preparationError('host-transfer-package-main-missing');
     const gitObjectFormat = objectFormatResult.stdout.toString('utf8').trim();
     if (gitObjectFormat !== 'sha1' && gitObjectFormat !== 'sha256') {
@@ -267,18 +264,16 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
       || proof.transferId !== input.transferId
       || proof.nextCaFingerprint !== manifest.targetCaFingerprint
     ) throw preparationError('host-transfer-package-restore-binding-invalid');
-    const [bundle, snapshot] = await Promise.all([
-      inspectHostTransferArtifact(
-        path.join(directory, BUNDLE_FILE),
-        HOST_TRANSFER_MAX_GIT_BUNDLE_BYTES,
-        input.signal,
-      ),
-      inspectHostTransferArtifact(
-        path.join(directory, SNAPSHOT_FILE),
-        HOST_TRANSFER_MAX_AUTHORITY_SNAPSHOT_BYTES,
-        input.signal,
-      ),
-    ]);
+    const bundle = await inspectHostTransferArtifact(
+      path.join(directory, BUNDLE_FILE),
+      HOST_TRANSFER_MAX_GIT_BUNDLE_BYTES,
+      input.signal,
+    );
+    const snapshot = await inspectHostTransferArtifact(
+      path.join(directory, SNAPSHOT_FILE),
+      HOST_TRANSFER_MAX_AUTHORITY_SNAPSHOT_BYTES,
+      input.signal,
+    );
     if (
       bundle.byteCount !== manifest.gitBundle.byteCount
       || bundle.sha256 !== manifest.gitBundle.sha256
@@ -288,6 +283,29 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     return this.loaded(directory, manifest, proof, input.signal);
   }
 
+  #withResource<T>(operation: () => Promise<T>): Promise<T> {
+    return this.options.resourceAdmission ? this.options.resourceAdmission(operation) : operation();
+  }
+
+  async *#streamFile(filePath: string, signal?: AbortSignal): AsyncIterable<Uint8Array> {
+    let release!: () => void;
+    const consumed = new Promise<void>(resolve => { release = resolve; });
+    let ready!: () => void;
+    let rejectAdmission!: (error: unknown) => void;
+    const admitted = new Promise<void>((resolve, reject) => { ready = resolve; rejectAdmission = reject; });
+    const holding = this.#withResource(async () => {
+      ready();
+      await consumed;
+    });
+    void holding.catch(rejectAdmission);
+    await admitted;
+    try { yield* streamFile(filePath, signal); }
+    finally {
+      release();
+      await holding;
+    }
+  }
+
   private loaded(
     directory: string,
     manifest: HostTransferPackageManifest,
@@ -295,8 +313,8 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     signal?: AbortSignal,
   ): PreparedHostTransferPackage {
     return Object.freeze({
-      authoritySnapshot: streamFile(path.join(directory, SNAPSHOT_FILE), signal),
-      gitBundle: streamFile(path.join(directory, BUNDLE_FILE), signal),
+      authoritySnapshot: this.#streamFile(path.join(directory, SNAPSHOT_FILE), signal),
+      gitBundle: this.#streamFile(path.join(directory, BUNDLE_FILE), signal),
       manifest,
       manifestDigest: digestHostTransferPackageManifest(manifest),
       proof: Object.freeze({ ...proof }),

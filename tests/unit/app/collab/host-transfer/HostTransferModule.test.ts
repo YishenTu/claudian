@@ -98,7 +98,7 @@ describe('HostTransferModule', () => {
       activateTransferredAuthority: jest.fn(),
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner,
-      bindTransferTarget: jest.fn(),
+      installTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),
       installationKey: TEST_INSTALLATION_A,
       lanHost: {},
@@ -116,7 +116,7 @@ describe('HostTransferModule', () => {
     const { module, recovery } = create();
     const runtime = module.createOutgoingRuntime({
       accept: { recover: jest.fn() },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -150,7 +150,7 @@ describe('HostTransferModule', () => {
     const recover = jest.fn();
     const runtime = module.createOutgoingRuntime({
       accept: { recover },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -231,7 +231,7 @@ describe('HostTransferModule', () => {
     const { control, module } = create();
     const runtime = module.createOutgoingRuntime({
       accept: { recover: jest.fn() },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -271,7 +271,7 @@ describe('HostTransferModule', () => {
       activateTransferredAuthority: jest.fn(),
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner: jest.fn().mockResolvedValue(undefined),
-      bindTransferTarget: jest.fn(),
+      installTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),
       installationKey: TEST_INSTALLATION_A,
       lanHost,

@@ -79,6 +79,7 @@ describe('Cloud membership management', () => {
       await expect(client.feature.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ status: 'success', value: { source: 'online', snapshot: { currentMember: { role: 'member' } } } });
       await waitUntil(() => fixture.acknowledgements.length === 2);
       expect(fixture.acknowledgements).toEqual([receipt.request, receipt.request]);
+      await waitForDocument(fixture.receiptPath, value => value.phase === 'settled');
       expect(JSON.parse(await readFile(fixture.receiptPath, 'utf8'))).toMatchObject({ phase: 'settled', offer: { state: 'acknowledged', revision: 2 } });
       expect(await readFile(fixture.intentPath, 'utf8')).toBe(userIntent);
       const firstResume = await client.feature.resumeManagementOperation(PROJECT_ID);

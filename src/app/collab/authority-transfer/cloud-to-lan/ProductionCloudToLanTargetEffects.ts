@@ -42,6 +42,8 @@ import {
 } from '@claudian-collab/protocol';
 
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
+import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
+import type { AuthorityDatabaseConnection, SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { verifyAuthorityRelinquishmentProof } from '@/app/collab/authority-transfer/AuthorityRelinquishmentProofVerifier';
 import {
   type AuthorityTransferImportedTargetIdentity,
@@ -72,6 +74,7 @@ import {
   type CollabLocalLanMembershipRecord,
   isCollabLocalCloudMembership,
   isCollabLocalLanMembership,
+  type OwnedAuthorityDirectoryCapability,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   LanAuthorityTransferRouteRegistration,
@@ -663,9 +666,9 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     });
   }
 
-  async #hasSupersededLanAuthority(record: AuthorityTransferRecord): Promise<boolean> {
+  async #supersededLanAuthority(record: AuthorityTransferRecord): Promise<OwnedAuthorityDirectoryCapability | null> {
     const foundation = this.options.foundation;
-    if (await foundation.hostInstallations.inspect(record.projectId) !== 'hosted-here') return false;
+    if (await foundation.hostInstallations.inspect(record.projectId) === 'absent') return null;
     const [current, membership] = await Promise.all([
       this.options.persistence.load(record.projectId),
       foundation.local.projects.loadMembership(record.projectId),
@@ -698,35 +701,34 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || !isCollabLocalCloudMembership(membership)
       || membership.authority.serverUrl !== sourceCloudUrl
       || membership.authority.authorityGeneration !== current.status.sourceAuthority.generation
-      || foundation.lanHost.isProjectRunning(record.projectId)
     ) throw targetError('authority-transfer-former-source-not-replaceable');
-    const authority = await foundation.inspectAuthority(record.projectId);
-    const project = authority
-      ? await authority.database.read(connection => authority.projects.get(connection))
-      : null;
-    if (
-      !project
-      || project.projectId !== record.projectId
-      || project.authorityGeneration + 1 !== current.status.sourceAuthority.generation
-    ) throw targetError('authority-transfer-former-source-not-replaceable');
-    return true;
+    return foundation.captureStoppedAuthority(record.projectId, current.status.sourceAuthority.generation - 1);
   }
 
   async #removeSupersededLanAuthority(record: AuthorityTransferRecord): Promise<void> {
-    if (!await this.#hasSupersededLanAuthority(record)) return;
+    await this.options.foundation.local.projects.resumeAuthorityDirectoryRemovals(record.projectId, {
+      kind: 'authority-transfer', operationId: record.operationIntentId, transferId: record.transferId,
+      sourceGeneration: record.status.sourceAuthority.generation - 1,
+      targetGeneration: record.status.targetAuthority.generation,
+    });
+    const resource = await this.#supersededLanAuthority(record);
+    if (resource === null) return;
     if (record.status.phase !== 'checkpoint-captured') {
       throw targetError('authority-transfer-former-source-not-replaceable');
     }
     const foundation = this.options.foundation;
     await foundation.closeAuthority(record.projectId);
-    await foundation.hostInstallations.removeOwned(record.projectId);
+    await foundation.hostInstallations.removeOwned(resource, {
+      kind: 'authority-transfer', operationId: record.operationIntentId, transferId: record.transferId,
+      sourceGeneration: record.status.sourceAuthority.generation - 1,
+      targetGeneration: record.status.targetAuthority.generation,
+    });
   }
 
   async #discardCancelledTargetAuthority(record: AuthorityTransferRecord): Promise<void> {
-    if (await this.#hasSupersededLanAuthority(record)) return;
+    if (await this.#supersededLanAuthority(record)) return;
     await this.options.foundation.discardAuthorityTransferTarget(
-      record.projectId,
-      record.ownerInstallationKey,
+      record, database => this.#validateLegacyTargetResource(record, database),
     );
   }
 
@@ -765,12 +767,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (state.claimBatch === null) {
         await this.#removeSupersededLanAuthority(record);
         await this.options.foundation.discardAuthorityTransferTarget(
-          record.projectId,
-          record.ownerInstallationKey,
+          record, database => this.#validateLegacyTargetResource(record, database),
         );
         const authority = await this.options.foundation.openAuthorityTransferTarget(
-          record.projectId,
-          record.ownerInstallationKey,
+          record, database => this.#validateLegacyTargetResource(record, database),
         );
         const git = await this.options.foundation.requireGitFoundation();
         const checkpoint = new AuthorityTransferCheckpointRepository();
@@ -784,15 +784,16 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
               .digest(),
             targetHostMemberId: memberId,
           }))).value;
-          await new AuthorityTransferCheckpointGit(git.runner).importIntoEmptyBareRepository({
+          await this.options.foundation.local.projects.withAuthorityDirectory(authority.resource, () => new AuthorityTransferCheckpointGit(git.runner).importIntoEmptyBareRepository({
             bundlePath: path.join(stagingPath, BUNDLE_FILE),
             manifest,
             ...(options.signal ? { signal: options.signal } : {}),
             targetRepositoryPath: path.join(authority.authorityDirectory, 'repository.git'),
-          });
+          }));
         } finally {
           await authority.database.close();
         }
+        await this.options.foundation.local.projects.validateAuthorityDirectory(authority.resource);
         if (
           importedIdentity.project.id !== record.projectId
           || importedIdentity.authorityGeneration !== record.status.targetAuthority.generation
@@ -1315,21 +1316,17 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       throw targetError('authority-transfer-target-stage-incomplete');
     }
     const stagedTargetProof = await this.#validateStateBindings(record, proof, state);
-    let authority = await this.options.foundation.inspectAuthority(record.projectId);
+    let authority = await this.options.foundation.inspectAuthorityTransferTarget(record);
     if (!authority) {
       const provisional = await this.options.foundation.openAuthorityTransferTarget(
-        record.projectId,
-        record.ownerInstallationKey,
+        record, database => this.#validateLegacyTargetResource(record, database),
       );
       try {
         await this.#assertStagedAuthorityBindings(state, stagedTargetProof, provisional);
       } finally {
         await provisional.database.close();
       }
-      authority = await this.options.foundation.activateAuthorityTransferTarget(
-        record.projectId,
-        record.ownerInstallationKey,
-      );
+      authority = await this.options.foundation.activateAuthorityTransferTarget(provisional.resource);
     }
     if (!state.claimBatch || !state.importedIdentity) {
       throw targetError('authority-transfer-target-stage-incomplete');
@@ -1412,13 +1409,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     targetProof: TargetProofEnvelope,
     authority: CollabAuthorityFoundation,
   ): Promise<void> {
-    const facts = await authority.database.read(connection => ({
-      members: new PendingMembershipRepository().listCredentialRecords(
-        connection,
-        ['active'],
-      ),
-      project: authority.projects.get(connection),
-    }));
+    await authority.database.read(connection => this.#assertStagedDatabaseBindings(state, targetProof, connection));
+  }
+
+  #assertStagedDatabaseBindings(state: TargetPrivateState, targetProof: TargetProofEnvelope, connection: AuthorityDatabaseConnection): void {
+    const facts = {
+      members: new PendingMembershipRepository().listCredentialRecords(connection, ['active']),
+      project: new ProjectAuthorityRepository().get(connection),
+    };
     const targetMembers = facts.members.filter(
       candidate => candidate.member.id === targetProof.payload.targetHostMemberId,
     );
@@ -1428,6 +1426,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     const actualCredentialHash = targetMembers[0]?.credentialHash;
     if (
       !facts.project
+      || facts.project.projectId !== targetProof.payload.projectId
+      || facts.project.authorityGeneration !== targetProof.payload.targetAuthorityGeneration
       || facts.project.hostMemberId !== targetProof.payload.targetHostMemberId
       || targetMembers.length !== 1
       || targetMembers[0]?.accessState !== 'bound'
@@ -1435,6 +1435,33 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || actualCredentialHash.byteLength !== canonicalCredentialHash.byteLength
       || !timingSafeEqual(actualCredentialHash, canonicalCredentialHash)
     ) throw targetError('authority-transfer-target-state-owner-mismatch');
+  }
+
+  async #validateLegacyTargetResource(
+    record: AuthorityTransferRecord,
+    database: Pick<SqlJsProjectDatabase, 'inspectPersisted'>,
+  ): Promise<void> {
+    const current = await this.options.persistence.load(record.projectId);
+    if (!current || current.localRole !== 'target' || current.ownerInstallationKey !== record.ownerInstallationKey
+      || current.operationIntentId !== record.operationIntentId || current.transferId !== record.transferId
+      || current.stagingDirectoryName !== record.stagingDirectoryName || current.status.phase !== record.status.phase
+      || current.status.sourceAuthority.kind !== 'cloud' || current.status.targetAuthority.kind !== 'lan'
+      || current.status.sourceAuthority.generation !== record.status.sourceAuthority.generation
+      || current.status.targetAuthority.generation !== record.status.targetAuthority.generation) {
+      throw targetError('authority-transfer-target-state-owner-mismatch');
+    }
+    const state = await readState(await this.#operationStatePath(record));
+    if (!state) throw targetError('authority-transfer-target-state-owner-mismatch');
+    const targetProof = await this.#validatePreparedStateBindings(record, state);
+    const inspected = await database.inspectPersisted(connection => {
+      const project = new ProjectAuthorityRepository().get(connection);
+      if (project === null && state.importedIdentity === null && state.claimBatch === null) return true;
+      this.#assertStagedDatabaseBindings(state, targetProof, connection);
+      return true;
+    });
+    if (!inspected && (state.importedIdentity !== null || state.claimBatch !== null)) {
+      throw targetError('authority-transfer-target-state-owner-mismatch');
+    }
   }
 
    async #validatePreparedStateBindings(

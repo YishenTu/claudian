@@ -44,7 +44,7 @@ export class TicketListPanel {
     this.focusSubscription = options.focus?.subscribe(() => {
       if (!this.destroyed) this.#syncFocusedTicket();
     }) ?? null;
-    this.subscription = options.port.subscribe(() => {
+    this.subscription = options.port.observeProject(options.project.id, () => {
       if (this.destroyed) return;
       this.dirty = true;
       if (this.active) void this.refresh();

@@ -130,20 +130,12 @@ describe('CollabFeatureService selection ordering', () => {
   });
 
   it('keeps the newer committed selection after an older inspection settles', async () => {
-    const older = service.selectProject('project-beta');
-    await Promise.race([
-      betaRequested.promise,
-      older.then(result => {
-        throw new Error(`Selection settled before reaching the endpoint: ${result.status}`);
-      }),
-    ]);
+    await expect(service.selectProject('project-beta')).resolves.toMatchObject({ status: 'success' });
+    const olderInspection = service.inspectProject('project-beta');
+    await betaRequested.promise;
     await expect(service.selectProject('project-alpha')).resolves.toMatchObject({ status: 'success' });
-    expect((await foundation.local.projects.loadIndex()).selectedProjectId).toBe('project-alpha');
-    expect(service.state.selectedProjectId).toBe('project-alpha');
-
     releaseBeta.resolve();
-    await expect(older).resolves.toMatchObject({ status: 'cancelled' });
-
+    await olderInspection;
     expect((await foundation.local.projects.loadIndex()).selectedProjectId).toBe('project-alpha');
     expect(service.state.selectedProjectId).toBe('project-alpha');
   });
@@ -197,9 +189,10 @@ describe('CollabFeatureService selection ordering', () => {
     try {
       const older = service.selectProject('project-beta');
       await preflightStarted.promise;
-      await expect(service.selectProject('project-alpha')).resolves.toMatchObject({ status: 'success' });
+      const newer = service.selectProject('project-alpha');
       continuePreflight.resolve();
-      await expect(older).resolves.toMatchObject({ status: 'cancelled' });
+      await expect(older).resolves.toMatchObject({ status: 'success' });
+      await expect(newer).resolves.toMatchObject({ status: 'success' });
       expect((await foundation.local.projects.loadIndex()).selectedProjectId).toBe('project-alpha');
       expect(service.state.selectedProjectId).toBe('project-alpha');
     } finally {

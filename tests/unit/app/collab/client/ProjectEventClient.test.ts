@@ -65,13 +65,13 @@ describe('ProjectEventClient', () => {
     jest.useFakeTimers();
     const socket = new FakeClientSocket();
     const connection = new CollabProjectConnection({
-      reconnect: async () => 'connected', onStatusChange: jest.fn(),
+      reconnect: async () => { connection.observeEvents('connected'); return 'connected'; },
+      onStatusChange: jest.fn(),
     });
     const client = new ProjectEventClient({
       caCertificatePem: 'certificate', endpoint: 'https://host.test',
       lastSequence: 0, memberCredential: 'credential', projectId: 'project-a',
-      onConnectionResult: (error?: CollabError) => error
-        ? connection.observeFailure(error) : connection.observeSuccess(),
+      onConnectionResult: (error?: CollabError) => connection.observeEvents(error ?? 'connected'),
     }, async () => 0, { createSocket: () => socket });
     try {
       client.start();

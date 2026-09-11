@@ -49,6 +49,7 @@ type RepositoryBoundary = Pick<
 >;
 
 export interface GitHttpBackendProxyOptions {
+  readonly resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly authorityDirectory: string;
   readonly authenticateMemberCredential:
     GitMembershipAuthenticator['authenticateMemberCredential'];
@@ -287,7 +288,15 @@ export class GitHttpBackendProxy {
     return this.#activeChildren.size;
   }
 
-  async enable(): Promise<void> {
+  #withResource<T>(operation: () => Promise<T>): Promise<T> {
+    return this.options.resourceAdmission ? this.options.resourceAdmission(operation) : operation();
+  }
+
+  enable(): Promise<void> {
+    return this.#withResource(() => this.#enable());
+  }
+
+  async #enable(): Promise<void> {
     if (this.closed) throw proxyError('operation-failed', 'git-proxy-closed');
     if (
       !isCollabProjectId(this.options.projectId)
@@ -405,34 +414,36 @@ export class GitHttpBackendProxy {
           return true;
         }
       }
-      await this.options.prepareMemberRef(memberId);
-      if (this.closed || !this.enabled) {
-        throw proxyError('operation-failed', 'git-proxy-disabled');
-      }
-      if (route.phase === 'rpc' && route.service === 'git-receive-pack') {
-        receiveReservationBytes = await this.#reserveReceiveStorage(contentLength);
-      }
-      const reauthenticated = await authenticateGitBasicRequest({
-        authorization: singleHeader(request, 'authorization'),
-        authenticateMemberCredential: this.options.authenticateMemberCredential,
-        service: route.service,
+      await this.#withResource(() => this.options.prepareMemberRef(memberId));
+      await this.#withResource(async () => {
+        if (this.closed || !this.enabled) {
+          throw proxyError('operation-failed', 'git-proxy-disabled');
+        }
+        if (route.phase === 'rpc' && route.service === 'git-receive-pack') {
+          receiveReservationBytes = await this.#reserveReceiveStorage(contentLength);
+        }
+        const reauthenticated = await authenticateGitBasicRequest({
+          authorization: singleHeader(request, 'authorization'),
+          authenticateMemberCredential: this.options.authenticateMemberCredential,
+          service: route.service,
+        });
+        if (reauthenticated.memberId !== memberId) {
+          throw proxyError('operation-failed', 'git-member-changed-during-admission');
+        }
+        if (this.closed || !this.enabled) {
+          throw proxyError('operation-failed', 'git-proxy-disabled');
+        }
+        this.#releaseReservation(memberId);
+        reserved = false;
+        await this.#runBackend(
+          request,
+          response,
+          route,
+          memberId,
+          contentLength,
+          receiveReservationBytes > 0 ? receiveReservationBytes : null,
+        );
       });
-      if (reauthenticated.memberId !== memberId) {
-        throw proxyError('operation-failed', 'git-member-changed-during-admission');
-      }
-      if (this.closed || !this.enabled) {
-        throw proxyError('operation-failed', 'git-proxy-disabled');
-      }
-      this.#releaseReservation(memberId);
-      reserved = false;
-      await this.#runBackend(
-        request,
-        response,
-        route,
-        memberId,
-        contentLength,
-        receiveReservationBytes > 0 ? receiveReservationBytes : null,
-      );
     } catch (error) {
       if (error instanceof CollabError && error.code === 'quota-exceeded') {
         responseForError(response, 413, 'Git repository quota exceeded.');

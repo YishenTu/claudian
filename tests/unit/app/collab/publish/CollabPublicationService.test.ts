@@ -498,11 +498,12 @@ describe('CollabPublicationService reconnect', () => {
       const recovered = code === 'endpoint-unreachable'
         ? await restarted.tryAutoReconnect(CLOUD_PROJECT_ID) : false;
       expect({ recovered, sockets: sockets.clients.size }).toEqual(code === 'endpoint-unreachable'
-        ? { recovered: true, sockets: 1 } : { recovered: false, sockets: 0 });
+        ? { recovered: true, sockets: 0 } : { recovered: false, sockets: 0 });
       await expect(restarted.readCoordinationSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
         source: 'online',
         stale: false,
       });
+      restarted.observeProject(CLOUD_PROJECT_ID);
       await eventConnected.promise;
     } finally {
       await Promise.all(services.map(service => service.close()));
@@ -525,7 +526,7 @@ describe('CollabPublicationService reconnect', () => {
       }
       snapshotReads += 1;
       const snapshot = cloudSnapshot();
-      if (snapshotReads === 1) {
+      if (snapshotReads <= (retained ? 2 : 1)) {
         response.end(JSON.stringify(collabCloudSuccessEnvelope('response-snapshot', snapshot)));
         return;
       }
@@ -557,6 +558,7 @@ describe('CollabPublicationService reconnect', () => {
         stale: false,
         snapshot: { project: { mainOid: 'a'.repeat(40) } },
       });
+      service.observeProject(CLOUD_PROJECT_ID);
       releaseRefresh.resolve();
       await expect(refreshed.promise).resolves.toBe('accepted-main-changed');
     } finally {
@@ -601,10 +603,12 @@ describe('CollabPublicationService reconnect', () => {
       return connected;
     };
     try {
+      const observation = service.observeProject(CLOUD_PROJECT_ID);
       await service.readCoordinationSnapshot(CLOUD_PROJECT_ID);
       expect(await waitForConnections(1)).toBe(1);
       service.resetProjectConnection(CLOUD_PROJECT_ID, { resumeEvents: true });
       expect(await waitForConnections(2)).toBe(2);
+      observation.dispose();
       service.resetProjectConnection(CLOUD_PROJECT_ID);
       await new Promise(resolve => setTimeout(resolve, 50));
       expect(connected).toBe(2);

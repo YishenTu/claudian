@@ -7,11 +7,13 @@ import {
   type HostTransferAuthorityRecord,
   HostTransferRepository,
 } from '@/app/collab/authority/HostTransferRepository';
+import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import type {
   AuthorityDatabaseConnection,
   SqlJsMutationResult,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { HostTransferDurablePhase } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
+import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type {
@@ -179,6 +181,19 @@ export class HostTransferAuthorityService {
       }
       return created;
     });
+  }
+
+  async assertSourceCleanupResource(record: HostTransferRecoveryRecord): Promise<void> {
+    const facts = await this.authority.database.read(connection => ({
+      project: new ProjectAuthorityRepository().get(connection), transfer: this.repository.get(connection, record.transferId),
+    }));
+    if (record.direction !== 'outgoing' || record.phase !== 'completed' || !record.targetTerminalResponseReceived
+      || facts.project?.projectId !== record.projectId || facts.project.hostMemberId !== record.targetHostMemberId
+      || facts.transfer?.phase !== 'completed' || facts.transfer.sourceHostMemberId !== record.sourceHostMemberId
+      || facts.transfer.targetHostMemberId !== record.targetHostMemberId
+      || JSON.stringify(facts.transfer.activationCertificate) !== record.activationCertificate) {
+      throw serviceError('host-transfer-source-cleanup-mismatch');
+    }
   }
 
   async getCurrent(

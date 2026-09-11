@@ -3,6 +3,7 @@ import { constants as fsConstants } from 'node:fs';
 import {
   lstat,
   open,
+  readdir,
   readFile,
   rename,
   rm,
@@ -56,7 +57,12 @@ interface InstallOwner {
 }
 
 export interface IncomingHostTransferPackageOptions {
-  readonly ensureAuthorityDirectory: (projectId: CollabProjectId) => Promise<string>;
+  readonly installAuthority: (input: {
+    readonly record: HostTransferRecoveryRecord;
+    readonly authorityGeneration: number;
+    readonly validateLegacy: (authorityDirectory: string) => Promise<void>;
+    readonly install: (authorityDirectory: string) => Promise<void>;
+  }) => Promise<void>;
   readonly projectsFolder: string;
   readonly readPinnedSourceCa: (projectId: CollabProjectId) => Promise<string>;
   readonly repositories: Pick<
@@ -393,8 +399,6 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       pinnedSourceCaCertificatePem,
       sourceHostMemberId: input.record.sourceHostMemberId,
     });
-    const authorityDirectory = await this.options.ensureAuthorityDirectory(input.record.projectId);
-    await this.#requireDirectory(authorityDirectory, 'host-transfer-target-authority-directory-invalid');
     const owner: InstallOwner = Object.freeze({
       activatedSnapshotDigest: sha256(activated.bytes),
       manifestDigest: input.manifestDigest,
@@ -403,22 +407,52 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
       schemaVersion: 1,
       transferId: input.record.transferId,
     });
-    await this.#installDatabase(authorityDirectory, activated, owner);
-    await this.#installRepository({
-      authorityDirectory,
-      bundlePath,
-      expectedRefs: inspected.expectedRefs,
-      manifest,
-      signal: input.signal,
-      transferId: input.record.transferId,
+    await this.options.installAuthority({
+      record: input.record,
+      authorityGeneration: activated.authorityGeneration,
+      validateLegacy: authorityDirectory => this.#validateLegacyInstall(authorityDirectory, owner, activated),
+      install: async authorityDirectory => {
+        await this.#requireDirectory(authorityDirectory, 'host-transfer-target-authority-directory-invalid');
+        await this.#installDatabase(authorityDirectory, activated, owner);
+        await this.#installRepository({
+          authorityDirectory,
+          bundlePath,
+          expectedRefs: inspected.expectedRefs,
+          manifest,
+          signal: input.signal,
+          transferId: input.record.transferId,
+        });
+        await writeOrValidate(
+          path.join(authorityDirectory, INSTALL_COMPLETE_FILE),
+          JSON.stringify(owner),
+        );
+      },
     });
-    await writeOrValidate(
-      path.join(authorityDirectory, INSTALL_COMPLETE_FILE),
-      JSON.stringify(owner),
-    );
     return Object.freeze({
       eventSequence: activated.eventSequence, proofChainDigest: manifest.proofChainDigest,
     });
+  }
+
+  async #validateLegacyInstall(
+    authorityDirectory: string,
+    owner: InstallOwner,
+    activated: { readonly legacyActivatedBytes?: Uint8Array },
+  ): Promise<void> {
+    const existing = await readInstallOwner(path.join(authorityDirectory, INSTALL_OWNER_FILE));
+    if (existing === null) {
+      const entries = await readdir(authorityDirectory);
+      if (entries.some(entry => entry !== '.claudian-authority.json')) {
+        throw packageError('host-transfer-target-authority-collision');
+      }
+      return;
+    }
+    const legacyDigest = activated.legacyActivatedBytes ? sha256(activated.legacyActivatedBytes) : null;
+    if (existing.projectId !== owner.projectId || existing.transferId !== owner.transferId
+      || existing.manifestDigest !== owner.manifestDigest
+      || (existing.activatedSnapshotDigest !== owner.activatedSnapshotDigest
+        && existing.activatedSnapshotDigest !== legacyDigest)) {
+      throw packageError('host-transfer-target-authority-collision');
+    }
   }
 
   async #installDatabase(
@@ -432,11 +466,9 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     const store = new NodeSqlJsSnapshotStore(authorityDirectory);
     const ownerPath = path.join(authorityDirectory, INSTALL_OWNER_FILE);
     const completePath = path.join(authorityDirectory, INSTALL_COMPLETE_FILE);
-    const [persistedOwner, persistedComplete, existing] = await Promise.all([
-      readInstallOwner(ownerPath),
-      readInstallOwner(completePath),
-      store.readCandidate('primary'),
-    ]);
+    const persistedOwner = await readInstallOwner(ownerPath);
+    const persistedComplete = await readInstallOwner(completePath);
+    const existing = await store.readCandidate('primary');
     const legacyDigest = activated.legacyActivatedBytes
       ? sha256(activated.legacyActivatedBytes)
       : null;
@@ -550,18 +582,16 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     manifest: HostTransferPackageManifest,
     signal?: AbortSignal,
   ): Promise<void> {
-    const [formatResult, refsResult, mainOid] = await Promise.all([
-      this.options.runner.run({
-        args: ['rev-parse', '--show-object-format'], cwd: repositoryPath,
-        maxStdoutBytes: 128, signal, suppressHooks: true,
-      }),
-      this.options.runner.run({
-        args: ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads'],
-        cwd: repositoryPath, maxStdoutBytes: 4 * 1024 * 1024,
-        signal, suppressHooks: true,
-      }),
-      this.options.repositories.resolveRef(repositoryPath, COLLAB_MAIN_REF),
-    ]);
+    const formatResult = await this.options.runner.run({
+      args: ['rev-parse', '--show-object-format'], cwd: repositoryPath,
+      maxStdoutBytes: 128, signal, suppressHooks: true,
+    });
+    const refsResult = await this.options.runner.run({
+      args: ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads'],
+      cwd: repositoryPath, maxStdoutBytes: 4 * 1024 * 1024,
+      signal, suppressHooks: true,
+    });
+    const mainOid = await this.options.repositories.resolveRef(repositoryPath, COLLAB_MAIN_REF);
     if (
       formatResult.stdout.toString('utf8').trim() !== manifest.gitObjectFormat
       || mainOid !== manifest.authorityMainOid

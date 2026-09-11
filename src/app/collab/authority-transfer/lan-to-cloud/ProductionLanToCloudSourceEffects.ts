@@ -576,37 +576,41 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         RELINQUISHMENT_FILE,
       ].map(fileName => rm(path.join(stagingPath, fileName), { force: true })));
       const repositoryPath = path.join(authority.authorityDirectory, 'repository.git');
-      await new AuthorityTransferAdmissionSettlement({
-        database: authority.database,
-        runner: git.runner,
-      }).settle({
-        repositoryPath,
-        settledAt: record.status.updatedAt,
-        ...(options.signal ? { signal: options.signal } : {}),
+      const physical = await this.options.foundation.local.projects.withAuthorityDirectory(authority.resource, async () => {
+        await new AuthorityTransferAdmissionSettlement({
+          database: authority.database,
+          runner: git.runner,
+        }).settle({
+          repositoryPath,
+          settledAt: record.status.updatedAt,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        const refs = parseRefs((await git.runner.run({
+          args: [
+            'for-each-ref',
+            '--format=%(objectname) %(refname)',
+            COLLAB_MAIN_REF,
+            COLLAB_MEMBER_REF_PREFIX,
+          ],
+          cwd: repositoryPath,
+          maxStdoutBytes: 1024 * 1024,
+          ...(options.signal ? { signal: options.signal } : {}),
+          suppressHooks: true,
+        })).stdout);
+        const objectFormatResult = await git.runner.run({
+          args: ['rev-parse', '--show-object-format'],
+          cwd: repositoryPath,
+          maxStdoutBytes: 64 * 1024,
+          ...(options.signal ? { signal: options.signal } : {}),
+          suppressHooks: true,
+        });
+        const objectFormat = objectFormatResult.stdout.toString('utf8').trim();
+        if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
+          throw effectsError('authority-transfer-object-format-invalid');
+        }
+        return { refs, objectFormat } as const;
       });
-      const refs = parseRefs((await git.runner.run({
-        args: [
-          'for-each-ref',
-          '--format=%(objectname) %(refname)',
-          COLLAB_MAIN_REF,
-          COLLAB_MEMBER_REF_PREFIX,
-        ],
-        cwd: repositoryPath,
-        maxStdoutBytes: 1024 * 1024,
-        ...(options.signal ? { signal: options.signal } : {}),
-        suppressHooks: true,
-      })).stdout);
-      const objectFormatResult = await git.runner.run({
-        args: ['rev-parse', '--show-object-format'],
-        cwd: repositoryPath,
-        maxStdoutBytes: 64 * 1024,
-        ...(options.signal ? { signal: options.signal } : {}),
-        suppressHooks: true,
-      });
-      const objectFormat = objectFormatResult.stdout.toString('utf8').trim();
-      if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
-        throw effectsError('authority-transfer-object-format-invalid');
-      }
+      const { refs, objectFormat } = physical;
       const expectedMainOid = refs[0].oid;
       const coordination = await authority.database.read(connection => (
         new AuthorityTransferCheckpointRepository().exportCoordination(connection, {
@@ -618,12 +622,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         flag: 'wx',
         mode: 0o600,
       });
-      const bundleFact = await new AuthorityTransferCheckpointGit(git.runner).createBundle({
+      const bundleFact = await this.options.foundation.local.projects.withAuthorityDirectory(authority.resource, () => new AuthorityTransferCheckpointGit(git.runner).createBundle({
         bundlePath: path.join(stagingPath, BUNDLE_FILE),
         refs,
         repositoryPath,
         ...(options.signal ? { signal: options.signal } : {}),
-      });
+      }));
       manifest = createAuthorityTransferCheckpointManifest({
         artifacts: [artifactFact('coordination.ndjson', coordinationBytes), bundleFact],
         createdAt: record.status.createdAt,

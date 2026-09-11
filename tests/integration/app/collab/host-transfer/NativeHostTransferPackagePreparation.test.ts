@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { CollabLocalProjectRepository, type OwnedAuthorityDirectoryCapability } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -33,6 +35,8 @@ const proof: CollabHostTrustTransitionProof = {
 
 describe('NativeHostTransferPackagePreparation', () => {
   let root: string;
+  let resources: CollabLocalProjectRepository;
+  let resource: OwnedAuthorityDirectoryCapability;
   let authorityDirectory: string;
   let repositoryPath: string;
   let database: SqlJsProjectDatabase;
@@ -42,10 +46,11 @@ describe('NativeHostTransferPackagePreparation', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-host-transfer-package-'));
-    authorityDirectory = path.join(root, 'authority');
+    resources = new CollabLocalProjectRepository(root, { installationKey: TEST_INSTALLATION_A });
+    resource = await resources.createOwnedAuthorityDirectory('project-alpha');
+    authorityDirectory = resource.authorityDirectory;
     repositoryPath = path.join(authorityDirectory, 'repository.git');
     const emptyConfigPath = path.join(root, 'empty-gitconfig');
-    await mkdir(authorityDirectory);
     await readFile(emptyConfigPath).catch(async () => {
       await writeFile(emptyConfigPath, '');
     });
@@ -68,7 +73,7 @@ describe('NativeHostTransferPackagePreparation', () => {
     await runner.run({ args: ['push', 'origin', 'main'], cwd: work });
 
     SQL = await initSqlJs();
-    database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    database = new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation), loadSqlJs: async () => SQL });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
@@ -115,8 +120,55 @@ describe('NativeHostTransferPackagePreparation', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('retains authority admission for an opened artifact stream and releases it on cancellation', async () => {
+    const service = new NativeHostTransferPackagePreparation({
+      authorityDirectory, database, repositoryPath, repositories, runner,
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
+      snapshots: new HostTransferAuthoritySnapshot({ loadSqlJs: async () => SQL }),
+    });
+    const prepared = await service.prepare({
+      projectId: 'project-alpha', proof, targetCaFingerprint: proof.nextCaFingerprint,
+      targetHostMemberId: 'member-target', transferId: 'transfer-alpha',
+    });
+    const stream = prepared.authoritySnapshot[Symbol.asyncIterator]();
+    expect((await stream.next()).done).toBe(false);
+    try {
+      await expect(resources.removeOwnedAuthorityDirectory(resource)).rejects.toMatchObject({
+        safeContext: { reason: 'authority-resource-busy' },
+      });
+    } finally {
+      await stream.return?.();
+    }
+    await expect(resources.removeOwnedAuthorityDirectory(resource)).resolves.toBe(true);
+  });
+
+  it('rejects retained package operations and unopened streams after resource replacement', async () => {
+    const service = new NativeHostTransferPackagePreparation({
+      authorityDirectory, database, repositoryPath, repositories, runner,
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
+      snapshots: new HostTransferAuthoritySnapshot({ loadSqlJs: async () => SQL }),
+    });
+    const input = {
+      projectId: 'project-alpha', proof, targetCaFingerprint: proof.nextCaFingerprint,
+      targetHostMemberId: 'member-target', transferId: 'transfer-alpha',
+    };
+    const prepared = await service.prepare(input);
+    const backup = path.join(root, 'retained');
+    await cp(authorityDirectory, backup, { recursive: true });
+    await resources.removeOwnedAuthorityDirectory(resource);
+    const replacement = await resources.createOwnedAuthorityDirectory('project-alpha');
+    await cp(path.join(backup, 'host-transfers'), path.join(replacement.authorityDirectory, 'host-transfers'), { recursive: true });
+    await expect(service.prepare(input)).rejects.toBeDefined();
+    await expect(service.restore({
+      manifestDigest: prepared.manifestDigest, projectId: input.projectId, transferId: input.transferId,
+    })).rejects.toBeDefined();
+    await expect(collect(prepared.authoritySnapshot)).rejects.toBeDefined();
+    await expect(collect(prepared.gitBundle)).rejects.toBeDefined();
+  });
+
   it('persists one exact restorable bundle, inert snapshot, proof, and canonical manifest', async () => {
     const service = new NativeHostTransferPackagePreparation({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory,
       database,
       now: () => new Date(NOW),
@@ -172,6 +224,7 @@ describe('NativeHostTransferPackagePreparation', () => {
 
   it('rejects operation ownership or digest drift on restore', async () => {
     const service = new NativeHostTransferPackagePreparation({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory, database, now: () => new Date(NOW), repositoryPath,
       repositories, runner,
       snapshots: new HostTransferAuthoritySnapshot({ loadSqlJs: async () => SQL }),
@@ -194,6 +247,7 @@ describe('NativeHostTransferPackagePreparation', () => {
 
   it('restores an already-owned schema 8 package without treating it as new output', async () => {
     const service = new NativeHostTransferPackagePreparation({
+      resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
       authorityDirectory, database, now: () => new Date(NOW), repositoryPath,
       repositories, runner,
       snapshots: new HostTransferAuthoritySnapshot({ loadSqlJs: async () => SQL }),

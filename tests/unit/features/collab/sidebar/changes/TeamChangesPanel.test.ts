@@ -61,8 +61,8 @@ describe('TeamChangesPanel', () => {
   it('reads the initial snapshot once when subscription immediately publishes current state', async () => {
     const container = document.body.createDiv();
     const test = fixture(snapshot());
-    test.port.subscribe.mockImplementation(listener => {
-      listener(test.port.state);
+    test.port.observeProject.mockImplementation((_projectId, listener) => {
+      listener(snapshot());
       return test.subscription;
     });
 
@@ -764,7 +764,8 @@ function fixture(value: CollabCoordinationSnapshot) {
       success(review(requestId))
     )),
     readSnapshot: jest.fn().mockResolvedValue(success(value)),
-    subscribe: jest.fn((listener: (next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => void) => {
+    observeProject: jest.fn((_projectId: string, observer: (coordination?: CollabCoordinationSnapshot) => void) => {
+      const listener = (_state: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => observer(coordination);
       listeners.add(listener);
       return subscription;
     }),

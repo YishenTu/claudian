@@ -32,8 +32,7 @@ it('detects a silently lost idle Host independently for three members', async ()
     lastSequence: member,
     memberCredential: String(member).repeat(43),
     projectId: 'project-idle-members',
-    onConnectionResult: error => error
-      ? connection.observeFailure(error) : connection.observeSuccess(),
+    onConnectionResult: error => connection.observeEvents(error ?? 'connected'),
   }, async invalidation => invalidation.sequence));
   try {
     clients.forEach(client => client.start());

@@ -38,7 +38,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(view.getState()).toEqual(viewState());
-    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.observeProject).not.toHaveBeenCalled();
     expect(port.prepareReview).not.toHaveBeenCalled();
     expect(port.readSnapshot).not.toHaveBeenCalled();
   });
@@ -58,7 +58,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(view.getState()).toEqual(state);
-    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.observeProject).not.toHaveBeenCalled();
     expect(port.readTicket).not.toHaveBeenCalled();
   });
 
@@ -113,7 +113,7 @@ describe('CollabDetailView', () => {
     await view.setState(viewState(), { history: false });
     await nextTurn();
 
-    expect(port.subscribe).toHaveBeenCalled();
+    expect(port.observeProject).toHaveBeenCalled();
     expect(port.prepareReview).toHaveBeenCalledWith(
       'project-a',
       'request-a',
@@ -495,7 +495,7 @@ describe('CollabDetailView', () => {
     });
     port.updateRequestMetadata.mockReturnValue(pending.promise);
     let invalidate: (() => void) | undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1578,7 +1578,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1608,7 +1608,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1661,7 +1661,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1697,7 +1697,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1764,7 +1764,7 @@ describe('CollabDetailView', () => {
     };
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1822,7 +1822,7 @@ describe('CollabDetailView', () => {
     const port = detailPort(review);
     const renderer = diffPort();
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1872,7 +1872,7 @@ describe('CollabDetailView', () => {
     const pending = deferred<ReturnType<typeof successfulMetadataUpdate>>();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1951,7 +1951,7 @@ describe('CollabDetailView', () => {
     }>();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -2011,7 +2011,7 @@ describe('CollabDetailView', () => {
       status: 'failure',
     });
     let invalidate: () => void = () => undefined;
-    port.subscribe.mockImplementation((listener: (state: never) => void) => {
+    port.observeProject.mockImplementation((_projectId: string, listener: (state: never) => void) => {
       invalidate = () => listener(undefined as never);
       return { dispose: jest.fn() };
     });
@@ -2875,7 +2875,7 @@ function detailPort(review: CollabRequestReview) {
     isDetailAdmissionOpen: jest.fn().mockReturnValue(true),
     publish: jest.fn(),
     reopenTicket: jest.fn(),
-    subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     updateRequestMetadata: jest.fn(),
     updateTicketContent: jest.fn(),
   } satisfies CollabDetailViewPort;

@@ -210,6 +210,7 @@ describe('CollabClientProjection', () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();
     const options = projectionOptions();
+    options.sessions.acquire('project-a').retainObservation();
     const projection = new CollabClientProjection(store, control, {
       ...options,
       onSnapshotResult: (_projectId, error) => error ? connection.observeFailure(error) : connection.observeSuccess(),
@@ -259,6 +260,7 @@ describe('CollabClientProjection', () => {
     control.readSnapshot.mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
       .mockResolvedValue({ ...snapshot(), eventSequence: 6 });
     const options = projectionOptions();
+    options.sessions.acquire('project-a').retainObservation();
     const projection = new CollabClientProjection(store, control, options);
     await expect(projection.readPresentationSnapshot('project-a')).resolves.toMatchObject({ source: 'cache', stale: true });
     const connection = options.sessions.acquire('project-a').ensureConnection(() => new CollabProjectConnection({

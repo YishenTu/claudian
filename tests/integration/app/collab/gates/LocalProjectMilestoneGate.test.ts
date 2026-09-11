@@ -52,6 +52,7 @@ import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-m2';
 const MEMBER_ID = 'member-host';
@@ -84,8 +85,8 @@ describe('G3 local Project milestone gate', () => {
 
   function createFoundation(configuredGitPath = ''): ClaudianCollabService {
     return new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => configuredGitPath,
       installationKey: TEST_INSTALLATION_A,
@@ -209,8 +210,8 @@ describe('G3 local Project milestone gate', () => {
     let checkAddress!: () => Promise<void>;
     const invitationCodec = new InvitationCodec({ isAddressAllowed: () => true });
     const foundation = new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,
@@ -256,7 +257,22 @@ describe('G3 local Project milestone gate', () => {
         .resolves.toMatchObject({ status: 'success' });
 
       addresses = [reboundAddress];
-      await checkAddress();
+      const rebindDeadline = Date.now() + 10_000;
+      for (;;) {
+        try {
+          await checkAddress();
+          break;
+        } catch (error) {
+          if (!(error instanceof CollabError) || error.code !== 'stale-project-selection'
+            || error.safeContext?.reason !== 'lan-host-route-projection-changed'
+            || Date.now() >= rebindDeadline) throw error;
+        }
+      }
+      const rebound = await foundation.local.projects.loadMembership(PROJECT_ID);
+      if (rebound?.authority.kind !== 'lan' || !rebound.authority.endpoint) {
+        throw new Error('Rebound LAN membership is missing');
+      }
+      expect(new URL(rebound.authority.endpoint).hostname).toBe(reboundAddress);
       await writeFile(path.join(repositoryPath, 'note.md'), 'after rebind\n');
 
       await expect(feature.publish({ description: 'After rebind', projectId: PROJECT_ID }))

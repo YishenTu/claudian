@@ -33,6 +33,7 @@ export interface AuthorityDatabaseConnection {
 }
 
 export interface SqlJsProjectDatabaseOptions {
+  readonly resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly loadSqlJs?: () => Promise<SqlJsStatic>;
   readonly snapshotStore?: SqlJsSnapshotStore;
 }
@@ -139,15 +140,37 @@ export class SqlJsProjectDatabase {
   private pendingMutationBatch: PendingMutation[] | null = null;
   private openResult: SqlJsProjectDatabaseOpenResult | null = null;
   private readonly queue = new SerialTaskQueue();
+  private readonly resourceAdmission: <T>(operation: () => Promise<T>) => Promise<T>;
   private readonly snapshotStore: SqlJsSnapshotStore;
 
   constructor(
     private readonly authorityDirectory: string,
     options: SqlJsProjectDatabaseOptions = {},
   ) {
+    this.resourceAdmission = options.resourceAdmission ?? (operation => operation());
     this.loadSqlJs = options.loadSqlJs ?? loadDefaultSqlJs;
     this.snapshotStore = options.snapshotStore
       ?? new NodeSqlJsSnapshotStore(authorityDirectory);
+  }
+
+  async inspectPersisted(reader: (connection: AuthorityDatabaseConnection) => void): Promise<boolean> {
+    await this.#assertAuthorityDirectory();
+    const sql = await this.loadSqlJs();
+    let inspected = false;
+    for (const kind of ['primary', 'temporary', 'backup'] as const) {
+      const bytes = await this.snapshotStore.readCandidate(kind);
+      if (bytes === null) continue;
+      let database: Database | null = null;
+      try {
+        database = new sql.Database(bytes);
+        database.run('PRAGMA query_only = ON');
+        reader(new SqlJsConnection(database));
+        inspected = true;
+      } finally {
+        database?.close();
+      }
+    }
+    return inspected;
   }
 
   get generation(): number {
@@ -156,20 +179,20 @@ export class SqlJsProjectDatabase {
 
   open(): Promise<SqlJsProjectDatabaseOpenResult> {
     this.pendingMutationBatch = null;
-    return this.queue.run(() => this.#openUnlocked());
+    return this.queue.run(() => this.resourceAdmission(() => this.#openUnlocked()));
   }
 
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T> {
     this.pendingMutationBatch = null;
-    return this.queue.run(async () => {
+    return this.queue.run(() => this.resourceAdmission(async () => {
       const database = this.#requireDatabase();
       return reader(new SqlJsConnection(database));
-    });
+    }));
   }
 
   exportSnapshot(): Promise<Uint8Array> {
     this.pendingMutationBatch = null;
-    return this.queue.run(async () => Uint8Array.from(this.#requireDatabase().export()));
+    return this.queue.run(() => this.resourceAdmission(async () => Uint8Array.from(this.#requireDatabase().export())));
   }
 
   mutate<T>(
@@ -181,7 +204,7 @@ export class SqlJsProjectDatabase {
         batch = [];
         this.pendingMutationBatch = batch;
         const scheduled = batch;
-        void this.queue.run(() => this.#commitMutationBatch(scheduled)).catch(error => {
+        void this.queue.run(() => this.resourceAdmission(() => this.#commitMutationBatch(scheduled))).catch(error => {
           for (const pending of scheduled) pending.reject(error);
         });
       }

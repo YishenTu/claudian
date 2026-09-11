@@ -2901,7 +2901,7 @@ describe('CollabFeatureService', () => {
     });
   });
 
-  it('inspects selection before reconciling and exposes a resumable conflict', async () => {
+  it('commits selection before separately inspecting its resumable conflict', async () => {
     const publish = publication();
     publish.findConflict.mockResolvedValue({
       status: 'success',
@@ -2930,12 +2930,16 @@ describe('CollabFeatureService', () => {
 
     await expect(service.selectProject('project-alpha')).resolves.toMatchObject({
       status: 'success',
+      value: { project: { id: 'project-alpha' } },
+    });
+    await expect(service.inspectProject('project-alpha')).resolves.toMatchObject({
+      status: 'success',
       value: {
         conflict: { descriptor: { operationId: 'conflict-alpha' } },
         project: { id: 'project-alpha' },
       },
     });
-    expect(selectionOrder).toEqual(['inspect', 'synchronize']);
+    expect(selectionOrder).toEqual(['synchronize', 'inspect']);
     expect(publish.synchronizeAcceptedMain).toHaveBeenCalledWith(
       'project-alpha',
       { signal: expect.any(AbortSignal) },
@@ -3050,7 +3054,7 @@ describe('CollabFeatureService', () => {
     });
 
     expect(publish.synchronizeAcceptedMain).toHaveBeenCalledTimes(1);
-    expect(publish.findConflict).toHaveBeenCalledTimes(1);
+    expect(publish.findConflict).toHaveBeenCalledTimes(0);
     synchronization.resolve({
       status: 'success',
       value: {
@@ -3060,7 +3064,7 @@ describe('CollabFeatureService', () => {
       },
     });
     await expect(subscriberInspection).resolves.toMatchObject({ status: 'success' });
-    expect(publish.findConflict).toHaveBeenCalledTimes(2);
+    expect(publish.findConflict).toHaveBeenCalledTimes(1);
   });
 
   it('does not start selection synchronization during an earlier Project inspection', async () => {
@@ -3179,48 +3183,6 @@ describe('CollabFeatureService', () => {
       'project-alpha',
       { signal: expect.any(AbortSignal) },
     );
-  });
-
-  it('does not publish a persisted selection before its synchronization is registered', async () => {
-    const selectionConflict = deferred<CollabResult<null>>();
-    const selectionInspectionStarted = deferred<void>();
-    currentIndex = {
-      ...currentIndex,
-      projects: [
-        ...currentIndex.projects,
-        {
-          ...currentIndex.projects[0],
-          id: 'project-beta',
-          name: 'Beta',
-          workspacePath: 'workspace/beta',
-        },
-      ],
-    };
-    await mkdir(path.join(vaultRoot, 'workspace', 'beta', '.git'), { recursive: true });
-    const publish = publication();
-    publish.findConflict.mockImplementation(projectId => {
-      if (projectId !== 'project-beta') {
-        return Promise.resolve({ status: 'success', value: null });
-      }
-      selectionInspectionStarted.resolve();
-      return selectionConflict.promise;
-    });
-    const service = createService({
-      publication: publish,
-    });
-    await service.initialize();
-    const selectedProjectIds: Array<string | null> = [];
-    service.subscribe(state => selectedProjectIds.push(state.selectedProjectId));
-    selectedProjectIds.length = 0;
-
-    const selection = service.selectProject('project-beta');
-    await selectionInspectionStarted.promise;
-    await service.listProjects();
-
-    expect(selectedProjectIds).not.toContain('project-beta');
-    selectionConflict.resolve({ status: 'success', value: null });
-    await expect(selection).resolves.toMatchObject({ status: 'success' });
-    expect(selectedProjectIds).toContain('project-beta');
   });
 
   it('does not schedule synchronization after close interrupts selection', async () => {
@@ -3500,29 +3462,6 @@ describe('CollabFeatureService', () => {
     })).resolves.toMatchObject({ status: 'success', value: { kind: 'text' } });
 
     expect(publish.publish).not.toHaveBeenCalled();
-  });
-
-  it('publishes a presentation invalidation when selected coordination changes', async () => {
-    const publish = publication();
-    const service = createService({
-      publication: publish,
-    });
-    await service.initialize();
-    const listener = jest.fn();
-    let observedCalls = 0;
-    const invalidationPublished = new Promise<void>(resolve => {
-      service.subscribe(state => {
-        listener(state);
-        observedCalls += 1;
-        if (observedCalls === 2) resolve();
-      });
-    });
-    const invalidate = (publish.subscribeCoordination as jest.Mock).mock.calls[0]?.[0];
-
-    invalidate?.('project-alpha');
-    await invalidationPublished;
-
-    expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it('publishes one observable operation and cancels it on Project switch', async () => {

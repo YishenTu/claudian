@@ -273,6 +273,7 @@ export class HostTransferAuthoritySnapshot {
     readonly sourceHostMemberId: CollabMemberId;
   }): Promise<{
     readonly bytes: Uint8Array;
+    readonly authorityGeneration: number;
     readonly eventSequence: number;
     readonly legacyActivatedBytes?: Uint8Array;
   }> {
@@ -310,7 +311,12 @@ export class HostTransferAuthoritySnapshot {
         migrateLegacyAuthorityDatabaseToCurrent(database);
       }
       this.#applyActivation(database, certificate, true);
+      const generation = one(database, 'SELECT authority_generation FROM authority_metadata WHERE singleton = 1').authority_generation;
+      if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 1) {
+        throw snapshotError('host-transfer-authority-generation-invalid');
+      }
       return {
+        authorityGeneration: generation,
         bytes: Uint8Array.from(database.export()),
         eventSequence: latestEventSequence(database),
         ...(legacyActivatedBytes ? { legacyActivatedBytes } : {}),

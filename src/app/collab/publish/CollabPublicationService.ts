@@ -286,10 +286,8 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
-    this.#connection(projectId).requireEvents();
     const snapshot = await this.projection.readPresentationSnapshot(projectId, options);
     this.sessions.acquire(projectId).observedAcceptedMainOid ??= snapshot.snapshot.project.mainOid;
-    if (!snapshot.stale) await this.#ensureEventSubscription(projectId);
     return snapshot;
   }
 
@@ -297,10 +295,8 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
-    this.#connection(projectId).requireEvents();
     const snapshot = await this.projection.readSnapshot(projectId, options);
     this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
-    if (!snapshot.stale) await this.#ensureEventSubscription(projectId);
     return snapshot;
   }
 
@@ -672,6 +668,20 @@ export class CollabPublicationService {
     return (await (await this.runtime()).requestDrafts.load(projectId))?.description ?? null;
   }
 
+  observeProject(projectId: CollabProjectId): { dispose(): void } {
+    return this.sessions.observeProject(projectId, work => {
+      this.#connection(projectId).requireEvents();
+      const generation = work.generation;
+      void this.#ensureEventSubscription(projectId).catch(error => {
+        if (work.hasObservers && work.generation === generation) {
+          this.#connection(projectId).requireEvents();
+          this.#observeConnection(projectId, error instanceof CollabError
+            ? error : new CollabError({ code: 'operation-failed' }));
+        }
+      });
+    });
+  }
+
   subscribeCoordination(
     listener: CollabCoordinationInvalidationListener,
   ): { dispose(): void } {
@@ -717,7 +727,7 @@ export class CollabPublicationService {
   ): void {
     if (this.disposed) return;
     const subscribed = this.projection.resetProjectConnection(projectId, options);
-    if (!subscribed || !options.resumeEvents) return;
+    if (!subscribed || !this.sessions.acquire(projectId).hasObservers) return;
     const work = this.sessions.acquire(projectId);
     const generation = work.generation;
     void this.#ensureEventSubscription(projectId).catch(error => {
@@ -889,6 +899,7 @@ export class CollabPublicationService {
     return this.sessions.acquire(projectId).ensureConnection(() => new CollabProjectConnection({
       onStatusChange: status => {
         const work = this.sessions.acquire(projectId);
+        if (!work.hasObservers) return;
         const snapshot = status === 'connected' && work.retainedSnapshotSource === 'online'
           ? work.retainedSnapshot : null;
         this.#notifyCoordination(projectId, 'coordination-changed', snapshot ? {
@@ -1010,31 +1021,26 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
   ): Promise<{ dispose(): void }> {
     const session = this.sessions.acquire(projectId);
-    return session.ensureCoordinationSubscription(() => this.projection.subscribe(
-      projectId,
-      snapshot => {
-      const previousMainOid = session.observedAcceptedMainOid;
-      const currentMainOid = snapshot.project.mainOid;
-      session.observedAcceptedMainOid = currentMainOid;
-      const acceptedMainChanged = previousMainOid !== null
-        && previousMainOid !== currentMainOid;
-      this.#notifyCoordination(
-        projectId,
-        acceptedMainChanged ? 'accepted-main-changed' : 'coordination-changed',
-        {
-          snapshot,
-          source: 'online',
-          stale: false,
-          syncState: {
-            eventSequence: snapshot.eventSequence,
-            generation: session.generation,
-            projectId,
-            status: 'synchronized',
-          },
-        },
-      );
-      },
-    ));
+    if (!session.hasObservers) return Promise.resolve({ dispose: () => undefined });
+    return session.ensureCoordinationSubscription(async () => {
+      const generation = session.generation;
+      const observationRevision = session.observationRevision;
+      let previousSequence: number | null = null;
+      const publish = (snapshot: CollabProjectSnapshot) => {
+        if (!session.hasObservers || session.observationRevision !== observationRevision || session.generation !== generation
+          || previousSequence !== null && snapshot.eventSequence <= previousSequence) return;
+        previousSequence = snapshot.eventSequence;
+        const previousMainOid = session.observedAcceptedMainOid;
+        session.observedAcceptedMainOid = snapshot.project.mainOid;
+        this.#notifyCoordination(projectId,
+          previousMainOid !== null && previousMainOid !== snapshot.project.mainOid
+            ? 'accepted-main-changed' : 'coordination-changed',
+          { snapshot, source: 'online', stale: false,
+            syncState: { eventSequence: snapshot.eventSequence, generation, projectId, status: 'synchronized' } },
+        );
+      };
+      return this.projection.subscribe(projectId, publish);
+    });
   }
 
   async #createRuntime(): Promise<PublicationRuntime> {
