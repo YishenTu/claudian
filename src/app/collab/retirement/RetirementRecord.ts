@@ -55,7 +55,12 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
     && recordKeys.every(key => KEYS.has(key));
   const legacyShape = recordKeys.length === LEGACY_KEYS.size
     && recordKeys.every(key => LEGACY_KEYS.has(key));
-  if ((!currentShape && !legacyShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
+  const publishedLanShape = recordKeys.length === KEYS.size + 1
+    && recordKeys.every(key => KEYS.has(key) || key === 'cloudDevelopmentActorId')
+    && record.cloudDevelopmentActorId === null
+    && record.cloudRetirementId === null
+    && record.cloudServerUrl === null;
+  if ((!currentShape && !legacyShape && !publishedLanShape) || record.schemaVersion !== 1 || record.kind !== 'retirement') throw new TypeError('Invalid retirement record');
   const cleanupStatus = record.cleanupStatus;
   const acknowledgementStatus = record.acknowledgementStatus;
   if ((cleanupStatus !== 'pending' && cleanupStatus !== 'running' && cleanupStatus !== 'failed' && cleanupStatus !== 'complete') || (acknowledgementStatus !== 'pending' && acknowledgementStatus !== 'acknowledged' && acknowledgementStatus !== 'expired')) throw new TypeError('Invalid retirement state');

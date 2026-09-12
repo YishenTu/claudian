@@ -561,6 +561,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
 
   it('rejects a claim or redemption outside the exact transfer lifetime', () => {
     const value = {
+      convergenceProof: null,
       claim: claim(),
       createdAt: CREATED_AT,
       cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -773,7 +774,43 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     expect(target).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['prepared', 'claim-retained', 'credential-persisted'] as const)(
+  it.each([true, false])('recovers an expired ambiguous Cloud claim only with target binding proof: %s', async bound => {
+    const store = new MemoryStore();
+    let record = createAuthorityTransferClaimantRecord({
+      cloudPrincipalId: 'vault-' + 'a'.repeat(64), createdAt: CREATED_AT,
+      memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed('lan-to-cloud'),
+    });
+    record = advanceAuthorityTransferClaimantRecord(record, {
+      phase: 'claim-retained', claim: claim(), updatedAt: '2026-08-27T00:00:01.000Z',
+    });
+    record = advanceAuthorityTransferClaimantRecord(record, {
+      phase: 'credential-persisted', targetCredential: null, updatedAt: '2026-08-27T00:00:02.000Z',
+    });
+    store.record = record;
+    const converged: AuthorityTransferClaimantRecord[] = [];
+    const target = {
+      cloudPrincipalId: record.cloudPrincipalId,
+      claimTransferredMembership: async () => { throw new Error('Expired claim must not be redeemed again'); },
+      confirmCloudTargetBinding: async () => {
+        if (!bound) throw new CollabError({ code: 'authorization-denied' });
+      },
+    };
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      convergence: { converge: async value => { converged.push(value); } },
+      now: () => new Date('2026-09-26T00:00:00.000Z'), store, target,
+      source: {
+        getClaim: async () => { throw new Error('Former Host is unavailable'); },
+        acknowledgeRedemption: async () => { throw new Error('Former Host is unavailable'); },
+      },
+    });
+    const outcome = await coordinator.resume(PROJECT_ID).then(() => 'completed', error => error.code as string);
+    expect(outcome).toBe(bound ? 'completed' : 'authorization-denied');
+    expect(store.record).toEqual(bound ? null : record);
+    expect(converged.map(value => ({ phase: value.phase, convergenceProof: value.convergenceProof, redemptionReceipt: value.redemptionReceipt })))
+      .toEqual(bound ? [{ phase: 'source-acknowledged', convergenceProof: 'existing-binding', redemptionReceipt: null }] : []);
+  });
+
+  it.each(['prepared', 'claim-retained'] as const)(
     'scrubs an expired %s record without replaying remote effects',
     async (phase) => {
       const store = new MemoryStore();
@@ -789,13 +826,6 @@ describe('AuthorityTransferClaimantCoordinator', () => {
           claim: claim(),
           phase: 'claim-retained',
           updatedAt: '2026-08-27T00:00:01.000Z',
-        });
-      }
-      if (phase === 'credential-persisted') {
-        record = advanceAuthorityTransferClaimantRecord(record, {
-          phase: 'credential-persisted',
-          targetCredential: null,
-          updatedAt: '2026-08-27T00:00:02.000Z',
         });
       }
       store.record = record;

@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "重新连接项目",
-      "descriptionLan": "粘贴 Host 新生成的邀请字符串，以重新连接 {name}。",
+      "descriptionLan": "使用新的邀请或成员认领信息重新连接 {name}。迁移到 Cloud 后，可在原 Host 仍可连接且保留你的认领信息时，使用 Cloud 服务器 URL 重连。",
       "descriptionCloud": "使用 Cloud 邀请、导入的成员身份凭据或新服务器 URL 重新连接 {name}。",
       "method": "重新连接方式",
       "invitationOrClaim": "邀请或导入的成员身份凭据",
+      "cloudMigration": "迁移到 Cloud 后重新连接",
       "relocation": "同一 Cloud 项目的新服务器 URL",
       "serverUrl": "Cloud 服务器 URL",
       "serverUrlPlaceholder": "http://server.example:8787",

@@ -32,6 +32,7 @@ import type {
   CollabLanToCloudTransferSelectionRequest,
   CollabLanToCloudTransferView,
   CollabOperationOptions,
+  CollabPendingReconnectView,
   CollabPrepareCloudToLanTargetRequest,
   CollabWithdrawCloudToLanTargetRequest,
 } from '@/core/collab';
@@ -325,6 +326,18 @@ export class AuthorityTransferEntryService {
     options?: CollabOperationOptions,
   ): Promise<void> {
     return this.#module.redeemManagerReissuedClaim(invitation, options);
+  }
+
+  readPendingLanToCloudClaim(projectId: CollabProjectId): Promise<CollabPendingReconnectView | null> {
+    return this.#module.readPendingLanToCloudClaim(projectId);
+  }
+
+  reconnectLanToCloud(
+    projectId: CollabProjectId,
+    serverUrl: string,
+    options?: CollabOperationOptions,
+  ): Promise<boolean> {
+    return this.#module.reconnectLanToCloud(projectId, serverUrl, options);
   }
 
   beginClose(): void {

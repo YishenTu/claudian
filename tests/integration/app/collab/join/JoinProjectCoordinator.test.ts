@@ -190,9 +190,9 @@ describe('JoinProjectCoordinator', () => {
     await expect(recovering.coordinator.resumeJoin({ operationId: 'join-alpha' }))
       .resolves.toMatchObject({ status: 'success' });
     expect(recovering.controlPaths).toEqual([
-      '/v10/projects/project-alpha/join-attempts',
-      '/v10/projects/project-alpha/join-attempts',
-      '/v10/projects/project-alpha/join-attempts/join-alpha/activate',
+      '/v9/projects/project-alpha/join-attempts',
+      '/v9/projects/project-alpha/join-attempts',
+      '/v9/projects/project-alpha/join-attempts/join-alpha/activate',
     ]);
   });
 

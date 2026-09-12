@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "Projekt neu verbinden",
-      "descriptionLan": "Füge eine neue Einladung vom Host ein, um {name} neu zu verbinden.",
+      "descriptionLan": "Verbinde {name} mit einer neuen Einladung oder einem Mitgliedschaftsnachweis erneut. Nach dem Umzug zu Cloud kannst du die Cloud-Server-URL verwenden, solange der bisherige Host erreichbar ist und deinen Nachweis aufbewahrt.",
       "descriptionCloud": "Verbinde {name} mit einer Cloud-Einladung, einem importierten Mitgliedschaftsanspruch oder der neuen Server-URL neu.",
       "method": "Methode zur erneuten Verbindung",
       "invitationOrClaim": "Einladung oder importierter Mitgliedschaftsanspruch",
+      "cloudMigration": "Nach dem Umzug zu Cloud erneut verbinden",
       "relocation": "Dasselbe Cloud-Projekt unter einer neuen Server-URL",
       "serverUrl": "Cloud-Server-URL",
       "serverUrlPlaceholder": "http://server.example:8787",

@@ -105,6 +105,9 @@ jobs:
           mkdir -p test-results
           npm run test -- --json --outputFile=test-results/jest.json
 
+      - name: Verify published LAN compatibility
+        run: npm run test:lan-compatibility
+
       - name: Summarize test timings
         if: always() && steps.tests.outcome != 'skipped'
         run: node scripts/summarize-jest-results.mjs test-results/jest.json test-results/timings

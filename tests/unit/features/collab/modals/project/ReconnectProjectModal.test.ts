@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { fireEvent, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
 import type { CollabFeaturePort } from '@/core/collab';
@@ -56,6 +57,23 @@ async function flush(): Promise<void> {
 }
 
 describe('ReconnectProjectModal', () => {
+  it('reconnects an existing LAN Member using the migrated Cloud server URL', async () => {
+    const cloudProject = { ...project(), authorityKind: 'cloud' as const };
+    const port = createPort({ reconnectProject: jest.fn().mockResolvedValue({ status: 'success', value: cloudProject }) });
+    const onReconnected = jest.fn();
+    const modal = new ReconnectProjectModal({} as never, port, { project: project(), onReconnected });
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.change(ui.getByRole('radio', { name: 'Reconnect to Cloud after migration' }), { target: { checked: true } });
+    fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), { target: { value: 'https://cloud.example.test' } });
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    fireEvent.click(ui.getByRole('button', { name: 'Reconnect' }));
+    await flush();
+    expect(port.reconnectProject).toHaveBeenCalledWith({ projectId: 'project-alpha', authority: { kind: 'cloud', serverUrl: 'https://cloud.example.test' } }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(onReconnected).toHaveBeenCalledWith(cloudProject);
+  });
+
   it('submits one invitation for the selected existing Project', async () => {
     const port = createPort({
       reconnectProject: jest.fn().mockResolvedValue({
@@ -291,8 +309,8 @@ describe('ReconnectProjectModal', () => {
     expect(onReconnected).toHaveBeenCalledWith(cloudProject);
   });
 
-  it('restores a pending Cloud relocation on reopen without asking for the URL again', async () => {
-    const cloudProject = { ...project(), authorityKind: 'cloud' as const };
+  it.each(['lan', 'cloud'] as const)('restores a pending Cloud reconnect for %s membership on reopen', async authorityKind => {
+    const cloudProject = { ...project(), authorityKind };
     const port = createPort({
       readPendingReconnect: jest.fn().mockResolvedValue({
         status: 'success',

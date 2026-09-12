@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "Reconectar proyecto",
-      "descriptionLan": "Pega una nueva invitación del Host para reconectar {name}.",
+      "descriptionLan": "Vuelve a conectar {name} con una nueva invitación o una credencial de recuperación de miembro. Tras migrar a Cloud, usa la URL del servidor Cloud mientras el Host anterior siga accesible y conserve tu credencial de recuperación.",
       "descriptionCloud": "Reconecta {name} con una invitación de Cloud, una credencial de membresía importada o su nueva URL de servidor.",
       "method": "Método de reconexión",
       "invitationOrClaim": "Invitación o credencial de membresía importada",
+      "cloudMigration": "Reconectar tras migrar a Cloud",
       "relocation": "El mismo proyecto Cloud en una nueva URL de servidor",
       "serverUrl": "URL del servidor Cloud",
       "serverUrlPlaceholder": "http://server.example:8787",

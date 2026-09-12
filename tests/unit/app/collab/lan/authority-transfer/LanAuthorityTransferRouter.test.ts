@@ -676,7 +676,7 @@ describe('LanAuthorityTransferRouter', () => {
       service,
       state: 'source-active',
     };
-    const legacy = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`);
+    const legacy = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`);
     expect(legacy.status).toBe(404);
 
     const path = collabLanAuthorityTransferOperationPath(

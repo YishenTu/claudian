@@ -6,8 +6,8 @@ import {
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const RETIRED_AT = '2026-08-13T00:00:00.000Z';
-const ACKNOWLEDGED_AT = '2026-08-13T00:01:00.000Z';
+const ACKNOWLEDGED_AT = new Date().toISOString();
+const RETIRED_AT = new Date(Date.parse(ACKNOWLEDGED_AT) - 60_000).toISOString();
 
 async function admitProjectRecovery(
   _projectId: string,
@@ -124,7 +124,7 @@ describe('RetirementAcknowledgementWorker', () => {
       acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
-      now: () => new Date('2026-09-12T00:00:00.000Z'),
+      now: () => new Date(Date.parse(RETIRED_AT) + 30 * 24 * 60 * 60 * 1_000),
       projectRecoveryAdmission: admitProjectRecovery,
     });
 

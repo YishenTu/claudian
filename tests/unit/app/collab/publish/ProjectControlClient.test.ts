@@ -105,6 +105,46 @@ function detailEnvelope(): unknown {
 }
 
 describe('ProjectControlClient', () => {
+  it('reads the deployed LAN base without Cloud generation metadata', async () => {
+    const data = snapshotEnvelope() as { protocolVersion: number; data: { project: Record<string, unknown> } };
+    data.protocolVersion = 9;
+    delete data.data.project.authorityGeneration;
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(data),
+    });
+    await expect(client.readSnapshot('project-a', CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-a', role: 'member' },
+      project: { authorityGeneration: 1, hostMemberId: 'member-host' },
+    });
+  });
+
+  it('keeps base reads available when the Host has no Ticket lookup capability', async () => {
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(request.path.endsWith('/snapshot')
+        ? snapshotEnvelope()
+        : envelope({ ticketId: 'ticket-a' })),
+    });
+    await expect(client.resolveTicketNumber({
+      memberCredential: CREDENTIAL, projectId: 'project-a', ticketNumber: 1,
+    })).rejects.toMatchObject({ safeContext: { reason: 'lan-capability-unavailable' } });
+    await expect(client.readSnapshot('project-a', CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-a', role: 'member' },
+    });
+  });
+
+  it('uses an advertised extension while ignoring unknown future capabilities', async () => {
+    const data = snapshotEnvelope() as { data: Record<string, unknown> };
+    data.data.capabilities = ['future-example-v1', 'ticket-number-lookup-v1'];
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(request.path.endsWith('/snapshot')
+        ? data
+        : envelope({ ticketId: 'ticket-a' })),
+    });
+    await expect(client.resolveTicketNumber({
+      memberCredential: CREDENTIAL, projectId: 'project-a', ticketNumber: 1,
+    })).resolves.toEqual({ ticketId: 'ticket-a' });
+  });
+
   it.each([null, 0, -1, 1.5, '3', Number.MAX_SAFE_INTEGER + 1])(
     'rejects an incomplete or invalid authority generation: %s', async generation => {
       const client = new ProjectControlClient({
@@ -146,7 +186,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v10/projects/project-a/snapshot',
+        path: '/v9/projects/project-a/snapshot',
       }),
       CREDENTIAL,
       {},
@@ -163,7 +203,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'publish-head',
         method: 'PUT',
-        path: '/v10/projects/project-a/requests/mine',
+        path: '/v9/projects/project-a/requests/mine',
       }),
       CREDENTIAL,
       {},
@@ -206,7 +246,7 @@ describe('ProjectControlClient', () => {
       1,
       expect.objectContaining({
         method: 'GET',
-        path: '/v10/projects/project-a/requests/request-a',
+        path: '/v9/projects/project-a/requests/request-a',
       }),
       CREDENTIAL,
       {},
@@ -222,7 +262,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'comment-key',
         method: 'POST',
-        path: '/v10/projects/project-a/requests/request-a/comments',
+        path: '/v9/projects/project-a/requests/request-a/comments',
       }),
       CREDENTIAL,
       {},
@@ -271,7 +311,7 @@ describe('ProjectControlClient', () => {
         },
         idempotencyKey: 'accept-key',
         method: 'POST',
-        path: '/v10/projects/project-a/requests/request-a/accept',
+        path: '/v9/projects/project-a/requests/request-a/accept',
       }),
       CREDENTIAL,
       {},

@@ -1563,7 +1563,7 @@ function cloudSnapshotResponse(input: CloudAuthorityHttpRequest): CloudAuthority
 }
 
 function lanEvent(kind: string, payload: Readonly<Record<string, unknown>>, sequence: number) {
-  return { kind, occurredAt: CREATED_AT, payload, projectId: 'project-a', protocolVersion: 10, sequence };
+  return { kind, occurredAt: CREATED_AT, payload, projectId: 'project-a', protocolVersion: 9, sequence };
 }
 
 async function flushEvents(): Promise<void> {
