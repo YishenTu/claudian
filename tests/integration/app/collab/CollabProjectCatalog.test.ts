@@ -510,4 +510,3 @@ it('registers maintenance for main accepted while an observed Project was suspen
     } finally { observation.dispose(); }
   }, false);
 });
-
