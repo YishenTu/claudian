@@ -27,7 +27,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **`@mention`** — Type `@` to reference vault files, folders, and Collab member changes. Type `#` to reference Collab tickets.
 
-
 **Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
@@ -47,13 +46,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 - A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code) etc.
 - Obsidian v1.13.0+
 - Desktop only (macOS, Linux, Windows)
-- Collab Mode requires [Git](https://git-scm.com/install/)
-
-### Collab compatibility
-
-LAN participants can update Claudian independently. The current client preserves 2.2.6 LAN collaboration, including Project identity, roles, Host trust and Git workflows. New features depend on the Host's supported capabilities. To receive Host responsibility from a newer client, update the receiving device first; other Members can stay on 2.2.6.
-
-Update Claudian before using Cloud or moving a Project between LAN and Cloud. Cloud supports the current client/server protocol only. After LAN-to-Cloud migration, existing Members open Reconnect Project, select Reconnect to Cloud after migration, and enter the Cloud server URL. The former Host must remain reachable while Members collect their retained claims. Reconnect preserves their identity, role and working copy; an interrupted claim can be resumed. A connected Manager can reissue a membership claim when needed.
+- Collab Mode requires [Git](https://git-scm.com/install/). If you plan to self-host a Cloud server, see the [Claudian Cloud Server repository](https://github.com/YishenTu/claudian-cloud-server) for deployment requirements.
 
 ## Installation
 
