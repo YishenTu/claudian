@@ -7,4 +7,3 @@ export function isTlsValidationError(error: unknown): boolean {
     || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
     || code === 'ERR_TLS_CERT_ALTNAME_INVALID';
 }
-
