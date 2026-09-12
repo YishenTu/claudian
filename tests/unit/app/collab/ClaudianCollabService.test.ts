@@ -163,7 +163,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     expect(requestWithMember).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: '/v10/projects/project-a/snapshot',
+        path: '/v9/projects/project-a/snapshot',
       }),
       Buffer.alloc(32, 1).toString('base64url'),
       {},

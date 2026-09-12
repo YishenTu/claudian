@@ -49,6 +49,12 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 - Desktop only (macOS, Linux, Windows)
 - Collab Mode requires [Git](https://git-scm.com/install/)
 
+### Collab compatibility
+
+LAN participants can update Claudian independently. The current client preserves 2.2.6 LAN collaboration, including Project identity, roles, Host trust and Git workflows. New features depend on the Host's supported capabilities. To receive Host responsibility from a newer client, update the receiving device first; other Members can stay on 2.2.6.
+
+Update Claudian before using Cloud or moving a Project between LAN and Cloud. Cloud supports the current client/server protocol only. After LAN-to-Cloud migration, existing Members open Reconnect Project, select Reconnect to Cloud after migration, and enter the Cloud server URL. The former Host must remain reachable while Members collect their retained claims. Reconnect preserves their identity, role and working copy; an interrupted claim can be resumed. A connected Manager can reissue a membership claim when needed.
+
 ## Installation
 
 ### From Obsidian Community Plugins (recommended)

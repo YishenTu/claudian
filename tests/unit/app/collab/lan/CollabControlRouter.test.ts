@@ -80,7 +80,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
         invitationId: 'invitation-alpha',
         invitationSecret: INVITATION_SECRET,
         projectId: PROJECT_ID,
-        protocolVersion: 10,
+        protocolVersion: 9,
       })),
     createJoinAttempt: jest.fn<
       ReturnType<CollabControlProjectService['createJoinAttempt']>,
@@ -229,7 +229,7 @@ describe('CollabControlRouter', () => {
   });
 
   it('dispatches a schema-validated join and returns a versioned request envelope', async () => {
-    const response = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/join-attempts`, {
+    const response = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/join-attempts`, {
       body: JSON.stringify({
         displayName: 'Member',
         joinAttemptId: 'join-alpha',
@@ -247,7 +247,7 @@ describe('CollabControlRouter', () => {
     expect(response.headers.get('x-request-id')).toBe(REQUEST_ID);
     await expect(response.json()).resolves.toMatchObject({
       data: { joinAttempt: { id: 'join-alpha', projectId: PROJECT_ID } },
-      protocolVersion: 10,
+      protocolVersion: 9,
       requestId: REQUEST_ID,
     });
     expect(projectService.createJoinAttempt).toHaveBeenCalledWith(
@@ -262,14 +262,14 @@ describe('CollabControlRouter', () => {
   });
 
   it('keeps Project routes isolated and unregisters them explicitly', async () => {
-    const unknown = await fetch(`${endpoint}/v10/projects/project-other/snapshot`, {
+    const unknown = await fetch(`${endpoint}/v9/projects/project-other/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(unknown.status).toBe(404);
     expect(projectService.readSnapshot).not.toHaveBeenCalled();
 
     expect(router.unregisterProject(PROJECT_ID)).toBe(true);
-    const stopped = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+    const stopped = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(stopped.status).toBe(404);
@@ -281,7 +281,7 @@ describe('CollabControlRouter', () => {
       body: string;
       status: number | undefined;
     }>((resolve, reject) => {
-      const request = httpRequest(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+      const request = httpRequest(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
         headers: {
           authorization: `Bearer ${MEMBER_CREDENTIAL}`,
           'content-length': Buffer.byteLength(body),
@@ -313,7 +313,7 @@ describe('CollabControlRouter', () => {
 
   it('does not let reserved object-property names bypass query rejection', async () => {
     const response = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/snapshot?__proto__=ignored`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/snapshot?__proto__=ignored`,
       { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
     );
 
@@ -327,7 +327,7 @@ describe('CollabControlRouter', () => {
     expect(projectService.readSnapshot).not.toHaveBeenCalled();
   });
 
-  it.each([1, 6, 9])(
+  it.each([1, 6, 10])(
     'rejects v%s Project control before body read, authentication, admission, or dispatch',
     async protocolVersion => {
       const run = jest.fn(async (operation: () => Promise<unknown>) => operation());
@@ -388,7 +388,7 @@ describe('CollabControlRouter', () => {
     },
   );
 
-  it.each([1, 6, 9])('rejects the v%s event stream before authentication or admission', async (
+  it.each([1, 6, 10])('rejects the v%s event stream before authentication or admission', async (
     protocolVersion,
   ) => {
     const run = jest.fn(async (operation: () => Promise<unknown>) => operation());
@@ -419,13 +419,13 @@ describe('CollabControlRouter', () => {
       lifecycle: { execute: jest.fn() },
     });
 
-    const response = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+    const response = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(response.status).toBe(200);
     await expect(router.authenticateEvent({
       authorization: `Bearer ${MEMBER_CREDENTIAL}`,
-      url: `/v10/projects/${PROJECT_ID}/events`,
+      url: `/v9/projects/${PROJECT_ID}/events`,
     })).resolves.toMatchObject({ projectId: PROJECT_ID });
     expect(run).toHaveBeenCalledTimes(2);
   });
@@ -443,14 +443,14 @@ describe('CollabControlRouter', () => {
       lifecycle: { execute: jest.fn() },
     });
 
-    const response = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+    const response = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(response.status).toBe(410);
     expect(projectService.readSnapshot).not.toHaveBeenCalled();
     await expect(router.authenticateEvent({
       authorization: `Bearer ${MEMBER_CREDENTIAL}`,
-      url: `/v10/projects/${PROJECT_ID}/events`,
+      url: `/v9/projects/${PROJECT_ID}/events`,
     })).rejects.toMatchObject({ code: 'project-retired' });
   });
 
@@ -489,7 +489,7 @@ describe('CollabControlRouter', () => {
       targetEndpoint: 'https://192.168.1.12:4545',
       transferId: 'transfer-a',
     });
-    const client = httpRequest(`${endpoint}/v10/projects/${PROJECT_ID}/host-transfers/transfer-a/accept`, {
+    const client = httpRequest(`${endpoint}/v9/projects/${PROJECT_ID}/host-transfers/transfer-a/accept`, {
       headers: {
         authorization: `Bearer ${MEMBER_CREDENTIAL}`,
         'content-length': Buffer.byteLength(body),
@@ -531,14 +531,14 @@ describe('CollabControlRouter', () => {
     };
     router.registerTerminalProject(PROJECT_ID, terminal);
 
-    const active = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+    const active = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(active.status).toBe(200);
     expect(terminal.getRetirement).not.toHaveBeenCalled();
 
     router.unregisterProject(PROJECT_ID);
-    const retired = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+    const retired = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
       headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` },
     });
     expect(retired.status).toBe(410);
@@ -553,13 +553,13 @@ describe('CollabControlRouter', () => {
     });
 
     const proof = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/host-transitions`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/host-transitions`,
     );
     expect(proof.status).toBe(200);
     expect(terminal.getHostTransitions).toHaveBeenCalledWith({ projectId: PROJECT_ID });
 
     const acknowledgement = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/retirement/acknowledgements/current`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/retirement/acknowledgements/current`,
       {
         body: JSON.stringify({
           idempotencyKey: 'retirement-ack-alpha',
@@ -582,14 +582,14 @@ describe('CollabControlRouter', () => {
 
   it('routes active-member snapshots and idempotent invitation management', async () => {
     const snapshotResponse = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/snapshot`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/snapshot`,
       { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
     );
     expect(snapshotResponse.status).toBe(200);
     expect(projectService.readSnapshot).toHaveBeenCalledWith(MEMBER_CREDENTIAL);
 
     const endpointResponse = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/endpoint`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/endpoint`,
       { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
     );
     expect(endpointResponse.status).toBe(200);
@@ -605,7 +605,7 @@ describe('CollabControlRouter', () => {
     );
 
     const invitationResponse = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/invitations`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/invitations`,
       {
         body: JSON.stringify({
           idempotencyKey: 'create-invitation-alpha',
@@ -635,7 +635,7 @@ describe('CollabControlRouter', () => {
     );
 
     const revokeResponse = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/invitations/current`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/invitations/current`,
       {
         body: JSON.stringify({
           idempotencyKey: 'revoke-invitation-alpha',
@@ -683,7 +683,7 @@ describe('CollabControlRouter', () => {
     expect(projectService.ensureMyRequest).not.toHaveBeenCalled();
 
     const response = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/requests/mine`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/requests/mine`,
       {
         body: JSON.stringify({
           description: 'Published change',
@@ -726,7 +726,7 @@ describe('CollabControlRouter', () => {
 
   it('dispatches authenticated request detail and idempotent comment endpoints', async () => {
     const detail = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/requests/request-alpha`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/requests/request-alpha`,
       { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
     );
     expect(detail.status).toBe(200);
@@ -755,7 +755,7 @@ describe('CollabControlRouter', () => {
     expect(projectService.createComment).not.toHaveBeenCalled();
 
     const comment = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/requests/request-alpha/comments`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/requests/request-alpha/comments`,
       {
         body: JSON.stringify({
           body: 'Please revise',
@@ -820,7 +820,7 @@ describe('CollabControlRouter', () => {
     });
 
     const response = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/requests/request-alpha`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/requests/request-alpha`,
       { headers: { authorization: `Bearer ${MEMBER_CREDENTIAL}` } },
     );
 
@@ -830,7 +830,7 @@ describe('CollabControlRouter', () => {
         code: 'operation-failed',
         safeContext: { reason: 'control-response-too-large' },
       },
-      protocolVersion: 10,
+      protocolVersion: 9,
     });
     expect(Number(response.headers.get('content-length')))
       .toBeLessThanOrEqual(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes);
@@ -842,7 +842,7 @@ describe('CollabControlRouter', () => {
     }));
     const expectedMainOid = 'a'.repeat(40);
     const response = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/requests/mine`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/requests/mine`,
       {
         body: JSON.stringify({
           description: 'Published change',
@@ -876,7 +876,7 @@ describe('CollabControlRouter', () => {
       lifecycle: { execute: executeLifecycle },
     });
     const response = await fetch(
-      `${endpoint}/v10/projects/${PROJECT_ID}/managers/member-second/promote`,
+      `${endpoint}/v9/projects/${PROJECT_ID}/managers/member-second/promote`,
       {
         body: JSON.stringify({
           idempotencyKey: 'promote-manager-alpha',
@@ -913,7 +913,7 @@ describe('CollabControlRouter', () => {
   });
 
   it('rejects malformed schemas and oversized bodies before domain dispatch', async () => {
-    const malformed = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/join-attempts`, {
+    const malformed = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/join-attempts`, {
       body: JSON.stringify({ projectId: PROJECT_ID }),
       headers: {
         authorization: `Claudian-Invitation ${INVITATION_SECRET}`,
@@ -923,7 +923,7 @@ describe('CollabControlRouter', () => {
     });
     expect(malformed.status).toBe(400);
 
-    const oversized = await fetch(`${endpoint}/v10/projects/${PROJECT_ID}/join-attempts`, {
+    const oversized = await fetch(`${endpoint}/v9/projects/${PROJECT_ID}/join-attempts`, {
       body: JSON.stringify({ value: 'x'.repeat(COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) }),
       headers: {
         authorization: `Claudian-Invitation ${INVITATION_SECRET}`,
@@ -938,7 +938,7 @@ describe('CollabControlRouter', () => {
   it('authenticates the event upgrade shell from a header rather than the URL', async () => {
     await expect(router.authenticateEvent({
       authorization: `Bearer ${MEMBER_CREDENTIAL}`,
-      url: `/v10/projects/${PROJECT_ID}/events`,
+      url: `/v9/projects/${PROJECT_ID}/events`,
     })).resolves.toMatchObject({
       lastSequence: 0,
       memberId: 'member-host',
@@ -950,18 +950,18 @@ describe('CollabControlRouter', () => {
     );
 
     await expect(router.authenticateEvent({
-      url: `/v10/projects/${PROJECT_ID}/events?credential=${MEMBER_CREDENTIAL}`,
+      url: `/v9/projects/${PROJECT_ID}/events?credential=${MEMBER_CREDENTIAL}`,
     })).rejects.toMatchObject({ code: 'authentication-failed' });
 
     await expect(router.authenticateEvent({
       authorization: `Bearer ${MEMBER_CREDENTIAL}`,
       lastSequence: '42',
-      url: `/v10/projects/${PROJECT_ID}/events`,
+      url: `/v9/projects/${PROJECT_ID}/events`,
     })).resolves.toMatchObject({ lastSequence: 42 });
     await expect(router.authenticateEvent({
       authorization: `Bearer ${MEMBER_CREDENTIAL}`,
       lastSequence: '-1',
-      url: `/v10/projects/${PROJECT_ID}/events`,
+      url: `/v9/projects/${PROJECT_ID}/events`,
     })).rejects.toMatchObject({ code: 'authentication-failed' });
   });
 });

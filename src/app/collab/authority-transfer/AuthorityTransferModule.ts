@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
   AcceptLanToCloudTransferTargetRequest,
   CollabAuthorityTransferStatus,
@@ -34,6 +36,7 @@ import {
   type AuthorityTransferClaimantRecord,
   type CloudToLanManagerClaimantPredecessor,
   type ManagerReissuedAuthorityTransferClaimantRecord,
+  type SourceIssuedAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import {
   AuthorityTransferClaimantRecovery,
@@ -78,6 +81,7 @@ import {
 } from '@/app/collab/authority-transfer/recovery/AuthorityTransferRecovery';
 import {
   type CollabLocalMembershipRecord,
+  isCollabLocalCloudMembership,
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
@@ -98,7 +102,8 @@ import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
-import type { CollabCloudToLanTransferView, CollabOperationOptions } from '@/core/collab';
+import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import type { CollabCloudToLanTransferView, CollabOperationOptions, CollabPendingReconnectView } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
@@ -141,6 +146,9 @@ export interface AuthorityTransferModuleOptions {
     input: Readonly<{ readonly projectId: CollabProjectId; readonly serverUrl: string; readonly allowCredentialCreation: boolean }>,
     options: CollabOperationOptions,
   ) => Promise<CloudAuthorityConnection>;
+  readonly createLanToCloudClaimantClient?: (
+    trust: LanAuthorityTransferTrustedHost,
+  ) => LanAuthorityTransferClient;
   readonly createLanToCloudSource: (
     projectId: CollabProjectId,
     session: CloudAuthorityConnection,
@@ -2168,6 +2176,110 @@ export class AuthorityTransferModule {
     if (failure) throw failure.reason;
   }
 
+  async readPendingLanToCloudClaim(projectId: CollabProjectId): Promise<CollabPendingReconnectView | null> {
+    const pending = await this.options.claimantStore.load(projectId);
+    if (pending?.variant !== 'source-issued' || pending.status.direction !== 'lan-to-cloud') return null;
+    return Object.freeze({
+      operationId: pending.operationIntentId, projectId, serverUrl: pending.status.targetUrl,
+    });
+  }
+
+  async reconnectLanToCloud(
+    projectId: CollabProjectId,
+    selectedServerUrl: string,
+    options: CollabOperationOptions = {},
+  ): Promise<boolean> {
+    const loadMembership = this.options.loadClaimantMembership;
+    if (!loadMembership) throw moduleError('authority-transfer-claimant-entry-unavailable');
+    const membership = await loadMembership(projectId);
+    const pending = await this.options.claimantStore.load(projectId);
+    if ((!membership || !isCollabLocalLanMembership(membership))
+      && !(pending?.variant === 'source-issued' && pending.status.direction === 'lan-to-cloud')) return false;
+    const serverUrl = validateCloudServerUrl(selectedServerUrl, 'serverUrl');
+    return this.options.lifecycle.runExclusive(
+      projectId, this.claimantRecovery.durableOwner.name, 'continuation',
+      async () => {
+        throwIfCancelled(options.signal);
+        const current = await loadMembership(projectId);
+        if (!current) throw moduleError('authority-transfer-claimant-membership-invalid');
+        const retained = await this.options.claimantStore.load(projectId);
+        let targetGeneration: number;
+        if (retained) {
+          if (retained.variant !== 'source-issued'
+            || retained.status.direction !== 'lan-to-cloud'
+            || retained.status.targetUrl !== serverUrl
+            || retained.memberId !== current.member.id) {
+            throw moduleError('authority-transfer-claimant-attempt-conflict');
+          }
+          targetGeneration = retained.status.targetAuthority.generation;
+          if (authorityTransferClaimantRequiresNoRuntime(retained, this.now())) {
+            await this.#completeAuthorityTransferClaimant(retained);
+          } else {
+            await this.claimants.resume(retained, options);
+          }
+        } else {
+          if (!isCollabLocalLanMembership(current) || current.hostOwnership.ownsAuthority
+            || !current.authority.endpoint || !current.authority.hostCaCertificatePem
+            || !current.authority.hostCaFingerprint) {
+            throw moduleError('authority-transfer-claimant-source-invalid');
+          }
+          const trust = {
+            authorityGeneration: current.authority.authorityGeneration,
+            caCertificatePem: current.authority.hostCaCertificatePem,
+            caFingerprint: current.authority.hostCaFingerprint,
+            endpoint: current.authority.endpoint,
+            projectId,
+          };
+          const lanClient = this.options.createLanToCloudClaimantClient?.(trust)
+            ?? new LanAuthorityTransferClient(trust);
+          const status = await lanClient.readCurrentTransferStatus(current.member.credential, options);
+          if (status.projectId !== projectId || status.direction !== 'lan-to-cloud'
+            || status.state !== 'completed' || status.sourceAuthority.kind !== 'lan'
+            || status.sourceAuthority.generation !== current.authority.authorityGeneration
+            || status.targetAuthority.kind !== 'cloud'
+            || status.targetUrl !== serverUrl) {
+            throw moduleError('authority-transfer-claimant-source-mismatch');
+          }
+          if (this.now().getTime() >= Date.parse(status.expiresAt)) {
+            throw moduleError('authority-transfer-claimant-expired');
+          }
+          const createConnection = this.options.createLanToCloudConnection;
+          if (!createConnection) throw moduleError('authority-transfer-claimant-entry-unavailable');
+          throwIfCancelled(options.signal);
+          const cloudSession = await createConnection({ projectId, serverUrl, allowCredentialCreation: true }, options);
+          try {
+            const binding = this.bindLanToCloudClaimant({
+              cloudSession, lanClient, memberCredential: current.member.credential, projectId,
+            });
+            try {
+              await binding.coordinator.start({
+                memberId: current.member.id, operationIntentId: `claim-${randomUUID()}`, status,
+              }, options);
+            } finally {
+              await binding.dispose();
+            }
+          } finally {
+            cloudSession.dispose();
+          }
+          targetGeneration = status.targetAuthority.generation;
+        }
+        const claimed = await loadMembership(projectId);
+        if (!claimed || !isCollabLocalCloudMembership(claimed)
+          || claimed.authority.authorityGeneration !== targetGeneration
+          || claimed.authority.serverUrl !== serverUrl || claimed.member.id !== current.member.id) {
+          throw moduleError('authority-transfer-claimant-not-converged');
+        }
+        return true;
+      },
+    ).catch(async error => {
+      const retained = await this.readPendingLanToCloudClaim(projectId);
+      if (retained?.serverUrl === serverUrl) {
+        throw durableOutcome(retained.operationId, 'authority-transfer-claimant-recovery-required', error);
+      }
+      throw error;
+    });
+  }
+
   bindLanToCloudClaimant(
     input: BindLanToCloudClaimantInput,
   ): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
@@ -2216,6 +2328,7 @@ export class AuthorityTransferModule {
       },
       target: {
         cloudPrincipalId: input.cloudSession.principalId,
+        confirmCloudTargetBinding: (record, options) => this.#confirmSourceIssuedCloudTarget(record, input.cloudSession, options),
         claimTransferredMembership: (record, request, options) => {
           if ('credentialHash' in request && request.credentialHash !== undefined) {
             throw moduleError('authority-transfer-cloud-claim-credential-unexpected');
@@ -2418,6 +2531,7 @@ export class AuthorityTransferModule {
       },
       target: {
         cloudPrincipalId: input.cloudSession.principalId,
+        confirmCloudTargetBinding: (record, options) => this.#confirmSourceIssuedCloudTarget(record, input.cloudSession, options),
         claimTransferredMembership: () => {
           throw moduleError('authority-transfer-claimant-target-replay-invalid');
         },
@@ -2500,6 +2614,35 @@ export class AuthorityTransferModule {
       throw moduleError('authority-transfer-claimant-target-credential-missing');
     }
     return record.targetCredential;
+  }
+
+  async #confirmSourceIssuedCloudTarget(
+    record: SourceIssuedAuthorityTransferClaimantRecord,
+    session: CloudAuthorityConnection,
+    options: CollabOperationOptions,
+  ): Promise<void> {
+    if (session.principalId !== record.cloudPrincipalId || session.serverUrl !== record.status.targetUrl) {
+      throw moduleError('authority-transfer-claimant-target-binding-invalid');
+    }
+    const status = await session.lifecycle.authorityTransfer('getProjectAuthorityTransfer', {
+      projectId: record.projectId, transferId: record.transferId,
+    }, options);
+    const snapshot = await session.readSnapshot(record.projectId, options);
+    const membership = await this.options.loadClaimantMembership?.(record.projectId);
+    if (!membership || membership.member.id !== record.memberId
+      || status.direction !== 'lan-to-cloud' || status.state !== 'completed' || status.phase !== 'completed'
+      || status.projectId !== record.projectId || status.transferId !== record.transferId
+      || status.sourceAuthority.generation !== record.status.sourceAuthority.generation
+      || status.targetAuthority.generation !== record.status.targetAuthority.generation
+      || status.targetUrl !== record.status.targetUrl
+      || status.checkpointSha256 !== record.status.checkpointSha256
+      || JSON.stringify(status.relinquishmentProof) !== JSON.stringify(record.status.relinquishmentProof)
+      || snapshot.project.id !== record.projectId || snapshot.project.authorityKind !== 'cloud'
+      || snapshot.project.authorityGeneration !== record.status.targetAuthority.generation
+      || snapshot.currentMember.id !== record.memberId
+      || snapshot.currentMember.personalRef !== membership.member.personalRef) {
+      throw moduleError('authority-transfer-claimant-target-binding-invalid');
+    }
   }
 
   #assertManagerReissuedTarget(

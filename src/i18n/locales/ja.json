@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "プロジェクトを再接続",
-      "descriptionLan": "Host が新しく作成した招待文字列を貼り付けて、{name} に再接続します。",
+      "descriptionLan": "新しい招待またはメンバーシップの引き継ぎ情報で {name} に再接続します。Cloud への移行後は、元の Host に接続でき、引き継ぎ情報が保持されている間、Cloud サーバー URL で再接続できます。",
       "descriptionCloud": "Cloud 招待、インポート済みメンバー資格情報、または新しいサーバー URL を使って {name} に再接続します。",
       "method": "再接続方法",
       "invitationOrClaim": "招待またはインポート済みメンバー資格情報",
+      "cloudMigration": "Cloud への移行後に再接続",
       "relocation": "同じ Cloud プロジェクトを新しいサーバー URL で使用",
       "serverUrl": "Cloud サーバー URL",
       "serverUrlPlaceholder": "http://server.example:8787",

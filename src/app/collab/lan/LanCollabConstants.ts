@@ -1,6 +1,8 @@
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 
-export const COLLAB_CONTROL_PROTOCOL_VERSION = 10 as const;
+// The deployed 2.2.6 LAN base contract is independent of package and Cloud versions.
+// Additive LAN features must use capability discovery, not change this version.
+export const COLLAB_CONTROL_PROTOCOL_VERSION = 9 as const;
 export const COLLAB_CONTROL_ROUTE_PREFIX = `/v${COLLAB_CONTROL_PROTOCOL_VERSION}/projects` as const;
 
 export const COLLAB_HOST_PORT_RANGE = Object.freeze({

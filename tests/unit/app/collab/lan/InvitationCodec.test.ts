@@ -41,7 +41,7 @@ describe('InvitationCodec', () => {
     expect(Buffer.from(invitation.invitationSecret, 'base64url')).toHaveLength(32);
 
     const encoded = codec.encode(invitation);
-    expect(encoded).toMatch(/^claudian-collab:v10:[A-Za-z0-9_-]+$/);
+    expect(encoded).toMatch(/^claudian-collab:v9:[A-Za-z0-9_-]+$/);
     expect(codec.decode(encoded)).toEqual(invitation);
   });
 
@@ -141,7 +141,7 @@ describe('InvitationCodec', () => {
     };
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
 
-    expect(() => codec.decode(`claudian-collab:v10:${encodedPayload}`)).toThrow(
+    expect(() => codec.decode(`claudian-collab:v9:${encodedPayload}`)).toThrow(
       expect.objectContaining({ code: 'invitation-invalid' }),
     );
     expect(() => codec.decode(`claudian-collab:v3:${encodedPayload}`)).toThrow(
@@ -149,7 +149,7 @@ describe('InvitationCodec', () => {
     );
   });
 
-  it.each([7, 9])('keeps interactive decoding strict v10 while privately normalizing a stored v%s Join', version => {
+  it.each([7])('keeps interactive decoding on the deployed base while privately normalizing a stored v%s Join', version => {
     const codec = new InvitationCodec(options());
     const legacyPayload = {
       caFingerprint: FINGERPRINT,

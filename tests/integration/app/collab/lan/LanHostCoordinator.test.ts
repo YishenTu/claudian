@@ -603,7 +603,7 @@ describe('LanHostCoordinator production transport', () => {
     const ca = membership.authority.hostCaCertificatePem;
     const sockets: WebSocket[] = [];
     const control = async () => new Promise<{ statusCode?: number; errorCode?: string }>(resolve => {
-      const request = httpsRequest(`${host.endpoint}/v10/projects/${PROJECT_ID}/snapshot`, {
+      const request = httpsRequest(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`, {
         agent: false, ca, rejectUnauthorized: true,
         headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
       }, response => {
@@ -617,7 +617,7 @@ describe('LanHostCoordinator production transport', () => {
       expect(await control()).toEqual({ statusCode: 200 });
       for (const target of [20, 60, 100]) {
         while (sockets.length < target) {
-          const socket = new WebSocket(`${host.endpoint.replace('https:', 'wss:')}/v10/projects/${PROJECT_ID}/events`, {
+          const socket = new WebSocket(`${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`, {
             ca, rejectUnauthorized: true, handshakeTimeout: 3000,
             headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
           });
@@ -691,7 +691,7 @@ describe('LanHostCoordinator production transport', () => {
         memberCredential: string;
       } }>(value),
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/join-attempts`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts`,
     }, invitation.invitationSecret);
     const activated = await client.requestWithMember({
       body: {
@@ -702,7 +702,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => envelopeData<{ currentMember: { status: string } }>(value),
       idempotencyKey: 'activate-alpha',
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/join-attempts/join-alpha/activate`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts/join-alpha/activate`,
     }, join.joinAttempt.memberCredential);
 
     expect(activated.currentMember.status).toBe('active');
@@ -710,7 +710,7 @@ describe('LanHostCoordinator production transport', () => {
       body: { invitation, projectId: PROJECT_ID },
       decode: value => envelopeData<{ caFingerprint: string; endpoint: string }>(value),
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/endpoint-refresh`,
+      path: `/v9/projects/${PROJECT_ID}/endpoint-refresh`,
     }, join.joinAttempt.memberCredential)).resolves.toEqual({
       caFingerprint: invitation.caFingerprint,
       endpoint: host.endpoint,
@@ -760,7 +760,7 @@ describe('LanHostCoordinator production transport', () => {
     const hostAccess = await membershipAccess(localProjects);
     const memberAccess = await membershipAccess(memberProjects);
     const events = new WebSocket(
-      `${host.endpoint.replace('https:', 'wss:')}/v10/projects/${PROJECT_ID}/events`,
+      `${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`,
       {
         ca: hostCa,
         headers: { authorization: `Bearer ${join.joinAttempt.memberCredential}` },
@@ -768,7 +768,7 @@ describe('LanHostCoordinator production transport', () => {
       },
     );
     const hostEvents = new WebSocket(
-      `${host.endpoint.replace('https:', 'wss:')}/v10/projects/${PROJECT_ID}/events`,
+      `${host.endpoint.replace('https:', 'wss:')}/v9/projects/${PROJECT_ID}/events`,
       {
         ca: hostCa,
         headers: { authorization: `Bearer ${HOST_CREDENTIAL}` },
@@ -812,7 +812,7 @@ describe('LanHostCoordinator production transport', () => {
       member: { role: 'manager' },
     });
     await expect(memberAccess.service.createInvitation(PROJECT_ID)).resolves.toMatchObject({
-      encodedInvitation: expect.stringMatching(/^claudian-collab:v10:/),
+      encodedInvitation: expect.stringMatching(/^claudian-collab:v9:/),
     });
     await expect(memberAccess.service.removeMember({
       memberId: 'member-host',
@@ -864,7 +864,7 @@ describe('LanHostCoordinator production transport', () => {
     await expect(client.requestWithMember({
       decode: value => value,
       method: 'GET',
-      path: `/v10/projects/${PROJECT_ID}/snapshot`,
+      path: `/v9/projects/${PROJECT_ID}/snapshot`,
     }, join.joinAttempt.memberCredential)).rejects.toMatchObject({
       code: 'membership-revoked',
     });
@@ -903,7 +903,7 @@ describe('LanHostCoordinator production transport', () => {
       invitation: { revoked_at: expect.any(String) },
       member: { status: 'revoked' },
     });
-    await expect(fetch(`${host.endpoint}/v10/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
   });
 
@@ -983,7 +983,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => value,
       idempotencyKey: 'accept-listener',
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/host-transfers/transfer-listener/accept`,
+      path: `/v9/projects/${PROJECT_ID}/host-transfers/transfer-listener/accept`,
     }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'operation-failed' });
 
     expect(admittedLifecycleOwners).toContain('host-transfer');
@@ -1026,7 +1026,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => value,
       idempotencyKey: 'cancel-listener',
       method: 'DELETE',
-      path: `/v10/projects/${PROJECT_ID}/host-transfers/transfer-listener`,
+      path: `/v9/projects/${PROJECT_ID}/host-transfers/transfer-listener`,
     }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'operation-failed' });
 
     expect(admittedLifecycleOwners).toContain('host-transfer');
@@ -1063,7 +1063,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => value,
       idempotencyKey: 'retire-listener',
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/retire`,
+      path: `/v9/projects/${PROJECT_ID}/retire`,
     }, HOST_CREDENTIAL)).rejects.toMatchObject({ code: 'operation-failed' });
 
     expect(admittedLifecycleOwners).toContain('retirement');
@@ -1322,7 +1322,7 @@ describe('LanHostCoordinator production transport', () => {
       throw new Error('Missing Host CA fixture');
     }
     const response = JSON.parse(await readPinnedUrl(
-      `${host.endpoint}/v10/projects/${PROJECT_ID}/snapshot`,
+      `${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`,
       membership.authority.hostCaCertificatePem,
     )) as { error?: { code?: string } };
 
@@ -2732,7 +2732,7 @@ describe('LanHostCoordinator production transport', () => {
       `${nextEndpoint}/v1/git/${PROJECT_ID}/repository.git/info/refs?service=git-upload-pack`,
       ca,
     )).resolves.toBe('git-ready');
-    await expect(fetch(`${first.endpoint}/v10/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${first.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
     await expect(localProjects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
       authority: {
@@ -2971,7 +2971,7 @@ describe('LanHostCoordinator production transport', () => {
         memberCredential: string;
       } }>(value),
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/join-attempts`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts`,
     }, firstInvitation.invitationSecret);
     await firstClient.requestWithMember({
       body: {
@@ -2982,7 +2982,7 @@ describe('LanHostCoordinator production transport', () => {
       decode: value => envelopeData(value),
       idempotencyKey: 'activate-roaming-member',
       method: 'POST',
-      path: `/v10/projects/${PROJECT_ID}/join-attempts/join-roaming-member/activate`,
+      path: `/v9/projects/${PROJECT_ID}/join-attempts/join-roaming-member/activate`,
     }, joined.joinAttempt.memberCredential);
 
     const memberRoot = path.join(root, 'roaming-member-device');
@@ -3151,7 +3151,7 @@ describe('LanHostCoordinator production transport', () => {
             memberCredential: string;
           } }>(value),
           method: 'POST',
-          path: `/v10/projects/${PROJECT_ID}/join-attempts`,
+          path: `/v9/projects/${PROJECT_ID}/join-attempts`,
         }, firstInvitation.invitationSecret);
         await firstClient.requestWithMember({
           body: {
@@ -3162,7 +3162,7 @@ describe('LanHostCoordinator production transport', () => {
           decode: value => envelopeData(value),
           idempotencyKey: `activate-roaming-member-${index}`,
           method: 'POST',
-          path: `/v10/projects/${PROJECT_ID}/join-attempts/join-roaming-member-${index}/activate`,
+          path: `/v9/projects/${PROJECT_ID}/join-attempts/join-roaming-member-${index}/activate`,
         }, joined.joinAttempt.memberCredential);
 
         const memberRoot = path.join(root, `roaming-member-${index}`);
@@ -3439,10 +3439,10 @@ describe('LanHostCoordinator production transport', () => {
 
       await coordinator.stopProject(PROJECT_ID);
       await expect(coordinator.createInvitation(betaId)).resolves.toMatchObject({
-        encodedInvitation: expect.stringMatching(/^claudian-collab:v10:/),
+        encodedInvitation: expect.stringMatching(/^claudian-collab:v9:/),
       });
       await coordinator.stopProject(betaId);
-      await expect(fetch(`${alpha.endpoint}/v10/projects/${betaId}/snapshot`))
+      await expect(fetch(`${alpha.endpoint}/v9/projects/${betaId}/snapshot`))
         .rejects.toThrow();
     } finally {
       await betaDatabase.close();
@@ -3467,7 +3467,7 @@ describe('LanHostCoordinator production transport', () => {
       projectId: PROJECT_ID,
       status: 'stopped',
     });
-    await expect(fetch(`${host.endpoint}/v10/projects/${PROJECT_ID}/snapshot`))
+    await expect(fetch(`${host.endpoint}/v9/projects/${PROJECT_ID}/snapshot`))
       .rejects.toThrow();
   });
 
@@ -3566,7 +3566,7 @@ describe('LanHostCoordinator production transport', () => {
       expect(await authorityDatabase.read(connection => connection.get(
         'SELECT revoked_at FROM invitations ORDER BY created_at DESC LIMIT 1',
       ))).toEqual({ revoked_at: expect.any(String) });
-      expect(invitation.encodedInvitation).toMatch(/^claudian-collab:v10:/);
+      expect(invitation.encodedInvitation).toMatch(/^claudian-collab:v9:/);
     } finally {
       await coordinator.stopProject(PROJECT_ID);
       await new Promise<void>(resolve => {

@@ -42,6 +42,10 @@ export interface AuthorityTransferClaimantTarget {
     request: ClaimTransferredMembershipRequest,
     options: CollabOperationOptions,
   ): Promise<CollabTransferredMembershipRedemptionReceipt>;
+  confirmCloudTargetBinding?(
+    record: SourceIssuedAuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
   confirmTargetBinding?(
     record: ManagerReissuedAuthorityTransferClaimantRecord,
     proof: 'receipt' | 'existing-binding',
@@ -230,9 +234,24 @@ export class AuthorityTransferClaimantCoordinator {
         switch (record.phase) {
           case 'prepared':
           case 'claim-retained':
-          case 'credential-persisted':
             await this.complete(record, options);
             return;
+          case 'credential-persisted':
+            if (record.status.direction !== 'lan-to-cloud') {
+              await this.complete(record, options);
+              return;
+            }
+            this.#assertTargetPrincipal(record);
+            if (!this.options.target.confirmCloudTargetBinding) {
+              throw claimantError('authority-transfer-claimant-target-confirmation-unavailable');
+            }
+            await this.options.target.confirmCloudTargetBinding(record, options);
+            // Expiry ends source acknowledgement, but cannot disprove redemption.
+            // Persist authenticated target evidence before changing local membership.
+            record = await this.#advanceSource(record, 'source-acknowledged', {
+              convergenceProof: 'existing-binding',
+            });
+            continue;
           case 'target-claimed':
             record = await this.#advanceSource(record, 'source-acknowledged');
             continue;
@@ -390,6 +409,7 @@ export class AuthorityTransferClaimantCoordinator {
     phase: SourceIssuedAuthorityTransferClaimantRecord['phase'],
     update: Readonly<{
       claim?: CollabTransferredMembershipClaim;
+      convergenceProof?: 'existing-binding';
       redemptionReceipt?: CollabTransferredMembershipRedemptionReceipt;
       targetCredential?: string | null;
     }> = {},

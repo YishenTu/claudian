@@ -301,14 +301,40 @@ export class LanAuthorityTransferClient {
     authorityGeneration: number,
     options: LanAuthorityTransferOperationOptions = {},
   ): Promise<string> {
+    await this.resolveCurrentIdentity(authorityGeneration, options);
+    return this.currentEndpoint;
+  }
+
+  async readCurrentTransferStatus(
+    memberCredential: string,
+    options: LanAuthorityTransferOperationOptions = {},
+  ): Promise<OperationResponse<'getProjectAuthorityTransfer'>> {
+    validateCredential(memberCredential);
+    if (this.trust.authorityGeneration === undefined) {
+      throw clientError('operation-failed', 'authority-transfer-source-generation-missing');
+    }
+    const identity = await this.resolveCurrentIdentity(this.trust.authorityGeneration, options);
+    if (!identity.transferId) {
+      throw clientError('operation-failed', 'authority-transfer-source-not-transferred');
+    }
+    return this.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: this.trust.projectId, transferId: identity.transferId,
+    }, memberCredential, options);
+  }
+
+  private async resolveCurrentIdentity(
+    authorityGeneration: number,
+    options: LanAuthorityTransferOperationOptions,
+  ): Promise<LanAuthorityTransferEndpointIdentity> {
     const expected = decodeLanAuthorityTransferEndpointIdentity({
       authorityGeneration, projectId: this.trust.projectId, transferId: null,
     });
-    if (await this.probeEndpoint(expected, this.endpoint, options)) return this.currentEndpoint;
-    const endpoint = this.options.discovery ? await this.resolveEndpoint(expected, options) : null;
-    if (!endpoint) throw clientError('endpoint-unreachable', 'authority-transfer-connection-failed');
-    this.endpoint = endpoint;
-    return this.currentEndpoint;
+    const identity = await this.probeEndpoint(expected, this.endpoint, options);
+    if (identity) return identity;
+    const resolved = this.options.discovery ? await this.resolveEndpoint(expected, options) : null;
+    if (!resolved) throw clientError('endpoint-unreachable', 'authority-transfer-connection-failed');
+    this.endpoint = resolved.endpoint;
+    return resolved.identity;
   }
 
   requestWithMember<Operation extends LanAuthorityTransferMemberOperation>(
@@ -386,17 +412,17 @@ export class LanAuthorityTransferClient {
         projectId: this.trust.projectId,
         transferId: 'transferId' in decodedRequest ? decodedRequest.transferId : null,
       });
-      const endpoint = await this.resolveEndpoint(expected, options);
-      if (!endpoint) throw error;
-      this.endpoint = endpoint;
-      return send(endpoint);
+      const resolved = await this.resolveEndpoint(expected, options);
+      if (!resolved) throw error;
+      this.endpoint = resolved.endpoint;
+      return send(resolved.endpoint);
     }
   }
 
   private async resolveEndpoint(
     expected: LanAuthorityTransferEndpointIdentity,
     options: LanAuthorityTransferOperationOptions,
-  ): Promise<URL | null> {
+  ): Promise<{ readonly endpoint: URL; readonly identity: LanAuthorityTransferEndpointIdentity } | null> {
     const candidates = await this.options.discovery!.discoverProjectCandidates(
       this.trust.projectId, this.trust.caFingerprint, options,
     );
@@ -410,10 +436,11 @@ export class LanAuthorityTransferClient {
         endpoints.set(validated.endpoint.origin, validated.endpoint);
       } catch { /* Discovery metadata is untrusted. */ }
     }
-    const probes = await Promise.all([...endpoints.values()].map(async endpoint => (
-      await this.probeEndpoint(expected, endpoint, options) ? endpoint : null
-    )));
-    const verified = probes.filter((endpoint): endpoint is URL => endpoint !== null);
+    const probes = await Promise.all([...endpoints.values()].map(async endpoint => {
+      const identity = await this.probeEndpoint(expected, endpoint, options);
+      return identity ? { endpoint, identity } : null;
+    }));
+    const verified = probes.filter(resolved => resolved !== null);
     if (verified.length > 1) throw clientError('operation-failed', 'authority-transfer-endpoint-ambiguous');
     return verified[0] ?? null;
   }
@@ -422,7 +449,7 @@ export class LanAuthorityTransferClient {
     expected: LanAuthorityTransferEndpointIdentity,
     endpoint: URL,
     options: LanAuthorityTransferOperationOptions,
-  ): Promise<boolean> {
+  ): Promise<LanAuthorityTransferEndpointIdentity | null> {
     const requestId = randomUUID();
     const body = Buffer.from(JSON.stringify(expected), 'utf8');
     const response = await requestHttpsBytes({
@@ -444,7 +471,7 @@ export class LanAuthorityTransferClient {
       }
       return null;
     });
-    if (!response) return false;
+    if (!response) return null;
     const contentType = response.headers['content-type'];
     let envelope: Record<string, unknown> | null = null;
     try { envelope = record(JSON.parse(response.body.toString('utf8'))); } catch { /* Reject below. */ }
@@ -465,7 +492,7 @@ export class LanAuthorityTransferClient {
     if (!matchesLanAuthorityTransferEndpointIdentity(expected, actual)) {
       throw clientError('operation-failed', 'authority-transfer-endpoint-identity-mismatch');
     }
-    return true;
+    return actual;
   }
 
   private async requestAtEndpoint<Operation extends CollabAuthorityTransferOperation>(

@@ -42,7 +42,9 @@ export function authorityTransferClaimantRequiresSource(
   if (
     record.phase === 'prepared'
     || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted'
+    || (record.phase === 'credential-persisted' && (
+      record.status.direction !== 'lan-to-cloud' || now.getTime() < Date.parse(record.status.expiresAt)
+    ))
   ) return true;
   return record.phase === 'target-claimed'
     && now.getTime() < Date.parse(record.status.expiresAt);
@@ -57,7 +59,7 @@ export function authorityTransferClaimantRequiresNoRuntime(
   if (now.getTime() < Date.parse(record.status.expiresAt)) return false;
   return record.phase === 'prepared'
     || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted';
+    || (record.phase === 'credential-persisted' && record.status.direction !== 'lan-to-cloud');
 }
 
 export class AuthorityTransferClaimantRecovery

@@ -84,6 +84,7 @@ export interface LocalProjectControlPortOptions {
 }
 
 interface LocalProjectControlSession {
+  readonly authorityGeneration: number;
   readonly client: LocalProjectControlClientPort;
   readonly memberCredential: string;
   readonly memberId: CollabMemberId;
@@ -151,6 +152,8 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     );
     if (
       snapshot.project.id !== projectId
+      || snapshot.project.authorityKind !== 'lan'
+      || snapshot.project.authorityGeneration !== session.authorityGeneration
       || snapshot.currentMember.id !== session.memberId
       || snapshot.currentMember.personalRef !== session.personalRef
     ) {
@@ -513,6 +516,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       throw controlError('host-stopped', 'control-host-endpoint-unavailable');
     }
     return {
+      authorityGeneration: membership.authority.authorityGeneration,
       client: this.createClient({
         caCertificatePem,
         caFingerprint,

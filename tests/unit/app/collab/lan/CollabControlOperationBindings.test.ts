@@ -25,7 +25,7 @@ describe('CollabControlOperationBindings', () => {
   it('builds parameterized paths from the authoritative binding', () => {
     expect(collabControlOperationPath('createComment', 'project-a', {
       requestId: 'request-a',
-    })).toBe('/v10/projects/project-a/requests/request-a/comments');
+    })).toBe('/v9/projects/project-a/requests/request-a/comments');
     expect(() => collabControlOperationPath('createComment', 'project-a'))
       .toThrow('Missing Collab route parameter: requestId');
   });

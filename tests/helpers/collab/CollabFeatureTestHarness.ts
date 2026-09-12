@@ -145,6 +145,8 @@ function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
     readLanToCloudTransfer: () => unexpected('readLanToCloudTransfer'),
     readCloudToLanTransfer: () => unexpected('readCloudToLanTransfer'),
     redeemManagerReissuedClaim: () => unexpected('redeemManagerReissuedClaim'),
+    readPendingLanToCloudClaim: async () => null,
+    reconnectLanToCloud: async () => false,
     withdrawCloudToLanTarget: () => unexpected('withdrawCloudToLanTarget'),
   };
 }

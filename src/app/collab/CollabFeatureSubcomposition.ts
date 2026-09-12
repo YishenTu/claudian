@@ -824,6 +824,7 @@ export function createCollabFeatureSubcomposition(
     persistence: foundation.authorityTransfers, projectId: target.projectId,
   }).retainCommittedRedemptions(target, source, members);
   const authorityTransfer = new AuthorityTransferModule({
+    createLanToCloudClaimantClient: createLanTransferClient,
     createLanToCloudConnection: async ({ allowCredentialCreation, ...input }, operationOptions) => {
       if (allowCredentialCreation) await cloudCredentials.getOrCreate(input.projectId);
       return cloudAuthority.connect(input, operationOptions);

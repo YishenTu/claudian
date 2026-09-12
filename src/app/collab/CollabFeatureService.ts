@@ -443,6 +443,12 @@ export interface CollabAuthorityTransferEntryPort {
     invitation: CloudMembershipClaimInvitation,
     options?: CollabOperationOptions,
   ): Promise<void>;
+  readPendingLanToCloudClaim(projectId: CollabProjectId): Promise<CollabPendingReconnectView | null>;
+  reconnectLanToCloud(
+    projectId: CollabProjectId,
+    serverUrl: string,
+    options?: CollabOperationOptions,
+  ): Promise<boolean>;
   withdrawCloudToLanTarget(
     input: CollabWithdrawCloudToLanTargetRequest,
     options?: CollabOperationOptions,
@@ -1025,12 +1031,16 @@ class CollabFeatureServiceCore {
     });
     try {
       throwIfCancelled(controller.signal);
-      const result = 'encodedInvitation' in request
-        && request.encodedInvitation.startsWith('claudian-cloud-claim:')
-        ? await this.#reconnectManagerReissuedClaim(request, { signal: controller.signal })
-        : await this.options.publication.reconnectProject(request, {
-            signal: controller.signal,
-          });
+      let result: CollabResult<CollabLocalProjectSummary>;
+      if ('encodedInvitation' in request && request.encodedInvitation.startsWith('claudian-cloud-claim:')) {
+        result = await this.#reconnectManagerReissuedClaim(request, { signal: controller.signal });
+      } else if ('authority' in request && await this.options.authorityTransfer.reconnectLanToCloud(
+        request.projectId, request.authority.serverUrl, { signal: controller.signal },
+      )) {
+        result = await this.#reconnectedProject(request.projectId);
+      } else {
+        result = await this.options.publication.reconnectProject(request, { signal: controller.signal });
+      }
       await this.#refreshAfterMutation(result);
       return result;
     } catch (error) {
@@ -1051,6 +1061,8 @@ class CollabFeatureServiceCore {
     _options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabPendingReconnectView | null>> {
     try {
+      const claim = await this.options.authorityTransfer.readPendingLanToCloudClaim(projectId);
+      if (claim) return { status: 'success', value: claim };
       const pending = await this.foundation.local.projects.loadProjectDocument(
         projectId,
         'pending-operation',
@@ -1098,7 +1110,11 @@ class CollabFeatureServiceCore {
       throw operationError('authority-transfer-claimant-project-mismatch');
     }
     await this.options.authorityTransfer.redeemManagerReissuedClaim(invitation, options);
-    const project = (await this.#refreshProjects()).find(item => item.id === request.projectId);
+    return this.#reconnectedProject(request.projectId);
+  }
+
+  async #reconnectedProject(projectId: CollabProjectId): Promise<CollabResult<CollabLocalProjectSummary>> {
+    const project = (await this.#refreshProjects()).find(item => item.id === projectId);
     if (!project) throw operationError('authority-transfer-claimant-project-missing');
     return { status: 'success', value: project };
   }

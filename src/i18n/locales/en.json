@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "Reconnect project",
-      "descriptionLan": "Paste a fresh invitation from the Host to reconnect {name}.",
+      "descriptionLan": "Reconnect {name} with a fresh invitation or membership claim. After migration to Cloud, use the Cloud server URL while the former Host is reachable and retains your claim.",
       "descriptionCloud": "Reconnect {name} with a Cloud invitation, imported membership claim, or its new server URL.",
       "method": "Reconnect method",
       "invitationOrClaim": "Invitation or imported membership claim",
+      "cloudMigration": "Reconnect to Cloud after migration",
       "relocation": "Same Cloud project at a new server URL",
       "serverUrl": "Cloud server URL",
       "serverUrlPlaceholder": "http://server.example:8787",

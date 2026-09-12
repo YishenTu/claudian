@@ -1,4 +1,5 @@
 import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
+import { LAN_COLLAB_CAPABILITIES } from '@/app/collab/lan/LanCollabCapabilities';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
@@ -48,7 +49,8 @@ export const handleProjectRoute: CollabControlRouteHandler = async request => {
 
   if (match.operation === 'getSnapshot') {
     const memberCredential = requireOperationCredential(request.authorization, match.operation);
-    return { data: await request.service.readSnapshot(memberCredential) };
+    const snapshot = await request.service.readSnapshot(memberCredential);
+    return { data: { ...snapshot, capabilities: LAN_COLLAB_CAPABILITIES } };
   }
 
   if (match.operation === 'confirmEndpoint') {

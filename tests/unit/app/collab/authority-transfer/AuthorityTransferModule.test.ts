@@ -195,6 +195,7 @@ function recoverableClaimantRecord(input: Readonly<{
     updatedAt: '2026-08-27T00:00:10.000Z',
   };
   return decodeAuthorityTransferClaimantRecord({
+    convergenceProof: null,
     cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null,
     claim: phaseIndex >= 1
       ? {
@@ -5864,7 +5865,7 @@ describe('AuthorityTransferModule', () => {
   it('scrubs an expired pre-redemption claimant without rebuilding transports', async () => {
     let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
       expiresAt: '2026-08-27T01:00:00.000Z',
-      phase: 'credential-persisted',
+      phase: 'claim-retained',
     });
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const recoverClaimant = jest.fn(async () => {

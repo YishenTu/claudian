@@ -15,7 +15,7 @@ import {
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const INVITATION_PREFIX = 'claudian-collab';
-const LEGACY_PENDING_JOIN_PROTOCOL_VERSIONS = new Set([7, 9]);
+const LEGACY_PENDING_JOIN_PROTOCOL_VERSION = 7;
 const MAX_ENCODED_INVITATION_LENGTH = 8 * 1024;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -167,7 +167,7 @@ export class InvitationCodec {
       return this.#decodeCurrentPayload(payload);
     }
     if (
-      !LEGACY_PENDING_JOIN_PROTOCOL_VERSIONS.has(prefixVersion)
+      prefixVersion !== LEGACY_PENDING_JOIN_PROTOCOL_VERSION
       || !payload
       || typeof payload !== 'object'
       || Array.isArray(payload)

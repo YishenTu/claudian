@@ -120,6 +120,25 @@ describe('LocalProjectControlPort', () => {
   beforeEach(async () => { vaultRoot = await mkdtemp(path.join(tmpdir(), 'local-control-port-')); });
   afterEach(async () => { await rm(vaultRoot, { recursive: true, force: true }); });
 
+  it.each([undefined, 1, 5])('rejects a LAN snapshot outside the selected generation: %s', async generation => {
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    const selected = membership();
+    await projects.saveMembership({ ...selected, authority: { ...selected.authority, authorityGeneration: 3 } });
+    const data = snapshot();
+    const project: Record<string, unknown> = data.project;
+    if (generation === undefined) delete project.authorityGeneration;
+    else project.authorityGeneration = generation;
+    const control = new LocalProjectControlPort(projects, {
+      createClient: () => new ProjectControlClient({
+        requestWithMember: async request => request.decode(response(data)),
+      }),
+    });
+    await expect(control.readSnapshot('project-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+    });
+    expect((await projects.loadMembership('project-a'))?.authority.authorityGeneration).toBe(3);
+  });
+
   it('resolves Ticket numbers through the captured LAN membership and canonical response codec', async () => {
     const projects = new CollabLocalProjectRepository(vaultRoot);
     await projects.saveMembership(membership());
@@ -129,7 +148,9 @@ describe('LocalProjectControlPort', () => {
       createClient: trust => new ProjectControlClient({
         requestWithMember: async (request, credential, options) => {
           observed.push({ credential, endpoint: trust.endpoint, path: request.path, signal: options?.signal });
-          return request.decode(response({ ticketId: request.path.endsWith('/9001') ? null : 'ticket-target' }));
+          return request.decode(response(request.path.endsWith('/snapshot')
+            ? { ...snapshot(), capabilities: ['ticket-number-lookup-v1'] }
+            : { ticketId: request.path.endsWith('/9001') ? null : 'ticket-target' }));
         },
       }),
     });
@@ -137,12 +158,16 @@ describe('LocalProjectControlPort', () => {
       .resolves.toEqual({ ticketId: 'ticket-target' });
     await expect(control.resolveTicketNumber({ projectId: 'project-a', ticketNumber: 9001 }, { signal }))
       .resolves.toEqual({ ticketId: null });
-    expect(observed).toEqual([123, 9001].map(ticketNumber => ({
+    expect(observed).toEqual([123, 9001].flatMap(ticketNumber => [
+      { credential: membership().member.credential, endpoint: membership().authority.endpoint,
+        path: '/v9/projects/project-a/snapshot', signal },
+      {
       credential: membership().member.credential,
       endpoint: membership().authority.endpoint,
-      path: `/v10/projects/project-a/tickets/by-number/${ticketNumber}`,
+      path: `/v9/projects/project-a/tickets/by-number/${ticketNumber}`,
       signal,
-    })));
+      },
+    ]));
   });
 
   it('keeps complete Request continuations on the captured membership and cancellation signal', async () => {
@@ -192,9 +217,9 @@ describe('LocalProjectControlPort', () => {
     expect(detail.comments).toEqual({ comments: [firstComment, secondComment] });
     for (const request of requests) expect(request.signal).toBe(signal);
     expect(requests.map(({ credential, endpoint, path }) => ({ credential, endpoint, path }))).toEqual([
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v10/projects/project-a/requests/request-a' },
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v10/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
-      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v10/projects/project-a/requests/request-a' },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: `/v9/projects/project-a/requests/request-a/comments?cursor=request-next&limit=${COLLAB_LIMITS.maxCommentPageSize}` },
+      { credential: 'A'.repeat(43), endpoint: 'https://192.168.1.20:54545', path: '/v9/projects/project-a/requests/request-a' },
     ]);
   });
 

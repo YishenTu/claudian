@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request as httpsRequest } from 'node:https';
 
+import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type {
   HostTransferTargetTransportPort,
 } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
@@ -195,6 +196,16 @@ export class HostTransferTargetTransport implements HostTransferTargetTransportP
     }));
     if (response.transferId !== input.transferId) {
       throw transportError('host-transfer-probe-mismatch', 'protocol-payload-invalid');
+    }
+    // A published 2.2.6 receiver has no format advertisement and only accepts
+    // its schema 12. Check before the source leaves its writable generation.
+    const versions = response.authoritySchemaVersions === undefined ? [12] : response.authoritySchemaVersions;
+    if (!Array.isArray(versions) || versions.length > 32
+      || !versions.every(version => Number.isSafeInteger(version) && version > 0)) {
+      throw transportError('host-transfer-probe-mismatch', 'protocol-payload-invalid');
+    }
+    if (!versions.includes(COLLAB_AUTHORITY_SCHEMA_VERSION)) {
+      throw transportError('host-transfer-target-schema-unsupported');
     }
   }
 

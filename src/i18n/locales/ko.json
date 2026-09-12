@@ -129,10 +129,11 @@
     },
     "reconnectProject": {
       "title": "프로젝트 다시 연결",
-      "descriptionLan": "Host가 새로 만든 초대 문자열을 붙여 넣어 {name}에 다시 연결합니다.",
+      "descriptionLan": "새 초대 또는 멤버십 복구 정보로 {name}에 다시 연결하세요. Cloud로 이전한 후에는 이전 Host에 연결할 수 있고 복구 정보가 보관되어 있는 동안 Cloud 서버 URL로 다시 연결할 수 있습니다.",
       "descriptionCloud": "Cloud 초대, 가져온 멤버십 자격 정보 또는 새 서버 URL로 {name}에 다시 연결합니다.",
       "method": "다시 연결 방법",
       "invitationOrClaim": "초대 또는 가져온 멤버십 자격 정보",
+      "cloudMigration": "Cloud 이전 후 다시 연결",
       "relocation": "새 서버 URL의 동일한 Cloud 프로젝트",
       "serverUrl": "Cloud 서버 URL",
       "serverUrlPlaceholder": "http://server.example:8787",

@@ -131,6 +131,57 @@ describe('LAN authority-transfer connection recovery', () => {
     }, MEMBER_CREDENTIAL);
   }
 
+  function terminal(generation = 1): LanAuthorityTransferRouteRegistration {
+    return {
+      authorityGeneration: generation, projectId: PROJECT_ID, state: 'terminal-source', transferId: STATUS.transferId,
+      service: {
+        expiresAt: STATUS.expiresAt,
+        authenticateMemberCredential: async credential => {
+          if (credential !== MEMBER_CREDENTIAL) throw new CollabError({ code: 'authentication-failed' });
+          return { memberId: 'member-peer' };
+        },
+        getProjectAuthorityTransfer: async (_actor, request) => {
+          expect(request.transferId).toBe(STATUS.transferId);
+          return STATUS;
+        },
+        getTransferredMembershipClaim: async () => { throw new Error('Not used'); },
+        acknowledgeTransferredMembershipClaimRedemption: async () => { throw new Error('Not used'); },
+        expire: async () => undefined,
+      },
+    };
+  }
+
+  it('discovers a terminal transfer at the pinned generation before authenticating the Member', async () => {
+    const original = await listen();
+    const target = await listen(terminal());
+    await close(original.server);
+    discover(target.endpoint);
+    await expect(client(original.endpoint).readCurrentTransferStatus(MEMBER_CREDENTIAL)).resolves.toEqual(STATUS);
+    expect(credentials).toEqual([{ authorization: `Bearer ${MEMBER_CREDENTIAL}`, endpoint: target.endpoint }]);
+  });
+
+  it('does not authenticate a Member when the selected LAN generation has not transferred', async () => {
+    const original = await listen();
+    await expect(client(original.endpoint).readCurrentTransferStatus(MEMBER_CREDENTIAL)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-source-not-transferred' },
+    });
+    expect(credentials).toEqual([]);
+  });
+
+  it('does not authenticate a Member to a terminal transfer at another generation', async () => {
+    const original = await listen(terminal(3));
+    await expect(client(original.endpoint).readCurrentTransferStatus(MEMBER_CREDENTIAL)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-endpoint-identity-mismatch' },
+    });
+    expect(credentials).toEqual([]);
+  });
+
+  it('retains member authentication after learning the terminal transfer identity', async () => {
+    const original = await listen(terminal());
+    await expect(client(original.endpoint).readCurrentTransferStatus(Buffer.alloc(32, 9).toString('base64url')))
+      .rejects.toMatchObject({ code: 'authentication-failed' });
+  });
+
   it('finds the same authority after successive listener replacements', async () => {
     const original = await listen();
     const next = await listen();

@@ -6,4 +6,5 @@
 - Retain the terminal responder for its entire recovery window, including after final acknowledgement, because responses can be lost. Expiry never removes local visible files or Retired projection.
 - Hand pending acknowledgement to the independently discoverable queue before deleting Project-private state. Its fallback payload must not recreate an active local projection.
 - Cloud Retire owns its frozen intent until durable terminal handoff; it never borrows LAN intent. Submitted replay precedes active-snapshot lookup.
+- Published 2.2.6 LAN retirement records contain three null Cloud fields, including the removed development actor field. Preserve that LAN-only shape without adopting prelaunch Cloud credentials or bindings.
 - Exact terminal Retirement may absorb pending Leave or responsibility ownership. Once Retired is durable, obsolete receipts cannot remain competing nonterminal owners; recovery removes them without reacquiring/draining itself.

@@ -28,7 +28,7 @@ import {
   parseInstallationKey,
 } from '@/core/device/InstallationKey';
 
-export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 3 as const;
+export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 4 as const;
 
 export const SOURCE_ISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES = [
   'prepared',
@@ -86,6 +86,7 @@ interface AuthorityTransferClaimantRecordBase {
 export interface SourceIssuedAuthorityTransferClaimantRecord
   extends AuthorityTransferClaimantRecordBase {
   readonly claim: CollabTransferredMembershipClaim | null;
+  readonly convergenceProof: 'existing-binding' | null;
   readonly lanTarget: AuthorityTransferClaimantLanTarget | null;
   readonly managerPredecessor: CloudToLanManagerClaimantPredecessor | null;
   readonly phase: SourceIssuedAuthorityTransferClaimantPhase;
@@ -113,7 +114,7 @@ export type AuthorityTransferClaimantRecord =
   | ManagerReissuedAuthorityTransferClaimantRecord;
 
 const SOURCE_KEYS = new Set([
-  'cloudPrincipalId', 'claim', 'createdAt', 'kind', 'lanTarget', 'managerPredecessor', 'memberId',
+  'cloudPrincipalId', 'claim', 'convergenceProof', 'createdAt', 'kind', 'lanTarget', 'managerPredecessor', 'memberId',
   'operationIntentId', 'phase', 'projectId', 'redemptionReceipt', 'schemaVersion',
   'status', 'targetCredential', 'transferId', 'updatedAt', 'variant',
 ]);
@@ -306,6 +307,10 @@ function decodeSourceIssuedRecord(
   if ((status.targetAuthority.kind === 'cloud') !== (cloudPrincipalId !== null)) {
     throw new TypeError('Invalid authority-transfer claimant Cloud principal');
   }
+  const convergenceProof = source.convergenceProof;
+  if (convergenceProof !== null && convergenceProof !== 'existing-binding') {
+    throw new TypeError('Invalid authority-transfer claimant convergence proof');
+  }
   const targetCredential = decodeCredential(source.targetCredential);
   const redemptionReceipt = decodeReceipt(source.redemptionReceipt);
   const managerPredecessor = decodeManagerPredecessor(
@@ -318,7 +323,11 @@ function decodeSourceIssuedRecord(
     (index >= 1) !== (claim !== null)
     || (status.targetAuthority.kind === 'lan' && index >= 2) !== (targetCredential !== null)
     || (status.targetAuthority.kind === 'cloud' && targetCredential !== null)
-    || (index >= 3) !== (redemptionReceipt !== null)
+    || (index >= 3 && convergenceProof === null) !== (redemptionReceipt !== null)
+    || (convergenceProof === 'existing-binding' && (
+      status.direction !== 'lan-to-cloud' || index < 4
+      || Date.parse(source.updatedAt as string) < Date.parse(status.expiresAt)
+    ))
     || (claim !== null && (
       claim.memberId !== source.memberId
       || claim.projectId !== source.projectId
@@ -344,6 +353,7 @@ function decodeSourceIssuedRecord(
   return Object.freeze({
     cloudPrincipalId,
     claim,
+    convergenceProof,
     createdAt: source.createdAt as CollabIsoTimestamp,
     kind: 'authority-transfer-claimant',
     lanTarget,
@@ -486,6 +496,7 @@ export function createAuthorityTransferClaimantRecord(input: {
   return decodeAuthorityTransferClaimantRecord({
     cloudPrincipalId: input.cloudPrincipalId,
     claim: null,
+    convergenceProof: null,
     createdAt: input.createdAt,
     kind: 'authority-transfer-claimant',
     lanTarget: input.lanTarget ?? null,
@@ -553,7 +564,12 @@ export function advanceAuthorityTransferClaimantRecord(
   const phases: readonly AuthorityTransferClaimantPhase[] = previous.variant === 'source-issued'
     ? SOURCE_ISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES
     : MANAGER_REISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES;
-  const isExistingBindingRecovery = previous.variant === 'manager-reissued'
+  const isExistingBindingRecovery = (previous.variant === 'source-issued'
+    && previous.status.direction === 'lan-to-cloud'
+    && previous.phase === 'credential-persisted'
+    && update.phase === 'source-acknowledged'
+    && update.convergenceProof === 'existing-binding')
+    || previous.variant === 'manager-reissued'
     && previous.phase === 'redemption-prepared'
     && update.phase === 'target-confirmed'
     && update.convergenceProof === 'existing-binding'

@@ -63,7 +63,7 @@ export class ReconnectProjectModal extends Modal {
         name: this.#options.project.name,
       }),
     });
-    if (this.#options.project.authorityKind === 'cloud') this.#renderCloudModeSelection();
+    this.#renderModeSelection();
     this.#invitationRow = this.contentEl.createDiv({ cls: 'claudian-collab-join-field' });
     this.#invitationRow.createEl('label', {
       attr: { for: 'claudian-collab-reconnect-invitation' },
@@ -78,7 +78,7 @@ export class ReconnectProjectModal extends Modal {
       },
     });
     this.#invitationInput.addEventListener('input', () => this.#updateButton());
-    if (this.#options.project.authorityKind === 'cloud') this.#renderServerUrlField();
+    this.#renderServerUrlField();
 
     this.#statusEl = this.contentEl.createDiv({ cls: 'claudian-collab-join-status' });
     const actions = this.contentEl.createDiv({ cls: 'claudian-collab-join-actions' });
@@ -96,9 +96,7 @@ export class ReconnectProjectModal extends Modal {
     this.#reconnectButton.addEventListener('click', () => {
       void this.#runReconnect();
     });
-    if (this.#options.project.authorityKind === 'cloud') {
-      void this.#loadPendingReconnect();
-    }
+    void this.#loadPendingReconnect();
   }
 
   onClose(): void {
@@ -244,7 +242,7 @@ export class ReconnectProjectModal extends Modal {
     this.#renderPendingReconnect(true);
   }
 
-  #renderCloudModeSelection(): void {
+  #renderModeSelection(): void {
     const group = this.contentEl.createEl('fieldset', {
       cls: 'claudian-collab-join-mode',
     });
@@ -269,7 +267,9 @@ export class ReconnectProjectModal extends Modal {
       label.createSpan({
         text: mode === 'invitation'
           ? t('collab.reconnectProject.invitationOrClaim')
-          : t('collab.reconnectProject.relocation'),
+          : t(this.#options.project.authorityKind === 'cloud'
+            ? 'collab.reconnectProject.relocation'
+            : 'collab.reconnectProject.cloudMigration'),
       });
     }
   }

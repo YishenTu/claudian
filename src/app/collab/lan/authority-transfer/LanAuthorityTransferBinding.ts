@@ -61,10 +61,13 @@ export function matchesLanAuthorityTransferEndpointIdentity(
   expected: LanAuthorityTransferEndpointIdentity,
   actual: LanAuthorityTransferEndpointIdentity,
 ): boolean {
+  // A generation-only lookup discovers routing metadata; Member authentication
+  // still authorizes the subsequent operation against the exact transfer.
   return actual.projectId === expected.projectId
     && (expected.authorityGeneration === null
       || actual.authorityGeneration === expected.authorityGeneration)
-    && (actual.transferId === expected.transferId
+    && (expected.transferId === null
+      || actual.transferId === expected.transferId
       || (actual.transferId === null && expected.authorityGeneration !== null));
 }
 

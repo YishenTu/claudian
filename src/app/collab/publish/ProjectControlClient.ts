@@ -8,8 +8,11 @@ import type {
   CollabHttpOperationOptions,
   CollabJsonRequest,
 } from '@/app/collab/lan/CollabHttpClient';
+import { decodeLanCollabCapabilities, type LanCollabCapability } from '@/app/collab/lan/LanCollabCapabilities';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { decodeLanCollabEnvelopeData } from '@/app/collab/lan/LanCollabEnvelope';
 import type { CollabLanProjectSnapshot } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ProjectControlTransport {
   requestWithMember<T>(
@@ -216,7 +219,7 @@ export class ProjectControlClient {
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 
-  resolveTicketNumber(
+  async resolveTicketNumber(
     input: ResolveTicketNumberRequest & {
       readonly memberCredential: string;
       readonly signal?: AbortSignal;
@@ -227,6 +230,10 @@ export class ProjectControlClient {
       ticketNumber: input.ticketNumber,
     });
     if (decoded.status !== 'ok') return Promise.reject(decoded.error);
+    await this.#requireCapability(
+      'ticket-number-lookup-v1', input.projectId, input.memberCredential,
+      input.signal ? { signal: input.signal } : {},
+    );
     return this.transport.requestWithMember({
       decode: lanCollabControlOperationCodec('resolveTicketNumber').decodeResponse,
       method: COLLAB_CONTROL_OPERATION_BINDINGS.resolveTicketNumber.method,
@@ -234,6 +241,32 @@ export class ProjectControlClient {
         ticketNumber: String(decoded.value.ticketNumber),
       }),
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
+  }
+
+  async #requireCapability(
+    capability: LanCollabCapability,
+    projectId: string,
+    memberCredential: string,
+    options: CollabHttpOperationOptions,
+  ): Promise<void> {
+    const capabilities = await this.transport.requestWithMember({
+      decode: input => {
+        const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse(input);
+        if (snapshot.project.id !== projectId) {
+          throw new CollabError({ code: 'authority-integrity-error' });
+        }
+        const data = decodeLanCollabEnvelopeData(input) as Readonly<Record<string, unknown>>;
+        return decodeLanCollabCapabilities(data.capabilities);
+      },
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,
+      path: collabControlOperationPath('getSnapshot', projectId),
+    }, memberCredential, options);
+    if (!capabilities.includes(capability)) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'lan-capability-unavailable' },
+      });
+    }
   }
 
   listTickets(input: ListProjectTicketsInput): Promise<CollabTicketPage> {

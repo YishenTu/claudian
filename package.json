@@ -22,6 +22,7 @@
     "test": "node scripts/run-tests.js",
     "test:unit": "node scripts/run-jest.js",
     "test:cross-platform-collab": "node scripts/run-cross-platform-collab-tests.js",
+    "test:lan-compatibility": "node scripts/run-lan-compatibility.mjs",
     "test:architecture": "node --test scripts/check-architecture-boundaries.test.mjs",
     "test:watch": "node scripts/run-jest.js --watch",
     "test:coverage": "node scripts/run-jest.js --coverage",
