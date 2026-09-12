@@ -24,6 +24,68 @@ async function admitProjectRecovery(
   await operation();
 }
 
+describe('ClaudianCollabService authority transfer routing', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('forwards cancellation through source route activation', async () => {
+    const service = new ClaudianCollabService({
+      getConfiguredGitPath: () => '',
+      installationKey: TEST_INSTALLATION_A,
+      obsidianConfigDirectory: '.obsidian',
+      vaultRoot: '/tmp/claudian-authority-transfer-route-cancellation',
+    });
+    const projectId = 'project-source-route-cancellation';
+    service.bindAuthorityTransferModule({
+      sourceActiveService: jest.fn(() => ({ kind: 'source-active-service' })),
+    } as never);
+    jest.spyOn(service, 'inspectAuthority').mockResolvedValue({
+      database: {
+        read: async (operation: (connection: unknown) => Promise<unknown>) => operation({}),
+      },
+      projects: {
+        get: async () => ({
+          authorityGeneration: 1,
+          hostMemberId: 'member-host',
+          projectId,
+        }),
+      },
+    } as never);
+    jest.spyOn(service.lanHost, 'isProjectRunning').mockReturnValue(false);
+    let releaseRoute!: () => void;
+    let enteredRoute!: () => void;
+    const routeGate = new Promise<void>(resolve => { releaseRoute = resolve; });
+    const routeStarted = new Promise<void>(resolve => { enteredRoute = resolve; });
+    let routeSignal: AbortSignal | undefined;
+    jest.spyOn(service.lanHost, 'startAuthorityTransferRoute').mockImplementation(async (
+      _registration,
+      options = {},
+    ) => {
+      routeSignal = options.signal;
+      enteredRoute();
+      await routeGate;
+      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+      return {} as never;
+    });
+    const stopRoute = jest.spyOn(service.lanHost, 'stopAuthorityTransferRoute')
+      .mockResolvedValue(undefined);
+    const controller = new AbortController();
+    const activation = service.activateAuthorityTransferSourceRoute(
+      projectId,
+      { signal: controller.signal },
+    );
+    await routeStarted;
+
+    controller.abort();
+    releaseRoute();
+
+    await expect(activation).rejects.toMatchObject({ code: 'cancelled' });
+    expect(routeSignal).toBe(controller.signal);
+    expect(stopRoute).not.toHaveBeenCalled();
+  });
+});
+
 describe('ClaudianCollabService retirement recovery', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -93,8 +155,6 @@ describe('ClaudianCollabService retirement recovery', () => {
     PinnedCollabHttpClient.mockImplementationOnce(() => ({ requestWithMember }));
 
     await expect(service.retireProject({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-a',
     })).resolves.toEqual({
       projectId: 'project-a',
@@ -102,14 +162,8 @@ describe('ClaudianCollabService retirement recovery', () => {
     });
     expect(requestWithMember).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: {
-          expectedHostMemberId: 'member-host',
-          idempotencyKey: expect.any(String),
-          managerActorMemberId: 'member-manager',
-          projectId: 'project-a',
-        },
-        method: 'POST',
-        path: '/v9/projects/project-a/retire',
+        method: 'GET',
+        path: '/v9/projects/project-a/snapshot',
       }),
       Buffer.alloc(32, 1).toString('base64url'),
       {},
@@ -141,111 +195,6 @@ describe('ClaudianCollabService retirement recovery', () => {
       safeContext: { reason: 'retirement-tombstone-durable' },
     });
     expect(internal.local.projects.loadRetirementTombstone).toHaveBeenCalledWith('project-a');
-  });
-
-  it('restores a terminal responder without recreating finalized local projection', async () => {
-    const service = new ClaudianCollabService({
-      getConfiguredGitPath: () => '',
-      installationKey: TEST_INSTALLATION_A,
-      obsidianConfigDirectory: '.obsidian',
-      vaultRoot: '/tmp/claudian-retirement-restore',
-    });
-    const internal = service as never as {
-      closeAuthority: jest.Mock;
-      local: { projects: {
-        loadIndex: jest.Mock;
-        loadRetirementRecord: jest.Mock;
-      } };
-      removeOwnedAuthorityDirectory: jest.Mock;
-      retiredAuthorityCleanupComplete: Set<string>;
-      retirementHandler: { handle: jest.Mock };
-      retirementTombstones: { restore: jest.Mock };
-      startRetirementResponder: jest.Mock;
-    };
-    internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
-      expiredProjectIds: [],
-      tombstones: [{
-        ownerInstallationKey: TEST_INSTALLATION_A,
-        projectId: 'project-a',
-        result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
-      }],
-    });
-    internal.startRetirementResponder = jest.fn().mockResolvedValue(undefined);
-    internal.local.projects.loadIndex = jest.fn().mockResolvedValue({
-      projects: [],
-      schemaVersion: 2,
-      selectedProjectId: null,
-    });
-    internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.removeOwnedAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
-    internal.closeAuthority = jest.fn().mockResolvedValue(undefined);
-    internal.retirementHandler = { handle: jest.fn() };
-    const projectRecoveryAdmission = jest.fn(async (
-      _projectId: string,
-      operation: () => Promise<void>,
-    ) => operation());
-
-    await service.restoreRetirementResponders(projectRecoveryAdmission);
-
-    expect(projectRecoveryAdmission).toHaveBeenCalledWith(
-      'project-a',
-      expect.any(Function),
-    );
-    expect(internal.startRetirementResponder).toHaveBeenCalledWith('project-a');
-    expect(internal.retirementHandler.handle).not.toHaveBeenCalled();
-    expect(internal.retiredAuthorityCleanupComplete.has('project-a')).toBe(true);
-  });
-
-  it('tears down retired authority after local projection recovery fails', async () => {
-    const service = new ClaudianCollabService({
-      getConfiguredGitPath: () => '',
-      installationKey: TEST_INSTALLATION_A,
-      obsidianConfigDirectory: '.obsidian',
-      vaultRoot: '/tmp/claudian-retirement-local-recovery-failure',
-    });
-    const internal = service as never as {
-      closeAuthority: jest.Mock;
-      local: { projects: {
-        loadIndex: jest.Mock;
-        loadRetirementRecord: jest.Mock;
-      } };
-      removeOwnedAuthorityDirectory: jest.Mock;
-      retiredAuthorityCleanupComplete: Set<string>;
-      retirementHandler: { handle: jest.Mock };
-      retirementTombstones: { restore: jest.Mock };
-      startRetirementResponder: jest.Mock;
-    };
-    internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
-      expiredProjectIds: [],
-      tombstones: [{
-        ownerInstallationKey: TEST_INSTALLATION_A,
-        projectId: 'project-a',
-        result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
-      }],
-    });
-    internal.startRetirementResponder = jest.fn().mockResolvedValue(undefined);
-    internal.local.projects.loadIndex = jest.fn().mockResolvedValue({
-      projects: [{ id: 'project-a' }],
-      schemaVersion: 2,
-      selectedProjectId: null,
-    });
-    internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.removeOwnedAuthorityDirectory = jest.fn().mockResolvedValue(undefined);
-    internal.closeAuthority = jest.fn().mockResolvedValue(undefined);
-    internal.retirementHandler = {
-      handle: jest.fn().mockRejectedValue(new Error('local cleanup failed')),
-    };
-
-    await expect(service.restoreRetirementResponders(admitProjectRecovery))
-      .resolves.toBeUndefined();
-
-    expect(internal.retirementHandler.handle).toHaveBeenCalledWith(
-      { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
-      'terminal-fallback',
-    );
-    expect(internal.closeAuthority).toHaveBeenCalledWith('project-a');
-    expect(internal.removeOwnedAuthorityDirectory).toHaveBeenCalledWith('project-a');
-    expect(internal.retiredAuthorityCleanupComplete.has('project-a')).toBe(true);
   });
 
   it('continues restoring other terminal responders after one Project fails', async () => {
@@ -293,64 +242,4 @@ describe('ClaudianCollabService retirement recovery', () => {
     expect(internal.startRetirementResponder).toHaveBeenLastCalledWith('project-b');
   });
 
-  it('converges an expired tombstone before removing its terminal state', async () => {
-    const service = new ClaudianCollabService({
-      getConfiguredGitPath: () => '',
-      installationKey: TEST_INSTALLATION_A,
-      obsidianConfigDirectory: '.obsidian',
-      vaultRoot: '/tmp/claudian-expired-retirement-convergence',
-    });
-    const order: string[] = [];
-    const result = { projectId: 'project-a', retiredAt: '2026-07-14T00:00:00.000Z' };
-    const internal = service as never as {
-      closeAuthority: jest.Mock;
-      lanHost: { stopTerminalProject: jest.Mock };
-      local: { projects: {
-        loadIndex: jest.Mock;
-        loadRetirementRecord: jest.Mock;
-        loadRetirementTombstone: jest.Mock;
-      } };
-      removeOwnedAuthorityDirectory: jest.Mock;
-      retirementHandler: { handle: jest.Mock };
-      retirementTombstones: { remove: jest.Mock; restore: jest.Mock };
-    };
-    internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
-      expiredProjectIds: ['project-a'],
-      tombstones: [],
-    });
-    internal.local.projects.loadRetirementTombstone = jest.fn().mockResolvedValue({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      projectId: 'project-a',
-      result,
-    });
-    internal.local.projects.loadIndex = jest.fn().mockResolvedValue({
-      projects: [{ id: 'project-a' }],
-      schemaVersion: 2,
-      selectedProjectId: 'project-a',
-    });
-    internal.local.projects.loadRetirementRecord = jest.fn().mockResolvedValue(null);
-    internal.retirementHandler = {
-      handle: jest.fn(async () => { order.push('local-retired'); }),
-    };
-    internal.lanHost.stopTerminalProject = jest.fn(async () => { order.push('host-stopped'); });
-    internal.closeAuthority = jest.fn(async () => { order.push('authority-closed'); });
-    internal.removeOwnedAuthorityDirectory = jest.fn(async () => {
-      order.push('authority-removed');
-    });
-    internal.retirementTombstones.remove = jest.fn(async () => {
-      order.push('tombstone-removed');
-      return true;
-    });
-
-    await service.restoreRetirementResponders(admitProjectRecovery);
-
-    expect(internal.retirementHandler.handle).toHaveBeenCalledWith(result, 'terminal-fallback');
-    expect(order).toEqual([
-      'local-retired',
-      'host-stopped',
-      'authority-closed',
-      'authority-removed',
-      'tombstone-removed',
-    ]);
-  });
 });

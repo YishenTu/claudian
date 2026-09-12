@@ -26,7 +26,10 @@ import {
 
 import {
   COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+  decodeLanAuthorityTransferEndpointIdentity,
+  matchCollabLanAuthorityTransferIdentityRoute,
   matchCollabLanAuthorityTransferRoute,
+  matchesLanAuthorityTransferEndpointIdentity,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferBinding';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -115,12 +118,12 @@ export interface LanAuthorityTransferTerminalSourceService
 }
 
 interface RouteRegistrationBase {
+  readonly authorityGeneration?: number;
   readonly projectId: CollabProjectId;
 }
 
 export interface LanAuthorityTransferSourceActiveRegistration
   extends RouteRegistrationBase {
-  readonly expectedEndpoint?: string;
   readonly hostMemberId: CollabMemberId;
   readonly service: LanAuthorityTransferSourceActiveService;
   readonly state: 'source-active';
@@ -129,7 +132,6 @@ export interface LanAuthorityTransferSourceActiveRegistration
 export interface LanAuthorityTransferTargetOnlyStagedRegistration
   extends RouteRegistrationBase {
   readonly credentialHash: string;
-  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTargetStagedService;
   readonly state: 'target-only-staged';
   readonly transferId: string;
@@ -137,7 +139,6 @@ export interface LanAuthorityTransferTargetOnlyStagedRegistration
 
 export interface LanAuthorityTransferTargetActiveRegistration
   extends RouteRegistrationBase {
-  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTargetActiveService;
   readonly state: 'target-active';
   readonly transferId: string;
@@ -145,7 +146,6 @@ export interface LanAuthorityTransferTargetActiveRegistration
 
 export interface LanAuthorityTransferTerminalSourceRegistration
   extends RouteRegistrationBase {
-  readonly expectedEndpoint?: string;
   readonly service: LanAuthorityTransferTerminalSourceService;
   readonly state: 'terminal-source';
   readonly transferId: string;
@@ -170,6 +170,7 @@ export type LanAuthorityTransferRouteAdmissionResult<T> =
 export interface LanAuthorityTransferRouteAccess {
   resolve(
     projectId: CollabProjectId,
+    transferId?: string,
   ): LanAuthorityTransferRouteRegistration | null;
 
   /**
@@ -446,7 +447,52 @@ function requireLanClaimRequest(
 export class LanAuthorityTransferRouter {
   constructor(private readonly routes: LanAuthorityTransferRouteAccess) {}
 
+  private async handleIdentity(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    const route = matchCollabLanAuthorityTransferIdentityRoute(request.method, request.url);
+    if (!route) return false;
+    const id = requestId(request.headers);
+    try {
+      if (route.version !== COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION) {
+        request.resume();
+        throw routeError('protocol-version-unsupported', 'authority-transfer-binding-version-unsupported');
+      }
+      const expected = decodeLanAuthorityTransferEndpointIdentity(
+        parseJsonBody(await readRequestBody(request)),
+      );
+      if (expected.projectId !== route.projectId) {
+        throw routeError('protocol-payload-invalid', 'authority-transfer-project-mismatch');
+      }
+      const registration = (expected.transferId === null ? null
+        : this.routes.resolve(route.projectId, expected.transferId))
+        ?? this.routes.resolve(route.projectId);
+      if (!registration) {
+        throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+      }
+      const admission = await this.routes.runIfCurrent(route.projectId, registration, async () => {
+        const actual = decodeLanAuthorityTransferEndpointIdentity({
+          authorityGeneration: registration.authorityGeneration ?? null,
+          projectId: registration.projectId,
+          transferId: registration.state === 'source-active' ? null : registration.transferId,
+        });
+        if (!matchesLanAuthorityTransferEndpointIdentity(expected, actual)) {
+          throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+        }
+        return actual;
+      });
+      if (!admission.admitted) {
+        throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+      }
+      writeJson(response, 200, id, { data: admission.value });
+    } catch (error) {
+      request.resume();
+      const safeError = asCollabError(error);
+      writeJson(response, statusForError(safeError), id, { error: safeError.toJSON() });
+    }
+    return true;
+  }
+
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    if (await this.handleIdentity(request, response)) return true;
     const route = matchCollabLanAuthorityTransferRoute(request.method, request.url);
     if (!route) return false;
     const requestIdValue = requestId(request.headers);
@@ -463,7 +509,13 @@ export class LanAuthorityTransferRouter {
         );
       }
       const body = await readRequestBody(request);
-      const registration = this.routes.resolve(route.projectId);
+      const decodedRequest = route.operation === 'claimTransferredMembership'
+        ? requireLanClaimRequest(request, route.operation, body)
+        : decodeCollabAuthorityTransferOperationRequest(route.operation, parseJsonBody(body));
+      const registration = this.routes.resolve(
+        route.projectId,
+        'transferId' in decodedRequest ? decodedRequest.transferId : undefined,
+      ) ?? this.routes.resolve(route.projectId);
       if (
         !registration
         || registration.projectId !== route.projectId
@@ -512,16 +564,12 @@ export class LanAuthorityTransferRouter {
             throw routeError('project-not-found', 'authority-transfer-route-not-found');
           }
           const decoded = lanClaimRequest
-            ?? decodeCollabAuthorityTransferOperationRequest(
-              route.operation,
-              parseJsonBody(body),
-            );
+            ?? decodedRequest;
           if (decoded.projectId !== registration.projectId) {
             throw routeError('project-not-found', 'authority-transfer-project-mismatch');
           }
           if (
-            (registration.state === 'target-only-staged'
-              || registration.state === 'target-active')
+            registration.state !== 'source-active'
             && (
               !('transferId' in decoded)
               || decoded.transferId !== registration.transferId

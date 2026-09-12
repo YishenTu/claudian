@@ -124,11 +124,11 @@ function parseState(value: unknown): CollabDetailViewState {
     if (
       !isCollabProjectId(state.projectId)
       || !isCollabOpaqueId(state.operationId)
-      || (state.location !== 'my-changes' && state.location !== 'request')
+      || (state.location !== 'my-changes' && state.location !== 'request' && state.location !== 'update')
       || (state.location === 'request' && (
         !isCollabOpaqueId(state.requestId)
       ))
-      || (state.location === 'my-changes' && state.requestId !== undefined)
+      || (state.location !== 'request' && state.requestId !== undefined)
     ) {
       throw viewError('review-view-state-invalid');
     }
@@ -142,7 +142,8 @@ function parseState(value: unknown): CollabDetailViewState {
   }
   if (state.kind === 'publication') {
     if (
-      !isCollabProjectId(state.projectId)
+      (state.intent !== undefined && state.intent !== 'publish' && state.intent !== 'update')
+      || !isCollabProjectId(state.projectId)
       || !isCollabOpaqueId(state.operationId)
       || !isCollabGitOid(state.currentMainOid)
       || !isCollabGitOid(state.candidateOid)
@@ -153,6 +154,7 @@ function parseState(value: unknown): CollabDetailViewState {
       throw viewError('review-view-state-invalid');
     }
     return {
+      ...(state.intent === undefined ? {} : { intent: state.intent }),
       candidateOid: state.candidateOid,
       comparisonBaseOid: state.comparisonBaseOid,
       comparisonTargetOid: state.comparisonTargetOid,
@@ -211,6 +213,7 @@ export class CollabDetailView extends ItemView {
   private conflictSession: ConflictDetailSession | null = null;
   private readonly conflictPanelFactory: CollabDetailConflictPanelFactory;
   private readonly diffSession: ReviewDiffSession;
+  private observedProjectId: string | null = null;
   private featureSubscription: { dispose(): void } | null = null;
   private readonly openTicketInNewTab: CollabDetailViewOptions['openTicketInNewTab'];
   private readonly preparedReviews: CollabPreparedReviewCache | null;
@@ -272,6 +275,7 @@ export class CollabDetailView extends ItemView {
       this.state = state;
       return;
     }
+    this.observeState(state);
     if (state.kind === 'conflict') {
       this.activateMode('conflict');
       this.state = state;
@@ -289,11 +293,7 @@ export class CollabDetailView extends ItemView {
 
   async onOpen(): Promise<void> {
     if (!this.port.isDetailAdmissionOpen()) return;
-    this.featureSubscription ??= this.port.subscribe(() => {
-      const state = this.state;
-      if (state?.kind === 'ticket') void this.loadTicket(state);
-      if (state?.kind === 'request') void this.reviewSession?.refresh();
-    });
+    this.observeState(this.state);
     this.contentEl.replaceChildren();
     this.contentEl.classList.add('claudian-collab-review');
     if (this.state) {
@@ -307,6 +307,20 @@ export class CollabDetailView extends ItemView {
     } else {
       this.renderMessage(t('collab.review.openRequest'));
     }
+  }
+
+  private observeState(state: CollabDetailViewState | null): void {
+    const projectId = state && 'projectId' in state ? state.projectId : null;
+    if (this.observedProjectId === projectId) return;
+    this.featureSubscription?.dispose();
+    this.featureSubscription = null;
+    this.observedProjectId = projectId;
+    if (!projectId) return;
+    this.featureSubscription = this.port.observeProject(projectId, () => {
+      const current = this.state;
+      if (current?.kind === 'ticket') void this.loadTicket(current);
+      if (current?.kind === 'request') void this.reviewSession?.refresh();
+    });
   }
 
   private async loadTicket(state: CollabTicketDetailViewState): Promise<void> {

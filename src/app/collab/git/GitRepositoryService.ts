@@ -155,6 +155,9 @@ export interface GitRepositoryReadSession {
   listRemoteUrls(remote: string): Promise<readonly string[]>;
   listTreeRecursive(commitOid: string): Promise<readonly GitRecursiveTreeEntry[]>;
   mergeTree(acceptedOid: string, memberOid: string): Promise<GitMergeTreeResult>;
+  readBlobMetadataAtPaths(
+    requests: readonly GitBlobPathRequest[],
+  ): Promise<readonly (GitBatchObjectMetadata | null)[]>;
   readBlobsAtPaths(
     requests: readonly GitBlobPathRequest[],
   ): Promise<readonly (Buffer | null)[]>;
@@ -451,7 +454,7 @@ export function parseGitBatchObjectMetadata(
     throw machineOutputError('git-batch-metadata-count-invalid');
   }
   return lines.map(line => {
-    if (/^\S+ missing$/.test(line)) return null;
+    if (/^.+ missing$/.test(line)) return null;
     const match = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (blob|commit|tag|tree) (\d+)$/.exec(line);
     const size = Number(match?.[3]);
     if (!match || !Number.isSafeInteger(size) || size < 0) {
@@ -604,13 +607,8 @@ function assertRemoteUrl(remoteUrl: string): void {
   } catch {
     throw repositoryError('repository-invalid', 'git-remote-url-invalid');
   }
-  const loopbackHttp = parsed.protocol === 'http:' && (
-    parsed.hostname === '127.0.0.1'
-    || parsed.hostname === '[::1]'
-    || parsed.hostname === 'localhost'
-  );
   if (
-    (parsed.protocol !== 'https:' && !loopbackHttp)
+    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')
     || parsed.username.length > 0
     || parsed.password.length > 0
     || parsed.search.length > 0
@@ -647,8 +645,9 @@ export class GitRepositoryService {
     repositoryPath: string,
     expectedKind: GitRepositoryKind,
     operation: (session: GitRepositoryReadSession) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
-    const repository = await this.#inspectRepository(repositoryPath);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
     if ((repository.bare ? 'bare' : 'working') !== expectedKind) {
       throw repositoryError(
         'repository-invalid',
@@ -658,74 +657,89 @@ export class GitRepositoryService {
       );
     }
     let active = true;
+    const pending = new Set<Promise<unknown>>();
+    const track = <Result>(task: Promise<Result>): Promise<Result> => {
+      pending.add(task);
+      void task.then(() => pending.delete(task), () => pending.delete(task));
+      return task;
+    };
     const ensureActive = (): void => {
       if (!active) throw repositoryError('repository-invalid', 'git-read-session-expired');
+      throwIfCancelled(signal);
     };
     const session: GitRepositoryReadSession = {
       countDivergence: async (leftOid, rightOid) => {
         ensureActive();
-        return this.#countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid);
+        return track(this.#countDivergenceUnchecked(repository.repositoryPath, leftOid, rightOid, signal));
       },
       findMergeBase: async (leftOid, rightOid) => {
         ensureActive();
-        return this.#findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid);
+        return track(this.#findMergeBaseUnchecked(repository.repositoryPath, leftOid, rightOid, signal));
       },
       getWorkingTreeState: async () => {
         ensureActive();
-        return this.#getWorkingTreeStateUnchecked(repository.repositoryPath);
+        return track(this.#getWorkingTreeStateUnchecked(repository.repositoryPath, signal));
       },
       getWorkingTreeStatus: async () => {
         ensureActive();
-        return this.#getWorkingTreeStatusUnchecked(repository.repositoryPath);
+        return track(this.#getWorkingTreeStatusUnchecked(repository.repositoryPath, signal));
       },
       isAncestor: async (ancestorOid, descendantOid) => {
         ensureActive();
-        return this.#isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid);
+        return track(this.#isAncestorUnchecked(repository.repositoryPath, ancestorOid, descendantOid, signal));
       },
       listChangedBlobs: async (baseOid, headOid) => {
         ensureActive();
-        return this.#listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid);
+        return track(this.#listChangedBlobsUnchecked(repository.repositoryPath, baseOid, headOid, signal));
       },
       listChangedFiles: async (baseOid, headOid) => {
         ensureActive();
-        return this.#listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid);
+        return track(this.#listChangedFilesUnchecked(repository.repositoryPath, baseOid, headOid, signal));
       },
       listWorkingTreeChangedFiles: async baseOid => {
         ensureActive();
-        return this.#listWorkingTreeChangedFilesUnchecked(
+        return track(this.#listWorkingTreeChangedFilesUnchecked(
           repository.repositoryPath,
           baseOid,
-        );
+          signal,
+        ));
       },
       listRemoteUrls: async remote => {
         ensureActive();
-        return this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote);
+        return track(this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote, signal));
       },
       listTreeRecursive: async commitOid => {
         ensureActive();
-        return this.#listTreeRecursiveUnchecked(repository.repositoryPath, commitOid);
+        return track(this.#listTreeRecursiveUnchecked(repository.repositoryPath, commitOid, signal));
       },
       mergeTree: async (acceptedOid, memberOid) => {
         ensureActive();
-        return this.#mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid);
+        return track(this.#mergeTreeUnchecked(repository.repositoryPath, acceptedOid, memberOid, signal));
+      },
+      readBlobMetadataAtPaths: async requests => {
+        ensureActive();
+        return track(this.#readBlobMetadataAtPathsUnchecked(repository.repositoryPath, requests, signal));
       },
       readBlobsAtPaths: async requests => {
         ensureActive();
-        return this.#readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
+        return track(this.#readBlobsAtPathsUnchecked(repository.repositoryPath, requests, signal));
       },
       resolveRef: async ref => {
         ensureActive();
-        return this.#resolveRefUnchecked(repository.repositoryPath, ref);
+        return track(this.#resolveRefUnchecked(repository.repositoryPath, ref, signal));
       },
       resolveRefs: async refs => {
         ensureActive();
-        return this.#resolveRefsUnchecked(repository.repositoryPath, refs);
+        return track(this.#resolveRefsUnchecked(repository.repositoryPath, refs, signal));
       },
     };
     try {
-      return await operation(session);
+      const result = await operation(session);
+      throwIfCancelled(signal);
+      return result;
     } finally {
       active = false;
+      await Promise.allSettled(pending);
     }
   }
 
@@ -918,8 +932,9 @@ export class GitRepositoryService {
 
    async #getWorkingTreeStatusUnchecked(
     repositoryPath: string,
+    signal?: AbortSignal,
   ): Promise<readonly GitStatusEntry[]> {
-    return (await this.#getWorkingTreeStateUnchecked(repositoryPath)).entries;
+    return (await this.#getWorkingTreeStateUnchecked(repositoryPath, signal)).entries;
   }
 
   async getWorkingTreeState(
@@ -1063,6 +1078,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     ancestorOid: string,
     descendantOid: string,
+    signal?: AbortSignal,
   ): Promise<boolean> {
     assertOid(ancestorOid);
     assertOid(descendantOid);
@@ -1070,6 +1086,7 @@ export class GitRepositoryService {
       acceptedExitCodes: [0, 1],
       args: ['merge-base', '--is-ancestor', ancestorOid, descendantOid],
       cwd: repositoryPath,
+      signal,
     });
     return result.exitCode === 0;
   }
@@ -1087,12 +1104,14 @@ export class GitRepositoryService {
     repositoryPath: string,
     leftOid: string,
     rightOid: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     assertOid(leftOid);
     assertOid(rightOid);
     return parseSingleOid((await this.runner.run({
       args: ['merge-base', leftOid, rightOid],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 128,
     })).stdout);
   }
@@ -1110,12 +1129,14 @@ export class GitRepositoryService {
     repositoryPath: string,
     leftOid: string,
     rightOid: string,
+    signal?: AbortSignal,
   ): Promise<GitDivergence> {
     assertOid(leftOid);
     assertOid(rightOid);
     const result = await this.runner.run({
       args: ['rev-list', '--left-right', '--count', `${leftOid}...${rightOid}`],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 128,
     });
     const match = /^(\d+)\s+(\d+)\s*$/.exec(result.stdout.toString('utf8'));
@@ -1144,6 +1165,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     baseOid: string,
     headOid: string,
+    signal?: AbortSignal,
   ): Promise<readonly GitChangedFile[]> {
     assertOid(baseOid);
     assertOid(headOid);
@@ -1159,6 +1181,7 @@ export class GitRepositoryService {
         headOid,
       ],
       cwd: repositoryPath,
+      signal,
     });
     const changes = parseGitNameStatus(result.stdout);
     for (const change of changes) {
@@ -1188,16 +1211,18 @@ export class GitRepositoryService {
    async #listWorkingTreeChangedFilesUnchecked(
     repositoryPath: string,
     baseOid: string,
+    signal?: AbortSignal,
   ): Promise<readonly GitChangedFile[]> {
     assertOid(baseOid);
     const result = await this.runner.run({
       args: ['diff', '--name-status', '-z', '-M', baseOid, '--'],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 16 * 1024 * 1024,
     });
     const changes = [...parseGitNameStatus(result.stdout)];
     const changedPaths = new Set(changes.map(change => change.path));
-    const workingTree = await this.#getWorkingTreeStateUnchecked(repositoryPath);
+    const workingTree = await this.#getWorkingTreeStateUnchecked(repositoryPath, signal);
     for (const entry of workingTree.entries) {
       if (entry.kind !== 'untracked' || changedPaths.has(entry.path)) continue;
       changes.push({ kind: 'added', path: entry.path });
@@ -1217,6 +1242,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     baseOid: string,
     headOid: string,
+    signal?: AbortSignal,
   ): Promise<readonly GitChangedBlob[]> {
     assertOid(baseOid);
     assertOid(headOid);
@@ -1233,6 +1259,7 @@ export class GitRepositoryService {
         headOid,
       ],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 16 * 1024 * 1024,
     });
     const changes = parseGitRawDiff(result.stdout);
@@ -1245,6 +1272,7 @@ export class GitRepositoryService {
       : parseGitBatchObjectMetadata((await this.runner.run({
         args: ['cat-file', '--batch-check'],
         cwd: repositoryPath,
+        signal,
         maxStdoutBytes: uniqueOids.length * 160,
         stdin: uniqueOids.map(oid => `${oid}\n`).join(''),
       })).stdout, uniqueOids.length);
@@ -1297,9 +1325,39 @@ export class GitRepositoryService {
     return this.#readBlobsAtPathsUnchecked(repository.repositoryPath, requests);
   }
 
+   async #readBlobMetadataAtPathsUnchecked(
+    repositoryPath: string,
+    requests: readonly GitBlobPathRequest[],
+    signal?: AbortSignal,
+  ): Promise<readonly (GitBatchObjectMetadata | null)[]> {
+    if (requests.length === 0) return [];
+    if (requests.length > 3) {
+      throw repositoryError('repository-invalid', 'git-blob-path-batch-too-large');
+    }
+    for (const request of requests) {
+      assertOid(request.treeish);
+      this.#requireRepositoryPath(request.repositoryRelativePath);
+    }
+    const result = await this.runner.run({
+      args: ['cat-file', '--batch-check'],
+      cwd: repositoryPath,
+      signal,
+      maxStdoutBytes: 16 * 1024,
+      stdin: requests.map(request => (
+        `${request.treeish}:${request.repositoryRelativePath}\n`
+      )).join(''),
+    });
+    const metadata = parseGitBatchObjectMetadata(result.stdout, requests.length);
+    if (metadata.some(object => object !== null && object.type !== 'blob')) {
+      throw machineOutputError('git-path-object-not-blob');
+    }
+    return metadata;
+  }
+
    async #readBlobsAtPathsUnchecked(
     repositoryPath: string,
     requests: readonly GitBlobPathRequest[],
+    signal?: AbortSignal,
   ): Promise<readonly (Buffer | null)[]> {
     if (requests.length === 0) return [];
     if (requests.length > 3) {
@@ -1312,6 +1370,7 @@ export class GitRepositoryService {
     const result = await this.runner.run({
       args: ['cat-file', '--batch'],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: requests.length * (CLAUDIAN_COLLAB_LIMITS.maxBlobBytes + 256),
       stdin: requests.map(request => (
         `${request.treeish}:${request.repositoryRelativePath}\n`
@@ -1331,11 +1390,13 @@ export class GitRepositoryService {
    async #listTreeRecursiveUnchecked(
     repositoryPath: string,
     commitOid: string,
+    signal?: AbortSignal,
   ): Promise<readonly GitRecursiveTreeEntry[]> {
     assertOid(commitOid);
     const result = await this.runner.run({
       args: ['ls-tree', '-r', '-z', '-l', '--full-tree', commitOid],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 16 * 1024 * 1024,
     });
     return parseGitRecursiveTree(result.stdout);
@@ -1359,6 +1420,7 @@ export class GitRepositoryService {
     repositoryPath: string,
     acceptedOid: string,
     memberOid: string,
+    signal?: AbortSignal,
   ): Promise<GitMergeTreeResult> {
     assertOid(acceptedOid);
     assertOid(memberOid);
@@ -1366,6 +1428,7 @@ export class GitRepositoryService {
       acceptedExitCodes: [0, 1],
       args: ['merge-tree', '--write-tree', acceptedOid, memberOid],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 4 * 1024 * 1024,
     });
     const match = /^([0-9a-f]{40}(?:[0-9a-f]{24})?)(?:\r?\n|$)/.exec(
@@ -1433,20 +1496,23 @@ export class GitRepositoryService {
   async listRemoteUrls(
     repositoryPath: string,
     remote: string,
+    signal?: AbortSignal,
   ): Promise<readonly string[]> {
-    const repository = await this.#inspectRepository(repositoryPath);
-    return this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote);
+    const repository = await this.#inspectRepository(repositoryPath, signal);
+    return this.#listRemoteUrlsUnchecked(repository.repositoryPath, remote, signal);
   }
 
    async #listRemoteUrlsUnchecked(
     repositoryPath: string,
     remote: string,
+    signal?: AbortSignal,
   ): Promise<readonly string[]> {
     assertRemoteName(remote);
     const result = await this.runner.run({
       acceptedExitCodes: [0, 1],
       args: ['config', '-z', '--get-all', `remote.${remote}.url`],
       cwd: repositoryPath,
+      signal,
       maxStdoutBytes: 16 * 1024,
     });
     return result.exitCode === 0 ? parseGitNulFields(result.stdout) : [];
@@ -1459,7 +1525,7 @@ export class GitRepositoryService {
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.#inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath, signal);
     assertRemoteName(remote);
     refspecs.forEach(assertRefspec);
     await this.runner.run({
@@ -1477,7 +1543,7 @@ export class GitRepositoryService {
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.#inspectRepository(repositoryPath);
+    await this.#inspectRepository(repositoryPath, signal);
     assertRemoteUrl(remoteUrl);
     refspecs.forEach(assertRefspec);
     await this.runner.run({
@@ -1506,18 +1572,19 @@ export class GitRepositoryService {
     });
   }
 
-  async pushToUrl(
+  async pushCommitToUrl(
     repositoryPath: string,
     remoteUrl: string,
-    refspec: string,
+    input: { readonly commitOid: string; readonly targetRef: string },
     network?: GitNetworkEnvironment,
     signal?: AbortSignal,
   ): Promise<void> {
     await this.#inspectRepository(repositoryPath);
     assertRemoteUrl(remoteUrl);
-    assertRefspec(refspec);
+    assertOid(input.commitOid);
+    assertRef(input.targetRef);
     await this.runner.run({
-      args: ['push', '--porcelain', remoteUrl, refspec],
+      args: ['push', '--porcelain', remoteUrl, `${input.commitOid}:${input.targetRef}`],
       cwd: repositoryPath,
       network,
       signal,

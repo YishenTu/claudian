@@ -1,16 +1,15 @@
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
+
 import type {
-  CollabListTicketsRequest,
   CollabOperationOptions,
   CollabResult,
-  CollabTicketPageProjection,
 } from '@/core/collab';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
 export interface TicketReferenceResolverPort {
-  listTickets(
-    request: CollabListTicketsRequest,
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
     options?: CollabOperationOptions,
-  ): Promise<CollabResult<CollabTicketPageProjection>>;
+  ): Promise<CollabResult<ResolveTicketNumberResponse>>;
 }
 
 /**
@@ -37,7 +36,7 @@ export class TicketReferenceResolver {
     this.cancel();
     const controller = new AbortController();
     this.controller = controller;
-    const ticketId = await this.findTicketId(projectId, ticketNumber, controller.signal);
+    const ticketId = await this.#findTicketId(projectId, ticketNumber, controller.signal);
     if (
       ticketId === null
       || controller.signal.aborted
@@ -47,32 +46,13 @@ export class TicketReferenceResolver {
     await openTicketInNewTab(projectId, ticketId);
   }
 
-  private async findTicketId(
+  async #findTicketId(
     projectId: string,
     ticketNumber: number,
     signal: AbortSignal,
   ): Promise<string | null> {
-    for (const status of ['open', 'closed'] as const) {
-      let cursor: string | undefined;
-      const visitedCursors = new Set<string>();
-      do {
-        if (signal.aborted) return null;
-        const result = await this.port.listTickets({
-          ...(cursor ? { cursor } : {}),
-          limit: CLAUDIAN_COLLAB_LIMITS.maxTicketPageSize,
-          projectId,
-          status,
-        }, { signal });
-        if (result.status !== 'success') break;
-        const ticket = result.value.page.tickets.find(
-          candidate => candidate.number === ticketNumber,
-        );
-        if (ticket) return ticket.id;
-        cursor = result.value.page.nextCursor;
-        if (cursor && visitedCursors.has(cursor)) break;
-        if (cursor) visitedCursors.add(cursor);
-      } while (cursor);
-    }
-    return null;
+    if (signal.aborted) return null;
+    const result = await this.port.resolveTicketNumber({ projectId, ticketNumber }, { signal });
+    return result.status === 'success' ? result.value.ticketId : null;
   }
 }

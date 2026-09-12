@@ -1,18 +1,18 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
+import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferProjectionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
-import type {
-  LanAuthorityProjectionTransitionPort,
-} from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface LocalHostTransferProjectionOptions {
-  readonly authorityProjectionTransitions: LanAuthorityProjectionTransitionPort;
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly loadMembership: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;
@@ -56,7 +56,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
   }
 
   async readPinnedSourceCa(projectId: CollabProjectId): Promise<string> {
-    const membership = await this.requireMembership(projectId);
+    const membership = await this.#requireMembership(projectId);
     const certificate = membership.authority.hostCaCertificatePem;
     if (!certificate) throw projectionError('host-transfer-projection-source-ca-missing');
     return certificate;
@@ -66,11 +66,11 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
     input: Parameters<HostTransferProjectionPort['promoteTargetHost']>[0],
   ): Promise<void> {
     await this.options.authorityProjectionTransitions.run(input.projectId, async () => {
-      const membership = await this.requireMembership(input.projectId);
+      const membership = await this.#requireMembership(input.projectId);
       if (membership.member.id !== input.targetHostMemberId) {
         throw projectionError('host-transfer-projection-target-mismatch');
       }
-      await this.rotate(membership, input.endpoint);
+      await this.#rotate(membership, input.endpoint);
       await this.options.saveMembership({
         ...membership,
         authority: {
@@ -79,6 +79,9 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
           gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
+          hostTrustCheckpoint: {
+            transferId: input.transferId, proofChainDigest: input.proofChainDigest,
+          },
         },
         hostOwnership: { autoStart: true, ownsAuthority: true },
         lastEventSequence: input.eventSequence,
@@ -91,8 +94,8 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
     input: Parameters<HostTransferProjectionPort['demoteSourceHost']>[0],
   ): Promise<void> {
     await this.options.authorityProjectionTransitions.run(input.projectId, async () => {
-      const membership = await this.requireMembership(input.projectId);
-      await this.rotate(membership, input.endpoint);
+      const membership = await this.#requireMembership(input.projectId);
+      await this.#rotate(membership, input.endpoint);
       await this.options.saveMembership({
         ...membership,
         authority: {
@@ -101,6 +104,9 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
           gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
+          hostTrustCheckpoint: {
+            transferId: input.transferId, proofChainDigest: input.proofChainDigest,
+          },
         },
         hostOwnership: { autoStart: false, ownsAuthority: false },
         updatedAt: this.now().toISOString(),
@@ -108,7 +114,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
     });
   }
 
-  private async rotate(
+  async #rotate(
     membership: CollabLocalLanMembershipRecord,
     endpoint: string,
   ): Promise<void> {
@@ -122,7 +128,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
     });
   }
 
-  private async requireMembership(
+  async #requireMembership(
     projectId: CollabProjectId,
   ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.loadMembership(projectId);

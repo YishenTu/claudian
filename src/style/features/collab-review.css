@@ -7,7 +7,6 @@
 }
 
 .claudian-collab-review-header {
-  border-block-end: 1px solid var(--background-modifier-border);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--size-2-2) var(--size-4-3);
@@ -211,8 +210,47 @@
   padding: var(--size-4-2) 0;
 }
 
-.claudian-collab-review-content [data-diffs] {
-  font-family: var(--font-monospace);
+.claudian-collab-diff {
+  min-width: 0;
+}
+
+.claudian-collab-diff-header {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: center;
+  padding: var(--size-4-2) var(--size-4-3);
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-diff .cm-editor .cm-deletedChunk,
+.claudian-collab-diff .cm-editor.cm-merge-a .cm-changedLine {
+  color: var(--text-error);
+  background-color: color-mix(in srgb, var(--text-error) 22%, transparent);
+}
+
+.claudian-collab-diff .cm-editor .cm-changeGutter {
+  width: 3px;
+  padding-inline: 0;
+}
+
+.claudian-collab-diff .cm-editor .cm-changeGutter .cm-gutterElement {
+  width: 3px;
+}
+
+.claudian-collab-diff .cm-editor .cm-deletedLineGutter,
+.claudian-collab-diff .cm-editor.cm-merge-a .cm-changedLineGutter {
+  background-color: var(--text-error);
+}
+
+.claudian-collab-diff .cm-editor.cm-merge-b .cm-changedLine {
+  background-color: color-mix(in srgb, var(--text-success) 22%, transparent);
+}
+
+.claudian-collab-diff .cm-collapsedLines:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
 }
 
 .claudian-collab-review-file {

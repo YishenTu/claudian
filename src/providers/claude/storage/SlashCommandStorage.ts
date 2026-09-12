@@ -17,7 +17,7 @@ export class SlashCommandStorage {
         if (!filePath.endsWith('.md')) continue;
 
         try {
-          const command = await this.loadFromFile(filePath);
+          const command = await this.#loadFromFile(filePath);
           if (command) {
             commands.push(command);
           }
@@ -32,7 +32,7 @@ export class SlashCommandStorage {
     return commands;
   }
 
-  private async loadFromFile(filePath: string): Promise<SlashCommand | null> {
+  async #loadFromFile(filePath: string): Promise<SlashCommand | null> {
     const content = await this.adapter.read(filePath);
     return this.parseFile(content, filePath);
   }
@@ -48,7 +48,7 @@ export class SlashCommandStorage {
     for (const filePath of files) {
       if (!filePath.endsWith('.md')) continue;
 
-      const id = this.filePathToId(filePath);
+      const id = this.#filePathToId(filePath);
       if (id === commandId) {
         await this.adapter.delete(filePath);
         return;
@@ -65,14 +65,14 @@ export class SlashCommandStorage {
     const parsed = parseSlashCommandContent(content);
     return {
       ...parsedToSlashCommand(parsed, {
-        id: this.filePathToId(filePath),
-        name: this.filePathToName(filePath),
+        id: this.#filePathToId(filePath),
+        name: this.#filePathToName(filePath),
       }),
       kind: 'command',
     };
   }
 
-  private filePathToId(filePath: string): string {
+  #filePathToId(filePath: string): string {
     // Encoding: escape `-` as `-_`, then replace `/` with `--`
     // This is unambiguous and reversible:
     //   a/b.md   -> cmd-a--b
@@ -88,7 +88,7 @@ export class SlashCommandStorage {
     return `cmd-${escaped}`;
   }
 
-  private filePathToName(filePath: string): string {
+  #filePathToName(filePath: string): string {
     return filePath
       .replace(`${COMMANDS_PATH}/`, '')
       .replace(/\.md$/, '');

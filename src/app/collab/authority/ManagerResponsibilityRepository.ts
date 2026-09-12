@@ -210,7 +210,7 @@ export class ManagerResponsibilityRepository {
     ) {
       throw responsibilityError('authority-integrity-error', 'manager-responsibility-input-invalid');
     }
-    const existing = this.findParticipantConflict(
+    const existing = this.#findParticipantConflict(
       connection,
       input.sourceManagerMemberId,
       input.targetMemberId,
@@ -261,7 +261,7 @@ export class ManagerResponsibilityRepository {
         input.offeredAt,
       ],
     );
-    return toSummary(this.requireById(connection, input.offerId));
+    return toSummary(this.#requireById(connection, input.offerId));
   }
 
   findById(
@@ -320,9 +320,9 @@ export class ManagerResponsibilityRepository {
       readonly offerId: CollabOperationId;
     },
   ): CollabManagerResponsibilityOfferSummary {
-    const record = this.requireById(connection, input.offerId);
-    this.requireTargetActor(record, input.actorMemberId, input.expectedTargetMemberId);
-    this.requireNotExpired(record, input.acknowledgedAt);
+    const record = this.#requireById(connection, input.offerId);
+    this.#requireTargetActor(record, input.actorMemberId, input.expectedTargetMemberId);
+    this.#requireNotExpired(record, input.acknowledgedAt);
     if (record.status !== 'offered') {
       throw responsibilityError(
         'manager-responsibility-pending',
@@ -330,14 +330,14 @@ export class ManagerResponsibilityRepository {
         record,
       );
     }
-    this.requireValidParticipants(connection, record);
+    this.#requireValidParticipants(connection, record);
     connection.run(
       `UPDATE manager_responsibility_offers
        SET status = 'acknowledged', acknowledged_at = ?, updated_at = ?
        WHERE offer_id = ? AND status = 'offered'`,
       [input.acknowledgedAt, input.acknowledgedAt, record.offerId],
     );
-    return toSummary(this.requireById(connection, record.offerId));
+    return toSummary(this.#requireById(connection, record.offerId));
   }
 
   decline(
@@ -349,9 +349,9 @@ export class ManagerResponsibilityRepository {
       readonly offerId: CollabOperationId;
     },
   ): CollabManagerResponsibilityOfferSummary {
-    const record = this.requireById(connection, input.offerId);
-    this.requireTargetActor(record, input.actorMemberId, input.expectedTargetMemberId);
-    this.requireNotExpired(record, input.declinedAt);
+    const record = this.#requireById(connection, input.offerId);
+    this.#requireTargetActor(record, input.actorMemberId, input.expectedTargetMemberId);
+    this.#requireNotExpired(record, input.declinedAt);
     if (record.status !== 'offered') {
       throw responsibilityError(
         'manager-responsibility-pending',
@@ -365,7 +365,7 @@ export class ManagerResponsibilityRepository {
        WHERE offer_id = ? AND status = 'offered'`,
       [input.declinedAt, record.offerId],
     );
-    return toSummary(this.requireById(connection, record.offerId));
+    return toSummary(this.#requireById(connection, record.offerId));
   }
 
   cancel(
@@ -376,13 +376,13 @@ export class ManagerResponsibilityRepository {
       readonly offerId: CollabOperationId;
     },
   ): CollabManagerResponsibilityOfferSummary {
-    const record = this.requireById(connection, input.offerId);
+    const record = this.#requireById(connection, input.offerId);
     if (
       record.sourceManagerMemberId !== input.actorMemberId
     ) {
       throw responsibilityError('authorization-denied', 'manager-responsibility-source-required');
     }
-    this.requireNotExpired(record, input.cancelledAt);
+    this.#requireNotExpired(record, input.cancelledAt);
     if (!NONTERMINAL_STATUSES.has(record.status)) {
       throw responsibilityError(
         'manager-responsibility-pending',
@@ -396,7 +396,7 @@ export class ManagerResponsibilityRepository {
        WHERE offer_id = ? AND status IN ('offered', 'acknowledged')`,
       [input.cancelledAt, record.offerId],
     );
-    return toSummary(this.requireById(connection, record.offerId));
+    return toSummary(this.#requireById(connection, record.offerId));
   }
 
   cancelRelatedNonterminal(
@@ -407,15 +407,15 @@ export class ManagerResponsibilityRepository {
     },
   ): number {
     assertId(input.memberId, isCollabMemberId, 'manager-responsibility-member-id-invalid');
-    return this.cancelMatchingNonterminal(connection, input.cancelledAt, input.memberId);
+    return this.#cancelMatchingNonterminal(connection, input.cancelledAt, input.memberId);
   }
 
   consume(
     connection: AuthorityDatabaseConnection,
     input: ConsumeManagerResponsibilityInput,
   ): CollabManagerResponsibilityOfferSummary {
-    const record = this.requireById(connection, input.offerId);
-    this.requireNotExpired(record, input.consumedAt);
+    const record = this.#requireById(connection, input.offerId);
+    this.#requireNotExpired(record, input.consumedAt);
     if (
       record.status !== 'acknowledged'
       || record.purpose !== input.expectedPurpose
@@ -431,17 +431,17 @@ export class ManagerResponsibilityRepository {
         record,
       );
     }
-    this.requireValidParticipants(connection, record);
+    this.#requireValidParticipants(connection, record);
     connection.run(
       `UPDATE manager_responsibility_offers
        SET status = 'consumed', consumed_at = ?, updated_at = ?
        WHERE offer_id = ? AND status = 'acknowledged'`,
       [input.consumedAt, input.consumedAt, record.offerId],
     );
-    return toSummary(this.requireById(connection, record.offerId));
+    return toSummary(this.#requireById(connection, record.offerId));
   }
 
-  private findParticipantConflict(
+  #findParticipantConflict(
     connection: AuthorityDatabaseConnection,
     sourceManagerMemberId: CollabMemberId,
     targetMemberId: CollabMemberId,
@@ -465,7 +465,7 @@ export class ManagerResponsibilityRepository {
     return row ? decodeRecord(row) : null;
   }
 
-  private cancelMatchingNonterminal(
+  #cancelMatchingNonterminal(
     connection: AuthorityDatabaseConnection,
     cancelledAt: string,
     memberId?: CollabMemberId,
@@ -488,7 +488,7 @@ export class ManagerResponsibilityRepository {
     return matches.length;
   }
 
-  private requireActiveTarget(
+  #requireActiveTarget(
     connection: AuthorityDatabaseConnection,
     targetMemberId: CollabMemberId,
   ): void {
@@ -507,7 +507,7 @@ export class ManagerResponsibilityRepository {
     }
   }
 
-  private requireValidParticipants(
+  #requireValidParticipants(
     connection: AuthorityDatabaseConnection,
     record: ManagerResponsibilityOfferRecord,
   ): void {
@@ -515,7 +515,7 @@ export class ManagerResponsibilityRepository {
       connection,
       record.sourceManagerMemberId,
     );
-    this.requireActiveTarget(connection, record.targetMemberId);
+    this.#requireActiveTarget(connection, record.targetMemberId);
     if (record.purpose === 'manager-leave' && managerSet.managerMemberIds.length !== 1) {
       throw responsibilityError(
         'stale-project-selection',
@@ -524,7 +524,7 @@ export class ManagerResponsibilityRepository {
     }
   }
 
-  private requireById(
+  #requireById(
     connection: AuthorityDatabaseConnection,
     offerId: CollabOperationId,
   ): ManagerResponsibilityOfferRecord {
@@ -544,7 +544,7 @@ export class ManagerResponsibilityRepository {
     return decodeRecord(row);
   }
 
-  private requireNotExpired(
+  #requireNotExpired(
     record: ManagerResponsibilityOfferRecord,
     now: string,
   ): void {
@@ -558,7 +558,7 @@ export class ManagerResponsibilityRepository {
     }
   }
 
-  private requireTargetActor(
+  #requireTargetActor(
     record: ManagerResponsibilityOfferRecord,
     actorMemberId: CollabMemberId,
     expectedTargetMemberId: CollabMemberId,

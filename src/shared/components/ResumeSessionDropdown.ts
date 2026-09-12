@@ -45,7 +45,7 @@ export class ResumeSessionDropdown {
   ) {
     this.containerEl = containerEl;
     this.inputEl = inputEl;
-    this.conversations = this.sortConversations(conversations);
+    this.conversations = this.#sortConversations(conversations);
     this.currentConversationId = currentConversationId;
     this.callbacks = callbacks;
     this.listboxId = `claudian-resume-listbox-${++nextListboxId}`;
@@ -57,12 +57,12 @@ export class ResumeSessionDropdown {
     );
 
     this.dropdownEl = this.containerEl.createDiv({ cls: 'claudian-resume-dropdown' });
-    this.configureInputAccessibility();
+    this.#configureInputAccessibility();
     this.render();
     this.dropdownEl.addClass('visible');
 
     // Auto-dismiss when user starts typing
-    this.onInput = () => this.dismiss();
+    this.onInput = () => this.#dismiss();
     this.inputEl.addEventListener('input', this.onInput);
   }
 
@@ -72,23 +72,23 @@ export class ResumeSessionDropdown {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        this.navigate(1);
+        this.#navigate(1);
         return true;
       case 'ArrowUp':
         e.preventDefault();
-        this.navigate(-1);
+        this.#navigate(-1);
         return true;
       case 'Enter':
       case 'Tab':
         if (this.conversations.length > 0) {
           e.preventDefault();
-          this.selectItem();
+          this.#selectItem();
           return true;
         }
         return false;
       case 'Escape':
         e.preventDefault();
-        this.dismiss();
+        this.#dismiss();
         return true;
     }
     return false;
@@ -100,37 +100,37 @@ export class ResumeSessionDropdown {
 
   destroy(): void {
     this.inputEl.removeEventListener('input', this.onInput);
-    this.restoreInputAccessibility();
+    this.#restoreInputAccessibility();
     this.dropdownEl?.remove();
   }
 
-  private dismiss(): void {
+  #dismiss(): void {
     this.dropdownEl.removeClass('visible');
     this.inputEl.removeAttribute('aria-activedescendant');
     this.callbacks.onDismiss();
   }
 
-  private selectItem(): void {
+  #selectItem(): void {
     if (this.conversations.length === 0) return;
     const selected = this.conversations[this.selectedIndex];
     if (!selected) return;
 
     // Dismiss without switching if selecting the current conversation
     if (selected.id === this.currentConversationId) {
-      this.dismiss();
+      this.#dismiss();
       return;
     }
 
     this.callbacks.onSelect(selected.id);
   }
 
-  private navigate(direction: number): void {
+  #navigate(direction: number): void {
     const maxIndex = this.conversations.length - 1;
     this.selectedIndex = Math.max(0, Math.min(maxIndex, this.selectedIndex + direction));
-    this.updateSelection();
+    this.#updateSelection();
   }
 
-  private updateSelection(scrollSelectedIntoView = true): void {
+  #updateSelection(scrollSelectedIntoView = true): void {
     const items = this.dropdownEl.querySelectorAll('.claudian-resume-item');
     let activeOptionId: string | null = null;
     items?.forEach((item, index) => {
@@ -154,7 +154,7 @@ export class ResumeSessionDropdown {
     }
   }
 
-  private sortConversations(conversations: ConversationMeta[]): ConversationMeta[] {
+  #sortConversations(conversations: ConversationMeta[]): ConversationMeta[] {
     return [...conversations].sort((a, b) => {
       return b.lastActivityAt - a.lastActivityAt;
     });
@@ -200,7 +200,7 @@ export class ResumeSessionDropdown {
 
       item.addEventListener('click', () => {
         if (isCurrent) {
-          this.dismiss();
+          this.#dismiss();
           return;
         }
         this.callbacks.onSelect(conv.id);
@@ -208,21 +208,21 @@ export class ResumeSessionDropdown {
 
       item.addEventListener('mouseenter', () => {
         this.selectedIndex = i;
-        this.updateSelection();
+        this.#updateSelection();
       });
     }
 
-    this.updateSelection(false);
+    this.#updateSelection(false);
   }
 
-  private configureInputAccessibility(): void {
+  #configureInputAccessibility(): void {
     // Preserve the textarea's native multiline textbox semantics.
     this.inputEl.setAttribute('aria-haspopup', 'listbox');
     this.inputEl.setAttribute('aria-controls', this.listboxId);
     this.inputEl.removeAttribute('aria-expanded');
   }
 
-  private restoreInputAccessibility(): void {
+  #restoreInputAccessibility(): void {
     for (const attribute of INPUT_ACCESSIBILITY_ATTRIBUTES) {
       const previousValue = this.previousInputAttributes.get(attribute) ?? null;
       if (previousValue === null) {

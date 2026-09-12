@@ -6,6 +6,7 @@ import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transf
 import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
@@ -69,6 +70,7 @@ function snapshot(authorityKind: 'cloud' | 'lan'): CollabProjectSnapshot {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      ...(authorityKind === 'cloud' ? { authorityGeneration: 2 } : {}),
       authorityKind,
       createdAt: CREATED_AT,
       id: PROJECT_ID,
@@ -84,6 +86,7 @@ function snapshot(authorityKind: 'cloud' | 'lan'): CollabProjectSnapshot {
 function lanMembership(): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.10:54545',
       gitRemoteUrl: `https://192.168.1.10:54545/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
@@ -111,6 +114,54 @@ function lanMembership(): CollabLocalMembershipRecord {
 }
 
 describe('AuthorityTransferLocalConvergence', () => {
+  it('holds the shared authority projection lane across origin and membership convergence', async () => {
+    let membership = lanMembership();
+    let releaseRotate!: () => void;
+    let signalRotateStarted!: () => void;
+    const observedRotate = new Promise<void>(resolve => { signalRotateStarted = resolve; });
+    const release = new Promise<void>(resolve => { releaseRotate = resolve; });
+    const authorityProjectionTransitions = new AuthorityProjectionTransitionCoordinator();
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions,
+      git: {
+        rotate: jest.fn(async () => {
+          signalRotateStarted();
+          await release;
+        }),
+      },
+      projects: {
+        loadMembership: jest.fn(async () => membership),
+        repairIndexFromMemberships: jest.fn(async () => ({
+          projects: [{ authorityKind: membership.authority.kind, id: PROJECT_ID }],
+          schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+          selectedProjectId: PROJECT_ID,
+        })),
+        saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => {
+          membership = next;
+        }),
+      } as never,
+      workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
+    });
+    const pendingConvergence = convergence.lanToCloudHost({
+      snapshot: snapshot('cloud'),
+      status: completed('lan-to-cloud'),
+    });
+    await observedRotate;
+    const competingProjection = jest.fn(async () => undefined);
+    const pendingCompetingProjection = authorityProjectionTransitions.run(
+      PROJECT_ID,
+      competingProjection,
+    );
+
+    await Promise.resolve();
+    expect(competingProjection).not.toHaveBeenCalled();
+    releaseRotate();
+    await pendingConvergence;
+    await pendingCompetingProjection;
+    expect(competingProjection).toHaveBeenCalledTimes(1);
+  });
+
   it('replaces LAN Host membership, origin, index, and work-session projection idempotently', async () => {
     let membership = lanMembership();
     const rotate = jest.fn(async () => undefined);
@@ -131,13 +182,13 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
       now: () => new Date('2026-08-27T00:01:00.000Z'),
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
     });
     const input = {
-      developmentActorId: 'member-host',
       snapshot: snapshot('cloud'),
       status: completed('lan-to-cloud'),
     };
@@ -150,15 +201,16 @@ describe('AuthorityTransferLocalConvergence', () => {
       projectId: PROJECT_ID,
       status: input.status,
       targetCredential: null,
+      variant: 'source-issued',
     } as AuthorityTransferClaimantRecord);
 
     expect(membership).toMatchObject({
       authority: {
-        bindingVersion: 2,
-        developmentActorId: 'member-host',
+        authorityGeneration: 2,
+        bindingVersion: 6,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6,
+        wireVersion: 10,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -168,16 +220,61 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(transitionProject).toHaveBeenCalledTimes(3);
   });
 
+  it('converges a completed LAN Host offline from its relinquishment proof', async () => {
+    let membership = lanMembership();
+    const rotate = jest.fn(async () => undefined);
+    const projects = {
+      loadMembership: jest.fn(async () => membership),
+      repairIndexFromMemberships: jest.fn(async () => ({
+        projects: [{ authorityKind: membership.authority.kind, id: PROJECT_ID }],
+        schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+        selectedProjectId: PROJECT_ID,
+      })),
+      saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => {
+        membership = next;
+      }),
+    };
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
+      git: { rotate },
+      projects: projects as never,
+      workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
+    });
+    const transferStatus = completed('lan-to-cloud');
+
+    await convergence.lanToCloudHostOffline(transferStatus);
+    await convergence.lanToCloudHostOffline(transferStatus);
+
+    expect(membership).toMatchObject({
+      authority: {
+        authorityGeneration: 2,
+        bindingVersion: 6,
+        kind: 'cloud',
+        serverUrl: 'https://cloud.example.test/',
+        wireVersion: 10,
+      },
+      lastEventSequence: 1,
+      member: {
+        displayName: 'Host',
+        id: 'member-host',
+        role: 'manager',
+      },
+    });
+    expect(rotate).toHaveBeenCalledTimes(1);
+    expect(projects.repairIndexFromMemberships).toHaveBeenCalledTimes(2);
+  });
+
   it('replaces Cloud target membership with the exact bound LAN Host identity', async () => {
     let membership = {
       ...lanMembership(),
       authority: {
-        bindingVersion: 2 as const,
-        developmentActorId: 'member-host',
-        gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+        authorityGeneration: 2,
+        bindingVersion: 6 as const,
+        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6 as const,
+        wireVersion: 10 as const,
       },
       member: {
         displayName: 'Host',
@@ -200,20 +297,32 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
     });
     const memberCredential = Buffer.alloc(32, 9).toString('base64url');
 
-    await convergence.cloudToLanHost({
+    const input = {
       endpoint: 'https://192.168.1.20:54545',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'e'.repeat(64),
+      identity: {
+        authorityGeneration: 2,
+        currentMember: snapshot('lan').currentMember,
+        eventSequence: snapshot('lan').eventSequence,
+        project: snapshot('lan').project,
+      },
       memberCredential,
-      snapshot: snapshot('lan'),
       status: completed('cloud-to-lan'),
+    };
+
+    const convergeHost = (candidate: typeof input) => convergence.cloudToLanHost({
+      ...candidate,
+      withEndpoint: operation => operation(candidate.endpoint),
     });
+    await convergeHost(input);
 
     expect(membership).toMatchObject({
       authority: {
@@ -226,6 +335,36 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(rotate).toHaveBeenCalledWith(expect.objectContaining({
       newRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
     }));
+
+    membership = {
+      ...membership,
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+    } as CollabLocalMembershipRecord;
+    await expect(convergeHost(input)).resolves.toBeUndefined();
+    expect(membership).toMatchObject({
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+    });
+
+    const relocated = { ...input, endpoint: 'https://192.168.2.20:54546' };
+    await expect(convergeHost(relocated)).resolves.toBeUndefined();
+    expect(membership).toMatchObject({
+      authority: {
+        authorityGeneration: 2,
+        endpoint: 'https://192.168.2.20:54546',
+        gitRemoteUrl: `https://192.168.2.20:54546/v1/git/${PROJECT_ID}/repository.git`,
+        hostCaFingerprint: 'e'.repeat(64),
+      },
+      hostOwnership: { autoStart: false, ownsAuthority: true },
+      member: { credential: memberCredential, id: 'member-host' },
+    });
+
+    membership = {
+      ...membership,
+      hostOwnership: { ownsAuthority: true },
+    } as CollabLocalMembershipRecord;
+    await expect(convergeHost(relocated)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
+    });
   });
 
   it('converges an offline LAN Member to Cloud without granting Host ownership', async () => {
@@ -244,13 +383,13 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
     });
 
     await convergence.lanToCloudMember({
-      developmentActorId: 'member-host',
       snapshot: snapshot('cloud'),
       status: completed('lan-to-cloud'),
     });
@@ -266,12 +405,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 2 as const,
-        developmentActorId: 'member-host',
-        gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 6 as const,
+        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 6 as const,
+        wireVersion: 10 as const,
       },
       member: {
         displayName: 'Host',
@@ -291,6 +429,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const convergence = new AuthorityTransferLocalConvergence({
       activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
@@ -301,11 +440,16 @@ describe('AuthorityTransferLocalConvergence', () => {
       endpoint: 'https://192.168.1.20:54545',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'e'.repeat(64),
+      identity: {
+        authorityGeneration: 2,
+        currentMember: snapshot('lan').currentMember,
+        eventSequence: snapshot('lan').eventSequence,
+        project: snapshot('lan').project,
+      },
       memberCredential: credential,
-      snapshot: snapshot('lan'),
       status: completed('cloud-to-lan'),
     });
-    await convergence.recoverConvertedClaimant({
+    const claimant = {
       lanTarget: {
         caCertificatePem: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n',
         caFingerprint: 'e'.repeat(64),
@@ -315,7 +459,24 @@ describe('AuthorityTransferLocalConvergence', () => {
       projectId: PROJECT_ID,
       status: completed('cloud-to-lan'),
       targetCredential: credential,
-    } as AuthorityTransferClaimantRecord);
+      variant: 'source-issued',
+    } as AuthorityTransferClaimantRecord;
+    membership = {
+      ...membership,
+      authority: { ...membership.authority, authorityGeneration: 1 },
+    } as CollabLocalMembershipRecord;
+    await expect(convergence.recoverConvertedClaimant(claimant)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-lan-membership-conflict' },
+    });
+    membership = {
+      ...membership,
+      authority: {
+        ...membership.authority, authorityGeneration: 2,
+        endpoint: 'https://192.168.2.20:54546',
+        gitRemoteUrl: `https://192.168.2.20:54546/v1/git/${PROJECT_ID}/repository.git`,
+      },
+    } as CollabLocalMembershipRecord;
+    await convergence.recoverConvertedClaimant(claimant);
 
     expect(membership).toMatchObject({
       authority: { kind: 'lan' },

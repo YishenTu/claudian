@@ -508,13 +508,13 @@ export class MembershipControlClient {
   acknowledgeManagerResponsibility(
     input: ManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    return this.transitionManagerResponsibility('acknowledge', input);
+    return this.#transitionManagerResponsibility('acknowledge', input);
   }
 
   declineManagerResponsibility(
     input: ManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {
-    return this.transitionManagerResponsibility('decline', input);
+    return this.#transitionManagerResponsibility('decline', input);
   }
 
   cancelManagerResponsibilityOffer(
@@ -541,7 +541,7 @@ export class MembershipControlClient {
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 
-  private transitionManagerResponsibility(
+  #transitionManagerResponsibility(
     action: 'acknowledge' | 'decline',
     input: ManagerResponsibilityOfferInput,
   ): Promise<CollabManagerResponsibilityOfferSummary> {

@@ -1,7 +1,8 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
+import type { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabConnectionStatus, CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabProjectResource {
@@ -41,7 +42,7 @@ function generationChangedError(): CollabError {
 
 export class CollabProjectWorkSession {
    #authoritySession: Promise<CollabProjectResource> | null = null;
-   #autoReconnectTask: Promise<boolean> | null = null;
+   #connection: CollabProjectConnection | null = null;
    #backgroundSynchronization: BackgroundSynchronization | null = null;
    readonly #cacheUpdateQueue = new SerialTaskQueue();
   private closed = false;
@@ -53,9 +54,37 @@ export class CollabProjectWorkSession {
    #inspections = new Set<Promise<void>>();
    readonly #mutationQueue = new SerialTaskQueue();
    #projectionGeneration = 0;
+   #retainedSnapshot: CollabProjectSnapshot | null = null;
+   #retainedSnapshotSource: 'online' | 'cache' | null = null;
    #snapshotRead: Promise<CollabProjectSnapshot> | null = null;
 
   observedAcceptedMainOid: string | null = null;
+  #observers = 0;
+  #observationRevision = 0;
+
+  get observationRevision(): number { return this.#observationRevision; }
+
+  get hasObservers(): boolean { return this.#observers > 0; }
+
+  retainObservation(): CollabProjectResource {
+    this.#assertOpen();
+    if (this.#observers === 0) this.#observationRevision += 1;
+    this.#observers += 1;
+    let disposed = false;
+    return { dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      this.#observers -= 1;
+      if (this.#observers > 0) return;
+      this.#observationRevision += 1;
+      this.#connection?.releaseEvents();
+      this.#eventConnection?.dispose();
+      this.#eventConnection = null;
+      const pending = this.#coordinationSubscription;
+      this.#coordinationSubscription = null;
+      if (pending) this.#trackDetached(pending.then(value => value.dispose(), () => undefined));
+    } };
+  }
 
   constructor(readonly projectId: CollabProjectId) {}
 
@@ -106,21 +135,33 @@ export class CollabProjectWorkSession {
     this.#backgroundSynchronization?.controller.abort();
   }
 
-  coalesceAutoReconnect(start: () => Promise<boolean>): Promise<boolean> {
+  ensureConnection(create: () => CollabProjectConnection): CollabProjectConnection {
     this.#assertOpen();
-    if (this.#autoReconnectTask) return this.#autoReconnectTask;
-    const pending = start();
-    this.#autoReconnectTask = pending;
-    this.#clearWhenSettled(
-      pending,
-      () => this.#autoReconnectTask === pending,
-      () => { this.#autoReconnectTask = null; },
-    );
-    return pending;
+    return this.#connection ??= create();
   }
 
-  currentAutoReconnect(): Promise<boolean> | null {
-    return this.#autoReconnectTask;
+  get connectionStatus(): CollabConnectionStatus {
+    return this.#connection?.status ?? 'offline';
+  }
+
+  get retainedSnapshot(): CollabProjectSnapshot | null {
+    return this.#retainedSnapshot;
+  }
+
+  get retainedSnapshotSource(): 'online' | 'cache' | null {
+    return this.#retainedSnapshotSource;
+  }
+
+  get connectionFailure(): CollabError | null {
+    return this.#connection?.failure ?? null;
+  }
+
+  retainSnapshot(snapshot: CollabProjectSnapshot, generation: number, source: 'online' | 'cache' = 'online'): void {
+    this.assertGeneration(generation);
+    if (source === 'cache' && this.#retainedSnapshotSource === 'online'
+      && this.#retainedSnapshot && this.#retainedSnapshot.eventSequence >= snapshot.eventSequence) return;
+    this.#retainedSnapshot = snapshot;
+    this.#retainedSnapshotSource = source;
   }
 
   coalesceEventRefresh(
@@ -198,10 +239,12 @@ export class CollabProjectWorkSession {
   adoptEventConnection(
     resource: CollabProjectResource,
     expectedGeneration: number,
+    expectedObservationRevision: number,
   ): void {
     try {
       this.#assertOpen();
       this.assertGeneration(expectedGeneration);
+      if (this.#observationRevision !== expectedObservationRevision) throw generationChangedError();
       this.setEventConnection(resource);
     } catch (error: unknown) {
       resource.dispose();
@@ -232,9 +275,13 @@ export class CollabProjectWorkSession {
     return pending;
   }
 
-  resetProjection(): void {
+  resetProjection(options: { readonly preserveConnectionAttempt?: boolean } = {}): boolean {
     this.#assertOpen();
+    const subscribed = this.#eventConnection !== null || this.#coordinationSubscription !== null;
     this.#projectionGeneration += 1;
+    this.#retainedSnapshot = null;
+    this.#retainedSnapshotSource = null;
+    this.#connection?.invalidate(options.preserveConnectionAttempt);
     this.observedAcceptedMainOid = null;
     this.#eventConnection?.dispose();
     this.#eventConnection = null;
@@ -252,6 +299,7 @@ export class CollabProjectWorkSession {
     if (this.#eventRefresh) this.#trackDetached(this.#eventRefresh);
     this.#snapshotRead = null;
     this.#eventRefresh = null;
+    return subscribed;
   }
 
   assertGeneration(generation: number): void {
@@ -274,11 +322,13 @@ export class CollabProjectWorkSession {
       void coordinationSubscription.then(value => value.dispose(), () => undefined);
     }
     this.#projectionGeneration += 1;
+    this.#retainedSnapshot = null;
+    this.#retainedSnapshotSource = null;
     const close = Promise.allSettled([
       this.#mutationQueue.drain(),
       this.#cacheUpdateQueue.drain(),
       this.#backgroundSynchronization?.settled ?? Promise.resolve(),
-      this.#autoReconnectTask ?? Promise.resolve(),
+      this.#connection?.close() ?? Promise.resolve(),
       this.#eventRefresh ?? Promise.resolve(),
       this.#snapshotRead ?? Promise.resolve(),
       coordinationSubscription ?? Promise.resolve(),
@@ -346,7 +396,14 @@ export interface CollabProjectWorkSessionSuspension {
   readonly token: symbol;
 }
 
+interface ProjectObservationDemand {
+  count: number;
+  lease: CollabProjectResource | null;
+  readonly start: (session: CollabProjectWorkSession) => void;
+}
+
 export class CollabProjectWorkSessionRegistry {
+  readonly #observations = new Map<CollabProjectId, ProjectObservationDemand>();
   private closed = false;
    #closePromise: Promise<void> | null = null;
    readonly #closedProjects = new Set<CollabProjectId>();
@@ -354,7 +411,7 @@ export class CollabProjectWorkSessionRegistry {
   private readonly sessions = new Map<CollabProjectId, CollabProjectWorkSession>();
    readonly #suspensions = new Map<
     CollabProjectId,
-    CollabProjectWorkSessionSuspension
+    CollabProjectWorkSessionSuspension & { readonly observedAcceptedMainOid: string | null }
   >();
 
   constructor(
@@ -373,6 +430,32 @@ export class CollabProjectWorkSessionRegistry {
     const session = this.create(projectId);
     this.sessions.set(projectId, session);
     return session;
+  }
+
+  observeProject(
+    projectId: CollabProjectId,
+    start: (session: CollabProjectWorkSession) => void,
+  ): CollabProjectResource {
+    if (this.closed) throw registryClosedError();
+    if (this.#closedProjects.has(projectId)) throw closedError(projectId);
+    let demand = this.#observations.get(projectId);
+    if (!demand) {
+      const session = this.#suspensions.has(projectId) ? null : this.acquire(projectId);
+      demand = { count: 0, lease: session?.retainObservation() ?? null, start };
+      this.#observations.set(projectId, demand);
+      if (session) start(session);
+    }
+    demand.count += 1;
+    const retained = demand;
+    let disposed = false;
+    return { dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      retained.count -= 1;
+      if (retained.count > 0) return;
+      retained.lease?.dispose();
+      if (this.#observations.get(projectId) === retained) this.#observations.delete(projectId);
+    } };
   }
 
   async closeProject(projectId: CollabProjectId): Promise<void> {
@@ -395,11 +478,22 @@ export class CollabProjectWorkSessionRegistry {
     return this.closeProject(projectId);
   }
 
-  resetProject(projectId: CollabProjectId): void {
+  abortBackgroundSynchronization(projectId: CollabProjectId): void {
+    this.sessions.get(projectId)?.abortBackgroundSynchronization();
+  }
+
+  readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus {
+    return this.sessions.get(projectId)?.connectionStatus ?? 'offline';
+  }
+
+  resetProject(
+    projectId: CollabProjectId,
+    options: { readonly preserveConnectionAttempt?: boolean } = {},
+  ): boolean {
     if (this.closed || this.#closedProjects.has(projectId) || this.#suspensions.has(projectId)) {
-      return;
+      return false;
     }
-    this.sessions.get(projectId)?.resetProjection();
+    return this.sessions.get(projectId)?.resetProjection(options) ?? false;
   }
 
   async suspendProject(
@@ -411,7 +505,11 @@ export class CollabProjectWorkSessionRegistry {
       await this.#closeTasks.get(projectId);
       return existingSuspension;
     }
-    const suspension = Object.freeze({ projectId, token: Symbol(projectId) });
+    const suspension = Object.freeze({
+      observedAcceptedMainOid: this.sessions.get(projectId)?.observedAcceptedMainOid ?? null,
+      projectId,
+      token: Symbol(projectId),
+    });
     if (!this.#closedProjects.has(projectId)) this.#suspensions.set(projectId, suspension);
     const existingClose = this.#closeTasks.get(projectId);
     if (existingClose) {
@@ -431,12 +529,21 @@ export class CollabProjectWorkSessionRegistry {
     const close = this.#closeTasks.get(projectId);
     if (close) await close;
     if (this.closed) throw registryClosedError();
+    const current = this.#suspensions.get(projectId);
     if (
       this.#closedProjects.has(projectId)
-      || this.#suspensions.get(projectId) !== suspension
+      || current !== suspension
     ) return false;
     this.#suspensions.delete(projectId);
     if (this.#closeTasks.get(projectId) === close) this.#closeTasks.delete(projectId);
+    const observation = this.#observations.get(projectId);
+    if (observation) {
+      observation.lease?.dispose();
+      const session = this.acquire(projectId);
+      session.observedAcceptedMainOid = current.observedAcceptedMainOid;
+      observation.lease = session.retainObservation();
+      observation.start(session);
+    }
     return true;
   }
 

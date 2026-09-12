@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 import {
   COLLAB_MAIN_REF,
@@ -16,6 +16,10 @@ import type {
   AuthoritySqlRow,
   AuthoritySqlValue,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import {
+  type AuthorityTransferImportedTargetIdentity,
+  decodeAuthorityTransferImportedTargetIdentity,
+} from '@/app/collab/authority-transfer/AuthorityTransferImportedTargetIdentity';
 import { verifyAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -336,7 +340,94 @@ function requireEmptyAuthority(connection: AuthorityDatabaseConnection): void {
   }
 }
 
+function importedTargetIdentity(
+  connection: AuthorityDatabaseConnection,
+  targetHostMemberId: CollabMemberId,
+): AuthorityTransferImportedTargetIdentity {
+  const project = connection.get(`
+    SELECT project_id, name
+    FROM project
+    WHERE singleton = 1
+  `);
+  const member = connection.get(`
+    SELECT member_id, display_name, personal_ref, role, status, access_state
+    FROM members
+    WHERE member_id = ?
+  `, [targetHostMemberId]);
+  const sequence = connection.get(`
+    SELECT COALESCE(MAX(sequence), 0) AS event_sequence
+    FROM events
+  `);
+  if (
+    !project
+    || !member
+    || status(member.status) !== 'active'
+    || text(member, 'access_state') !== 'bound'
+    || !sequence
+  ) throw checkpointError('checkpoint-imported-target-identity-invalid');
+  return decodeAuthorityTransferImportedTargetIdentity({
+    authorityGeneration: new AuthorityMetadataRepository().getGeneration(connection),
+    currentMember: {
+      displayName: text(member, 'display_name'),
+      id: text(member, 'member_id'),
+      personalRef: text(member, 'personal_ref'),
+      role: role(member.role),
+    },
+    eventSequence: integer(sequence, 'event_sequence'),
+    project: {
+      id: text(project, 'project_id'),
+      name: text(project, 'name'),
+    },
+  });
+}
+
 export class AuthorityTransferCheckpointRepository {
+  assertImportedTargetCredential(
+    connection: AuthorityDatabaseConnection,
+    input: Readonly<{
+      canonicalCredentialHash: Uint8Array;
+      projectId: string;
+      targetAuthorityGeneration: number;
+      targetHostMemberId: CollabMemberId;
+    }>,
+  ): void {
+    if (input.canonicalCredentialHash.byteLength !== 32) {
+      throw checkpointError('checkpoint-target-credential-invalid');
+    }
+    const project = connection.get(`
+      SELECT project_id, state, host_member_id
+      FROM project
+      WHERE singleton = 1
+    `);
+    const generation = connection.get(`
+      SELECT authority_generation
+      FROM authority_metadata
+      WHERE singleton = 1
+    `);
+    const member = connection.get(`
+      SELECT status, access_state, credential_hash
+      FROM members
+      WHERE member_id = ?
+    `, [input.targetHostMemberId]);
+    const credentialHash = member?.credential_hash;
+    if (
+      !project
+      || text(project, 'project_id') !== input.projectId
+      || (text(project, 'state') !== 'disabled' && text(project, 'state') !== 'active')
+      || text(project, 'host_member_id') !== input.targetHostMemberId
+      || !generation
+      || generation.authority_generation !== input.targetAuthorityGeneration
+      || !member
+      || text(member, 'status') !== 'active'
+      || text(member, 'access_state') !== 'bound'
+      || !(credentialHash instanceof Uint8Array)
+      || credentialHash.byteLength !== 32
+    ) throw checkpointError('checkpoint-target-authority-identity-invalid');
+    if (!timingSafeEqual(credentialHash, input.canonicalCredentialHash)) {
+      throw checkpointError('checkpoint-target-credential-conflict');
+    }
+  }
+
   activateImportedAuthority(
     connection: AuthorityDatabaseConnection,
     input: Readonly<{
@@ -383,7 +474,7 @@ export class AuthorityTransferCheckpointRepository {
   importCoordination(
     connection: AuthorityDatabaseConnection,
     input: ImportAuthorityTransferCoordinationInput,
-  ): void {
+  ): AuthorityTransferImportedTargetIdentity {
     if (input.targetHostCredentialHash.byteLength !== 32) {
       throw checkpointError('checkpoint-target-credential-invalid');
     }
@@ -566,5 +657,6 @@ export class AuthorityTransferCheckpointRepository {
           break;
       }
     }
+    return importedTargetIdentity(connection, input.targetHostMemberId);
   }
 }

@@ -84,7 +84,7 @@ implements ProviderCommandDiscoveryController<T> {
     const generation = this.generation;
     const abortController = new AbortController();
     this.loadAbortController = abortController;
-    const load = this.loadWithTimeout(abortController)
+    const load = this.#loadWithTimeout(abortController)
       .catch((): ProviderCommandDiscoveryResult<T> => ({
         status: 'error',
         message: 'Could not load provider commands',
@@ -134,7 +134,7 @@ implements ProviderCommandDiscoveryController<T> {
     };
   }
 
-  private async loadWithTimeout(
+  async #loadWithTimeout(
     abortController: AbortController,
   ): Promise<ProviderCommandDiscoveryResult<T>> {
     const resolvedTimeoutMs = this.resolveTimeoutMs?.();

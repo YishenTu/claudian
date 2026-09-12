@@ -144,7 +144,7 @@ class ProviderExecutionSessionLeaseImpl
     listener: (reason: ProviderExecutionInvalidationReason) => void,
   ): () => void {
     if (this.invalidationReason) {
-      this.notifyListener(listener, this.invalidationReason);
+      this.#notifyListener(listener, this.invalidationReason);
       return () => undefined;
     }
 
@@ -181,11 +181,11 @@ class ProviderExecutionSessionLeaseImpl
     const listeners = [...this.invalidationListeners];
     this.invalidationListeners.clear();
     for (const listener of listeners) {
-      this.notifyListener(listener, reason);
+      this.#notifyListener(listener, reason);
     }
   }
 
-  private notifyListener(
+  #notifyListener(
     listener: (reason: ProviderExecutionInvalidationReason) => void,
     reason: ProviderExecutionInvalidationReason,
   ): void {
@@ -215,8 +215,8 @@ export class ProviderExecutionLifecycleRegistry {
     config: ProviderSessionConfig,
     owner: ProviderExecutionOwnerKind,
   ): ProviderExecutionSessionLease {
-    this.assertAvailable();
-    const state = this.getOrCreateState(backend.providerId);
+    this.#assertAvailable();
+    const state = this.#getOrCreateState(backend.providerId);
     if (state.transitionReservations > 0) {
       throw new ProviderExecutionTransitionError(backend.providerId);
     }
@@ -246,7 +246,7 @@ export class ProviderExecutionLifecycleRegistry {
     mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
     parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T> {
-    this.assertAvailable();
+    this.#assertAvailable();
     const orderedProviderIds = [...new Set(providerIds)].sort();
     if (parentScope && this.activeTransitionScopes.has(parentScope)) {
       const rejectedProviderId =
@@ -262,7 +262,7 @@ export class ProviderExecutionLifecycleRegistry {
     }) as ProviderExecutionTransitionScope;
     this.activeTransitionScopes.add(scope);
     try {
-      return await this.runTransitionWithLocks(
+      return await this.#runTransitionWithLocks(
         orderedProviderIds,
         scope,
         () => mutation(scope),
@@ -272,14 +272,14 @@ export class ProviderExecutionLifecycleRegistry {
     }
   }
 
-  private async runTransitionWithLocks<T>(
+  async #runTransitionWithLocks<T>(
     orderedProviderIds: ProviderId[],
     scope: ProviderExecutionTransitionScope,
     mutation: () => Promise<T>,
   ): Promise<T> {
     const states = orderedProviderIds.map((providerId) => ({
       providerId,
-      state: this.getOrCreateState(providerId),
+      state: this.#getOrCreateState(providerId),
     }));
     const releaseLocks: Array<() => void> = [];
     for (const { state } of states) {
@@ -291,7 +291,7 @@ export class ProviderExecutionLifecycleRegistry {
         releaseLocks.push(await state.lock.acquire());
       }
 
-      this.assertAvailable();
+      this.#assertAvailable();
 
       const contexts = states.map(({ providerId, state }) => {
         state.generation += 1;
@@ -375,8 +375,8 @@ export class ProviderExecutionLifecycleRegistry {
     providerId: ProviderId,
     hook: ProviderExecutionTransitionHook,
   ): () => void {
-    this.assertAvailable();
-    const state = this.getOrCreateState(providerId);
+    this.#assertAvailable();
+    const state = this.#getOrCreateState(providerId);
     state.hooks.add(hook);
 
     let registered = true;
@@ -391,11 +391,11 @@ export class ProviderExecutionLifecycleRegistry {
     if (this.disposePromise) return this.disposePromise;
 
     this.disposed = true;
-    this.disposePromise = this.disposeAll();
+    this.disposePromise = this.#disposeAll();
     return this.disposePromise;
   }
 
-  private async disposeAll(): Promise<void> {
+  async #disposeAll(): Promise<void> {
     const states = [...this.states.entries()]
       .sort(([first], [second]) => first.localeCompare(second))
       .map(([providerId, state]) => ({ providerId, state }));
@@ -433,13 +433,13 @@ export class ProviderExecutionLifecycleRegistry {
     }
   }
 
-  private assertAvailable(): void {
+  #assertAvailable(): void {
     if (this.disposed) {
       throw new ProviderExecutionRegistryDisposedError();
     }
   }
 
-  private getOrCreateState(providerId: ProviderId): ProviderLifecycleState {
+  #getOrCreateState(providerId: ProviderId): ProviderLifecycleState {
     let state = this.states.get(providerId);
     if (!state) {
       state = {

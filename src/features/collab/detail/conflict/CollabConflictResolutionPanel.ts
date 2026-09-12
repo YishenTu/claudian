@@ -11,7 +11,7 @@ import {
   LatestTaskScope,
 } from '@/shared/async/LatestTaskScope';
 
-export type CollabConflictLocation = 'my-changes' | 'request';
+export type CollabConflictLocation = 'my-changes' | 'request' | 'update';
 
 export type CollabConflictResolutionPort = Pick<
   CollabFeaturePort,
@@ -101,25 +101,25 @@ export class CollabConflictResolutionPanel {
   async open(operationId: CollabOperationId): Promise<void> {
     if (this.destroyed) return;
     const task = this.readTasks.start();
-    this.destroyFileResources();
+    this.#destroyFileResources();
     this.operationId = operationId;
     this.session = null;
     this.contents.clear();
     this.fileSections.clear();
-    this.renderMessage(t('collab.conflict.loading'));
+    this.#renderMessage(t('collab.conflict.loading'));
     try {
       const result = await this.port.readConflict(operationId, { signal: task.signal });
       if (!this.isCurrent(task, operationId)) return;
       if (!isSuccess(result) || result.value.descriptor.operationId !== operationId) {
-        this.renderMessage(t('collab.conflict.loadFailed'), true, true);
+        this.#renderMessage(t('collab.conflict.loadFailed'), true, true);
         return;
       }
       this.session = result.value;
-      this.renderShell();
-      await this.loadFiles(task, operationId);
+      this.#renderShell();
+      await this.#loadFiles(task, operationId);
     } catch {
       if (this.isCurrent(task, operationId)) {
-        this.renderMessage(t('collab.conflict.loadFailed'), true, true);
+        this.#renderMessage(t('collab.conflict.loadFailed'), true, true);
       }
     } finally {
       task.complete();
@@ -130,14 +130,14 @@ export class CollabConflictResolutionPanel {
     if (this.destroyed) return;
     this.destroyed = true;
     this.readTasks.close();
-    this.destroyFileResources();
+    this.#destroyFileResources();
     this.rootEl.replaceChildren();
   }
 
-  private renderShell(): void {
+  #renderShell(): void {
     const session = this.session;
     if (!session) return;
-    this.destroyFileResources();
+    this.#destroyFileResources();
     this.fileSections.clear();
     this.rootEl.replaceChildren();
     this.rootEl.classList.add('claudian-collab-conflict');
@@ -148,7 +148,7 @@ export class CollabConflictResolutionPanel {
     appendText(
       header,
       'h2',
-      this.location === 'request'
+      session.intent === 'update' ? t('collab.update.conflictTitle') : this.location === 'request'
         ? t('collab.conflict.requestTitle')
         : t('collab.conflict.myChangesTitle'),
     );
@@ -159,7 +159,7 @@ export class CollabConflictResolutionPanel {
     appendText(
       this.rootEl,
       'p',
-      t('collab.conflict.editAndPublish'),
+      session.intent === 'update' ? t('collab.update.editAndContinue') : t('collab.conflict.editAndPublish'),
       'claudian-collab-conflict-guidance',
     );
 
@@ -177,7 +177,7 @@ export class CollabConflictResolutionPanel {
     this.rootEl.append(content);
   }
 
-  private async loadFiles(
+  async #loadFiles(
     task: LatestTaskHandle,
     expectedOperationId: CollabOperationId,
   ): Promise<void> {
@@ -195,24 +195,24 @@ export class CollabConflictResolutionPanel {
           || result.value.path !== conflict.path
           || result.value.kind !== conflict.kind
         ) {
-          this.renderFileError(conflict.path);
+          this.#renderFileError(conflict.path);
           continue;
         }
         this.contents.set(conflict.path, result.value);
-        this.renderConflictFile(conflict.path);
+        this.#renderConflictFile(conflict.path);
       } catch {
         if (this.isCurrent(task, expectedOperationId)) {
-          this.renderFileError(conflict.path);
+          this.#renderFileError(conflict.path);
         }
       }
     }
   }
 
-  private renderConflictFile(path: string): void {
+  #renderConflictFile(path: string): void {
     const content = this.contents.get(path);
     const host = this.fileSections.get(path);
     if (!content || !host) return;
-    this.destroyPathResources(path);
+    this.#destroyPathResources(path);
     host.replaceChildren();
     appendText(host, 'h3', content.path);
     appendText(host, 'div', kindLabel(content.kind), 'claudian-collab-conflict-kind');
@@ -228,7 +228,7 @@ export class CollabConflictResolutionPanel {
       return;
     }
     if (content.kind === 'text') {
-      this.renderTextConflict(host, content);
+      this.#renderTextConflict(host, content);
       return;
     }
     if (
@@ -236,11 +236,11 @@ export class CollabConflictResolutionPanel {
       || content.kind === 'delete-modify'
       || content.kind === 'rename-delete'
     ) {
-      this.renderOpaqueConflict(host, content);
+      this.#renderOpaqueConflict(host, content);
     }
   }
 
-  private renderTextConflict(
+  #renderTextConflict(
     host: HTMLElement,
     content: Extract<CollabConflictFileContent, { kind: 'text' }>,
   ): void {
@@ -252,7 +252,7 @@ export class CollabConflictResolutionPanel {
     const diffHost = createDiv();
     diffHost.className = 'claudian-collab-conflict-diff';
     const renderer = this.comparisonDiffFactory();
-    const rendererKey = this.rendererKey(content.path);
+    const rendererKey = this.#rendererKey(content.path);
     this.comparisonDiffs.set(rendererKey, renderer);
     void renderer.render({
       container: diffHost,
@@ -268,7 +268,7 @@ export class CollabConflictResolutionPanel {
     host.append(diffHost);
   }
 
-  private renderOpaqueConflict(
+  #renderOpaqueConflict(
     host: HTMLElement,
     content: Exclude<
       CollabConflictFileContent,
@@ -277,12 +277,12 @@ export class CollabConflictResolutionPanel {
   ): void {
     const versions = createDiv();
     versions.className = 'claudian-collab-conflict-versions';
-    this.renderOpaqueVersion(versions, t('collab.conflict.accepted'), content.accepted);
-    this.renderOpaqueVersion(versions, t('collab.conflict.mine'), content.personal);
+    this.#renderOpaqueVersion(versions, t('collab.conflict.accepted'), content.accepted);
+    this.#renderOpaqueVersion(versions, t('collab.conflict.mine'), content.personal);
     host.append(versions);
   }
 
-  private renderOpaqueVersion(
+  #renderOpaqueVersion(
     parent: HTMLElement,
     label: string,
     version: { bytes: number; exists: boolean; path: string },
@@ -299,18 +299,18 @@ export class CollabConflictResolutionPanel {
     parent.append(section);
   }
 
-  private renderFileError(path: string): void {
+  #renderFileError(path: string): void {
     const host = this.fileSections.get(path);
     if (!host) return;
-    this.destroyPathResources(path);
+    this.#destroyPathResources(path);
     host.replaceChildren();
     appendText(host, 'h3', path);
     const error = appendText(host, 'div', t('collab.conflict.fileLoadFailed'), 'mod-warning');
     error.setAttribute('role', 'alert');
   }
 
-  private renderMessage(message: string, warning = false, retry = false): void {
-    this.destroyFileResources();
+  #renderMessage(message: string, warning = false, retry = false): void {
+    this.#destroyFileResources();
     this.fileSections.clear();
     this.rootEl.replaceChildren();
     const status = appendText(
@@ -333,11 +333,11 @@ export class CollabConflictResolutionPanel {
       && this.operationId === operationId;
   }
 
-  private rendererKey(path: string): string {
+  #rendererKey(path: string): string {
     return `${path}\u0000`;
   }
 
-  private destroyPathResources(path: string): void {
+  #destroyPathResources(path: string): void {
     const prefix = `${path}\u0000`;
     for (const [key, renderer] of this.comparisonDiffs) {
       if (!key.startsWith(prefix)) continue;
@@ -346,7 +346,7 @@ export class CollabConflictResolutionPanel {
     }
   }
 
-  private destroyFileResources(): void {
+  #destroyFileResources(): void {
     for (const renderer of this.comparisonDiffs.values()) renderer.destroy();
     this.comparisonDiffs.clear();
   }

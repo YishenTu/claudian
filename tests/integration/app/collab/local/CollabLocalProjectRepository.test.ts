@@ -1,14 +1,16 @@
 import { spawnSync } from 'node:child_process';
+import type * as NodeFsPromises from 'node:fs/promises';
 import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  symlink,
-  writeFile,
+chmod,
+copyFile,
+mkdir,
+mkdtemp,
+readdir,
+readFile,
+rm,
+stat,
+symlink,
+writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,25 +18,33 @@ import path from 'node:path';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
 import {
-  type CollabLocalCloudMembershipRecord,
-  type CollabLocalLanMembershipRecord,
-  type CollabLocalMembershipRecord,
-  type CollabLocalProjectIndexEntry,
-  CollabLocalProjectRepository,
+type CollabLocalCloudMembershipRecord,
+type CollabLocalLanMembershipRecord,
+type CollabLocalMembershipRecord,
+type CollabLocalProjectIndexEntry,
+CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
-  createHostTransferRecoveryRecord,
+createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
-  decodeRetirementRecord,
-  type RetirementRecord,
+decodeCloudRetirementIntent,
+} from '@/app/collab/retirement/CloudRetirementIntent';
+import {
+decodeRetirementRecord,
+type RetirementRecord,
 } from '@/app/collab/retirement/RetirementRecord';
 import {
-  type RetirementTombstoneRecord,
+type RetirementTombstoneRecord,
 } from '@/app/collab/retirement/RetirementTombstoneRecord';
 
 const PROJECT_ID = 'project-alpha';
+const PROVISIONAL_OPERATION = {
+  kind: 'authority-transfer' as const, operationId: 'intent-one', transferId: 'transfer-one',
+  sourceGeneration: 2, targetGeneration: 3,
+};
 const MEMBER_CREDENTIAL = 'A'.repeat(43);
 
 function indexEntry(
@@ -57,6 +67,7 @@ function membershipRecord(
 ): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:54545',
       gitRemoteUrl: `https://192.168.1.20:54545/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: [
@@ -92,12 +103,12 @@ function membershipRecord(
 function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
-      developmentActorId: 'member-alice',
-      gitRemoteUrl: `http://127.0.0.1:8787/v2/projects/${PROJECT_ID}/repository.git`,
+      authorityGeneration: 7,
+      bindingVersion: 6,
+      gitRemoteUrl: `http://198.51.100.20:8787/operator/cloud/v6/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
-      serverUrl: 'http://127.0.0.1:8787/',
-      wireVersion: 6,
+      serverUrl: 'HTTP://198.51.100.20:8787/operator/cloud',
+      wireVersion: 10,
     },
     createdAt: '2026-08-08T00:00:00.000Z',
     lastEventSequence: 7,
@@ -243,6 +254,71 @@ describe('CollabLocalProjectRepository', () => {
     expect(await readdir(workspace)).toEqual(['note.md']);
   });
 
+  it.each([1, 2])('rejects schema %s Cloud membership without rewriting it', async schemaVersion => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record: Record<string, unknown> = { ...cloudMembershipRecord(), schemaVersion };
+    if (schemaVersion === 1) delete record.lifecycle;
+    const membershipPath = path.join(vaultRoot, repository.getProjectPaths(PROJECT_ID).membership);
+    await mkdir(path.dirname(membershipPath), { recursive: true });
+    const bytes = JSON.stringify(record);
+    await writeFile(membershipPath, bytes);
+
+    await expect(repository.loadMembership(PROJECT_ID)).rejects.toMatchObject({
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+    await expect(readFile(membershipPath, 'utf8')).resolves.toBe(bytes);
+  });
+
+  it.each([1, 2])('rejects a schema %s index containing Cloud without rewriting it', async schemaVersion => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const cloudProject: Record<string, unknown> = { ...indexEntry({ authorityKind: 'cloud' }) };
+    const lanProject: Record<string, unknown> = { ...indexEntry({
+      id: 'project-lan',
+      workspacePath: 'workspace/project-lan',
+    }) };
+    if (schemaVersion === 1) {
+      delete cloudProject.lifecycle;
+      delete lanProject.lifecycle;
+    }
+    const indexPath = path.join(vaultRoot, '.claudian', 'collab', 'index.json');
+    await mkdir(path.dirname(indexPath), { recursive: true });
+    const bytes = JSON.stringify({
+      projects: [lanProject, cloudProject],
+      schemaVersion,
+      selectedProjectId: PROJECT_ID,
+    });
+    await writeFile(indexPath, bytes);
+
+    await expect(repository.loadIndex()).rejects.toMatchObject({
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+    await expect(readFile(indexPath, 'utf8')).resolves.toBe(bytes);
+  });
+
+  it('adds LAN authority generation 1 to an existing local membership', async () => {
+    const projectState = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    );
+    await mkdir(projectState, { recursive: true });
+    const record = membershipRecord();
+    const { authorityGeneration: _authorityGeneration, ...legacyAuthority } = record.authority;
+    await writeFile(path.join(projectState, 'membership.json'), JSON.stringify({
+      ...record,
+      authority: legacyAuthority,
+    }));
+
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+      authority: { authorityGeneration: 1, kind: 'lan' },
+    });
+    await expect(readFile(path.join(projectState, 'membership.json'), 'utf8'))
+      .resolves.toContain('"authorityGeneration": 1');
+  });
+
   it('migrates v2 lifecycle projections without reactivating leaving or retired Projects', async () => {
     const stateDirectory = path.join(vaultRoot, '.claudian', 'collab');
     const projectState = path.join(stateDirectory, 'projects', PROJECT_ID);
@@ -312,6 +388,21 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
+  it('retains the verified Host history checkpoint across reopening membership storage', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const base = membershipRecord();
+    const record = {
+      ...base,
+      authority: {
+        ...base.authority,
+        hostTrustCheckpoint: { transferId: 'transfer-alpha', proofChainDigest: 'b'.repeat(64) },
+      },
+    };
+    await repository.saveMembership(record);
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadMembership(PROJECT_ID))
+      .resolves.toEqual(record);
+  });
+
   it('persists a strict Cloud membership without LAN authority or Host fields', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = cloudMembershipRecord();
@@ -330,9 +421,56 @@ describe('CollabLocalProjectRepository', () => {
     expect(persisted).not.toHaveProperty('hostOwnership');
     expect(persisted.member).not.toHaveProperty('credential');
     expect(persisted.authority).not.toHaveProperty('hostCaCertificatePem');
+    expect(persisted.authority).not.toHaveProperty('developmentActorId');
   });
 
-  it('rejects a Cloud development actor that differs from the current Member', async () => {
+  it('persists the current Cloud membership while the Vault Leave journal owns exit', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = { ...cloudMembershipRecord(), lifecycle: 'leaving' as const };
+
+    await repository.saveMembership(record);
+
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toEqual(record);
+  });
+
+  it('persists and enumerates the strict private Cloud retirement intent', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const intent = decodeCloudRetirementIntent({
+      authorityGeneration: 7,
+      createdAt: '2026-08-13T00:00:00.000Z',
+      kind: 'cloud-retirement-intent',
+      memberId: 'member-alice',
+      personalRef: 'refs/heads/members/member-alice',
+      phase: 'submitted',
+      projectId: PROJECT_ID,
+      request: {
+        expectedAuthorityGeneration: 7,
+        expectedMainOid: 'a'.repeat(40),
+        idempotencyKey: 'retire-request-one',
+        projectId: PROJECT_ID,
+      },
+      result: null,
+      schemaVersion: 1,
+      serverUrl: 'http://198.51.100.20:8787/operator/cloud',
+      updatedAt: '2026-08-13T00:00:00.000Z',
+    });
+
+    await repository.saveProjectDocument(
+      PROJECT_ID,
+      'cloud-retirement-intent',
+      intent,
+    );
+
+    await expect(repository.loadProjectDocument(
+      PROJECT_ID,
+      'cloud-retirement-intent',
+      decodeCloudRetirementIntent,
+    )).resolves.toEqual(intent);
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+  });
+
+  it('rejects any persisted Cloud development actor, including the current Member', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = cloudMembershipRecord();
 
@@ -340,8 +478,20 @@ describe('CollabLocalProjectRepository', () => {
       ...record,
       authority: {
         ...record.authority,
-        developmentActorId: 'member-bob',
-      },
+        developmentActorId: 'member-alice',
+      } as CollabLocalCloudMembershipRecord['authority'],
+    })).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+  });
+
+  it.each([undefined, 0, -1, 1.5])('rejects Cloud authority generation %s without a fallback', async authorityGeneration => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const record = cloudMembershipRecord();
+    await expect(repository.saveMembership({
+      ...record,
+      authority: { ...record.authority, authorityGeneration } as CollabLocalCloudMembershipRecord['authority'],
     })).rejects.toMatchObject({
       code: 'operation-failed',
       safeContext: { reason: 'local-record-corrupt' },
@@ -684,7 +834,7 @@ describe('CollabLocalProjectRepository', () => {
     await repository.upsertProject(indexEntry());
     await repository.selectProject(PROJECT_ID);
     await repository.saveMembership(membershipRecord());
-    for (const kind of ['cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
+    for (const kind of ['cache', 'ticket-cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
       await repository.saveProjectDocument(PROJECT_ID, kind, {
         projectId: PROJECT_ID,
         schemaVersion: 1,
@@ -727,7 +877,7 @@ describe('CollabLocalProjectRepository', () => {
       'retirement',
       decodeRetirementRecord,
     )).resolves.toEqual(record);
-    for (const kind of ['cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
+    for (const kind of ['cache', 'ticket-cache', 'pending-operation', 'publication-state', 'request-draft'] as const) {
       await expect(repository.loadProjectDocument(
         PROJECT_ID,
         kind,
@@ -865,8 +1015,9 @@ describe('CollabLocalProjectRepository', () => {
     await expect(repository.purgeProjectPrivateState(PROJECT_ID)).resolves.toBe(false);
   });
 
-  it('moves a pending retirement acknowledgement outside a finalized Project', async () => {
+  it.each(['lan', 'cloud'] as const)('preserves pending %s acknowledgement identity outside a finalized Project', async authorityKind => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
+    const credential = await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
     const retirement = decodeRetirementRecord({
       acknowledgedAt: null,
       acknowledgementStatus: 'pending',
@@ -883,9 +1034,14 @@ describe('CollabLocalProjectRepository', () => {
       retiredAt: '2026-08-13T00:00:00.000Z',
       schemaVersion: 1,
       updatedAt: '2026-08-13T00:00:00.000Z',
+      cloudRetirementId: authorityKind === 'cloud' ? 'retire-cloud-one' : null,
+      cloudServerUrl: authorityKind === 'cloud' ? 'https://cloud.example.test' : null,
+      ...(authorityKind === 'cloud' ? {
+        hostCaCertificatePem: null, hostCaFingerprint: null, hostEndpoint: null, memberCredential: null,
+      } : {}),
     });
     await repository.transitionProjectToRetired(retirement, {
-      authorityKind: 'lan',
+      authorityKind,
       createdAt: '2026-08-08T00:00:00.000Z',
       name: 'Project Alpha',
       workspacePath: 'workspace/project-alpha',
@@ -913,6 +1069,7 @@ describe('CollabLocalProjectRepository', () => {
     ))).rejects.toMatchObject({ code: 'ENOENT' });
 
     const restarted = new CollabLocalProjectRepository(vaultRoot);
+    expect(await new CloudProjectCredentialStore(vaultRoot).require(PROJECT_ID)).toEqual(credential);
     await expect(restarted.loadRetirementRecord(PROJECT_ID)).resolves.toEqual(retirement);
     await expect(restarted.removeRetirementAcknowledgement(PROJECT_ID)).resolves.toBe(true);
     await expect(restarted.loadRetirementRecord(PROJECT_ID)).resolves.toBeNull();
@@ -1053,6 +1210,7 @@ describe('CollabLocalProjectRepository', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = membershipRecord({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,
@@ -1193,12 +1351,6 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
-  it('does not expose a cursor-only membership projection mutator', () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
-
-    expect(repository).not.toHaveProperty('updateMembershipEventSequence');
-  });
-
   it('projects promotion and demotion monotonically with the event cursor', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot, {
       now: () => new Date('2026-08-08T01:00:00.000Z'),
@@ -1250,6 +1402,20 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
+  it.each(['cache', 'ticket-cache'] as const)('rejects an oversized %s file before decoding content', async kind => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const document = { projectId: PROJECT_ID, schemaVersion: 1 };
+    await repository.saveProjectDocument(PROJECT_ID, kind, document);
+    const cachePath = path.join(vaultRoot, repository.getProjectPaths(PROJECT_ID).cache);
+    const file = kind === 'cache' ? cachePath : path.join(path.dirname(cachePath), 'ticket-cache.json');
+    await writeFile(file, JSON.stringify({ ...document, body: 'x'.repeat(5 * 1024 * 1024) }));
+    const decode = jest.fn(() => document);
+    await expect(repository.loadProjectDocument(PROJECT_ID, kind, decode)).rejects.toMatchObject({
+      code: 'operation-failed', safeContext: { reason: 'local-record-corrupt' },
+    });
+    expect(decode).not.toHaveBeenCalled();
+  });
+
   it('stores cache and pending-operation documents only in guarded private state', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const cache = {
@@ -1293,6 +1459,91 @@ describe('CollabLocalProjectRepository', () => {
     await expect(repository.loadIndex()).resolves.toMatchObject({ projects: [] });
     await expect(repository.listPendingOperationProjectIds())
       .resolves.toEqual([PROJECT_ID]);
+  });
+
+  it('enumerates recovery document presence without decoding a corrupt payload', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.saveProjectDocument(PROJECT_ID, 'pending-operation', {
+      operationId: 'create-project-alpha',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    const projectDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      PROJECT_ID,
+    );
+    await writeFile(path.join(projectDirectory, 'pending-operation.json'), '{invalid');
+    await repository.saveProjectDocument(PROJECT_ID, 'cloud-retirement-intent', {
+      kind: 'cloud-retirement-intent',
+      projectId: PROJECT_ID,
+      schemaVersion: 1,
+    });
+    await writeFile(path.join(projectDirectory, 'cloud-retirement-intent.json'), '{invalid');
+
+    await expect(repository.listPendingOperationProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual([PROJECT_ID]);
+    await expect(repository.loadProjectDocument(
+      PROJECT_ID,
+      'pending-operation',
+      value => value as never,
+    )).rejects.toMatchObject({
+      code: 'operation-failed',
+      safeContext: { reason: 'local-record-corrupt' },
+    });
+  });
+
+  it('enumerates non-regular retirement nodes without blocking another Project', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const projectIds = ['project-directory', 'project-symlink', 'project-valid'] as const;
+    for (const projectId of projectIds) {
+      await repository.saveProjectDocument(projectId, 'cloud-retirement-intent', {
+        kind: 'cloud-retirement-intent',
+        projectId,
+        schemaVersion: 1,
+      });
+    }
+    const directoryPath = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      'project-directory',
+      'cloud-retirement-intent.json',
+    );
+    await rm(directoryPath);
+    await mkdir(directoryPath);
+    const symlinkProjectDirectory = path.join(
+      vaultRoot,
+      '.claudian',
+      'collab',
+      'projects',
+      'project-symlink',
+    );
+    const targetPath = path.join(symlinkProjectDirectory, 'retirement-target.json');
+    await writeFile(targetPath, '{}', 'utf8');
+    await rm(path.join(symlinkProjectDirectory, 'cloud-retirement-intent.json'));
+    await symlink(targetPath, path.join(
+      symlinkProjectDirectory,
+      'cloud-retirement-intent.json',
+    ));
+
+    await expect(repository.listCloudRetirementIntentProjectIds())
+      .resolves.toEqual(projectIds);
+    await expect(repository.loadProjectDocument(
+      'project-directory',
+      'cloud-retirement-intent',
+      value => value as never,
+    )).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(repository.loadProjectDocument(
+      'project-symlink',
+      'cloud-retirement-intent',
+      value => value as never,
+    )).rejects.toMatchObject({ code: 'workspace-boundary-invalid' });
   });
 
   it('ignores ordinary files while enumerating Project-local recovery documents', async () => {
@@ -1415,7 +1666,9 @@ describe('CollabLocalProjectRepository', () => {
     ))).toEqual({
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: null,
+      schemaVersion: 3,
     });
 
     await writeFile(path.join(authorityDirectory, 'authority.db'), 'private');
@@ -1424,6 +1677,95 @@ describe('CollabLocalProjectRepository', () => {
     await expect(repository.removeOwnedAuthorityDirectory(capability)).rejects.toMatchObject({
       code: 'operation-failed',
     });
+  });
+
+  it('rejects an earlier capability after the same Project resource is removed and recreated', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const earlier = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    await repository.removeOwnedAuthorityDirectory(earlier);
+    const replacement = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(replacement.authorityDirectory, 'keep.db'), 'replacement authority');
+
+    await expect(repository.removeOwnedAuthorityDirectory(earlier)).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(readFile(path.join(replacement.authorityDirectory, 'keep.db'), 'utf8')).resolves.toBe('replacement authority');
+    await expect(repository.removeOwnedAuthorityDirectory(replacement)).resolves.toBe(true);
+  });
+
+  it('keeps a replacement provisional import when an earlier attempt activates or discards', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const earlier = await repository.prepareProvisionalAuthorityDirectory(PROJECT_ID, PROVISIONAL_OPERATION);
+    await repository.removeProvisionalAuthorityDirectory(earlier);
+    const replacement = await repository.prepareProvisionalAuthorityDirectory(PROJECT_ID, PROVISIONAL_OPERATION);
+    await writeFile(path.join(replacement.authorityDirectory, 'collab.db'), 'replacement import');
+    await mkdir(path.join(replacement.authorityDirectory, 'repository.git'));
+
+    await expect(repository.bindProvisionalAuthorityDirectory(earlier)).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(repository.removeProvisionalAuthorityDirectory(earlier)).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(readFile(path.join(replacement.authorityDirectory, 'collab.db'), 'utf8')).resolves.toBe('replacement import');
+    const active = await repository.bindProvisionalAuthorityDirectory(replacement);
+    await expect(repository.removeOwnedAuthorityDirectory(active)).resolves.toBe(true);
+  });
+
+  it('recovers an exact provisional import with interrupted SQL promotion files', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const resource = await repository.prepareProvisionalAuthorityDirectory(PROJECT_ID, PROVISIONAL_OPERATION);
+    await writeFile(path.join(resource.authorityDirectory, 'collab.db.tmp'), 'interrupted snapshot');
+    await writeFile(path.join(resource.authorityDirectory, 'collab.db.bak'), 'previous snapshot');
+    const restarted = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const recovered = await restarted.recoverProvisionalAuthorityDirectory(PROJECT_ID, PROVISIONAL_OPERATION);
+    expect(recovered?.resourceId).toBe(resource.resourceId);
+    await expect(restarted.removeProvisionalAuthorityDirectory(recovered!)).resolves.toBe(true);
+  });
+
+  it('removes a provisional resource with valid maximum-length operation identifiers', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const resource = await repository.prepareProvisionalAuthorityDirectory('p'.repeat(64), {
+      kind: 'authority-transfer', operationId: 'o'.repeat(128), transferId: 't'.repeat(128),
+      sourceGeneration: 2, targetGeneration: 3,
+    });
+    await expect(repository.removeProvisionalAuthorityDirectory(resource)).resolves.toBe(true);
+    await expect(stat(resource.authorityDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('recovers only the provisional import belonging to the exact transfer operation', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const operation = {
+      kind: 'authority-transfer' as const, operationId: 'intent-one', transferId: 'transfer-one',
+      sourceGeneration: 2, targetGeneration: 3,
+    };
+    const original = await repository.prepareProvisionalAuthorityDirectory(PROJECT_ID, operation);
+    await writeFile(path.join(original.authorityDirectory, 'collab.db'), 'import');
+    await mkdir(path.join(original.authorityDirectory, 'repository.git'));
+    const reopened = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    await expect(reopened.recoverProvisionalAuthorityDirectory(PROJECT_ID, {
+      ...operation, operationId: 'intent-two', transferId: 'transfer-two',
+    })).rejects.toMatchObject({ code: 'operation-failed' });
+    const recovered = await reopened.recoverProvisionalAuthorityDirectory(PROJECT_ID, operation);
+    expect(recovered?.resourceId).toBe(original.resourceId);
+    await expect(reopened.bindProvisionalAuthorityDirectory(recovered!)).resolves.toMatchObject({ resourceId: original.resourceId });
+  });
+
+  it('resumes detached cleanup after restart without touching a replacement authority', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const original = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(original.authorityDirectory, 'collab.db'), 'old authority');
+    const filesystem = jest.requireActual<typeof NodeFsPromises>('node:fs/promises');
+    const remove = filesystem.rm;
+    const failure = jest.spyOn(filesystem, 'rm').mockImplementation(async (file, options) => {
+      if (String(file).endsWith('.tree')) throw new Error('injected removal failure');
+      return remove(file, options);
+    });
+    try {
+      await expect(repository.removeOwnedAuthorityDirectory(original)).rejects.toBeDefined();
+    } finally {
+      failure.mockRestore();
+    }
+    const reopened = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const replacement = await reopened.createOwnedAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(replacement.authorityDirectory, 'collab.db'), 'replacement authority');
+    await expect(reopened.resumeAuthorityDirectoryRemoval(PROJECT_ID, original.resourceId)).resolves.toBe(true);
+    await expect(readFile(path.join(replacement.authorityDirectory, 'collab.db'), 'utf8')).resolves.toBe('replacement authority');
+    await expect(reopened.resumeAuthorityDirectoryRemoval(PROJECT_ID, original.resourceId)).resolves.toBe(false);
   });
 
   it('refuses authority cleanup without its exact ownership marker', async () => {
@@ -1440,38 +1782,6 @@ describe('CollabLocalProjectRepository', () => {
     });
     await expect(readFile(path.join(authorityDirectory, 'keep.db'), 'utf8'))
       .resolves.toBe('unowned');
-  });
-
-  it('atomically retires a former Host authority into attempt-scoped inert storage', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot, {
-      installationKey: TEST_INSTALLATION_A,
-    });
-    const capability = await repository.createOwnedAuthorityDirectory(PROJECT_ID);
-    const authorityDirectory = capability.authorityDirectory;
-    await writeFile(path.join(authorityDirectory, 'collab.db'), 'former-host');
-
-    const retiredDirectory = await repository.retireOwnedAuthorityDirectory(
-      capability,
-      'bootstrap-attempt-one',
-    );
-    const replayedDirectory = await repository.retireOwnedAuthorityDirectory(
-      capability,
-      'bootstrap-attempt-one',
-    );
-    if (retiredDirectory === null) throw new Error('Expected retired authority directory');
-
-    expect(retiredDirectory).toBe(path.join(
-      vaultRoot,
-      '.claudian',
-      'collab',
-      'retired-lan-authorities',
-      PROJECT_ID,
-      'bootstrap-attempt-one',
-    ));
-    expect(replayedDirectory).toBe(retiredDirectory);
-    await expect(stat(authorityDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(readFile(path.join(retiredDirectory, 'collab.db'), 'utf8'))
-      .resolves.toBe('former-host');
   });
 
   it('claims only a known legacy authority layout when Host ownership is proven', async () => {
@@ -1500,7 +1810,9 @@ describe('CollabLocalProjectRepository', () => {
     ))).toEqual({
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: null,
+      schemaVersion: 3,
     });
   });
 
@@ -1527,4 +1839,52 @@ describe('CollabLocalProjectRepository', () => {
     await expect(readFile(path.join(authorityDirectory, 'unknown.bin'), 'utf8'))
       .resolves.toBe('unowned');
   });
+test('provisional effects must stop at durable activation even if provisional unlink did not happen', async () => {
+  const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+  const provisional = await repository.prepareProvisionalAuthorityDirectory('project-alpha', PROVISIONAL_OPERATION);
+  await writeFile(path.join(provisional.authorityDirectory, 'collab.db'), 'import');
+  await mkdir(path.join(provisional.authorityDirectory, 'repository.git'));
+  const names = await import('node:fs/promises').then(fs => fs.readdir(provisional.authorityDirectory));
+  const marker = names.find(name => name.endsWith('.json'))!;
+  await copyFile(path.join(provisional.authorityDirectory, marker), path.join(provisional.authorityDirectory, '.claudian-authority.json'));
+  await expect(repository.validateAuthorityDirectory(provisional)).rejects.toBeDefined();
+});
+
+test('rejects conflicting active and provisional identities without repairing either marker', async () => {
+  const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+  const provisional = await repository.prepareProvisionalAuthorityDirectory(PROJECT_ID, PROVISIONAL_OPERATION);
+  const provisionalPath = path.join(provisional.authorityDirectory, '.claudian-authority-resource.json');
+  const bytes = await readFile(provisionalPath, 'utf8');
+  const conflict = { ...JSON.parse(bytes), resourceId: '7b9dd3ef-4060-46b0-bb2b-7fb4d1f5fda1' };
+  await writeFile(path.join(provisional.authorityDirectory, '.claudian-authority.json'), JSON.stringify(conflict));
+  await expect(repository.inspectAuthorityInstallation(PROJECT_ID)).rejects.toMatchObject({ code: 'operation-failed' });
+  expect(await readFile(provisionalPath, 'utf8')).toBe(bytes);
+});
+
+test('cleanup must preserve an unrelated detached-path collision and cannot report canonical tree removed', async () => {
+  const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+  const active = await repository.createOwnedAuthorityDirectory('project-alpha');
+  const collision = path.join(vaultRoot, '.claudian/collab/authority-removals/project-alpha', `${active.resourceId}.tree`);
+  await mkdir(collision, { recursive: true });
+  await writeFile(path.join(collision, 'keep.txt'), 'unowned collision');
+  await expect(repository.removeOwnedAuthorityDirectory(active)).rejects.toBeDefined();
+  expect(await readFile(path.join(collision, 'keep.txt'), 'utf8')).toBe('unowned collision');
+  expect((await stat(active.authorityDirectory)).isDirectory()).toBe(true);
+});
+
+test('new provisional marker cannot admit physical effects after its directory sync fails', async () => {
+  const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+  const fs = jest.requireActual<typeof NodeFsPromises>('node:fs/promises');
+  const actualOpen = fs.open;
+  const authorityDirectory = path.join(vaultRoot, '.claudian/collab/authorities/project-alpha');
+  const injected = jest.spyOn(fs, 'open').mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+    const handle = await actualOpen(...args);
+    if (String(args[0]) === authorityDirectory) handle.sync = async () => { throw new Error('injected fsync failure'); };
+    return handle;
+  });
+  try {
+    await expect(repository.prepareProvisionalAuthorityDirectory('project-alpha', PROVISIONAL_OPERATION)).rejects.toBeDefined();
+  } finally { injected.mockRestore(); }
+});
+
 });

@@ -143,7 +143,7 @@ export class ProjectEventHub {
     this.clearInterval = timer.clearInterval ?? (handle => window.clearInterval(handle));
     this.setInterval = timer.setInterval
       ?? ((callback, milliseconds) => window.setInterval(callback, milliseconds));
-    this.subscription = source.subscribe(() => this.scheduleRefresh());
+    this.subscription = source.subscribe(() => this.#scheduleRefresh());
   }
 
   hasAuthenticatedPresence(projectId: string, memberId: string): boolean {
@@ -196,9 +196,9 @@ export class ProjectEventHub {
     socket.on('pong', () => {
       connection.missedPongs = 0;
     });
-    socket.on('close', () => this.removeConnection(connection));
-    socket.on('error', () => this.removeConnection(connection));
-    this.ensureHeartbeat();
+    socket.on('close', () => this.#removeConnection(connection));
+    socket.on('error', () => this.#removeConnection(connection));
+    this.#ensureHeartbeat();
     await this.refresh(connection);
   }
 
@@ -206,7 +206,7 @@ export class ProjectEventHub {
     if (this.closed) return;
     this.closed = true;
     this.subscription.dispose();
-    this.stopHeartbeat();
+    this.#stopHeartbeat();
     const connections = [...this.connections];
     this.connections.clear();
     for (const connection of connections) {
@@ -216,7 +216,7 @@ export class ProjectEventHub {
     }
   }
 
-  private scheduleRefresh(): void {
+  #scheduleRefresh(): void {
     if (this.closed || this.refreshScheduled) return;
     this.refreshScheduled = true;
     queueMicrotask(() => {
@@ -295,12 +295,12 @@ export class ProjectEventHub {
     }
   }
 
-  private ensureHeartbeat(): void {
+  #ensureHeartbeat(): void {
     if (this.heartbeatHandle !== null || this.connections.size === 0) return;
     this.heartbeatHandle = this.setInterval(() => {
       for (const connection of [...this.connections]) {
         if (connection.socket.readyState !== OPEN_READY_STATE) {
-          this.removeConnection(connection);
+          this.#removeConnection(connection);
           continue;
         }
         if (connection.missedPongs >= 2) {
@@ -313,14 +313,14 @@ export class ProjectEventHub {
     }, HEARTBEAT_INTERVAL_MS);
   }
 
-  private stopHeartbeat(): void {
+  #stopHeartbeat(): void {
     if (this.heartbeatHandle === null) return;
     this.clearInterval(this.heartbeatHandle);
     this.heartbeatHandle = null;
   }
 
-  private removeConnection(connection: EventConnection): void {
+  #removeConnection(connection: EventConnection): void {
     this.connections.delete(connection);
-    if (this.connections.size === 0) this.stopHeartbeat();
+    if (this.connections.size === 0) this.#stopHeartbeat();
   }
 }

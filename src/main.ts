@@ -731,15 +731,10 @@ export default class ClaudianPlugin extends Plugin {
     });
     const { feature } = collab.createCollabFeatureSubcomposition({
       foundation,
+      getProjectsFolder: () => this.settings.collabProjectsFolder,
       projectSetup,
       vaultRoot,
     });
-    try {
-      await feature.prepareCloudBootstrapLocalRecovery();
-    } catch (error) {
-      await Promise.allSettled([feature.close(), foundation.close()]);
-      throw error;
-    }
     if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) {
       await feature.close();
       await foundation.close();
@@ -747,7 +742,6 @@ export default class ClaudianPlugin extends Plugin {
     }
     this.collabFoundation = foundation;
     this.collabFeatureService = feature;
-    void feature.recoverPendingCloudBootstraps().catch(() => undefined);
     return feature;
   }
 
@@ -917,14 +911,17 @@ export default class ClaudianPlugin extends Plugin {
       closeTicket: async (...args) => (
         (await this.requireCollabFeatureService()).closeTicket(...args)
       ),
+      confirmUpdate: async (...args) => (
+        (await this.requireCollabFeatureService()).confirmUpdate(...args)
+      ),
       confirmPublish: async (...args) => (
         (await this.requireCollabFeatureService()).confirmPublish(...args)
       ),
       createTicket: async (...args) => (
         (await this.requireCollabFeatureService()).createTicket(...args)
       ),
-      listTickets: async (...args) => (
-        (await this.requireCollabFeatureService()).listTickets(...args)
+      resolveTicketNumber: async (...args) => (
+        (await this.requireCollabFeatureService()).resolveTicketNumber(...args)
       ),
       prepareReview: async (...args) => (
         (await this.requireCollabFeatureService()).prepareReview(...args)
@@ -965,13 +962,13 @@ export default class ClaudianPlugin extends Plugin {
       reopenTicket: async (...args) => (
         (await this.requireCollabFeatureService()).reopenTicket(...args)
       ),
-      subscribe: listener => {
+      observeProject: (projectId, listener) => {
         if (!this.isCollabEnabled()) return { dispose: () => undefined };
         let disposed = false;
         let subscription: { dispose(): void } | null = null;
         void this.requireCollabFeatureService().then(feature => {
           if (disposed) return;
-          subscription = feature.subscribe(listener);
+          subscription = feature.observeProject(projectId, listener);
         }).catch(() => undefined);
         return {
           dispose: () => {
@@ -1006,7 +1003,7 @@ export default class ClaudianPlugin extends Plugin {
   private async openCollabConflict(
     projectId: string,
     operationId: string,
-    location: 'my-changes' | 'request',
+    location: 'my-changes' | 'request' | 'update',
     requestId?: string,
   ): Promise<void> {
     try {
@@ -1097,6 +1094,7 @@ export default class ClaudianPlugin extends Plugin {
       const selected = review.files.find(file => file.path === selectedPath) ?? review.files[0];
       this.collabPreparedReviews.storePublication(review);
       await this.getCollabDetailViewCoordinator().open({
+        ...(review.intent ? { intent: review.intent } : {}),
         candidateOid: review.candidateOid,
         comparisonBaseOid: review.comparisonBaseOid,
         comparisonTargetOid: review.comparisonTargetOid,

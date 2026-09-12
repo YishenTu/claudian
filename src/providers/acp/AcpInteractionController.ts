@@ -66,7 +66,7 @@ export class AcpInteractionController {
     this.pending.set(interactionId, pending);
 
     const abortFromCaller = (): void => {
-      this.dismiss(interactionId, 'cancelled');
+      this.#dismiss(interactionId, 'cancelled');
       abortController.abort();
     };
     signal?.addEventListener('abort', abortFromCaller, { once: true });
@@ -99,18 +99,18 @@ export class AcpInteractionController {
       }, abortController.signal);
 
       if (response.interactionId !== interactionId) {
-        this.dismiss(interactionId, 'native-rejected');
+        this.#dismiss(interactionId, 'native-rejected');
         return CANCELLED_RESPONSE;
       }
       if (this.options.getTurnId() !== turnId) {
-        this.dismiss(interactionId, 'superseded');
+        this.#dismiss(interactionId, 'superseded');
         return CANCELLED_RESPONSE;
       }
 
-      this.dismiss(interactionId, 'resolved');
+      this.#dismiss(interactionId, 'resolved');
       return mapAcpApprovalDecision(response.decision, request.options);
     } catch {
-      this.dismiss(interactionId, 'cancelled');
+      this.#dismiss(interactionId, 'cancelled');
       return CANCELLED_RESPONSE;
     } finally {
       signal?.removeEventListener('abort', abortFromCaller);
@@ -120,7 +120,7 @@ export class AcpInteractionController {
 
   dismissAll(reason: ProviderInteractionDismissReason): void {
     for (const [interactionId, pending] of this.pending) {
-      this.dismiss(interactionId, reason);
+      this.#dismiss(interactionId, reason);
       pending.abortController.abort();
     }
   }
@@ -131,7 +131,7 @@ export class AcpInteractionController {
     this.dismissAll('session-disposed');
   }
 
-  private dismiss(
+  #dismiss(
     interactionId: string,
     reason: ProviderInteractionDismissReason,
   ): void {

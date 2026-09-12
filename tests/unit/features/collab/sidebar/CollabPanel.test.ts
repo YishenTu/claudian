@@ -1,15 +1,19 @@
 /** @jest-environment jsdom */
 
+import { getByRole, queryByRole } from '@testing-library/dom';
 import { type App, Menu } from 'obsidian';
 
 import { type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { CollabTransientSurfaceRegistry } from '@/features/collab/modals/CollabTransientSurfaceRegistry';
 
 const mockOpenCreate = jest.fn();
 const mockOpenJoin = jest.fn();
 const mockOpenManagement = jest.fn();
 const mockOpenReconnect = jest.fn();
 const mockCreateManagement = jest.fn();
+let mockManagementAction: HTMLButtonElement | null = null;
+let mockManagementMutation: jest.Mock | null = null;
 
 jest.mock('@/features/collab/modals/project/CreateProjectModal', () => ({
   CreateProjectModal: class MockCreateProjectModal {
@@ -34,8 +38,44 @@ jest.mock('@/features/collab/modals/project/ReconnectProjectModal', () => ({
 
 jest.mock('@/features/collab/modals/project/ProjectManagementModal', () => ({
   ProjectManagementModal: class MockProjectManagementModal {
-    constructor(...args: unknown[]) { mockCreateManagement(...args); }
-    open(): void { mockOpenManagement(); }
+    readonly #action: HTMLButtonElement | null;
+    #closed = false;
+    readonly #onClosed: (() => void) | undefined;
+
+    constructor(...args: unknown[]) {
+      mockCreateManagement(...args);
+      const options = args[2] as {
+        onClosed?: () => void;
+        project: CollabLocalProjectSummary;
+      };
+      this.#onClosed = options.onClosed;
+      this.#action = mockManagementMutation ? document.createElement('button') : null;
+      if (this.#action) {
+        this.#action.type = 'button';
+        this.#action.setAttribute('aria-label', `Start ${options.project.name} Host`);
+        this.#action.addEventListener('click', () => {
+          if (!this.#closed) mockManagementMutation?.(options.project.id);
+        });
+      }
+    }
+
+    close(): void {
+      if (this.#closed) return;
+      this.#closed = true;
+      if (this.#action) {
+        this.#action.disabled = true;
+        this.#action.remove();
+      }
+      this.#onClosed?.();
+    }
+
+    open(): void {
+      mockOpenManagement();
+      if (this.#action) {
+        document.body.appendChild(this.#action);
+        mockManagementAction = this.#action;
+      }
+    }
   },
 }));
 
@@ -243,12 +283,19 @@ function createPort(initialState: CollabFeatureState) {
             id: 'project-alpha',
             mainOid: 'a'.repeat(40),
             mainRef: 'refs/heads/main',
+            authorityGeneration: 1,
             managerSetGeneration: 0,
             name: 'Alpha',
           },
         },
         source: 'online',
         stale: false,
+        syncState: {
+          eventSequence: 1,
+          generation: 0,
+          projectId: 'project-alpha',
+          status: 'synchronized',
+        },
       },
     }),
     selectProject: jest.fn(async (projectId: string) => {
@@ -262,6 +309,10 @@ function createPort(initialState: CollabFeatureState) {
     resumeSetup: jest.fn().mockResolvedValue({
       status: 'success',
       value: project(),
+    }),
+    resumeLeave: jest.fn().mockResolvedValue({
+      status: 'success',
+      value: undefined,
     }),
     createInvitation: jest.fn().mockResolvedValue({
       status: 'success',
@@ -303,6 +354,16 @@ function createPort(initialState: CollabFeatureState) {
       for (const listener of listeners) listener(state);
       return { status: 'success', value: { projectId, status: 'stopped' } };
     }),
+    observeProject: jest.fn((_projectId: string, observer: () => void) => {
+      let previous = state;
+      const listener = (next: CollabFeatureState) => {
+        if (next === previous) return;
+        previous = next;
+        observer();
+      };
+      listeners.add(listener);
+      return { dispose: jest.fn(() => listeners.delete(listener)) };
+    }),
     subscribe: jest.fn((listener: (next: CollabFeatureState) => void) => {
       listeners.add(listener);
       listener(state);
@@ -313,6 +374,7 @@ function createPort(initialState: CollabFeatureState) {
     resumeSetup: jest.Mock;
     selectProject: jest.Mock;
     subscribe: jest.Mock;
+    observeProject: jest.Mock;
   };
   return port;
 }
@@ -365,10 +427,42 @@ describe('CollabPanel', () => {
     mockOpenCreate.mockClear();
     mockOpenJoin.mockClear();
     mockOpenReconnect.mockClear();
+    mockManagementAction?.remove();
+    mockManagementAction = null;
+    mockManagementMutation = null;
   });
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('places Update above My changes and removes it after the Project observer reports confirmation', async () => {
+    const currentProject = project({ connectionStatus: 'connected', hostStatus: 'running' });
+    const port = createPort({ lifecycle: 'ready', projects: [currentProject], selectedProjectId: currentProject.id });
+    const originalInspection = await port.inspectProject(currentProject.id);
+    if (originalInspection.status !== 'success') throw new Error('Inspection required');
+    let updateState: 'available' | 'current' = 'available';
+    jest.spyOn(port, 'inspectProject').mockImplementation(async () => ({ status: 'success', value: { ...originalInspection.value, projectUpdate: { state: updateState } } }));
+    const onOpenPublicationReview = jest.fn();
+    const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [], canConfirm: true };
+    port.updateProject = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: currentProject.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
+    const container = document.body.createDiv();
+    const panel = new CollabPanel(container, {} as never, { app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, projectSetup: { getPendingSetupOperationId: jest.fn() }, resolveGit: async () => AVAILABLE, onOpenPublicationReview });
+    panel.setActive(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const update = getByRole(container, 'button', { name: 'Update' });
+    const personal = container.querySelector('.claudian-collab-personal-home')!;
+    expect(update.compareDocumentPosition(personal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    update.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onOpenPublicationReview).toHaveBeenCalledWith(currentProject, review);
+    updateState = 'current';
+    for (const [, observer] of port.observeProject.mock.calls) observer();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(queryByRole(container, 'button', { name: 'Update' })).toBeNull();
+    expect(container.querySelector('.claudian-collab-project-update')?.textContent).toBe('');
+    panel.destroy();
+    container.remove();
   });
 
   it('reuses Git resolution started while the Collab chunk is loading', async () => {
@@ -730,6 +824,42 @@ describe('CollabPanel', () => {
     expect(port.resumeSetup).toHaveBeenCalledWith({ operationId: 'create-project-alpha' });
   });
 
+  it('labels and resumes a journal-only Leave without treating it as setup', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({
+      lifecycle: 'ready',
+      projects: [project({
+        cleanupStatus: 'failed',
+        health: 'needs-attention',
+        lifecycle: 'leaving',
+      })],
+      selectedProjectId: 'project-alpha',
+    });
+    const getPendingSetupOperationId = jest.fn().mockResolvedValue(null);
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(),
+      configuredGitPath: () => '',
+      initialGitResolution: Promise.resolve(AVAILABLE),
+      onSaveConfiguredGitPath: jest.fn(),
+      port,
+      projectSetup: { getPendingSetupOperationId },
+      resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
+    });
+
+    panel.preload();
+    await flush();
+    panel.setActive(true);
+
+    expect(container.textContent).toContain('Leaving this project needs attention');
+    expect(container.textContent).not.toContain('setup is incomplete');
+    expect(getPendingSetupOperationId).not.toHaveBeenCalled();
+    const resume = container.querySelector<HTMLButtonElement>('[data-action="resume-leave"]')!;
+    expect(resume).not.toBeNull();
+    resume.click();
+    await flush();
+    expect(port.resumeLeave).toHaveBeenCalledWith('project-alpha');
+  });
+
   it('opens the Project picker with an Obsidian DOM menu', async () => {
     const container = document.body.createDiv();
     const port = createPort({
@@ -781,6 +911,56 @@ describe('CollabPanel', () => {
     expect(port.selectProject).toHaveBeenCalledWith('project-beta');
     menu.items[2]?.clickHandler?.();
     expect(mockOpenReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes old Project management before a delayed Project selection publishes', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({
+      lifecycle: 'ready',
+      projects: [
+        project(),
+        project({
+          id: 'project-beta',
+          name: 'Beta',
+          workspacePath: 'workspace/beta',
+        }),
+      ],
+      selectedProjectId: 'project-alpha',
+    });
+    let finishSelection!: () => void;
+    port.selectProject.mockImplementationOnce(() => new Promise(resolve => {
+      finishSelection = () => resolve({ status: 'cancelled' });
+    }));
+    const transientSurfaces = new CollabTransientSurfaceRegistry();
+    mockManagementMutation = jest.fn();
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(),
+      configuredGitPath: () => '',
+      onSaveConfiguredGitPath: jest.fn(),
+      port,
+      projectSetup: { getPendingSetupOperationId: jest.fn() },
+      resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
+      transientSurfaces,
+    });
+
+    panel.setActive(true);
+    await flush();
+    getByRole(container, 'button', { name: 'Project management' }).click();
+    const oldProjectAction = getByRole(document.body, 'button', {
+      name: 'Start Alpha Host',
+    }) as HTMLButtonElement;
+
+    getByRole(container, 'button', { name: 'Select project' }).click();
+    MockMenu.instances.at(-1)?.items[1]?.clickHandler?.();
+
+    expect(port.state.selectedProjectId).toBe('project-alpha');
+    expect(oldProjectAction.disabled).toBe(true);
+    expect(oldProjectAction.isConnected).toBe(false);
+    oldProjectAction.click();
+    expect(mockManagementMutation).not.toHaveBeenCalled();
+
+    finishSelection();
+    await flush();
   });
 
   it('mounts the shared personal Publish surface for a healthy Project', async () => {
@@ -1181,7 +1361,7 @@ describe('CollabPanel', () => {
     expect(container.querySelector('[data-request-id="request-maya"]')).toBe(request);
     expect(port.inspectProject).toHaveBeenCalledTimes(inspectionCount);
     expect(port.readSnapshot).toHaveBeenCalledTimes(snapshotCount);
-    expect(port.subscribe).toHaveBeenCalledTimes(4);
+    expect(port.observeProject).toHaveBeenCalledTimes(3);
   });
 
   it('restores a pending setup action that resolves while Collab is hidden', async () => {

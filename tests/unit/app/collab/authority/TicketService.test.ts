@@ -88,6 +88,39 @@ describe('TicketService', () => {
     })).resolves.toEqual({ tickets: [] });
   });
 
+  it('resolves immutable Ticket numbers for open and closed Tickets without scanning pages', async () => {
+    const created = await createTicket();
+    await expect(service.resolveNumber('member-other', {
+      projectId: 'project-alpha', ticketNumber: 1,
+    })).resolves.toEqual({ ticketId: created.ticket.id });
+    await service.close('member-author', {
+      expectedRevision: 1, idempotencyKey: 'close-resolved',
+      projectId: 'project-alpha', ticketId: created.ticket.id,
+    });
+    await expect(service.resolveNumber('member-other', {
+      projectId: 'project-alpha', ticketNumber: 1,
+    })).resolves.toEqual({ ticketId: created.ticket.id });
+    await expect(service.resolveNumber('member-other', {
+      projectId: 'project-alpha', ticketNumber: 9_001,
+    })).resolves.toEqual({ ticketId: null });
+  });
+
+  it('authorizes the Project and active Member before resolving Ticket numbers', async () => {
+    await createTicket();
+    await expect(service.resolveNumber('member-missing', {
+      projectId: 'project-alpha', ticketNumber: 1,
+    })).rejects.toMatchObject({ code: 'membership-revoked' });
+    await expect(service.resolveNumber('member-other', {
+      projectId: 'project-other', ticketNumber: 1,
+    })).rejects.toMatchObject({ code: 'project-not-found' });
+    await database.mutate(connection => {
+      connection.run("UPDATE members SET status = 'revoked', revoked_at = ? WHERE member_id = ?", [CREATED_AT, 'member-other']);
+    });
+    await expect(service.resolveNumber('member-other', {
+      projectId: 'project-alpha', ticketNumber: 1,
+    })).rejects.toMatchObject({ code: 'membership-revoked' });
+  });
+
   it('enforces author/Manager content editing and revision CAS', async () => {
     const created = await createTicket();
     await expect(service.updateContent('member-other', {

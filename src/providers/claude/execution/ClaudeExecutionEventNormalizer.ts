@@ -172,7 +172,7 @@ export class ClaudeExecutionEventNormalizer {
       }
       if (isStreamChunk(event)) {
         for (const chunk of normalizeTaskToolChunk(event, state.taskToolNormalizer)) {
-          this.normalizeStreamChunk(message, chunk, state, normalized);
+          this.#normalizeStreamChunk(message, chunk, state, normalized);
         }
       }
     }
@@ -231,7 +231,7 @@ export class ClaudeExecutionEventNormalizer {
     state.sawStreamThinking = false;
   }
 
-  private normalizeStreamChunk(
+  #normalizeStreamChunk(
     message: SDKMessage,
     chunk: StreamChunk,
     state: NormalizationState,

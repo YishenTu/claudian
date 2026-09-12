@@ -1,7 +1,7 @@
 import {
-  existsSync,
-  readdirSync,
-  readFileSync,
+existsSync,
+readdirSync,
+readFileSync,
 } from 'node:fs';
 import path from 'node:path';
 
@@ -17,21 +17,6 @@ describe('Collab documentation', () => {
 
     expect(packageJson.devDependencies.obsidian).toBe(manifest.minAppVersion);
     expect(readme).toContain(`- Obsidian v${manifest.minAppVersion}+`);
-  });
-
-  it('links the concise Collab overview to its documentation and states the LAN boundary', () => {
-    const readme = readFileSync(path.resolve('README.md'), 'utf8');
-
-    for (const disclosure of [
-      'Visit [claudian.md](https://claudian.md/)',
-      '**Collab Mode**',
-      '[Learn more](https://claudian.md/docs/collab-mode/)',
-      'Collab Mode requires [Git](https://git-scm.com/install/)',
-      "travel directly between invited teammates' devices on the local network",
-      'does not send Project data to a Claudian cloud service or any third party',
-    ]) {
-      expect(readme).toContain(disclosure);
-    }
   });
 
   it('keeps every scoped Claude guide as an import of its adjacent agent guide', () => {

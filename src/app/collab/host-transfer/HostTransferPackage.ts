@@ -25,7 +25,7 @@ export interface HostTransferArtifactIdentity {
 export interface HostTransferPackageManifest {
   readonly schemaVersion: typeof HOST_TRANSFER_MANIFEST_SCHEMA_VERSION;
   readonly protocolVersion: typeof COLLAB_HOST_TRANSFER_PROTOCOL_VERSION;
-  readonly authoritySchemaVersion: 8 | 9 | 10 | 11 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
+  readonly authoritySchemaVersion: 8 | 9 | 10 | 11 | 12 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
   readonly sourceAuthorityGeneration: number;
@@ -128,6 +128,7 @@ function assertManifest(
           && manifest.authoritySchemaVersion !== 9
           && manifest.authoritySchemaVersion !== 10
           && manifest.authoritySchemaVersion !== 11
+          && manifest.authoritySchemaVersion !== 12
         )
       )
     )
@@ -228,7 +229,6 @@ export function serializeHostTransferPackageManifest(
 
 function decodeManifest(
   value: unknown,
-  allowLegacyAuthority: boolean,
 ): HostTransferPackageManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw packageError('host-transfer-manifest-invalid');
@@ -245,39 +245,18 @@ function decodeManifest(
     }
   }
   const manifest = record as unknown as HostTransferPackageManifest;
-  assertManifest(manifest, allowLegacyAuthority);
+  assertManifest(manifest, true);
   return canonicalManifest(manifest);
-}
-
-export function decodeHostTransferPackageManifest(value: unknown): HostTransferPackageManifest {
-  return decodeManifest(value, false);
-}
-
-export function decodeHostTransferRecoveryPackageManifest(
-  value: unknown,
-): HostTransferPackageManifest {
-  return decodeManifest(value, true);
-}
-
-export function parseHostTransferPackageManifest(serialized: string): HostTransferPackageManifest {
-  return parseManifest(serialized, false);
 }
 
 export function parseHostTransferRecoveryPackageManifest(
   serialized: string,
 ): HostTransferPackageManifest {
-  return parseManifest(serialized, true);
-}
-
-function parseManifest(
-  serialized: string,
-  allowLegacyAuthority: boolean,
-): HostTransferPackageManifest {
   if (Buffer.byteLength(serialized, 'utf8') > HOST_TRANSFER_MAX_MANIFEST_BYTES) {
     throw packageError('host-transfer-manifest-too-large', 'quota-exceeded');
   }
   try {
-    return decodeManifest(JSON.parse(serialized), allowLegacyAuthority);
+    return decodeManifest(JSON.parse(serialized));
   } catch (error) {
     if (error instanceof CollabError) throw error;
     throw packageError('host-transfer-manifest-invalid');

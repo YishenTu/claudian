@@ -49,7 +49,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
     this.onSelect = options.onSelect;
     this.providerConfig = options.providerConfig ?? null;
     this.providerId = options.providerId ?? options.providerConfig?.providerId ?? null;
-    this.bindDiscovery();
+    this.#bindDiscovery();
   }
 
   clearProviderCatalog(): void {
@@ -74,14 +74,14 @@ export class SlashCommandSource implements ComposerDropdownSource {
     const snapshot = this.discovery?.getSnapshot();
     let result = snapshot;
     if (snapshot?.status === 'idle') {
-      this.startDiscovery('load');
+      this.#startDiscovery('load');
       result = { status: 'loading' };
     }
     const providerEntries = result?.status === 'ready' ? result.items : [];
     const includeBuiltIns = this.includeBuiltIns
       && match.atInputStart
       && match.trigger === '/';
-    const items = this.buildItems(providerEntries, includeBuiltIns)
+    const items = this.#buildItems(providerEntries, includeBuiltIns)
       .filter(item => {
         const query = match.query.toLocaleLowerCase();
         return item.label.toLocaleLowerCase().includes(query)
@@ -148,7 +148,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
     if (value.kind === 'retry') {
       return {
         kind: 'invoke',
-        onApplied: () => this.startDiscovery('retry'),
+        onApplied: () => this.#startDiscovery('retry'),
       };
     }
     return {
@@ -171,7 +171,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
     this.providerConfig = config;
     this.providerId = config.providerId;
     this.discovery = discovery;
-    this.bindDiscovery();
+    this.#bindDiscovery();
     this.notify();
   }
 
@@ -185,17 +185,17 @@ export class SlashCommandSource implements ComposerDropdownSource {
     return () => this.listeners.delete(listener);
   }
 
-  private bindDiscovery(): void {
+  #bindDiscovery(): void {
     this.discoveryUnsubscribe = this.discovery?.subscribe(() => this.notify()) ?? null;
   }
 
-  private startDiscovery(action: 'load' | 'retry'): void {
+  #startDiscovery(action: 'load' | 'retry'): void {
     const discovery = this.discovery;
     if (!discovery) return;
     void Promise.resolve().then(() => discovery[action]()).catch(() => undefined);
   }
 
-  private buildItems(
+  #buildItems(
     providerEntries: readonly ProviderCommandEntry[],
     includeBuiltIns: boolean,
   ): ComposerDropdownValueItem[] {

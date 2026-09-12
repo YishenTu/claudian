@@ -8,7 +8,6 @@ const RETIREMENT = {
   acknowledgementStatus: 'pending',
   cleanupOperationId: 'cleanup-one',
   cleanupStatus: 'pending',
-  cloudDevelopmentActorId: null,
   cloudRetirementId: null,
   cloudServerUrl: null,
   createdAt: '2026-08-13T00:00:00.000Z',

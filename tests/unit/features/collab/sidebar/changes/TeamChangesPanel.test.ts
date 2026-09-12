@@ -61,8 +61,8 @@ describe('TeamChangesPanel', () => {
   it('reads the initial snapshot once when subscription immediately publishes current state', async () => {
     const container = document.body.createDiv();
     const test = fixture(snapshot());
-    test.port.subscribe.mockImplementation(listener => {
-      listener(test.port.state);
+    test.port.observeProject.mockImplementation((_projectId, listener) => {
+      listener(snapshot());
       return test.subscription;
     });
 
@@ -98,6 +98,81 @@ describe('TeamChangesPanel', () => {
     await flush();
     expect(test.port.readSnapshot).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[data-request-id="request-team"]')).not.toBeNull();
+  });
+
+  it('renders the delivered coordination snapshot without another network read', async () => {
+    const container = document.body.createDiv();
+    const test = fixture(snapshot());
+    const panel = new TeamChangesPanel(container, {
+      onOpenFile: jest.fn(),
+      port: test.port,
+      project: project(),
+    });
+    await flush();
+    test.port.readSnapshot.mockRejectedValue(new Error('Unexpected second snapshot request'));
+
+    test.emit(snapshot({ requests: [request('request-new', 'member-b', 3)] }));
+    await flush();
+
+    expect(container.querySelector('[data-request-id="request-new"]')).not.toBeNull();
+    expect(container.querySelector('[data-request-id="request-team"]')).toBeNull();
+    panel.destroy();
+  });
+
+  it('keeps a newer event snapshot when an earlier inspection arrives later', async () => {
+    const container = document.body.createDiv();
+    const earlier = snapshot();
+    const test = fixture(earlier);
+    const panel = new TeamChangesPanel(container, {
+      onOpenFile: jest.fn(), port: test.port, project: project(),
+    });
+    await flush();
+    const newer = snapshot({ requests: [request('request-new', 'member-b', 3)] });
+    const delivered = {
+      ...newer,
+      snapshot: { ...newer.snapshot, eventSequence: 3 },
+      syncState: { ...newer.syncState, eventSequence: 3 },
+    };
+    test.emit();
+    test.emit(delivered);
+    panel.adoptSnapshot(earlier);
+    await flush();
+
+    expect(container.querySelector('[data-request-id="request-new"]')).not.toBeNull();
+    expect(container.querySelector('[data-request-id="request-team"]')).toBeNull();
+    panel.destroy();
+  });
+
+  it('keeps fresh local conflict activity from an inspection with an older snapshot', async () => {
+    const container = document.body.createDiv();
+    const earlier = snapshot();
+    const test = fixture(earlier);
+    const panel = new TeamChangesPanel(container, {
+      onOpenFile: jest.fn(), port: test.port, project: project(),
+    });
+    await flush();
+    test.emit({
+      ...earlier,
+      snapshot: { ...earlier.snapshot, eventSequence: 3 },
+      syncState: { ...earlier.syncState, eventSequence: 3 },
+    });
+    panel.adoptSnapshot(earlier, { operationId: 'operation-a', requestId: 'request-mine' });
+    expect(container.querySelector('[data-request-id="request-mine"]')?.textContent)
+      .toContain('View conflicts');
+    panel.destroy();
+  });
+
+  it('adopts a snapshot from a replacement session whose generation restarted', async () => {
+    const container = document.body.createDiv();
+    const initial = snapshot();
+    const test = fixture({ ...initial, syncState: { ...initial.syncState, generation: 1 } });
+    const panel = new TeamChangesPanel(container, {
+      onOpenFile: jest.fn(), port: test.port, project: project(),
+    });
+    await flush();
+    test.emit(snapshot({ requests: [request('request-new', 'member-b', 3)] }));
+    expect(container.querySelector('[data-request-id="request-new"]')).not.toBeNull();
+    panel.destroy();
   });
 
   it('restarts an expanded review that was aborted while inactive', async () => {
@@ -619,6 +694,7 @@ function snapshot(options: {
         id: 'project-a',
         mainOid: MAIN,
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Alpha',
       },
@@ -680,7 +756,7 @@ function fixture(value: CollabCoordinationSnapshot) {
     projects: [project()],
     selectedProjectId: 'project-a',
   };
-  const listeners = new Set<(state: CollabFeatureState) => void>();
+  const listeners = new Set<(state: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => void>();
   const subscription = { dispose: jest.fn() };
   const port = {
     get state() { return state; },
@@ -688,15 +764,16 @@ function fixture(value: CollabCoordinationSnapshot) {
       success(review(requestId))
     )),
     readSnapshot: jest.fn().mockResolvedValue(success(value)),
-    subscribe: jest.fn((listener: (next: CollabFeatureState) => void) => {
+    observeProject: jest.fn((_projectId: string, observer: (coordination?: CollabCoordinationSnapshot) => void) => {
+      const listener = (_state: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => observer(coordination);
       listeners.add(listener);
       return subscription;
     }),
   } as unknown as jest.Mocked<TeamChangesPanelPort>;
   return {
-    emit() {
+    emit(coordination?: CollabCoordinationSnapshot) {
       state = { ...state };
-      for (const listener of listeners) listener(state);
+      for (const listener of listeners) listener(state, coordination);
     },
     port,
     subscription,

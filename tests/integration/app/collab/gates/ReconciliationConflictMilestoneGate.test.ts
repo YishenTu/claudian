@@ -1,4 +1,4 @@
-import {
+import fs, {
   mkdir,
   mkdtemp,
   readFile,
@@ -40,7 +40,9 @@ describe('M6 publish conflict gate', () => {
     root = '';
   });
 
-  it('auto-syncs contribution-free work and exposes open-request conflicts', async () => {
+  it.each(['normal', 'cleanup retry', 'cleanup restart'] as const)(
+    'auto-syncs contribution-free work and completes conflict publication with %s',
+    async recovery => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-m6-gate-'));
     const hostRoot = path.join(root, 'host-vault');
     const memberARoot = path.join(root, 'member-a-vault');
@@ -52,10 +54,10 @@ describe('M6 publish conflict gate', () => {
     });
     const host = createFoundation(hostRoot, invitationCodec, await availablePort(), true);
     const memberA = createFoundation(memberARoot, invitationCodec);
-    const memberB = createFoundation(memberBRoot, invitationCodec);
+    let memberB = createFoundation(memberBRoot, invitationCodec);
     const hostFeature = createFeature(host, hostRoot);
     const memberAFeature = createFeature(memberA, memberARoot);
-    const memberBFeature = createFeature(memberB, memberBRoot);
+    let memberBFeature = createFeature(memberB, memberBRoot);
 
     unwrap(await hostFeature.initialize(), 'Host initialization');
     unwrap(await memberAFeature.initialize(), 'Member A initialization');
@@ -171,6 +173,41 @@ describe('M6 publish conflict gate', () => {
       writeFile(path.join(memberBPath, 'agent.md'), 'reviewed agent file\n'),
       writeFile(path.join(memberBPath, 'manual.md'), 'manual reviewed\n'),
     ]);
+    let observedInterruption: unknown = null;
+    let faultInjected = false;
+    if (recovery !== 'normal') {
+      const operationPath = path.join(
+        memberBRoot,
+        memberB.local.projects.getConflictDirectoryPath(),
+        operationId,
+      );
+      const realRm = fs.rm;
+      const fault = jest.spyOn(fs, 'rm').mockImplementation(async (target, options) => {
+        if (!faultInjected && String(target) === operationPath) {
+          faultInjected = true;
+          throw Object.assign(new Error('Temporary scratch cleanup failure'), { code: 'EBUSY' });
+        }
+        return realRm(target, options);
+      });
+      try {
+        observedInterruption = await memberBFeature.publish({
+          description: memberBRequest.description,
+          projectId,
+        });
+      } finally {
+        fault.mockRestore();
+      }
+      if (recovery === 'cleanup restart') {
+        await memberBFeature.close();
+        await memberB.close();
+        memberB = createFoundation(memberBRoot, invitationCodec);
+        memberBFeature = createFeature(memberB, memberBRoot);
+        unwrap(await memberBFeature.initialize(), 'Restarted Member B initialization');
+      }
+    }
+    expect(faultInjected).toBe(recovery !== 'normal');
+    const expectedInterruption = expect.objectContaining({ durableProgress: true, status: 'recovery-required' });
+    expect(observedInterruption).toEqual(recovery === 'normal' ? null : expectedInterruption);
     const prepared = unwrap(await memberBFeature.publish({
       description: memberBRequest.description,
       projectId,
@@ -204,7 +241,8 @@ describe('M6 publish conflict gate', () => {
     const memberBGit = await memberB.requireGitFoundation();
     expect(await memberBGit.repositories.getWorkingTreeStatus(memberBPath)).toEqual([]);
     expect(memberBGit.runner.activeProcessCount).toBe(0);
-  });
+    },
+  );
 
   function createFoundation(
     vaultRoot: string,
@@ -216,8 +254,8 @@ describe('M6 publish conflict gate', () => {
       installationKey: TEST_INSTALLATION_A,
       ...(ownsAuthority
         ? {
-          createAuthorityDatabase: (authorityDirectory: string) => (
-            new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+          createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
+            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

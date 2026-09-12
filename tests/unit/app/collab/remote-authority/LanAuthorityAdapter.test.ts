@@ -7,6 +7,7 @@ const PROJECT_ID = 'project-authority-lan';
 function membership(): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.20:41730',
       gitRemoteUrl: `https://192.168.1.20:41730/v1/git/${PROJECT_ID}/repository.git`,
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
@@ -42,7 +43,7 @@ describe('LanAuthorityAdapter', () => {
     const adapter = new LanAuthorityAdapter({
       createControl: () => control,
       createEvent,
-      createMembershipControl: () => ({ membership: jest.fn() }),
+      createMembershipControl: () => ({ authorityKind: 'lan', membership: jest.fn() }),
     });
 
     const session = await adapter.create(membership());
@@ -105,7 +106,7 @@ describe('LanAuthorityAdapter', () => {
       createEvent,
       createMembershipControl: record => {
         membershipControlMemberships.push(record);
-        return { membership: jest.fn() };
+        return { authorityKind: 'lan', membership: jest.fn() };
       },
       resolveLocalTarget: jest.fn().mockResolvedValue(
         localEndpoint === null ? null : { endpoint: localEndpoint },

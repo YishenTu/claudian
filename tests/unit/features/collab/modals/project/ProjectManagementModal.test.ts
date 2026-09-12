@@ -1,6 +1,8 @@
 /** @jest-environment jsdom */
 
 import { type CollabMember } from '@claudian-collab/protocol';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { configureAxe } from 'jest-axe';
 
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -21,6 +23,8 @@ import {
   ProjectManagementModal,
   type ProjectManagementModalPort,
 } from '@/features/collab/modals/project/ProjectManagementModal';
+
+const axe = configureAxe({ rules: { region: { enabled: false } } });
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
 
@@ -73,23 +77,55 @@ function createPort(
   const currentMember = members.find(member => member.id === identity.currentMemberId)
     ?? members[0]!;
   return {
+    moveCloudToLan: jest.fn().mockResolvedValue(success({} as never)),
+    moveLanToCloud: jest.fn().mockResolvedValue(success({} as never)),
+    acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
     createInvitation: jest.fn().mockResolvedValue(success({
       encodedInvitation: 'claudian-collab:v2:invite-alpha',
       expiresAt: '2026-08-08T00:15:00.000Z',
     })),
     acceptHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
+    acceptLanToCloudTransfer: jest.fn().mockResolvedValue(success({} as never)),
+    beginCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
+    cancelCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
     cancelHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
+    cancelLanToCloudTransfer: jest.fn().mockResolvedValue(success({} as never)),
     cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue(success({} as never)),
     claimLegacyHostInstallation: jest.fn().mockResolvedValue(success(project({
       hostInstallationStatus: 'hosted-here',
       hostStatus: 'stopped',
     }))),
+    completeManagementOperation: jest.fn().mockResolvedValue(success(undefined)),
     createHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     createManagerResponsibilityOffer: jest.fn().mockResolvedValue(success({} as never)),
     declineHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     demoteManager: jest.fn().mockResolvedValue(success(undefined)),
     leaveProject: jest.fn().mockResolvedValue(success(undefined)),
+    listInvitations: jest.fn().mockResolvedValue(success([])),
+    listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+    listMembers: jest.fn().mockResolvedValue(success(members.map(item => ({
+      displayName: item.displayName,
+      importedClaim: null,
+      memberId: item.id,
+      role: item.role,
+    })))),
+    observeCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
+    prepareCloudToLanTarget: jest.fn().mockResolvedValue(success({} as never)),
+    proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({} as never)),
     promoteManager: jest.fn().mockResolvedValue(success(undefined)),
+    readLanToCloudTransfer: jest.fn().mockResolvedValue(success(null)),
+    readCloudToLanTransfer: jest.fn().mockResolvedValue(success(null)),
+    readManagementOperation: jest.fn().mockResolvedValue(success(null)),
+    readProjectCapabilities: jest.fn().mockResolvedValue(success({
+      authorityKind: 'lan',
+      authorityTransfer: true,
+      importedMemberClaims: false,
+      invitations: true,
+      leave: true,
+      managerResponsibility: true,
+      membershipManagement: true,
+      retirement: true,
+    })),
     readSnapshot: jest.fn().mockResolvedValue(success({
       snapshot: {
         currentMember,
@@ -101,7 +137,10 @@ function createPort(
       syncState: { status: 'synchronized' },
     } as never)),
     removeMember: jest.fn().mockResolvedValue(success(undefined)),
+    reissueMemberClaim: jest.fn().mockResolvedValue(success({} as never)),
+    resumeManagementOperation: jest.fn().mockResolvedValue(success({} as never)),
     revokeInvitation: jest.fn().mockResolvedValue(success(undefined)),
+    revokeMemberClaim: jest.fn().mockResolvedValue(success(undefined)),
     retireProject: jest.fn().mockResolvedValue(success(undefined)),
     startHost: jest.fn().mockResolvedValue(success({
       projectId: 'project-alpha',
@@ -112,6 +151,7 @@ function createPort(
       status: 'stopped',
     })),
     subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    withdrawCloudToLanTarget: jest.fn().mockResolvedValue(success(undefined)),
     ...overrides,
   } as jest.Mocked<ProjectManagementModalPort>;
 }
@@ -123,12 +163,133 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('identifies the Project and groups management into named sections', async () => {
+    const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    expect(ui.getByRole('heading', { level: 2, name: 'Alpha' })).not.toBeNull();
+    expect(ui.getByText('workspace/alpha')).not.toBeNull();
+    expect(ui.getByText('1 member')).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Members' }))
+      .getByRole('button', { name: 'Create invitation' })).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Hosting' }))
+      .getByRole('button', { name: 'Move to Cloud' })).not.toBeNull();
+    expect(within(ui.getByRole('region', { name: 'Project actions' }))
+      .getByRole('button', { name: 'Leave project' })).not.toBeNull();
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it.each(['Leave project', 'Retire project'])(
+    'shows the %s confirmation below the Project actions controls', async action => {
+      const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+      const modal = new ProjectManagementModal({} as never, port, { project: project() });
+      document.body.appendChild(modal.contentEl);
+      modal.onOpen();
+      await flush();
+      const ui = within(modal.contentEl);
+      fireEvent.click(ui.getByRole('button', { name: action }));
+      const actions = within(ui.getByRole('region', { name: 'Project actions' }));
+      const confirm = actions.getByRole('button', { name: 'Confirm' });
+      const retire = actions.getByRole('button', { name: 'Retire project' });
+      expect(retire.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING)
+        .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(await axe(modal.contentEl)).toHaveNoViolations();
+      fireEvent.click(actions.getByRole('button', { name: 'Cancel' }));
+      expect(ui.queryByRole('button', { name: 'Confirm' })).toBeNull();
+      expect(port.leaveProject).not.toHaveBeenCalled();
+      expect(port.retireProject).not.toHaveBeenCalled();
+      modal.onClose();
+      modal.contentEl.remove();
+    },
+  );
+
+  it('expands the Cloud move form on request and preserves its draft when collapsed', async () => {
+    const port = createPort([member('member-manager', 'Alice', { role: 'manager' })]);
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    modal.onOpen();
+    await flush();
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    const toggle = ui.getByRole('button', { name: 'Move to Cloud' });
+    expect(toggle.getAttribute('type')).toBe('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(ui.queryByRole('textbox', { name: 'Cloud server URL' })).toBeNull();
+    fireEvent.click(toggle);
+    const input = ui.getByRole('textbox', { name: 'Cloud server URL' });
+    fireEvent.input(input, { target: { value: 'https://cloud.example.test/' } });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(ui.queryByRole('textbox', { name: 'Cloud server URL' })).toBeNull();
+    fireEvent.click(toggle);
+    expect((ui.getByRole('textbox', { name: 'Cloud server URL' }) as HTMLInputElement).value)
+      .toBe('https://cloud.example.test/');
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it('keeps ordinary-member Cloud Leave reachable while the authority is offline', async () => {
+    const port = createPort([], {
+      readProjectCapabilities: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+      readSnapshot: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({
+        authorityKind: 'cloud',
+        connectionStatus: 'offline',
+        role: 'member',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+    modal.contentEl.querySelector<HTMLButtonElement>('[data-action="leave-project"]')?.click();
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="confirm-access-action"]',
+    )?.click();
+    await flush();
+
+    expect(port.leaveProject).toHaveBeenCalledWith({
+      cleanupChoice: 'keep-files',
+      projectId: 'project-alpha',
+    });
+  });
+
   it('renders Cloud membership without exposing LAN lifecycle actions', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),
       member('member-maya', 'Maya'),
     ];
     const port = createPort(members, {
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud',
+        authorityTransfer: false,
+        importedMemberClaims: false,
+        invitations: false,
+        leave: false,
+        managerResponsibility: false,
+        membershipManagement: false,
+        retirement: false,
+      })),
       readSnapshot: jest.fn().mockResolvedValue(success({
         snapshot: {
           currentMember: members[0],
@@ -176,6 +337,1514 @@ describe('ProjectManagementModal', () => {
     }
   });
 
+  it('renders negotiated Cloud lifecycle, membership, and imported-claim actions', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([
+        { displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager' },
+        {
+          displayName: 'Maya',
+          importedClaim: { bindingState: 'unbound', state: 'expired' },
+          memberId: 'member-maya',
+          role: 'member',
+        },
+      ])),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: true,
+        invitations: true,
+        leave: true,
+        managerResponsibility: true,
+        membershipManagement: true,
+        retirement: true,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+      reissueMemberClaim: jest.fn().mockResolvedValue(success({
+        encodedInvitation: 'claudian-cloud-claim:v1:replacement',
+        expiresAt: '2026-09-10T00:00:00.000Z',
+      })),
+      readManagementOperation: jest.fn()
+        .mockResolvedValueOnce(success(null))
+        .mockResolvedValue(success({
+          action: 'reissue-member-claim',
+          completionId: 'completion-reissued-claim',
+          invitation: {
+            encodedInvitation: 'claudian-cloud-claim:v1:replacement',
+            expiresAt: '2026-09-10T00:00:00.000Z',
+          },
+          secretAvailableUntil: '2026-09-10T00:00:00.000Z',
+          status: 'result-retained',
+        })),
+    });
+    const copyText = jest.fn().mockResolvedValue(undefined);
+    const modal = new ProjectManagementModal({} as never, port, {
+      copyText,
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    for (const action of [
+      'create-invitation',
+      'leave-project',
+      'retire-project',
+      'make-manager',
+      'remove-member',
+      'reissue-member-claim',
+      'revoke-member-claim',
+    ]) {
+      expect(modal.contentEl.querySelector(`[data-action="${action}"]`)).not.toBeNull();
+    }
+    expect(modal.contentEl.querySelector('[data-action="make-manager"]')?.getAttribute(
+      'aria-label',
+    )).toBe('Make Manager: Maya');
+    expect(modal.contentEl.querySelector('[data-action="remove-member"]')?.getAttribute(
+      'aria-label',
+    )).toBe('Remove: Maya');
+    expect(modal.contentEl.querySelector('[data-action="start-host"]')).toBeNull();
+
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="reissue-member-claim"]',
+    )?.click();
+    await flush();
+    expect(port.reissueMemberClaim).toHaveBeenCalledWith({
+      memberId: 'member-maya',
+      projectId: 'project-alpha',
+    });
+    expect(modal.contentEl.textContent).toContain('claudian-cloud-claim:v1:replacement');
+
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="copy-member-claim"]',
+    )?.click();
+    await flush();
+    expect(copyText).toHaveBeenCalledWith('claudian-cloud-claim:v1:replacement');
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      completionId: 'completion-reissued-claim',
+      projectId: 'project-alpha',
+    });
+  });
+
+  it('redacts a retained member claim when its secret availability expires', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
+      const members = [member('member-manager', 'Alice', { role: 'manager' })];
+      const port = createPort(members, {
+        readManagementOperation: jest.fn().mockResolvedValue(success({
+          action: 'reissue-member-claim',
+          completionId: 'completion-expiring-claim',
+          invitation: {
+            encodedInvitation: 'claudian-cloud-claim:v1:expiring-secret',
+            expiresAt: '2026-09-10T00:00:00.000Z',
+          },
+          secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+          status: 'result-retained',
+        })),
+        readProjectCapabilities: jest.fn().mockResolvedValue(success({
+          authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+          invitations: true, leave: true, managerResponsibility: true,
+          membershipManagement: true, retirement: true,
+        })),
+        readSnapshot: jest.fn().mockResolvedValue(success({
+          snapshot: {
+            currentMember: members[0], members,
+            project: { authorityGeneration: 4, authorityKind: 'cloud' },
+          },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never)),
+      } as never);
+      const modal = new ProjectManagementModal({} as never, port, {
+        project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+      });
+
+      modal.onOpen();
+      await flush();
+      await flush();
+      expect(modal.contentEl.textContent)
+        .toContain('claudian-cloud-claim:v1:expiring-secret');
+
+      jest.advanceTimersByTime(1_000);
+
+      expect(modal.contentEl.textContent)
+        .not.toContain('claudian-cloud-claim:v1:expiring-secret');
+      expect(modal.contentEl.querySelector('[data-action="copy-member-claim"]')).toBeNull();
+      expect(modal.contentEl.querySelector(
+        '[data-action="complete-management-operation"]',
+      )).not.toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('revalidates a retained member claim immediately before copying it', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
+      const members = [member('member-manager', 'Alice', { role: 'manager' })];
+      const retained = {
+        action: 'reissue-member-claim' as const,
+        completionId: 'completion-claim-revalidation',
+        invitation: {
+          encodedInvitation: 'claudian-cloud-claim:v1:stale-secret',
+          expiresAt: '2026-09-10T00:00:00.000Z',
+        },
+        secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+        status: 'result-retained' as const,
+      };
+      const port = createPort(members, {
+        readManagementOperation: jest.fn()
+          .mockResolvedValueOnce(success(retained))
+          .mockResolvedValueOnce(success({ ...retained, invitation: null })),
+        readProjectCapabilities: jest.fn().mockResolvedValue(success({
+          authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+          invitations: true, leave: true, managerResponsibility: true,
+          membershipManagement: true, retirement: true,
+        })),
+        readSnapshot: jest.fn().mockResolvedValue(success({
+          snapshot: {
+            currentMember: members[0], members,
+            project: { authorityGeneration: 4, authorityKind: 'cloud' },
+          },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never)),
+      } as never);
+      const copyText = jest.fn().mockResolvedValue(undefined);
+      const modal = new ProjectManagementModal({} as never, port, {
+        copyText,
+        project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+      });
+
+      modal.onOpen();
+      await flush();
+      await flush();
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:01.000Z'));
+      modal.contentEl.querySelector<HTMLButtonElement>(
+        '[data-action="copy-member-claim"]',
+      )?.click();
+      await flush();
+
+      expect(port.readManagementOperation).toHaveBeenCalledTimes(2);
+      expect(copyText).not.toHaveBeenCalled();
+      expect(modal.contentEl.textContent)
+        .not.toContain('claudian-cloud-claim:v1:stale-secret');
+      expect(modal.contentEl.querySelector(
+        '[data-action="complete-management-operation"]',
+      )).not.toBeNull();
+      expect(port.completeManagementOperation).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('hides imported-claim actions for an already bound Member', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([
+        { displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager' },
+        {
+          displayName: 'Maya',
+          importedClaim: { bindingState: 'bound', state: 'hidden' },
+          memberId: 'member-maya',
+          role: 'member',
+        },
+      ])),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+        invitations: false, leave: false, managerResponsibility: true,
+        membershipManagement: true, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    const maya = modal.contentEl.querySelector('[data-member-id="member-maya"]')!;
+    expect(maya.querySelector('[data-action="reissue-member-claim"]')).toBeNull();
+    expect(maya.querySelector('[data-action="revoke-member-claim"]')).toBeNull();
+  });
+
+  it('lets any LAN Member propose a raw Cloud target without exposing Host acceptance', async () => {
+    const members = [
+      member('member-host', 'Host', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      proposeLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        phase: 'collecting-readiness', state: 'active', transferId: 'transfer-member-request',
+      } as never)),
+    }, {
+      currentMemberId: 'member-maya',
+      hostMemberId: 'member-host',
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', role: 'member' }),
+    });
+    modal.onOpen();
+    await flush();
+
+    const serverUrl = modal.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="lan-to-cloud-server-url"]',
+    )!;
+    serverUrl.value = ' HTTP://203.0.113.20:8787/operator/cloud ';
+    serverUrl.dispatchEvent(new Event('input'));
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="propose-lan-to-cloud"]',
+    )?.click();
+    await flush();
+
+    expect(port.proposeLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      serverUrl: ' HTTP://203.0.113.20:8787/operator/cloud ',
+    });
+    expect(modal.contentEl.querySelector('[data-action="accept-lan-to-cloud"]')).toBeNull();
+    expect(port.acceptLanToCloudTransfer).not.toHaveBeenCalled();
+  });
+
+  it('does not expose Host acceptance on an installation hosted elsewhere', async () => {
+    const proposal = {
+      proposedByMemberId: 'member-maya',
+      serverUrl: 'https://cloud.example.test/',
+      status: {
+        phase: 'collecting-readiness',
+        state: 'active',
+      },
+    } as never;
+    const members = [member('member-host', 'Host', { role: 'manager' })];
+    const port = createPort(members, {
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success(proposal)),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ hostInstallationStatus: 'hosted-elsewhere' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.querySelector('[data-action="accept-lan-to-cloud"]')).toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="cancel-lan-to-cloud"]')).toBeNull();
+  });
+
+  it('keeps Cloud management open read-only until the user explicitly resumes it', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      listMembers: jest.fn().mockResolvedValue(success(members.map(item => ({
+        displayName: item.displayName,
+        importedClaim: null,
+        memberId: item.id,
+        role: item.role,
+      })))),
+      readManagementOperation: jest.fn().mockResolvedValue(success({
+        action: 'remove-member',
+        completionId: 'completion-pending',
+        invitation: null,
+        secretAvailableUntil: null,
+        status: 'pending',
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: false,
+        membershipManagement: true, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+      resumeManagementOperation: jest.fn().mockResolvedValue(success({
+        action: 'remove-member',
+        completionId: 'completion-retained',
+        invitation: null,
+        secretAvailableUntil: null,
+        status: 'result-retained',
+      })),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+    expect(port.resumeManagementOperation).not.toHaveBeenCalled();
+
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="resume-management-operation"]',
+    )?.click();
+    await flush();
+    expect(port.resumeManagementOperation).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores durable Cloud management controls when authority reads are offline', async () => {
+    const port = createPort([], {
+      readManagementOperation: jest.fn().mockResolvedValue(success({
+        action: 'remove-member',
+        completionId: 'completion-offline',
+        invitation: null,
+        secretAvailableUntil: null,
+        status: 'result-retained',
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+      readSnapshot: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'offline' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(port.readManagementOperation).toHaveBeenCalledWith(
+      'project-alpha',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(modal.contentEl.querySelector('[data-action="complete-management-operation"]'))
+      .not.toBeNull();
+  });
+
+  it('restores a pending LAN-to-Cloud requester intent while the LAN Host is offline', async () => {
+    const proposal = {
+      proposedByMemberId: 'member-maya',
+      serverUrl: 'http://203.0.113.20:8787/operator/cloud',
+      sourceOwned: false,
+      status: null,
+    } as const;
+    const port = createPort([], {
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success(proposal)),
+      readProjectCapabilities: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+      readSnapshot: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'lan', connectionStatus: 'offline', role: 'member' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const input = modal.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="lan-to-cloud-server-url"]',
+    );
+    expect(input?.value).toBe(proposal.serverUrl);
+    within(modal.contentEl).getByRole('button', { name: 'Retry move to Cloud' }).click();
+    await flush();
+    expect(port.proposeLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      serverUrl: proposal.serverUrl,
+    });
+  });
+
+  it('refreshes LAN durable transfer state after a recovery-required proposal result', async () => {
+    const proposal = {
+      proposedByMemberId: 'member-maya',
+      serverUrl: 'https://cloud.example.test/',
+      sourceOwned: false,
+      status: { phase: 'collecting-readiness', state: 'active' } as never,
+    };
+    const members = [member('member-maya', 'Maya')];
+    const port = createPort(members, {
+      proposeLanToCloudTransfer: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'durable-progress-recovery-required' }),
+        operationId: 'intent-lan-to-cloud',
+        status: 'recovery-required',
+      }),
+      readLanToCloudTransfer: jest.fn()
+        .mockResolvedValueOnce(success(null))
+        .mockResolvedValueOnce(success(proposal)),
+    }, { currentMemberId: 'member-maya', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', role: 'member' }),
+    });
+    modal.onOpen();
+    await flush();
+    const input = modal.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="lan-to-cloud-server-url"]',
+    )!;
+    input.value = proposal.serverUrl;
+    input.dispatchEvent(new Event('input'));
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="propose-lan-to-cloud"]',
+    )?.click();
+    await flush();
+
+    expect(port.readLanToCloudTransfer).toHaveBeenCalledTimes(2);
+    expect(modal.contentEl.textContent).toContain(proposal.serverUrl);
+  });
+
+  it.each([
+    ['member-manager', 'Retry move to Cloud'],
+    ['member-other', 'Accept move to Cloud'],
+  ])('binds %s LAN-to-Cloud actions to the saved transfer on reopen', async (proposedByMemberId, label) => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-other', 'Maya'),
+    ];
+    const proposal = {
+      proposedByMemberId,
+      serverUrl: 'https://cloud.example.test/',
+      sourceOwned: true,
+      status: {
+        phase: 'collecting-readiness',
+        state: 'active',
+        transferId: 'transfer-visible',
+      } as never,
+    };
+    const port = createPort(members, {
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success(proposal)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: label }));
+    await flush();
+    expect(port.acceptLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      transferId: 'transfer-visible',
+    });
+
+    modal.onOpen();
+    await flush();
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="cancel-lan-to-cloud"]',
+    )?.click();
+    await flush();
+    expect(port.cancelLanToCloudTransfer).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      transferId: 'transfer-visible',
+    });
+  });
+
+  it('clears stale privileged footer actions while a refresh fails', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    let listener: ((state: CollabFeatureState) => void) | undefined;
+    const port = createPort(members, {
+      readProjectCapabilities: jest.fn()
+        .mockResolvedValueOnce(success({
+          authorityKind: 'lan', authorityTransfer: false, importedMemberClaims: false,
+          invitations: true, leave: true, managerResponsibility: true,
+          membershipManagement: true, retirement: true,
+        }))
+        .mockResolvedValueOnce({
+          error: new CollabError({ code: 'endpoint-unreachable' }),
+          status: 'failure',
+        }),
+      readSnapshot: jest.fn()
+        .mockResolvedValueOnce(success({
+          snapshot: {
+            currentMember: members[0], members,
+            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
+          },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never))
+        .mockResolvedValueOnce({
+          error: new CollabError({ code: 'endpoint-unreachable' }),
+          status: 'failure',
+        }),
+      subscribe: jest.fn().mockImplementation(next => {
+        listener = next;
+        return { dispose: jest.fn() };
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    expect(modal.contentEl.querySelector('[data-action="create-invitation"]')).not.toBeNull();
+
+    listener?.({ lifecycle: 'ready', projects: [project()], selectedProjectId: 'project-alpha' });
+    await flush();
+
+    expect(modal.contentEl.querySelector('[data-action="create-invitation"]')).toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="retire-project"]')).toBeNull();
+  });
+
+  it('closes when the selected Project changes and fences the old Project surface', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let listener: ((state: CollabFeatureState) => void) | undefined;
+    const port = createPort(members, {
+      subscribe: jest.fn().mockImplementation(next => {
+        listener = next;
+        return { dispose: jest.fn() };
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+
+    listener?.({
+      lifecycle: 'ready',
+      projects: [project(), project({ id: 'project-beta', name: 'Beta' })],
+      selectedProjectId: 'project-beta',
+    });
+
+    expect(modal.close).toHaveBeenCalledTimes(1);
+    expect(modal.contentEl.childElementCount).toBe(0);
+  });
+
+  it('disposes a synchronously delivered foreign-Project subscription before reading', () => {
+    const dispose = jest.fn();
+    const port = createPort([], {
+      subscribe: jest.fn().mockImplementation(next => {
+        next({
+          lifecycle: 'ready',
+          projects: [project({ id: 'project-beta', name: 'Beta' })],
+          selectedProjectId: 'project-beta',
+        });
+        return { dispose };
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(port.readSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('locks competing Cloud management controls while a durable operation is pending', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      readManagementOperation: jest.fn().mockResolvedValue(success({
+        action: 'remove-member',
+        completionId: 'completion-lock',
+        invitation: null,
+        secretAvailableUntil: null,
+        status: 'pending',
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: false,
+        invitations: true, leave: true, managerResponsibility: true,
+        membershipManagement: true, retirement: true,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    expect(modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="resume-management-operation"]',
+    )?.disabled).toBe(false);
+    for (const action of [
+      'create-invitation',
+      'make-manager',
+      'remove-member',
+      'leave-project',
+      'retire-project',
+    ]) {
+      expect(modal.contentEl.querySelector<HTMLButtonElement>(
+        `[data-action="${action}"]`,
+      )?.disabled).toBe(true);
+    }
+  });
+
+  it('shows persisted authority-transfer recovery when negotiation disables new actions', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      preparationId: 'preparation-recovery',
+      projectId: 'project-alpha',
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+    } as never;
+    const port = createPort(members, {
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
+        manager: {
+          descriptor,
+          handle: { operationIntentId: 'intent-recovery', transferId: 'transfer-recovery' },
+          status: { phase: 'source-quiesced', state: 'active' },
+        },
+        target: null,
+      } as never)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).toContain('In progress');
+    expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="observe-cloud-to-lan"]')).toBeNull();
+  });
+
+  it('explains a saved pre-publication transfer when capability negotiation is unavailable', async () => {
+    const members = [member('member-maya', 'Maya')];
+    const port = createPort(members, {
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
+        manager: null,
+        target: {
+          canWithdraw: false,
+          descriptor: null,
+          handle: null,
+          status: null,
+        },
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: true, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected', role: 'member' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).toContain('Pending');
+    expect(modal.contentEl.textContent).toContain('compatible server connection');
+  });
+
+  it('shows a saved Manager preparation when capability negotiation is unavailable', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      preparationId: 'preparation-manager-recovery',
+      projectId: 'project-alpha',
+      selectedTargetMemberId: 'member-maya',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+    } as never;
+    const port = createPort(members, {
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
+        manager: { descriptor, handle: null, status: null },
+        target: null,
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).toContain('preparation-manager-recovery');
+    expect(modal.contentEl.textContent).toContain('Pending');
+  });
+
+  it('keeps pending invitation recovery reachable when the current capability is disabled', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      readManagementOperation: jest.fn().mockResolvedValue(success({
+        action: 'create-invitation',
+        completionId: 'completion-invitation',
+        invitation: null,
+        secretAvailableUntil: null,
+        status: 'pending',
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const invitation = modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="create-invitation"]',
+    );
+    expect(invitation).not.toBeNull();
+    expect(invitation?.disabled).toBe(false);
+    expect(invitation?.textContent).toBe('Resume invitation');
+  });
+
+  it('fails closed when the durable management read fails with capabilities disabled', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      readManagementOperation: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).toContain('Members could not be loaded');
+    expect(modal.contentEl.querySelector('[data-action="retry-members"]')).not.toBeNull();
+  });
+
+  it('moves directly to Cloud when the local Host requests the move', async () => {
+    const members = [member('member-host', 'Host')];
+    const port = createPort(members, {
+      moveLanToCloud: jest.fn().mockResolvedValue(success({
+        phase: 'completed', state: 'completed', transferId: 'transfer-proposed',
+      } as never)),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+        role: 'member',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+    const input = modal.contentEl.querySelector<HTMLInputElement>(
+      '[data-field="lan-to-cloud-server-url"]',
+    )!;
+    input.value = 'https://cloud.example.test/';
+    input.dispatchEvent(new Event('input'));
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="propose-lan-to-cloud"]',
+    )?.click();
+    await flush();
+
+    expect(port.moveLanToCloud).toHaveBeenCalledWith({
+      projectId: 'project-alpha', serverUrl: 'https://cloud.example.test/',
+    });
+    expect(modal.close).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('keeps the exact Host move available for retry after automatic acceptance fails', async () => {
+    const port = createPort([member('member-host', 'Host')], {
+      moveLanToCloud: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }), status: 'failure',
+      }),
+      readLanToCloudTransfer: jest.fn().mockResolvedValueOnce(success(null)).mockResolvedValue(success({
+        proposedByMemberId: 'member-host', serverUrl: 'https://cloud.example.test/', sourceOwned: true,
+        status: { phase: 'collecting-readiness', state: 'active', transferId: 'transfer-host-retry' },
+      } as never)),
+      acceptLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+          phase: 'completed', state: 'completed', transferId: 'transfer-host-retry',
+        } as never)),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' }),
+    });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
+      target: { value: 'https://cloud.example.test/' },
+    });
+    fireEvent.click(within(modal.contentEl.querySelector('#claudian-collab-transfer-form')!).getByRole('button', { name: 'Move to Cloud' }));
+    await flush();
+    expect(port.moveLanToCloud).toHaveBeenCalledWith({
+      projectId: 'project-alpha', serverUrl: 'https://cloud.example.test/',
+    });
+    expect(ui.getByRole('alert').textContent).toContain('You can retry safely.');
+    expect(ui.getByRole('button', { name: 'Retry move to Cloud' })).toHaveProperty('disabled', false);
+    expect(modal.close).not.toHaveBeenCalled();
+    fireEvent.click(ui.getByRole('button', { name: 'Retry move to Cloud' }));
+    await flush();
+    expect(port.acceptLanToCloudTransfer).toHaveBeenLastCalledWith({
+      projectId: 'project-alpha', transferId: 'transfer-host-retry',
+    });
+    expect(modal.close).toHaveBeenCalled();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it('does not reopen the initiating modal when its application-owned Host move settles after close', async () => {
+    let finishMove!: (value: ReturnType<typeof success<never>>) => void;
+    const port = createPort([member('member-host', 'Host')], {
+      moveLanToCloud: jest.fn().mockImplementation(() => new Promise(resolve => {
+        finishMove = resolve;
+      })),
+    }, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' }),
+    });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen();
+    await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    fireEvent.input(ui.getByRole('textbox', { name: 'Cloud server URL' }), {
+      target: { value: 'https://cloud.example.test/' },
+    });
+    fireEvent.click(within(modal.contentEl.querySelector('#claudian-collab-transfer-form')!).getByRole('button', { name: 'Move to Cloud' }));
+    modal.close();
+    finishMove(success({
+      phase: 'completed', state: 'completed', transferId: 'transfer-after-close',
+    } as never));
+    await flush();
+    expect(port.moveLanToCloud).toHaveBeenCalledWith({ projectId: 'project-alpha', serverUrl: 'https://cloud.example.test/' });
+    expect(modal.contentEl.textContent).toBe('');
+    modal.contentEl.remove();
+  });
+
+  it('treats a persisted cancelled Cloud move as no current move', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        proposedByMemberId: 'member-manager',
+        serverUrl: 'http://100.89.0.41:8787',
+        sourceOwned: true,
+        status: {
+          phase: 'cancelled',
+          state: 'cancelled',
+          transferId: 'transfer-cancelled',
+        },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    document.body.appendChild(modal.contentEl);
+    const hosting = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-hosting',
+    )!;
+    expect(within(hosting).getByRole('button', { name: 'Move to Cloud' }))
+      .not.toBeNull();
+    expect(hosting.textContent).not.toContain('Cloud target:');
+    expect(hosting.textContent).not.toContain('Cancelled');
+    expect(hosting.querySelector('[data-field="lan-to-cloud-server-url"]')).not.toBeNull();
+    fireEvent.click(within(hosting).getByRole('button', { name: 'Move to Cloud' }));
+    const requestMove = within(hosting.querySelector('#claudian-collab-transfer-form')!).getByRole('button', {
+      name: 'Move to Cloud',
+    });
+    expect(requestMove.classList.contains('mod-cta')).toBe(true);
+    expect(requestMove.classList.contains(
+      'claudian-collab-authority-transfer-submit',
+    )).toBe(true);
+    expect(requestMove).toHaveProperty('disabled', true);
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it('shows persisted Cloud-to-LAN progress to the selected non-Manager target', async () => {
+    const members = [member('member-maya', 'Maya')];
+    const descriptor = {
+      preparationId: 'preparation-target',
+      projectId: 'project-alpha',
+      selectedTargetMemberId: 'member-maya',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+    } as never;
+    let observedStatus: { phase: string; state: string } | null = null;
+    const port = createPort(members, {
+      acceptCloudToLanTransfer: jest.fn().mockImplementation(async () => {
+        observedStatus = { phase: 'source-quiesced', state: 'active' };
+        return success(observedStatus as never);
+      }),
+      readCloudToLanTransfer: jest.fn().mockImplementation(async () => success({
+        manager: null,
+        target: {
+          canWithdraw: false,
+          descriptor,
+          handle: { operationIntentId: 'intent-target', transferId: 'transfer-target' },
+          status: observedStatus,
+        },
+      } as never)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: false,
+        invitations: false, leave: true, managerResponsibility: false,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected', role: 'member' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    expect(modal.contentEl.textContent).not.toContain('In progress');
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="accept-cloud-to-lan"]',
+    )?.click();
+    await flush();
+    await waitFor(() => expect(modal.contentEl.textContent).toContain('In progress'));
+    expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).toBeNull();
+  });
+
+  it.each([false, true])('moves to this LAN device with one action and retains a failed move for retry (%s)', async retry => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      expiresAt: '2026-09-10T00:00:00.000Z',
+      preparationId: 'preparation-one',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'http://cloud.example:8787',
+      targetUrl: 'https://192.168.1.30:54545',
+      transferId: 'transfer-one',
+    } as never;
+    const handle = {
+      operationIntentId: 'intent-one',
+      projectId: 'project-alpha',
+      transferId: 'transfer-one',
+    } as never;
+    const activeStatus = {
+      phase: 'source-quiesced',
+      state: 'active',
+    } as never;
+    const completedStatus = {
+      phase: 'completed',
+      state: 'completed',
+    } as never;
+    const port = createPort(members, {
+      moveCloudToLan: jest.fn().mockResolvedValueOnce(retry
+        ? { status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) }
+        : success(completedStatus)).mockResolvedValue(success(completedStatus)),
+      readCloudToLanTransfer: jest.fn().mockResolvedValueOnce(success(null)).mockResolvedValue(success({
+        manager: null,
+        target: { canWithdraw: false, descriptor, handle, status: activeStatus },
+      })),
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([{
+        displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager',
+      }])),
+      observeCloudToLanTransfer: jest.fn().mockResolvedValue(success(activeStatus)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: false,
+        leave: false,
+        managerResponsibility: true,
+        membershipManagement: true,
+        retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      copyText: jest.fn().mockResolvedValue(undefined),
+      onChanged,
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    const toggle = ui.getByRole('button', { name: 'Move to LAN' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(ui.queryByRole('button', { name: 'Prepare LAN target' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(ui.getByRole('combobox', { name: 'LAN host' })).not.toBeNull();
+    expect(ui.queryByRole('textbox')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Begin move to LAN' })).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Accept transfer on this device' })).toBeNull();
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="prepare-cloud-to-lan"]',
+    )?.click();
+    await flush();
+    expect(port.moveCloudToLan).toHaveBeenCalledWith('project-alpha');
+    await waitFor(() => expect(ui.queryByRole('button', { name: 'Retry' }) !== null).toBe(retry));
+    if (retry) {
+      fireEvent.click(ui.getByRole('button', { name: 'Retry' }));
+      await flush();
+    }
+    expect(port.moveCloudToLan).toHaveBeenLastCalledWith('project-alpha');
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    modal.contentEl.remove();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(modal.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows only the target input and returned handle when moving to another device', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      expiresAt: '2026-09-10T00:00:00.000Z',
+      preparationId: 'preparation-one',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'http://cloud.example:8787',
+      targetUrl: 'https://192.168.1.30:54545',
+      transferId: 'transfer-one',
+    } as never;
+    const handle = {
+      operationIntentId: 'intent-one',
+      projectId: 'project-alpha',
+      transferId: 'transfer-one',
+    } as never;
+    const activeStatus = {
+      phase: 'source-quiesced',
+      state: 'active',
+    } as never;
+    const completedStatus = {
+      phase: 'completed',
+      state: 'completed',
+    } as never;
+    const port = createPort(members, {
+      acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success(completedStatus)),
+      beginCloudToLanTransfer: jest.fn().mockResolvedValue(success(handle)),
+      readCloudToLanTransfer: jest.fn().mockResolvedValueOnce(success(null)).mockResolvedValue(success({
+        manager: { descriptor, handle, status: null }, target: null,
+      })),
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([{
+        displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager',
+      }])),
+      prepareCloudToLanTarget: jest.fn().mockResolvedValue(success(descriptor)),
+      observeCloudToLanTransfer: jest.fn().mockResolvedValue(success(activeStatus)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: false,
+        leave: false,
+        managerResponsibility: true,
+        membershipManagement: true,
+        retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const onChanged = jest.fn();
+    const copyText = jest.fn().mockResolvedValue(undefined);
+    const modal = new ProjectManagementModal({} as never, port, {
+      copyText,
+      onChanged,
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    document.body.appendChild(modal.contentEl);
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to LAN' }));
+    fireEvent.change(ui.getByRole('combobox', { name: 'LAN host' }), {
+      target: { value: 'another-device' },
+    });
+    expect(ui.queryByRole('button', { name: 'Prepare LAN target' })).toBeNull();
+    expect(ui.queryByRole('textbox', { name: 'Transfer handle' })).toBeNull();
+    fireEvent.input(ui.getByRole('textbox', { name: 'LAN target descriptor' }), {
+      target: { value: JSON.stringify(descriptor) },
+    });
+    fireEvent.click(ui.getByRole('button', { name: 'Begin move to LAN' }));
+    await flush();
+    expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ descriptor });
+    await waitFor(() => expect(ui.queryByRole('textbox', { name: 'LAN target descriptor' })).toBeNull());
+    expect(ui.queryByRole('button', { name: 'Accept transfer on this device' })).toBeNull();
+    expect((ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement).value)
+      .toBe(JSON.stringify(handle));
+    fireEvent.click(ui.getByRole('button', { name: 'Copy transfer data: Transfer handle' }));
+    await flush();
+    expect(copyText).toHaveBeenCalledWith(JSON.stringify(handle));
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    modal.onClose();
+    modal.contentEl.remove();
+  });
+
+  it('hides target-device controls when a Manager selected another Member installation', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const descriptor = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      preparationId: 'preparation-maya',
+      projectId: 'project-alpha',
+      publishedAt: CREATED_AT,
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-maya',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+    } as const;
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success(members.map(item => ({
+        displayName: item.displayName,
+        importedClaim: null,
+        memberId: item.id,
+        role: item.role,
+      })))),
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
+        manager: { descriptor, handle: null, status: null },
+        target: null,
+      })),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: true,
+        membershipManagement: true, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    expect(modal.contentEl.querySelector('[data-action="prepare-cloud-to-lan"]')).toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="accept-cloud-to-lan"]')).toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="withdraw-cloud-to-lan-target"]'))
+      .toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).not.toBeNull();
+  });
+
+  it('restores durable Cloud-to-LAN Manager and target controls after close and offline reopen', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const descriptor = {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      preparationId: 'preparation-one',
+      projectId: 'project-alpha',
+      publishedAt: CREATED_AT,
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+    } as const;
+    const handle = {
+      operationIntentId: 'intent-manager',
+      preparationId: 'preparation-one',
+      projectId: 'project-alpha',
+      schemaVersion: 1,
+      selectedTargetMemberId: 'member-manager',
+      sourceAuthorityGeneration: 4,
+      sourceCloudUrl: 'https://cloud.example.test/',
+      targetUrl: 'https://192.168.1.30:54545',
+      transferId: 'transfer-one',
+    } as const;
+    const view = {
+      manager: {
+        descriptor,
+        handle,
+        status: { phase: 'source-quiesced', state: 'active' } as never,
+      },
+      target: {
+        canWithdraw: false,
+        descriptor,
+        handle,
+        status: { phase: 'source-quiesced', state: 'active' } as never,
+      },
+    } as const;
+    const port = createPort(members, {
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success(view)),
+      readProjectCapabilities: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+      readSnapshot: jest.fn().mockResolvedValue({
+        error: new CollabError({ code: 'endpoint-unreachable' }),
+        status: 'failure',
+      }),
+    } as never);
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'offline' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    expect(modal.contentEl.querySelector('[data-action="observe-cloud-to-lan"]'))
+      .not.toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="accept-cloud-to-lan"]'))
+      .not.toBeNull();
+    expect(modal.contentEl.querySelector('[data-action="withdraw-cloud-to-lan-target"]'))
+      .toBeNull();
+
+    modal.onClose();
+    modal.onOpen();
+    await flush();
+    expect(port.readCloudToLanTransfer).toHaveBeenCalledTimes(2);
+    expect(modal.contentEl.querySelector('[data-action="observe-cloud-to-lan"]'))
+      .not.toBeNull();
+  });
+
+  it.each([
+    'revoke-invitation',
+    'demote-manager',
+    'remove-member',
+    'create-manager-offer',
+    'cancel-manager-offer',
+    'promote-manager',
+    'reissue-member-claim',
+    'revoke-member-claim',
+  ] as const)('finishes a retained %s result explicitly', async action => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let retained = true;
+    const port = createPort(members, {
+      completeManagementOperation: jest.fn().mockImplementation(async () => {
+        retained = false;
+        return success(undefined);
+      }),
+      readManagementOperation: jest.fn().mockImplementation(async () => success(retained
+        ? {
+          action,
+          completionId: `completion-${action}`,
+          invitation: null,
+          secretAvailableUntil: null,
+          status: 'result-retained' as const,
+        }
+        : null)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
+        invitations: true, leave: true, managerResponsibility: true,
+        membershipManagement: true, retirement: true,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    } as never);
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+    const finish = modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="complete-management-operation"]',
+    );
+    expect(finish).not.toBeNull();
+    finish!.click();
+    await flush();
+
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      completionId: `completion-${action}`,
+      projectId: 'project-alpha',
+    });
+  });
+
+  it('does not settle Cloud retained state when a LAN-open modal observes authority convergence', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let listener: ((state: CollabFeatureState) => void) | undefined;
+    const port = createPort(members, {
+      subscribe: jest.fn().mockImplementation(next => {
+        listener = next;
+        return { dispose: jest.fn() };
+      }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'lan' }),
+    });
+    modal.onOpen();
+    await flush();
+
+    listener?.({
+      lifecycle: 'ready',
+      projects: [project({ authorityKind: 'cloud', connectionStatus: 'connected' })],
+      selectedProjectId: 'project-alpha',
+    });
+    modal.onClose();
+
+    expect(port.completeManagementOperation).not.toHaveBeenCalled();
+  });
+
+  it('has no detectable accessibility violations in negotiated Cloud management', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      listMembers: jest.fn().mockResolvedValue(success([{
+        displayName: 'Alice', importedClaim: null, memberId: 'member-manager', role: 'manager',
+      }])),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: true,
+        invitations: true, leave: true, managerResponsibility: true,
+        membershipManagement: true, retirement: true,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+  });
+
   it('cancels a superseded snapshot read when a newer read starts', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const signals: AbortSignal[] = [];
@@ -198,7 +1867,11 @@ describe('ProjectManagementModal', () => {
         } as never));
       }),
       subscribe: jest.fn().mockImplementation((listener: (state: unknown) => void) => {
-        invalidate = () => listener({ projects: [] });
+        invalidate = () => listener({
+          lifecycle: 'ready',
+          projects: [project()],
+          selectedProjectId: 'project-alpha',
+        });
         return { dispose: jest.fn() };
       }),
     });
@@ -282,14 +1955,17 @@ describe('ProjectManagementModal', () => {
     );
     expect(projectActions).not.toBeNull();
     expect(Array.from(projectActions?.children ?? []).map(child => (
-      child.className
+      `${child.tagName}:${child.className}`
     ))).toEqual([
-      'claudian-collab-project-actions-primary',
-      'claudian-collab-project-actions-lifecycle',
+      'H3:',
+      'DIV:claudian-collab-project-actions-lifecycle',
     ]);
     expect(Array.from(projectActions?.querySelectorAll('button') ?? []).map(button => (
       button.getAttribute('data-action')
-    ))).toEqual(['create-invitation', 'leave-project', 'retire-project']);
+    ))).toEqual(['leave-project', 'retire-project']);
+    expect(modal.contentEl.querySelector(
+      '.claudian-collab-access-members [data-action="create-invitation"]',
+    )).not.toBeNull();
     expect(modal.contentEl.querySelector(
       '[data-member-id="member-manager"] [data-action="leave-project"]',
     )).toBeNull();
@@ -298,10 +1974,7 @@ describe('ProjectManagementModal', () => {
       '[data-action="create-invitation"]',
     )?.click();
     await flush();
-    expect(port.createInvitation).toHaveBeenCalledWith(
-      'project-alpha',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(port.createInvitation).not.toHaveBeenCalled();
     expect(modal.contentEl.textContent).not.toContain('claudian-collab:v2:invite-alpha');
     expect(modal.contentEl.querySelector('[data-action="create-invitation"]'))
       .not.toBeNull();
@@ -314,11 +1987,10 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       purpose: 'manager-promotion',
       targetMemberId: 'member-maya',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('shows pending promotion acknowledgement and lets only the source cancel it', async () => {
@@ -370,7 +2042,108 @@ describe('ProjectManagementModal', () => {
     expect(port.cancelManagerResponsibilityOffer).toHaveBeenCalledWith({
       offerId: 'promotion-one',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
+  });
+
+  it('matches the current Manager to the relevant offer when disjoint offers coexist', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-other-manager', 'Omar', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+      member('member-noah', 'Noah'),
+    ];
+    const offers = [
+      {
+        expiresAt: '2026-09-10T00:00:00.000Z',
+        offerId: 'offer-unrelated',
+        offeredAt: CREATED_AT,
+        purpose: 'manager-promotion' as const,
+        sourceManagerMemberId: 'member-other-manager',
+        status: 'offered' as const,
+        targetMemberId: 'member-noah',
+      },
+      {
+        expiresAt: '2026-09-10T00:00:00.000Z',
+        offerId: 'offer-current',
+        offeredAt: CREATED_AT,
+        purpose: 'manager-promotion' as const,
+        sourceManagerMemberId: 'member-manager',
+        status: 'acknowledged' as const,
+        targetMemberId: 'member-maya',
+      },
+    ];
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success(offers)),
+      listMembers: jest.fn().mockResolvedValue(success(members.map(item => ({
+        displayName: item.displayName,
+        importedClaim: null,
+        memberId: item.id,
+        role: item.role,
+      })))),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: true,
+        membershipManagement: true, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    expect(modal.contentEl.querySelector(
+      '[data-action="complete-promotion"][data-member-id="member-maya"]',
+    )).not.toBeNull();
+    const current = modal.contentEl.querySelector('[data-member-id="member-manager"]')!;
+    current.querySelector<HTMLButtonElement>(
+      '[data-action="cancel-manager-responsibility"]',
+    )?.click();
+    await flush();
+    expect(port.cancelManagerResponsibilityOffer).toHaveBeenCalledWith({
+      offerId: 'offer-current',
+      projectId: 'project-alpha',
+    });
+  });
+
+  it('does not offer Manager promotion without membership-management capability', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
+        invitations: false, leave: false, managerResponsibility: true,
+        membershipManagement: false, retirement: false,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0], members,
+          project: { authorityGeneration: 4, authorityKind: 'cloud' },
+        },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ authorityKind: 'cloud', connectionStatus: 'connected' }),
+    });
+
+    modal.onOpen();
+    await flush();
+    await flush();
+
+    expect(modal.contentEl.querySelector('[data-action="make-manager"]')).toBeNull();
   });
 
   it('completes an acknowledged promotion without changing the source Manager', async () => {
@@ -418,11 +2191,10 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.promoteManager).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       managerResponsibilityOfferId: 'promotion-one',
       projectId: 'project-alpha',
       targetMemberId: 'member-maya',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(port.createManagerResponsibilityOffer).not.toHaveBeenCalled();
   });
 
@@ -483,8 +2255,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
-
     listener?.({
       lifecycle: 'ready',
       projects: [project()],
@@ -498,7 +2268,6 @@ describe('ProjectManagementModal', () => {
 
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
     expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0]).toEqual({
-      intentId: firstIntentId,
       projectId: 'project-alpha',
       purpose: 'manager-promotion',
       targetMemberId: 'member-maya',
@@ -567,8 +2336,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.promoteManager.mock.calls[0]?.[0].intentId;
-
     listener?.({
       lifecycle: 'ready',
       projects: [project()],
@@ -582,7 +2349,6 @@ describe('ProjectManagementModal', () => {
 
     expect(port.promoteManager).toHaveBeenCalledTimes(2);
     expect(port.promoteManager.mock.calls[1]?.[0]).toEqual({
-      intentId: firstIntentId,
       managerResponsibilityOfferId: 'promotion-one',
       projectId: 'project-alpha',
       targetMemberId: 'member-maya',
@@ -619,13 +2385,12 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.demoteManager).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       targetMemberId: 'member-host',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
   });
 
-  it('discards a failed mutation intent when another confirmation replaces it', async () => {
+  it('requests project-scoped LAN intent abandonment when another confirmation replaces it', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),
       member('member-bob', 'Bob', { role: 'manager' }),
@@ -651,8 +2416,6 @@ describe('ProjectManagementModal', () => {
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    const firstIntentId = port.demoteManager.mock.calls[0]?.[0].intentId;
-
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="make-manager"][data-member-id="member-maya"]',
     )?.click();
@@ -668,7 +2431,12 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.demoteManager).toHaveBeenCalledTimes(2);
-    expect(port.demoteManager.mock.calls[1]?.[0].intentId).not.toBe(firstIntentId);
+    expect(port.demoteManager.mock.calls[1]?.[0]).toEqual({
+      projectId: 'project-alpha', targetMemberId: 'member-bob',
+    });
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+    });
   });
 
   it('submits Manager removal and surfaces last-Manager authority protection', async () => {
@@ -704,10 +2472,9 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.removeMember).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       memberId: 'member-bob',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(modal.contentEl.querySelector('[role="alert"]')?.textContent)
       .toContain('At least one Manager must remain');
   });
@@ -728,12 +2495,11 @@ describe('ProjectManagementModal', () => {
     modal.onOpen();
     await flush();
     expect(modal.contentEl.querySelector(
-      '.claudian-collab-project-actions [data-action="start-host"]',
+      '.claudian-collab-hosting [data-action="start-host"]',
     )).not.toBeNull();
     expect(Array.from(modal.contentEl.querySelectorAll(
       '.claudian-collab-project-actions button',
     )).map(button => button.getAttribute('data-action'))).toEqual([
-      'start-host',
       'leave-project',
     ]);
     modal.contentEl.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
@@ -746,6 +2512,56 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.textContent).toContain('Running');
     expect(modal.contentEl.querySelectorAll('[data-action="start-host"]')).toHaveLength(0);
     expect(modal.contentEl.querySelectorAll('[data-action="stop-host"]')).toHaveLength(1);
+  });
+
+  it('groups invitation, Hosting, and Project actions by their user intent', async () => {
+    const host = member('member-host', 'Host operator', { role: 'manager' });
+    const modal = new ProjectManagementModal({} as never, createPort(
+      [host],
+      {},
+      { currentMemberId: host.id, hostMemberId: host.id },
+    ), {
+      project: project({
+        connectionStatus: 'connected',
+        hostInstallationStatus: 'hosted-here',
+        hostStatus: 'running',
+      }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const members = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-access-members',
+    )!;
+    expect(within(members).getByRole('heading', { level: 3, name: 'Members' }))
+      .not.toBeNull();
+    expect(within(members).getByRole('button', { name: 'Create invitation' }))
+      .toHaveProperty('className', 'mod-cta');
+
+    const hosting = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-hosting',
+    )!;
+    expect(within(hosting).getByRole('heading', { level: 3, name: 'Hosting' }))
+      .not.toBeNull();
+    expect(within(hosting).getByText('LAN Host (on this device)')).not.toBeNull();
+    expect(within(hosting).getByRole('button', { name: 'Move to Cloud' }))
+      .not.toBeNull();
+    expect(hosting.textContent).not.toContain('authority');
+
+    const projectActions = modal.contentEl.querySelector<HTMLElement>(
+      '.claudian-collab-project-actions',
+    )!;
+    expect(within(projectActions).getByRole('heading', {
+      level: 3,
+      name: 'Project actions',
+    })).not.toBeNull();
+    expect(within(projectActions).getByRole('button', { name: 'Leave project' }))
+      .toHaveProperty('className', 'mod-cta');
+    expect(within(projectActions).getByRole('button', { name: 'Retire project' }))
+      .toHaveProperty('className', 'mod-warning');
+    expect(projectActions.querySelector('[data-action="create-invitation"]')).toBeNull();
+    expect(projectActions.querySelector('[data-action="stop-host"]')).toBeNull();
   });
 
   it('shows a synchronized foreign Host as status-only in Project management', async () => {
@@ -764,7 +2580,7 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     const host = modal.contentEl.querySelector('.claudian-collab-project-host-action');
-    expect(host?.textContent).toContain('Hosted on another device');
+    expect(host?.textContent).toContain('LAN Host (on another device)');
     expect(host?.querySelectorAll('button')).toHaveLength(0);
     expect(port.startHost).not.toHaveBeenCalled();
   });
@@ -819,10 +2635,8 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.retireProject).toHaveBeenCalledWith({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-host',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('shows and copies redacted Host diagnostics after a failed start', async () => {
@@ -853,7 +2667,7 @@ describe('ProjectManagementModal', () => {
     modal.contentEl.querySelector<HTMLButtonElement>('[data-action="start-host"]')?.click();
     await flush();
     expect(modal.contentEl.querySelector(
-      '.claudian-collab-project-actions [data-action="host-diagnostics"]',
+      '.claudian-collab-hosting [data-action="host-diagnostics"]',
     )).not.toBeNull();
     expect(modal.contentEl.querySelector('[data-state="host-diagnostics"]')).toBeNull();
   });
@@ -891,10 +2705,9 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(port.removeMember).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       memberId: 'member-maya',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
@@ -926,7 +2739,7 @@ describe('ProjectManagementModal', () => {
     expect(port.leaveProject).toHaveBeenCalledWith({
       cleanupChoice: 'keep-files',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(modal.close).toHaveBeenCalledTimes(1);
   });
 
@@ -984,14 +2797,15 @@ describe('ProjectManagementModal', () => {
 
     expect(managerModal.contentEl.querySelector('[role="alert"]')?.textContent)
       .toContain('could not be completed');
-    const firstIntentId = port.removeMember.mock.calls[0]?.[0].intentId;
-    expect(firstIntentId).toEqual(expect.any(String));
+    expect(port.removeMember.mock.calls[0]?.[0]).toEqual({
+      memberId: 'member-maya', projectId: 'project-alpha',
+    });
     managerModal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
     expect(port.removeMember).toHaveBeenCalledTimes(2);
-    expect(port.removeMember.mock.calls[1]?.[0].intentId).toBe(firstIntentId);
+    expect(port.removeMember.mock.calls[1]?.[0]).toEqual(port.removeMember.mock.calls[0]?.[0]);
   });
 
   it('aborts loading and ignores its late result after close', async () => {
@@ -1062,7 +2876,7 @@ describe('ProjectManagementModal', () => {
       expect(port.leaveProject).toHaveBeenCalledWith({
         cleanupChoice: 'delete-files',
         projectId: 'project-alpha',
-      }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      }, { signal: expect.any(AbortSignal) });
       modal.onClose();
     }
   });
@@ -1134,11 +2948,10 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.createManagerResponsibilityOffer).toHaveBeenCalledWith({
-      intentId: expect.any(String),
       projectId: 'project-alpha',
       purpose: 'manager-leave',
       targetMemberId: 'member-maya',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(modal.contentEl.textContent).toContain('Waiting for Maya');
 
     offerStatus = 'acknowledged';
@@ -1158,7 +2971,7 @@ describe('ProjectManagementModal', () => {
       cleanupChoice: 'keep-files',
       managerResponsibilityOfferId: 'manager-offer-one',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('retains a Leave offer intent for Retry but discards it with the workflow', async () => {
@@ -1201,18 +3014,18 @@ describe('ProjectManagementModal', () => {
 
     await enterSuccessorFlow();
     await selectSuccessor();
-    const firstIntent = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
     await selectSuccessor();
-    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0].intentId)
-      .toBe(firstIntent);
+    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
 
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="cancel-access-action"]',
     )?.click();
     await enterSuccessorFlow();
     await selectSuccessor();
-    expect(port.createManagerResponsibilityOffer.mock.calls[2]?.[0].intentId)
-      .not.toBe(firstIntent);
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({ projectId: 'project-alpha' });
+    expect(port.createManagerResponsibilityOffer.mock.calls[2]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
   });
 
   it('discards actor-scoped Leave intents when the current Member changes', async () => {
@@ -1269,8 +3082,6 @@ describe('ProjectManagementModal', () => {
     };
 
     await createOffer();
-    const firstIntent = port.createManagerResponsibilityOffer.mock.calls[0]?.[0].intentId;
-
     currentMember = members[1]!;
     listener?.({
       lifecycle: 'ready',
@@ -1280,8 +3091,9 @@ describe('ProjectManagementModal', () => {
     await flush();
     await createOffer();
 
-    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0].intentId)
-      .not.toBe(firstIntent);
+    expect(port.completeManagementOperation).toHaveBeenCalledWith({ projectId: 'project-alpha' });
+    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0])
+      .toEqual(port.createManagerResponsibilityOffer.mock.calls[0]?.[0]);
   });
 
   it('does not ask the target to manually confirm Manager responsibility', async () => {
@@ -1365,7 +3177,7 @@ describe('ProjectManagementModal', () => {
     expect(port.declineHostTransfer).toHaveBeenCalledWith({
       projectId: 'project-alpha',
       transferId: 'host-transfer-one',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('disables duplicate responsibility mutations while one is pending', async () => {
@@ -1437,20 +3249,75 @@ describe('ProjectManagementModal', () => {
     )?.click();
     await flush();
     expect(port.retireProject).toHaveBeenCalledWith({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-alpha',
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    }, { signal: expect.any(AbortSignal) });
     expect(modal.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores Retire controls after a rejected invocation and permits an explicit retry', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const port = createPort(members, {
+      retireProject: jest.fn()
+        .mockRejectedValueOnce(new CollabError({ code: 'project-retired' }))
+        .mockResolvedValue(success(undefined)),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Retire project' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    await flush();
+
+    expect(within(modal.contentEl).getByRole('alert')).toBeTruthy();
+    const retry = within(modal.contentEl).getByRole<HTMLButtonElement>('button', { name: 'Retry' });
+    expect(retry.disabled).toBe(false);
+    expect(within(modal.contentEl).getByRole<HTMLButtonElement>('button', { name: 'Cancel' }).disabled)
+      .toBe(false);
+    expect(await axe(modal.contentEl)).toHaveNoViolations();
+    fireEvent.click(retry);
+    await flush();
+
+    expect(modal.close).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('ignores a rejected Retire after the modal closes', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let reject!: (error: Error) => void;
+    const port = createPort(members, {
+      retireProject: jest.fn((_request, _options) => new Promise((_resolve, fail) => { reject = fail; })),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, {
+      onChanged,
+      project: project({ connectionStatus: 'connected' }),
+    });
+    modal.onOpen();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Retire project' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    modal.onClose();
+    reject(new CollabError({ code: 'project-retired' }));
+    await flush();
+
+    expect(modal.contentEl.childElementCount).toBe(0);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('ignores a completed Leave after the modal closes', async () => {
     const members = [member('member-maya', 'Maya')];
     let finish!: (result: ReturnType<typeof success<void>>) => void;
+    let signal: AbortSignal | undefined;
     const port = createPort(members, {
-      leaveProject: jest.fn().mockReturnValue(new Promise(resolve => {
-        finish = resolve;
-      })),
+      leaveProject: jest.fn((_request, options) => {
+        signal = options?.signal;
+        return new Promise(resolve => { finish = resolve; });
+      }),
     }, { currentMemberId: 'member-maya', hostMemberId: 'member-host' });
     const onChanged = jest.fn();
     const modal = new ProjectManagementModal({} as never, port, {
@@ -1463,11 +3330,19 @@ describe('ProjectManagementModal', () => {
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="confirm-access-action"]',
     )?.click();
+    expect(port.leaveProject).toHaveBeenCalledWith(
+      {
+        cleanupChoice: 'keep-files',
+        projectId: 'project-alpha',
+      },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     modal.onClose();
     finish(success(undefined));
     await flush();
 
     expect(onChanged).not.toHaveBeenCalled();
+    expect(signal?.aborted).toBe(true);
     expect(modal.contentEl.childElementCount).toBe(0);
   });
 
@@ -1477,10 +3352,12 @@ describe('ProjectManagementModal', () => {
       member('member-maya', 'Maya'),
     ];
     let finish!: (result: ReturnType<typeof success<void>>) => void;
+    let signal: AbortSignal | undefined;
     const port = createPort(members, {
-      promoteManager: jest.fn().mockReturnValue(new Promise(resolve => {
-        finish = resolve;
-      })),
+      promoteManager: jest.fn((_request, options) => {
+        signal = options?.signal;
+        return new Promise(resolve => { finish = resolve; });
+      }),
       readSnapshot: jest.fn().mockResolvedValue(success({
         snapshot: {
           currentMember: members[0],
@@ -1520,6 +3397,7 @@ describe('ProjectManagementModal', () => {
     await flush();
 
     expect(onChanged).not.toHaveBeenCalled();
+    expect(signal?.aborted).toBe(true);
     expect(modal.contentEl.childElementCount).toBe(0);
   });
 

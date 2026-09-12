@@ -18,6 +18,7 @@ import {
   type GitCommandRunner,
   parseGitNulFields,
 } from '@/app/collab/git/GitCommandRunner';
+import { canonicalConflictStagePaths, parseGitConflictStages } from '@/app/collab/git/gitConflictPaths';
 import type {
   GitRepositoryReadSession,
   GitRepositoryService,
@@ -134,11 +135,11 @@ export class NativeGitAcceptedStateIntegrator implements
     signal?: AbortSignal,
   ): Promise<ReconciliationPlan> {
     return this.git.withReadSession(context.repositoryPath, 'working', session => (
-      this.planInSession(session, context, snapshot, operationId, signal)
-    ));
+      this.#planInSession(session, context, snapshot, operationId, signal)
+    ), signal);
   }
 
-  private async planInSession(
+  async #planInSession(
     session: GitRepositoryReadSession,
     context: PublishProjectContext,
     snapshot: PublishRepositorySnapshot,
@@ -146,10 +147,11 @@ export class NativeGitAcceptedStateIntegrator implements
     signal?: AbortSignal,
   ): Promise<ReconciliationPlan> {
     throwIfCancelled(signal);
-    const { acceptedMainOid, personalOid } = await this.assertExpectedState(
+    const { acceptedMainOid, personalOid } = await this.#assertExpectedState(
       session,
       context,
       snapshot,
+      signal,
     );
     if (
       personalOid === acceptedMainOid
@@ -162,7 +164,8 @@ export class NativeGitAcceptedStateIntegrator implements
     }
 
     throwIfCancelled(signal);
-    const analysis = await this.analyzeMerge(
+    const analysis = await this.#analyzeMerge(
+      session,
       context.repositoryPath,
       personalOid,
       acceptedMainOid,
@@ -171,7 +174,7 @@ export class NativeGitAcceptedStateIntegrator implements
     if (analysis.kind === 'clean') return { kind: 'diverged' };
     const mergeBaseOid = await session.findMergeBase(personalOid, acceptedMainOid);
     const conflicts = await Promise.all(analysis.conflictPaths.map(conflictPath => (
-      this.classifyConflict(
+      this.#classifyConflict(
         session,
         conflictPath,
         mergeBaseOid,
@@ -228,17 +231,18 @@ export class NativeGitAcceptedStateIntegrator implements
     const { acceptedMainOid } = await this.git.withReadSession(
       context.repositoryPath,
       'working',
-      session => this.assertExpectedState(session, context, expected),
+      session => this.#assertExpectedState(session, context, expected, signal),
+      signal,
     );
     throwIfCancelled(signal);
 
     await this.runner.run({
-      args: ['merge', '--ff-only', '--no-edit', '--no-stat', '--no-verify', acceptedMainOid],
+      args: ['merge', '--ff-only', '--no-overwrite-ignore', '--no-edit', '--no-stat', '--no-verify', acceptedMainOid],
       cwd: context.repositoryPath,
       suppressHooks: true,
     });
 
-    const snapshot = await this.inspectAfterIntegration(context, expected);
+    const snapshot = await this.#inspectAfterIntegration(context, expected);
     return {
       kind: 'fast-forwarded',
       snapshot,
@@ -246,7 +250,7 @@ export class NativeGitAcceptedStateIntegrator implements
   }
 
   async hasMutationLock(context: PublishProjectContext): Promise<boolean> {
-    this.assertCurrentMemberRef(context);
+    this.#assertCurrentMemberRef(context);
     const gitDirectory = path.join(context.repositoryPath, '.git');
     const personalLock = `${path.join(
       gitDirectory,
@@ -266,18 +270,19 @@ export class NativeGitAcceptedStateIntegrator implements
     return states.some(Boolean);
   }
 
-  private async assertExpectedState(
+  async #assertExpectedState(
     session: GitRepositoryReadSession,
     context: PublishProjectContext,
     expected: PublishRepositorySnapshot,
+    signal?: AbortSignal,
   ): Promise<{ acceptedMainOid: string; personalOid: string }> {
-    this.assertCurrentMemberRef(context);
+    this.#assertCurrentMemberRef(context);
     if (!expected.workingTreeClean || expected.changedFiles.length !== 0) {
       throw integrationError('working-tree-busy', 'reconciliation-working-tree-dirty');
     }
     const remotePersonal = remotePersonalRef(context.personalRef);
-    const [symbolicHead, refs, status] = await Promise.all([
-      this.readSymbolicHead(context),
+    const symbolicHead = await this.#readSymbolicHead(context, signal);
+    const [refs, status] = await Promise.all([
       session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
       session.getWorkingTreeStatus(),
     ]);
@@ -321,7 +326,7 @@ export class NativeGitAcceptedStateIntegrator implements
     return { acceptedMainOid: requiredMainOid, personalOid: requiredPersonalOid };
   }
 
-  private assertCurrentMemberRef(context: PublishProjectContext): void {
+  #assertCurrentMemberRef(context: PublishProjectContext): void {
     if (context.personalRef !== collabMemberRef(context.memberId)) {
       throw integrationError(
         'repository-invalid',
@@ -330,17 +335,22 @@ export class NativeGitAcceptedStateIntegrator implements
     }
   }
 
-  private async readSymbolicHead(context: PublishProjectContext): Promise<string | null> {
+  async #readSymbolicHead(
+    context: PublishProjectContext,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const result = await this.runner.run({
       acceptedExitCodes: [0, 1],
       args: ['symbolic-ref', '--quiet', 'HEAD'],
       cwd: context.repositoryPath,
+      signal,
       maxStdoutBytes: 512,
     });
     return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : null;
   }
 
-  private async analyzeMerge(
+  async #analyzeMerge(
+    session: GitRepositoryReadSession,
     repositoryPath: string,
     personalOid: string,
     acceptedMainOid: string,
@@ -351,7 +361,6 @@ export class NativeGitAcceptedStateIntegrator implements
       args: [
         'merge-tree',
         '--write-tree',
-        '--name-only',
         '--no-messages',
         '-z',
         personalOid,
@@ -365,7 +374,13 @@ export class NativeGitAcceptedStateIntegrator implements
     if (!isCollabGitOid(fields[0])) {
       throw integrationError('repository-invalid', 'reconciliation-merge-output-invalid');
     }
-    const conflictPaths = [...new Set(fields.slice(1).filter(Boolean))].sort();
+    const stages = parseGitConflictStages(fields.slice(1));
+    const trees = stages.length > 0 ? await Promise.all([
+      session.listTreeRecursive(personalOid),
+      session.listTreeRecursive(acceptedMainOid),
+    ]) : [[], []];
+    const relocatedPaths = canonicalConflictStagePaths(stages, trees[0], trees[1]);
+    const conflictPaths = [...new Set(stages.map(stage => relocatedPaths.get(stage.path) ?? stage.path))].sort();
     if (result.exitCode === 0) {
       if (conflictPaths.length !== 0) {
         throw integrationError('repository-invalid', 'reconciliation-merge-output-invalid');
@@ -392,7 +407,7 @@ export class NativeGitAcceptedStateIntegrator implements
     return { conflictPaths, kind: 'conflicting' };
   }
 
-  private async classifyConflict(
+  async #classifyConflict(
     session: GitRepositoryReadSession,
     conflictPath: string,
     mergeBaseOid: string,
@@ -430,14 +445,14 @@ export class NativeGitAcceptedStateIntegrator implements
     return { kind: 'text', path: conflictPath };
   }
 
-  private async inspectAfterIntegration(
+  async #inspectAfterIntegration(
     context: PublishProjectContext,
     expected: PublishRepositorySnapshot,
   ): Promise<PublishRepositorySnapshot> {
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
       const remotePersonal = remotePersonalRef(context.personalRef);
-      const [symbolicHead, refs, status] = await Promise.all([
-        this.readSymbolicHead(context),
+      const symbolicHead = await this.#readSymbolicHead(context);
+      const [refs, status] = await Promise.all([
         session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
         session.getWorkingTreeStatus(),
       ]);

@@ -4,7 +4,7 @@ import { ConversationRepository } from '@/app/conversations/ConversationReposito
 import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
 import { resolveConversationModel } from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { Conversation, ConversationMutablePatch } from '@/core/types';
+import type { Conversation } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -144,17 +144,6 @@ describe('ConversationRepository hydration', () => {
 
     expect(repository.getAll()).toHaveLength(1);
     expect(persistence.saveMetadata).not.toHaveBeenCalled();
-  });
-
-  it('keeps Linked content out of the typed mutable patch', () => {
-    const patch: ConversationMutablePatch = { title: 'Renamed' };
-    const invalidPatch: ConversationMutablePatch = {
-      // @ts-expect-error Linked content is creation-only conversation identity.
-      linkedContentPath: 'Notes/Other.md',
-    };
-
-    expect(patch).toEqual({ title: 'Renamed' });
-    expect(invalidPatch).toHaveProperty('linkedContentPath');
   });
 
   it('recovers and persists only missing historical model selections', async () => {

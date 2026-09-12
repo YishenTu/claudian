@@ -89,7 +89,7 @@ export class ManagerSetRepository {
     connection: AuthorityDatabaseConnection,
     input: ManagerSetMutationInput,
   ): AuthorityManagerSet {
-    this.requireTarget(connection, input.targetMemberId, 'member');
+    this.#requireTarget(connection, input.targetMemberId, 'member');
     connection.run(
       "UPDATE members SET role = 'manager' WHERE member_id = ? AND role = 'member' AND status = 'active'",
       [input.targetMemberId],
@@ -127,7 +127,7 @@ export class ManagerSetRepository {
     if (!before.managerMemberIds.includes(input.departingManagerMemberId)) {
       throw managerSetError('stale-project-selection', 'departing-manager-role-changed');
     }
-    this.requireTarget(connection, input.targetMemberId, 'member');
+    this.#requireTarget(connection, input.targetMemberId, 'member');
     connection.run(
       "UPDATE members SET role = 'manager' WHERE member_id = ? AND role = 'member' AND status = 'active'",
       [input.targetMemberId],
@@ -160,7 +160,7 @@ export class ManagerSetRepository {
     return managerSet;
   }
 
-  private requireTarget(
+  #requireTarget(
     connection: AuthorityDatabaseConnection,
     memberId: CollabMemberId,
     role: 'manager' | 'member',

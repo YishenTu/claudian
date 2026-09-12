@@ -26,7 +26,7 @@ export class AcpSubprocess {
     });
     this.process.onError((error) => {
       this.closeError = error;
-      this.notifyClose(error);
+      this.#notifyClose(error);
     });
     this.process.onExit(({ code, signal }) => {
       const exitError = this.closeError ?? (
@@ -34,22 +34,22 @@ export class AcpSubprocess {
           ? undefined
           : new Error(`ACP subprocess exited (${formatExit(code, signal)})`)
       );
-      this.notifyClose(exitError);
+      this.#notifyClose(exitError);
     });
   }
 
   get stdin(): Writable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdin;
   }
 
   get stdout(): Readable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdout;
   }
 
   get stderr(): Readable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stderr;
   }
 
@@ -76,13 +76,13 @@ export class AcpSubprocess {
     return this.process.shutdown();
   }
 
-  private assertStarted(): void {
+  #assertStarted(): void {
     if (!this.process.isStarted()) {
       throw new Error('ACP subprocess is not started');
     }
   }
 
-  private notifyClose(error?: Error): void {
+  #notifyClose(error?: Error): void {
     if (this.notifiedClose) return;
     this.notifiedClose = true;
     for (const listener of [...this.closeListeners]) {

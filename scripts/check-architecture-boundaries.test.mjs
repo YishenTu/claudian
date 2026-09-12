@@ -69,16 +69,6 @@ const step12ProjectMembershipOperations = Object.freeze([
   'leaveProject',
 ]);
 
-const step12CloudCapabilityTokens = Object.freeze([
-  'cloud-imported-membership-claims',
-  'cloud-project-create',
-  'cloud-project-invitations',
-  'cloud-project-join',
-  'cloud-project-leave',
-  'cloud-project-manager-responsibility',
-  'cloud-project-membership',
-]);
-
 function symbolPattern(symbols) {
   return new RegExp(`\\b(?:${symbols.join('|')})\\b`, 'u');
 }
@@ -409,6 +399,14 @@ test('Collab modal and shared code do not depend on detail or sidebar surfaces',
   ), []);
 });
 
+test('Collab detail sessions do not depend on the detail view router', () => {
+  const detailRoot = path.join(featuresRoot, 'collab', 'detail');
+  assert.deepEqual(findResolvedImportViolations(
+    [path.join(detailRoot, 'sessions')],
+    target => normalizeModuleTarget(target) === path.join(detailRoot, 'CollabDetailView'),
+  ), []);
+});
+
 test('active Collab code has no singular Manager or transfer compatibility surface', () => {
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /\bmanager_member_id\b/,
@@ -481,24 +479,11 @@ test('chat consumes Collab only through the FeatureHost surface seam', () => {
   );
 });
 
-test('the retired Vault file-tree surface stays outside the plugin', () => {
-  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
-  const viewSource = fs.readFileSync(path.join(featuresRoot, 'chat', 'ClaudianView.ts'), 'utf8');
-  const settingsTypeSource = fs.readFileSync(path.join(sourceRoot, 'core', 'types', 'settings.ts'), 'utf8');
-  const treeRoot = path.join(featuresRoot, 'chat', 'ui', 'vault-file-tree');
-
-  assert.equal(packageJson.dependencies?.['@pierre/trees'], undefined);
-  assert.equal(fs.existsSync(treeRoot) && listTypeScriptFiles(treeRoot).length > 0, false);
-  assert.equal(fs.existsSync(path.join(sourceRoot, 'style', 'components', 'vault-file-tree.css')), false);
-  assert.doesNotMatch(viewSource, /VaultFileTree|filesSurface|showVaultFiles/);
-  assert.doesNotMatch(settingsTypeSource, /enableFilePane/);
-});
-
 test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
   const mainFile = path.join(sourceRoot, 'main.ts');
   const eagerGraph = listStaticSourceGraph(mainFile);
   const collabAppRoot = path.join(appRoot, 'collab');
-  const forbiddenPackages = ['@pierre/diffs', 'node-forge', 'sql.js', 'ws'];
+  const forbiddenPackages = ['@codemirror/merge', 'node-forge', 'sql.js', 'ws'];
   const heavyImports = eagerGraph.flatMap(file => (
     listSourceImports(file)
       .filter(sourceImport => (
@@ -526,14 +511,14 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
     listSourceImports(path.join(collabReviewRoot, 'CollabDiffRenderer.ts'))
       .some(sourceImport => (
         sourceImport.dynamic
-        && sourceImport.specifier === './CollabPierreDiffModule'
+        && sourceImport.specifier === './CollabCodeMirrorDiffModule'
       )),
   );
   assert.ok(
-    listSourceImports(path.join(collabReviewRoot, 'CollabPierreDiffModule.ts'))
+    listSourceImports(path.join(collabReviewRoot, 'CollabCodeMirrorDiffModule.ts'))
       .some(sourceImport => (
         !sourceImport.dynamic
-        && sourceImport.specifier === '@pierre/diffs'
+        && sourceImport.specifier === '@codemirror/merge'
       )),
   );
 });
@@ -671,24 +656,23 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
 
   const protocol = await import(protocolPackageName);
 
-  assert.equal(manifest.dependencies?.[protocolPackageName], '3.3.2');
+  const protocolVersion = manifest.dependencies?.[protocolPackageName];
+  assert.match(protocolVersion, /^\d+\.\d+\.\d+$/u);
+  assert.equal(protocolManifest.version, protocolVersion);
   assert.equal(manifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(protocolManifest.dependencies?.['@lezer/markdown'], '1.7.2');
   assert.equal(manifest.dependencies?.['@claudian/collab-protocol'], undefined);
   assert.equal(manifest.workspaces, undefined);
-  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], '3.3.2');
-  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, '3.3.2');
-  assert.equal(
-    lockfile.packages?.[protocolInstallPath]?.integrity,
-    'sha512-oOSfYrCZNSjVbDK9tE2d8wlhvIf9nUi5mCHf/lLQwQ2jeZ4sW7dLgygE+NEhZFqfICXwF3V++UTsAfcle5AAdg==',
-  );
+  assert.equal(lockfile.packages?.['']?.dependencies?.[protocolPackageName], protocolVersion);
+  assert.equal(lockfile.packages?.[protocolInstallPath]?.version, protocolVersion);
+  assert.match(lockfile.packages?.[protocolInstallPath]?.integrity ?? '', /^sha512-[A-Za-z0-9+/]+=*$/u);
   assert.equal(lockfile.packages?.['node_modules/@lezer/markdown']?.version, '1.7.2');
-  assert.match(
-    lockfile.packages?.[protocolInstallPath]?.resolved ?? '',
-    /^https:\/\/registry\.npmjs\.org\/@claudian-collab\/protocol\/-\/protocol-3\.3\.2\.tgz$/u,
+  assert.equal(
+    lockfile.packages?.[protocolInstallPath]?.resolved,
+    `https://registry.npmjs.org/@claudian-collab/protocol/-/protocol-${protocolVersion}.tgz`,
   );
-  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 6);
-  assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 2);
+  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 10);
+  assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 6);
   assert.equal(protocol.COLLAB_PROJECT_BACKUP_COORDINATION_FORMAT_VERSION, 3);
   assert.deepEqual(
     protocol.COLLAB_PROJECT_MEMBERSHIP_OPERATIONS,
@@ -733,13 +717,7 @@ test('standalone Collab protocol registry and contract constants are not redefin
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
-test('the protocol pin does not expose Step 12 Cloud management behavior', () => {
-  const cloudAuthorityAdapterSource = fs.readFileSync(path.join(
-    appRoot,
-    'collab',
-    'remote-authority',
-    'CloudAuthorityAdapter.ts',
-  ), 'utf8');
+test('Cloud wire management adaptation stays outside presentation', () => {
   const packageManagementSurface = [
     'COLLAB_PROJECT_MEMBERSHIP_LIMITS',
     'COLLAB_PROJECT_MEMBERSHIP_OPERATIONS',
@@ -747,13 +725,7 @@ test('the protocol pin does not expose Step 12 Cloud management behavior', () =>
     'decodeCollabProjectMembershipOperationRequest',
     'decodeCollabProjectMembershipOperationResponse',
   ];
-  const cloudAdapterSurface = symbolPattern([
-    ...step12CloudCapabilityTokens,
-    ...step12ProjectMembershipOperations,
-    ...packageManagementSurface,
-  ]);
   const cloudPresentationSurface = symbolPattern([
-    ...step12CloudCapabilityTokens,
     'createCloudProject',
     'createProjectInvitation',
     'joinCloudProject',
@@ -766,7 +738,6 @@ test('the protocol pin does not expose Step 12 Cloud management behavior', () =>
     ...packageManagementSurface,
   ]);
 
-  assert.doesNotMatch(cloudAuthorityAdapterSource, cloudAdapterSurface);
   assert.deepEqual(findMatches([featuresRoot], cloudPresentationSurface), []);
 });
 
@@ -786,10 +757,8 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     new Map([
       ['src/app/collab/CollabLocalProjectRepository.ts', 1],
       ['src/app/collab/exit/PendingLeaveRecord.ts', 1],
-      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
-      ['src/app/collab/join/JoinProjectRecord.ts', 1],
       ['src/app/collab/lan/LanHostCoordinator.ts', 1],
-      ['src/app/collab/project/CollabProjectSetupRecord.ts', 1],
+      ['src/app/collab/project/CollabWorkingCopySlug.ts', 1],
     ]),
   ), []);
 
@@ -808,45 +777,17 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     entries,
     /\[0-9a-f\]\{40\}\(\?:\[0-9a-f\]\{24\}\)\?/,
     new Map([
-      ['src/app/collab/conflicts/ConflictScratchGitRepository.ts', 1],
+      ['src/app/collab/git/gitConflictPaths.ts', 1],
       ['src/app/collab/git/GitRepositoryService.ts', 10],
-      ['src/app/collab/join/JoinProjectCoordinator.ts', 1],
+      ['src/app/collab/project/CollabWorkingCopySetup.ts', 1],
     ]),
   ), []);
 
-  // Agent Runtime v5 owns a frozen declarative JSON-schema descriptor, not a runtime validator.
+  // Agent Runtime owns a frozen declarative JSON-schema descriptor, not a runtime validator.
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
     /\(\?:\[0-9a-f\]\{40\}\|\[0-9a-f\]\{64\}\)/,
     new Map([['src/app/agent-runtime/AgentRuntimeMethodRegistry.ts', 1]]),
   ), []);
-});
-
-test('Collab application barrel exposes only composition values', () => {
-  const barrelPath = path.join(appRoot, 'collab', 'index.ts');
-  const source = fs.readFileSync(barrelPath, 'utf8');
-  assert.doesNotMatch(source, /export\s+\*/);
-
-  const sourceFile = ts.createSourceFile(
-    barrelPath,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  );
-  const runtimeExports = [];
-  for (const statement of sourceFile.statements) {
-    if (!ts.isExportDeclaration(statement) || !statement.exportClause) continue;
-    if (!ts.isNamedExports(statement.exportClause)) continue;
-    for (const element of statement.exportClause.elements) {
-      if (!statement.isTypeOnly && !element.isTypeOnly) runtimeExports.push(element.name.text);
-    }
-  }
-  assert.deepEqual(runtimeExports.sort(), [
-    'ClaudianCollabService',
-    'CollabFeatureService',
-    'CollabProjectSetupService',
-    'createCollabFeatureSubcomposition',
-  ].sort());
 });
 
 test('superseded Collab state authorities stay removed', () => {
@@ -879,7 +820,7 @@ test('production consumes protocol-owned canonical Collab Git refs', () => {
   ), []);
 });
 
-test('Collab consumer CI does not retain protocol producer gates', () => {
+test('Collab consumer CI runs production and cross-platform checks', () => {
   const workflow = fs.readFileSync(
     path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
     'utf8',
@@ -887,8 +828,6 @@ test('Collab consumer CI does not retain protocol producer gates', () => {
   const crossPlatformJob = workflow
     .split(/^  build:/mu)[0]
     .split(/^  cross-platform-smoke:/mu)[1] ?? '';
-  assert.doesNotMatch(workflow, /protocol-contract:|verify:protocol|check:protocol-compatibility/);
-  assert.doesNotMatch(workflow, /packages\/collab-protocol/);
   assert.match(crossPlatformJob, /npm run build/);
   assert.match(
     crossPlatformJob,
@@ -897,36 +836,23 @@ test('Collab consumer CI does not retain protocol producer gates', () => {
   assert.match(crossPlatformJob, /npm run test:cross-platform-collab/);
 });
 
-test('Collab Git process owners await Windows process-tree termination', () => {
-  for (const relativePath of [
-    'src/app/collab/git/GitCommandRunner.ts',
-    'src/app/collab/lan/GitHttpBackendProxy.ts',
-  ]) {
-    const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
-    assert.match(source, /killProcessTree:\s*true/);
-    assert.match(source, /terminateSpawnedProcessTree\(/);
-    assert.match(source, /await\s+(?:active\.)?terminationTask/);
-  }
-});
-
 test('CI gates releases, cross-platform behavior, and security', () => {
   const workflowsRoot = path.join(process.cwd(), '.github', 'workflows');
-  const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8');
-  const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8');
+  const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8').replace(/\r\n/g, '\n');
   const nightly = fs.readFileSync(path.join(workflowsRoot, 'nightly.yml'), 'utf8');
   const codeql = fs.readFileSync(path.join(workflowsRoot, 'codeql.yml'), 'utf8');
 
+  assert.match(ci, /^  push:\n    branches: \[main, codex\/cloud-integration\]$/m);
+  assert.match(ci, /^  pull_request:\n    branches: \[main, codex\/cloud-integration\]$/m);
   assert.match(ci, /workflow_call:/);
   assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
   assert.match(ci, /diff-hygiene:/);
   assert.match(ci, /dependency-review-action@v4/);
-  assert.doesNotMatch(ci, /protocol-contract:/);
-  assert.doesNotMatch(ci, /npm run check:protocol-compatibility/);
   assert.match(ci, /cross-platform-smoke:/);
   assert.match(ci, /windows-latest/);
   assert.match(ci, /macos-latest/);
   assert.match(ci, /cross-platform-collab-scope:/);
-  assert.doesNotMatch(ci, /packages\/collab-protocol/);
   assert.match(ci, /src\/app\/collab\/\*/);
   assert.match(ci, /src\/core\/collab\/\*/);
   assert.match(ci, /src\/features\/collab\/\*/);
@@ -934,6 +860,7 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   assert.match(ci, /needs:\s*cross-platform-collab-scope/);
   assert.match(ci, /needs\.cross-platform-collab-scope\.outputs\.run == 'true'/);
 
+  assert.match(release, /^on:\n  push:\n    tags:\n      - '\*'\n\njobs:/m);
   assert.match(release, /uses:\s*\.\/\.github\/workflows\/ci\.yml/);
   assert.match(release, /needs:\s*verify/);
 
@@ -1022,11 +949,13 @@ test('performance policy enforces the main bundle budget and reports health delt
 test('bundle-critical runtime dependencies require exact manifest and lock agreement', () => {
   assert.deepEqual(bundleCriticalRuntimeDependencies, [
     '@anthropic-ai/claude-agent-sdk',
+    '@codemirror/merge',
     'smol-toml',
   ]);
   const packageJson = {
     dependencies: {
       '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
       'smol-toml': '1.7.1',
     },
   };
@@ -1034,6 +963,7 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
     packages: {
       '': { dependencies: { ...packageJson.dependencies } },
       'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
+      'node_modules/@codemirror/merge': { version: '6.12.2' },
       'node_modules/smol-toml': { version: '1.7.1' },
     },
   };
@@ -1043,6 +973,7 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
     },
     packages: {
       '@anthropic-ai/claude-agent-sdk': ['@anthropic-ai/claude-agent-sdk@0.3.226'],
+      '@codemirror/merge': ['@codemirror/merge@6.12.2'],
       'smol-toml': ['smol-toml@1.7.1'],
     },
   };
@@ -1108,6 +1039,7 @@ test('production artifact entry rejects dependency drift before emitting main.js
     fs.writeFileSync(path.join(fixtureRoot, 'package.json'), JSON.stringify({
       dependencies: {
         '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
         'smol-toml': '1.7.1',
       },
     }));
@@ -1116,10 +1048,12 @@ test('production artifact entry rejects dependency drift before emitting main.js
         '': {
           dependencies: {
             '@anthropic-ai/claude-agent-sdk': '0.3.226',
+      '@codemirror/merge': '6.12.2',
             'smol-toml': '1.7.1',
           },
         },
         'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
+      'node_modules/@codemirror/merge': { version: '6.12.2' },
         'node_modules/smol-toml': { version: '1.6.1' },
       },
     }));

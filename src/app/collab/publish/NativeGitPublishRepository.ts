@@ -138,12 +138,12 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
 
   async inspect(
     context: PublishProjectContext,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<PublishRepositorySnapshot> {
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
       const workingTree = await session.getWorkingTreeState();
       const entries = workingTree.entries;
-      const changedFiles = await Promise.all(entries.map(entry => this.changedFile(
+      const changedFiles = await Promise.all(entries.map(entry => this.#changedFile(
         context.repositoryPath,
         entry,
       )));
@@ -177,7 +177,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
         personalRemoteOid,
         workingTreeClean: entries.length === 0,
       };
-    });
+    }, signal);
   }
 
   async validateChangedFiles(
@@ -213,7 +213,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     expected: PublishRepositorySnapshot,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.assertExpected(context, expected, signal);
+    await this.#assertExpected(context, expected, signal);
     await this.git.stageAll(context.repositoryPath, signal);
   }
 
@@ -223,7 +223,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     message: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    await this.assertExpected(context, expected, signal);
+    await this.#assertExpected(context, expected, signal);
     const headOid = expected.headOid;
     if (!headOid) throw repositoryError('repository-invalid', 'publish-head-missing');
     return this.git.createCommitFromIndex(context.repositoryPath, {
@@ -239,7 +239,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     expected: PublishRepositorySnapshot,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.assertExpected(context, expected, signal);
+    await this.#assertExpected(context, expected, signal);
     await ensureTrustedCollabOrigin(this.git, context, 'publish-origin-mismatch');
     await this.network.withNetwork(context, (network, remoteUrl) => this.git.fetchFromUrl(
       context.repositoryPath,
@@ -294,13 +294,15 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     expected: PublishRepositorySnapshot,
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.assertExpected(context, expected, signal);
+    const commitOid = expected.headOid;
+    if (!commitOid) throw repositoryError('repository-invalid', 'publish-head-missing');
+    await this.#assertExpected(context, expected, signal);
     await ensureTrustedCollabOrigin(this.git, context, 'publish-origin-mismatch');
     await this.network.withNetwork(context, async (network, remoteUrl) => {
-      await this.git.pushToUrl(
+      await this.git.pushCommitToUrl(
         context.repositoryPath,
         remoteUrl,
-        `${context.personalRef}:${context.personalRef}`,
+        { commitOid, targetRef: context.personalRef },
         network,
         signal,
       );
@@ -314,7 +316,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     }, signal);
   }
 
-  private async assertExpected(
+  async #assertExpected(
     context: PublishProjectContext,
     expected: PublishRepositorySnapshot,
     signal?: AbortSignal,
@@ -325,7 +327,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
     }
   }
 
-  private async changedFile(
+  async #changedFile(
     repositoryPath: string,
     entry: GitStatusEntry,
   ): Promise<PublishChangedFile> {

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import * as timers from 'node:timers';
 
 import {
+  COLLAB_CLOUD_BINDING_LIMITS,
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
   COLLAB_PROTOCOL_VERSION,
@@ -18,12 +20,15 @@ import {
   collabControlOperationCodec,
   type CollabControlOperationMap,
   collabMemberRef,
+  type CollabProjectMembershipOperationMap,
   type CollabProjectRetirementOperation,
   type CollabProjectRetirementOperationMap,
   decodeCollabCloudCapabilityDocument,
   decodeCollabCloudErrorEnvelope,
   decodeCollabCloudProjectEventMessage,
   decodeCollabCloudSuccessEnvelope,
+  isCollabMemberId,
+  isCollabProjectId,
 } from '@claudian-collab/protocol';
 import { type RawData, WebSocket } from 'ws';
 
@@ -32,20 +37,32 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import {
+  cloudAuthorityError,
   cloudAuthorityOperationError,
   cloudAuthorityProtocolError,
+  CloudAuthorityRejection,
 } from '@/app/collab/remote-authority/CloudAuthorityError';
-import { canonicalCloudOrigin } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import {
+  cloudProjectGitRemoteUrl,
+  resolveCloudRoute,
+  validateCloudServerUrl,
+} from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import {
+  CloudPersonalRefReader,
+  type CloudPersonalRefReadInput,
+} from '@/app/collab/remote-authority/CloudPersonalRefReader';
 import { decodeCloudAuthorityProjectSnapshot } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type {
   CollabAuthorityLifecyclePort,
 } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
+import type { CloudAuthorityMembershipControlPort, CloudMembershipBinding, CloudMembershipOperation } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabAuthorityAdapter,
   CollabAuthorityEventConnectionInput,
   CollabAuthorityEventInvalidation,
   CollabAuthoritySession,
+  CollabAuthoritySessionCreationOptions,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { completeRequestDetail, completeTicketDetail } from '@/app/collab/remote-authority/completeCollabDetails';
 import {
@@ -53,22 +70,25 @@ import {
   NodeCloudAuthorityArtifactTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
 import {
+  type CloudAuthorityHttpRequest,
   type CloudAuthorityHttpResponse,
   type CloudAuthorityHttpTransport,
   NodeCloudAuthorityHttpTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
-import type { CollabCloudProjectSnapshot } from '@/core/collab';
+import { isTlsValidationError } from '@/app/collab/tlsErrors';
+import type { CollabCloudProjectSnapshot, CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const MIN_RECONNECT_DELAY_MS = 1_000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
 const IMPLEMENTED_CLOUD_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new Set([
   'accept',
   'authority-transfer',
-  'development-bootstrap',
+  'cloud-imported-membership-claims',
+  'cloud-project-invitations',
+  'cloud-project-leave',
+  'cloud-project-manager-responsibility',
+  'cloud-project-membership',
   'git-receive-pack-personal-ref',
   'git-upload-pack',
-  'project-checkpoint-export',
   'project-events',
   'project-retirement',
   'project-snapshot',
@@ -84,10 +104,12 @@ function cloudCapabilityImplemented(
     && collabCloudCapabilitySupported(document, capability);
 }
 
+import { type CloudProjectCredential,CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+
 export interface CloudProjectEventSocket {
   close(code: number, reason: string): void;
   onClose(listener: (code: number) => void): void;
-  onError(listener: () => void): void;
+  onError(listener: (error?: unknown) => void): void;
   onMessage(listener: (data: string) => void): void;
   onOpen(listener: () => void): void;
 }
@@ -98,15 +120,13 @@ export interface CloudProjectEventSocketInput {
 }
 
 export interface CloudProjectEventClientOptions {
-  readonly clearTimeout?: (handle: number) => void;
   readonly createSocket?: (input: CloudProjectEventSocketInput) => CloudProjectEventSocket;
-  readonly random?: () => number;
-  readonly setTimeout?: (callback: () => void, milliseconds: number) => number;
 }
 
 export interface CloudProjectEventClientInput {
+  readonly onConnectionResult?: (error?: CollabError) => void;
+  readonly headers: Readonly<Record<string, string>>;
   readonly afterSequence: number;
-  readonly developmentActorId: string;
   readonly projectId: string;
   readonly serverUrl: string;
 }
@@ -119,17 +139,95 @@ export interface CloudAuthorityAdapterOptions {
   ) => { dispose(): void; start(): void };
   readonly request?: CloudAuthorityHttpTransport;
   readonly requestIdFactory?: () => string;
+  readonly readPersonalRef?: (input: CloudPersonalRefReadInput) => Promise<string>;
 }
 
-export interface CloudAuthorityLifecycleBinding {
-  readonly developmentActorId: string;
+export interface CloudAuthorityConnectionInput {
   readonly projectId: string;
   readonly serverUrl: string;
 }
 
-export interface CloudAuthorityLifecycleSession {
-  readonly developmentActorId: string;
+export interface CloudPendingLeaveConnectionInput extends CloudAuthorityConnectionInput {
+  readonly authorityGeneration: number;
+  readonly memberId: string;
+  readonly personalRef: string;
+}
+
+export type CloudPendingRetirementConnectionInput = CloudPendingLeaveConnectionInput;
+
+export type CloudAuthorityTransferConnectionInput = CloudPendingLeaveConnectionInput;
+
+export interface CloudAuthorityTransferConnection {
+  readonly authorityGeneration: number;
   dispose(): void;
+  readonly lifecycle: CollabAuthorityLifecyclePort;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readonly memberId: string;
+  readonly personalRef: string;
+  readonly projectId: string;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+  readonly serverUrl: string;
+  supports(capability: CollabCloudCapability): boolean;
+}
+
+export interface CloudPendingLeaveConnection {
+  dispose(): void;
+  getManagerResponsibilityOffer(
+    request: CollabProjectMembershipOperationMap['getManagerResponsibilityOffer']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['getManagerResponsibilityOffer']['response']>;
+  leaveProject(
+    request: CollabProjectMembershipOperationMap['leaveProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['leaveProject']['response']>;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readPersonalRefOid(
+    personalRef: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<string>;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+}
+
+export interface CloudPendingRetirementConnection {
+  dispose(): void;
+  listProjectMembers(
+    request: CollabProjectMembershipOperationMap['listProjectMembers']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectMembershipOperationMap['listProjectMembers']['response']>;
+  readSnapshot(
+    projectId: string,
+    options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
+  ): Promise<CollabCloudProjectSnapshot>;
+  retireProject(
+    request: CollabProjectRetirementOperationMap['retireProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabProjectRetirementOperationMap['retireProject']['response']>;
+}
+
+export interface CloudAuthorityConnection {
+  readonly principalId: string;
+  joinProject(
+    input: CollabControlOperationMap['joinCloudProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabControlOperationMap['joinCloudProject']['response']>;
+  createProject(
+    input: CollabControlOperationMap['createCloudProject']['request'],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<CollabControlOperationMap['createCloudProject']['response']>;
+  dispose(): void;
+  readonly git: CollabAuthoritySession['git'];
   readonly lifecycle: CollabAuthorityLifecyclePort;
   readonly projectId: string;
   readSnapshot(
@@ -141,13 +239,40 @@ export interface CloudAuthorityLifecycleSession {
 }
 
 class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
-  constructor(private readonly socket: WebSocket) {}
+  private heartbeat: ReturnType<typeof timers.setTimeout> | undefined;
 
-  close(code: number, reason: string): void { this.socket.close(code, reason); }
+  constructor(private readonly socket: WebSocket) {
+    socket.on('open', () => this.#resetHeartbeat());
+    socket.on('ping', () => this.#resetHeartbeat());
+    socket.once('close', () => timers.clearTimeout(this.heartbeat));
+  }
+
+  #resetHeartbeat(): void {
+    timers.clearTimeout(this.heartbeat);
+    this.heartbeat = timers.setTimeout(() => this.socket.terminate(), (
+      COLLAB_CLOUD_BINDING_LIMITS.eventHeartbeatMs
+      * COLLAB_CLOUD_BINDING_LIMITS.eventMissedHeartbeatLimit
+    ));
+    this.heartbeat.unref();
+  }
+
+  close(code: number, reason: string): void {
+    timers.clearTimeout(this.heartbeat);
+    this.socket.close(code, reason);
+  }
   onClose(listener: (code: number) => void): void {
     this.socket.on('close', code => listener(code));
   }
-  onError(listener: () => void): void { this.socket.on('error', listener); }
+  onError(listener: (error?: unknown) => void): void {
+    this.socket.on('error', listener);
+    this.socket.on('unexpected-response', (_request, response) => {
+      listener(new CollabError({
+        code: response.statusCode === 401 || response.statusCode === 403
+          ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
+      response.destroy();
+    });
+  }
   onMessage(listener: (data: string) => void): void {
     this.socket.on('message', (data: RawData) => listener(data.toString()));
   }
@@ -156,6 +281,7 @@ class NodeCloudProjectEventSocket implements CloudProjectEventSocket {
 
 function createDefaultEventSocket(input: CloudProjectEventSocketInput): CloudProjectEventSocket {
   return new NodeCloudProjectEventSocket(new WebSocket(input.url, {
+    handshakeTimeout: 30_000,
     headers: input.headers,
     perMessageDeflate: false,
   }));
@@ -169,6 +295,12 @@ function controlIntegrityError(reason: string): CollabError {
   });
 }
 
+function assertResponseRequestId(actual: string, expected: string): void {
+  if (actual !== expected) {
+    throw controlIntegrityError('cloud-control-response-request-id-mismatch');
+  }
+}
+
 function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
   if (
     response.contentType === null
@@ -178,9 +310,17 @@ function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
   }
 }
 
-class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthorityLifecyclePort {
+function assertRequestActive(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw cloudAuthorityError('cancelled', 'cloud-authority-request-cancelled');
+  }
+}
+
+class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthorityLifecyclePort, CloudAuthorityMembershipControlPort {
+  readonly authorityKind = 'cloud' as const;
+  readonly #lifetime = new AbortController();
+
   constructor(
-    private readonly actorId: string,
     private readonly artifacts: CloudAuthorityArtifactTransport,
     private readonly capabilities: ReadonlySet<string>,
     private readonly capabilityLimits: Readonly<{
@@ -188,13 +328,89 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       readonly maxCheckpointManifestUtf8Bytes: number;
       readonly maxCheckpointRepositoryBundleBytes: number;
     }>,
-    private readonly memberId: string,
+    private readonly identity: Readonly<{
+      readonly authorityGeneration: number;
+      readonly memberId: string;
+      readonly personalRef: string;
+    }> | null,
     private readonly origin: string,
-    private readonly personalRef: string,
     private readonly projectId: string,
-    private readonly request: CloudAuthorityHttpTransport,
+    private readonly transport: CloudAuthorityHttpTransport,
     private readonly requestId: () => string,
+    private readonly headers: Readonly<Record<string, string>>,
   ) {}
+
+  dispose(): void {
+    this.#lifetime.abort();
+  }
+
+  assertActive(): void {
+    assertRequestActive(this.#lifetime.signal);
+  }
+
+  cloudMembership<Operation extends CloudMembershipOperation>(
+    operation: Operation,
+    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    binding: CloudMembershipBinding,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+    if (!this.identity || binding.serverUrl !== this.origin || binding.projectId !== this.projectId
+      || binding.memberId !== this.identity.memberId
+      || binding.authorityGeneration !== this.identity.authorityGeneration) {
+      throw cloudAuthorityOperationError('cloud-membership-binding-mismatch');
+    }
+    switch (operation) {
+      case 'listProjectMembers': return this.execute('cloud-project-membership', operation, request, options);
+      case 'demoteManager': return this.execute('cloud-project-membership', operation, request, options);
+      case 'removeMember': return this.execute('cloud-project-membership', operation, request, options);
+      case 'promoteManager': return this.execute('cloud-project-membership', operation, request, options);
+      case 'reissueTransferredMembershipClaim': return this.execute('cloud-imported-membership-claims', operation, request, options);
+      case 'revokeTransferredMembershipClaim': return this.execute('cloud-imported-membership-claims', operation, request, options);
+      case 'createManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'getManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'listCurrentManagerResponsibilityOffers': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'cancelManagerResponsibilityOffer': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'acknowledgeManagerResponsibility': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'declineManagerResponsibility': return this.execute('cloud-project-manager-responsibility', operation, request, options);
+      case 'createProjectInvitation': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'listProjectInvitations': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'revokeProjectInvitation': return this.execute('cloud-project-invitations', operation, request, options);
+      case 'leaveProject': return this.execute('cloud-project-leave', operation, request, options);
+      default: throw cloudAuthorityOperationError('cloud-membership-operation-unavailable');
+    }
+  }
+
+  private signal(caller?: AbortSignal): AbortSignal {
+    return caller ? AbortSignal.any([this.#lifetime.signal, caller]) : this.#lifetime.signal;
+  }
+
+  private async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
+    const signal = this.signal(input.signal);
+    assertRequestActive(signal);
+    const response = await this.transport({ ...input, signal });
+    assertRequestActive(signal);
+    return response;
+  }
+
+  async createProject(
+    input: CollabControlOperationMap['createCloudProject']['request'],
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<CollabControlOperationMap['createCloudProject']['response']> {
+    const response = await this.execute('cloud-project-create', 'createCloudProject', input, options);
+    if (response.projectId !== this.projectId) {
+      throw controlIntegrityError('cloud-control-created-project-mismatch');
+    }
+    return response;
+  }
+
+  async joinProject(
+    input: CollabControlOperationMap['joinCloudProject']['request'],
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<CollabControlOperationMap['joinCloudProject']['response']> {
+    const response = await this.execute('cloud-project-join', 'joinCloudProject', input, options);
+    if (response.projectId !== this.projectId) throw controlIntegrityError('cloud-control-joined-project-mismatch');
+    return response;
+  }
 
   authorityTransfer<Operation extends CollabAuthorityTransferOperation>(
     operation: Operation,
@@ -224,14 +440,16 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       'upload',
       input.artifact,
     );
+    const signal = this.signal(options.signal);
     const response = await this.artifacts.upload({
       body: input.body,
       byteCount: input.byteCount,
-      headers: { 'x-claudian-development-actor': this.actorId },
+      headers: this.headers,
       maximumBytes: this.#artifactLimit(input.artifact),
-      ...(options.signal ? { signal: options.signal } : {}),
-      url: new URL(route.target, this.origin).toString(),
+      signal,
+      url: resolveCloudRoute(this.origin, route.target),
     });
+    assertRequestActive(signal);
     if (response.status === 204) return;
     this.#throwArtifactResponse(response);
   }
@@ -248,12 +466,15 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       'download',
       input.artifact,
     );
+    const signal = this.signal(options.signal);
     const response = await this.artifacts.download({
-      headers: { 'x-claudian-development-actor': this.actorId },
+      headers: this.headers,
       maximumBytes: this.#artifactLimit(input.artifact),
-      ...(options.signal ? { signal: options.signal } : {}),
-      url: new URL(route.target, this.origin).toString(),
+      signal,
+      url: resolveCloudRoute(this.origin, route.target),
     });
+    if ('byteCount' in response && signal.aborted) response.body.destroy();
+    assertRequestActive(signal);
     if ('byteCount' in response) {
       return { body: response.body, byteCount: response.byteCount };
     }
@@ -271,28 +492,34 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     const route = collabCloudProjectOperationRoute(projectId, 'getProjectSnapshot');
     const decoded = COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC.decodeRequest({ projectId });
     if (decoded.status !== 'ok') throw decoded.error;
+    const requestId = this.requestId();
     const response = await this.request({
       body: {
         data: decoded.value,
         protocolVersion: COLLAB_PROTOCOL_VERSION,
-        requestId: this.requestId(),
+        requestId,
       },
-      headers: { 'x-claudian-development-actor': this.actorId },
+      headers: this.headers,
       method: route.method,
       ...(options.signal ? { signal: options.signal } : {}),
-      url: new URL(route.target, this.origin).toString(),
+      url: resolveCloudRoute(this.origin, route.target),
     });
     assertJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
+      assertResponseRequestId(envelope.requestId, requestId);
       throw new CollabError(envelope.error);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
+    assertResponseRequestId(envelope.requestId, requestId);
     const snapshot = decodeCloudAuthorityProjectSnapshot(envelope.data);
     if (
       snapshot.project.id !== projectId
-      || snapshot.currentMember.id !== this.memberId
-      || snapshot.currentMember.personalRef !== this.personalRef
+      || (this.identity !== null && (
+        snapshot.currentMember.id !== this.identity.memberId
+        || snapshot.currentMember.personalRef !== this.identity.personalRef
+        || snapshot.project.authorityGeneration !== this.identity.authorityGeneration
+      ))
     ) {
       throw controlIntegrityError('cloud-control-snapshot-response-mismatch');
     }
@@ -308,7 +535,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       signal ? { signal } : {},
     );
     if (
-      response.request.memberId !== this.memberId
+      response.request.memberId !== this.identity?.memberId
       || response.request.latestHeadOid !== input.headOid
       || response.request.status !== 'open'
       || response.mainOid !== input.expectedMainOid
@@ -343,7 +570,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       signal ? { signal } : {},
     );
     if (
-      response.comment.authorMemberId !== this.memberId
+      response.comment.authorMemberId !== this.identity?.memberId
       || response.comment.requestId !== input.requestId
       || response.request.id !== input.requestId
     ) {
@@ -362,7 +589,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       projectId: request.projectId,
       title: request.title,
     }, options);
-    if (response.ticket.ticket.authorMemberId !== this.memberId) {
+    if (response.ticket.ticket.authorMemberId !== this.identity?.memberId) {
       throw controlIntegrityError('cloud-control-ticket-create-mismatch');
     }
     return response.ticket;
@@ -394,7 +621,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       ticketId: request.ticketId,
     }, options);
     if (
-      response.comment.authorMemberId !== this.memberId
+      response.comment.authorMemberId !== this.identity?.memberId
       || response.comment.ticketId !== request.ticketId
       || response.ticket.id !== request.ticketId
     ) {
@@ -435,6 +662,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
   ) {
     return this.#updateRequest(request, idempotencyKey, options);
   }
+  resolveTicketNumber(
+    request: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[0],
+    options: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[1] = {},
+  ) { return this.execute('tickets', 'resolveTicketNumber', request, options); }
+
   listTickets(
     request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
     options: Parameters<CollabAuthorityControlPort['listTickets']>[1] = {},
@@ -493,6 +725,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       detail,
       (cursor, limit) => this.listRequestComments(projectId, requestId, { cursor, limit }, options),
       reason => controlIntegrityError(`cloud-control-${reason}`),
+      () => this.#readRequestDetail(projectId, requestId, options),
     );
   }
   readRequestPage(
@@ -511,6 +744,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       (cursor, limit) => this.listTicketComments(projectId, ticketId, { cursor, limit }, options),
       (cursor, limit) => this.listTicketAcceptedRelations(projectId, ticketId, { cursor, limit }, options),
       reason => controlIntegrityError(`cloud-control-${reason}`),
+      () => this.#readTicketDetail(projectId, ticketId, options),
     );
   }
   readTicketPage(
@@ -519,7 +753,8 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     options: Parameters<CollabAuthorityControlPort['readTicketPage']>[2] = {},
   ) { return this.#readTicketDetail(projectId, ticketId, options); }
 
-   #requireCapability(capability: CollabCloudCapability): void {
+  #requireCapability(capability: CollabCloudCapability): void {
+    this.assertActive();
     if (!this.capabilities.has(capability)) {
       throw cloudAuthorityOperationError('cloud-authority-capability-unavailable');
     }
@@ -559,23 +794,26 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     const decoded = codec.decodeRequest(input);
     if (decoded.status !== 'ok') throw decoded.error;
     const route = collabCloudProjectOperationRoute(input.projectId, operation);
+    const requestId = this.requestId();
     const response = await this.request({
       body: {
         data: decoded.value,
         protocolVersion: COLLAB_PROTOCOL_VERSION,
-        requestId: this.requestId(),
+        requestId,
       },
-      headers: { 'x-claudian-development-actor': this.actorId },
+      headers: this.headers,
       method: route.method,
       ...(options.signal ? { signal: options.signal } : {}),
-      url: new URL(route.target, this.origin).toString(),
+      url: resolveCloudRoute(this.origin, route.target),
     });
     assertJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
-      throw new CollabError(envelope.error);
+      assertResponseRequestId(envelope.requestId, requestId);
+      throw new CloudAuthorityRejection(envelope.error, envelope.mutationOutcome);
     }
     const envelope = decodeCollabCloudSuccessEnvelope(response.body);
+    assertResponseRequestId(envelope.requestId, requestId);
     return codec.decodeResponse(envelope.data);
   }
 
@@ -632,7 +870,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       projectId: request.projectId,
       requestId: request.requestId,
     }, options);
-    if (response.request.id !== request.requestId || response.request.memberId !== this.memberId) {
+    if (response.request.id !== request.requestId || response.request.memberId !== this.identity?.memberId) {
       throw controlIntegrityError('cloud-control-request-metadata-mismatch');
     }
     return response.request;
@@ -643,17 +881,11 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
 export class CloudProjectEventClient {
    #activeRefresh: Promise<void> | null = null;
    #acknowledgedSequence: number;
-  private readonly clearTimeout: (handle: number) => void;
    readonly #createSocket: NonNullable<CloudProjectEventClientOptions['createSocket']>;
   private disposed = false;
    #observedSequence: number;
   private readonly origin: string;
-   readonly #random: () => number;
-   #reconnectAfterRefresh = false;
-   #reconnectAttempt = 0;
-   #reconnectHandle: number | null = null;
    #pendingInvalidation: CollabAuthorityEventInvalidation | null = null;
-  private readonly setTimeout: (callback: () => void, milliseconds: number) => number;
    #socket: CloudProjectEventSocket | null = null;
 
   constructor(
@@ -665,12 +897,8 @@ export class CloudProjectEventClient {
   ) {
     this.#acknowledgedSequence = input.afterSequence;
     this.#observedSequence = input.afterSequence;
-    this.origin = canonicalCloudOrigin(input.serverUrl, 'serverUrl');
-    this.clearTimeout = options.clearTimeout ?? (handle => window.clearTimeout(handle));
+    this.origin = validateCloudServerUrl(input.serverUrl, 'serverUrl');
     this.#createSocket = options.createSocket ?? createDefaultEventSocket;
-    this.#random = options.random ?? Math.random;
-    this.setTimeout = options.setTimeout
-      ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
   }
 
   start(): void {
@@ -679,33 +907,34 @@ export class CloudProjectEventClient {
       this.input.projectId,
       this.#acknowledgedSequence,
     );
-    const url = new URL(route.target, this.origin);
+    const url = new URL(resolveCloudRoute(this.origin, route.target));
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = this.#createSocket({
-      headers: { 'x-claudian-development-actor': this.input.developmentActorId },
+      headers: this.input.headers,
       url: url.toString(),
     });
     this.#socket = socket;
+    this.#observedSequence = this.#acknowledgedSequence;
     socket.onOpen(() => {
       if (this.#socket !== socket) return;
-      this.#reconnectAttempt = 0;
       this.request({ kind: 'snapshot', sequence: this.#acknowledgedSequence });
     });
     socket.onMessage(data => {
       if (this.#socket === socket) this.#handleMessage(data);
     });
-    socket.onError(() => {
-      if (this.#socket === socket) socket.close(1011, 'Event connection failed');
+    socket.onError(error => {
+      if (this.#socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
+      }), 'Event connection failed');
     });
     socket.onClose(code => {
       if (this.#socket !== socket) return;
       this.#socket = null;
-      if (code === 1008) {
-        this.#pendingInvalidation = null;
-      } else {
-        this.#reconnectAfterRefresh = true;
-        this.#scheduleReconnectWhenIdle();
-      }
+      this.input.onConnectionResult?.(new CollabError({
+        code: code === 1008 ? 'authorization-denied' : 'endpoint-unreachable',
+      }));
+      this.#pendingInvalidation = null;
     });
   }
 
@@ -713,11 +942,6 @@ export class CloudProjectEventClient {
     if (this.disposed) return;
     this.disposed = true;
     this.#pendingInvalidation = null;
-    this.#reconnectAfterRefresh = false;
-    if (this.#reconnectHandle !== null) {
-      this.clearTimeout(this.#reconnectHandle);
-      this.#reconnectHandle = null;
-    }
     const socket = this.#socket;
     this.#socket = null;
     socket?.close(1000, 'Client stopped');
@@ -776,20 +1000,23 @@ export class CloudProjectEventClient {
   }
 
    #startRefresh(invalidation: CollabAuthorityEventInvalidation): void {
+    const socket = this.#socket;
     const refresh = Promise.resolve().then(async () => {
-      if (this.disposed) return;
+      if (this.disposed || this.#socket !== socket) return;
       const applied = await this.onInvalidation(invalidation);
-      if (this.disposed) return;
+      if (this.disposed || this.#socket !== socket) return;
       if (!Number.isSafeInteger(applied) || applied < invalidation.sequence) {
-        throw cloudAuthorityOperationError('cloud-event-cursor-not-applied');
+        throw controlIntegrityError('cloud-event-cursor-not-applied');
       }
       this.#acknowledgedSequence = Math.max(this.#acknowledgedSequence, applied);
       this.#observedSequence = Math.max(this.#observedSequence, applied);
-    }).catch(() => {
-      if (this.disposed) return;
-      this.#pendingInvalidation = null;
-      const socket = this.#socket;
-      if (socket) socket.close(1011, 'Event refresh failed');
+      if (invalidation.kind === 'retired') this.dispose();
+      else this.input.onConnectionResult?.();
+    }).catch(error => {
+      if (this.disposed || this.#socket !== socket) return;
+      this.#fail(error instanceof CollabError ? error : new CollabError({
+        code: 'operation-failed',
+      }), 'Event refresh failed');
     }).finally(() => {
       if (this.#activeRefresh !== refresh) return;
       this.#activeRefresh = null;
@@ -803,7 +1030,6 @@ export class CloudProjectEventClient {
         this.#startRefresh(pending);
         return;
       }
-      this.#scheduleReconnectWhenIdle();
     });
     this.#activeRefresh = refresh;
   }
@@ -821,120 +1047,365 @@ export class CloudProjectEventClient {
     };
   }
 
-   #scheduleReconnectWhenIdle(): void {
-    if (!this.#reconnectAfterRefresh || this.#activeRefresh) return;
-    this.#reconnectAfterRefresh = false;
-    this.#scheduleReconnect();
+  #fail(error: CollabError, reason: string): void {
+    const socket = this.#socket;
+    if (!socket || this.disposed) return;
+    this.#socket = null;
+    this.#pendingInvalidation = null;
+    socket.close(1011, reason);
+    this.input.onConnectionResult?.(error);
   }
 
-   #scheduleReconnect(): void {
-    if (this.disposed || this.#reconnectHandle !== null) return;
-    const ceiling = Math.min(
-      MAX_RECONNECT_DELAY_MS,
-      MIN_RECONNECT_DELAY_MS * (2 ** this.#reconnectAttempt),
-    );
-    this.#reconnectAttempt += 1;
-    this.#reconnectHandle = this.setTimeout(() => {
-      this.#reconnectHandle = null;
-      this.start();
-    }, Math.floor(this.#random() * ceiling));
-  }
 }
 
 export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
   readonly authorityKind = 'cloud' as const;
    readonly #createEventClient: NonNullable<CloudAuthorityAdapterOptions['createEventClient']>;
   private readonly artifacts: CloudAuthorityArtifactTransport;
+  private readonly readPersonalRef: NonNullable<CloudAuthorityAdapterOptions['readPersonalRef']>;
   private readonly request: CloudAuthorityHttpTransport;
   private readonly requestId: () => string;
 
-  constructor(options: CloudAuthorityAdapterOptions = {}) {
+  private readonly credentials: CloudProjectCredentialStore;
+
+  constructor(vaultRoot: string, options: CloudAuthorityAdapterOptions = {}) {
+    this.credentials = new CloudProjectCredentialStore(vaultRoot);
     this.artifacts = options.artifacts ?? new NodeCloudAuthorityArtifactTransport();
     this.#createEventClient = options.createEventClient
       ?? ((input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation));
+    const personalRefs = new CloudPersonalRefReader();
+    this.readPersonalRef = options.readPersonalRef ?? (input => personalRefs.read(input));
     this.request = options.request ?? new NodeCloudAuthorityHttpTransport().request;
     this.requestId = options.requestIdFactory
       ?? (() => `cloud-${randomUUID().replaceAll('-', '')}`);
   }
 
-  async create(membership: CollabLocalMembershipRecord): Promise<CollabAuthoritySession> {
+  async create(
+    membership: CollabLocalMembershipRecord,
+    options: CollabOperationOptions & CollabAuthoritySessionCreationOptions = {},
+  ): Promise<CollabAuthoritySession> {
     if (!isCollabLocalCloudMembership(membership)) {
       throw new TypeError('Cloud adapter requires a Cloud membership');
     }
-    const { document, origin } = await this.#negotiate(
-      membership.authority.developmentActorId,
-      membership.authority.serverUrl,
-    );
+    const { authorityGeneration, bindingVersion, gitRemoteUrl, serverUrl, wireVersion } = membership.authority;
+    const projectId = membership.project.id;
+    const { id: memberId, personalRef } = membership.member;
+    if (
+      typeof authorityGeneration !== 'number'
+      || !Number.isSafeInteger(authorityGeneration)
+      || authorityGeneration < 1
+      || bindingVersion !== COLLAB_CLOUD_BINDING_VERSION
+      || wireVersion !== COLLAB_PROTOCOL_VERSION
+      || !isCollabProjectId(projectId)
+      || !isCollabMemberId(memberId)
+      || personalRef !== collabMemberRef(memberId)
+      || gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)
+    ) throw new TypeError('Invalid Cloud authority binding');
+    const { document, origin } = await this.#negotiate(serverUrl, options);
+    const credential = await this.credentials.require(projectId);
+    const headers = credentialHeaders(credential);
     const capabilities = new Set(document.capabilities);
     const control = new CloudAuthorityControl(
-      membership.authority.developmentActorId,
       this.artifacts,
       capabilities,
       document.limits,
-      membership.member.id,
+      {
+        authorityGeneration,
+        memberId,
+        personalRef,
+      },
       origin,
-      membership.member.personalRef,
-      membership.project.id,
+      projectId,
       this.request,
       this.requestId,
+      headers,
     );
+    try {
+      const snapshot = await control.readSnapshot(projectId, options);
+      options.onInitialSnapshot?.(snapshot);
+    } catch (error) {
+      control.dispose();
+      throw error;
+    }
+    let eventConnection: { dispose(): void } | null = null;
     return {
       authorityKind: 'cloud',
       control,
-      dispose: () => undefined,
+      dispose: () => {
+        control.dispose();
+        eventConnection?.dispose();
+      },
       events: {
-        connect: ({ afterSequence, onInvalidation }: CollabAuthorityEventConnectionInput) => {
+        connect: ({ afterSequence, onInvalidation, onConnectionResult }: CollabAuthorityEventConnectionInput) => {
+          control.assertActive();
           if (!collabCloudCapabilitySupported(document, 'project-events')) {
             throw cloudAuthorityOperationError('cloud-authority-capability-unavailable');
           }
           const client = this.#createEventClient({
+            onConnectionResult,
             afterSequence,
-            developmentActorId: membership.authority.developmentActorId,
-            projectId: membership.project.id,
+            headers,
+            projectId,
             serverUrl: origin,
           }, onInvalidation);
-          client.start();
-          return client;
+          const connection = {
+            dispose: () => {
+              if (eventConnection !== connection) return;
+              eventConnection = null;
+              client.dispose();
+            },
+          };
+          eventConnection?.dispose();
+          eventConnection = connection;
+          try {
+            client.start();
+            return connection;
+          } catch (error) {
+            connection.dispose();
+            throw error;
+          }
         },
       },
       git: {
-        headers: [{
-          name: 'X-Claudian-Development-Actor',
-          sensitive: false,
-          value: membership.authority.developmentActorId,
-        }],
-        remoteUrl: membership.authority.gitRemoteUrl,
+        headers: gitCredentialHeaders(headers),
+        remoteUrl: gitRemoteUrl,
       },
       lifecycle: control,
+      membership: control,
       supports: capability => cloudCapabilityImplemented(document, capability),
     };
   }
 
-  async createLifecycle(
-    binding: CloudAuthorityLifecycleBinding,
-  ): Promise<CloudAuthorityLifecycleSession> {
-    const { document, origin } = await this.#negotiate(
-      binding.developmentActorId,
-      binding.serverUrl,
-    );
+  async connectPendingLeave(
+    binding: CloudPendingLeaveConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudPendingLeaveConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud pending Leave binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
     const capabilities = new Set(document.capabilities);
-    const lifecycle = new CloudAuthorityControl(
-      binding.developmentActorId,
+    const control = new CloudAuthorityControl(
       this.artifacts,
       capabilities,
       document.limits,
-      binding.developmentActorId,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
       origin,
-      collabMemberRef(binding.developmentActorId),
       binding.projectId,
       this.request,
       this.requestId,
+      headers,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    const lifetime = new AbortController();
+    const requestOptions = (
+      caller: { readonly signal?: AbortSignal } = {},
+    ): { readonly signal: AbortSignal } => ({
+      signal: caller.signal
+        ? AbortSignal.any([lifetime.signal, caller.signal])
+        : lifetime.signal,
+    });
+    return {
+      dispose: () => {
+        lifetime.abort();
+        control.dispose();
+      },
+      getManagerResponsibilityOffer: (request, requestOptionsInput) => (
+        control.cloudMembership(
+          'getManagerResponsibilityOffer',
+          request,
+          membershipBinding,
+          requestOptions(requestOptionsInput),
+        )
+      ),
+      leaveProject: (request, requestOptionsInput) => control.cloudMembership(
+        'leaveProject',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptions(requestOptionsInput),
+      ),
+      readPersonalRefOid: (personalRef, requestOptionsInput) => {
+        if (
+          personalRef !== binding.personalRef
+          || !cloudCapabilityImplemented(document, 'git-upload-pack')
+        ) throw controlIntegrityError('cloud-pending-leave-personal-ref-mismatch');
+        return this.readPersonalRef({
+          headers,
+          personalRef,
+          projectId: binding.projectId,
+          serverUrl: origin,
+          ...requestOptions(requestOptionsInput),
+        });
+      },
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptions(requestOptionsInput),
+      ),
+    };
+  }
+
+  async connectPendingRetirement(
+    binding: CloudPendingRetirementConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudPendingRetirementConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud pending Retirement binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
+    const control = new CloudAuthorityControl(
+      this.artifacts,
+      new Set(document.capabilities),
+      document.limits,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
+      origin,
+      binding.projectId,
+      this.request,
+      this.requestId,
+      headers,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    return {
+      dispose: () => control.dispose(),
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptionsInput,
+      ),
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptionsInput,
+      ),
+      retireProject: (request, requestOptionsInput) => control.retirement(
+        'retireProject',
+        request,
+        requestOptionsInput,
+      ),
+    };
+  }
+
+  async connectAuthorityTransfer(
+    binding: CloudAuthorityTransferConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudAuthorityTransferConnection> {
+    if (
+      !isCollabProjectId(binding.projectId)
+      || !isCollabMemberId(binding.memberId)
+      || binding.personalRef !== collabMemberRef(binding.memberId)
+      || !Number.isSafeInteger(binding.authorityGeneration)
+      || binding.authorityGeneration < 1
+    ) throw new TypeError('Invalid Cloud authority-transfer binding');
+    const { document, origin } = await this.#negotiate(binding.serverUrl, options);
+    const credential = await this.credentials.require(binding.projectId);
+    const headers = credentialHeaders(credential);
+    const control = new CloudAuthorityControl(
+      this.artifacts,
+      new Set(document.capabilities),
+      document.limits,
+      {
+        authorityGeneration: binding.authorityGeneration,
+        memberId: binding.memberId,
+        personalRef: binding.personalRef,
+      },
+      origin,
+      binding.projectId,
+      this.request,
+      this.requestId,
+      headers,
+    );
+    const membershipBinding: CloudMembershipBinding = {
+      authorityGeneration: binding.authorityGeneration,
+      memberId: binding.memberId,
+      projectId: binding.projectId,
+      serverUrl: origin,
+    };
+    return {
+      authorityGeneration: binding.authorityGeneration,
+      dispose: () => control.dispose(),
+      lifecycle: control,
+      listProjectMembers: (request, requestOptionsInput) => control.cloudMembership(
+        'listProjectMembers',
+        request,
+        membershipBinding,
+        requestOptionsInput,
+      ),
+      memberId: binding.memberId,
+      personalRef: binding.personalRef,
+      projectId: binding.projectId,
+      readSnapshot: (projectId, requestOptionsInput) => control.readSnapshot(
+        projectId,
+        requestOptionsInput,
+      ),
+      serverUrl: binding.serverUrl,
+      supports: capability => cloudCapabilityImplemented(document, capability),
+    };
+  }
+
+  async connect(
+    binding: CloudAuthorityConnectionInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CloudAuthorityConnection> {
+    const { projectId, serverUrl } = binding;
+    const remoteUrl = cloudProjectGitRemoteUrl(serverUrl, projectId);
+    const { document, origin } = await this.#negotiate(serverUrl, options);
+    const credential = await this.credentials.require(projectId);
+    const headers = credentialHeaders(credential);
+    const capabilities = new Set(document.capabilities);
+    const lifecycle = new CloudAuthorityControl(
+      this.artifacts,
+      capabilities,
+      document.limits,
+      null,
+      origin,
+      projectId,
+      this.request,
+      this.requestId,
+      headers,
     );
     return {
-      developmentActorId: binding.developmentActorId,
-      dispose: () => undefined,
+      createProject: (input, options) => lifecycle.createProject(input, options),
+      joinProject: (input, options) => lifecycle.joinProject(input, options),
+      dispose: () => lifecycle.dispose(),
+      git: { headers: gitCredentialHeaders(headers), remoteUrl },
+      principalId: credential.principalId,
       lifecycle,
-      projectId: binding.projectId,
+      projectId,
       readSnapshot: (projectId, options) => lifecycle.readSnapshot(projectId, options),
       serverUrl: origin,
       supports: capability => cloudCapabilityImplemented(document, capability),
@@ -942,16 +1413,19 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
   }
 
    async #negotiate(
-    developmentActorId: string,
     serverUrl: string,
+    options: CollabOperationOptions,
   ): Promise<{ readonly document: CollabCloudCapabilityDocument; readonly origin: string }> {
-    const origin = canonicalCloudOrigin(serverUrl, 'serverUrl');
+    assertRequestActive(options.signal);
+    const origin = validateCloudServerUrl(serverUrl, 'serverUrl');
     const route = collabCloudCapabilitiesRoute();
     const response = await this.request({
-      headers: { 'x-claudian-development-actor': developmentActorId },
+      headers: {},
       method: route.method,
-      url: new URL(route.target, origin).toString(),
+      ...(options.signal ? { signal: options.signal } : {}),
+      url: resolveCloudRoute(origin, route.target),
     });
+    assertRequestActive(options.signal);
     assertJsonResponse(response);
     if (response.status !== 200) {
       throw cloudAuthorityOperationError('cloud-capability-negotiation-failed');
@@ -973,4 +1447,14 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     }
     return { document, origin };
   }
+}
+
+function credentialHeaders(credential: CloudProjectCredential): Readonly<Record<string, string>> {
+  return Object.freeze({
+    authorization: `Bearer ${credential.credential}`,
+  });
+}
+
+function gitCredentialHeaders(headers: Readonly<Record<string, string>>) {
+  return Object.entries(headers).map(([name, value]) => ({ name, value, sensitive: true }));
 }

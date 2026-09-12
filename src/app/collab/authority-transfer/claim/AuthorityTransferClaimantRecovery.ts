@@ -13,6 +13,17 @@ import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantRecoveryHandler {
+  beforeProject(
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<'skip' | void>;
+  complete(
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
+  isLocalOwner?(
+    record: AuthorityTransferClaimantRecord,
+  ): Promise<boolean>;
   resume(
     record: AuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
@@ -27,24 +38,28 @@ export function authorityTransferClaimantRequiresSource(
   record: AuthorityTransferClaimantRecord,
   now: Date,
 ): boolean {
+  if (record.variant === 'manager-reissued') return false;
   if (
     record.phase === 'prepared'
     || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted'
+    || (record.phase === 'credential-persisted' && (
+      record.status.direction !== 'lan-to-cloud' || now.getTime() < Date.parse(record.status.expiresAt)
+    ))
   ) return true;
   return record.phase === 'target-claimed'
     && now.getTime() < Date.parse(record.status.expiresAt);
 }
 
-function requiresNoRuntime(
+export function authorityTransferClaimantRequiresNoRuntime(
   record: AuthorityTransferClaimantRecord,
   now: Date,
 ): boolean {
   if (record.phase === 'completed' || record.phase === 'membership-converged') return true;
+  if (record.variant === 'manager-reissued') return false;
   if (now.getTime() < Date.parse(record.status.expiresAt)) return false;
   return record.phase === 'prepared'
     || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted';
+    || (record.phase === 'credential-persisted' && record.status.direction !== 'lan-to-cloud');
 }
 
 export class AuthorityTransferClaimantRecovery
@@ -83,8 +98,9 @@ implements CollabProjectLifecycleRecoveryStage {
         async () => {
           const record = await this.store.load(projectId);
           if (!record) return;
-          if (requiresNoRuntime(record, this.now())) {
-            await this.store.remove(projectId);
+          if (await this.handler.beforeProject(record, options) === 'skip') return;
+          if (authorityTransferClaimantRequiresNoRuntime(record, this.now())) {
+            await this.handler.complete(record, options);
             return;
           }
           await this.handler.resume(record, options);
@@ -108,7 +124,10 @@ implements CollabProjectLifecycleRecoveryStage {
   ): Promise<'absent' | 'nonterminal' | 'terminal'> {
     const record = await this.store.load(projectId);
     if (!record) return 'absent';
-    return record.phase === 'completed' || record.phase === 'membership-converged'
+    if (record.phase === 'completed' || record.phase === 'membership-converged') {
+      return 'terminal';
+    }
+    return await this.handler.isLocalOwner?.(record) === false
       ? 'terminal'
       : 'nonterminal';
   }

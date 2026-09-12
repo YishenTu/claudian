@@ -105,49 +105,49 @@ const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
 };
 
 export class CodexNotificationRouter {
-  private seenWebSearchIds = new Set<string>();
-  private planUpdateCounter = 0;
-  private startedUserMessageIds = new Set<string>();
-  private startedAgentMessageIds = new Set<string>();
-  private streamedAgentMessageTextById = new Map<string, string>();
-  private emittedMemoryCitationIds = new Set<string>();
-  private emittedMemoryCitationKeys = new Set<string>();
-  private streamedAssistantTurnText = '';
-  private currentAssistantSegmentId: string | undefined;
-  private currentAssistantSegmentText = '';
-  private seenRawCallIds = new Set<string>();
-  private pendingRawOutputItemsByCallId = new Map<string, Record<string, unknown>>();
-  private rawStartedCallIds = new Set<string>();
-  private startedCanonicalToolItemIds = new Set<string>();
-  private completedCanonicalToolItemIds = new Set<string>();
-  private rawToolNamesByCallId = new Map<string, string>();
-  private rawToolInputsByCallId = new Map<string, Record<string, unknown>>();
-  private rawToolOutputsByCallId = new Map<string, RawToolResult>();
-  private handledRawOutputCallIds = new Set<string>();
-  private inFlightRawFunctionCallIds = new Set<string>();
-  private immediateRawOutputCallIds = new Set<string>();
-  private emittedImmediateToolResultIds = new Set<string>();
-  private wrappedCommandCallIdsByCellId = new Map<string, string>();
-  private wrappedCommandOutputByCallId = new Map<string, string>();
-  private wrappedWaitCallsByCallId = new Map<string, WrappedWaitCall>();
-  private pendingWrappedWaitCallsByCallId = new Map<string, PendingWrappedWaitCall>();
-  private canonicalCommandOutputByItemId = new Map<string, string>();
-  private pendingCanonicalToolOutputByItemId = new Map<string, string[]>();
-  private canonicalPrefilledRawCommandCallIds = new Set<string>();
+  #seenWebSearchIds = new Set<string>();
+  #planUpdateCounter = 0;
+  #startedUserMessageIds = new Set<string>();
+  #startedAgentMessageIds = new Set<string>();
+  #streamedAgentMessageTextById = new Map<string, string>();
+  #emittedMemoryCitationIds = new Set<string>();
+  #emittedMemoryCitationKeys = new Set<string>();
+  #streamedAssistantTurnText = '';
+  #currentAssistantSegmentId: string | undefined;
+  #currentAssistantSegmentText = '';
+  #seenRawCallIds = new Set<string>();
+  #pendingRawOutputItemsByCallId = new Map<string, Record<string, unknown>>();
+  #rawStartedCallIds = new Set<string>();
+  #startedCanonicalToolItemIds = new Set<string>();
+  #completedCanonicalToolItemIds = new Set<string>();
+  #rawToolNamesByCallId = new Map<string, string>();
+  #rawToolInputsByCallId = new Map<string, Record<string, unknown>>();
+  #rawToolOutputsByCallId = new Map<string, RawToolResult>();
+  #handledRawOutputCallIds = new Set<string>();
+  #inFlightRawFunctionCallIds = new Set<string>();
+  #immediateRawOutputCallIds = new Set<string>();
+  #emittedImmediateToolResultIds = new Set<string>();
+  #wrappedCommandCallIdsByCellId = new Map<string, string>();
+  #wrappedCommandOutputByCallId = new Map<string, string>();
+  #wrappedWaitCallsByCallId = new Map<string, WrappedWaitCall>();
+  #pendingWrappedWaitCallsByCallId = new Map<string, PendingWrappedWaitCall>();
+  #canonicalCommandOutputByItemId = new Map<string, string>();
+  #pendingCanonicalToolOutputByItemId = new Map<string, string[]>();
+  #canonicalPrefilledRawCommandCallIds = new Set<string>();
   // Raw tool calls and canonical command items describe the same work with unrelated IDs.
   // A uniquely correlated command keeps whichever projection started first as the visible row.
-  private unmatchedRawCommands: RawCommandProjection[] = [];
-  private unmatchedCanonicalCommands: CanonicalCommandProjection[] = [];
-  private rawCommandByCanonicalId = new Map<string, RawCommandProjection>();
+  #unmatchedRawCommands: RawCommandProjection[] = [];
+  #unmatchedCanonicalCommands: CanonicalCommandProjection[] = [];
+  #rawCommandByCanonicalId = new Map<string, RawCommandProjection>();
   // Non-Bash Code Mode exec calls are transport envelopes. Canonical items own their
   // semantic lifecycles; the envelope remains available as a lossless raw-only fallback.
-  private deferredRawExecCalls = new Map<string, DeferredRawExecCall>();
-  private projectedCanonicalItemIds = new Set<string>();
-  private activeCanonicalToolProjections = new Map<string, CanonicalToolProjection>();
-  private deferredOwnedCanonicalItemIds = new Set<string>();
-  private ignoredLateRawOutputCallIds = new Set<string>();
-  private suppressedRawCallIds = new Set<string>();
-  private fileChangeInputsById = new Map<string, Record<string, unknown>>();
+  #deferredRawExecCalls = new Map<string, DeferredRawExecCall>();
+  #projectedCanonicalItemIds = new Set<string>();
+  #activeCanonicalToolProjections = new Map<string, CanonicalToolProjection>();
+  #deferredOwnedCanonicalItemIds = new Set<string>();
+  #ignoredLateRawOutputCallIds = new Set<string>();
+  #suppressedRawCallIds = new Set<string>();
+  #fileChangeInputsById = new Map<string, Record<string, unknown>>();
 
   constructor(
     private readonly emit: ChunkEmitter,
@@ -155,238 +155,238 @@ export class CodexNotificationRouter {
     private readonly workingDirectory?: string,
   ) {}
 
-  private resetAssistantTextTracking(): void {
-    this.streamedAssistantTurnText = '';
-    this.resetAssistantSegmentText();
+  #resetAssistantTextTracking(): void {
+    this.#streamedAssistantTurnText = '';
+    this.#resetAssistantSegmentText();
   }
 
-  private resetAssistantSegmentText(): void {
-    this.currentAssistantSegmentId = undefined;
-    this.currentAssistantSegmentText = '';
+  #resetAssistantSegmentText(): void {
+    this.#currentAssistantSegmentId = undefined;
+    this.#currentAssistantSegmentText = '';
   }
 
-  private beginAssistantSegment(itemId: string): void {
-    if (this.currentAssistantSegmentId === itemId) {
+  #beginAssistantSegment(itemId: string): void {
+    if (this.#currentAssistantSegmentId === itemId) {
       return;
     }
 
-    this.currentAssistantSegmentId = itemId;
-    this.currentAssistantSegmentText = '';
+    this.#currentAssistantSegmentId = itemId;
+    this.#currentAssistantSegmentText = '';
   }
 
-  private claimAssistantSegment(itemId?: string): void {
+  #claimAssistantSegment(itemId?: string): void {
     if (!itemId) {
       return;
     }
 
-    if (this.currentAssistantSegmentId && this.currentAssistantSegmentId !== itemId) {
-      this.beginAssistantSegment(itemId);
+    if (this.#currentAssistantSegmentId && this.#currentAssistantSegmentId !== itemId) {
+      this.#beginAssistantSegment(itemId);
       return;
     }
 
-    if (!this.currentAssistantSegmentId) {
-      this.currentAssistantSegmentId = itemId;
+    if (!this.#currentAssistantSegmentId) {
+      this.#currentAssistantSegmentId = itemId;
     }
   }
 
-  private appendAssistantText(text: string, itemId?: string): void {
+  #appendAssistantText(text: string, itemId?: string): void {
     if (!text) {
       return;
     }
 
-    this.claimAssistantSegment(itemId);
+    this.#claimAssistantSegment(itemId);
 
-    this.currentAssistantSegmentText += text;
-    this.streamedAssistantTurnText += text;
+    this.#currentAssistantSegmentText += text;
+    this.#streamedAssistantTurnText += text;
   }
 
   beginTurn(): void {
-    this.startedUserMessageIds.clear();
-    this.startedAgentMessageIds.clear();
-    this.streamedAgentMessageTextById.clear();
-    this.emittedMemoryCitationIds.clear();
-    this.emittedMemoryCitationKeys.clear();
-    this.resetAssistantTextTracking();
-    this.seenRawCallIds.clear();
-    this.pendingRawOutputItemsByCallId.clear();
-    this.rawStartedCallIds.clear();
-    this.startedCanonicalToolItemIds.clear();
-    this.completedCanonicalToolItemIds.clear();
-    this.rawToolNamesByCallId.clear();
-    this.rawToolInputsByCallId.clear();
-    this.rawToolOutputsByCallId.clear();
-    this.handledRawOutputCallIds.clear();
-    this.inFlightRawFunctionCallIds.clear();
-    this.immediateRawOutputCallIds.clear();
-    this.emittedImmediateToolResultIds.clear();
-    this.wrappedCommandCallIdsByCellId.clear();
-    this.wrappedCommandOutputByCallId.clear();
-    this.wrappedWaitCallsByCallId.clear();
-    this.pendingWrappedWaitCallsByCallId.clear();
-    this.canonicalCommandOutputByItemId.clear();
-    this.pendingCanonicalToolOutputByItemId.clear();
-    this.canonicalPrefilledRawCommandCallIds.clear();
-    this.unmatchedRawCommands.length = 0;
-    this.unmatchedCanonicalCommands.length = 0;
-    this.rawCommandByCanonicalId.clear();
-    this.deferredRawExecCalls.clear();
-    this.projectedCanonicalItemIds.clear();
-    this.activeCanonicalToolProjections.clear();
-    this.deferredOwnedCanonicalItemIds.clear();
-    this.ignoredLateRawOutputCallIds.clear();
-    this.suppressedRawCallIds.clear();
-    this.fileChangeInputsById.clear();
+    this.#startedUserMessageIds.clear();
+    this.#startedAgentMessageIds.clear();
+    this.#streamedAgentMessageTextById.clear();
+    this.#emittedMemoryCitationIds.clear();
+    this.#emittedMemoryCitationKeys.clear();
+    this.#resetAssistantTextTracking();
+    this.#seenRawCallIds.clear();
+    this.#pendingRawOutputItemsByCallId.clear();
+    this.#rawStartedCallIds.clear();
+    this.#startedCanonicalToolItemIds.clear();
+    this.#completedCanonicalToolItemIds.clear();
+    this.#rawToolNamesByCallId.clear();
+    this.#rawToolInputsByCallId.clear();
+    this.#rawToolOutputsByCallId.clear();
+    this.#handledRawOutputCallIds.clear();
+    this.#inFlightRawFunctionCallIds.clear();
+    this.#immediateRawOutputCallIds.clear();
+    this.#emittedImmediateToolResultIds.clear();
+    this.#wrappedCommandCallIdsByCellId.clear();
+    this.#wrappedCommandOutputByCallId.clear();
+    this.#wrappedWaitCallsByCallId.clear();
+    this.#pendingWrappedWaitCallsByCallId.clear();
+    this.#canonicalCommandOutputByItemId.clear();
+    this.#pendingCanonicalToolOutputByItemId.clear();
+    this.#canonicalPrefilledRawCommandCallIds.clear();
+    this.#unmatchedRawCommands.length = 0;
+    this.#unmatchedCanonicalCommands.length = 0;
+    this.#rawCommandByCanonicalId.clear();
+    this.#deferredRawExecCalls.clear();
+    this.#projectedCanonicalItemIds.clear();
+    this.#activeCanonicalToolProjections.clear();
+    this.#deferredOwnedCanonicalItemIds.clear();
+    this.#ignoredLateRawOutputCallIds.clear();
+    this.#suppressedRawCallIds.clear();
+    this.#fileChangeInputsById.clear();
   }
 
   endTurn(): void {
-    this.startedUserMessageIds.clear();
-    this.startedAgentMessageIds.clear();
-    this.streamedAgentMessageTextById.clear();
-    this.emittedMemoryCitationIds.clear();
-    this.emittedMemoryCitationKeys.clear();
-    this.resetAssistantTextTracking();
-    this.seenRawCallIds.clear();
-    this.pendingRawOutputItemsByCallId.clear();
-    this.rawStartedCallIds.clear();
-    this.startedCanonicalToolItemIds.clear();
-    this.completedCanonicalToolItemIds.clear();
-    this.rawToolNamesByCallId.clear();
-    this.rawToolInputsByCallId.clear();
-    this.rawToolOutputsByCallId.clear();
-    this.handledRawOutputCallIds.clear();
-    this.inFlightRawFunctionCallIds.clear();
-    this.immediateRawOutputCallIds.clear();
-    this.emittedImmediateToolResultIds.clear();
-    this.wrappedCommandCallIdsByCellId.clear();
-    this.wrappedCommandOutputByCallId.clear();
-    this.wrappedWaitCallsByCallId.clear();
-    this.pendingWrappedWaitCallsByCallId.clear();
-    this.canonicalCommandOutputByItemId.clear();
-    this.pendingCanonicalToolOutputByItemId.clear();
-    this.canonicalPrefilledRawCommandCallIds.clear();
-    this.unmatchedRawCommands.length = 0;
-    this.unmatchedCanonicalCommands.length = 0;
-    this.rawCommandByCanonicalId.clear();
-    this.deferredRawExecCalls.clear();
-    this.projectedCanonicalItemIds.clear();
-    this.activeCanonicalToolProjections.clear();
-    this.deferredOwnedCanonicalItemIds.clear();
-    this.ignoredLateRawOutputCallIds.clear();
-    this.suppressedRawCallIds.clear();
-    this.fileChangeInputsById.clear();
+    this.#startedUserMessageIds.clear();
+    this.#startedAgentMessageIds.clear();
+    this.#streamedAgentMessageTextById.clear();
+    this.#emittedMemoryCitationIds.clear();
+    this.#emittedMemoryCitationKeys.clear();
+    this.#resetAssistantTextTracking();
+    this.#seenRawCallIds.clear();
+    this.#pendingRawOutputItemsByCallId.clear();
+    this.#rawStartedCallIds.clear();
+    this.#startedCanonicalToolItemIds.clear();
+    this.#completedCanonicalToolItemIds.clear();
+    this.#rawToolNamesByCallId.clear();
+    this.#rawToolInputsByCallId.clear();
+    this.#rawToolOutputsByCallId.clear();
+    this.#handledRawOutputCallIds.clear();
+    this.#inFlightRawFunctionCallIds.clear();
+    this.#immediateRawOutputCallIds.clear();
+    this.#emittedImmediateToolResultIds.clear();
+    this.#wrappedCommandCallIdsByCellId.clear();
+    this.#wrappedCommandOutputByCallId.clear();
+    this.#wrappedWaitCallsByCallId.clear();
+    this.#pendingWrappedWaitCallsByCallId.clear();
+    this.#canonicalCommandOutputByItemId.clear();
+    this.#pendingCanonicalToolOutputByItemId.clear();
+    this.#canonicalPrefilledRawCommandCallIds.clear();
+    this.#unmatchedRawCommands.length = 0;
+    this.#unmatchedCanonicalCommands.length = 0;
+    this.#rawCommandByCanonicalId.clear();
+    this.#deferredRawExecCalls.clear();
+    this.#projectedCanonicalItemIds.clear();
+    this.#activeCanonicalToolProjections.clear();
+    this.#deferredOwnedCanonicalItemIds.clear();
+    this.#ignoredLateRawOutputCallIds.clear();
+    this.#suppressedRawCallIds.clear();
+    this.#fileChangeInputsById.clear();
   }
 
   handleNotification(method: string, params: unknown): void {
     switch (method) {
       case 'item/agentMessage/delta':
-        this.onAgentMessageDelta(params as AgentMessageDeltaNotification);
+        this.#onAgentMessageDelta(params as AgentMessageDeltaNotification);
         break;
       case 'item/started':
-        this.onItemStarted(params as ItemStartedNotification);
+        this.#onItemStarted(params as ItemStartedNotification);
         break;
       case 'item/completed':
-        this.onItemCompleted(params as ItemCompletedNotification);
+        this.#onItemCompleted(params as ItemCompletedNotification);
         break;
       case 'item/reasoning/summaryTextDelta':
-        this.onReasoningSummaryDelta(params as ReasoningSummaryTextDeltaNotification);
+        this.#onReasoningSummaryDelta(params as ReasoningSummaryTextDeltaNotification);
         break;
       case 'item/reasoning/textDelta':
-        this.onReasoningTextDelta(params as ReasoningTextDeltaNotification);
+        this.#onReasoningTextDelta(params as ReasoningTextDeltaNotification);
         break;
       case 'item/reasoning/summaryPartAdded':
         break;
       case 'item/plan/delta':
-        this.onPlanDelta(params as PlanDeltaNotification);
+        this.#onPlanDelta(params as PlanDeltaNotification);
         break;
       case 'item/commandExecution/outputDelta':
-        this.onOutputDelta(params as { itemId: string; delta: string }, true);
+        this.#onOutputDelta(params as { itemId: string; delta: string }, true);
         break;
       case 'item/fileChange/outputDelta':
-        this.onOutputDelta(params as { itemId: string; delta: string }, false);
+        this.#onOutputDelta(params as { itemId: string; delta: string }, false);
         break;
       case 'item/fileChange/patchUpdated':
-        this.onFileChangePatchUpdated(params as FileChangePatchUpdatedNotification);
+        this.#onFileChangePatchUpdated(params as FileChangePatchUpdatedNotification);
         break;
       case 'rawResponseItem/completed':
-        this.onRawResponseItemCompleted(params);
+        this.#onRawResponseItemCompleted(params);
         break;
       case 'event_msg':
-        this.onEventMsg(params);
+        this.#onEventMsg(params);
         break;
       case 'thread/tokenUsage/updated':
-        this.onTokenUsageUpdated(params as TokenUsageUpdatedNotification);
+        this.#onTokenUsageUpdated(params as TokenUsageUpdatedNotification);
         break;
       case 'turn/plan/updated':
-        this.onPlanUpdated(params as TurnPlanUpdatedNotification);
+        this.#onPlanUpdated(params as TurnPlanUpdatedNotification);
         break;
       case 'turn/completed':
-        this.onTurnCompleted(params as TurnCompletedNotification);
+        this.#onTurnCompleted(params as TurnCompletedNotification);
         break;
       case 'error':
-        this.onError(params as ErrorNotification);
+        this.#onError(params as ErrorNotification);
         break;
       default:
         break;
     }
   }
 
-  private onAgentMessageDelta(params: AgentMessageDeltaNotification): void {
-    const previousText = this.streamedAgentMessageTextById.get(params.itemId) ?? '';
-    this.streamedAgentMessageTextById.set(params.itemId, previousText + params.delta);
-    this.appendAssistantText(params.delta, params.itemId);
+  #onAgentMessageDelta(params: AgentMessageDeltaNotification): void {
+    const previousText = this.#streamedAgentMessageTextById.get(params.itemId) ?? '';
+    this.#streamedAgentMessageTextById.set(params.itemId, previousText + params.delta);
+    this.#appendAssistantText(params.delta, params.itemId);
     this.emit({ type: 'text', content: params.delta });
   }
 
-  private onReasoningSummaryDelta(params: ReasoningSummaryTextDeltaNotification): void {
+  #onReasoningSummaryDelta(params: ReasoningSummaryTextDeltaNotification): void {
     this.emit({ type: 'thinking', content: params.delta });
   }
 
-  private onReasoningTextDelta(params: ReasoningTextDeltaNotification): void {
+  #onReasoningTextDelta(params: ReasoningTextDeltaNotification): void {
     this.emit({ type: 'thinking', content: params.delta });
   }
 
-  private onPlanDelta(params: PlanDeltaNotification): void {
+  #onPlanDelta(params: PlanDeltaNotification): void {
     this.emit({ type: 'text', content: params.delta });
   }
 
-  private onItemStarted(params: ItemStartedNotification): void {
+  #onItemStarted(params: ItemStartedNotification): void {
     const item = params.item;
     const itemId = getItemId(item);
-    const deferredOwned = this.claimDeferredRawExecFromItem(item, false);
+    const deferredOwned = this.#claimDeferredRawExecFromItem(item, false);
     if (item.type === 'commandExecution' && !deferredOwned) {
-      if (this.claimPendingRawCommand(item)) {
-        this.activeCanonicalToolProjections.delete(item.id);
-        this.flushPendingCanonicalToolOutput(item.id);
+      if (this.#claimPendingRawCommand(item)) {
+        this.#activeCanonicalToolProjections.delete(item.id);
+        this.#flushPendingCanonicalToolOutput(item.id);
         return;
       }
     }
-    if (itemId && this.rawStartedCallIds.has(itemId)) {
-      this.flushPendingCanonicalToolOutput(itemId);
+    if (itemId && this.#rawStartedCallIds.has(itemId)) {
+      this.#flushPendingCanonicalToolOutput(itemId);
       return;
     }
     if (itemId && isCanonicalToolItem(item)) {
-      if (this.startedCanonicalToolItemIds.has(itemId)) {
+      if (this.#startedCanonicalToolItemIds.has(itemId)) {
         return;
       }
-      this.startedCanonicalToolItemIds.add(itemId);
+      this.#startedCanonicalToolItemIds.add(itemId);
     }
 
     switch (item.type) {
       case 'userMessage':
-        this.emitUserMessageBoundary(item);
+        this.#emitUserMessageBoundary(item);
         break;
 
       case 'agentMessage':
-        this.emitAgentMessageBoundary(item);
+        this.#emitAgentMessageBoundary(item);
         break;
 
       case 'reasoning':
         break;
 
       case 'commandExecution':
-        this.emitToolUseFromCommand(item);
+        this.#emitToolUseFromCommand(item);
         if (!deferredOwned) {
-          this.unmatchedCanonicalCommands.push({
+          this.#unmatchedCanonicalCommands.push({
             itemId: item.id,
             commands: readCanonicalCommandCandidates(item),
             workingDirectory: normalizeWorkingDirectory(item.cwd, this.workingDirectory),
@@ -395,118 +395,118 @@ export class CodexNotificationRouter {
         break;
 
       case 'fileChange':
-        this.emitToolUseFromFileChange(item);
+        this.#emitToolUseFromFileChange(item);
         break;
 
       case 'imageView':
-        this.emitToolUseFromImageView(item);
+        this.#emitToolUseFromImageView(item);
         break;
 
       case 'webSearch':
-        this.emitToolUseFromWebSearch(item);
+        this.#emitToolUseFromWebSearch(item);
         break;
 
       case 'collabAgentToolCall':
-        this.emitToolUseFromCollabAgent(item);
+        this.#emitToolUseFromCollabAgent(item);
         break;
 
       case 'mcpToolCall':
-        this.emitToolUseFromMcp(item);
+        this.#emitToolUseFromMcp(item);
         break;
 
       case 'dynamicToolCall':
-        this.emitToolUseFromDynamic(item);
+        this.#emitToolUseFromDynamic(item);
         break;
 
       default:
         break;
     }
     if (itemId && isCanonicalToolItem(item)) {
-      this.flushPendingCanonicalToolOutput(itemId);
+      this.#flushPendingCanonicalToolOutput(itemId);
     }
   }
 
-  private onItemCompleted(params: ItemCompletedNotification): void {
+  #onItemCompleted(params: ItemCompletedNotification): void {
     const item = params.item;
     const itemId = getItemId(item);
     if (itemId && isCanonicalToolItem(item)) {
-      if (this.completedCanonicalToolItemIds.has(itemId)) {
+      if (this.#completedCanonicalToolItemIds.has(itemId)) {
         return;
       }
-      this.completedCanonicalToolItemIds.add(itemId);
-      this.inFlightRawFunctionCallIds.delete(itemId);
+      this.#completedCanonicalToolItemIds.add(itemId);
+      this.#inFlightRawFunctionCallIds.delete(itemId);
     }
-    const deferredOwned = this.claimDeferredRawExecFromItem(item, true);
+    const deferredOwned = this.#claimDeferredRawExecFromItem(item, true);
     if (itemId && deferredOwned) {
-      this.markDeferredCanonicalCompleted(itemId);
+      this.#markDeferredCanonicalCompleted(itemId);
     }
     const rawResult = item.type !== 'commandExecution' && itemId
-      ? this.consumeRawToolOutput(itemId)
+      ? this.#consumeRawToolOutput(itemId)
       : undefined;
     const hadCanonicalToolUse = itemId
-      ? this.startedCanonicalToolItemIds.has(itemId)
+      ? this.#startedCanonicalToolItemIds.has(itemId)
       : false;
     const completedCommandRawProjection = item.type === 'commandExecution' && !deferredOwned
-      ? this.rawCommandByCanonicalId.get(item.id) ?? this.claimPendingRawCommand(item)
+      ? this.#rawCommandByCanonicalId.get(item.id) ?? this.#claimPendingRawCommand(item)
       : undefined;
     if (item.type === 'commandExecution') {
-      if (!this.startedCanonicalToolItemIds.has(item.id) && !completedCommandRawProjection) {
-        this.startedCanonicalToolItemIds.add(item.id);
-        this.emitToolUseFromCommand(item);
+      if (!this.#startedCanonicalToolItemIds.has(item.id) && !completedCommandRawProjection) {
+        this.#startedCanonicalToolItemIds.add(item.id);
+        this.#emitToolUseFromCommand(item);
       } else if (completedCommandRawProjection) {
-        this.startedCanonicalToolItemIds.add(item.id);
+        this.#startedCanonicalToolItemIds.add(item.id);
       }
     } else {
-      this.ensureCanonicalToolUseFromCompletion(item);
+      this.#ensureCanonicalToolUseFromCompletion(item);
     }
     if (itemId && isCanonicalToolItem(item)) {
-      this.flushPendingCanonicalToolOutput(itemId);
+      this.#flushPendingCanonicalToolOutput(itemId);
     }
 
     switch (item.type) {
       case 'userMessage':
-        if (!this.startedUserMessageIds.has(item.id)) {
-          this.emitUserMessageBoundary(item);
+        if (!this.#startedUserMessageIds.has(item.id)) {
+          this.#emitUserMessageBoundary(item);
         }
         break;
 
       case 'agentMessage':
-        this.completeAgentMessage(item);
+        this.#completeAgentMessage(item);
         break;
 
       case 'commandExecution':
-        this.completeCommand(item, false, completedCommandRawProjection);
+        this.#completeCommand(item, false, completedCommandRawProjection);
         break;
 
       case 'fileChange':
         if (hadCanonicalToolUse) {
-          this.emitToolUseFromFileChange(item);
+          this.#emitToolUseFromFileChange(item);
         }
-        this.emitToolResultFromFileChange(item);
+        this.#emitToolResultFromFileChange(item);
         break;
 
       case 'imageView':
-        this.emitToolResultFromImageView(item);
+        this.#emitToolResultFromImageView(item);
         break;
 
       case 'webSearch':
-        this.emitToolResultFromWebSearch(item);
+        this.#emitToolResultFromWebSearch(item);
         break;
 
       case 'collabAgentToolCall':
-        this.emitToolResultFromCollabAgent(item);
+        this.#emitToolResultFromCollabAgent(item);
         break;
 
       case 'mcpToolCall':
-        this.emitToolResultFromMcp(item);
+        this.#emitToolResultFromMcp(item);
         break;
 
       case 'dynamicToolCall':
-        this.emitToolResultFromDynamic(item);
+        this.#emitToolResultFromDynamic(item);
         break;
 
       case 'contextCompaction':
-        this.emitContextCompactionBoundary(item);
+        this.#emitContextCompactionBoundary(item);
         break;
 
       default:
@@ -519,14 +519,14 @@ export class CodexNotificationRouter {
     if (
       itemId
       && item.type !== 'commandExecution'
-      && this.rawStartedCallIds.has(itemId)
+      && this.#rawStartedCallIds.has(itemId)
       && !rawResult
     ) {
-      this.ignoredLateRawOutputCallIds.add(itemId);
+      this.#ignoredLateRawOutputCallIds.add(itemId);
     }
   }
 
-  private onRawResponseItemCompleted(params: unknown): void {
+  #onRawResponseItemCompleted(params: unknown): void {
     const item = asRecord(asRecord(params)?.item);
     const itemType = typeof item?.type === 'string' ? item.type : undefined;
     if (!item || !itemType) {
@@ -535,23 +535,23 @@ export class CodexNotificationRouter {
 
     switch (itemType) {
       case 'function_call':
-        this.handleRawFunctionCall(item);
-        this.replayPendingRawToolOutput(item);
+        this.#handleRawFunctionCall(item);
+        this.#replayPendingRawToolOutput(item);
         break;
 
       case 'custom_tool_call':
-        this.handleRawCustomToolCall(item);
-        this.replayPendingRawToolOutput(item);
+        this.#handleRawCustomToolCall(item);
+        this.#replayPendingRawToolOutput(item);
         break;
 
       case 'function_call_output':
       case 'custom_tool_call_output':
-        this.handleRawToolOutput(item);
+        this.#handleRawToolOutput(item);
         break;
 
       case 'agentMessage':
       case 'message':
-        this.emitMissingRawAgentMessageText(item);
+        this.#emitMissingRawAgentMessageText(item);
         break;
 
       default:
@@ -559,7 +559,7 @@ export class CodexNotificationRouter {
     }
   }
 
-  private onEventMsg(params: unknown): void {
+  #onEventMsg(params: unknown): void {
     const payload = asRecord(params);
     if (!payload) {
       return;
@@ -573,38 +573,38 @@ export class CodexNotificationRouter {
     const text = stripCodexMemoryCitationMarkup(
       firstString(payload.text, payload.message),
     );
-    this.emitMissingAssistantTurnText(text);
-    this.emitMemoryCitation(
+    this.#emitMissingAssistantTurnText(text);
+    this.#emitMemoryCitation(
       payload.memory_citation ?? payload.memoryCitation,
     );
   }
 
-  private handleRawFunctionCall(item: Record<string, unknown>): void {
+  #handleRawFunctionCall(item: Record<string, unknown>): void {
     const rawName = firstString(item.name, item.type);
     const callId = readRawCallId(item);
     if (!callId) {
       return;
     }
-    if (this.seenRawCallIds.has(callId)) {
+    if (this.#seenRawCallIds.has(callId)) {
       return;
     }
-    this.seenRawCallIds.add(callId);
-    if (this.completedCanonicalToolItemIds.has(callId)) {
-      this.ignoredLateRawOutputCallIds.add(callId);
+    this.#seenRawCallIds.add(callId);
+    if (this.#completedCanonicalToolItemIds.has(callId)) {
+      this.#ignoredLateRawOutputCallIds.add(callId);
       return;
     }
     const rawArguments = parseRawArguments(item);
     if (rawName === 'wait') {
       const cellId = readCodexExecCellIdArgument(rawArguments);
       const commandCallId = cellId
-        ? this.wrappedCommandCallIdsByCellId.get(cellId)
+        ? this.#wrappedCommandCallIdsByCellId.get(cellId)
         : undefined;
       if (cellId && commandCallId) {
-        this.wrappedWaitCallsByCallId.set(callId, { commandCallId, cellId });
+        this.#wrappedWaitCallsByCallId.set(callId, { commandCallId, cellId });
         return;
       }
       if (cellId) {
-        this.pendingWrappedWaitCallsByCallId.set(callId, {
+        this.#pendingWrappedWaitCallsByCallId.set(callId, {
           callId,
           cellId,
           item,
@@ -615,40 +615,40 @@ export class CodexNotificationRouter {
     }
 
     if (rawName === 'write_stdin' && isSilentWriteStdinInput(rawArguments)) {
-      this.suppressedRawCallIds.add(callId);
+      this.#suppressedRawCallIds.add(callId);
       return;
     }
 
-    this.inFlightRawFunctionCallIds.add(callId);
-    this.emitRawToolUse(callId, rawName, item, rawArguments);
+    this.#inFlightRawFunctionCallIds.add(callId);
+    this.#emitRawToolUse(callId, rawName, item, rawArguments);
   }
 
-  private handleRawCustomToolCall(item: Record<string, unknown>): void {
+  #handleRawCustomToolCall(item: Record<string, unknown>): void {
     const rawName = firstString(item.name, item.type);
     const callId = readRawCallId(item);
     if (!callId) {
       return;
     }
-    if (this.seenRawCallIds.has(callId)) {
+    if (this.#seenRawCallIds.has(callId)) {
       return;
     }
-    this.seenRawCallIds.add(callId);
-    if (this.completedCanonicalToolItemIds.has(callId)) {
-      this.ignoredLateRawOutputCallIds.add(callId);
+    this.#seenRawCallIds.add(callId);
+    if (this.#completedCanonicalToolItemIds.has(callId)) {
+      this.#ignoredLateRawOutputCallIds.add(callId);
       return;
     }
 
     const rawArguments = parseRawArguments(item);
     if (rawName === 'apply_patch') {
       const input = normalizeCodexToolInput(rawName, rawArguments);
-      this.rememberFileChangeInput(callId, input);
-      this.deferredRawExecCalls.set(callId, {
+      this.#rememberFileChangeInput(callId, input);
+      this.#deferredRawExecCalls.set(callId, {
         callId,
         item,
         rawArguments,
         expectedCalls: [{ name: 'apply_patch', input, claimed: false }],
       });
-      this.claimActiveCanonicalProjections();
+      this.#claimActiveCanonicalProjections();
       return;
     }
 
@@ -657,7 +657,7 @@ export class CodexNotificationRouter {
       const isSingleCommand = expectedCalls?.length === 1
         && expectedCalls[0]?.name === 'Bash';
       if (!isSingleCommand) {
-        this.deferredRawExecCalls.set(callId, {
+        this.#deferredRawExecCalls.set(callId, {
           callId,
           item,
           rawArguments,
@@ -672,17 +672,17 @@ export class CodexNotificationRouter {
             return { ...semanticCall, claimed: false };
           }),
         });
-        this.claimActiveCanonicalProjections();
+        this.#claimActiveCanonicalProjections();
         return;
       }
     }
 
     // Raw custom output is terminal unless a canonical dynamic-tool completion also arrives.
-    this.immediateRawOutputCallIds.add(callId);
-    this.emitRawToolUse(callId, rawName, item, rawArguments);
+    this.#immediateRawOutputCallIds.add(callId);
+    this.#emitRawToolUse(callId, rawName, item, rawArguments);
   }
 
-  private emitRawToolUse(
+  #emitRawToolUse(
     callId: string,
     rawName: string,
     item: Record<string, unknown>,
@@ -695,19 +695,19 @@ export class CodexNotificationRouter {
       toolArguments,
     );
 
-    if (this.rawStartedCallIds.has(callId)) {
-      this.rawToolNamesByCallId.set(callId, normalized.name);
-      this.rawToolInputsByCallId.set(callId, normalized.input);
+    if (this.#rawStartedCallIds.has(callId)) {
+      this.#rawToolNamesByCallId.set(callId, normalized.name);
+      this.#rawToolInputsByCallId.set(callId, normalized.input);
       return;
     }
 
-    this.rawStartedCallIds.add(callId);
-    this.rawToolNamesByCallId.set(callId, normalized.name);
-    this.rawToolInputsByCallId.set(callId, normalized.input);
+    this.#rawStartedCallIds.add(callId);
+    this.#rawToolNamesByCallId.set(callId, normalized.name);
+    this.#rawToolInputsByCallId.set(callId, normalized.input);
     if (
       normalized.name !== 'Bash'
       && !fromCanonicalProjection
-      && this.startedCanonicalToolItemIds.has(callId)
+      && this.#startedCanonicalToolItemIds.has(callId)
     ) {
       return;
     }
@@ -715,26 +715,26 @@ export class CodexNotificationRouter {
       ? firstString(normalized.input.command)
       : '';
     if (command) {
-      const workingDirectory = this.readRawCommandWorkingDirectory(rawName, toolArguments);
-      const canonicalCommand = this.takeUniqueCanonicalCommand(command, workingDirectory);
+      const workingDirectory = this.#readRawCommandWorkingDirectory(rawName, toolArguments);
+      const canonicalCommand = this.#takeUniqueCanonicalCommand(command, workingDirectory);
       const projection: RawCommandProjection = {
         callId,
         visibleId: canonicalCommand?.itemId ?? callId,
         command,
         workingDirectory,
-        rawOwnsCompletion: this.immediateRawOutputCallIds.has(callId),
+        rawOwnsCompletion: this.#immediateRawOutputCallIds.has(callId),
       };
       if (canonicalCommand) {
-        this.rawCommandByCanonicalId.set(canonicalCommand.itemId, projection);
-        this.activeCanonicalToolProjections.delete(canonicalCommand.itemId);
-        const streamedOutput = this.canonicalCommandOutputByItemId.get(canonicalCommand.itemId);
-        this.canonicalCommandOutputByItemId.delete(canonicalCommand.itemId);
+        this.#rawCommandByCanonicalId.set(canonicalCommand.itemId, projection);
+        this.#activeCanonicalToolProjections.delete(canonicalCommand.itemId);
+        const streamedOutput = this.#canonicalCommandOutputByItemId.get(canonicalCommand.itemId);
+        this.#canonicalCommandOutputByItemId.delete(canonicalCommand.itemId);
         if (streamedOutput && projection.rawOwnsCompletion) {
-          this.wrappedCommandOutputByCallId.set(callId, streamedOutput);
-          this.canonicalPrefilledRawCommandCallIds.add(callId);
+          this.#wrappedCommandOutputByCallId.set(callId, streamedOutput);
+          this.#canonicalPrefilledRawCommandCallIds.add(callId);
         }
       } else {
-        this.unmatchedRawCommands.push(projection);
+        this.#unmatchedRawCommands.push(projection);
       }
 
       if (canonicalCommand) {
@@ -742,7 +742,7 @@ export class CodexNotificationRouter {
       }
     }
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: callId,
@@ -751,49 +751,49 @@ export class CodexNotificationRouter {
     });
   }
 
-  private handleRawToolOutput(item: Record<string, unknown>): void {
+  #handleRawToolOutput(item: Record<string, unknown>): void {
     const callId = readRawCallId(item);
     if (!callId) {
       return;
     }
     if (
-      !this.seenRawCallIds.has(callId)
-      && !this.rawStartedCallIds.has(callId)
-      && !this.deferredRawExecCalls.has(callId)
+      !this.#seenRawCallIds.has(callId)
+      && !this.#rawStartedCallIds.has(callId)
+      && !this.#deferredRawExecCalls.has(callId)
     ) {
-      this.pendingRawOutputItemsByCallId.set(callId, item);
+      this.#pendingRawOutputItemsByCallId.set(callId, item);
       return;
     }
-    if (this.pendingWrappedWaitCallsByCallId.has(callId)) {
-      this.pendingRawOutputItemsByCallId.set(callId, item);
+    if (this.#pendingWrappedWaitCallsByCallId.has(callId)) {
+      this.#pendingRawOutputItemsByCallId.set(callId, item);
       return;
     }
-    if (this.handledRawOutputCallIds.has(callId)) {
+    if (this.#handledRawOutputCallIds.has(callId)) {
       return;
     }
-    this.handledRawOutputCallIds.add(callId);
-    this.inFlightRawFunctionCallIds.delete(callId);
+    this.#handledRawOutputCallIds.add(callId);
+    this.#inFlightRawFunctionCallIds.delete(callId);
 
-    const wrappedWaitCall = this.wrappedWaitCallsByCallId.get(callId);
+    const wrappedWaitCall = this.#wrappedWaitCallsByCallId.get(callId);
     if (wrappedWaitCall) {
-      this.wrappedWaitCallsByCallId.delete(callId);
-      this.handleWrappedWaitOutput(wrappedWaitCall, item.output);
+      this.#wrappedWaitCallsByCallId.delete(callId);
+      this.#handleWrappedWaitOutput(wrappedWaitCall, item.output);
       return;
     }
 
-    if (this.suppressedRawCallIds.delete(callId)) {
+    if (this.#suppressedRawCallIds.delete(callId)) {
       return;
     }
 
-    if (this.ignoredLateRawOutputCallIds.has(callId)) {
+    if (this.#ignoredLateRawOutputCallIds.has(callId)) {
       return;
     }
 
-    if (this.emittedImmediateToolResultIds.has(callId)) {
+    if (this.#emittedImmediateToolResultIds.has(callId)) {
       return;
     }
 
-    const deferredExec = this.deferredRawExecCalls.get(callId);
+    const deferredExec = this.#deferredRawExecCalls.get(callId);
     if (deferredExec) {
       if (deferredExec.expectedCalls.length > 0) {
         deferredExec.hasRawOutput = true;
@@ -801,15 +801,15 @@ export class CodexNotificationRouter {
         if (deferredExec.expectedCalls.every(call => (
           call.claimed && call.canonicalCompleted
         ))) {
-          this.deferredRawExecCalls.delete(callId);
+          this.#deferredRawExecCalls.delete(callId);
         }
         return;
       }
 
-      this.deferredRawExecCalls.delete(callId);
+      this.#deferredRawExecCalls.delete(callId);
 
-      this.immediateRawOutputCallIds.add(callId);
-      this.emitRawToolUse(
+      this.#immediateRawOutputCallIds.add(callId);
+      this.#emitRawToolUse(
         callId,
         'exec',
         deferredExec.item,
@@ -817,7 +817,7 @@ export class CodexNotificationRouter {
       );
     }
 
-    const normalizedName = this.rawToolNamesByCallId.get(callId);
+    const normalizedName = this.#rawToolNamesByCallId.get(callId);
     if (!normalizedName) {
       return;
     }
@@ -827,193 +827,193 @@ export class CodexNotificationRouter {
     const content = normalizeRawToolOutput(
       normalizedName,
       rawOutput,
-      this.rawToolInputsByCallId.get(callId),
+      this.#rawToolInputsByCallId.get(callId),
     );
     const result = {
       content,
       isError: isCodexToolOutputError(rawOutputText),
     };
 
-    if (this.immediateRawOutputCallIds.delete(callId)) {
+    if (this.#immediateRawOutputCallIds.delete(callId)) {
       const execCellId = normalizedName === 'Bash'
         ? extractCodexExecCellId(rawOutputText)
         : undefined;
       if (execCellId) {
-        this.wrappedCommandCallIdsByCellId.set(execCellId, callId);
-        this.appendWrappedCommandOutput(callId, content);
-        this.bindPendingWrappedWaitCalls(execCellId, callId);
+        this.#wrappedCommandCallIdsByCellId.set(execCellId, callId);
+        this.#appendWrappedCommandOutput(callId, content);
+        this.#bindPendingWrappedWaitCalls(execCellId, callId);
         return;
       }
 
-      this.wrappedCommandOutputByCallId.delete(callId);
-      this.canonicalPrefilledRawCommandCallIds.delete(callId);
-      if (!this.emittedImmediateToolResultIds.has(callId)) {
-        this.emittedImmediateToolResultIds.add(callId);
+      this.#wrappedCommandOutputByCallId.delete(callId);
+      this.#canonicalPrefilledRawCommandCallIds.delete(callId);
+      if (!this.#emittedImmediateToolResultIds.has(callId)) {
+        this.#emittedImmediateToolResultIds.add(callId);
         this.emit({
           type: 'tool_result',
-          id: this.visibleRawCallId(callId),
+          id: this.#visibleRawCallId(callId),
           ...result,
         });
       }
       return;
     }
 
-    this.rawToolOutputsByCallId.set(callId, result);
+    this.#rawToolOutputsByCallId.set(callId, result);
   }
 
-  private replayPendingRawToolOutput(item: Record<string, unknown>): void {
+  #replayPendingRawToolOutput(item: Record<string, unknown>): void {
     const callId = readRawCallId(item);
     if (!callId) {
       return;
     }
-    const pendingOutput = this.pendingRawOutputItemsByCallId.get(callId);
+    const pendingOutput = this.#pendingRawOutputItemsByCallId.get(callId);
     if (!pendingOutput) {
       return;
     }
-    this.pendingRawOutputItemsByCallId.delete(callId);
-    this.handleRawToolOutput(pendingOutput);
+    this.#pendingRawOutputItemsByCallId.delete(callId);
+    this.#handleRawToolOutput(pendingOutput);
   }
 
-  private handleWrappedWaitOutput(waitCall: WrappedWaitCall, rawOutput: unknown): void {
+  #handleWrappedWaitOutput(waitCall: WrappedWaitCall, rawOutput: unknown): void {
     const rawOutputText = stringifyCodexToolOutput(rawOutput);
     const content = normalizeRawToolOutput(
       'Bash',
       rawOutput,
-      this.rawToolInputsByCallId.get(waitCall.commandCallId),
+      this.#rawToolInputsByCallId.get(waitCall.commandCallId),
     );
     const nextCellId = extractCodexExecCellId(rawOutputText);
 
     if (nextCellId) {
-      this.wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
-      this.wrappedCommandCallIdsByCellId.set(nextCellId, waitCall.commandCallId);
-      this.appendWrappedCommandOutput(waitCall.commandCallId, content);
+      this.#wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
+      this.#wrappedCommandCallIdsByCellId.set(nextCellId, waitCall.commandCallId);
+      this.#appendWrappedCommandOutput(waitCall.commandCallId, content);
       return;
     }
 
-    const previousOutput = this.wrappedCommandOutputByCallId.get(waitCall.commandCallId);
+    const previousOutput = this.#wrappedCommandOutputByCallId.get(waitCall.commandCallId);
     const completeOutput = appendCodexCommandOutput(previousOutput, content);
-    this.wrappedCommandOutputByCallId.delete(waitCall.commandCallId);
-    this.canonicalPrefilledRawCommandCallIds.delete(waitCall.commandCallId);
-    this.wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
-    this.emittedImmediateToolResultIds.add(waitCall.commandCallId);
+    this.#wrappedCommandOutputByCallId.delete(waitCall.commandCallId);
+    this.#canonicalPrefilledRawCommandCallIds.delete(waitCall.commandCallId);
+    this.#wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
+    this.#emittedImmediateToolResultIds.add(waitCall.commandCallId);
     this.emit({
       type: 'tool_result',
-      id: this.visibleRawCallId(waitCall.commandCallId),
+      id: this.#visibleRawCallId(waitCall.commandCallId),
       content: completeOutput,
       isError: isCodexToolOutputError(rawOutputText),
     });
   }
 
-  private bindPendingWrappedWaitCalls(cellId: string, commandCallId: string): void {
-    for (const [waitCallId, waitCall] of this.pendingWrappedWaitCallsByCallId) {
+  #bindPendingWrappedWaitCalls(cellId: string, commandCallId: string): void {
+    for (const [waitCallId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
       if (waitCall.cellId !== cellId) {
         continue;
       }
-      this.pendingWrappedWaitCallsByCallId.delete(waitCallId);
-      this.wrappedWaitCallsByCallId.set(waitCallId, { commandCallId, cellId });
-      const pendingOutput = this.pendingRawOutputItemsByCallId.get(waitCallId);
+      this.#pendingWrappedWaitCallsByCallId.delete(waitCallId);
+      this.#wrappedWaitCallsByCallId.set(waitCallId, { commandCallId, cellId });
+      const pendingOutput = this.#pendingRawOutputItemsByCallId.get(waitCallId);
       if (pendingOutput) {
-        this.pendingRawOutputItemsByCallId.delete(waitCallId);
-        this.handleRawToolOutput(pendingOutput);
+        this.#pendingRawOutputItemsByCallId.delete(waitCallId);
+        this.#handleRawToolOutput(pendingOutput);
       }
     }
   }
 
-  private appendWrappedCommandOutput(callId: string, content: string): void {
+  #appendWrappedCommandOutput(callId: string, content: string): void {
     if (!content) return;
 
-    const previousOutput = this.wrappedCommandOutputByCallId.get(callId);
-    const completeOutput = this.canonicalPrefilledRawCommandCallIds.delete(callId)
+    const previousOutput = this.#wrappedCommandOutputByCallId.get(callId);
+    const completeOutput = this.#canonicalPrefilledRawCommandCallIds.delete(callId)
       ? mergeOverlappingCommandOutput(previousOutput, content)
       : appendCodexCommandOutput(previousOutput, content);
     const delta = completeOutput.slice(previousOutput?.length ?? 0);
-    this.wrappedCommandOutputByCallId.set(callId, completeOutput);
+    this.#wrappedCommandOutputByCallId.set(callId, completeOutput);
     if (delta) {
-      this.emit({ type: 'tool_output', id: this.visibleRawCallId(callId), content: delta });
+      this.emit({ type: 'tool_output', id: this.#visibleRawCallId(callId), content: delta });
     }
   }
 
-  private emitMissingRawAgentMessageText(item: Record<string, unknown>): void {
+  #emitMissingRawAgentMessageText(item: Record<string, unknown>): void {
     const rawText = item.type === 'message'
       ? readAssistantMessageText(item)
       : firstString(item.text, item.message);
     const text = stripCodexMemoryCitationMarkup(rawText);
-    this.emitMissingAssistantSegmentText(text);
+    this.#emitMissingAssistantSegmentText(text);
   }
 
-  private emitMissingAssistantSegmentText(text: string, itemId?: string): void {
-    this.claimAssistantSegment(itemId);
-    const segmentId = itemId ?? this.currentAssistantSegmentId;
+  #emitMissingAssistantSegmentText(text: string, itemId?: string): void {
+    this.#claimAssistantSegment(itemId);
+    const segmentId = itemId ?? this.#currentAssistantSegmentId;
     const missingText = normalizeAgentMessageCompletionText(
       text,
-      this.currentAssistantSegmentText,
+      this.#currentAssistantSegmentText,
     );
     if (text) {
-      this.currentAssistantSegmentText = text;
+      this.#currentAssistantSegmentText = text;
       if (segmentId) {
-        this.streamedAgentMessageTextById.set(segmentId, text);
+        this.#streamedAgentMessageTextById.set(segmentId, text);
       }
     }
     if (!missingText) {
       return;
     }
 
-    this.streamedAssistantTurnText += missingText;
+    this.#streamedAssistantTurnText += missingText;
     this.emit({ type: 'text', content: missingText });
   }
 
-  private emitMissingAgentMessageText(text: string, itemId: string): void {
-    const streamedText = this.streamedAgentMessageTextById.get(itemId) ?? '';
+  #emitMissingAgentMessageText(text: string, itemId: string): void {
+    const streamedText = this.#streamedAgentMessageTextById.get(itemId) ?? '';
     const missingText = normalizeAgentMessageCompletionText(text, streamedText);
     if (text) {
-      this.streamedAgentMessageTextById.set(itemId, text);
+      this.#streamedAgentMessageTextById.set(itemId, text);
     }
     if (!missingText) {
       return;
     }
 
-    this.claimAssistantSegment(itemId);
-    this.currentAssistantSegmentText = text;
-    this.streamedAssistantTurnText += missingText;
+    this.#claimAssistantSegment(itemId);
+    this.#currentAssistantSegmentText = text;
+    this.#streamedAssistantTurnText += missingText;
     this.emit({ type: 'text', content: missingText });
   }
 
-  private emitMissingAssistantTurnText(text: string): void {
+  #emitMissingAssistantTurnText(text: string): void {
     const missingText = normalizeAgentMessageCompletionText(
       text,
-      this.streamedAssistantTurnText,
+      this.#streamedAssistantTurnText,
     );
     if (!missingText) {
       return;
     }
 
-    this.streamedAssistantTurnText += missingText;
-    this.currentAssistantSegmentText += missingText;
-    if (this.currentAssistantSegmentId) {
-      this.streamedAgentMessageTextById.set(
-        this.currentAssistantSegmentId,
-        this.currentAssistantSegmentText,
+    this.#streamedAssistantTurnText += missingText;
+    this.#currentAssistantSegmentText += missingText;
+    if (this.#currentAssistantSegmentId) {
+      this.#streamedAgentMessageTextById.set(
+        this.#currentAssistantSegmentId,
+        this.#currentAssistantSegmentText,
       );
     }
     this.emit({ type: 'text', content: missingText });
   }
 
-  private consumeRawToolOutput(callId: string): RawToolResult | undefined {
-    const result = this.rawToolOutputsByCallId.get(callId);
-    this.rawToolOutputsByCallId.delete(callId);
+  #consumeRawToolOutput(callId: string): RawToolResult | undefined {
+    const result = this.#rawToolOutputsByCallId.get(callId);
+    this.#rawToolOutputsByCallId.delete(callId);
     return result;
   }
 
-  private flushPendingRawToolOutputs(): void {
-    for (const [callId, result] of this.rawToolOutputsByCallId) {
-      this.emit({ type: 'tool_result', id: this.visibleRawCallId(callId), ...result });
+  #flushPendingRawToolOutputs(): void {
+    for (const [callId, result] of this.#rawToolOutputsByCallId) {
+      this.emit({ type: 'tool_result', id: this.#visibleRawCallId(callId), ...result });
     }
-    this.rawToolOutputsByCallId.clear();
+    this.#rawToolOutputsByCallId.clear();
   }
 
-  private flushDeferredRawExecCalls(terminalError = false): void {
-    for (const deferredExec of this.deferredRawExecCalls.values()) {
-      if (this.emitDeferredRawExecFallback(
+  #flushDeferredRawExecCalls(terminalError = false): void {
+    for (const deferredExec of this.#deferredRawExecCalls.values()) {
+      if (this.#emitDeferredRawExecFallback(
         deferredExec,
         deferredExec.rawOutput,
         true,
@@ -1021,7 +1021,7 @@ export class CodexNotificationRouter {
       )) {
         continue;
       }
-      this.emitRawToolUse(
+      this.#emitRawToolUse(
         deferredExec.callId,
         'exec',
         deferredExec.item,
@@ -1034,71 +1034,71 @@ export class CodexNotificationRouter {
         isError: terminalError,
       });
     }
-    this.deferredRawExecCalls.clear();
+    this.#deferredRawExecCalls.clear();
   }
 
-  private flushPendingWrappedWaitCalls(terminalError: boolean): void {
-    for (const [callId, waitCall] of this.pendingWrappedWaitCallsByCallId) {
-      this.pendingWrappedWaitCallsByCallId.delete(callId);
-      this.emitRawToolUse(callId, 'wait', waitCall.item, waitCall.rawArguments);
-      const pendingOutput = this.pendingRawOutputItemsByCallId.get(callId);
+  #flushPendingWrappedWaitCalls(terminalError: boolean): void {
+    for (const [callId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
+      this.#pendingWrappedWaitCallsByCallId.delete(callId);
+      this.#emitRawToolUse(callId, 'wait', waitCall.item, waitCall.rawArguments);
+      const pendingOutput = this.#pendingRawOutputItemsByCallId.get(callId);
       if (pendingOutput) {
-        this.pendingRawOutputItemsByCallId.delete(callId);
-        this.handleRawToolOutput(pendingOutput);
+        this.#pendingRawOutputItemsByCallId.delete(callId);
+        this.#handleRawToolOutput(pendingOutput);
       } else {
-        this.emittedImmediateToolResultIds.add(callId);
+        this.#emittedImmediateToolResultIds.add(callId);
         this.emit({ type: 'tool_result', id: callId, content: '', isError: terminalError });
       }
     }
   }
 
-  private flushInFlightRawTools(isError: boolean): void {
-    const yieldedCommandCallIds = new Set(this.wrappedCommandCallIdsByCellId.values());
+  #flushInFlightRawTools(isError: boolean): void {
+    const yieldedCommandCallIds = new Set(this.#wrappedCommandCallIdsByCellId.values());
     for (const callId of yieldedCommandCallIds) {
-      if (this.emittedImmediateToolResultIds.has(callId)) {
+      if (this.#emittedImmediateToolResultIds.has(callId)) {
         continue;
       }
-      this.emittedImmediateToolResultIds.add(callId);
+      this.#emittedImmediateToolResultIds.add(callId);
       this.emit({
         type: 'tool_result',
-        id: this.visibleRawCallId(callId),
-        content: this.wrappedCommandOutputByCallId.get(callId) ?? '',
+        id: this.#visibleRawCallId(callId),
+        content: this.#wrappedCommandOutputByCallId.get(callId) ?? '',
         isError,
       });
     }
-    for (const callId of this.immediateRawOutputCallIds) {
-      if (this.emittedImmediateToolResultIds.has(callId)) {
+    for (const callId of this.#immediateRawOutputCallIds) {
+      if (this.#emittedImmediateToolResultIds.has(callId)) {
         continue;
       }
-      this.emittedImmediateToolResultIds.add(callId);
+      this.#emittedImmediateToolResultIds.add(callId);
       this.emit({
         type: 'tool_result',
-        id: this.visibleRawCallId(callId),
+        id: this.#visibleRawCallId(callId),
         content: '',
         isError,
       });
     }
-    for (const callId of this.inFlightRawFunctionCallIds) {
-      if (this.emittedImmediateToolResultIds.has(callId)) {
+    for (const callId of this.#inFlightRawFunctionCallIds) {
+      if (this.#emittedImmediateToolResultIds.has(callId)) {
         continue;
       }
-      this.emittedImmediateToolResultIds.add(callId);
+      this.#emittedImmediateToolResultIds.add(callId);
       this.emit({
         type: 'tool_result',
-        id: this.visibleRawCallId(callId),
+        id: this.#visibleRawCallId(callId),
         content: '',
         isError,
       });
     }
-    this.wrappedCommandCallIdsByCellId.clear();
-    this.wrappedCommandOutputByCallId.clear();
-    this.wrappedWaitCallsByCallId.clear();
-    this.pendingWrappedWaitCallsByCallId.clear();
-    this.inFlightRawFunctionCallIds.clear();
-    this.immediateRawOutputCallIds.clear();
+    this.#wrappedCommandCallIdsByCellId.clear();
+    this.#wrappedCommandOutputByCallId.clear();
+    this.#wrappedWaitCallsByCallId.clear();
+    this.#pendingWrappedWaitCallsByCallId.clear();
+    this.#inFlightRawFunctionCallIds.clear();
+    this.#immediateRawOutputCallIds.clear();
   }
 
-  private emitDeferredRawExecFallback(
+  #emitDeferredRawExecFallback(
     deferredExec: DeferredRawExecCall,
     rawOutput?: unknown,
     emitResult = false,
@@ -1112,7 +1112,7 @@ export class CodexNotificationRouter {
     deferredExec.expectedCalls.forEach((call, index) => {
       if (call.claimed) {
         if (!call.canonicalCompleted && call.canonicalItemId) {
-          this.completedCanonicalToolItemIds.add(call.canonicalItemId);
+          this.#completedCanonicalToolItemIds.add(call.canonicalItemId);
           this.emit({
             type: 'tool_result',
             id: call.canonicalItemId,
@@ -1127,7 +1127,7 @@ export class CodexNotificationRouter {
       const fallbackId = deferredExec.expectedCalls.length === 1
         ? deferredExec.callId
         : `${deferredExec.callId}:${index + 1}`;
-      this.resetAssistantSegmentText();
+      this.#resetAssistantSegmentText();
       this.emit({
         type: 'tool_use',
         id: fallbackId,
@@ -1147,7 +1147,7 @@ export class CodexNotificationRouter {
     return true;
   }
 
-  private claimDeferredRawExecFromItem(
+  #claimDeferredRawExecFromItem(
     item: ItemStartedNotification['item'],
     completed: boolean,
   ): boolean {
@@ -1155,7 +1155,7 @@ export class CodexNotificationRouter {
       ? {
           itemId: item.id,
           name: 'apply_patch',
-          input: this.rememberFileChangeInput(
+          input: this.#rememberFileChangeInput(
             item.id,
             buildFileChangeInput(item.changes ?? []),
           ),
@@ -1164,37 +1164,37 @@ export class CodexNotificationRouter {
     if (!projection) {
       return false;
     }
-    const claimed = this.registerCanonicalToolProjection(projection, completed);
+    const claimed = this.#registerCanonicalToolProjection(projection, completed);
     if (claimed) {
-      this.deferredOwnedCanonicalItemIds.add(projection.itemId);
+      this.#deferredOwnedCanonicalItemIds.add(projection.itemId);
     }
-    return claimed || this.deferredOwnedCanonicalItemIds.has(projection.itemId);
+    return claimed || this.#deferredOwnedCanonicalItemIds.has(projection.itemId);
   }
 
-  private registerCanonicalToolProjection(
+  #registerCanonicalToolProjection(
     projection: CanonicalToolProjection,
     completed = false,
   ): boolean {
-    if (this.projectedCanonicalItemIds.has(projection.itemId)) {
-      if (!this.activeCanonicalToolProjections.has(projection.itemId)) {
+    if (this.#projectedCanonicalItemIds.has(projection.itemId)) {
+      if (!this.#activeCanonicalToolProjections.has(projection.itemId)) {
         return false;
       }
-      if (this.claimDeferredRawExec(
+      if (this.#claimDeferredRawExec(
         projection.name,
         projection.input,
         projection.comparisonInput,
         projection.itemId,
         completed,
       )) {
-        this.activeCanonicalToolProjections.delete(projection.itemId);
+        this.#activeCanonicalToolProjections.delete(projection.itemId);
         return true;
       } else {
-        this.activeCanonicalToolProjections.set(projection.itemId, projection);
+        this.#activeCanonicalToolProjections.set(projection.itemId, projection);
       }
       return false;
     }
-    this.projectedCanonicalItemIds.add(projection.itemId);
-    const claimed = this.claimDeferredRawExec(
+    this.#projectedCanonicalItemIds.add(projection.itemId);
+    const claimed = this.#claimDeferredRawExec(
       projection.name,
       projection.input,
       projection.comparisonInput,
@@ -1202,33 +1202,33 @@ export class CodexNotificationRouter {
       completed,
     );
     if (!claimed) {
-      this.activeCanonicalToolProjections.set(projection.itemId, projection);
+      this.#activeCanonicalToolProjections.set(projection.itemId, projection);
     }
     return claimed;
   }
 
-  private claimActiveCanonicalProjections(): void {
-    for (const [itemId, projection] of this.activeCanonicalToolProjections) {
-      if (this.claimDeferredRawExec(
+  #claimActiveCanonicalProjections(): void {
+    for (const [itemId, projection] of this.#activeCanonicalToolProjections) {
+      if (this.#claimDeferredRawExec(
         projection.name,
         projection.input,
         projection.comparisonInput,
         itemId,
-        this.completedCanonicalToolItemIds.has(itemId),
-        this.completedCanonicalToolItemIds.has(itemId),
+        this.#completedCanonicalToolItemIds.has(itemId),
+        this.#completedCanonicalToolItemIds.has(itemId),
       )) {
-        this.activeCanonicalToolProjections.delete(itemId);
-        this.deferredOwnedCanonicalItemIds.add(itemId);
-        const unmatchedCommandIndex = this.unmatchedCanonicalCommands
+        this.#activeCanonicalToolProjections.delete(itemId);
+        this.#deferredOwnedCanonicalItemIds.add(itemId);
+        const unmatchedCommandIndex = this.#unmatchedCanonicalCommands
           .findIndex(command => command.itemId === itemId);
         if (unmatchedCommandIndex !== -1) {
-          this.unmatchedCanonicalCommands.splice(unmatchedCommandIndex, 1);
+          this.#unmatchedCanonicalCommands.splice(unmatchedCommandIndex, 1);
         }
       }
     }
   }
 
-  private claimDeferredRawExec(
+  #claimDeferredRawExec(
     name: string,
     input: Record<string, unknown>,
     comparisonInput = input,
@@ -1237,7 +1237,7 @@ export class CodexNotificationRouter {
     requireSameId = false,
   ): boolean {
     const projectedName = semanticToolName(name);
-    const availableCalls = [...this.deferredRawExecCalls.values()].flatMap(deferredExec => (
+    const availableCalls = [...this.#deferredRawExecCalls.values()].flatMap(deferredExec => (
       deferredExec.expectedCalls
         .filter(call => !call.claimed && call.name === projectedName)
         .map(expectedCall => ({ deferredExec, expectedCall }))
@@ -1277,13 +1277,13 @@ export class CodexNotificationRouter {
         call.claimed && call.canonicalCompleted
       ))
     ) {
-      this.deferredRawExecCalls.delete(deferredExec.callId);
+      this.#deferredRawExecCalls.delete(deferredExec.callId);
     }
     return true;
   }
 
-  private markDeferredCanonicalCompleted(itemId: string): void {
-    for (const deferredExec of this.deferredRawExecCalls.values()) {
+  #markDeferredCanonicalCompleted(itemId: string): void {
+    for (const deferredExec of this.#deferredRawExecCalls.values()) {
       const claimedCall = deferredExec.expectedCalls.find(call => (
         call.canonicalItemId === itemId
       ));
@@ -1295,7 +1295,7 @@ export class CodexNotificationRouter {
             call.claimed && call.canonicalCompleted
           ))
         ) {
-          this.deferredRawExecCalls.delete(deferredExec.callId);
+          this.#deferredRawExecCalls.delete(deferredExec.callId);
         }
         return;
       }
@@ -1304,12 +1304,12 @@ export class CodexNotificationRouter {
 
   // -- commandExecution -------------------------------------------------------
 
-  private claimPendingRawCommand(item: CommandExecutionItem): RawCommandProjection | undefined {
+  #claimPendingRawCommand(item: CommandExecutionItem): RawCommandProjection | undefined {
     const rawAction = readCanonicalCommand(item);
     const workingDirectory = normalizeWorkingDirectory(item.cwd, this.workingDirectory);
-    let index = this.unmatchedRawCommands.findIndex(command => command.callId === item.id);
+    let index = this.#unmatchedRawCommands.findIndex(command => command.callId === item.id);
     if (index === -1) {
-      const matchingIndexes = this.unmatchedRawCommands
+      const matchingIndexes = this.#unmatchedRawCommands
         .map((command, candidateIndex) => ({ command, candidateIndex }))
         .filter(({ command }) => (
           (command.command === rawAction || command.command === item.command)
@@ -1323,19 +1323,19 @@ export class CodexNotificationRouter {
       return undefined;
     }
 
-    const [command] = this.unmatchedRawCommands.splice(index, 1);
+    const [command] = this.#unmatchedRawCommands.splice(index, 1);
     if (!command) {
       return undefined;
     }
-    this.rawCommandByCanonicalId.set(item.id, command);
+    this.#rawCommandByCanonicalId.set(item.id, command);
     return command;
   }
 
-  private takeUniqueCanonicalCommand(
+  #takeUniqueCanonicalCommand(
     command: string,
     workingDirectory?: string,
   ): CanonicalCommandProjection | undefined {
-    const matches = this.unmatchedCanonicalCommands
+    const matches = this.#unmatchedCanonicalCommands
       .map((candidate, index) => ({ candidate, index }))
       .filter(({ candidate }) => (
         candidate.commands.includes(command)
@@ -1349,11 +1349,11 @@ export class CodexNotificationRouter {
     if (!match) {
       return undefined;
     }
-    this.unmatchedCanonicalCommands.splice(match.index, 1);
+    this.#unmatchedCanonicalCommands.splice(match.index, 1);
     return match.candidate;
   }
 
-  private readRawCommandWorkingDirectory(
+  #readRawCommandWorkingDirectory(
     rawName: string,
     rawArguments: Record<string, unknown>,
   ): string | undefined {
@@ -1379,8 +1379,8 @@ export class CodexNotificationRouter {
     return normalizeWorkingDirectory(this.workingDirectory);
   }
 
-  private visibleRawCallId(callId: string): string {
-    for (const projection of this.rawCommandByCanonicalId.values()) {
+  #visibleRawCallId(callId: string): string {
+    for (const projection of this.#rawCommandByCanonicalId.values()) {
       if (projection.callId === callId) {
         return projection.visibleId;
       }
@@ -1388,18 +1388,18 @@ export class CodexNotificationRouter {
     return callId;
   }
 
-  private completeCommand(
+  #completeCommand(
     item: CommandExecutionItem,
     allowRawCorrelation = true,
     resolvedRawCommand?: RawCommandProjection,
   ): void {
     const rawCommand = resolvedRawCommand
-      ?? this.rawCommandByCanonicalId.get(item.id)
-      ?? (allowRawCorrelation ? this.claimPendingRawCommand(item) : undefined);
-    const unmatchedCanonicalIndex = this.unmatchedCanonicalCommands
+      ?? this.#rawCommandByCanonicalId.get(item.id)
+      ?? (allowRawCorrelation ? this.#claimPendingRawCommand(item) : undefined);
+    const unmatchedCanonicalIndex = this.#unmatchedCanonicalCommands
       .findIndex(command => command.itemId === item.id);
     if (unmatchedCanonicalIndex !== -1) {
-      this.unmatchedCanonicalCommands.splice(unmatchedCanonicalIndex, 1);
+      this.#unmatchedCanonicalCommands.splice(unmatchedCanonicalIndex, 1);
     }
     if (rawCommand?.rawOwnsCompletion) {
       return;
@@ -1407,29 +1407,29 @@ export class CodexNotificationRouter {
 
     const resultId = rawCommand?.visibleId ?? item.id;
     const rawResult = rawCommand
-      ? this.consumeRawToolOutput(rawCommand.callId)
-      : this.consumeRawToolOutput(item.id);
-    this.emitToolResultFromCommand(item, rawResult, resultId);
-    this.canonicalCommandOutputByItemId.delete(item.id);
+      ? this.#consumeRawToolOutput(rawCommand.callId)
+      : this.#consumeRawToolOutput(item.id);
+    this.#emitToolResultFromCommand(item, rawResult, resultId);
+    this.#canonicalCommandOutputByItemId.delete(item.id);
     if (rawCommand) {
-      this.wrappedCommandOutputByCallId.delete(rawCommand.callId);
-      this.canonicalPrefilledRawCommandCallIds.delete(rawCommand.callId);
+      this.#wrappedCommandOutputByCallId.delete(rawCommand.callId);
+      this.#canonicalPrefilledRawCommandCallIds.delete(rawCommand.callId);
     }
     if (rawCommand) {
-      this.ignoredLateRawOutputCallIds.add(rawCommand.callId);
+      this.#ignoredLateRawOutputCallIds.add(rawCommand.callId);
     }
   }
 
-  private emitToolUseFromCommand(item: CommandExecutionItem): void {
+  #emitToolUseFromCommand(item: CommandExecutionItem): void {
     const rawAction = item.commandActions?.[0]?.command ?? item.command;
     const normalizedName = normalizeCodexToolName('command_execution');
     const input = normalizeCodexToolInput('command_execution', { command: rawAction });
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({ type: 'tool_use', id: item.id, name: normalizedName, input });
   }
 
-  private emitToolResultFromCommand(
+  #emitToolResultFromCommand(
     item: CommandExecutionItem,
     rawResult?: RawToolResult,
     resultId = item.id,
@@ -1446,13 +1446,13 @@ export class CodexNotificationRouter {
 
   // -- fileChange -------------------------------------------------------------
 
-  private emitToolUseFromFileChange(item: FileChangeItem): void {
-    const input = this.rememberFileChangeInput(
+  #emitToolUseFromFileChange(item: FileChangeItem): void {
+    const input = this.#rememberFileChangeInput(
       item.id,
       buildFileChangeInput(item.changes ?? []),
     );
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: item.id,
@@ -1461,8 +1461,8 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitToolResultFromFileChange(item: FileChangeItem): void {
-    const input = this.rememberFileChangeInput(
+  #emitToolResultFromFileChange(item: FileChangeItem): void {
+    const input = this.#rememberFileChangeInput(
       item.id,
       buildFileChangeInput(item.changes ?? []),
     );
@@ -1479,49 +1479,49 @@ export class CodexNotificationRouter {
     });
   }
 
-  private onFileChangePatchUpdated(params: FileChangePatchUpdatedNotification): void {
+  #onFileChangePatchUpdated(params: FileChangePatchUpdatedNotification): void {
     const itemId = firstString(params.itemId);
     if (!itemId) {
       return;
     }
 
-    const input = this.rememberFileChangeInput(
+    const input = this.#rememberFileChangeInput(
       itemId,
       buildFileChangeInput(params.changes ?? []),
     );
-    const claimed = this.registerCanonicalToolProjection(
+    const claimed = this.#registerCanonicalToolProjection(
       { itemId, name: 'apply_patch', input },
       false,
     );
     if (claimed) {
-      this.deferredOwnedCanonicalItemIds.add(itemId);
+      this.#deferredOwnedCanonicalItemIds.add(itemId);
     }
-    this.startedCanonicalToolItemIds.add(itemId);
+    this.#startedCanonicalToolItemIds.add(itemId);
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: itemId,
       name: normalizeCodexToolName('file_change'),
       input,
     });
-    this.flushPendingCanonicalToolOutput(itemId);
+    this.#flushPendingCanonicalToolOutput(itemId);
   }
 
-  private rememberFileChangeInput(
+  #rememberFileChangeInput(
     itemId: string,
     input: Record<string, unknown>,
   ): Record<string, unknown> {
-    const previous = this.fileChangeInputsById.get(itemId);
+    const previous = this.#fileChangeInputsById.get(itemId);
     const merged = mergeApplyPatchInputs(previous, input);
-    this.fileChangeInputsById.set(itemId, merged);
+    this.#fileChangeInputsById.set(itemId, merged);
     return merged;
   }
 
   // -- imageView --------------------------------------------------------------
 
-  private emitToolUseFromImageView(item: ImageViewItem): void {
-    this.resetAssistantSegmentText();
+  #emitToolUseFromImageView(item: ImageViewItem): void {
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: item.id,
@@ -1530,17 +1530,17 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitToolResultFromImageView(item: ImageViewItem): void {
+  #emitToolResultFromImageView(item: ImageViewItem): void {
     this.emit({ type: 'tool_result', id: item.id, content: item.path, isError: false });
   }
 
   // -- webSearch --------------------------------------------------------------
 
-  private emitToolUseFromWebSearch(item: WebSearchItem): void {
-    if (this.seenWebSearchIds.has(item.id)) return;
-    this.seenWebSearchIds.add(item.id);
+  #emitToolUseFromWebSearch(item: WebSearchItem): void {
+    if (this.#seenWebSearchIds.has(item.id)) return;
+    this.#seenWebSearchIds.add(item.id);
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: item.id,
@@ -1555,7 +1555,7 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitToolResultFromWebSearch(item: WebSearchItem): void {
+  #emitToolResultFromWebSearch(item: WebSearchItem): void {
     this.emit({
       type: 'tool_result',
       id: item.id,
@@ -1566,9 +1566,9 @@ export class CodexNotificationRouter {
 
   // -- collabAgentToolCall ----------------------------------------------------
 
-  private emitToolUseFromCollabAgent(item: CollabAgentToolCallItem): void {
+  #emitToolUseFromCollabAgent(item: CollabAgentToolCallItem): void {
     const toolName = COLLAB_AGENT_TOOL_MAP[item.tool] ?? item.tool;
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: item.id,
@@ -1577,7 +1577,7 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitToolResultFromCollabAgent(item: CollabAgentToolCallItem): void {
+  #emitToolResultFromCollabAgent(item: CollabAgentToolCallItem): void {
     const resultText = item.result && typeof item.result === 'object'
       ? JSON.stringify(item.result)
       : item.status === 'completed' ? 'Completed' : item.status ?? 'Done';
@@ -1592,8 +1592,8 @@ export class CodexNotificationRouter {
 
   // -- mcpToolCall ------------------------------------------------------------
 
-  private emitToolUseFromMcp(item: McpToolCallItem): void {
-    this.resetAssistantSegmentText();
+  #emitToolUseFromMcp(item: McpToolCallItem): void {
+    this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: item.id,
@@ -1602,7 +1602,7 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitToolResultFromMcp(item: McpToolCallItem): void {
+  #emitToolResultFromMcp(item: McpToolCallItem): void {
     let content = '';
     if (item.error) {
       content = item.error;
@@ -1626,8 +1626,8 @@ export class CodexNotificationRouter {
 
   // -- dynamicToolCall --------------------------------------------------------
 
-  private emitToolUseFromDynamic(item: DynamicToolCallItem): void {
-    this.emitRawToolUse(
+  #emitToolUseFromDynamic(item: DynamicToolCallItem): void {
+    this.#emitRawToolUse(
       item.id,
       item.tool,
       {},
@@ -1636,49 +1636,49 @@ export class CodexNotificationRouter {
     );
   }
 
-  private ensureCanonicalToolUseFromCompletion(
+  #ensureCanonicalToolUseFromCompletion(
     item: ItemCompletedNotification['item'],
   ): void {
     const itemId = getItemId(item);
     if (
       !itemId
       || !isCanonicalToolItem(item)
-      || this.startedCanonicalToolItemIds.has(itemId)
+      || this.#startedCanonicalToolItemIds.has(itemId)
     ) {
       return;
     }
-    this.startedCanonicalToolItemIds.add(itemId);
-    if (this.rawStartedCallIds.has(itemId)) {
+    this.#startedCanonicalToolItemIds.add(itemId);
+    if (this.#rawStartedCallIds.has(itemId)) {
       return;
     }
 
     switch (item.type) {
       case 'fileChange':
-        this.emitToolUseFromFileChange(item);
+        this.#emitToolUseFromFileChange(item);
         break;
       case 'imageView':
-        this.emitToolUseFromImageView(item);
+        this.#emitToolUseFromImageView(item);
         break;
       case 'webSearch':
-        this.emitToolUseFromWebSearch(item);
+        this.#emitToolUseFromWebSearch(item);
         break;
       case 'collabAgentToolCall':
-        this.emitToolUseFromCollabAgent(item);
+        this.#emitToolUseFromCollabAgent(item);
         break;
       case 'mcpToolCall':
-        this.emitToolUseFromMcp(item);
+        this.#emitToolUseFromMcp(item);
         break;
       case 'dynamicToolCall':
-        this.emitToolUseFromDynamic(item);
+        this.#emitToolUseFromDynamic(item);
         break;
       default:
         break;
     }
   }
 
-  private emitToolResultFromDynamic(item: DynamicToolCallItem): void {
-    if (this.emittedImmediateToolResultIds.has(item.id)) return;
-    this.emittedImmediateToolResultIds.add(item.id);
+  #emitToolResultFromDynamic(item: DynamicToolCallItem): void {
+    if (this.#emittedImmediateToolResultIds.has(item.id)) return;
+    this.#emittedImmediateToolResultIds.add(item.id);
 
     const content = (item.contentItems ?? [])
       .map(contentItem => contentItem.type === 'inputText'
@@ -1694,18 +1694,18 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitContextCompactionBoundary(_item: ContextCompactionItem): void {
+  #emitContextCompactionBoundary(_item: ContextCompactionItem): void {
     this.emit({ type: 'context_compacted' });
   }
 
-  private emitUserMessageBoundary(item: UserMessageItem): void {
-    if (this.startedUserMessageIds.has(item.id)) {
+  #emitUserMessageBoundary(item: UserMessageItem): void {
+    if (this.#startedUserMessageIds.has(item.id)) {
       return;
     }
 
-    const rawContent = this.extractUserMessageText(item.content);
+    const rawContent = this.#extractUserMessageText(item.content);
     const visibleContent = extractCodexUserVisibleText(rawContent);
-    this.startedUserMessageIds.add(item.id);
+    this.#startedUserMessageIds.add(item.id);
 
     if (visibleContent === null && rawContent.trim()) {
       return;
@@ -1718,31 +1718,31 @@ export class CodexNotificationRouter {
     });
   }
 
-  private emitAgentMessageBoundary(item: AgentMessageItem): void {
-    if (this.startedAgentMessageIds.has(item.id)) {
+  #emitAgentMessageBoundary(item: AgentMessageItem): void {
+    if (this.#startedAgentMessageIds.has(item.id)) {
       return;
     }
 
-    this.startedAgentMessageIds.add(item.id);
-    this.claimAssistantSegment(item.id);
+    this.#startedAgentMessageIds.add(item.id);
+    this.#claimAssistantSegment(item.id);
     this.emit({ type: 'assistant_message_start', itemId: item.id });
   }
 
-  private completeAgentMessage(item: AgentMessageItem): void {
-    if (!this.startedAgentMessageIds.has(item.id)) {
-      this.emitAgentMessageBoundary(item);
+  #completeAgentMessage(item: AgentMessageItem): void {
+    if (!this.#startedAgentMessageIds.has(item.id)) {
+      this.#emitAgentMessageBoundary(item);
     }
 
     const visibleText = stripCodexMemoryCitationMarkup(item.text);
     if (visibleText) {
-      this.emitMissingAgentMessageText(visibleText, item.id);
+      this.#emitMissingAgentMessageText(visibleText, item.id);
     }
 
-    this.emitMemoryCitation(item.memoryCitation, item.id);
+    this.#emitMemoryCitation(item.memoryCitation, item.id);
   }
 
-  private emitMemoryCitation(value: unknown, itemId?: string): void {
-    if (itemId && this.emittedMemoryCitationIds.has(itemId)) {
+  #emitMemoryCitation(value: unknown, itemId?: string): void {
+    if (itemId && this.#emittedMemoryCitationIds.has(itemId)) {
       return;
     }
     const citations = normalizeCodexMemoryCitation(value);
@@ -1751,18 +1751,18 @@ export class CodexNotificationRouter {
     }
 
     if (itemId) {
-      this.emittedMemoryCitationIds.add(itemId);
+      this.#emittedMemoryCitationIds.add(itemId);
     }
     const citationKey = buildMemoryCitationKey(citations);
-    if (this.emittedMemoryCitationKeys.has(citationKey)) {
+    if (this.#emittedMemoryCitationKeys.has(citationKey)) {
       return;
     }
 
-    this.emittedMemoryCitationKeys.add(citationKey);
+    this.#emittedMemoryCitationKeys.add(citationKey);
     this.emit({ type: 'citations', citations });
   }
 
-  private extractUserMessageText(content: UserInput[]): string {
+  #extractUserMessageText(content: UserInput[]): string {
     return joinCodexUserTextParts(
       content.map((part) => (part.type === 'text' ? part.text : '')),
       '\n\n',
@@ -1771,9 +1771,9 @@ export class CodexNotificationRouter {
 
   // -- turn/plan/updated (update_plan) ----------------------------------------
 
-  private onPlanUpdated(params: TurnPlanUpdatedNotification): void {
-    this.planUpdateCounter += 1;
-    const syntheticId = `plan-update-${params.turnId ?? 'turn'}-${this.planUpdateCounter}`;
+  #onPlanUpdated(params: TurnPlanUpdatedNotification): void {
+    this.#planUpdateCounter += 1;
+    const syntheticId = `plan-update-${params.turnId ?? 'turn'}-${this.#planUpdateCounter}`;
     const PLAN_STATUS_MAP: Record<string, string> = {
       inProgress: 'in_progress',
       in_progress: 'in_progress',
@@ -1790,7 +1790,7 @@ export class CodexNotificationRouter {
       todos,
       ...(params.explanation ? { explanation: params.explanation } : {}),
     };
-    this.claimDeferredRawExec(
+    this.#claimDeferredRawExec(
       'TodoWrite',
       projectionInput,
       projectionInput,
@@ -1798,32 +1798,32 @@ export class CodexNotificationRouter {
       true,
     );
 
-    this.resetAssistantSegmentText();
+    this.#resetAssistantSegmentText();
     this.emit({ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input: { todos } });
     this.emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
   }
 
   // -- outputDelta (commandExecution + fileChange) ----------------------------
 
-  private onOutputDelta(
+  #onOutputDelta(
     params: { itemId: string; delta: string },
     isCommandOutput: boolean,
   ): void {
-    const rawCommand = this.rawCommandByCanonicalId.get(params.itemId);
+    const rawCommand = this.#rawCommandByCanonicalId.get(params.itemId);
     if (rawCommand?.rawOwnsCompletion) {
       return;
     }
     if (isCommandOutput) {
-      const previousOutput = this.canonicalCommandOutputByItemId.get(params.itemId) ?? '';
-      this.canonicalCommandOutputByItemId.set(params.itemId, previousOutput + params.delta);
+      const previousOutput = this.#canonicalCommandOutputByItemId.get(params.itemId) ?? '';
+      this.#canonicalCommandOutputByItemId.set(params.itemId, previousOutput + params.delta);
     }
-    const lifecycleStarted = this.startedCanonicalToolItemIds.has(params.itemId)
-      || this.rawStartedCallIds.has(params.itemId)
+    const lifecycleStarted = this.#startedCanonicalToolItemIds.has(params.itemId)
+      || this.#rawStartedCallIds.has(params.itemId)
       || rawCommand !== undefined;
     if (!lifecycleStarted) {
-      const pendingOutput = this.pendingCanonicalToolOutputByItemId.get(params.itemId) ?? [];
+      const pendingOutput = this.#pendingCanonicalToolOutputByItemId.get(params.itemId) ?? [];
       pendingOutput.push(params.delta);
-      this.pendingCanonicalToolOutputByItemId.set(params.itemId, pendingOutput);
+      this.#pendingCanonicalToolOutputByItemId.set(params.itemId, pendingOutput);
       return;
     }
     this.emit({
@@ -1833,13 +1833,13 @@ export class CodexNotificationRouter {
     });
   }
 
-  private flushPendingCanonicalToolOutput(itemId: string): void {
-    const pendingOutput = this.pendingCanonicalToolOutputByItemId.get(itemId);
+  #flushPendingCanonicalToolOutput(itemId: string): void {
+    const pendingOutput = this.#pendingCanonicalToolOutputByItemId.get(itemId);
     if (!pendingOutput) {
       return;
     }
-    this.pendingCanonicalToolOutputByItemId.delete(itemId);
-    const rawCommand = this.rawCommandByCanonicalId.get(itemId);
+    this.#pendingCanonicalToolOutputByItemId.delete(itemId);
+    const rawCommand = this.#rawCommandByCanonicalId.get(itemId);
     if (rawCommand?.rawOwnsCompletion) {
       return;
     }
@@ -1854,7 +1854,7 @@ export class CodexNotificationRouter {
 
   // -- tokenUsage / turnCompleted / error -------------------------------------
 
-  private onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
+  #onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
     const last = params.tokenUsage.last;
     const contextTokens = last.inputTokens;
     const contextWindow = params.tokenUsage.modelContextWindow;
@@ -1872,7 +1872,7 @@ export class CodexNotificationRouter {
     this.emit({ type: 'usage', usage, sessionId: params.threadId });
   }
 
-  private onTurnCompleted(params: TurnCompletedNotification): void {
+  #onTurnCompleted(params: TurnCompletedNotification): void {
     const turn = params.turn;
 
     if (turn.status === 'completed') {
@@ -1882,10 +1882,10 @@ export class CodexNotificationRouter {
     }
 
     const terminalError = turn.status === 'failed';
-    this.flushDeferredRawExecCalls(terminalError);
-    this.flushPendingWrappedWaitCalls(terminalError);
-    this.flushPendingRawToolOutputs();
-    this.flushInFlightRawTools(terminalError);
+    this.#flushDeferredRawExecCalls(terminalError);
+    this.#flushPendingWrappedWaitCalls(terminalError);
+    this.#flushPendingRawToolOutputs();
+    this.#flushInFlightRawTools(terminalError);
     if (turn.status === 'failed' && turn.error) {
       this.emit({ type: 'error', content: turn.error.message });
     } else {
@@ -1893,12 +1893,12 @@ export class CodexNotificationRouter {
     }
   }
 
-  private onError(params: ErrorNotification): void {
+  #onError(params: ErrorNotification): void {
     if (params.willRetry) return;
-    this.flushDeferredRawExecCalls(true);
-    this.flushPendingWrappedWaitCalls(true);
-    this.flushPendingRawToolOutputs();
-    this.flushInFlightRawTools(true);
+    this.#flushDeferredRawExecCalls(true);
+    this.#flushPendingWrappedWaitCalls(true);
+    this.#flushPendingRawToolOutputs();
+    this.#flushInFlightRawTools(true);
     this.emit({ type: 'error', content: params.error.message });
   }
 }

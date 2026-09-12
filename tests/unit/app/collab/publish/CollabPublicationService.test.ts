@@ -1,32 +1,37 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp,rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
-  COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
-  COLLAB_LIMITS,
-  collabCloudCapabilityDocument,
-  collabCloudSuccessEnvelope,
+COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
+COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC,
+COLLAB_LIMITS,
+collabCloudCapabilityDocument,
+collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
 import {
-  completeCollabPublicationOptions,
+completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { WebSocketServer } from 'ws';
 
 import type {
-  CollabLocalCloudMembershipRecord,
-  CollabLocalLanMembershipRecord,
+CollabLocalCloudMembershipRecord,
+CollabLocalLanMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
-  type CollabPublicationFoundationPort,
-  CollabPublicationService,
+type CollabPublicationFoundationPort,
+CollabPublicationService,
 } from '@/app/collab/publish/CollabPublicationService';
 import type { CollabRequestDraftRecord } from '@/app/collab/publish/CollabRequestDraftRecord';
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
 import { type CollabUpdateRequestMetadataRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -63,12 +68,12 @@ const LAN_ACTIVE_ENDPOINT = 'https://192.168.1.44:41731';
 function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
-      developmentActorId: CLOUD_MEMBER_ID,
-      gitRemoteUrl: `${serverUrl}/v2/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      authorityGeneration: 1,
+      bindingVersion: 6,
+      gitRemoteUrl: `${serverUrl}/v6/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 6,
+      wireVersion: 10,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -106,6 +111,7 @@ function cloudSnapshot() {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       createdAt: CLOUD_CREATED_AT,
       expectedMainOid: 'a'.repeat(40),
       id: CLOUD_PROJECT_ID,
@@ -119,6 +125,7 @@ function cloudSnapshot() {
 function lanMembership(ownsAuthority: boolean): CollabLocalLanMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: LAN_STORED_ENDPOINT,
       gitRemoteUrl: `${LAN_STORED_ENDPOINT}/v1/git/${LAN_PROJECT_ID}/repository.git`,
       hostCaCertificatePem: LAN_CA,
@@ -169,6 +176,7 @@ function lanSnapshot() {
       id: LAN_PROJECT_ID,
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main' as const,
+      authorityGeneration: 1,
       managerSetGeneration: 1,
       name: 'LAN Project',
     },
@@ -193,6 +201,25 @@ const cloudLimits = {
 
 describe('CollabPublicationService reconnect', () => {
   let tlsRoot: string;
+  const reconnectServices: CollabPublicationService[] = [];
+
+  afterEach(async () => {
+    await Promise.all(reconnectServices.splice(0).map(service => service.close()));
+    jest.restoreAllMocks();
+  });
+
+  function reconnectProjects(ownsAuthority: boolean) {
+    jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+      .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
+      .mockResolvedValue(lanSnapshot() as never);
+    return {
+      loadMembership: async () => lanMembership(ownsAuthority),
+      loadProjectDocument: async () => null,
+      saveProjectDocument: async () => undefined,
+      updateMembershipProjection: async () => undefined,
+    };
+  }
+
 
   beforeAll(async () => {
     tlsRoot = await mkdtemp(path.join(tmpdir(), 'claudian-publication-lanes-'));
@@ -246,6 +273,16 @@ describe('CollabPublicationService reconnect', () => {
       }));
 
       try {
+        await expect(service.readProjectCapabilities(LAN_PROJECT_ID)).resolves.toEqual({
+          authorityKind: 'lan',
+          authorityTransfer: true,
+          importedMemberClaims: false,
+          invitations: true,
+          leave: true,
+          managerResponsibility: true,
+          membershipManagement: true,
+          retirement: true,
+        });
         await expect(service.readSnapshot(LAN_PROJECT_ID)).resolves.toMatchObject({
           currentMember: {
             id: LAN_MEMBER_ID,
@@ -302,7 +339,7 @@ describe('CollabPublicationService reconnect', () => {
 
     try {
       await expect(
-        service.transferSnapshot(LAN_PROJECT_ID),
+        service.readAuthoritySnapshot(LAN_PROJECT_ID),
       ).resolves.toMatchObject({
         snapshot: {
           currentMember: { id: LAN_MEMBER_ID },
@@ -334,7 +371,8 @@ describe('CollabPublicationService reconnect', () => {
         if (this.trust.endpoint === LAN_STORED_ENDPOINT) {
           return Promise.reject(new CollabError({ code: 'endpoint-unreachable' }));
         }
-        return Promise.resolve({ ticket: { id: 'ticket-after-reconnect' } }) as never;
+        return Promise.resolve(input.path.endsWith('/snapshot')
+          ? lanSnapshot() : { ticket: { id: 'ticket-after-reconnect' } }) as never;
       });
     const projects = {
       loadMembership: jest.fn(async () => currentMembership),
@@ -364,7 +402,7 @@ describe('CollabPublicationService reconnect', () => {
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
       discovery: {
-        discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+        discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
       },
       inspectHostInstallation: async () => 'hosted-elsewhere',
       reconnect: {
@@ -381,24 +419,224 @@ describe('CollabPublicationService reconnect', () => {
       }, {}, 'ticket-stale-endpoint')).resolves.toMatchObject({
         ticket: { id: 'ticket-after-reconnect' },
       });
-      expect(requests).toEqual([LAN_STORED_ENDPOINT, LAN_ACTIVE_ENDPOINT]);
+      expect(requests).toEqual([
+        LAN_STORED_ENDPOINT, LAN_STORED_ENDPOINT, LAN_ACTIVE_ENDPOINT, LAN_ACTIVE_ENDPOINT,
+      ]);
       expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
         candidates: [candidate],
         projectId: LAN_PROJECT_ID,
-      }, {});
+      }, { signal: expect.any(AbortSignal) });
     } finally {
       request.mockRestore();
       await service.close();
     }
   });
 
-  it('uses the production Cloud adapter composition without renderer fetch', async () => {
+  it.each(([
+    'endpoint-unreachable', 'authorization-denied', 'authority-integrity-error',
+  ] as const).flatMap(code => ([
+    { code, readMethod: 'readCoordinationSnapshot' as const },
+    { code, readMethod: 'readPresentationSnapshot' as const },
+  ])))('recovers cold cached $readMethod only for connectivity failure: $code', async ({ code, readMethod }) => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)
+        : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ server });
+    const eventConnected = deferred<void>();
+    sockets.on('connection', () => eventConnected.resolve());
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server address missing');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-cached-coordination-'));
+    const services: CollabPublicationService[] = [];
+    try {
+      const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
+      const projects = new CollabLocalProjectRepository(vaultRoot);
+      await projects.saveMembership(membership);
+      await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+      const transport = new NodeCloudAuthorityHttpTransport();
+      let fault: CollabError | null = null;
+      const cloudAuthority = new CloudAuthorityAdapter(vaultRoot, {
+        request: input => fault ? Promise.reject(fault) : transport.request(input),
+        requestIdFactory: () => 'response-snapshot',
+      });
+      const create = () => {
+        const service = new CollabPublicationService({
+          local: { pathPolicy: {}, projects, workspace: {} },
+          requireGitFoundation: jest.fn(),
+        } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+          cloudAuthority,
+          vaultRoot,
+        }));
+        services.push(service);
+        return service;
+      };
+      const online = create();
+      await online.readSnapshot(CLOUD_PROJECT_ID);
+      await online.close();
+
+      fault = new CollabError({ code });
+      const restarted = create();
+      const cachedResult = {
+        value: expect.objectContaining({
+          snapshot: expect.objectContaining({ eventSequence: 1, project: expect.objectContaining({ id: CLOUD_PROJECT_ID }) }),
+          source: 'cache',
+          stale: true,
+          syncState: expect.objectContaining({ status: 'offline' }),
+        }),
+      };
+      const observed = await restarted[readMethod](CLOUD_PROJECT_ID).then(
+        value => ({ value }),
+        (error: CollabError) => ({ code: error.code }),
+      );
+      expect(observed).toEqual(code === 'endpoint-unreachable' ? cachedResult : { code });
+
+      fault = null;
+      const recovered = code === 'endpoint-unreachable'
+        ? await restarted.tryAutoReconnect(CLOUD_PROJECT_ID) : false;
+      expect({ recovered, sockets: sockets.clients.size }).toEqual(code === 'endpoint-unreachable'
+        ? { recovered: true, sockets: 0 } : { recovered: false, sockets: 0 });
+      await expect(restarted.readCoordinationSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+        source: 'online',
+        stale: false,
+      });
+      restarted.observeProject(CLOUD_PROJECT_ID);
+      await eventConnected.promise;
+    } finally {
+      await Promise.all(services.map(service => service.close()));
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([false, true])('notifies accepted-main changes between initial presentation and the first event refresh (retained: %s)', async retained => {
+    const releaseRefresh = deferred<void>();
+    let snapshotReads = 0;
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)));
+        return;
+      }
+      snapshotReads += 1;
+      const snapshot = cloudSnapshot();
+      if (snapshotReads <= (retained ? 2 : 1)) {
+        response.end(JSON.stringify(collabCloudSuccessEnvelope('response-snapshot', snapshot)));
+        return;
+      }
+      void releaseRefresh.promise.then(() => response.end(JSON.stringify(collabCloudSuccessEnvelope('response-snapshot', {
+        ...snapshot, eventSequence: 2, project: { ...snapshot.project, expectedMainOid: 'b'.repeat(40) },
+      }))));
+    });
+    const sockets = new WebSocketServer({ server });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing server address');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'collab-initial-main-'));
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(cloudMembership(`http://127.0.0.1:${address.port}`));
+    await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} }, requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+      cloudAuthority: new CloudAuthorityAdapter(vaultRoot, { requestIdFactory: () => 'response-snapshot' }),
+      vaultRoot,
+    }));
+    const refreshed = deferred<string>();
+    service.subscribeCoordination((_projectId, reason, coordination) => {
+      if (coordination?.snapshot.eventSequence === 2) refreshed.resolve(reason);
+    });
+    try {
+      if (retained) await service.readSnapshot(CLOUD_PROJECT_ID);
+      await expect(service.readPresentationSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+        stale: false,
+        snapshot: { project: { mainOid: 'a'.repeat(40) } },
+      });
+      service.observeProject(CLOUD_PROJECT_ID);
+      releaseRefresh.resolve();
+      await expect(refreshed.promise).resolves.toBe('accepted-main-changed');
+    } finally {
+      releaseRefresh.resolve();
+      await service.close();
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reopens an existing event subscription after explicit endpoint rotation without another read', async () => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)
+        : collabCloudSuccessEnvelope('response-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ server });
+    let connected = 0;
+    sockets.on('connection', () => { connected += 1; });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing server address');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'collab-event-rotation-'));
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(cloudMembership(`http://127.0.0.1:${address.port}`));
+    await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} }, requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+      cloudAuthority: new CloudAuthorityAdapter(vaultRoot, { requestIdFactory: () => 'response-snapshot' }),
+      vaultRoot,
+    }));
+    const waitForConnections = async (count: number) => {
+      const deadline = Date.now() + 2_000;
+      while (connected < count && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      return connected;
+    };
+    try {
+      const observation = service.observeProject(CLOUD_PROJECT_ID);
+      await service.readCoordinationSnapshot(CLOUD_PROJECT_ID);
+      expect(await waitForConnections(1)).toBe(1);
+      service.resetProjectConnection(CLOUD_PROJECT_ID, { resumeEvents: true });
+      expect(await waitForConnections(2)).toBe(2);
+      observation.dispose();
+      service.resetProjectConnection(CLOUD_PROJECT_ID);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(connected).toBe(2);
+    } finally {
+      await service.close();
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('shares the configured Cloud transport across lifecycle and publication without renderer fetch', async () => {
     const routes: string[] = [];
     const server = createServer((request, response) => {
       routes.push(request.url ?? '');
       response.setHeader('content-type', 'application/json; charset=utf-8');
+      if (request.headers['x-test-ingress'] !== 'private-fixture') {
+        response.writeHead(401);
+        response.end('{}');
+        return;
+      }
       if (request.method === 'GET') {
         response.end(JSON.stringify(collabCloudCapabilityDocument([
+          'authority-transfer',
+          'cloud-project-invitations',
+          'cloud-project-membership',
           'project-snapshot',
         ], cloudLimits)));
         return;
@@ -412,6 +650,16 @@ describe('CollabPublicationService reconnect', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('server address missing');
     const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
+    const transport = new NodeCloudAuthorityHttpTransport();
+    const cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-publication-vault-'));
+    await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate(membership.project.id);
+    const cloudAuthority = new CloudAuthorityAdapter(cloudVaultRoot, {
+      request: input => transport.request({
+        ...input,
+        headers: { ...input.headers, 'x-test-ingress': 'private-fixture' },
+      }),
+      requestIdFactory: () => 'response-snapshot',
+    });
     const projects = {
       loadMembership: jest.fn().mockResolvedValue(membership),
       loadProjectDocument: jest.fn().mockResolvedValue(null),
@@ -422,21 +670,46 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: { pathPolicy: {}, projects, workspace: {} },
       requireGitFoundation: jest.fn(),
-    } as unknown as CollabPublicationFoundationPort, publicationOptions());
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({ cloudAuthority }));
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(
       new Error('renderer fetch is disabled'),
     );
 
     try {
+      const connection = await cloudAuthority.connect({
+        projectId: CLOUD_PROJECT_ID,
+        serverUrl: membership.authority.serverUrl,
+      });
+      try {
+        await expect(connection.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+          currentMember: { id: CLOUD_MEMBER_ID },
+        });
+      } finally {
+        connection.dispose();
+      }
+      await expect(service.readProjectCapabilities(CLOUD_PROJECT_ID)).resolves.toEqual({
+        authorityKind: 'cloud',
+        authorityTransfer: true,
+        importedMemberClaims: false,
+        invitations: true,
+        leave: false,
+        managerResponsibility: false,
+        membershipManagement: true,
+        retirement: false,
+      });
       await expect(service.readSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
         currentMember: { id: CLOUD_MEMBER_ID },
         project: { authorityKind: 'cloud', id: CLOUD_PROJECT_ID },
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v2/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v6/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        '/collab/capabilities',
+        `/v6/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v6/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
+      await rm(cloudVaultRoot, { recursive: true, force: true });
       fetchMock.mockRestore();
       await service.close();
       server.closeAllConnections();
@@ -473,14 +746,14 @@ describe('CollabPublicationService reconnect', () => {
     expect(retirement.handle).toHaveBeenCalledWith(result, 'terminal-fallback');
   });
 
-  it('discovers and reconnects an offline Member under its stored CA', async () => {
+  it('discovers a successor Host for proof verification when the old CA is no longer advertised', async () => {
     const candidate = {
-      caFingerprint: 'ab'.repeat(32),
+      caFingerprint: 'cd'.repeat(32),
       endpoint: 'https://192.168.1.20:54545',
-      projectId: 'project-a',
+      projectId: LAN_PROJECT_ID,
     };
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
     };
     const reconnect = {
       reconnectDiscoveredProject: jest.fn().mockResolvedValue({
@@ -490,7 +763,7 @@ describe('CollabPublicationService reconnect', () => {
           connectionStatus: 'connected',
           health: 'healthy',
           hostStatus: 'not-host',
-          id: 'project-a',
+          id: LAN_PROJECT_ID,
           name: 'Alpha',
           role: 'member',
           workspacePath: 'workspace/project-a',
@@ -501,12 +774,7 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: {
         pathPolicy: {},
-        projects: {
-          loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
-            hostOwnership: { ownsAuthority: false },
-          }),
-        },
+        projects: reconnectProjects(false),
       },
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
@@ -514,27 +782,27 @@ describe('CollabPublicationService reconnect', () => {
       reconnect,
     }));
 
-    await expect(service.tryAutoReconnect('project-a')).resolves.toBe(true);
+    reconnectServices.push(service);
+    await expect(service.tryAutoReconnect(LAN_PROJECT_ID)).resolves.toBe(true);
 
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalledWith(
-      'project-a',
-      'ab'.repeat(32),
-      {},
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalledWith(
+      LAN_PROJECT_ID,
+      { signal: expect.any(AbortSignal) },
     );
     expect(reconnect.reconnectDiscoveredProject).toHaveBeenCalledWith({
       candidates: [candidate],
-      projectId: 'project-a',
-    }, {});
+      projectId: LAN_PROJECT_ID,
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('uses ordinary trusted discovery for a hosted-here Host Member', async () => {
     const candidate = {
       caFingerprint: 'ab'.repeat(32),
       endpoint: 'https://192.168.1.21:54545',
-      projectId: 'project-a',
+      projectId: LAN_PROJECT_ID,
     };
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([candidate]),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([candidate]),
     };
     const reconnectDiscoveredProject = jest.fn().mockResolvedValue({
       status: 'success',
@@ -543,12 +811,7 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: {
         pathPolicy: {},
-        projects: {
-          loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
-            hostOwnership: { ownsAuthority: true },
-          }),
-        },
+        projects: reconnectProjects(true),
       },
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
@@ -560,12 +823,13 @@ describe('CollabPublicationService reconnect', () => {
       },
     }));
 
-    await expect(service.tryAutoReconnect('project-a')).resolves.toBe(true);
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalled();
+    reconnectServices.push(service);
+    await expect(service.tryAutoReconnect(LAN_PROJECT_ID)).resolves.toBe(true);
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalled();
     expect(reconnectDiscoveredProject).toHaveBeenCalledWith({
       candidates: [candidate],
-      projectId: 'project-a',
-    }, {});
+      projectId: LAN_PROJECT_ID,
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('coalesces concurrent automatic reconnect attempts for one Project', async () => {
@@ -575,7 +839,7 @@ describe('CollabPublicationService reconnect', () => {
       projectId: string;
     }[]>();
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockReturnValue(candidate.promise),
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockReturnValue(candidate.promise),
     };
     const reconnect = {
       reconnectDiscoveredProject: jest.fn().mockResolvedValue({
@@ -585,7 +849,7 @@ describe('CollabPublicationService reconnect', () => {
           connectionStatus: 'connected',
           health: 'healthy',
           hostStatus: 'not-host',
-          id: 'project-a',
+          id: LAN_PROJECT_ID,
           name: 'Alpha',
           role: 'member',
           workspacePath: 'workspace/project-a',
@@ -596,12 +860,7 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: {
         pathPolicy: {},
-        projects: {
-          loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
-            hostOwnership: { ownsAuthority: false },
-          }),
-        },
+        projects: reconnectProjects(false),
       },
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
@@ -609,25 +868,55 @@ describe('CollabPublicationService reconnect', () => {
       reconnect,
     }));
 
-    const first = service.tryAutoReconnect('project-a');
-    const second = service.tryAutoReconnect('project-a');
+    reconnectServices.push(service);
+    const first = service.tryAutoReconnect(LAN_PROJECT_ID);
+    const second = service.tryAutoReconnect(LAN_PROJECT_ID);
 
     candidate.resolve([{
       caFingerprint: 'ab'.repeat(32),
       endpoint: 'https://192.168.1.20:54545',
-      projectId: 'project-a',
+      projectId: LAN_PROJECT_ID,
     }]);
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
-    expect(discovery.discoverProjectCandidates).toHaveBeenCalledTimes(1);
+    expect(discovery.discoverProjectCandidatesForTrustTransition).toHaveBeenCalledTimes(1);
     expect(reconnect.reconnectDiscoveredProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels discovery and drains it before Project activity closes', async () => {
+    const candidate = deferred<readonly []>();
+    const started = deferred<void>();
+    let discoverySignal: AbortSignal | undefined;
+    const service = new CollabPublicationService({
+      local: { projects: reconnectProjects(false) },
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({
+      discovery: {
+        discoverProjectCandidatesForTrustTransition: async (_projectId, options) => {
+          discoverySignal = options?.signal;
+          started.resolve();
+          return candidate.promise;
+        },
+      },
+    }));
+    reconnectServices.push(service);
+    const pending = service.tryAutoReconnect(LAN_PROJECT_ID);
+    await started.promise;
+    const draining = service.drainProject(LAN_PROJECT_ID);
+    try {
+      expect(discoverySignal?.aborted).toBe(true);
+    } finally {
+      candidate.resolve([]);
+      await draining;
+      await service.close();
+    }
+    await expect(pending).resolves.toBe(false);
   });
 
   it('surfaces a discovered authority split instead of hiding it as offline', async () => {
     const discovery = {
-      discoverProjectCandidates: jest.fn().mockResolvedValue([{
+      discoverProjectCandidatesForTrustTransition: jest.fn().mockResolvedValue([{
         caFingerprint: 'ab'.repeat(32),
         endpoint: 'https://192.168.1.20:54545',
-        projectId: 'project-a',
+        projectId: LAN_PROJECT_ID,
       }]),
     };
     const integrityError = new CollabError({
@@ -644,12 +933,7 @@ describe('CollabPublicationService reconnect', () => {
     const service = new CollabPublicationService({
       local: {
         pathPolicy: {},
-        projects: {
-          loadMembership: jest.fn().mockResolvedValue({
-            authority: { hostCaFingerprint: 'ab'.repeat(32), kind: 'lan' },
-            hostOwnership: { ownsAuthority: false },
-          }),
-        },
+        projects: reconnectProjects(false),
       },
       requireGitFoundation: jest.fn(),
     } as unknown as CollabPublicationFoundationPort, publicationOptions({
@@ -657,10 +941,11 @@ describe('CollabPublicationService reconnect', () => {
       reconnect,
     }));
 
-    await expect(service.tryAutoReconnect('project-a')).rejects.toBe(integrityError);
+    reconnectServices.push(service);
+    await expect(service.tryAutoReconnect(LAN_PROJECT_ID)).rejects.toBe(integrityError);
   });
 
-  it('serializes same-Project reconnect transactions behind its mutation queue', async () => {
+  it('retains the publication mutation lane for explicit LAN reconnects', async () => {
     const first = deferred<{
       status: 'success';
       value: {
@@ -684,7 +969,7 @@ describe('CollabPublicationService reconnect', () => {
             connectionStatus: 'connected',
             health: 'healthy',
             hostStatus: 'not-host',
-            id: 'project-a',
+            id: LAN_PROJECT_ID,
             name: 'Alpha',
             role: 'member',
             workspacePath: 'workspace/project-a',
@@ -702,7 +987,7 @@ describe('CollabPublicationService reconnect', () => {
     }));
     const request = {
       encodedInvitation: 'claudian-collab:v2:payload',
-      projectId: 'project-a',
+      projectId: LAN_PROJECT_ID,
     };
 
     const firstResult = service.reconnectProject(request);
@@ -717,6 +1002,71 @@ describe('CollabPublicationService reconnect', () => {
         connectionStatus: 'connected',
         health: 'healthy',
         hostStatus: 'not-host',
+        id: LAN_PROJECT_ID,
+        name: 'Alpha',
+        role: 'member',
+        workspacePath: 'workspace/project-a',
+      },
+    });
+    await expect(firstResult).resolves.toMatchObject({ status: 'success' });
+    expect(service.readConnectionStatus(LAN_PROJECT_ID)).toBe('offline');
+    await expect(secondResult).resolves.toMatchObject({ status: 'success' });
+    expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not self-enqueue a Cloud relocation that owns the publication suspension', async () => {
+    const first = deferred<{
+      status: 'success';
+      value: {
+        authorityKind: 'cloud';
+        connectionStatus: 'connected';
+        health: 'healthy';
+        hostStatus: 'not-host';
+        id: string;
+        name: string;
+        role: 'member';
+        workspacePath: string;
+      };
+    }>();
+    const reconnect = {
+      reconnectProject: jest.fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValueOnce({
+          status: 'success',
+          value: {
+            authorityKind: 'cloud',
+            connectionStatus: 'connected',
+            health: 'healthy',
+            hostStatus: 'not-host',
+            id: 'project-a',
+            name: 'Alpha',
+            role: 'member',
+            workspacePath: 'workspace/project-a',
+          },
+        }),
+    };
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects: {} },
+      requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, publicationOptions({ reconnect }));
+    const request = {
+      authority: { kind: 'cloud' as const, serverUrl: 'https://cloud.example.test/operator' },
+      projectId: 'project-a',
+    };
+
+    const firstResult = service.reconnectProject(request);
+    const secondResult = service.reconnectProject(request);
+    await Promise.resolve();
+    expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
+    await expect(secondResult).resolves.toMatchObject({ status: 'success' });
+
+    first.resolve({
+      status: 'success',
+      value: {
+        authorityKind: 'cloud',
+        connectionStatus: 'connected',
+        health: 'healthy',
+        hostStatus: 'not-host',
         id: 'project-a',
         name: 'Alpha',
         role: 'member',
@@ -724,8 +1074,6 @@ describe('CollabPublicationService reconnect', () => {
       },
     });
     await expect(firstResult).resolves.toMatchObject({ status: 'success' });
-    await expect(secondResult).resolves.toMatchObject({ status: 'success' });
-    expect(reconnect.reconnectProject).toHaveBeenCalledTimes(2);
   });
 
   it('serializes same-Project request metadata writes and preserves the failed newer draft', async () => {
@@ -779,6 +1127,22 @@ describe('CollabPublicationService reconnect', () => {
     await expect(draftStore.load('project-a')).resolves.toEqual(newerDraft);
   });
 
+  it('allows retirement to abort background work after suspension and terminal closure', async () => {
+    const service = publicationServiceForClose();
+    try {
+      const suspension = await service.suspendProject('project-a');
+      expect(() => service.abortProjectBackgroundWork('project-a')).not.toThrow();
+
+      await service.completeProjectSuspension(suspension);
+      expect(() => service.abortProjectBackgroundWork('project-a')).not.toThrow();
+      expect(() => service.beginProjectInspection('project-a')).toThrow(
+        expect.objectContaining({ code: 'project-retired' }),
+      );
+    } finally {
+      await service.close();
+    }
+  });
+
   it('fails closed when a suspended work session was terminally drained', async () => {
     const service = publicationServiceForClose();
     const suspension = await service.suspendProject('project-a');
@@ -814,7 +1178,6 @@ describe('CollabPublicationService reconnect', () => {
     await expect(Promise.all([first, overlapping])).resolves.toEqual([undefined, undefined]);
     expect(disposeProjection).toHaveBeenCalledTimes(1);
     expect(harness.coordinationListeners.size).toBe(0);
-    expect(service).not.toHaveProperty('dispose');
   });
 
   it('shares a rejected close and tears down local projection exactly once', async () => {

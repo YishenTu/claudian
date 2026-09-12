@@ -1530,6 +1530,7 @@ function coordination(
         id: 'project-a',
         mainOid: 'c'.repeat(40),
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Project A',
       },

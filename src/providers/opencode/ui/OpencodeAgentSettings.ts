@@ -400,7 +400,7 @@ export class OpencodeAgentSettings {
       attr: { 'aria-label': 'Add' },
     });
     setIcon(addBtn, 'plus');
-    addBtn.addEventListener('click', () => this.openModal(null));
+    addBtn.addEventListener('click', () => this.#openModal(null));
 
     if (visibleAgents.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
@@ -410,11 +410,11 @@ export class OpencodeAgentSettings {
 
     const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
     for (const agent of visibleAgents) {
-      this.renderItem(listEl, agent);
+      this.#renderItem(listEl, agent);
     }
   }
 
-  private renderItem(listEl: HTMLElement, agent: OpencodeAgentDefinition): void {
+  #renderItem(listEl: HTMLElement, agent: OpencodeAgentDefinition): void {
     const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
     const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
 
@@ -443,7 +443,7 @@ export class OpencodeAgentSettings {
       attr: { 'aria-label': 'Edit' },
     });
     setIcon(editBtn, 'pencil');
-    editBtn.addEventListener('click', () => this.openModal(agent));
+    editBtn.addEventListener('click', () => this.#openModal(agent));
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
@@ -470,7 +470,7 @@ export class OpencodeAgentSettings {
     });
   }
 
-  private openModal(existing: OpencodeAgentDefinition | null): void {
+  #openModal(existing: OpencodeAgentDefinition | null): void {
     if (!this.app) return;
 
     const modal = new OpencodeAgentModal(

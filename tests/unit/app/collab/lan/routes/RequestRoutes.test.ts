@@ -1,3 +1,4 @@
+import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import { handleRequestRoute } from '@/app/collab/lan/routes/RequestRoutes';
 import type {
   CollabControlProjectService,
@@ -9,9 +10,9 @@ const HEAD = 'a'.repeat(40);
 const MAIN = 'b'.repeat(40);
 
 function route(
-  overrides: Partial<CollabControlRouteRequest> = {},
+  overrides: Partial<CollabControlRouteRequest> & { method?: string; segments?: readonly string[] } = {},
 ): CollabControlRouteRequest {
-  return {
+  const { method, segments, ...request } = {
     authorization: `Bearer ${CREDENTIAL}`,
     body: {
       description: 'Implements #12',
@@ -34,6 +35,9 @@ function route(
     } as unknown as CollabControlProjectService,
     ...overrides,
   };
+  const operationMatch = matchCollabControlOperation(method, segments);
+  if (!operationMatch) throw new Error('Invalid route fixture');
+  return { ...request, operationMatch };
 }
 
 describe('handleRequestRoute', () => {
@@ -227,12 +231,5 @@ describe('handleRequestRoute', () => {
     await expect(handleRequestRoute(route(override))).rejects.toMatchObject({
       code: expect.stringMatching(/^(authentication-failed|protocol-payload-invalid)$/),
     });
-  });
-
-  it('returns null for routes outside the request endpoints', async () => {
-    await expect(handleRequestRoute(route({
-      method: 'GET',
-      segments: ['requests'],
-    }))).resolves.toBeNull();
   });
 });

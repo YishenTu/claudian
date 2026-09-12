@@ -7,11 +7,13 @@ import {
   type HostTransferAuthorityRecord,
   HostTransferRepository,
 } from '@/app/collab/authority/HostTransferRepository';
+import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import type {
   AuthorityDatabaseConnection,
   SqlJsMutationResult,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { HostTransferDurablePhase } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
+import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type {
@@ -160,7 +162,7 @@ export class HostTransferAuthorityService {
     actorMemberId: CollabMemberId,
     request: CreateHostTransferRequest,
   ): Promise<CollabHostTransferSummary> {
-    return this.mutateIdempotently(actorMemberId, request, 'create', connection => {
+    return this.#mutateIdempotently(actorMemberId, request, 'create', connection => {
       const now = this.now();
       const created = this.repository.createOffer(connection, {
         actorMemberId,
@@ -181,6 +183,19 @@ export class HostTransferAuthorityService {
     });
   }
 
+  async assertSourceCleanupResource(record: HostTransferRecoveryRecord): Promise<void> {
+    const facts = await this.authority.database.read(connection => ({
+      project: new ProjectAuthorityRepository().get(connection), transfer: this.repository.get(connection, record.transferId),
+    }));
+    if (record.direction !== 'outgoing' || record.phase !== 'completed' || !record.targetTerminalResponseReceived
+      || facts.project?.projectId !== record.projectId || facts.project.hostMemberId !== record.targetHostMemberId
+      || facts.transfer?.phase !== 'completed' || facts.transfer.sourceHostMemberId !== record.sourceHostMemberId
+      || facts.transfer.targetHostMemberId !== record.targetHostMemberId
+      || JSON.stringify(facts.transfer.activationCertificate) !== record.activationCertificate) {
+      throw serviceError('host-transfer-source-cleanup-mismatch');
+    }
+  }
+
   async getCurrent(
     actorMemberId: CollabMemberId,
     projectId: CollabProjectId,
@@ -191,7 +206,7 @@ export class HostTransferAuthorityService {
       const before = this.repository.getNonterminal(connection);
       const current = this.repository.expireOfferedDue(connection, currentAt);
       if (current?.phase === 'expired') {
-        if (before?.phase === 'offered') this.appendEvent(connection, current, null);
+        if (before?.phase === 'offered') this.#appendEvent(connection, current, null);
         return null;
       }
       if (
@@ -222,7 +237,7 @@ export class HostTransferAuthorityService {
       decodedCredential.byteLength !== 32
       || decodedCredential.toString('base64url') !== request.receiverCredential
     ) throw serviceError('host-transfer-receiver-credential-invalid');
-    return this.mutateIdempotently(actorMemberId, request, 'accept', connection => (
+    return this.#mutateIdempotently(actorMemberId, request, 'accept', connection => (
       this.repository.accept(connection, {
         actorMemberId,
         projectId: request.projectId,
@@ -247,7 +262,7 @@ export class HostTransferAuthorityService {
         safeContext: { reason: 'host-transfer-target-changed' },
       }));
     }
-    return this.mutateIdempotently(actorMemberId, request, 'decline', connection => (
+    return this.#mutateIdempotently(actorMemberId, request, 'decline', connection => (
       this.repository.terminateBeforeRelinquishment(connection, {
         actorMemberId,
         phase: 'declined',
@@ -269,7 +284,7 @@ export class HostTransferAuthorityService {
         safeContext: { reason: 'host-transfer-host-changed' },
       }));
     }
-    return this.mutateIdempotently(actorMemberId, request, 'cancel', connection => (
+    return this.#mutateIdempotently(actorMemberId, request, 'cancel', connection => (
       this.repository.terminateBeforeRelinquishment(connection, {
         actorMemberId,
         phase: 'cancelled',
@@ -286,7 +301,7 @@ export class HostTransferAuthorityService {
         ...input,
         updatedAt: this.now().toISOString(),
       });
-      this.appendEvent(connection, record, null);
+      this.#appendEvent(connection, record, null);
       return record;
     })).value;
   }
@@ -325,7 +340,7 @@ export class HostTransferAuthorityService {
         transferId: input.transferId,
         updatedAt: this.now().toISOString(),
       });
-      this.appendEvent(connection, relinquished, record.sourceHostMemberId);
+      this.#appendEvent(connection, relinquished, record.sourceHostMemberId);
       return relinquished;
     })).value;
   }
@@ -334,7 +349,7 @@ export class HostTransferAuthorityService {
     return this.authority.database.read(connection => this.repository.listProofs(connection));
   }
 
-  private async mutateIdempotently(
+  async #mutateIdempotently(
     actorMemberId: CollabMemberId,
     request: { readonly idempotencyKey: string; readonly projectId: CollabProjectId },
     action: 'accept' | 'cancel' | 'create' | 'decline',
@@ -352,7 +367,7 @@ export class HostTransferAuthorityService {
       const now = this.now().toISOString();
       const record = mutation(connection);
       const response = summary(record, actorMemberId);
-      this.appendEvent(connection, record, actorMemberId);
+      this.#appendEvent(connection, record, actorMemberId);
       return this.repository.storeIdempotency(connection, {
         actorMemberId,
         createdAt: now,
@@ -363,7 +378,7 @@ export class HostTransferAuthorityService {
     })).value;
   }
 
-  private appendEvent(
+  #appendEvent(
     connection: AuthorityDatabaseConnection,
     record: HostTransferAuthorityRecord,
     actorMemberId: CollabMemberId | null,

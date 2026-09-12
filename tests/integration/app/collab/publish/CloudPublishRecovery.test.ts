@@ -30,6 +30,7 @@ import {
 import {
   CloudAuthorityAdapter,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import type {
   CloudAuthorityHttpRequest,
   CloudAuthorityHttpResponse,
@@ -105,14 +106,15 @@ describe('Cloud Publish recovery integration', () => {
     await writeFile(path.join(repositoryPath, 'note.md'), 'Cloud contribution\n');
 
     const transport = new LostResponseCloudTransport(mainOid);
-    const authority = await new CloudAuthorityAdapter({
+    await new CloudProjectCredentialStore(root).getOrCreate(PROJECT_ID);
+    const authority = await new CloudAuthorityAdapter(root, {
       request: input => transport.request(input),
-    }).create(membership(authorityPath));
+    }).create(membership());
     const context: PublishProjectContext = {
       memberId: ACTOR_ID,
       personalRef: PERSONAL_REF,
       projectId: PROJECT_ID,
-      remoteUrl: authority.git.remoteUrl,
+      remoteUrl: authorityPath,
       repositoryPath,
     };
     const repository = new NativeGitPublishRepository(git, {
@@ -128,6 +130,7 @@ describe('Cloud Publish recovery integration', () => {
       state,
       unusedCandidates(),
       { compare: async () => [] },
+      { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
       { createOperationId: () => 'cloud-publish' },
     );
 
@@ -173,7 +176,10 @@ class LostResponseCloudTransport {
   async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
     if (input.method === 'GET') {
       return {
-        body: collabCloudCapabilityDocument(['requests'], capabilityLimits()),
+        body: collabCloudCapabilityDocument([
+          'project-snapshot',
+          'requests',
+        ], capabilityLimits()),
         contentType: 'application/json',
         status: 200,
       };
@@ -182,6 +188,13 @@ class LostResponseCloudTransport {
       readonly data: Readonly<Record<string, unknown>>;
       readonly requestId: string;
     };
+    if (input.url.endsWith('/getProjectSnapshot')) {
+      return {
+        body: collabCloudSuccessEnvelope(envelope.requestId, cloudSnapshot(this.mainOid)),
+        contentType: 'application/json',
+        status: 200,
+      };
+    }
     const intent = String(envelope.data.idempotencyKey);
     this.requestIntents.push(intent);
     if (!this.requestRecord) {
@@ -215,6 +228,34 @@ class LostResponseCloudTransport {
   }
 }
 
+function cloudSnapshot(mainOid: string) {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: 'Alice',
+    id: ACTOR_ID,
+    personalRef: PERSONAL_REF,
+    role: 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 0,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 1,
+      createdAt: CREATED_AT,
+      expectedMainOid: mainOid,
+      id: PROJECT_ID,
+      mainRef: 'refs/heads/main',
+      name: 'Cloud Project',
+    },
+    ticketHighlights: [],
+  };
+}
+
 class DirectNetwork implements PublishGitNetworkPort {
   withNetwork<T>(
     context: PublishProjectContext,
@@ -241,15 +282,15 @@ class MemoryPublicationState {
   async save(record: CollabPublicationStateRecord): Promise<void> { this.current = record; }
 }
 
-function membership(gitRemoteUrl: string): CollabLocalCloudMembershipRecord {
+function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
-      developmentActorId: ACTOR_ID,
-      gitRemoteUrl,
+      authorityGeneration: 1,
+      bindingVersion: 6,
+      gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 6,
+      wireVersion: 10,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

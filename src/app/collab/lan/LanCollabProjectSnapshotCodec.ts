@@ -207,6 +207,11 @@ function project(value: unknown): CollabLanProject {
     throw decodeError('project');
   }
   return {
+    // The deployed LAN base predates authority transfer and has generation 1.
+    // A supplied generation is authoritative and must never be defaulted.
+    authorityGeneration: source.authorityGeneration === undefined
+      ? 1
+      : positiveInteger(source, 'authorityGeneration'),
     authorityKind: 'lan',
     createdAt: timestamp(source, 'createdAt'),
     hostMemberId: string(source, 'hostMemberId', 64, isCollabMemberId),

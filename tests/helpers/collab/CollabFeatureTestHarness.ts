@@ -1,5 +1,5 @@
 import type {
-  CollabCloudBootstrapPort,
+  CollabAuthorityTransferEntryPort,
   CollabFeatureServiceOptions,
   CollabHostTransferPort,
   CollabJoinProjectPort,
@@ -32,16 +32,29 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'createProject',
   'joinProject',
   'reconnectProject',
+  'readPendingReconnect',
+  'resumeReconnect',
   'resumeSetup',
   'readSnapshot',
+  'readProjectCapabilities',
   'readPublishDescription',
   'publish',
   'confirmPublish',
+  'updateProject',
+  'confirmUpdate',
   'prepareWorkingTreeReview',
   'readWorkingTreeReviewFile',
   'readConflict',
   'readConflictFile',
   'createInvitation',
+  'listInvitations',
+  'listMembers',
+  'reissueMemberClaim',
+  'revokeMemberClaim',
+  'listManagerResponsibilityOffers',
+  'readManagementOperation',
+  'resumeManagementOperation',
+  'completeManagementOperation',
   'revokeInvitation',
   'claimLegacyHostInstallation',
   'startHost',
@@ -51,6 +64,7 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'readReviewFile',
   'readPublicationReviewFile',
   'addComment',
+  'resolveTicketNumber',
   'listTickets',
   'readTicket',
   'createTicket',
@@ -62,6 +76,7 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'acceptRequest',
   'removeMember',
   'leaveProject',
+  'resumeLeave',
   'createManagerResponsibilityOffer',
   'cancelManagerResponsibilityOffer',
   'promoteManager',
@@ -73,6 +88,17 @@ export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'retireProject',
   'finalizeRetiredProject',
   'retryProjectCleanup',
+  'proposeLanToCloudTransfer',
+  'readLanToCloudTransfer',
+  'readCloudToLanTransfer',
+  'acceptLanToCloudTransfer',
+  'cancelLanToCloudTransfer',
+  'prepareCloudToLanTarget',
+  'beginCloudToLanTransfer',
+  'acceptCloudToLanTransfer',
+  'withdrawCloudToLanTarget',
+  'observeCloudToLanTransfer',
+  'cancelCloudToLanTransfer',
   'subscribe',
 ] as const satisfies readonly (keyof CollabFeaturePort)[];
 
@@ -86,7 +112,9 @@ export const TEST_COLLAB_RESULT_STATUSES = [
 ] as const satisfies readonly CollabResult<unknown>['status'][];
 
 type FeatureOptionsOverrides = {
-  readonly cloudBootstrap?: Partial<CollabCloudBootstrapPort>;
+  readonly authorityTransfer?: Partial<CollabAuthorityTransferEntryPort>;
+  readonly cloudEntry?: Partial<CollabFeatureServiceOptions['cloudEntry']>;
+  readonly cloudRetirementIntents?: CollabFeatureServiceOptions['cloudRetirementIntents'];
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
   readonly join?: Partial<CollabJoinProjectPort>;
@@ -94,23 +122,37 @@ type FeatureOptionsOverrides = {
   readonly lifecycleRecovery?: Partial<CollabLifecycleRecoveryPort>;
   readonly localExit?: Partial<CollabLocalExitPort>;
   readonly membership?: Partial<CollabMembershipPort>;
+  readonly pendingLeaves?: CollabFeatureServiceOptions['pendingLeaves'];
   readonly publication?: Partial<CollabPublicationPort>;
   readonly retirement?: Partial<CollabRetirementPort>;
   readonly vaultRoot: string;
 };
 
-function defaultCloudBootstrap(): CollabCloudBootstrapPort {
+function defaultAuthorityTransfer(): CollabAuthorityTransferEntryPort {
   return {
-    cancel: () => unexpected('cancelCloudBootstrap'),
+    moveCloudToLan: () => unexpected('moveCloudToLan'),
+    moveLanToCloud: () => unexpected('moveLanToCloud'),
+    acceptLanToCloudTransfer: () => unexpected('acceptLanToCloudTransfer'),
+    acceptCloudToLanTransfer: () => unexpected('acceptCloudToLanTransfer'),
+    beginCloudToLanTransfer: () => unexpected('beginCloudToLanTransfer'),
+    beginClose: () => undefined,
+    cancelCloudToLanTransfer: () => unexpected('cancelCloudToLanTransfer'),
+    cancelLanToCloudTransfer: () => unexpected('cancelLanToCloudTransfer'),
     close: () => Promise.resolve(),
-    prepareLocalRecovery: () => Promise.resolve(),
-    recoverPending: () => Promise.resolve(),
-    startFormerHost: () => unexpected('startCloudBootstrapFormerHost'),
-    submitParticipant: () => unexpected('submitCloudBootstrapParticipant'),
+    observeCloudToLanTransfer: () => unexpected('observeCloudToLanTransfer'),
+    prepareCloudToLanTarget: () => unexpected('prepareCloudToLanTarget'),
+    proposeLanToCloudTransfer: () => unexpected('proposeLanToCloudTransfer'),
+    readLanToCloudTransfer: () => unexpected('readLanToCloudTransfer'),
+    readCloudToLanTransfer: () => unexpected('readCloudToLanTransfer'),
+    redeemManagerReissuedClaim: () => unexpected('redeemManagerReissuedClaim'),
+    readPendingLanToCloudClaim: async () => null,
+    reconnectLanToCloud: async () => false,
+    withdrawCloudToLanTarget: () => unexpected('withdrawCloudToLanTarget'),
   };
 }
 
 type PublicationOptionsOverrides = {
+  readonly cloudAuthority?: CollabPublicationServiceOptions['cloudAuthority'];
   readonly discovery?: Partial<CollabPublicationServiceOptions['discovery']>;
   readonly inspectHostInstallation?: CollabPublicationServiceOptions['inspectHostInstallation'];
   readonly readActiveLocalRoute?: CollabPublicationServiceOptions['readActiveLocalRoute'];
@@ -150,6 +192,7 @@ function projectSnapshot(): CollabLanProjectSnapshot {
       id: 'project-alpha',
       mainOid: OID_A,
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -201,11 +244,22 @@ function defaultLifecycleRecovery(): CollabLifecycleRecoveryPort {
 }
 
 function defaultLocalExit(): CollabLocalExitPort {
-  return { leaveProject: () => Promise.resolve() };
+  return {
+    leaveProject: () => Promise.resolve(),
+    resumeLeave: () => Promise.resolve(),
+  };
 }
 
 function defaultMembership(): CollabMembershipPort {
   return {
+    listInvitations: () => unexpected('listInvitations'),
+    listMembers: () => unexpected('listMembers'),
+    reissueMemberClaim: () => unexpected('reissueMemberClaim'),
+    revokeMemberClaim: () => unexpected('revokeMemberClaim'),
+    listManagerResponsibilityOffers: () => unexpected('listManagerResponsibilityOffers'),
+    readManagementOperation: () => Promise.resolve(null),
+    resumeManagementOperation: () => unexpected('resumeManagementOperation'),
+    completeManagementOperation: () => unexpected('completeManagementOperation'),
     cancelManagerResponsibilityOffer: () => unexpected('cancelManagerResponsibilityOffer'),
     createInvitation: () => unexpected('createInvitation'),
     createManagerResponsibilityOffer: () => unexpected('createManagerResponsibilityOffer'),
@@ -218,6 +272,8 @@ function defaultMembership(): CollabMembershipPort {
 
 function defaultPublication(): CollabPublicationPort {
   return {
+    updateProject: () => unexpected('updateProject'),
+    confirmUpdate: () => unexpected('confirmUpdate'),
     abortProjectBackgroundWork: () => undefined,
     acceptRequest: () => unexpected('acceptRequest'),
     addComment: () => unexpected('addComment'),
@@ -231,7 +287,18 @@ function defaultPublication(): CollabPublicationPort {
     confirmPublish: () => unexpected('confirmPublish'),
     createTicket: () => unexpected('createTicket'),
     findConflict: () => Promise.resolve({ status: 'success', value: null }),
-    inspectPersonalChanges: projectId => Promise.resolve({
+    inspectLocalChanges: projectId => Promise.resolve({
+      gitStatus: {
+      acceptedMainOid: OID_A,
+      aheadBy: 0,
+      behindBy: 0,
+      changedFiles: [],
+      headOid: OID_B,
+      includesAcceptedMain: true,
+      personalRemoteOid: OID_B,
+      workingTreeClean: true,
+    },
+      personalChanges: {
       action: 'publish',
       hasContribution: false,
       unpublishedReview: {
@@ -243,10 +310,12 @@ function defaultPublication(): CollabPublicationPort {
         snapshotId: SNAPSHOT_ID,
       },
       updateAvailable: false,
+      },
     }),
     listRequestComments: () => unexpected('listRequestComments'),
     listTicketAcceptedRelations: () => unexpected('listTicketAcceptedRelations'),
     listTicketComments: () => unexpected('listTicketComments'),
+    resolveTicketNumber: () => unexpected('resolveTicketNumber'),
     listTickets: () => unexpected('listTickets'),
     preparePublicationReview: () => unexpected('preparePublicationReview'),
     prepareReview: () => unexpected('prepareReview'),
@@ -255,6 +324,17 @@ function defaultPublication(): CollabPublicationPort {
     publish: () => unexpected('publish'),
     readConflict: () => unexpected('readConflict'),
     readConflictFile: () => unexpected('readConflictFile'),
+    readPresentationSnapshot: projectId => Promise.resolve({
+      snapshot: { ...projectSnapshot(), project: { ...projectSnapshot().project, id: projectId } },
+      source: 'online',
+      stale: false,
+      syncState: {
+        eventSequence: 1,
+        generation: 1,
+        projectId,
+        status: 'synchronized',
+      },
+    }),
     readCoordinationSnapshot: projectId => Promise.resolve({
       snapshot: { ...projectSnapshot(), project: { ...projectSnapshot().project, id: projectId } },
       source: 'online',
@@ -265,6 +345,16 @@ function defaultPublication(): CollabPublicationPort {
         projectId,
         status: 'synchronized',
       },
+    }),
+    readProjectCapabilities: () => Promise.resolve({
+      authorityKind: 'lan',
+      authorityTransfer: true,
+      importedMemberClaims: false,
+      invitations: true,
+      leave: true,
+      managerResponsibility: true,
+      membershipManagement: true,
+      retirement: true,
     }),
     readGitStatus: () => Promise.resolve({
       acceptedMainOid: OID_A,
@@ -285,11 +375,13 @@ function defaultPublication(): CollabPublicationPort {
     reconnectProject: () => unexpected('reconnectProject'),
     reopenTicket: () => unexpected('reopenTicket'),
     scheduleAcceptedMainSynchronization: () => undefined,
+    observeProject: () => ({ dispose: () => undefined }),
     subscribeCoordination: () => ({ dispose: () => undefined }),
     synchronizeAcceptedMain: projectId => Promise.resolve({
       status: 'success',
       value: { headOid: OID_A, projectId, state: 'already-current' },
     }),
+    readConnectionStatus: () => 'connected',
     tryAutoReconnect: () => Promise.resolve(false),
     updateRequestMetadata: () => unexpected('updateRequestMetadata'),
     updateTicketContent: () => unexpected('updateTicketContent'),
@@ -309,7 +401,20 @@ export function completeCollabFeatureOptions(
   overrides: FeatureOptionsOverrides,
 ): CollabFeatureServiceOptions {
   return {
-    cloudBootstrap: { ...defaultCloudBootstrap(), ...overrides.cloudBootstrap },
+    authorityTransfer: {
+      ...defaultAuthorityTransfer(),
+      ...overrides.authorityTransfer,
+    },
+    cloudRetirementIntents: overrides.cloudRetirementIntents ?? {
+      listProjectIds: () => Promise.resolve([]),
+    },
+    cloudEntry: {
+      joinProject: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) }),
+      close: () => Promise.resolve(),
+      createProject: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed', safeContext: { reason: 'cloud-project-create-unavailable' } }) }),
+      resumeSetup: () => Promise.resolve({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) }),
+      ...overrides.cloudEntry,
+    },
     hostTransfer: { ...defaultHostTransfer(), ...overrides.hostTransfer },
     hostInstallation: {
       ...defaultHostInstallation(),
@@ -320,6 +425,10 @@ export function completeCollabFeatureOptions(
     lifecycleRecovery: { ...defaultLifecycleRecovery(), ...overrides.lifecycleRecovery },
     localExit: { ...defaultLocalExit(), ...overrides.localExit },
     membership: { ...defaultMembership(), ...overrides.membership },
+    pendingLeaves: overrides.pendingLeaves ?? {
+      listProjectIds: () => Promise.resolve([]),
+      load: () => Promise.resolve(null),
+    },
     publication: { ...defaultPublication(), ...overrides.publication },
     retirement: { ...defaultRetirement(), ...overrides.retirement },
     vaultRoot: overrides.vaultRoot,
@@ -341,8 +450,9 @@ export function completeCollabPublicationOptions(
   overrides: PublicationOptionsOverrides,
 ): CollabPublicationServiceOptions {
   return {
+    cloudAuthority: overrides.cloudAuthority ?? new CloudAuthorityAdapter(overrides.vaultRoot),
     discovery: {
-      discoverProjectCandidates: () => Promise.resolve([]),
+      discoverProjectCandidatesForTrustTransition: () => Promise.resolve([]),
       ...overrides.discovery,
     },
     inspectHostInstallation: overrides.inspectHostInstallation
@@ -362,3 +472,4 @@ export function completeCollabPublicationOptions(
     vaultRoot: overrides.vaultRoot,
   };
 }
+import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';

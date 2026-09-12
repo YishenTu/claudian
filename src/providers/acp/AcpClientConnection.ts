@@ -96,7 +96,7 @@ export class AcpClientConnection {
   private readonly unsubscribeHandlers: Array<() => void> = [];
 
   constructor(private readonly options: AcpClientConnectionOptions) {
-    this.registerServerHandlers();
+    this.#registerServerHandlers();
   }
 
   get signal(): AbortSignal {
@@ -135,14 +135,14 @@ export class AcpClientConnection {
     const request: AcpInitializeRequest = {
       ...('_meta' in partialRequest ? { _meta: partialRequest._meta } : {}),
       clientCapabilities: mergeCapabilities(
-        this.buildClientCapabilities(),
+        this.#buildClientCapabilities(),
         partialRequest.clientCapabilities,
       ),
       clientInfo: partialRequest.clientInfo ?? this.options.clientInfo ?? null,
       protocolVersion: partialRequest.protocolVersion ?? 1,
     };
 
-    const response = await this.requestWithFallback<AcpInitializeResponse>('initialize', request);
+    const response = await this.#requestWithFallback<AcpInitializeResponse>('initialize', request);
     this.agentInfo = response.agentInfo ?? null;
     this.agentCapabilities = response.agentCapabilities ?? null;
     this.authMethods = response.authMethods ?? null;
@@ -150,46 +150,46 @@ export class AcpClientConnection {
   }
 
   authenticate(request: AcpAuthenticateRequest): Promise<AcpAuthenticateResponse> {
-    return this.requestWithFallback<AcpAuthenticateResponse>('authenticate', request);
+    return this.#requestWithFallback<AcpAuthenticateResponse>('authenticate', request);
   }
 
   newSession(request: AcpNewSessionRequest): Promise<AcpNewSessionResponse> {
-    return this.requestWithFallback<AcpNewSessionResponse>('newSession', request);
+    return this.#requestWithFallback<AcpNewSessionResponse>('newSession', request);
   }
 
   loadSession(request: AcpLoadSessionRequest): Promise<AcpLoadSessionResponse> {
-    return this.requestWithFallback<AcpLoadSessionResponse>('loadSession', request);
+    return this.#requestWithFallback<AcpLoadSessionResponse>('loadSession', request);
   }
 
   listSessions(request: AcpListSessionsRequest = {}): Promise<AcpListSessionsResponse> {
-    return this.requestWithFallback<AcpListSessionsResponse>('listSessions', request);
+    return this.#requestWithFallback<AcpListSessionsResponse>('listSessions', request);
   }
 
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse> {
-    return this.requestWithFallback<AcpPromptResponse>('prompt', request, {
+    return this.#requestWithFallback<AcpPromptResponse>('prompt', request, {
       timeoutMs: ACP_PROMPT_TURN_TIMEOUT_MS,
     });
   }
 
   cancel(notification: AcpCancelNotification): void {
-    this.notifyLogicalMethod('cancel', notification, { sendAllCandidatesIfUncached: true });
+    this.#notifyLogicalMethod('cancel', notification, { sendAllCandidatesIfUncached: true });
   }
 
   setMode(request: AcpSetSessionModeRequest): Promise<AcpSetSessionModeResponse> {
-    return this.requestWithFallback<AcpSetSessionModeResponse>('setMode', request);
+    return this.#requestWithFallback<AcpSetSessionModeResponse>('setMode', request);
   }
 
   setModel(request: AcpSetSessionModelRequest): Promise<AcpSetSessionModelResponse> {
-    return this.requestWithFallback<AcpSetSessionModelResponse>('setModel', request);
+    return this.#requestWithFallback<AcpSetSessionModelResponse>('setModel', request);
   }
 
   setConfigOption(
     request: AcpSetSessionConfigOptionRequest,
   ): Promise<AcpSetSessionConfigOptionResponse> {
-    return this.requestWithFallback<AcpSetSessionConfigOptionResponse>('setConfigOption', request);
+    return this.#requestWithFallback<AcpSetSessionConfigOptionResponse>('setConfigOption', request);
   }
 
-  private buildClientCapabilities(): AcpClientCapabilities | undefined {
+  #buildClientCapabilities(): AcpClientCapabilities | undefined {
     const capabilities: AcpClientCapabilities = { ...this.options.clientCapabilities };
     const fileSystem = this.options.delegate?.fileSystem;
     const terminal = this.options.delegate?.terminal;
@@ -209,7 +209,7 @@ export class AcpClientConnection {
     return Object.keys(capabilities).length === 0 ? undefined : capabilities;
   }
 
-  private registerServerHandlers(): void {
+  #registerServerHandlers(): void {
     const transport = this.options.transport;
     const delegate = this.options.delegate;
 
@@ -226,7 +226,7 @@ export class AcpClientConnection {
 
     subscribeNotification(
       ACP_SERVER_NOTIFICATION_ALIASES.sessionUpdate,
-      async (params) => this.dispatchSessionNotification(params as AcpSessionNotification),
+      async (params) => this.#dispatchSessionNotification(params as AcpSessionNotification),
     );
 
     if (delegate?.requestPermission) {
@@ -278,7 +278,7 @@ export class AcpClientConnection {
     }
   }
 
-  private async dispatchSessionNotification(notification: AcpSessionNotification): Promise<void> {
+  async #dispatchSessionNotification(notification: AcpSessionNotification): Promise<void> {
     if (this.options.delegate?.onSessionNotification) {
       await this.options.delegate.onSessionNotification(notification);
     }
@@ -290,7 +290,7 @@ export class AcpClientConnection {
 
   // -32601 (Method not found) is the only error we absorb; agents that advertise legacy
   // method names only reject unknown candidates with it, so every other code is real.
-  private async requestWithFallback<T>(
+  async #requestWithFallback<T>(
     logicalMethod: AcpLogicalMethod,
     params?: unknown,
     requestOptions?: JsonRpcRequestOptions,
@@ -323,7 +323,7 @@ export class AcpClientConnection {
     throw new Error(`No ACP method candidates configured for ${logicalMethod}`);
   }
 
-  private notifyLogicalMethod(
+  #notifyLogicalMethod(
     logicalMethod: AcpLogicalMethod,
     params?: unknown,
     options: { sendAllCandidatesIfUncached?: boolean } = {},

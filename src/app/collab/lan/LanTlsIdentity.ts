@@ -182,7 +182,7 @@ export class LanTlsIdentity {
 
   loadOrCreate(): Promise<LanTlsHostCa> {
     if (this.identityPromise) return this.identityPromise;
-    const pending = this.loadOrCreateUnlocked();
+    const pending = this.#loadOrCreateUnlocked();
     this.identityPromise = pending;
     const clearPending = () => {
       if (this.identityPromise === pending) this.identityPromise = null;
@@ -220,23 +220,23 @@ export class LanTlsIdentity {
       { mode: 0o700 },
     );
     await ensureCollabVaultDirectory(this.vaultRoot, this.tlsDirectory, { mode: 0o700 });
-    return this.withIdentityLock(async () => {
-      const current = await this.readPersistedIdentity(this.hostCaPath);
+    return this.#withIdentityLock(async () => {
+      const current = await this.#readPersistedIdentity(this.hostCaPath);
       if (current) {
-        this.assertExpectedFingerprint(current, expectedFingerprint);
+        this.#assertExpectedFingerprint(current, expectedFingerprint);
         return current;
       }
-      const legacy = await this.readPersistedIdentity(LEGACY_HOST_CA_PATH);
+      const legacy = await this.#readPersistedIdentity(LEGACY_HOST_CA_PATH);
       if (!legacy) {
         if (expectedFingerprint !== null) {
           throw tlsIdentityError('legacy-host-ca-missing');
         }
-        const created = await this.createHostCa();
-        await this.persistHostCa(created);
+        const created = await this.#createHostCa();
+        await this.#persistHostCa(created);
         return created;
       }
-      this.assertExpectedFingerprint(legacy, expectedFingerprint);
-      await this.persistHostCa(legacy);
+      this.#assertExpectedFingerprint(legacy, expectedFingerprint);
+      await this.#persistHostCa(legacy);
       return legacy;
     });
   }
@@ -296,7 +296,7 @@ export class LanTlsIdentity {
     });
   }
 
-  private async loadOrCreateUnlocked(): Promise<LanTlsHostCa> {
+  async #loadOrCreateUnlocked(): Promise<LanTlsHostCa> {
     await ensureCollabContainerGuard(this.vaultRoot, '.claudian/collab', {
       privateContainer: true,
     });
@@ -306,16 +306,16 @@ export class LanTlsIdentity {
       { mode: 0o700 },
     );
     await ensureCollabVaultDirectory(this.vaultRoot, this.tlsDirectory, { mode: 0o700 });
-    return this.withIdentityLock(async () => {
-      const existing = await this.readPersistedIdentity(this.hostCaPath);
+    return this.#withIdentityLock(async () => {
+      const existing = await this.#readPersistedIdentity(this.hostCaPath);
       if (existing) return existing;
-      const created = await this.createHostCa();
-      await this.persistHostCa(created);
+      const created = await this.#createHostCa();
+      await this.#persistHostCa(created);
       return created;
     });
   }
 
-  private async readPersistedIdentity(relativePath: string): Promise<LanTlsHostCa | null> {
+  async #readPersistedIdentity(relativePath: string): Promise<LanTlsHostCa | null> {
     let contents: string;
     try {
       const absolutePath = await resolveCollabVaultPath(
@@ -349,13 +349,13 @@ export class LanTlsIdentity {
     ) {
       throw tlsIdentityError('host-ca-record-invalid');
     }
-    return this.validateHostCa(
+    return this.#validateHostCa(
       (persisted as Record<string, string>).certificatePem,
       (persisted as Record<string, string>).privateKeyPem,
     );
   }
 
-  private persistHostCa(hostCa: LanTlsHostCa): Promise<void> {
+  #persistHostCa(hostCa: LanTlsHostCa): Promise<void> {
     const persisted: PersistedHostCa = {
       certificatePem: hostCa.caCertificatePem,
       privateKeyPem: hostCa.caPrivateKeyPem,
@@ -369,7 +369,7 @@ export class LanTlsIdentity {
     );
   }
 
-  private assertExpectedFingerprint(
+  #assertExpectedFingerprint(
     hostCa: LanTlsHostCa,
     expectedFingerprint: string | null,
   ): void {
@@ -381,7 +381,7 @@ export class LanTlsIdentity {
     }
   }
 
-  private async createHostCa(): Promise<LanTlsHostCa> {
+  async #createHostCa(): Promise<LanTlsHostCa> {
     const keyPairPem = await generateRsaKeyPair();
     const privateKey = privateKeyFromPem(keyPairPem.privateKeyPem);
     const certificate = forgePki.createCertificate();
@@ -408,13 +408,13 @@ export class LanTlsIdentity {
       { name: 'subjectKeyIdentifier' },
     ]);
     certificate.sign(privateKey, forgeSha256.create());
-    return this.validateHostCa(
+    return this.#validateHostCa(
       normalizePem(forgePki.certificateToPem(certificate)),
       keyPairPem.privateKeyPem,
     );
   }
 
-  private validateHostCa(certificatePem: string, privateKeyPem: string): LanTlsHostCa {
+  #validateHostCa(certificatePem: string, privateKeyPem: string): LanTlsHostCa {
     try {
       const normalizedCertificate = normalizePem(certificatePem);
       const normalizedPrivateKey = normalizePem(privateKeyPem);
@@ -440,7 +440,7 @@ export class LanTlsIdentity {
     }
   }
 
-  private async withIdentityLock<T>(operation: () => Promise<T>): Promise<T> {
+  async #withIdentityLock<T>(operation: () => Promise<T>): Promise<T> {
     const lockPath = await resolveCollabVaultPath(this.vaultRoot, this.hostCaLockPath);
     const startedAt = Date.now();
     let handle: Awaited<ReturnType<typeof open>> | null = null;

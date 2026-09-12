@@ -357,7 +357,7 @@ export class GitRuntimeResolver {
       ) {
         return { reason: 'configured-path-invalid', status: 'missing' };
       }
-      return this.resolveCandidates([{ path: configuredPath, source: 'configured' }], true);
+      return this.#resolveCandidates([{ path: configuredPath, source: 'configured' }], true);
     }
 
     const candidates: GitCandidate[] = [];
@@ -385,10 +385,10 @@ export class GitRuntimeResolver {
     if (executableCandidates.length === 0) {
       return { reason: 'not-found', status: 'missing' };
     }
-    return this.resolveCandidates(executableCandidates, false);
+    return this.#resolveCandidates(executableCandidates, false);
   }
 
-  private async resolveCandidates(
+  async #resolveCandidates(
     candidates: readonly GitCandidate[],
     configuredOnly: boolean,
   ): Promise<GitRuntimeResolution> {

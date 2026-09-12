@@ -28,12 +28,14 @@ export interface CollabProjectBase {
 }
 
 export interface CollabLanProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'lan';
   hostMemberId: CollabMemberId;
   managerSetGeneration: number;
 }
 
 export interface CollabCloudProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'cloud';
 }
 
@@ -234,7 +236,10 @@ export interface CollabRequestReview {
   canAccept: boolean;
 }
 
+export type CollabContributionIntent = 'publish' | 'update';
+
 export interface CollabPublicationReview {
+  intent?: CollabContributionIntent;
   kind: 'publication';
   projectId: CollabProjectId;
   operationId: CollabOperationId;

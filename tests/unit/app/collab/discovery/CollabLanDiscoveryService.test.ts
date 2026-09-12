@@ -45,6 +45,23 @@ describe('CollabLanDiscoveryService', () => {
     jest.useRealTimers();
   });
 
+  it('exposes failed publication health and can advertise again after releasing the failed runtime', async () => {
+    const fake = createRuntime();
+    const discovery = new CollabLanDiscoveryService({ createRuntime: fake.create });
+    const host = { caFingerprint: 'ab'.repeat(32), endpoint: 'https://192.168.1.10:54545', projectId: 'project-a' };
+    fake.runtime.publish.mockImplementationOnce(() => { throw new Error('unavailable'); });
+    const failed = await discovery.advertiseProject(host);
+    expect(failed.active).toBe(false);
+    const active = await discovery.advertiseProject(host);
+    expect(active.active).toBe(true);
+    fake.emitError();
+    expect(active.active).toBe(false);
+    await active.stop();
+    const recovered = await discovery.advertiseProject(host);
+    expect(recovered.active).toBe(true);
+    await recovered.stop();
+  });
+
   it('advertises only the non-secret Project locator and releases it', async () => {
     const fake = createRuntime();
     const discovery = new CollabLanDiscoveryService({ createRuntime: fake.create });

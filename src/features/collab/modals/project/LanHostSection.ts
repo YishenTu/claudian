@@ -78,23 +78,16 @@ export class LanHostSection {
     const warning = hostStatus === 'needs-attention' || !!this.errorText;
 
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-host-section-header' });
-    header.createSpan({ text: t('collab.host.summary') });
     if (installationStatus === 'hosted-elsewhere') {
-      header.createSpan({
-        cls: 'claudian-collab-host-badge',
-        text: t('collab.host.hostedElsewhere'),
-      });
+      header.createSpan({ text: t('collab.host.hostedElsewhereSummary') });
       return;
     }
     if (hostStatus === 'not-host') {
       this.rootEl.remove();
       return;
     }
-    header.createSpan({
-      cls: 'claudian-collab-host-badge',
-      text: t('collab.host.hostedHere'),
-    });
-    this.renderStatusButton(header, hostStatus, warning);
+    header.createSpan({ text: t('collab.host.hostedHereSummary') });
+    this.#renderStatusButton(header, hostStatus);
     if (!warning) return;
 
     const body = this.rootEl.createDiv({ cls: 'claudian-collab-host-body' });
@@ -123,10 +116,9 @@ export class LanHostSection {
     }
   }
 
-  private renderStatusButton(
+  #renderStatusButton(
     header: HTMLDivElement,
     status: Exclude<CollabHostStatus, 'not-host'>,
-    warning: boolean,
   ): void {
     const pending = status === 'starting' || status === 'stopping';
     const action = this.errorAction
@@ -151,19 +143,17 @@ export class LanHostSection {
             : t('collab.host.stop'),
         type: 'button',
       },
-      cls: warning
-        ? 'claudian-collab-host-badge claudian-collab-host-badge--warning'
-        : 'claudian-collab-host-badge',
-      text: this.statusLabel(status),
+      cls: 'mod-cta claudian-collab-host-status-button',
+      text: this.#statusLabel(status),
     });
     button.disabled = pending;
     if (pending) return;
     button.addEventListener('click', () => {
-      void this.runAction(action);
+      void this.#runAction(action);
     });
   }
 
-  private async runAction(action: HostAction): Promise<void> {
+  async #runAction(action: HostAction): Promise<void> {
     const generation = ++this.operationGeneration;
     this.abortController.abort();
     this.abortController = new AbortController();
@@ -241,7 +231,7 @@ export class LanHostSection {
     this.render();
   }
 
-  private statusLabel(status: Exclude<CollabHostStatus, 'not-host'>): string {
+  #statusLabel(status: Exclude<CollabHostStatus, 'not-host'>): string {
     switch (status) {
       case 'stopped':
         return t('collab.host.status.stopped');

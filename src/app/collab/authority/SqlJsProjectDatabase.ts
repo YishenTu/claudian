@@ -14,6 +14,7 @@ import {
   applyAuthorityMigrations,
   assertAuthorityDatabaseIntegrity,
 } from '@/app/collab/authority/AuthoritySchema';
+import { assertAuthorityTransactionIntegrity, beginAuthorityTransaction } from '@/app/collab/authority/AuthorityTransactionIntegrity';
 import {
   NodeSqlJsSnapshotStore,
   type SqlJsSnapshotKind,
@@ -32,6 +33,7 @@ export interface AuthorityDatabaseConnection {
 }
 
 export interface SqlJsProjectDatabaseOptions {
+  readonly resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly loadSqlJs?: () => Promise<SqlJsStatic>;
   readonly snapshotStore?: SqlJsSnapshotStore;
 }
@@ -50,6 +52,13 @@ export interface SqlJsMutationResult<T> {
 export interface SqlJsProjectDatabaseSubscription {
   dispose(): void;
 }
+
+interface PendingMutation {
+  readonly apply: (database: Database) => { readonly generation: number; readonly complete: () => void };
+  readonly reject: (error: unknown) => void;
+}
+
+const MAX_MUTATIONS_PER_SNAPSHOT = 16;
 
 interface ValidCandidate {
   readonly database: Database;
@@ -128,17 +137,40 @@ export class SqlJsProjectDatabase {
   private hasValidPrimary = false;
   private readonly loadSqlJs: () => Promise<SqlJsStatic>;
   private readonly mutationListeners = new Set<(generation: number) => void>();
+  private pendingMutationBatch: PendingMutation[] | null = null;
   private openResult: SqlJsProjectDatabaseOpenResult | null = null;
   private readonly queue = new SerialTaskQueue();
+  private readonly resourceAdmission: <T>(operation: () => Promise<T>) => Promise<T>;
   private readonly snapshotStore: SqlJsSnapshotStore;
 
   constructor(
     private readonly authorityDirectory: string,
     options: SqlJsProjectDatabaseOptions = {},
   ) {
+    this.resourceAdmission = options.resourceAdmission ?? (operation => operation());
     this.loadSqlJs = options.loadSqlJs ?? loadDefaultSqlJs;
     this.snapshotStore = options.snapshotStore
       ?? new NodeSqlJsSnapshotStore(authorityDirectory);
+  }
+
+  async inspectPersisted(reader: (connection: AuthorityDatabaseConnection) => void): Promise<boolean> {
+    await this.#assertAuthorityDirectory();
+    const sql = await this.loadSqlJs();
+    let inspected = false;
+    for (const kind of ['primary', 'temporary', 'backup'] as const) {
+      const bytes = await this.snapshotStore.readCandidate(kind);
+      if (bytes === null) continue;
+      let database: Database | null = null;
+      try {
+        database = new sql.Database(bytes);
+        database.run('PRAGMA query_only = ON');
+        reader(new SqlJsConnection(database));
+        inspected = true;
+      } finally {
+        database?.close();
+      }
+    }
+    return inspected;
   }
 
   get generation(): number {
@@ -146,69 +178,107 @@ export class SqlJsProjectDatabase {
   }
 
   open(): Promise<SqlJsProjectDatabaseOpenResult> {
-    return this.queue.run(() => this.openUnlocked());
+    this.pendingMutationBatch = null;
+    return this.queue.run(() => this.resourceAdmission(() => this.#openUnlocked()));
   }
 
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T> {
-    return this.queue.run(async () => {
-      const database = this.requireDatabase();
+    this.pendingMutationBatch = null;
+    return this.queue.run(() => this.resourceAdmission(async () => {
+      const database = this.#requireDatabase();
       return reader(new SqlJsConnection(database));
-    });
+    }));
   }
 
   exportSnapshot(): Promise<Uint8Array> {
-    return this.queue.run(async () => Uint8Array.from(this.requireDatabase().export()));
+    this.pendingMutationBatch = null;
+    return this.queue.run(() => this.resourceAdmission(async () => Uint8Array.from(this.#requireDatabase().export())));
   }
 
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
   ): Promise<SqlJsMutationResult<T>> {
-    return this.queue.run(async () => {
-      const database = this.requireDatabase();
-      database.run('BEGIN IMMEDIATE');
-      let transactionCommitted = false;
-      let value: T;
-      try {
-        value = mutation(new SqlJsConnection(database));
-        if (value instanceof Promise) {
-          throw authorityError('operation-failed', 'authority-mutation-must-be-synchronous');
-        }
-        database.run(`
-          UPDATE project
-          SET snapshot_generation = snapshot_generation + 1
-          WHERE singleton = 1
-        `);
-        if (database.getRowsModified() !== 1) {
-          throw authorityError('authority-integrity-error', 'authority-project-row-missing');
-        }
-        const generation = assertAuthorityDatabaseIntegrity(database, {
-          full: false,
-          requireProject: true,
+    return new Promise((resolve, reject) => {
+      let batch = this.pendingMutationBatch;
+      if (batch === null || batch.length >= MAX_MUTATIONS_PER_SNAPSHOT) {
+        batch = [];
+        this.pendingMutationBatch = batch;
+        const scheduled = batch;
+        void this.queue.run(() => this.resourceAdmission(() => this.#commitMutationBatch(scheduled))).catch(error => {
+          for (const pending of scheduled) pending.reject(error);
         });
-        database.run('COMMIT');
-        transactionCommitted = true;
-        const bytes = database.export();
-        await this.persistSnapshot(bytes, this.hasValidPrimary);
-        this.generationValue = generation;
-        this.hasValidPrimary = true;
-        this.notifyMutationListeners(generation);
-        return { generation, value };
-      } catch (error) {
-        if (!transactionCommitted) {
-          try {
-            database.run('ROLLBACK');
-          } catch {
-            throw this.blockForRecovery();
-          }
-        }
-        if (transactionCommitted) throw this.blockForRecovery();
-        if (error instanceof CollabError) throw error;
-        throw authorityError('authority-integrity-error', 'authority-transaction-failed');
       }
+      batch.push({
+        apply: database => {
+          const result = this.#applyMutation(database, mutation);
+          return { generation: result.generation, complete: () => resolve(result) };
+        },
+        reject,
+      });
     });
   }
 
+  async #commitMutationBatch(batch: readonly PendingMutation[]): Promise<void> {
+    if (this.pendingMutationBatch === batch) this.pendingMutationBatch = null;
+    const database = this.#requireDatabase();
+    const committed: Array<{ readonly generation: number; readonly complete: () => void }> = [];
+    for (const pending of batch) {
+      try {
+        this.#requireDatabase();
+        committed.push(pending.apply(database));
+      } catch (error) {
+        pending.reject(error);
+      }
+    }
+    if (committed.length === 0) return;
+    try {
+      this.#requireDatabase();
+      await this.#persistSnapshot(database.export(), this.hasValidPrimary);
+    } catch {
+      throw this.#blockForRecovery();
+    }
+    this.hasValidPrimary = true;
+    this.generationValue = committed[committed.length - 1].generation;
+    for (const result of committed) {
+      this.#notifyMutationListeners(result.generation);
+      result.complete();
+    }
+  }
+
+  #applyMutation<T>(
+    database: Database,
+    mutation: (connection: AuthorityDatabaseConnection) => T,
+  ): SqlJsMutationResult<T> {
+    beginAuthorityTransaction(database);
+    try {
+      const value = mutation(new SqlJsConnection(database));
+      if (value instanceof Promise) {
+        throw authorityError('operation-failed', 'authority-mutation-must-be-synchronous');
+      }
+      database.run(`
+        UPDATE project
+        SET snapshot_generation = snapshot_generation + 1
+        WHERE singleton = 1
+      `);
+      if (database.getRowsModified() !== 1) {
+        throw authorityError('authority-integrity-error', 'authority-project-row-missing');
+      }
+      const generation = assertAuthorityTransactionIntegrity(database);
+      database.run('COMMIT');
+      return { generation, value };
+    } catch (error) {
+      try {
+        database.run('ROLLBACK');
+      } catch {
+        throw this.#blockForRecovery();
+      }
+      if (error instanceof CollabError) throw error;
+      throw authorityError('authority-integrity-error', 'authority-transaction-failed');
+    }
+  }
+
   close(): Promise<void> {
+    this.pendingMutationBatch = null;
     return this.queue.run(async () => {
       this.mutationListeners.clear();
       this.database?.close();
@@ -218,7 +288,7 @@ export class SqlJsProjectDatabase {
   }
 
   subscribe(listener: (generation: number) => void): SqlJsProjectDatabaseSubscription {
-    this.requireDatabase();
+    this.#requireDatabase();
     this.mutationListeners.add(listener);
     let disposed = false;
     return {
@@ -230,47 +300,55 @@ export class SqlJsProjectDatabase {
     };
   }
 
-  private async openUnlocked(): Promise<SqlJsProjectDatabaseOpenResult> {
+  async #openUnlocked(): Promise<SqlJsProjectDatabaseOpenResult> {
     if (this.blockedError) throw this.blockedError;
     if (this.closed) throw authorityError('not-initialized', 'authority-database-closed');
     if (this.database && this.openResult) return this.openResult;
-    await this.assertAuthorityDirectory();
+    await this.#assertAuthorityDirectory();
     const SQL = await this.loadSqlJs().catch(() => {
       throw authorityError('operation-failed', 'sql-js-initialize-failed');
     });
     const kinds: readonly SqlJsSnapshotKind[] = ['primary', 'temporary', 'backup'];
-    const rawCandidates = new Map<SqlJsSnapshotKind, Uint8Array>();
-    const validCandidates: ValidCandidate[] = [];
+    let foundSnapshot = false;
+    let selected: ValidCandidate | null = null;
+    let hasValidPrimary = false;
     let unsupportedVersion = false;
     for (const kind of kinds) {
-      let bytes: Uint8Array | null;
+      let candidate: ValidCandidate | 'absent' | 'invalid' | 'unsupported';
       try {
-        bytes = await this.snapshotStore.readCandidate(kind);
+        candidate = await this.#inspectCandidate(SQL, kind);
       } catch (error) {
-        for (const candidate of validCandidates) candidate.database.close();
+        selected?.database.close();
         throw error;
       }
-      if (bytes === null) continue;
-      rawCandidates.set(kind, bytes);
-      try {
-        validCandidates.push(this.validateCandidate(SQL, kind, bytes));
-      } catch (error) {
-        if (
-          error instanceof CollabError
-          && error.code === 'schema-version-unsupported'
-        ) {
-          unsupportedVersion = true;
-        }
+      if (candidate === 'absent') continue;
+      foundSnapshot = true;
+      if (candidate === 'unsupported') {
+        unsupportedVersion = true;
+        continue;
+      }
+      if (candidate === 'invalid') continue;
+      if (kind === 'primary') hasValidPrimary = true;
+      if (
+        selected === null
+        || candidate.generation > selected.generation
+        || (candidate.generation === selected.generation
+          && CANDIDATE_PRIORITY[candidate.kind] > CANDIDATE_PRIORITY[selected.kind])
+      ) {
+        selected?.database.close();
+        selected = candidate;
+      } else {
+        candidate.database.close();
       }
     }
 
     if (unsupportedVersion) {
-      for (const candidate of validCandidates) candidate.database.close();
+      selected?.database.close();
       throw authorityError('schema-version-unsupported', 'authority-schema-newer');
     }
 
-    if (validCandidates.length === 0) {
-      if (rawCandidates.size > 0) {
+    if (selected === null) {
+      if (foundSnapshot) {
         throw authorityError('database-corrupt', 'no-valid-authority-snapshot');
       }
       const database = new SQL.Database();
@@ -287,15 +365,9 @@ export class SqlJsProjectDatabase {
       return this.openResult;
     }
 
-    validCandidates.sort((left, right) => (
-      right.generation - left.generation
-      || CANDIDATE_PRIORITY[right.kind] - CANDIDATE_PRIORITY[left.kind]
-    ));
-    const selected = validCandidates[0];
-    for (const candidate of validCandidates.slice(1)) candidate.database.close();
     this.database = selected.database;
     this.generationValue = selected.generation;
-    this.hasValidPrimary = validCandidates.some(candidate => candidate.kind === 'primary');
+    this.hasValidPrimary = hasValidPrimary;
 
     try {
       if (selected.migrated) {
@@ -310,15 +382,15 @@ export class SqlJsProjectDatabase {
           requireProject: true,
         });
         selected.database.run('COMMIT');
-        await this.persistSnapshot(selected.database.export(), this.hasValidPrimary);
+        await this.#persistSnapshot(selected.database.export(), this.hasValidPrimary);
         this.generationValue = generation;
         this.hasValidPrimary = true;
       } else if (selected.kind !== 'primary') {
-        await this.persistSnapshot(selected.database.export(), this.hasValidPrimary);
+        await this.#persistSnapshot(selected.database.export(), this.hasValidPrimary);
         this.hasValidPrimary = true;
       }
     } catch {
-      throw this.blockForRecovery();
+      throw this.#blockForRecovery();
     }
 
     this.openResult = {
@@ -329,7 +401,24 @@ export class SqlJsProjectDatabase {
     return this.openResult;
   }
 
-  private validateCandidate(
+  async #inspectCandidate(
+    sqlJs: SqlJsStatic,
+    kind: SqlJsSnapshotKind,
+  ): Promise<ValidCandidate | 'absent' | 'invalid' | 'unsupported'> {
+    // Keep raw bytes out of the selection loop's async frame so a discarded
+    // image can be collected before the next candidate is allocated.
+    const bytes = await this.snapshotStore.readCandidate(kind);
+    if (bytes === null) return 'absent';
+    try {
+      return this.#validateCandidate(sqlJs, kind, bytes);
+    } catch (error) {
+      return error instanceof CollabError && error.code === 'schema-version-unsupported'
+        ? 'unsupported'
+        : 'invalid';
+    }
+  }
+
+  #validateCandidate(
     sqlJs: SqlJsStatic,
     kind: SqlJsSnapshotKind,
     bytes: Uint8Array,
@@ -364,7 +453,7 @@ export class SqlJsProjectDatabase {
     }
   }
 
-  private async persistSnapshot(bytes: Uint8Array, rotatePrimary: boolean): Promise<void> {
+  async #persistSnapshot(bytes: Uint8Array, rotatePrimary: boolean): Promise<void> {
     await this.snapshotStore.writeTemporary(bytes);
     if (rotatePrimary) {
       await this.snapshotStore.removeBackup();
@@ -376,7 +465,7 @@ export class SqlJsProjectDatabase {
     await this.snapshotStore.syncDirectory();
   }
 
-  private requireDatabase(): Database {
+  #requireDatabase(): Database {
     if (this.blockedError) throw this.blockedError;
     if (!this.database || this.closed) {
       throw authorityError('not-initialized', 'authority-database-not-open');
@@ -384,7 +473,7 @@ export class SqlJsProjectDatabase {
     return this.database;
   }
 
-  private notifyMutationListeners(generation: number): void {
+  #notifyMutationListeners(generation: number): void {
     for (const listener of [...this.mutationListeners]) {
       try {
         listener(generation);
@@ -394,7 +483,7 @@ export class SqlJsProjectDatabase {
     }
   }
 
-  private blockForRecovery(): CollabError {
+  #blockForRecovery(): CollabError {
     this.database?.close();
     this.database = null;
     this.blockedError ??= authorityError(
@@ -404,7 +493,7 @@ export class SqlJsProjectDatabase {
     return this.blockedError;
   }
 
-  private async assertAuthorityDirectory(): Promise<void> {
+  async #assertAuthorityDirectory(): Promise<void> {
     const directoryStat = await lstat(this.authorityDirectory).catch(() => null);
     if (!directoryStat?.isDirectory() || directoryStat.isSymbolicLink()) {
       throw authorityError('database-corrupt', 'authority-directory-invalid');

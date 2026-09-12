@@ -19,7 +19,7 @@ function commentError(reason: string): CollabError {
 export class RequestCommentRepository {
   private readonly relations = new RequestTicketRelationRepository();
 
-  private countForRequest(
+  #countForRequest(
     connection: AuthorityDatabaseConnection,
     requestId: string,
   ): number {
@@ -60,7 +60,7 @@ export class RequestCommentRepository {
     if (!requestRow || requestRow.status !== 'open') {
       throw new CollabError({ code: 'request-not-open', recoveryActions: ['retry'] });
     }
-    if (this.countForRequest(connection, input.requestId) >= COLLAB_LIMITS.maxRequestComments) {
+    if (this.#countForRequest(connection, input.requestId) >= COLLAB_LIMITS.maxRequestComments) {
       throw new CollabError({
         code: 'quota-exceeded',
         safeContext: {

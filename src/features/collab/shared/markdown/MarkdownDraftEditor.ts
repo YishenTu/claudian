@@ -70,7 +70,7 @@ export class MarkdownDraftEditor {
   private editButton: HTMLButtonElement | null = null;
   private editorHostEl: HTMLElement | null = null;
   private readonly handleEditorKeydown = (event: KeyboardEvent): void => {
-    if (this.handleSuggestionKeydown(event)) event.stopImmediatePropagation();
+    if (this.#handleSuggestionKeydown(event)) event.stopImmediatePropagation();
   };
   private mode: 'edit' | 'preview';
   private previewButton: HTMLButtonElement | null = null;
@@ -93,17 +93,17 @@ export class MarkdownDraftEditor {
     if (options.onUpdate) this.updateListeners.add(options.onUpdate);
 
     if (this.editable) {
-      this.renderModeControls(options.toolbarEl ?? this.rootEl.createDiv());
+      this.#renderModeControls(options.toolbarEl ?? this.rootEl.createDiv());
       this.editorHostEl = this.rootEl.createDiv({
         cls: 'claudian-collab-markdown-draft-editor',
       });
-      this.view = this.createView(this.editorHostEl);
+      this.view = this.#createView(this.editorHostEl);
     }
     this.previewEl = this.rootEl.createDiv({
       cls: 'claudian-collab-markdown-draft-preview markdown-rendered',
     });
-    this.renderSuggestions();
-    this.syncMode();
+    this.#renderSuggestions();
+    this.#syncMode();
   }
 
   destroy(): void {
@@ -162,7 +162,7 @@ export class MarkdownDraftEditor {
   setMode(mode: 'edit' | 'preview'): void {
     if (!this.editable && mode === 'edit') return;
     this.mode = mode;
-    this.syncMode();
+    this.#syncMode();
   }
 
   setSelection(anchor: number, head = anchor): void {
@@ -179,7 +179,7 @@ export class MarkdownDraftEditor {
   setValue(value: string): void {
     if (!this.view) {
       this.value = value;
-      if (this.mode === 'preview') this.renderPreview();
+      if (this.mode === 'preview') this.#renderPreview();
       return;
     }
     this.view.dispatch({
@@ -188,7 +188,7 @@ export class MarkdownDraftEditor {
     });
   }
 
-  private createView(parent: HTMLElement): EditorView {
+  #createView(parent: HTMLElement): EditorView {
     const extensions: Extension[] = [
       highlightSpecialChars(),
       history(),
@@ -207,9 +207,9 @@ export class MarkdownDraftEditor {
         if (!update.docChanged && !update.selectionSet) return;
         this.value = update.state.doc.toString();
         if (update.docChanged) this.setInvalid(false);
-        this.emitUpdate();
-        this.renderSuggestions();
-        if (this.mode === 'preview') this.renderPreview();
+        this.#emitUpdate();
+        this.#renderSuggestions();
+        if (this.mode === 'preview') this.#renderPreview();
       }),
     ];
     if (this.options.placeholder) extensions.push(placeholder(this.options.placeholder));
@@ -225,7 +225,7 @@ export class MarkdownDraftEditor {
     return view;
   }
 
-  private emitUpdate(): void {
+  #emitUpdate(): void {
     const update = {
       selection: this.getSelection(),
       value: this.getValue(),
@@ -233,7 +233,7 @@ export class MarkdownDraftEditor {
     for (const listener of this.updateListeners) listener(update);
   }
 
-  private renderModeControls(host: HTMLElement): void {
+  #renderModeControls(host: HTMLElement): void {
     host.classList.add('claudian-collab-markdown-draft-modes');
     const actionName = this.options.actionName ?? 'markdown';
     this.editButton = host.createEl('button', {
@@ -259,7 +259,7 @@ export class MarkdownDraftEditor {
     this.previewButton.addEventListener('click', () => this.setMode('preview'));
   }
 
-  private renderPreview(): void {
+  #renderPreview(): void {
     const generation = ++this.previewGeneration;
     const value = this.getValue();
     this.previewEl.replaceChildren();
@@ -274,7 +274,7 @@ export class MarkdownDraftEditor {
     });
   }
 
-  private renderSuggestions(): void {
+  #renderSuggestions(): void {
     let suggestions = this.rootEl.querySelector<HTMLElement>(
       ':scope > .claudian-collab-markdown-suggestions',
     );
@@ -293,11 +293,11 @@ export class MarkdownDraftEditor {
     const cursor = this.getSelection().head;
     const beforeCursor = value.slice(0, cursor);
     const ticketFragment = /#([0-9]*)$/.exec(beforeCursor);
-    const memberFragment = this.memberFragment(beforeCursor);
+    const memberFragment = this.#memberFragment(beforeCursor);
     const entries = ticketFragment
-      ? this.ticketSuggestionEntries(ticketFragment[1] ?? '', ticketFragment.index, cursor)
+      ? this.#ticketSuggestionEntries(ticketFragment[1] ?? '', ticketFragment.index, cursor)
       : memberFragment
-        ? this.memberSuggestionEntries(memberFragment.query, memberFragment.from, cursor)
+        ? this.#memberSuggestionEntries(memberFragment.query, memberFragment.from, cursor)
         : [];
     if (entries.length === 0) return;
     suggestions.hidden = false;
@@ -314,14 +314,14 @@ export class MarkdownDraftEditor {
         cls: 'claudian-collab-markdown-suggestion',
         text: entry.label,
       });
-      action.addEventListener('mouseenter', () => this.setSuggestionIndex(index));
-      action.addEventListener('focus', () => this.setSuggestionIndex(index));
-      action.addEventListener('click', () => this.acceptSuggestion(entry));
+      action.addEventListener('mouseenter', () => this.#setSuggestionIndex(index));
+      action.addEventListener('focus', () => this.#setSuggestionIndex(index));
+      action.addEventListener('click', () => this.#acceptSuggestion(entry));
     }
-    this.setSuggestionIndex(this.suggestionIndex);
+    this.#setSuggestionIndex(this.suggestionIndex);
   }
 
-  private ticketSuggestionEntries(
+  #ticketSuggestionEntries(
     query: string,
     from: number,
     to: number,
@@ -337,7 +337,7 @@ export class MarkdownDraftEditor {
       }));
   }
 
-  private memberSuggestionEntries(
+  #memberSuggestionEntries(
     query: string,
     from: number,
     to: number,
@@ -357,7 +357,7 @@ export class MarkdownDraftEditor {
       }));
   }
 
-  private memberFragment(
+  #memberFragment(
     beforeCursor: string,
   ): { readonly from: number; readonly query: string } | null {
     const from = beforeCursor.lastIndexOf('@');
@@ -368,7 +368,7 @@ export class MarkdownDraftEditor {
     return query.length <= 200 && !/[\r\n@]/.test(query) ? { from, query } : null;
   }
 
-  private acceptSuggestion(entry: MarkdownSuggestionEntry): void {
+  #acceptSuggestion(entry: MarkdownSuggestionEntry): void {
     const following = this.getValue()[entry.to];
     const preserveFollowing = following !== undefined && /[^\S\r\n]/u.test(following);
     this.replaceRange(
@@ -378,13 +378,13 @@ export class MarkdownDraftEditor {
     );
   }
 
-  private handleSuggestionKeydown(event: KeyboardEvent): boolean {
-    const suggestions = this.suggestionButtons();
+  #handleSuggestionKeydown(event: KeyboardEvent): boolean {
+    const suggestions = this.#suggestionButtons();
     if (suggestions.length === 0) return false;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const direction = event.key === 'ArrowDown' ? 1 : -1;
-      this.setSuggestionIndex(
+      this.#setSuggestionIndex(
         (this.suggestionIndex + direction + suggestions.length) % suggestions.length,
       );
       return true;
@@ -405,8 +405,8 @@ export class MarkdownDraftEditor {
     return false;
   }
 
-  private setSuggestionIndex(index: number): void {
-    const suggestions = this.suggestionButtons();
+  #setSuggestionIndex(index: number): void {
+    const suggestions = this.#suggestionButtons();
     if (suggestions.length === 0) {
       this.suggestionIndex = 0;
       return;
@@ -420,7 +420,7 @@ export class MarkdownDraftEditor {
     }
   }
 
-  private suggestionButtons(): HTMLButtonElement[] {
+  #suggestionButtons(): HTMLButtonElement[] {
     const menu = this.rootEl.querySelector<HTMLElement>(
       ':scope > .claudian-collab-markdown-suggestions',
     );
@@ -430,7 +430,7 @@ export class MarkdownDraftEditor {
     )];
   }
 
-  private syncMode(): void {
+  #syncMode(): void {
     this.rootEl.setAttribute('data-markdown-mode', this.mode);
     if (this.editButton) {
       this.editButton.setAttribute('aria-pressed', String(this.mode === 'edit'));
@@ -440,8 +440,8 @@ export class MarkdownDraftEditor {
     }
     if (this.editorHostEl) this.editorHostEl.hidden = this.mode !== 'edit';
     this.previewEl.hidden = this.mode !== 'preview';
-    this.renderSuggestions();
-    if (this.mode === 'preview') this.renderPreview();
+    this.#renderSuggestions();
+    if (this.mode === 'preview') this.#renderPreview();
   }
 }
 

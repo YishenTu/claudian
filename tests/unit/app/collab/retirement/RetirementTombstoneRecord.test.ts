@@ -11,6 +11,7 @@ const record: RetirementTombstoneRecord = {
   schemaVersion: COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION,
   kind: 'retirement-tombstone',
   ownerInstallationKey: TEST_INSTALLATION_A,
+  sourceResourceId: '12345678-1234-4234-8234-123456789abc',
   projectId: 'project-alpha',
   retiredAt,
   expiresAt: '2026-09-12T00:00:00.000Z',
@@ -34,7 +35,7 @@ describe('RetirementTombstoneRecord', () => {
   });
 
   it('classifies ownerless legacy input without assigning the current installation', () => {
-    const { ownerInstallationKey: _, ...withoutOwner } = record;
+    const { ownerInstallationKey: _, sourceResourceId: _resourceId, ...withoutOwner } = record;
     expect(decodeRetirementTombstoneRecord({
       ...withoutOwner,
       schemaVersion: 1,

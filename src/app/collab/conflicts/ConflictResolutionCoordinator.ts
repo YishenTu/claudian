@@ -85,15 +85,22 @@ export interface ConflictScratchGitPort {
   ): Promise<readonly CollabConflictTextSegment[]>;
 }
 
+export interface ConflictPublicationInput {
+  readonly candidateOid: string;
+  readonly contributionHeadOid: string;
+  readonly currentMainOid: string;
+  readonly operationId: CollabOperationId;
+}
+
 export interface ConflictPublicationPort {
+  isResolutionRetained(
+    context: PublishProjectContext,
+    input: ConflictPublicationInput,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   prepareResolvedReview(
     context: PublishProjectContext,
-    input: {
-      readonly candidateOid: string;
-      readonly contributionHeadOid: string;
-      readonly currentMainOid: string;
-      readonly operationId: CollabOperationId;
-    },
+    input: ConflictPublicationInput,
     signal?: AbortSignal,
   ): Promise<CollabPublicationReview>;
 }
@@ -166,38 +173,70 @@ export class ConflictResolutionCoordinator {
     descriptor: CollabConflictDescriptor,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabConflictSession>> {
-    return this.operationQueue.run(() => this.startExclusive(descriptor, options.signal));
+    return this.operationQueue.run(() => this.#startExclusive(descriptor, options.signal));
   }
 
   read(
     operationId: CollabOperationId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabConflictSession>> {
-    return this.operationQueue.run(() => this.readExclusive(operationId, options.signal));
+    return this.operationQueue.run(() => this.#readExclusive(operationId, options.signal));
   }
 
   readFile(
     request: CollabConflictFileRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabConflictFileContent>> {
-    return this.operationQueue.run(() => this.readFileExclusive(request, options.signal));
+    return this.operationQueue.run(() => this.#readFileExclusive(request, options.signal));
   }
 
   findProject(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabConflictSession | null>> {
-    return this.operationQueue.run(() => this.findProjectExclusive(projectId, options.signal));
+    return this.operationQueue.run(() => this.#findProjectExclusive(projectId, options.signal));
   }
 
   prepareWorkingTreeResolution(
     descriptor: CollabConflictDescriptor,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabConflictSession>> {
-    return this.operationQueue.run(() => this.prepareWorkingTreeResolutionExclusive(
+    return this.operationQueue.run(() => this.#prepareWorkingTreeResolutionExclusive(
       descriptor,
       options.signal,
     ));
+  }
+
+  resumeCommitted(
+    operationId: CollabOperationId,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabResult<CollabConflictSession | null>> {
+    return this.operationQueue.run(async () => {
+      let record: ConflictResolutionRecord | null = null;
+      try {
+        throwIfCancelled(options.signal);
+        record = await this.store.load(operationId);
+        if (!record || record.phase !== 'committed') return { status: 'success', value: null };
+        const context = await this.#loadContext(record, options.signal);
+        if (record.resultCommitOid && await this.publication.isResolutionRetained(context, {
+          candidateOid: record.resultCommitOid,
+          contributionHeadOid: record.descriptor.startingPersonalOid,
+          currentMainOid: record.descriptor.startingMainOid,
+          operationId: record.operationId,
+        }, options.signal)) {
+          await this.safety.assertSafe(context);
+          throwIfCancelled(options.signal);
+          await this.store.remove(record.operationId);
+          return { status: 'success', value: this.session(record) };
+        }
+        return {
+          status: 'success',
+          value: await this.#completeCommitted(record, context, options.signal),
+        };
+      } catch (error) {
+        return this.failure(error, record, record?.phase === 'committed');
+      }
+    });
   }
 
   discard(
@@ -206,7 +245,7 @@ export class ConflictResolutionCoordinator {
     return this.operationQueue.run(() => this.store.remove(operationId));
   }
 
-  private async startExclusive(
+  async #startExclusive(
     descriptor: CollabConflictDescriptor,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabConflictSession>> {
@@ -235,40 +274,40 @@ export class ConflictResolutionCoordinator {
         await this.store.save(record);
         durableProgress = true;
       }
-      const context = await this.loadContext(record, signal);
-      record = await this.ensureReady(record, context, signal);
+      const context = await this.#loadContext(record, signal);
+      record = await this.#ensureReady(record, context, signal);
       return { status: 'success', value: this.session(record) };
     } catch (error) {
       return this.failure(error, record, durableProgress);
     }
   }
 
-  private async readExclusive(
+  async #readExclusive(
     operationId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabConflictSession>> {
     let record: ConflictResolutionRecord | null = null;
     try {
       throwIfCancelled(signal);
-      record = await this.requireRecord(operationId);
-      const context = await this.loadContext(record, signal);
-      record = await this.ensureReady(record, context, signal);
+      record = await this.#requireRecord(operationId);
+      const context = await this.#loadContext(record, signal);
+      record = await this.#ensureReady(record, context, signal);
       return { status: 'success', value: this.session(record) };
     } catch (error) {
       return this.failure(error, record, false);
     }
   }
 
-  private async readFileExclusive(
+  async #readFileExclusive(
     request: CollabConflictFileRequest,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabConflictFileContent>> {
     let record: ConflictResolutionRecord | null = null;
     try {
       throwIfCancelled(signal);
-      record = await this.requireRecord(request.operationId);
-      const context = await this.loadContext(record, signal);
-      record = await this.ensureReady(record, context, signal);
+      record = await this.#requireRecord(request.operationId);
+      const context = await this.#loadContext(record, signal);
+      record = await this.#ensureReady(record, context, signal);
       const conflict = record.descriptor.conflicts.find(entry => entry.path === request.path);
       if (!conflict) {
         throw conflictError('content-conflict', 'conflict-file-path-invalid');
@@ -280,7 +319,7 @@ export class ConflictResolutionCoordinator {
         };
       }
       const scratchPath = await this.store.repositoryPath(record.operationId);
-      const paths = this.conflictVersionPaths(conflict);
+      const paths = this.#conflictVersionPaths(conflict);
       const [base, personal, accepted] = await Promise.all([
         this.git.readBlobAtPath(scratchPath, record.descriptor.mergeBaseOid, paths.base),
         this.git.readBlobAtPath(
@@ -319,11 +358,11 @@ export class ConflictResolutionCoordinator {
       return {
         status: 'success',
         value: {
-          accepted: this.opaqueVersion(paths.accepted, accepted),
-          base: this.opaqueVersion(paths.base, base),
+          accepted: this.#opaqueVersion(paths.accepted, accepted),
+          base: this.#opaqueVersion(paths.base, base),
           kind: conflict.kind,
           path: conflict.path,
-          personal: this.opaqueVersion(paths.personal, personal),
+          personal: this.#opaqueVersion(paths.personal, personal),
         },
       };
     } catch (error) {
@@ -331,7 +370,7 @@ export class ConflictResolutionCoordinator {
     }
   }
 
-  private async findProjectExclusive(
+  async #findProjectExclusive(
     projectId: CollabProjectId,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabConflictSession | null>> {
@@ -346,15 +385,15 @@ export class ConflictResolutionCoordinator {
         throw conflictError('repository-invalid', 'conflict-project-operation-ambiguous');
       }
       record = matches[0];
-      const context = await this.loadContext(record, signal);
-      record = await this.ensureReady(record, context, signal);
+      const context = await this.#loadContext(record, signal);
+      record = await this.#ensureReady(record, context, signal);
       return { status: 'success', value: this.session(record) };
     } catch (error) {
       return this.failure(error, record, false);
     }
   }
 
-  private async prepareWorkingTreeResolutionExclusive(
+  async #prepareWorkingTreeResolutionExclusive(
     descriptor: CollabConflictDescriptor,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabConflictSession>> {
@@ -362,18 +401,18 @@ export class ConflictResolutionCoordinator {
     let durableProgress = false;
     try {
       throwIfCancelled(signal);
-      record = await this.requireRecord(descriptor.operationId);
+      record = await this.#requireRecord(descriptor.operationId);
       if (record.projectId !== descriptor.projectId) {
         throw conflictError('idempotency-conflict', 'conflict-project-mismatch');
       }
-      const context = await this.loadContext(record, signal);
+      const context = await this.#loadContext(record, signal);
       if (record.phase === 'committed') {
         if (!exactDescriptor(record.descriptor, descriptor)) {
           throw conflictError('idempotency-conflict', 'conflict-operation-mismatch');
         }
         return {
           status: 'success',
-          value: await this.completeCommitted(record, context, signal),
+          value: await this.#completeCommitted(record, context, signal),
         };
       }
 
@@ -390,10 +429,10 @@ export class ConflictResolutionCoordinator {
       if (descriptor.conflicts.some(conflict => (
         conflict.kind === 'directory-file' || conflict.kind === 'portability'
       ))) {
-        record = await this.rebuild(record, context, signal);
+        record = await this.#rebuild(record, context, signal);
         return { status: 'success', value: this.session(record) };
       }
-      record = await this.rebuild(record, context, signal);
+      record = await this.#rebuild(record, context, signal);
       const scratchPath = await this.store.repositoryPath(record.operationId);
       await this.projects.revalidate(context);
       await this.safety.assertSafe(context);
@@ -404,18 +443,18 @@ export class ConflictResolutionCoordinator {
         descriptor,
         descriptor.conflicts.map(conflict => conflict.path),
       );
-      record = await this.saveRecord(record, { phase: 'committed', resultCommitOid });
+      record = await this.#saveRecord(record, { phase: 'committed', resultCommitOid });
       durableProgress = true;
       return {
         status: 'success',
-        value: await this.completeCommitted(record, context, signal),
+        value: await this.#completeCommitted(record, context, signal),
       };
     } catch (error) {
       return this.failure(error, record, durableProgress);
     }
   }
 
-  private async ensureReady(
+  async #ensureReady(
     record: ConflictResolutionRecord,
     context: PublishProjectContext,
     signal?: AbortSignal,
@@ -434,10 +473,10 @@ export class ConflictResolutionCoordinator {
         // Recreate only the derived disposable repository below.
       }
     }
-    return this.rebuild(record, context, signal);
+    return this.#rebuild(record, context, signal);
   }
 
-  private async rebuild(
+  async #rebuild(
     record: ConflictResolutionRecord,
     context: PublishProjectContext,
     signal?: AbortSignal,
@@ -445,10 +484,10 @@ export class ConflictResolutionCoordinator {
     throwIfCancelled(signal);
     const scratchPath = await this.store.recreateRepository(record.operationId);
     await this.git.prepare(context, scratchPath, record.descriptor, signal);
-    return this.saveRecord(record, { phase: 'ready' });
+    return this.#saveRecord(record, { phase: 'ready' });
   }
 
-  private async completeCommitted(
+  async #completeCommitted(
     record: ConflictResolutionRecord,
     context: PublishProjectContext,
     signal?: AbortSignal,
@@ -481,7 +520,7 @@ export class ConflictResolutionCoordinator {
     return { descriptor: record.descriptor, publicationReview };
   }
 
-  private saveRecord(
+  #saveRecord(
     record: ConflictResolutionRecord,
     changes: Partial<Pick<ConflictResolutionRecord, 'phase' | 'resultCommitOid'>>,
   ): Promise<ConflictResolutionRecord> {
@@ -493,7 +532,7 @@ export class ConflictResolutionCoordinator {
     return this.store.save(updated).then(() => updated);
   }
 
-  private async loadContext(
+  async #loadContext(
     record: ConflictResolutionRecord,
     signal?: AbortSignal,
   ): Promise<PublishProjectContext> {
@@ -506,7 +545,7 @@ export class ConflictResolutionCoordinator {
     return context;
   }
 
-  private async requireRecord(
+  async #requireRecord(
     operationId: CollabOperationId,
   ): Promise<ConflictResolutionRecord> {
     const record = await this.store.load(operationId);
@@ -518,7 +557,7 @@ export class ConflictResolutionCoordinator {
     return { descriptor: record.descriptor };
   }
 
-  private conflictVersionPaths(conflict: CollabConflictEntry): {
+  #conflictVersionPaths(conflict: CollabConflictEntry): {
     accepted: string;
     base: string;
     personal: string;
@@ -530,7 +569,7 @@ export class ConflictResolutionCoordinator {
     };
   }
 
-  private opaqueVersion(path: string, contents: Buffer | null): {
+  #opaqueVersion(path: string, contents: Buffer | null): {
     bytes: number;
     exists: boolean;
     path: string;

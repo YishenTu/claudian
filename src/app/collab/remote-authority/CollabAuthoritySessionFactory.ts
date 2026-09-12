@@ -2,6 +2,7 @@ import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjec
 import type {
   CollabAuthorityAdapter,
   CollabAuthoritySession,
+  CollabAuthoritySessionCreationOptions,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -23,7 +24,10 @@ export class CollabAuthoritySessionFactory {
     this.adapters = byKind;
   }
 
-  create(membership: CollabLocalMembershipRecord): Promise<CollabAuthoritySession> {
+  create(
+    membership: CollabLocalMembershipRecord,
+    options?: CollabAuthoritySessionCreationOptions,
+  ): Promise<CollabAuthoritySession> {
     const adapter = this.adapters.get(membership.authority.kind);
     if (!adapter) {
       return Promise.reject(new CollabError({
@@ -32,6 +36,6 @@ export class CollabAuthoritySessionFactory {
       }));
     }
     const frozen = deepFreeze(structuredClone(membership));
-    return adapter.create(frozen);
+    return adapter.create(frozen, options);
   }
 }

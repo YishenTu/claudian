@@ -1,5 +1,5 @@
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { SKILLS_PATH,SkillStorage } from '@/providers/claude/storage/SkillStorage';
+import { SkillStorage } from '@/providers/claude/storage/SkillStorage';
 
 function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter {
   const mockAdapter = {
@@ -36,9 +36,6 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
 }
 
 describe('SkillStorage', () => {
-  it('exports SKILLS_PATH', () => {
-    expect(SKILLS_PATH).toBe('.claude/skills');
-  });
 
   describe('loadAll', () => {
     it('loads skills from subdirectories with SKILL.md', async () => {

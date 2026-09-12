@@ -12,13 +12,6 @@ export type HostTransferDurablePhase =
   | 'declined'
   | 'expired';
 
-const TERMINAL_PHASES = new Set<HostTransferDurablePhase>([
-  'completed',
-  'cancelled',
-  'declined',
-  'expired',
-]);
-
 const TRANSITIONS: Readonly<Record<HostTransferDurablePhase, readonly HostTransferDurablePhase[]>> = {
   offered: ['accepted', 'cancelled', 'declined', 'expired'],
   accepted: ['quiescing', 'cancelled', 'declined', 'expired'],
@@ -38,10 +31,6 @@ function phaseError(reason: string): CollabError {
     recoveryActions: ['open-diagnostics'],
     safeContext: { reason },
   });
-}
-
-export function isTerminalHostTransferPhase(phase: HostTransferDurablePhase): boolean {
-  return TERMINAL_PHASES.has(phase);
 }
 
 export function assertHostTransferTransition(

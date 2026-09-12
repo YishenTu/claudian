@@ -20,10 +20,11 @@ export class RequestQueryGitPolicy implements RequestQueryGitPort {
   constructor(
     private readonly repositoryPath: string,
     private readonly git: GitRepositoryService,
+    private readonly resourceAdmission: <T>(operation: () => Promise<T>) => Promise<T> = operation => operation(),
   ) {}
 
   async inspect(input: RequestQueryGitInput): Promise<RequestQueryGitResult> {
-    return this.git.withReadSession(this.repositoryPath, 'bare', async session => {
+    return this.resourceAdmission(() => this.git.withReadSession(this.repositoryPath, 'bare', async session => {
       const refs = await session.resolveRefs([COLLAB_MAIN_REF, input.personalRef]);
       const mainOid = refs.get(COLLAB_MAIN_REF) ?? null;
       const personalOid = refs.get(input.personalRef) ?? null;
@@ -38,6 +39,6 @@ export class RequestQueryGitPolicy implements RequestQueryGitPort {
             : 'clean',
         reviewedHeadOid: input.latestHeadOid,
       };
-    });
+    }));
   }
 }

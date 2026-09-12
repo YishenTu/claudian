@@ -52,7 +52,7 @@ function envelope(data: unknown): unknown {
   };
 }
 
-function snapshotEnvelope(): unknown {
+function snapshotEnvelope(authorityGeneration: unknown = 1): unknown {
   return envelope({
     currentMember: member(),
     eventSequence: 2,
@@ -76,6 +76,7 @@ function snapshotEnvelope(): unknown {
       id: 'project-a',
       mainOid: HEAD,
       mainRef: 'refs/heads/main',
+      authorityGeneration,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -104,6 +105,57 @@ function detailEnvelope(): unknown {
 }
 
 describe('ProjectControlClient', () => {
+  it('reads the deployed LAN base without Cloud generation metadata', async () => {
+    const data = snapshotEnvelope() as { protocolVersion: number; data: { project: Record<string, unknown> } };
+    data.protocolVersion = 9;
+    delete data.data.project.authorityGeneration;
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(data),
+    });
+    await expect(client.readSnapshot('project-a', CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-a', role: 'member' },
+      project: { authorityGeneration: 1, hostMemberId: 'member-host' },
+    });
+  });
+
+  it('keeps base reads available when the Host has no Ticket lookup capability', async () => {
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(request.path.endsWith('/snapshot')
+        ? snapshotEnvelope()
+        : envelope({ ticketId: 'ticket-a' })),
+    });
+    await expect(client.resolveTicketNumber({
+      memberCredential: CREDENTIAL, projectId: 'project-a', ticketNumber: 1,
+    })).rejects.toMatchObject({ safeContext: { reason: 'lan-capability-unavailable' } });
+    await expect(client.readSnapshot('project-a', CREDENTIAL)).resolves.toMatchObject({
+      currentMember: { id: 'member-a', role: 'member' },
+    });
+  });
+
+  it('uses an advertised extension while ignoring unknown future capabilities', async () => {
+    const data = snapshotEnvelope() as { data: Record<string, unknown> };
+    data.data.capabilities = ['future-example-v1', 'ticket-number-lookup-v1'];
+    const client = new ProjectControlClient({
+      requestWithMember: async request => request.decode(request.path.endsWith('/snapshot')
+        ? data
+        : envelope({ ticketId: 'ticket-a' })),
+    });
+    await expect(client.resolveTicketNumber({
+      memberCredential: CREDENTIAL, projectId: 'project-a', ticketNumber: 1,
+    })).resolves.toEqual({ ticketId: 'ticket-a' });
+  });
+
+  it.each([null, 0, -1, 1.5, '3', Number.MAX_SAFE_INTEGER + 1])(
+    'rejects an incomplete or invalid authority generation: %s', async generation => {
+      const client = new ProjectControlClient({
+        requestWithMember: async request => request.decode(snapshotEnvelope(generation)),
+      });
+      await expect(client.readSnapshot('project-a', CREDENTIAL)).rejects.toMatchObject({
+        code: 'protocol-payload-invalid',
+      });
+    },
+  );
+
   it('reads the full Project snapshot and ensures the exact personal head', async () => {
     const transport: ProjectControlTransport = {
       requestWithMember: jest.fn(async <T>(

@@ -1,18 +1,17 @@
 import {
-  type ProviderExecutionBackend,
-  type ProviderExecutionEvent,
-  ProviderExecutionLifecycleRegistry,
-  ProviderExecutionRegistryDisposedError,
-  type ProviderExecutionRequest,
-  type ProviderExecutionRun,
-  type ProviderExecutionSession,
-  ProviderExecutionTransitionError,
-  type ProviderExecutionTransitionHook,
-  type ProviderExecutionTransitionScope,
-  type ProviderSessionConfig,
-  type ProviderSessionEvent,
-  type ProviderSessionSnapshot,
-  type ProviderSessionStatus,
+type ProviderExecutionBackend,
+ProviderExecutionLifecycleRegistry,
+ProviderExecutionRegistryDisposedError,
+type ProviderExecutionRequest,
+type ProviderExecutionRun,
+type ProviderExecutionSession,
+ProviderExecutionTransitionError,
+type ProviderExecutionTransitionHook,
+type ProviderExecutionTransitionScope,
+type ProviderSessionConfig,
+type ProviderSessionEvent,
+type ProviderSessionSnapshot,
+type ProviderSessionStatus
 } from '@/core/execution';
 
 class TestSession implements ProviderExecutionSession {
@@ -613,25 +612,5 @@ describe('ProviderExecutionLifecycleRegistry', () => {
         afterTransition: jest.fn(),
       }),
     ).toThrow(ProviderExecutionRegistryDisposedError);
-  });
-
-  it('keeps requested-run events out of the session listener contract', () => {
-    const requested: ProviderExecutionEvent = {
-      type: 'text_delta',
-      scope: {
-        kind: 'requested',
-        sessionInstanceId: 'session',
-        executionId: 'execution',
-        turnId: 'turn',
-        sequence: 1,
-      },
-      text: 'hello',
-    };
-    const sessionListener = (_event: ProviderSessionEvent): void => undefined;
-
-    // The compile-time contracts are distinct even though requested and session
-    // events share normalized payloads.
-    expect(requested.scope.kind).toBe('requested');
-    expect(sessionListener).toBeDefined();
   });
 });

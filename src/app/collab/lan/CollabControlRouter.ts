@@ -20,10 +20,7 @@ import {
   TerminalLifecycleGateway,
 } from '@/app/collab/lan/lifecycle/LifecycleGateway';
 import { handleJoinRoute } from '@/app/collab/lan/routes/JoinRoutes';
-import {
-  handleLifecycleRoute,
-  isLifecycleControlRoute,
-} from '@/app/collab/lan/routes/LifecycleRoutes';
+import { handleLifecycleRoute } from '@/app/collab/lan/routes/LifecycleRoutes';
 import { handleMembershipRoute } from '@/app/collab/lan/routes/MembershipRoutes';
 import { handleProjectRoute } from '@/app/collab/lan/routes/ProjectRoutes';
 import { handleRequestRoute } from '@/app/collab/lan/routes/RequestRoutes';
@@ -413,16 +410,14 @@ export class CollabControlRouter {
       if (!registered) {
         const terminal = this.terminalProjects.get(route.projectId);
         if (!terminal) throw routerError('project-not-found', 'host-project-not-running');
-        const result = await this.dispatchTerminal({
+        const result = await this.#dispatchTerminal({
           authorization: singleHeader(request.headers, 'authorization'),
           body,
           idempotencyKey: singleHeader(request.headers, 'idempotency-key'),
-          method: request.method ?? '',
-          ...(operationMatch ? { operationMatch } : {}),
+          operationMatch,
           projectId: route.projectId,
           query: route.query,
           remoteAddress: normalizeRemoteAddress(request.socket.remoteAddress),
-          segments: route.segments,
           lifecycle: terminal.lifecycle,
         }, terminal.service);
         invokeAfterResponseFlush(response, result.afterResponseFlushed);
@@ -434,23 +429,18 @@ export class CollabControlRouter {
         });
         return;
       }
-      const routeRequest: CollabControlRouteRequest = {
+      const dispatch = () => operationMatch ? this.dispatch({
         authorization: singleHeader(request.headers, 'authorization'),
         body,
         idempotencyKey: singleHeader(request.headers, 'idempotency-key'),
         lifecycle: registered.routing.lifecycle,
-        method: request.method ?? '',
-        ...(operationMatch ? { operationMatch } : {}),
+        operationMatch,
         projectId: route.projectId,
         query: route.query,
         remoteAddress: normalizeRemoteAddress(request.socket.remoteAddress),
-        segments: route.segments,
         service: registered.service,
-      };
-      const dispatch = () => this.dispatch(routeRequest);
-      const lifecycleRoute = operationBinding
-        ? operationBinding.family === 'lifecycle'
-        : isLifecycleControlRoute(request.method, route.segments);
+      }) : Promise.resolve(null);
+      const lifecycleRoute = operationBinding?.family === 'lifecycle';
       const requiresOuterAdmission = operationBinding
         ? operationBinding.admission === 'active' && !lifecycleRoute
         : !lifecycleRoute;
@@ -522,9 +512,7 @@ export class CollabControlRouter {
   private async dispatch(
     request: CollabControlRouteRequest,
   ): Promise<CollabControlRouteResult | null> {
-    const match = request.operationMatch
-      ?? matchCollabControlOperation(request.method, request.segments);
-    if (!match) return null;
+    const match = request.operationMatch;
     switch (COLLAB_CONTROL_OPERATION_BINDINGS[match.operation].family) {
       case 'join': return handleJoinRoute(request);
       case 'request': return handleRequestRoute(request);
@@ -535,15 +523,16 @@ export class CollabControlRouter {
     }
   }
 
-  private async dispatchTerminal(
+  async #dispatchTerminal(
     request: CollabTerminalControlRouteRequest,
     terminal: CollabTerminalProjectService,
   ): Promise<CollabControlRouteResult> {
-    const operation = request.operationMatch?.operation;
+    const match = request.operationMatch;
+    const operation = match?.operation;
     const isAcknowledgement = operation === 'acknowledgeRetirement';
     const isHostTransitions = operation === 'getHostTransitions';
-    if (isAcknowledgement || isHostTransitions) {
-      const result = await handleLifecycleRoute(request);
+    if (match && (isAcknowledgement || isHostTransitions)) {
+      const result = await handleLifecycleRoute({ ...request, operationMatch: match });
       if (result) return result;
     }
     if (!request.authorization?.startsWith('Bearer ')) {

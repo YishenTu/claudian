@@ -7,17 +7,18 @@ import {
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
 
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { HostTransferModule } from '@/app/collab/host-transfer/HostTransferModule';
 import { createHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
-import { LanAuthorityProjectionTransitionCoordinator } from '@/app/collab/LanAuthorityProjectionTransitionCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const membership = {
   authority: {
+    authorityGeneration: 1,
     endpoint: 'https://192.168.1.10:27001',
     gitRemoteUrl: 'https://192.168.1.10:27001/v1/git/project-a/repository.git',
     hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
@@ -53,6 +54,7 @@ const coordination = {
       id: 'project-a',
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Project A',
     },
@@ -94,9 +96,9 @@ describe('HostTransferModule', () => {
     ) => operation());
     const module = new HostTransferModule({
       activateTransferredAuthority: jest.fn(),
-      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner,
-      bindTransferTarget: jest.fn(),
+      installTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),
       installationKey: TEST_INSTALLATION_A,
       lanHost: {},
@@ -114,7 +116,7 @@ describe('HostTransferModule', () => {
     const { module, recovery } = create();
     const runtime = module.createOutgoingRuntime({
       accept: { recover: jest.fn() },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -148,7 +150,7 @@ describe('HostTransferModule', () => {
     const recover = jest.fn();
     const runtime = module.createOutgoingRuntime({
       accept: { recover },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -229,7 +231,7 @@ describe('HostTransferModule', () => {
     const { control, module } = create();
     const runtime = module.createOutgoingRuntime({
       accept: { recover: jest.fn() },
-      authority: { authorityDirectory: '/authority', database: {} },
+      authority: { authorityDirectory: '/authority', database: {}, resource: { resourceId: 'a5e0cb40-6725-4e3c-918b-87e69b0428ae' } },
       git: {},
       hostTransfers: {},
       projectId: 'project-a',
@@ -267,9 +269,9 @@ describe('HostTransferModule', () => {
     });
     const module = new HostTransferModule({
       activateTransferredAuthority: jest.fn(),
-      authorityProjectionTransitions: new LanAuthorityProjectionTransitionCoordinator(),
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       assertRecoveryOwner: jest.fn().mockResolvedValue(undefined),
-      bindTransferTarget: jest.fn(),
+      installTransferTarget: jest.fn(),
       finalizeOldAuthority: jest.fn(),
       installationKey: TEST_INSTALLATION_A,
       lanHost,

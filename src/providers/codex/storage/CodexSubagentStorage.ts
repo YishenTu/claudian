@@ -45,11 +45,11 @@ export class CodexSubagentStorage {
   ) {}
 
   async loadAll(): Promise<CodexSubagentDefinition[]> {
-    return this.scanAdapter(this.vaultAdapter);
+    return this.#scanAdapter(this.vaultAdapter);
   }
 
   async load(agent: CodexSubagentDefinition): Promise<CodexSubagentDefinition | null> {
-    const filePath = this.resolveCurrentPath(agent);
+    const filePath = this.#resolveCurrentPath(agent);
     try {
       if (!(await this.vaultAdapter.exists(filePath))) return null;
       const content = await this.vaultAdapter.read(filePath);
@@ -60,8 +60,8 @@ export class CodexSubagentStorage {
   }
 
   async save(agent: CodexSubagentDefinition, previous?: CodexSubagentDefinition | null): Promise<void> {
-    const filePath = this.resolveTargetPath(agent, previous);
-    const previousPath = previous ? this.resolveCurrentPath(previous) : null;
+    const filePath = this.#resolveTargetPath(agent, previous);
+    const previousPath = previous ? this.#resolveCurrentPath(previous) : null;
     await this.vaultAdapter.ensureFolder(CODEX_AGENTS_PATH);
     const content = serializeSubagentToml(agent);
     await this.vaultAdapter.write(filePath, content);
@@ -72,11 +72,11 @@ export class CodexSubagentStorage {
   }
 
   async delete(agent: CodexSubagentDefinition): Promise<void> {
-    const filePath = this.resolveCurrentPath(agent);
+    const filePath = this.#resolveCurrentPath(agent);
     await this.vaultAdapter.delete(filePath);
   }
 
-  private resolveCurrentPath(agent: CodexSubagentDefinition): string {
+  #resolveCurrentPath(agent: CodexSubagentDefinition): string {
     const persistedLocation = parseCodexSubagentPersistenceKey(agent.persistenceKey);
     if (persistedLocation) {
       return `${CODEX_AGENTS_PATH}/${persistedLocation.fileName}`;
@@ -85,18 +85,18 @@ export class CodexSubagentStorage {
     return `${CODEX_AGENTS_PATH}/${agent.name}.toml`;
   }
 
-  private resolveTargetPath(
+  #resolveTargetPath(
     agent: CodexSubagentDefinition,
     previous?: CodexSubagentDefinition | null,
   ): string {
     if (previous && previous.name === agent.name) {
-      return this.resolveCurrentPath(previous);
+      return this.#resolveCurrentPath(previous);
     }
 
     return `${CODEX_AGENTS_PATH}/${agent.name}.toml`;
   }
 
-  private async scanAdapter(
+  async #scanAdapter(
     adapter: Pick<VaultFileAdapter, 'read' | 'listFiles'>,
   ): Promise<CodexSubagentDefinition[]> {
     const results: CodexSubagentDefinition[] = [];

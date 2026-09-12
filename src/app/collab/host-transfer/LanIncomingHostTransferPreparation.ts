@@ -94,8 +94,8 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     input: Parameters<IncomingHostTransferPreparationPort['assertEligible']>[0],
   ): Promise<void> {
     throwIfCancelled(input.signal);
-    this.assertIdentity(input.projectId, input.transferId);
-    const membership = await this.requireMembership(input.projectId);
+    this.#assertIdentity(input.projectId, input.transferId);
+    const membership = await this.#requireMembership(input.projectId);
     if (membership.member.id !== input.targetMemberId) {
       throw preparationError('host-transfer-target-member-mismatch', 'authorization-denied');
     }
@@ -114,10 +114,10 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     input: Parameters<IncomingHostTransferPreparationPort['startProvisional']>[0],
   ): Promise<Awaited<ReturnType<IncomingHostTransferPreparationPort['startProvisional']>>> {
     throwIfCancelled(input.signal);
-    this.assertIdentity(input.projectId, input.transferId);
-    const coordinator = this.requireCoordinator();
-    const stagingDirectoryName = this.stagingName(input.transferId);
-    const ownership = this.ownership(input.projectId, input.transferId, stagingDirectoryName);
+    this.#assertIdentity(input.projectId, input.transferId);
+    const coordinator = this.#requireCoordinator();
+    const stagingDirectoryName = this.#stagingName(input.transferId);
+    const ownership = this.#ownership(input.projectId, input.transferId, stagingDirectoryName);
     const staging = await this.options.workspace.reserveProjectsFolderChild(
       this.options.projectsFolder,
       ownership,
@@ -128,7 +128,7 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     }
     if (!existing) await mkdir(staging.absolutePath, { mode: 0o700 });
     const receiverCredential = this.createReceiverCredential();
-    this.assertReceiverCredential(receiverCredential);
+    this.#assertReceiverCredential(receiverCredential);
     try {
       const listener = await this.options.lanHost.startProvisionalTransfer({
         coordinator,
@@ -155,11 +155,11 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
   }
 
   async restoreProvisional(record: HostTransferRecoveryRecord): Promise<void> {
-    const coordinator = this.requireCoordinator();
-    this.assertRecord(record);
+    const coordinator = this.#requireCoordinator();
+    this.#assertRecord(record);
     const staging = await this.options.workspace.reserveProjectsFolderChild(
       this.options.projectsFolder,
-      this.ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
+      this.#ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
     );
     const existing = await lstat(staging.absolutePath).catch(() => null);
     if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) {
@@ -183,11 +183,11 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
   }
 
   async cancelProvisional(record: HostTransferRecoveryRecord): Promise<void> {
-    this.assertCleanupRecord(record);
+    this.#assertCleanupRecord(record);
     await this.options.lanHost.stopProvisionalTransfer(record.transferId);
     const removed = await this.options.workspace.removeReservedProjectsFolderChild(
       this.options.projectsFolder,
-      this.ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
+      this.#ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
     );
     // The terminal journal makes an absent operation-owned staging marker an
     // idempotent replay after a crash between cleanup and its checkpoint.
@@ -195,18 +195,18 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
   }
 
   async completeProvisional(record: HostTransferRecoveryRecord): Promise<void> {
-    this.assertCleanupRecord(record);
+    this.#assertCleanupRecord(record);
     await this.options.lanHost.stopProvisionalTransfer(record.transferId);
     await this.options.workspace.removeReservedProjectsFolderChild(
       this.options.projectsFolder,
-      this.ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
+      this.#ownership(record.projectId, record.transferId, record.stagingDirectoryName!),
     );
   }
 
   async restoreTerminalReceipt(record: HostTransferRecoveryRecord): Promise<void> {
-    this.assertTerminalReceipt(record);
+    this.#assertTerminalReceipt(record);
     const listener = await this.options.lanHost.startProvisionalTransfer({
-      coordinator: this.requireCoordinator(),
+      coordinator: this.#requireCoordinator(),
       projectId: record.projectId,
       receiverCredentialHash: record.receiverCredentialHash!,
       transferId: record.transferId,
@@ -222,11 +222,11 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
   }
 
   async confirmTerminalReceipt(record: HostTransferRecoveryRecord): Promise<void> {
-    this.assertTerminalReceipt(record);
+    this.#assertTerminalReceipt(record);
     await this.options.lanHost.stopProvisionalTransfer(record.transferId);
   }
 
-  private async requireMembership(projectId: CollabProjectId): Promise<IncomingMembership> {
+  async #requireMembership(projectId: CollabProjectId): Promise<IncomingMembership> {
     const membership = await this.options.loadMembership(projectId);
     if (!membership || membership.project.id !== projectId) {
       throw preparationError('host-transfer-target-project-missing', 'authorization-denied');
@@ -234,7 +234,7 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     return membership;
   }
 
-  private requireCoordinator(): Pick<
+  #requireCoordinator(): Pick<
     IncomingHostTransferCoordinator,
     'activate' | 'cancel' | 'complete' | 'confirm' | 'stage'
   > {
@@ -242,8 +242,8 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     return this.coordinator;
   }
 
-  private assertTerminalReceipt(record: HostTransferRecoveryRecord): void {
-    this.assertIdentity(record.projectId, record.transferId);
+  #assertTerminalReceipt(record: HostTransferRecoveryRecord): void {
+    this.#assertIdentity(record.projectId, record.transferId);
     if (
       !record.receiverCredentialHash
       || record.receiverCredential !== null
@@ -254,10 +254,10 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     ) throw preparationError('host-transfer-terminal-receipt-invalid');
   }
 
-  private assertRecord(record: HostTransferRecoveryRecord): void {
-    this.assertIdentity(record.projectId, record.transferId);
-    this.assertReceiverCredential(record.receiverCredential ?? '');
-    if (record.stagingDirectoryName !== this.stagingName(record.transferId)) {
+  #assertRecord(record: HostTransferRecoveryRecord): void {
+    this.#assertIdentity(record.projectId, record.transferId);
+    this.#assertReceiverCredential(record.receiverCredential ?? '');
+    if (record.stagingDirectoryName !== this.#stagingName(record.transferId)) {
       throw preparationError('host-transfer-staging-name-invalid', 'workspace-boundary-invalid');
     }
     if (
@@ -267,14 +267,14 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     ) throw preparationError('host-transfer-provisional-record-invalid');
   }
 
-  private assertCleanupRecord(record: HostTransferRecoveryRecord): void {
-    this.assertIdentity(record.projectId, record.transferId);
+  #assertCleanupRecord(record: HostTransferRecoveryRecord): void {
+    this.#assertIdentity(record.projectId, record.transferId);
     if (record.receiverCredential !== null) {
-      this.assertReceiverCredential(record.receiverCredential);
+      this.#assertReceiverCredential(record.receiverCredential);
     } else if (!record.receiverCredentialHash) {
       throw preparationError('host-transfer-terminal-credential-missing');
     }
-    if (record.stagingDirectoryName !== this.stagingName(record.transferId)) {
+    if (record.stagingDirectoryName !== this.#stagingName(record.transferId)) {
       throw preparationError('host-transfer-staging-name-invalid', 'workspace-boundary-invalid');
     }
     if (
@@ -284,24 +284,24 @@ export class LanIncomingHostTransferPreparation implements IncomingHostTransferP
     ) throw preparationError('host-transfer-provisional-record-invalid');
   }
 
-  private assertIdentity(projectId: string, transferId: string): void {
+  #assertIdentity(projectId: string, transferId: string): void {
     if (!isCollabProjectId(projectId) || !isCollabOpaqueId(transferId)) {
       throw preparationError('host-transfer-target-identity-invalid');
     }
   }
 
-  private assertReceiverCredential(credential: string): void {
+  #assertReceiverCredential(credential: string): void {
     if (
       !RECEIVER_CREDENTIAL_PATTERN.test(credential)
       || Buffer.from(credential, 'base64url').byteLength !== 32
     ) throw preparationError('host-transfer-receiver-credential-invalid');
   }
 
-  private stagingName(transferId: string): string {
+  #stagingName(transferId: string): string {
     return `.claudian-host-transfer-${transferId}`;
   }
 
-  private ownership(projectId: string, transferId: string, childName: string) {
+  #ownership(projectId: string, transferId: string, childName: string) {
     return {
       childName,
       operationId: transferId,

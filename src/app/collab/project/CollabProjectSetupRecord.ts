@@ -14,6 +14,7 @@ export type CollabProjectSetupPhase =
 export interface CollabProjectSetupRecord {
   readonly schemaVersion: 2 | typeof COLLAB_PROJECT_SETUP_SCHEMA_VERSION;
   readonly ownerInstallationKey?: InstallationKey;
+  readonly authorityResourceId?: string;
   readonly projectId: CollabProjectId;
   readonly operationId: CollabOperationId;
   readonly phase: CollabProjectSetupPhase;
@@ -36,7 +37,6 @@ export interface CollabProjectSetupRecord {
 
 type UnknownRecord = Record<string, unknown>;
 
-const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -86,6 +86,12 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
   const ownerInstallationKey = value.schemaVersion === COLLAB_PROJECT_SETUP_SCHEMA_VERSION
     ? parseInstallationKey(value.ownerInstallationKey)
     : undefined;
+  const authorityResourceId = value.authorityResourceId;
+  if (authorityResourceId !== undefined && (value.schemaVersion !== COLLAB_PROJECT_SETUP_SCHEMA_VERSION
+    || typeof authorityResourceId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(authorityResourceId))) {
+    throw new TypeError('Invalid Project setup resource');
+  }
   const phase = value.phase;
   if (
     phase !== 'planned'
@@ -114,6 +120,8 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
     throw new TypeError('Invalid setup commit');
   }
   const projectId = stringField(value, 'projectId', 64);
+  const slug = stringField(value, 'slug', 64);
+  if (!isCollabWorkingCopySlug(slug)) throw new TypeError('Invalid setup slug');
   if (!isCollabProjectId(projectId)) throw new TypeError('Invalid projectId');
   const cloneDirectoryName = stringField(
     value,
@@ -149,6 +157,7 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       return operationId;
     })(),
     ...(ownerInstallationKey === undefined ? {} : { ownerInstallationKey }),
+    ...(authorityResourceId === undefined ? {} : { authorityResourceId }),
     phase,
     projectId,
     projectsFolder,
@@ -156,7 +165,7 @@ export function decodeCollabProjectSetupRecord(value: unknown): CollabProjectSet
       ? COLLAB_PROJECT_SETUP_SCHEMA_VERSION
       : 2,
     seedDirectoryName,
-    slug: stringField(value, 'slug', 64, SAFE_SLUG_PATTERN),
+    slug,
     updatedAt: timestampField(value, 'updatedAt'),
     ...(legacy || value.legacySetupRecord === true
       ? { legacySetupRecord: true as const }
@@ -181,3 +190,4 @@ export function bindLegacyCollabProjectSetupOwner(
     schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   });
 }
+import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';

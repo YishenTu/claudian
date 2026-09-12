@@ -1,5 +1,10 @@
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
+import { getCACertificates, setDefaultCACertificates } from 'node:tls';
 
 import {
   COLLAB_CHECKPOINT_ARTIFACT_LIMITS,
@@ -8,19 +13,33 @@ import {
   type CollabAuthorityTransferStatus,
   type CollabCloudCapability,
   collabCloudCapabilityDocument,
+  collabCloudErrorEnvelope,
   collabCloudSuccessEnvelope,
+  CollabError as ProtocolError,
 } from '@claudian-collab/protocol';
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { WebSocketServer } from 'ws';
 
+import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
   CloudAuthorityAdapter,
   CloudProjectEventClient,
   type CloudProjectEventSocket,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import type {
-  CloudAuthorityHttpRequest,
+import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
+import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
+import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
+import {
+  type CloudAuthorityHttpRequest,
+  NodeCloudAuthorityHttpTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-cloud';
 const ACTOR_ID = 'member-alice';
@@ -36,6 +55,8 @@ const STEP_12_CLOUD_MANAGEMENT_CAPABILITIES = Object.freeze([
   'cloud-project-leave',
   'cloud-project-manager-responsibility',
   'cloud-project-membership',
+  'development-bootstrap',
+  'project-checkpoint-export',
 ] satisfies readonly CollabCloudCapability[]);
 
 function changeRequest(overrides: Readonly<Record<string, unknown>> = {}) {
@@ -84,12 +105,12 @@ function ticketDetail(overrides: Readonly<Record<string, unknown>> = {}) {
 function membership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
-      developmentActorId: ACTOR_ID,
-      gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      authorityGeneration: 1,
+      bindingVersion: 6,
+      gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 6,
+      wireVersion: 10,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 3,
@@ -149,6 +170,7 @@ function cloudSnapshot() {
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       createdAt: '2026-08-22T00:00:00.000Z',
       expectedMainOid: 'a'.repeat(40),
       id: PROJECT_ID,
@@ -159,43 +181,986 @@ function cloudSnapshot() {
   });
 }
 
+function boundCapabilityDocument(
+  capabilities: readonly CollabCloudCapability[],
+) {
+  return collabCloudCapabilityDocument([
+    ...new Set<CollabCloudCapability>(['project-snapshot', ...capabilities]),
+  ], limits);
+}
+
+function envelopeRequestId(input: CloudAuthorityHttpRequest | string): string {
+  if (typeof input === 'string') return input;
+  return (input.body as { readonly requestId: string }).requestId;
+}
+
+function cloudSnapshotResponse(input: CloudAuthorityHttpRequest | string) {
+  return {
+    body: collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
+    contentType: 'application/json',
+    status: 200,
+  } as const;
+}
+
 describe('CloudAuthorityAdapter', () => {
-  it('does not expose unimplemented Step 12 management capabilities', async () => {
-    const request = jest.fn(async () => ({
-      body: collabCloudCapabilityDocument(
-        STEP_12_CLOUD_MANAGEMENT_CAPABILITIES,
-        limits,
-      ),
-      contentType: 'application/json',
-      status: 200,
-    }));
-    const adapter = new CloudAuthorityAdapter({ request });
+  jest.setTimeout(30_000);
+  let cloudVaultRoot: string;
+  beforeEach(async () => {
+    cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-adapter-vault-'));
+    await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate(PROJECT_ID);
+  });
+  afterEach(async () => { await rm(cloudVaultRoot, { recursive: true, force: true }); });
+
+  it('returns the initiating snapshot preflight once and reads subsequent snapshots afresh', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    await store.saveMembership(membership());
+    const sessions = new CollabProjectWorkSessionRegistry();
+    let sequence = 7;
+    const operations: string[] = [];
+    const request = async (input: CloudAuthorityHttpRequest) => {
+      operations.push(input.url.split('/').at(-1)!);
+      return {
+        body: input.method === 'GET'
+          ? boundCapabilityDocument([])
+          : collabCloudSuccessEnvelope(envelopeRequestId(input), {
+            ...cloudSnapshot(),
+            eventSequence: sequence++,
+          }),
+        contentType: 'application/json',
+        status: 200,
+      };
+    };
+    const factory = new CollabAuthoritySessionFactory([
+      new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+    ]);
+    const router = new CollabAuthorityControlRouter(store, sessions, factory);
+    try {
+      await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 7 });
+      expect(operations).toEqual(['capabilities', 'getProjectSnapshot']);
+      await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 8 });
+    } finally {
+      await sessions.close();
+    }
+  });
+
+  it.each(['settled', 'pending'] as const)(
+    'does not retain preflight snapshots from a %s non-snapshot operation',
+    async state => {
+      const store = new CollabLocalProjectRepository(cloudVaultRoot);
+      await store.saveMembership(membership());
+      const sessions = new CollabProjectWorkSessionRegistry();
+      let entered!: () => void;
+      let release!: () => void;
+      const preflightEntered = new Promise<void>(resolve => { entered = resolve; });
+      const preflightReleased = new Promise<void>(resolve => { release = resolve; });
+      let sequence = 7;
+      const request = async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') return {
+          body: boundCapabilityDocument(['tickets']), contentType: 'application/json', status: 200,
+        };
+        if (input.url.endsWith('/listTickets')) return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), { tickets: [] }),
+          contentType: 'application/json', status: 200,
+        };
+        const eventSequence = sequence++;
+        if (eventSequence === 7) {
+          entered();
+          await preflightReleased;
+        }
+        return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
+            ...cloudSnapshot(), eventSequence,
+          }),
+          contentType: 'application/json', status: 200,
+        };
+      };
+      const factory = new CollabAuthoritySessionFactory([
+        new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+      ]);
+      const router = new CollabAuthorityControlRouter(store, sessions, factory);
+      try {
+        const tickets = router.listTickets({ projectId: PROJECT_ID, status: 'open' });
+        await preflightEntered;
+        if (state === 'settled') {
+          release();
+          await tickets;
+        }
+        const snapshot = router.readSnapshot(PROJECT_ID);
+        release();
+        await expect(tickets).resolves.toEqual({ tickets: [] });
+        await expect(snapshot).resolves.toMatchObject({ eventSequence: 8 });
+      } finally {
+        release();
+        await sessions.close();
+      }
+    },
+  );
+
+  it.each(['cancel', 'reset'] as const)(
+    'rejects an initiating snapshot when its caller or generation changes during preflight: %s',
+    async interruption => {
+      const store = new CollabLocalProjectRepository(cloudVaultRoot);
+      await store.saveMembership(membership());
+      const sessions = new CollabProjectWorkSessionRegistry();
+      const controller = new AbortController();
+      let entered!: () => void;
+      let release!: () => void;
+      const preflightEntered = new Promise<void>(resolve => { entered = resolve; });
+      const preflightReleased = new Promise<void>(resolve => { release = resolve; });
+      let sequence = 7;
+      const request = async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') return {
+          body: boundCapabilityDocument([]), contentType: 'application/json', status: 200,
+        };
+        const eventSequence = sequence++;
+        if (eventSequence === 7) {
+          entered();
+          await preflightReleased;
+        }
+        return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
+            ...cloudSnapshot(), eventSequence,
+          }),
+          contentType: 'application/json', status: 200,
+        };
+      };
+      const factory = new CollabAuthoritySessionFactory([
+        new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+      ]);
+      const router = new CollabAuthorityControlRouter(store, sessions, factory);
+      try {
+        const snapshot = router.readSnapshot(PROJECT_ID, { signal: controller.signal });
+        const settled = snapshot.then(() => null, (error: unknown) => error);
+        await preflightEntered;
+        if (interruption === 'cancel') controller.abort();
+        else sessions.resetProject(PROJECT_ID);
+        release();
+        await expect(settled).resolves.toMatchObject({ code: 'cancelled' });
+        await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 8 });
+      } finally {
+        release();
+        await sessions.close();
+      }
+    },
+  );
+
+  it('uses only the next attempt preflight after an initial snapshot failure settles', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    await store.saveMembership(membership());
+    const sessions = new CollabProjectWorkSessionRegistry();
+    let sequence = 6;
+    const request = async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') return {
+        body: boundCapabilityDocument([]), contentType: 'application/json', status: 200,
+      };
+      const eventSequence = sequence++;
+      if (eventSequence === 6) throw new CollabError({ code: 'endpoint-unreachable' });
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
+          ...cloudSnapshot(), eventSequence,
+        }),
+        contentType: 'application/json', status: 200,
+      };
+    };
+    const router = new CollabAuthorityControlRouter(store, sessions, new CollabAuthoritySessionFactory([
+      new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+    ]));
+    try {
+      await expect(router.readSnapshot(PROJECT_ID)).rejects.toMatchObject({ code: 'endpoint-unreachable' });
+      await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 7 });
+      await expect(router.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ eventSequence: 8 });
+    } finally {
+      await sessions.close();
+    }
+  });
+
+  it('resolves a Ticket number with one authority lookup and retains missing results', async () => {
+    const store = new CollabLocalProjectRepository(cloudVaultRoot);
+    await store.saveMembership(membership());
+    const sessions = new CollabProjectWorkSessionRegistry();
+    const lookups: unknown[] = [];
+    const request = async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') return {
+        body: boundCapabilityDocument(['tickets']), contentType: 'application/json', status: 200,
+      };
+      if (input.url.endsWith('/getProjectSnapshot')) return cloudSnapshotResponse(input);
+      if (!input.url.endsWith('/resolveTicketNumber')) throw new Error('Unexpected Ticket request');
+      const data = (input.body as { data: { projectId: string; ticketNumber: number } }).data;
+      lookups.push(data);
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
+          ticketId: data.ticketNumber === 123 ? 'ticket-target' : null,
+        }),
+        contentType: 'application/json', status: 200,
+      };
+    };
+    const router = new CollabAuthorityControlRouter(store, sessions, new CollabAuthoritySessionFactory([
+      new CloudAuthorityAdapter(cloudVaultRoot, { request }),
+    ]));
+    try {
+      await expect(router.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 123 }))
+        .resolves.toEqual({ ticketId: 'ticket-target' });
+      await expect(router.resolveTicketNumber({ projectId: PROJECT_ID, ticketNumber: 9001 }))
+        .resolves.toEqual({ ticketId: null });
+      expect(lookups).toEqual([
+        { projectId: PROJECT_ID, ticketNumber: 123 },
+        { projectId: PROJECT_ID, ticketNumber: 9001 },
+      ]);
+    } finally {
+      await sessions.close();
+    }
+  });
+
+  it('uses the persisted Vault credential for native control requests and Git', async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), 'cloud-credential-transport-'));
+    const observed: Record<string, string | string[] | undefined>[] = [];
+    const server = createServer(async (request, response) => {
+      observed.push(request.headers);
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot'], limits)));
+      } else {
+        let body = '';
+        for await (const chunk of request) body += String(chunk);
+        const { requestId } = JSON.parse(body) as { requestId: string };
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(requestId, cloudSnapshot())));
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing listener');
+    try {
+      await new CloudProjectCredentialStore(vault).getOrCreate(PROJECT_ID);
+      const connection = await new CloudAuthorityAdapter(vault).connect({
+        projectId: PROJECT_ID, serverUrl: `http://127.0.0.1:${address.port}`,
+      });
+      await connection.readSnapshot(PROJECT_ID);
+      expect(observed[1].authorization).toMatch(/^Bearer [0-9a-f]{64}$/u);
+      expect(observed[1]['x-claudian-ingress-principal']).toBeUndefined();
+      expect(connection.git.headers).toEqual([
+        { name: 'authorization', sensitive: true, value: observed[1].authorization },
+      ]);
+      connection.dispose();
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the HTTPS prefix with native certificate verification for JSON, artifacts, and WebSockets', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-tls-'));
+    const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A })
+      .issueServerIdentity('127.0.0.1');
+    const authenticatedHeaders: Array<Record<string, string | string[] | undefined>> = [];
+    const observed: Array<{ actor: unknown; path: string }> = [];
+    const server = createHttpsServer({ cert: identity.certificateChainPem, key: identity.privateKeyPem }, (request, response) => {
+      if (!request.url?.endsWith('/collab/capabilities')) authenticatedHeaders.push(request.headers);
+      observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
+      if (request.url?.endsWith('/checkpoint/checkpoint.json')) {
+        response.setHeader('content-type', 'application/octet-stream');
+        response.setHeader('content-length', '2');
+        response.end('{}');
+        return;
+      }
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? collabCloudCapabilityDocument(['authority-transfer', 'project-snapshot', 'project-events'], limits)
+        : collabCloudSuccessEnvelope('tls-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ noServer: true });
+    let connected!: () => void;
+    const opened = new Promise<void>(resolve => { connected = resolve; });
+    server.on('upgrade', (request, socket, head) => {
+      if (!request.url?.endsWith('/collab/capabilities')) authenticatedHeaders.push(request.headers);
+      observed.push({ actor: request.headers['x-claudian-development-actor'], path: request.url ?? '' });
+      sockets.handleUpgrade(request, socket, head, connected);
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `HTTPS://127.0.0.1:${address.port}/operator/cloud/`;
+    const trustedCa = getCACertificates('default');
+    let eventDeadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await expect(new CloudAuthorityAdapter(cloudVaultRoot).connect({ projectId: PROJECT_ID, serverUrl }))
+        .rejects.toMatchObject({ code: 'endpoint-unreachable' });
+      // Install only this fixture CA in the test process; production TLS options remain untouched.
+      setDefaultCACertificates([...trustedCa, identity.caCertificatePem]);
+      const bound = membership();
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
+        requestIdFactory: () => 'tls-snapshot',
+      }).create({
+        ...bound,
+        authority: {
+          ...bound.authority,
+          gitRemoteUrl: `https://127.0.0.1:${address.port}/operator/cloud/v6/projects/project-cloud/repository.git`,
+          serverUrl,
+        },
+      });
+      try {
+        const artifact = await session.lifecycle!.downloadAuthorityTransferArtifact({
+          artifact: 'checkpoint.json', projectId: PROJECT_ID, transferId: 'transfer-one',
+        });
+        const chunks: Buffer[] = [];
+        for await (const chunk of artifact.body) chunks.push(Buffer.from(chunk));
+        expect(Buffer.concat(chunks).toString('utf8')).toBe('{}');
+        session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 });
+        await Promise.race([
+          opened,
+          new Promise<never>((_resolve, reject) => {
+            eventDeadline = setTimeout(() => reject(new Error('TLS event connection did not open')), 5_000);
+          }),
+        ]);
+        const persisted = await new CloudProjectCredentialStore(cloudVaultRoot).require(PROJECT_ID);
+        expect(authenticatedHeaders).toHaveLength(3);
+        for (const headers of authenticatedHeaders) {
+          expect(headers.authorization).toBe(`Bearer ${persisted.credential}`);
+          expect(headers['x-claudian-ingress-principal']).toBeUndefined();
+        }
+        expect(observed).toEqual([
+          { actor: undefined, path: '/operator/cloud/collab/capabilities' },
+          { actor: undefined, path: '/operator/cloud/v6/projects/project-cloud/operations/getProjectSnapshot' },
+          { actor: undefined, path: '/operator/cloud/v6/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json' },
+          { actor: undefined, path: '/operator/cloud/v6/projects/project-cloud/events?afterSequence=3' },
+        ]);
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      clearTimeout(eventDeadline);
+      setDefaultCACertificates(trustedCa);
+      for (const peer of sockets.clients) peer.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('captures an unbound connection target before asynchronous negotiation', async () => {
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
+      request: async input => {
+        await ready;
+        return {
+          body: input.method === 'GET'
+            ? collabCloudCapabilityDocument(['project-snapshot'], limits)
+            : collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
+          contentType: 'application/json',
+          status: 200,
+        };
+      },
+    });
+    const binding = { projectId: PROJECT_ID, serverUrl: 'HTTP://198.51.100.20/operator/cloud' };
+    const pending = adapter.connect(binding);
+    binding.projectId = 'project-foreign';
+    binding.serverUrl = 'https://foreign.example.test';
+    release();
+    const connection = await pending;
+    try {
+      expect(connection.projectId).toBe('project-cloud');
+      expect(connection.serverUrl).toBe('HTTP://198.51.100.20/operator/cloud');
+      await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ project: { id: PROJECT_ID } });
+    } finally {
+      connection.dispose();
+    }
+  });
+
+  it.each(['bound', 'unbound'] as const)('cancels %s capability negotiation through the native transport', async kind => {
+    let requested!: () => void;
+    const started = new Promise<void>(resolve => { requested = resolve; });
+    const server = createServer(() => requested());
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request: new NodeCloudAuthorityHttpTransport(200).request });
+    const controller = new AbortController();
+    const bound = membership();
+    try {
+      const pending = kind === 'bound'
+        ? adapter.create({
+          ...bound,
+          authority: {
+            ...bound.authority,
+            gitRemoteUrl: `${serverUrl}/v6/projects/project-cloud/repository.git`,
+            serverUrl,
+          },
+        }, { signal: controller.signal })
+        : adapter.connect({ projectId: PROJECT_ID, serverUrl }, { signal: controller.signal });
+      await started;
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['dispose', 'caller'] as const)('fences a late snapshot completion after %s cancellation', async cancellation => {
+    let release!: (response: Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>) => void;
+    const response = new Promise<Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>>(resolve => { release = resolve; });
+    let snapshotReads = 0;
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
+      request: async input => input.method === 'GET'
+        ? { body: boundCapabilityDocument([]), contentType: 'application/json', status: 200 }
+        : snapshotReads++ === 0
+          ? cloudSnapshotResponse(input)
+          : response,
+    }).create(membership());
+    const controller = new AbortController();
+    try {
+      const pending = session.control.readSnapshot(PROJECT_ID, { signal: controller.signal });
+      if (cancellation === 'dispose') session.dispose();
+      else controller.abort();
+      release({ body: collabCloudSuccessEnvelope('late-response', cloudSnapshot()), contentType: 'application/json', status: 200 });
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('owns and closes its prefixed WebSocket without a development assertion', async () => {
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(request.method === 'GET'
+        ? boundCapabilityDocument(['project-events'])
+        : collabCloudSuccessEnvelope('response-bound-snapshot', cloudSnapshot())));
+    });
+    const sockets = new WebSocketServer({ noServer: true });
+    let connected!: () => void;
+    let closed!: () => void;
+    const opened = new Promise<void>(resolve => { connected = resolve; });
+    const disconnected = new Promise<boolean>(resolve => { closed = () => resolve(true); });
+    let observed: unknown;
+    server.on('upgrade', (request, socket, head) => {
+      observed = { actor: request.headers['x-claudian-development-actor'], path: request.url };
+      sockets.handleUpgrade(request, socket, head, peer => {
+        peer.once('close', closed);
+        connected();
+      });
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
+    const bound = membership();
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
+      requestIdFactory: () => 'response-bound-snapshot',
+    }).create({
+      ...bound,
+      authority: {
+        ...bound.authority,
+        gitRemoteUrl: `${serverUrl}/v6/projects/project-cloud/repository.git`,
+        serverUrl,
+      },
+    });
+    const connection = session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await opened;
+      // The HTTP upgrade has reached the server; let the client finish opening before disposal.
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(observed).toEqual({
+        actor: undefined,
+        path: '/operator/cloud/v6/projects/project-cloud/events?afterSequence=3',
+      });
+      session.dispose();
+      expect(await Promise.race([
+        disconnected,
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 200); }),
+      ])).toBe(true);
+      expect(() => session.events.connect({ afterSequence: 3, onInvalidation: async () => 3 }))
+        .toThrow(expect.objectContaining({ code: 'cancelled' }));
+    } finally {
+      clearTimeout(timer);
+      connection.dispose();
+      session.dispose();
+      for (const peer of sockets.clients) peer.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['upload', 'download'] as const)('aborts a prefixed artifact %s when the unbound connection is disposed', async direction => {
+    let requested!: () => void;
+    const started = new Promise<void>(resolve => { requested = resolve; });
+    let observed: unknown;
+    const server = createServer((request, response) => {
+      if (request.url?.endsWith('/collab/capabilities')) {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['authority-transfer'], limits)));
+      } else {
+        observed = { actor: request.headers['x-claudian-development-actor'], path: request.url };
+        request.resume();
+        requested();
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
+      artifacts: new NodeCloudAuthorityArtifactTransport(200, 400),
+    }).connect({
+      projectId: PROJECT_ID,
+      serverUrl: `http://127.0.0.1:${address.port}/operator/cloud`,
+    });
+    const artifact = { artifact: 'checkpoint.json' as const, projectId: PROJECT_ID, transferId: 'transfer-one' };
+    try {
+      const pending = direction === 'upload'
+        ? connection.lifecycle.uploadAuthorityTransferArtifact({ ...artifact, body: Readable.from('x'), byteCount: 1 })
+        : connection.lifecycle.downloadAuthorityTransferArtifact(artifact);
+      await started;
+      connection.dispose();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+      expect(observed).toEqual({
+        actor: undefined,
+        path: '/operator/cloud/v6/projects/project-cloud/authority-transfers/transfer-one/checkpoint/checkpoint.json',
+      });
+    } finally {
+      connection.dispose();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each(['bound', 'unbound'] as const)('disposes %s connections by aborting in-flight reads and closing further admission', async kind => {
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    let snapshotReads = 0;
+    const server = createServer((request, response) => {
+      if (request.method === 'GET') {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(boundCapabilityDocument([])));
+      } else if (kind === 'bound' && snapshotReads++ === 0) {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(
+          'response-bound-snapshot',
+          cloudSnapshot(),
+        )));
+      } else {
+        reading();
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
+      request: new NodeCloudAuthorityHttpTransport(200).request,
+      requestIdFactory: () => 'response-bound-snapshot',
+    });
+    const bound = membership();
+    const connection = kind === 'bound'
+      ? await adapter.create({
+        ...bound,
+        authority: {
+          ...bound.authority,
+          gitRemoteUrl: `${serverUrl}/v6/projects/project-cloud/repository.git`,
+          serverUrl,
+        },
+      })
+      : await adapter.connect({ projectId: PROJECT_ID, serverUrl });
+    const read = () => 'control' in connection
+      ? connection.control.readSnapshot(PROJECT_ID)
+      : connection.readSnapshot(PROJECT_ID);
+    try {
+      const pending = read();
+      await started;
+      connection.dispose();
+      await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+      await expect(read()).rejects.toMatchObject({ code: 'cancelled' });
+    } finally {
+      connection.dispose();
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it.each([
+    { authorityGeneration: undefined },
+    { authorityGeneration: 0 },
+    { authorityGeneration: Number.MAX_SAFE_INTEGER + 1 },
+    { bindingVersion: 2 },
+    { wireVersion: 6 },
+    { gitRemoteUrl: 'https://other.example.test/v6/projects/project-cloud/repository.git' },
+  ])('rejects invalid bound authority facts before connecting: %j', async authority => {
+    const bound = membership();
+    const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
+      ...bound,
+      authority: { ...bound.authority, ...authority } as CollabLocalCloudMembershipRecord['authority'],
+    })).rejects.toThrow('Invalid Cloud authority binding');
+  });
+
+  it('rejects a bound personal ref for another Member before connecting', async () => {
+    const bound = membership();
+    const request = jest.fn(async () => { throw new Error('Connection must not be attempted'); });
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
+      ...bound,
+      member: { ...bound.member, personalRef: 'refs/heads/members/member-bob' },
+    })).rejects.toThrow('Invalid Cloud authority binding');
+  });
+
+  it('uses the configured HTTP prefix without asserting a development identity', async () => {
+    const observed: Array<{ actor: string | string[] | undefined; path: string }> = [];
+    const server = createServer((request, response) => {
+      observed.push({
+        actor: request.headers['x-claudian-development-actor'],
+        path: request.url ?? '',
+      });
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot'], limits)));
+        return;
+      }
+      const snapshot = cloudSnapshot();
+      response.end(JSON.stringify(collabCloudSuccessEnvelope('prefixed-snapshot', {
+        ...snapshot,
+        project: { ...snapshot.project, authorityGeneration: 7 },
+      })));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    const serverUrl = `HTTP://127.0.0.1:${address.port}/operator/cloud`;
+    const gitRemoteUrl = `http://127.0.0.1:${address.port}/operator/cloud/v6/projects/project-cloud/repository.git`;
+    const bound = membership();
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { requestIdFactory: () => 'prefixed-snapshot' });
+    try {
+      const session = await adapter.create({
+        ...bound,
+        authority: { ...bound.authority, authorityGeneration: 7, gitRemoteUrl, serverUrl },
+      });
+      try {
+        expect(session.git).toEqual({ headers: expect.any(Array), remoteUrl: gitRemoteUrl });
+        expect(observed).toEqual([
+          { actor: undefined, path: '/operator/cloud/collab/capabilities' },
+          { actor: undefined, path: '/operator/cloud/v6/projects/project-cloud/operations/getProjectSnapshot' },
+        ]);
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('exposes only the implemented Step 13 membership-management capabilities', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+      ? {
+        body: boundCapabilityDocument(STEP_12_CLOUD_MANAGEMENT_CAPABILITIES),
+        contentType: 'application/json',
+        status: 200,
+      }
+      : cloudSnapshotResponse(input));
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request });
     const [session, lifecycle] = await Promise.all([
       adapter.create(membership()),
-      adapter.createLifecycle({
-        developmentActorId: ACTOR_ID,
+      adapter.connect({
         projectId: PROJECT_ID,
         serverUrl: 'https://cloud.example.test',
       }),
     ]);
 
     for (const capability of STEP_12_CLOUD_MANAGEMENT_CAPABILITIES) {
-      expect(session.supports(capability)).toBe(false);
-      expect(lifecycle.supports(capability)).toBe(false);
+      const expected = [
+        'cloud-imported-membership-claims',
+        'cloud-project-invitations',
+        'cloud-project-leave',
+        'cloud-project-manager-responsibility',
+        'cloud-project-membership',
+      ].includes(capability);
+      expect(session.supports(capability)).toBe(expected);
+      expect(lifecycle.supports(capability)).toBe(expected);
     }
-    expect(session.membership).toBeUndefined();
+    expect(session.membership?.authorityKind).toBe('cloud');
   });
 
-  it('binds a lifecycle-only snapshot to the canonical Member ref', async () => {
+  it('opens one exact bound Cloud Leave recovery connection', async () => {
+    const readPersonalRef = jest.fn(async () => HEAD_OID);
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument([
+            'cloud-project-leave',
+            'cloud-project-manager-responsibility',
+            'cloud-project-membership',
+            'git-upload-pack',
+            'project-snapshot',
+          ], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      const data = operation === 'getProjectSnapshot'
+        ? cloudSnapshot()
+        : operation === 'listProjectMembers'
+          ? {
+            managerSetGeneration: 7,
+            members: [{
+              bindingState: 'bound',
+              displayName: 'Alice',
+              importedClaimGeneration: null,
+              importedClaimState: 'not-applicable',
+              memberId: ACTOR_ID,
+              membershipRevision: 9,
+              role: 'manager',
+            }],
+            projectId: PROJECT_ID,
+          }
+          : {
+            discardedRequestId: null,
+            leftAt: CREATED_AT,
+            managerSetGeneration: 8,
+            memberId: ACTOR_ID,
+            projectId: PROJECT_ID,
+            promotedSuccessorMemberId: null,
+            status: 'left',
+          };
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
+      readPersonalRef,
+      request,
+    }).connectPendingLeave({
+      authorityGeneration: 1,
+      memberId: ACTOR_ID,
+      personalRef: 'refs/heads/members/member-alice',
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    });
+
+    await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+      currentMember: { id: ACTOR_ID },
+    });
+    await expect(connection.listProjectMembers({ projectId: PROJECT_ID })).resolves
+      .toMatchObject({ managerSetGeneration: 7 });
+    await expect(connection.readPersonalRefOid(
+      'refs/heads/members/member-alice',
+    )).resolves.toBe(HEAD_OID);
+    await expect(connection.leaveProject({
+      expectedManagerSetGeneration: 7,
+      expectedMembershipRevision: 9,
+      expectedOfferRevision: null,
+      expectedPersonalRefOid: HEAD_OID,
+      idempotencyKey: 'leave-cloud-one',
+      managerResponsibilityOfferId: null,
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({ memberId: ACTOR_ID, status: 'left' });
+
+    expect(readPersonalRef).toHaveBeenCalledWith(expect.objectContaining({
+      personalRef: 'refs/heads/members/member-alice',
+      projectId: PROJECT_ID,
+      serverUrl: 'https://cloud.example.test',
+    }));
+    connection.dispose();
+  });
+
+  describe.each(['connectPendingRetirement', 'connectAuthorityTransfer'] as const)(
+    '%s cancellation',
+    connect => {
+      it.each(['dispose', 'caller'] as const)(
+        'rejects late recovery reads after %s cancellation',
+        async cancellation => {
+          const response = deferred<void>();
+          const started = deferred<CloudAuthorityHttpRequest>();
+          const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
+            request: async input => {
+              if (input.method === 'GET') {
+                return {
+                  body: collabCloudCapabilityDocument([
+                    'cloud-project-membership',
+                    'project-snapshot',
+                  ], limits),
+                  contentType: 'application/json',
+                  status: 200,
+                };
+              }
+              started.resolve(input);
+              await response.promise;
+              return cloudSnapshotResponse(input);
+            },
+          });
+          const connection = await adapter[connect]({
+            authorityGeneration: 1,
+            memberId: ACTOR_ID,
+            personalRef: 'refs/heads/members/member-alice',
+            projectId: PROJECT_ID,
+            serverUrl: 'https://cloud.example.test',
+          });
+          const controller = new AbortController();
+          const options = { signal: controller.signal };
+          try {
+            const pending = connection.readSnapshot(PROJECT_ID, options);
+            const request = await started.promise;
+            if (cancellation === 'dispose') connection.dispose();
+            else controller.abort();
+            expect(request.signal?.aborted).toBe(true);
+            response.resolve();
+            await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+            await expect(connection.readSnapshot(PROJECT_ID, options))
+              .rejects.toMatchObject({ code: 'cancelled' });
+            const nextRead = connection.readSnapshot(PROJECT_ID).then(
+              () => 'active',
+              (error: { readonly code: string }) => error.code,
+            );
+            await expect(nextRead).resolves.toBe(
+              cancellation === 'dispose' ? 'cancelled' : 'active',
+            );
+            connection.dispose();
+            await expect(connection.listProjectMembers({ projectId: PROJECT_ID }))
+              .rejects.toMatchObject({ code: 'cancelled' });
+          } finally {
+            response.resolve();
+            connection.dispose();
+          }
+        },
+      );
+    },
+  );
+
+  it('opens one exact bound Cloud Retirement recovery connection', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: collabCloudCapabilityDocument([
+            'cloud-project-membership',
+            'project-retirement',
+            'project-snapshot',
+          ], limits),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      const data = operation === 'getProjectSnapshot'
+        ? cloudSnapshot()
+        : operation === 'listProjectMembers'
+          ? {
+            managerSetGeneration: 7,
+            members: [{
+              bindingState: 'bound',
+              displayName: 'Alice',
+              importedClaimGeneration: null,
+              importedClaimState: 'not-applicable',
+              memberId: ACTOR_ID,
+              membershipRevision: 9,
+              role: 'manager',
+            }],
+            projectId: PROJECT_ID,
+          }
+          : {
+            acknowledgementRequired: true,
+            kind: 'project-retired',
+            projectId: PROJECT_ID,
+            retiredAt: CREATED_AT,
+            retirementId: 'retirement-cloud-one',
+            terminalExpiresAt: '2026-09-26T00:00:00.000Z',
+          };
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, { request })
+      .connectPendingRetirement({
+        authorityGeneration: 1,
+        memberId: ACTOR_ID,
+        personalRef: 'refs/heads/members/member-alice',
+        projectId: PROJECT_ID,
+        serverUrl: 'https://cloud.example.test',
+      });
+
+    await expect(connection.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+      currentMember: { id: ACTOR_ID },
+    });
+    await expect(connection.listProjectMembers({ projectId: PROJECT_ID })).resolves
+      .toMatchObject({ managerSetGeneration: 7 });
+    await expect(connection.retireProject({
+      expectedAuthorityGeneration: 1,
+      expectedMainOid: HEAD_OID,
+      idempotencyKey: 'retire-cloud-one',
+      projectId: PROJECT_ID,
+    })).resolves.toMatchObject({ retirementId: 'retirement-cloud-one' });
+    connection.dispose();
+  });
+
+  it('opens one exact bound authority-transfer connection without a snapshot preflight', async () => {
+    const transferStatus = {
+      batchRevision: null,
+      batchSha256: null,
+      checkpointSha256: null,
+      createdAt: CREATED_AT,
+      direction: 'cloud-to-lan',
+      expiresAt: '2026-09-21T00:00:00.000Z',
+      phase: 'collecting-readiness',
+      projectId: PROJECT_ID,
+      relinquishmentProof: null,
+      sourceAuthority: { generation: 1, kind: 'cloud' },
+      state: 'active',
+      targetAuthority: { generation: 2, kind: 'lan' },
+      targetUrl: 'https://192.168.1.10:43123',
+      transferId: 'transfer-cloud-to-lan',
+      updatedAt: CREATED_AT,
+    } satisfies CollabAuthorityTransferStatus;
+    const requests: CloudAuthorityHttpRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      requests.push(input);
+      return {
+        body: input.method === 'GET'
+          ? collabCloudCapabilityDocument([
+            'authority-transfer',
+            'cloud-project-membership',
+            'project-snapshot',
+          ], limits)
+          : collabCloudSuccessEnvelope(envelopeRequestId(input), transferStatus),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const connection = await new CloudAuthorityAdapter(cloudVaultRoot, { request })
+      .connectAuthorityTransfer({
+        authorityGeneration: 1,
+        memberId: ACTOR_ID,
+        personalRef: 'refs/heads/members/member-alice',
+        projectId: PROJECT_ID,
+        serverUrl: 'https://cloud.example.test',
+      });
+
+    expect(requests.map(input => input.url)).toEqual([
+      'https://cloud.example.test/collab/capabilities',
+    ]);
+    await expect(connection.lifecycle.authorityTransfer(
+      'getProjectAuthorityTransfer',
+      { projectId: PROJECT_ID, transferId: transferStatus.transferId },
+    )).resolves.toEqual(transferStatus);
+    expect(requests.map(input => input.url)).toEqual([
+      'https://cloud.example.test/collab/capabilities',
+      `https://cloud.example.test/v6/projects/${PROJECT_ID}`
+        + '/operations/getProjectAuthorityTransfer',
+    ]);
+    connection.dispose();
+  });
+
+  it('reads an unbound lifecycle snapshot using only the server-established Member identity', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'
         ? collabCloudCapabilityDocument(['project-snapshot'], limits)
-        : collabCloudSuccessEnvelope('response-lifecycle-snapshot', cloudSnapshot()),
+        : collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
       contentType: 'application/json',
       status: 200,
     }));
-    const lifecycle = await new CloudAuthorityAdapter({ request }).createLifecycle({
-      developmentActorId: ACTOR_ID,
+    const lifecycle = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).connect({
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     });
@@ -207,6 +1172,183 @@ describe('CloudAuthorityAdapter', () => {
       },
       project: { id: PROJECT_ID },
     });
+    lifecycle.dispose();
+  });
+
+  it('rejects a bound session before exposing mutation ports when its authenticated snapshot has another authority generation', async () => {
+    const requests: CloudAuthorityHttpRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      requests.push(input);
+      return {
+        body: input.method === 'GET'
+          ? collabCloudCapabilityDocument([
+            'cloud-project-membership',
+            'project-snapshot',
+          ], limits)
+          : collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
+        contentType: 'application/json',
+        status: 200,
+      };
+    });
+    const bound = membership();
+    const pending = new CloudAuthorityAdapter(cloudVaultRoot, { request }).create({
+      ...bound,
+      authority: { ...bound.authority, authorityGeneration: 7 },
+    });
+
+    await expect(pending).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-control-snapshot-response-mismatch' },
+    });
+    expect(requests.map(input => input.url)).toEqual([
+      'https://cloud.example.test/collab/capabilities',
+      `https://cloud.example.test/v6/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+    ]);
+  });
+
+  it('rejects an authenticated snapshot success envelope correlated to another request', async () => {
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+      body: input.method === 'GET'
+        ? boundCapabilityDocument([])
+        : collabCloudSuccessEnvelope('response-for-another-request', cloudSnapshot()),
+      contentType: 'application/json',
+      status: 200,
+    }));
+
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, {
+      request,
+      requestIdFactory: () => 'snapshot-request',
+    }).create(membership())).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'cloud-control-response-request-id-mismatch' },
+    });
+  });
+
+  it.each(['success', 'rejection'] as const)(
+    'rejects an operation %s envelope correlated to another request without completed-rejection provenance',
+    async outcome => {
+      const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') {
+          return {
+            body: boundCapabilityDocument(['requests']),
+            contentType: 'application/json',
+            status: 200,
+          };
+        }
+        if (input.url.endsWith('/getProjectSnapshot')) {
+          return cloudSnapshotResponse('operation-request');
+        }
+        return {
+          body: outcome === 'success'
+            ? collabCloudSuccessEnvelope('response-for-another-request', {
+              mainOid: MAIN_OID,
+              request: changeRequest(),
+            })
+            : collabCloudErrorEnvelope(
+              'response-for-another-request',
+              new ProtocolError({ code: 'authorization-denied' }),
+            ),
+          contentType: 'application/json',
+          status: outcome === 'success' ? 200 : 403,
+        };
+      });
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
+        request,
+        requestIdFactory: () => 'operation-request',
+      }).create(membership());
+
+      const operation = session.control.ensure({
+        description: 'Published change',
+        expectedMainOid: MAIN_OID,
+        headOid: HEAD_OID,
+        idempotencyKey: 'publish-head',
+        projectId: PROJECT_ID,
+      });
+      const rejection: unknown = await operation.catch((error: unknown) => error);
+      expect(rejection).toMatchObject({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'cloud-control-response-request-id-mismatch' },
+      });
+      expect(rejection).not.toBeInstanceOf(CloudAuthorityRejection);
+      session.dispose();
+    },
+  );
+
+  it('admits a Project through a short-lived connection without a fabricated membership', async () => {
+    const received: unknown[] = [];
+    let returnedProjectId = PROJECT_ID;
+    const server = createServer(async (request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['cloud-project-create'], limits)));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      received.push({
+        actor: request.headers['x-claudian-development-actor'],
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        path: request.url,
+      });
+      response.end(JSON.stringify(collabCloudSuccessEnvelope('request-entry', {
+        createdAt: CREATED_AT,
+        mainOid: MAIN_OID,
+        managerSetGeneration: 1,
+        memberId: 'member-server-selected',
+        membershipRevision: 2,
+        personalRef: 'refs/heads/members/member-server-selected',
+        projectId: returnedProjectId,
+        role: 'manager',
+      })));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test listener');
+    try {
+      const connection = await new CloudAuthorityAdapter(cloudVaultRoot, {
+        requestIdFactory: () => 'request-entry',
+      }).connect({
+        projectId: PROJECT_ID,
+        serverUrl: `http://127.0.0.1:${address.port}/operator/cloud/`,
+      });
+      try {
+        await expect(connection.createProject({
+          idempotencyKey: 'create-exact-intent',
+          managerDisplayName: 'Alice',
+          projectId: PROJECT_ID,
+          projectName: 'Cloud Project',
+        })).resolves.toMatchObject({
+          memberId: 'member-server-selected',
+          personalRef: 'refs/heads/members/member-server-selected',
+          projectId: PROJECT_ID,
+        });
+        expect(received).toEqual([{
+          actor: undefined,
+          body: {
+            data: {
+              idempotencyKey: 'create-exact-intent',
+              managerDisplayName: 'Alice',
+              projectId: 'project-cloud',
+              projectName: 'Cloud Project',
+            },
+            protocolVersion: 10,
+            requestId: 'request-entry',
+          },
+          path: '/operator/cloud/v6/projects/project-cloud/operations/createCloudProject',
+        }]);
+        returnedProjectId = 'project-other';
+        await expect(connection.createProject({
+          idempotencyKey: 'create-exact-intent',
+          managerDisplayName: 'Alice',
+          projectId: PROJECT_ID,
+          projectName: 'Cloud Project',
+        })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+      } finally {
+        connection.dispose();
+      }
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 
   it('binds negotiated lifecycle control and artifact routes without a local registry', async () => {
@@ -229,7 +1371,7 @@ describe('CloudAuthorityAdapter', () => {
     } satisfies CollabAuthorityTransferStatus;
     const jsonRequests: CloudAuthorityHttpRequest[] = [];
     const uploaded: Buffer[] = [];
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       artifacts: {
         download: input => Promise.resolve({
           body: Readable.from(['checkpoint']),
@@ -248,13 +1390,18 @@ describe('CloudAuthorityAdapter', () => {
             body: collabCloudCapabilityDocument([
               'authority-transfer',
               'project-retirement',
+              'project-snapshot',
             ], limits),
             contentType: 'application/json',
             status: 200,
           };
         }
+        const operation = input.url.split('/').at(-1);
         return {
-          body: collabCloudSuccessEnvelope('request-lifecycle', transferStatus),
+          body: collabCloudSuccessEnvelope(
+            envelopeRequestId(input),
+            operation === 'getProjectSnapshot' ? cloudSnapshot() : transferStatus,
+          ),
           contentType: 'application/json',
           status: 200,
         };
@@ -282,21 +1429,61 @@ describe('CloudAuthorityAdapter', () => {
     const downloaded: Buffer[] = [];
     for await (const chunk of download.body) downloaded.push(Buffer.from(chunk));
 
-    expect(jsonRequests[1]?.url).toBe(
-      `https://cloud.example.test/v2/projects/${PROJECT_ID}`
+    expect(jsonRequests[2]?.url).toBe(
+      `https://cloud.example.test/v6/projects/${PROJECT_ID}`
         + '/operations/getProjectAuthorityTransfer',
     );
     expect(Buffer.concat(uploaded).toString('utf8')).toBe('checkpoint');
     expect(Buffer.concat(downloaded).toString('utf8')).toBe('checkpoint');
   });
 
+  it.each(['upload', 'download'] as const)('rejects binding 2 before binary %s transport', async direction => {
+    const paths: string[] = [];
+    const server = createServer((request, response) => {
+      paths.push(request.url ?? '');
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({
+        ...collabCloudCapabilityDocument(['authority-transfer'], limits),
+        bindingVersions: [2],
+      }));
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing server address');
+      const operation = async () => {
+        const connection = await new CloudAuthorityAdapter(cloudVaultRoot).connect({
+          projectId: PROJECT_ID,
+          serverUrl: `http://127.0.0.1:${address.port}`,
+        });
+        const artifact = { artifact: 'checkpoint.json' as const, projectId: PROJECT_ID, transferId: 'transfer-current' };
+        if (direction === 'upload') {
+          await connection.lifecycle.uploadAuthorityTransferArtifact({
+            ...artifact, body: Readable.from(['checkpoint']), byteCount: 10,
+          });
+        } else {
+          await connection.lifecycle.downloadAuthorityTransferArtifact(artifact);
+        }
+      };
+      await expect(operation()).rejects.toMatchObject({ code: 'protocol-version-unsupported' });
+      expect(paths).toEqual(['/collab/capabilities']);
+    } finally {
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    }
+  });
+
   it('keeps lifecycle calls capability-gated and rejects legacy binding documents', async () => {
-    const request = jest.fn(async () => ({
-      body: collabCloudCapabilityDocument([], limits),
-      contentType: 'application/json',
-      status: 200,
-    }));
-    const session = await new CloudAuthorityAdapter({ request }).create(membership());
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+      ? {
+        body: boundCapabilityDocument([]),
+        contentType: 'application/json',
+        status: 200,
+      }
+      : cloudSnapshotResponse(input));
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
     await expect(session.lifecycle!.authorityTransfer(
       'getProjectAuthorityTransfer',
       { projectId: PROJECT_ID, transferId: 'transfer-unavailable' },
@@ -308,13 +1495,13 @@ describe('CloudAuthorityAdapter', () => {
     request.mockResolvedValueOnce({
       body: {
         ...collabCloudCapabilityDocument([], limits),
-        bindingVersions: [1],
-        protocolVersions: [4],
+        bindingVersions: [2],
+        protocolVersions: [6],
       },
       contentType: 'application/json',
       status: 200,
     });
-    await expect(new CloudAuthorityAdapter({ request }).create(membership()))
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership()))
       .rejects.toMatchObject({ code: 'protocol-version-unsupported' });
   });
 
@@ -349,23 +1536,23 @@ describe('CloudAuthorityAdapter', () => {
       ...membership(),
       authority: {
         ...membership().authority,
+        gitRemoteUrl: `http://127.0.0.1:${address.port}/v6/projects/project-cloud/repository.git`,
         serverUrl: `http://127.0.0.1:${address.port}`,
       },
     } satisfies CollabLocalCloudMembershipRecord;
 
     try {
-      const session = await new CloudAuthorityAdapter().create(localMembership);
-      await expect(session.control.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
-        currentMember: { id: ACTOR_ID },
-        project: { authorityKind: 'cloud', id: PROJECT_ID },
-      });
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
+        requestIdFactory: () => 'request-snapshot',
+      }).create(localMembership);
       expect(requests).toEqual([
-        { actor: ACTOR_ID, url: '/collab/capabilities' },
+        { actor: undefined, url: '/collab/capabilities' },
         {
-          actor: ACTOR_ID,
-          url: `/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+          actor: undefined,
+          url: `/v6/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
         },
       ]);
+      session.dispose();
     } finally {
       fetchMock.mockRestore();
       await new Promise<void>((resolve, reject) => server.close(error => {
@@ -399,43 +1586,29 @@ describe('CloudAuthorityAdapter', () => {
         };
       }
       return {
-        body: collabCloudSuccessEnvelope('request-snapshot', cloudSnapshot()),
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
         contentType: 'application/json; charset=utf-8',
         status: 200,
       };
     });
-    const session = await new CloudAuthorityAdapter({ request }).create(membership());
-
-    await expect(session.control.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
-      currentMember: { id: ACTOR_ID },
-      eventSequence: 7,
-      project: {
-        authorityKind: 'cloud',
-        id: PROJECT_ID,
-        mainOid: 'a'.repeat(40),
-      },
-    });
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
     expect(session.supports('project-snapshot')).toBe(true);
     expect(session.supports('requests')).toBe(false);
     expect(session.git).toEqual({
-      headers: [{
-        name: 'X-Claudian-Development-Actor',
-        sensitive: false,
-        value: ACTOR_ID,
-      }],
-      remoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+      headers: expect.any(Array),
+      remoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
     });
     expect(requests).toEqual([
       expect.objectContaining({
-        headers: { 'x-claudian-development-actor': ACTOR_ID },
+        headers: {},
         method: 'GET',
         url: 'https://cloud.example.test/collab/capabilities',
       }),
       expect.objectContaining({
         body: expect.objectContaining({ data: { projectId: PROJECT_ID } }),
-        headers: { 'x-claudian-development-actor': ACTOR_ID },
+        headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
         method: 'POST',
-        url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
+        url: `https://cloud.example.test/v6/projects/${PROJECT_ID}/operations/getProjectSnapshot`,
       }),
     ]);
   });
@@ -446,13 +1619,14 @@ describe('CloudAuthorityAdapter', () => {
       requests.push(input);
       if (input.method === 'GET') {
         return {
-          body: collabCloudCapabilityDocument(['requests'], limits),
+          body: boundCapabilityDocument(['requests']),
           contentType: 'application/json; charset=utf-8',
           status: 200,
         };
       }
+      if (input.url.endsWith('/getProjectSnapshot')) return cloudSnapshotResponse(input);
       return {
-        body: collabCloudSuccessEnvelope('response-ensure', {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
           mainOid: MAIN_OID,
           request: changeRequest(),
         }),
@@ -460,7 +1634,7 @@ describe('CloudAuthorityAdapter', () => {
         status: 200,
       };
     });
-    const session = await new CloudAuthorityAdapter({
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
       request,
       requestIdFactory: () => 'request-ensure',
     }).create(membership());
@@ -474,7 +1648,7 @@ describe('CloudAuthorityAdapter', () => {
       projectId: PROJECT_ID,
       signal: controller.signal,
     })).resolves.toMatchObject({ id: 'request-one', latestHeadOid: HEAD_OID });
-    expect(requests[1]).toEqual({
+    expect(requests[2]).toEqual({
       body: {
         data: {
           description: 'Published change',
@@ -483,38 +1657,40 @@ describe('CloudAuthorityAdapter', () => {
           idempotencyKey: 'publish-head',
           projectId: PROJECT_ID,
         },
-        protocolVersion: 6,
+        protocolVersion: 10,
         requestId: 'request-ensure',
       },
-      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
       method: 'POST',
-      signal: controller.signal,
-      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/ensureMyRequest`,
+      signal: expect.any(AbortSignal),
+      url: `https://cloud.example.test/v6/projects/${PROJECT_ID}/operations/ensureMyRequest`,
     });
   });
 
   it('routes Accept through the canonical Cloud operation with its exact authority tuple', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
       ? {
-        body: collabCloudCapabilityDocument(['accept'], limits),
+        body: boundCapabilityDocument(['accept']),
         contentType: 'application/json',
         status: 200,
       }
-      : {
-        body: collabCloudSuccessEnvelope('response-accept', {
-          mainOid: MERGED_OID,
-          mergeCommitOid: MERGED_OID,
-          request: changeRequest({
-            latestHeadOid: HEAD_OID,
-            mergedOid: MERGED_OID,
-            revision: 1,
-            status: 'merged',
+      : input.url.endsWith('/getProjectSnapshot')
+        ? cloudSnapshotResponse(input)
+        : {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), {
+            mainOid: MERGED_OID,
+            mergeCommitOid: MERGED_OID,
+            request: changeRequest({
+              latestHeadOid: HEAD_OID,
+              mergedOid: MERGED_OID,
+              revision: 1,
+              status: 'merged',
+            }),
           }),
-        }),
-        contentType: 'application/json; charset=utf-8',
-        status: 200,
-      });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+          contentType: 'application/json; charset=utf-8',
+          status: 200,
+        });
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
     const controller = new AbortController();
 
     await expect(control.acceptRequest({
@@ -530,7 +1706,7 @@ describe('CloudAuthorityAdapter', () => {
       mainOid: MERGED_OID,
       request: { id: 'request-one', mergedOid: MERGED_OID, status: 'merged' },
     });
-    expect(request.mock.calls[1]?.[0]).toEqual({
+    expect(request.mock.calls[2]?.[0]).toEqual({
       body: {
         data: {
           expectedHeadOid: HEAD_OID,
@@ -541,33 +1717,35 @@ describe('CloudAuthorityAdapter', () => {
           projectId: PROJECT_ID,
           requestId: 'request-one',
         },
-        protocolVersion: 6,
+        protocolVersion: 10,
         requestId: expect.any(String),
       },
-      headers: { 'x-claudian-development-actor': ACTOR_ID },
+      headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
       method: 'POST',
-      signal: controller.signal,
-      url: `https://cloud.example.test/v2/projects/${PROJECT_ID}/operations/acceptRequest`,
+      signal: expect.any(AbortSignal),
+      url: `https://cloud.example.test/v6/projects/${PROJECT_ID}/operations/acceptRequest`,
     });
   });
 
   it('rejects an Accept response for a different reviewed Request tuple', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'
-        ? collabCloudCapabilityDocument(['accept'], limits)
-        : collabCloudSuccessEnvelope('response-accept', {
-          mainOid: MERGED_OID,
-          mergeCommitOid: MERGED_OID,
-          request: changeRequest({
-            id: 'request-other',
-            mergedOid: MERGED_OID,
-            status: 'merged',
+        ? boundCapabilityDocument(['accept'])
+        : input.url.endsWith('/getProjectSnapshot')
+          ? cloudSnapshotResponse(input).body
+          : collabCloudSuccessEnvelope(envelopeRequestId(input), {
+            mainOid: MERGED_OID,
+            mergeCommitOid: MERGED_OID,
+            request: changeRequest({
+              id: 'request-other',
+              mergedOid: MERGED_OID,
+              status: 'merged',
+            }),
           }),
-        }),
       contentType: 'application/json',
       status: 200,
     }));
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.acceptRequest({
       expectedHeadOid: HEAD_OID,
@@ -588,12 +1766,13 @@ describe('CloudAuthorityAdapter', () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
       if (input.method === 'GET') {
         return {
-          body: collabCloudCapabilityDocument(['requests'], limits),
+          body: boundCapabilityDocument(['requests']),
           contentType: 'application/json',
           status: 200,
         };
       }
       const operation = input.url.split('/').at(-1)!;
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
       operations.push(operation);
       const data = operation === 'getRequest'
         ? {
@@ -618,12 +1797,12 @@ describe('CloudAuthorityAdapter', () => {
             }
             : { request: changeRequest({ description: 'Updated description', revision: 2 }) };
       return {
-        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
         contentType: 'application/json',
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       request: { id: 'request-one' },
@@ -671,12 +1850,13 @@ describe('CloudAuthorityAdapter', () => {
       requests.push(input);
       if (input.method === 'GET') {
         return {
-          body: collabCloudCapabilityDocument(['tickets'], limits),
+          body: boundCapabilityDocument(['tickets']),
           contentType: 'application/json',
           status: 200,
         };
       }
       const operation = input.url.split('/').at(-1)!;
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
       const data = operation === 'listTickets'
         ? { tickets: [ticketSummary()] }
         : operation === 'getTicket'
@@ -700,12 +1880,12 @@ describe('CloudAuthorityAdapter', () => {
                   }
                   : { ticket: ticketSummary({ revision: 2 }) };
       return {
-        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
         contentType: 'application/json',
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.listTickets({ projectId: PROJECT_ID, status: 'open' })).resolves
       .toMatchObject({ tickets: [{ id: 'ticket-one' }] });
@@ -750,7 +1930,7 @@ describe('CloudAuthorityAdapter', () => {
       ticketId: 'ticket-one',
     }, 'reopen-ticket')).resolves.toMatchObject({ id: 'ticket-one' });
 
-    expect(requests.slice(1).map(input => input.url.split('/').at(-1))).toEqual([
+    expect(requests.slice(2).map(input => input.url.split('/').at(-1))).toEqual([
       'listTickets',
       'getTicket',
       'getTicket',
@@ -762,7 +1942,7 @@ describe('CloudAuthorityAdapter', () => {
       'closeTicket',
       'reopenTicket',
     ]);
-    for (const input of requests.slice(6)) {
+    for (const input of requests.slice(7)) {
       expect(input.body).toEqual(expect.objectContaining({
         data: expect.not.objectContaining({ intentId: expect.anything() }),
       }));
@@ -795,12 +1975,13 @@ describe('CloudAuthorityAdapter', () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
       if (input.method === 'GET') {
         return {
-          body: collabCloudCapabilityDocument(['requests', 'tickets'], limits),
+          body: boundCapabilityDocument(['requests', 'tickets']),
           contentType: 'application/json',
           status: 200,
         };
       }
       const operation = input.url.split('/').at(-1)!;
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
       const body = input.body as { readonly data: Readonly<Record<string, unknown>> };
       const data = operation === 'getRequest'
         ? {
@@ -822,18 +2003,18 @@ describe('CloudAuthorityAdapter', () => {
               ? { comments: [ticketComment(`ticket-${String(body.data.cursor)}`)] }
               : { acceptedRelations: [acceptedRelation] };
       return {
-        body: collabCloudSuccessEnvelope(`response-${operation}`, data),
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
         contentType: 'application/json',
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readRequestPage(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       comments: { comments: [{ id: 'request-comment-one' }], nextCursor: 'request-next' },
     });
     expect(request.mock.calls.map(([input]) => input.url.split('/').at(-1))).toEqual([
-      'capabilities', 'getRequest',
+      'capabilities', 'getProjectSnapshot', 'getRequest',
     ]);
     await expect(control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
       comments: { comments: [{ id: 'request-comment-one' }, { id: 'request-comment-two' }] },
@@ -851,26 +2032,31 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects a Ticket cursor reused across complete comment and relation collections', async () => {
-    const request = jest.fn()
-      .mockResolvedValueOnce({
-        body: collabCloudCapabilityDocument(['tickets'], limits),
+    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: boundCapabilityDocument(['tickets']),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+      return {
+        body: collabCloudSuccessEnvelope(
+          envelopeRequestId(input),
+          operation === 'getTicket'
+            ? ticketDetail({
+              acceptedRelations: { acceptedRelations: [], nextCursor: 'same-cursor' },
+              comments: { comments: [], nextCursor: 'same-cursor' },
+            })
+            : { comments: [] },
+        ),
         contentType: 'application/json',
         status: 200,
-      })
-      .mockResolvedValueOnce({
-        body: collabCloudSuccessEnvelope('response-detail', ticketDetail({
-          acceptedRelations: { acceptedRelations: [], nextCursor: 'same-cursor' },
-          comments: { comments: [], nextCursor: 'same-cursor' },
-        })),
-        contentType: 'application/json',
-        status: 200,
-      })
-      .mockResolvedValueOnce({
-        body: collabCloudSuccessEnvelope('response-comments', { comments: [] }),
-        contentType: 'application/json',
-        status: 200,
-      });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+      };
+    });
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.readTicket(PROJECT_ID, 'ticket-one')).rejects.toMatchObject({
       code: 'authority-integrity-error',
@@ -879,16 +2065,306 @@ describe('CloudAuthorityAdapter', () => {
     });
   });
 
+  it('restarts a complete Request read when a comment arrives between pages', async () => {
+    let appended = false;
+    const comment = (id: string) => ({
+      authorMemberId: ACTOR_ID,
+      body: id,
+      createdAt: CREATED_AT,
+      id,
+      requestId: 'request-one',
+    });
+    const request = async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: boundCapabilityDocument(['requests']),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+      const data = operation === 'getRequest'
+        ? {
+          comments: { comments: [comment('comment-one')], nextCursor: 'after-one' },
+          currentMainOid: MAIN_OID,
+          request: changeRequest({ commentCount: appended ? 3 : 2 }),
+          reviewedHeadOid: HEAD_OID,
+          reviewCondition: 'clean',
+        }
+        : { comments: [comment('comment-two'), comment('comment-three')] };
+      if (operation === 'listRequestComments') appended = true;
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    };
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
+    try {
+      await expect(session.control.readRequest(PROJECT_ID, 'request-one')).resolves.toMatchObject({
+        comments: { comments: [
+          comment('comment-one'), comment('comment-two'), comment('comment-three'),
+        ] },
+        request: { commentCount: 3 },
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it.each(['comments', 'accepted relations'] as const)(
+    'restarts a complete Ticket read when %s arrive between pages',
+    async collection => {
+      let appended = false;
+      const comment = (id: string) => ({
+        authorMemberId: ACTOR_ID,
+        body: id,
+        createdAt: CREATED_AT,
+        id,
+        ticketId: 'ticket-one',
+      });
+      const relation = (id: string) => ({
+        acceptedAt: CREATED_AT,
+        acceptedMergeOid: MAIN_OID,
+        commitOid: HEAD_OID,
+        id,
+        kind: 'resolves',
+        requestId: `request-${id}`,
+      });
+      const request = async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') {
+          return {
+            body: boundCapabilityDocument(['tickets']),
+            contentType: 'application/json',
+            status: 200,
+          };
+        }
+        const operation = input.url.split('/').at(-1);
+        if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+        const data = operation === 'getTicket'
+          ? ticketDetail(collection === 'comments'
+            ? {
+              comments: { comments: [comment('one')], nextCursor: 'after-one' },
+              ticket: ticketSummary({ commentCount: appended ? 3 : 2 }),
+            }
+            : {
+              acceptedRelations: { acceptedRelations: [relation('one')], nextCursor: 'after-one' },
+              ticket: ticketSummary({ acceptedRelationCount: appended ? 3 : 2 }),
+            })
+          : collection === 'comments'
+            ? { comments: [comment('two'), comment('three')] }
+            : { acceptedRelations: [relation('two'), relation('three')] };
+        if (operation !== 'getTicket') appended = true;
+        return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+          contentType: 'application/json',
+          status: 200,
+        };
+      };
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
+      try {
+        await expect(session.control.readTicket(PROJECT_ID, 'ticket-one')).resolves.toEqual(
+          collection === 'comments'
+            ? ticketDetail({
+              comments: { comments: [comment('one'), comment('two'), comment('three')] },
+              ticket: ticketSummary({ commentCount: 3 }),
+            })
+            : ticketDetail({
+              acceptedRelations: { acceptedRelations: [relation('one'), relation('two'), relation('three')] },
+              ticket: ticketSummary({ acceptedRelationCount: 3 }),
+            }),
+        );
+      } finally {
+        session.dispose();
+      }
+    },
+  );
+
+  it.each(['Request comments', 'Ticket comments', 'Ticket relations'] as const)(
+    'rejects duplicate %s across individually valid pages',
+    async collection => {
+      const requestComment = {
+        authorMemberId: ACTOR_ID,
+        body: 'Comment',
+        createdAt: CREATED_AT,
+        id: 'comment-one',
+        requestId: 'request-one',
+      };
+      const ticketComment = {
+        authorMemberId: ACTOR_ID,
+        body: 'Comment',
+        createdAt: CREATED_AT,
+        id: 'comment-one',
+        ticketId: 'ticket-one',
+      };
+      const relation = {
+        acceptedAt: CREATED_AT,
+        acceptedMergeOid: MAIN_OID,
+        commitOid: HEAD_OID,
+        id: 'relation-one',
+        kind: 'resolves',
+        requestId: 'request-one',
+      };
+      const request = async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') {
+          return {
+            body: boundCapabilityDocument(['requests', 'tickets']),
+            contentType: 'application/json',
+            status: 200,
+          };
+        }
+        const operation = input.url.split('/').at(-1);
+        if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+        const data = operation === 'getRequest'
+          ? {
+            comments: { comments: [requestComment], nextCursor: 'after-one' },
+            currentMainOid: MAIN_OID,
+            request: changeRequest({ commentCount: 2 }),
+            reviewedHeadOid: HEAD_OID,
+            reviewCondition: 'clean',
+          }
+          : operation === 'getTicket'
+            ? ticketDetail(collection === 'Ticket comments'
+              ? {
+                comments: { comments: [ticketComment], nextCursor: 'after-one' },
+                ticket: ticketSummary({ commentCount: 2 }),
+              }
+              : {
+                acceptedRelations: { acceptedRelations: [relation], nextCursor: 'after-one' },
+                ticket: ticketSummary({ acceptedRelationCount: 2 }),
+              })
+            : operation === 'listRequestComments'
+              ? { comments: [requestComment] }
+              : operation === 'listTicketComments'
+                ? { comments: [ticketComment] }
+                : { acceptedRelations: [relation] };
+        return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+          contentType: 'application/json',
+          status: 200,
+        };
+      };
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
+      try {
+        const read = collection === 'Request comments'
+          ? session.control.readRequest(PROJECT_ID, 'request-one')
+          : session.control.readTicket(PROJECT_ID, 'ticket-one');
+        await expect(read).rejects.toMatchObject({ code: 'authority-integrity-error' });
+      } finally {
+        session.dispose();
+      }
+    },
+  );
+
+  it.each(['Request', 'Ticket'] as const)(
+    'bounds complete %s retries while metadata keeps changing',
+    async kind => {
+      let metadataReads = 0;
+      const comment = (id: string) => ({
+        authorMemberId: ACTOR_ID,
+        body: id,
+        createdAt: CREATED_AT,
+        id,
+        ...(kind === 'Request' ? { requestId: 'request-one' } : { ticketId: 'ticket-one' }),
+      });
+      const request = async (input: CloudAuthorityHttpRequest) => {
+        if (input.method === 'GET') {
+          return {
+            body: boundCapabilityDocument(['requests', 'tickets']),
+            contentType: 'application/json',
+            status: 200,
+          };
+        }
+        const operation = input.url.split('/').at(-1);
+        if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+        if (operation === 'getRequest' || operation === 'getTicket') metadataReads += 1;
+        if (metadataReads > 4) throw new Error('Complete read exceeded its metadata request budget');
+        const data = operation === 'getRequest'
+          ? {
+            comments: { comments: [comment('one')], nextCursor: 'after-one' },
+            currentMainOid: MAIN_OID,
+            request: changeRequest({ commentCount: 2, revision: metadataReads }),
+            reviewedHeadOid: HEAD_OID,
+            reviewCondition: 'clean',
+          }
+          : operation === 'getTicket'
+            ? ticketDetail({
+              comments: { comments: [comment('one')], nextCursor: 'after-one' },
+              ticket: ticketSummary({ commentCount: 2, revision: metadataReads }),
+            })
+            : { comments: [comment('two')] };
+        return {
+          body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+          contentType: 'application/json',
+          status: 200,
+        };
+      };
+      const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
+      try {
+        const read = kind === 'Request'
+          ? session.control.readRequest(PROJECT_ID, 'request-one')
+          : session.control.readTicket(PROJECT_ID, 'ticket-one');
+        await expect(read).rejects.toMatchObject({
+          code: kind === 'Request' ? 'stale-request-head' : 'stale-ticket',
+          recoveryActions: ['retry'],
+        });
+      } finally {
+        session.dispose();
+      }
+    },
+  );
+
+  it('rejects a continuation cursor that advances without any comments', async () => {
+    let continuationReads = 0;
+    const request = async (input: CloudAuthorityHttpRequest) => {
+      if (input.method === 'GET') {
+        return {
+          body: boundCapabilityDocument(['requests']),
+          contentType: 'application/json',
+          status: 200,
+        };
+      }
+      const operation = input.url.split('/').at(-1);
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
+      if (operation === 'listRequestComments') continuationReads += 1;
+      if (continuationReads > 4) throw new Error('Empty pages exceeded the request budget');
+      const data = operation === 'getRequest'
+        ? {
+          comments: { comments: [], nextCursor: 'after-first' },
+          currentMainOid: MAIN_OID,
+          request: changeRequest({ commentCount: 1 }),
+          reviewedHeadOid: HEAD_OID,
+          reviewCondition: 'clean',
+        }
+        : { comments: [], nextCursor: `empty-${continuationReads}` };
+      return {
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
+        contentType: 'application/json',
+        status: 200,
+      };
+    };
+    const session = await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership());
+    try {
+      await expect(session.control.readRequest(PROJECT_ID, 'request-one')).rejects.toMatchObject({
+        code: 'authority-integrity-error',
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('rejects continuation comments returned for a different owner', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
       if (input.method === 'GET') {
         return {
-          body: collabCloudCapabilityDocument(['requests', 'tickets'], limits),
+          body: boundCapabilityDocument(['requests', 'tickets']),
           contentType: 'application/json',
           status: 200,
         };
       }
       const operation = input.url.split('/').at(-1)!;
+      if (operation === 'getProjectSnapshot') return cloudSnapshotResponse(input);
       const comment = {
         authorMemberId: ACTOR_ID,
         body: 'Wrong owner',
@@ -899,12 +2375,12 @@ describe('CloudAuthorityAdapter', () => {
           : { ticketId: 'ticket-other' }),
       };
       return {
-        body: collabCloudSuccessEnvelope(`response-${operation}`, { comments: [comment] }),
+        body: collabCloudSuccessEnvelope(envelopeRequestId(input), { comments: [comment] }),
         contentType: 'application/json',
         status: 200,
       };
     });
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
+    const control = (await new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).control;
 
     await expect(control.listRequestComments(PROJECT_ID, 'request-one', {})).rejects
       .toMatchObject({ code: 'authority-integrity-error' });
@@ -914,9 +2390,9 @@ describe('CloudAuthorityAdapter', () => {
 
   it('fails closed on unsupported binding or wire versions', async () => {
     const document = collabCloudCapabilityDocument(['project-snapshot'], limits);
-    const adapter = new CloudAuthorityAdapter({
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       request: async () => ({
-        body: { ...document, bindingVersions: [1] },
+        body: { ...document, bindingVersions: [2] },
         contentType: 'application/json',
         status: 200,
       }),
@@ -927,20 +2403,19 @@ describe('CloudAuthorityAdapter', () => {
     });
   });
 
-  it('rejects a Cloud snapshot bound to a different Project', async () => {
+  it('rejects a bound session whose authenticated snapshot belongs to a different Project', async () => {
     const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
       body: input.method === 'GET'
         ? collabCloudCapabilityDocument(['project-snapshot'], limits)
-        : collabCloudSuccessEnvelope('response-snapshot', {
+        : collabCloudSuccessEnvelope(envelopeRequestId(input), {
           ...cloudSnapshot(),
           project: { ...cloudSnapshot().project, id: 'project-other' },
         }),
       contentType: 'application/json',
       status: 200,
     }));
-    const control = (await new CloudAuthorityAdapter({ request }).create(membership())).control;
-
-    await expect(control.readSnapshot(PROJECT_ID)).rejects.toMatchObject({
+    await expect(new CloudAuthorityAdapter(cloudVaultRoot, { request }).create(membership())).rejects
+      .toMatchObject({
       code: 'authority-integrity-error',
       safeContext: { reason: 'cloud-control-snapshot-response-mismatch' },
     });
@@ -949,12 +2424,62 @@ describe('CloudAuthorityAdapter', () => {
 });
 
 describe('CloudProjectEventClient', () => {
+  it('preserves native TLS validation failure as terminal connection evidence', () => {
+    const socket = new FakeSocket();
+    const result = jest.fn();
+    const client = new CloudProjectEventClient({
+      headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+      onConnectionResult: result,
+    }, () => Promise.resolve(0), { createSocket: () => socket });
+    client.start();
+    socket.error(Object.assign(new Error('private-certificate-details'), { code: 'CERT_HAS_EXPIRED' }));
+    expect(result).toHaveBeenCalledWith(expect.objectContaining({ code: 'tls-untrusted' }));
+    expect(JSON.stringify(result.mock.calls)).not.toContain('private-certificate-details');
+    client.dispose();
+  });
+
+  it('publishes connection success only after the authoritative snapshot is applied', async () => {
+    const socket = new FakeSocket();
+    let apply!: (value: number) => void;
+    const applied = new Promise<number>(resolve => { apply = resolve; });
+    const result = jest.fn();
+    const client = new CloudProjectEventClient({
+      headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+      onConnectionResult: result,
+    }, () => applied, { createSocket: () => socket });
+    client.start();
+    socket.open();
+    expect(result).not.toHaveBeenCalled();
+    apply(1);
+    await flush();
+    expect(result).toHaveBeenCalledWith();
+    client.dispose();
+  });
+
+  it.each(['authorization-denied', 'authority-integrity-error', 'operation-failed'] as const)(
+    'retains %s from snapshot application rather than replacing it with a socket error',
+    async code => {
+      const socket = new FakeSocket();
+      const failure = new CollabError({ code });
+      const result = jest.fn();
+      const client = new CloudProjectEventClient({
+        headers: {}, afterSequence: 0, projectId: PROJECT_ID, serverUrl: 'https://cloud.test',
+        onConnectionResult: result,
+      }, () => Promise.reject(failure), { createSocket: () => socket });
+      client.start();
+      socket.open();
+      await flush();
+      expect(result).toHaveBeenCalledWith(failure);
+      client.dispose();
+    },
+  );
+
   it('preserves the terminal retirement identity instead of degrading it to a snapshot', async () => {
     const socket = new FakeSocket();
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -972,7 +2497,7 @@ describe('CloudProjectEventClient', () => {
         retirementId: 'retirement-cloud-one',
       },
       projectId: PROJECT_ID,
-      protocolVersion: 6,
+      protocolVersion: 10,
       sequence: 4,
     }));
     await flush();
@@ -988,11 +2513,10 @@ describe('CloudProjectEventClient', () => {
 
   it('refreshes snapshot first, detects a gap, and reconnects after the applied cursor', async () => {
     const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1000,17 +2524,12 @@ describe('CloudProjectEventClient', () => {
         const socket = new FakeSocket();
         sockets.push(socket);
         expect(input).toEqual({
-          headers: { 'x-claudian-development-actor': ACTOR_ID },
-          url: `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
+          headers: {},
+          url: `wss://cloud.example.test/v6/projects/${PROJECT_ID}/events?afterSequence=${
             sockets.length === 1 ? 3 : 5
           }`,
         });
         return socket;
-      },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
       },
     });
 
@@ -1028,61 +2547,10 @@ describe('CloudProjectEventClient', () => {
 
     sockets[0]!.closed(1000);
     await flush();
-    scheduled.shift()?.();
-    expect(sockets).toHaveLength(2);
-  });
-
-  it('waits for a slow applied cursor before reconnecting while server backpressure stays server-owned', async () => {
-    const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
-    const firstApplication = deferred<number>();
-    const onInvalidation = jest.fn()
-      .mockImplementationOnce(() => firstApplication.promise)
-      .mockImplementation(async invalidation => invalidation.sequence);
-    const client = new CloudProjectEventClient({
-      afterSequence: 3,
-      developmentActorId: ACTOR_ID,
-      projectId: PROJECT_ID,
-      serverUrl: 'https://cloud.example.test',
-    }, onInvalidation, {
-      createSocket: input => {
-        const socket = new FakeSocket();
-        sockets.push(socket);
-        expect(input.url).toBe(
-          `wss://cloud.example.test/v2/projects/${PROJECT_ID}/events?afterSequence=${
-            sockets.length === 1 ? 3 : 4
-          }`,
-        );
-        return socket;
-      },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return scheduled.length;
-      },
-    });
-
     client.start();
-    sockets[0]!.open();
-    sockets[0]!.message(JSON.stringify({
-      kind: 'request.updated',
-      occurredAt: '2026-08-22T00:00:00.000Z',
-      payload: { requestId: 'request-one' },
-      projectId: PROJECT_ID,
-      protocolVersion: 6,
-      sequence: 4,
-    }));
-    sockets[0]!.closed(1006);
-    await flush();
-    expect(scheduled).toHaveLength(0);
-
-    firstApplication.resolve(4);
-    await flush();
-    await flush();
-    expect(scheduled).toHaveLength(1);
-    scheduled.shift()?.();
     expect(sockets).toHaveLength(2);
   });
+
 
   it('bounds a slow event flood to one active and one coalesced refresh', async () => {
     const socket = new FakeSocket();
@@ -1091,8 +2559,8 @@ describe('CloudProjectEventClient', () => {
       .mockImplementationOnce(() => firstApplication.promise)
       .mockImplementation(async invalidation => invalidation.sequence);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1107,7 +2575,7 @@ describe('CloudProjectEventClient', () => {
         occurredAt: '2026-08-22T00:00:00.000Z',
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
-        protocolVersion: 6,
+        protocolVersion: 10,
         sequence,
       }));
     }
@@ -1128,8 +2596,8 @@ describe('CloudProjectEventClient', () => {
     const firstApplication = deferred<number>();
     const onInvalidation = jest.fn(() => firstApplication.promise);
     const client = new CloudProjectEventClient({
+      headers: {},
       afterSequence: 3,
-      developmentActorId: ACTOR_ID,
       projectId: PROJECT_ID,
       serverUrl: 'https://cloud.example.test',
     }, onInvalidation, {
@@ -1143,7 +2611,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
-      protocolVersion: 6,
+      protocolVersion: 10,
       sequence: 4,
     }));
     await flush();
@@ -1159,56 +2627,22 @@ describe('CloudProjectEventClient', () => {
     expect(socket.close).toHaveBeenCalledWith(1000, 'Client stopped');
   });
 
-  it('cancels a pending reconnect during client shutdown', async () => {
-    const sockets: FakeSocket[] = [];
-    const scheduled: Array<() => void> = [];
-    const clearTimeout = jest.fn();
-    const client = new CloudProjectEventClient({
-      afterSequence: 3,
-      developmentActorId: ACTOR_ID,
-      projectId: PROJECT_ID,
-      serverUrl: 'https://cloud.example.test',
-    }, async invalidation => invalidation.sequence, {
-      clearTimeout,
-      createSocket: () => {
-        const socket = new FakeSocket();
-        sockets.push(socket);
-        return socket;
-      },
-      random: () => 0,
-      setTimeout: callback => {
-        scheduled.push(callback);
-        return 42;
-      },
-    });
 
-    client.start();
-    sockets[0]!.open();
-    await flush();
-    sockets[0]!.closed(1006);
-    await flush();
-    expect(scheduled).toHaveLength(1);
-
-    client.dispose();
-    expect(clearTimeout).toHaveBeenCalledWith(42);
-    scheduled[0]?.();
-    expect(sockets).toHaveLength(1);
-  });
 });
 
 class FakeSocket implements CloudProjectEventSocket {
   private closeListener: ((code: number) => void) | undefined;
-  private errorListener: (() => void) | undefined;
+  private errorListener: ((error?: unknown) => void) | undefined;
   private messageListener: ((data: string) => void) | undefined;
   private openListener: (() => void) | undefined;
 
   close = jest.fn();
   onClose(listener: (code: number) => void): void { this.closeListener = listener; }
-  onError(listener: () => void): void { this.errorListener = listener; }
+  onError(listener: (error?: unknown) => void): void { this.errorListener = listener; }
   onMessage(listener: (data: string) => void): void { this.messageListener = listener; }
   onOpen(listener: () => void): void { this.openListener = listener; }
   closed(code: number): void { this.closeListener?.(code); }
-  error(): void { this.errorListener?.(); }
+  error(error?: unknown): void { this.errorListener?.(error); }
   message(data: string): void { this.messageListener?.(data); }
   open(): void { this.openListener?.(); }
 }

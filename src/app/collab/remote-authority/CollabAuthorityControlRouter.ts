@@ -1,4 +1,4 @@
-import type { CollabProjectId } from '@claudian-collab/protocol';
+import type { CollabProjectId, CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
 import type {
   CollabProjectWorkSessionRegistry,
@@ -8,15 +8,18 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
 import type {
+  CloudMembershipBinding,
+  CloudMembershipOperation,
   CollabAuthorityMembershipControlPort,
   CollabAuthorityMembershipOperation,
   CollabAuthorityMembershipOperationMap,
+  CollabAuthorityMembershipRouterPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
-import type { CollabOperationOptions } from '@/core/collab';
+import type { CollabOperationOptions, CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabAuthorityMembershipStore {
@@ -24,6 +27,7 @@ export interface CollabAuthorityMembershipStore {
 }
 
 export interface CollabAuthorityControlRouterOptions {
+  readonly onConnectionResult?: (projectId: string, error?: CollabError) => void;
   readonly tryReconnect?: (
     projectId: CollabProjectId,
     options: CollabOperationOptions,
@@ -40,7 +44,7 @@ function routerError(reason: string): CollabError {
 
 export class CollabAuthorityControlRouter implements
   CollabAuthorityControlPort,
-  CollabAuthorityMembershipControlPort {
+  CollabAuthorityMembershipRouterPort {
   constructor(
     private readonly memberships: CollabAuthorityMembershipStore,
     private readonly sessions: CollabProjectWorkSessionRegistry,
@@ -128,6 +132,17 @@ export class CollabAuthorityControlRouter implements
     ));
   }
 
+  resolveTicketNumber(
+    request: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[0],
+    options?: Parameters<CollabAuthorityControlPort['resolveTicketNumber']>[1],
+  ) {
+    return this.execute(
+      request.projectId,
+      options,
+      control => control.resolveTicketNumber(request, options),
+    );
+  }
+
   listTickets(
     request: Parameters<CollabAuthorityControlPort['listTickets']>[0],
     options?: Parameters<CollabAuthorityControlPort['listTickets']>[1],
@@ -196,7 +211,12 @@ export class CollabAuthorityControlRouter implements
     projectId: string,
     options?: Parameters<CollabAuthorityControlPort['readSnapshot']>[1],
   ) {
-    return this.execute(projectId, options, control => control.readSnapshot(projectId, options));
+    return this.#executeSession(projectId, options, (session, initialSnapshot) => {
+      if (options?.signal?.aborted) return Promise.reject(new CollabError({ code: 'cancelled' }));
+      return initialSnapshot === undefined
+        ? session.control.readSnapshot(projectId, options)
+        : Promise.resolve(initialSnapshot);
+    }, false);
   }
 
   readTicket(
@@ -224,9 +244,24 @@ export class CollabAuthorityControlRouter implements
     input: CollabAuthorityMembershipOperationMap[Operation]['input'],
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityMembershipOperationMap[Operation]['result']> {
-    return this.executeMembership(input.projectId, options, control => (
+    return this.#executeMembership(input.projectId, options, control => (
       control.membership(operation, input, options)
     ));
+  }
+
+  cloudMembership<Operation extends CloudMembershipOperation>(
+    operation: Operation,
+    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    binding: CloudMembershipBinding,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+    // A frozen Cloud intent must never enter LAN discovery or semantic reconnect retry.
+    return this.session(request.projectId).then(session => {
+      if (session.authorityKind !== 'cloud' || session.membership?.authorityKind !== 'cloud') {
+        throw routerError('authority-session-cloud-membership-unavailable');
+      }
+      return session.membership.cloudMembership(operation, request, binding, options);
+    });
   }
 
   private async execute<T>(
@@ -234,50 +269,78 @@ export class CollabAuthorityControlRouter implements
     options: CollabOperationOptions | undefined,
     operation: (control: CollabAuthorityControlPort) => Promise<T>,
   ): Promise<T> {
-    return this.executeSession(projectId, options, session => operation(session.control));
+    return this.#executeSession(projectId, options, session => operation(session.control));
   }
 
-  private executeMembership<T>(
+  #executeMembership<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
     operation: (control: CollabAuthorityMembershipControlPort) => Promise<T>,
   ): Promise<T> {
-    return this.executeSession(projectId, options, session => {
-      if (!session.membership) {
+    return this.#executeSession(projectId, options, session => {
+      if (session.authorityKind !== 'lan' || session.membership?.authorityKind !== 'lan') {
         throw routerError('authority-session-membership-control-unavailable');
       }
       return operation(session.membership);
     });
   }
 
-  private async executeSession<T>(
+  async #executeSession<T>(
     projectId: CollabProjectId,
     options: CollabOperationOptions | undefined,
-    operation: (session: CollabAuthoritySession) => Promise<T>,
+    operation: (
+      session: CollabAuthoritySession,
+      initialSnapshot?: CollabProjectSnapshot,
+    ) => Promise<T>,
+    replayAfterRecovery = true,
   ): Promise<T> {
+    const attempt = async (): Promise<T> => {
+      const work = this.sessions.acquire(projectId);
+      const generation = work.generation;
+      try {
+        let initialSnapshot: CollabProjectSnapshot | undefined;
+        const session = await this.session(projectId, snapshot => { initialSnapshot = snapshot; });
+        const result = await operation(session, initialSnapshot);
+        if (replayAfterRecovery && work.generation === generation) {
+          this.options.onConnectionResult?.(projectId);
+        }
+        return result;
+      } catch (error) {
+        if (work.generation === generation && error instanceof CollabError) {
+          this.options.onConnectionResult?.(projectId, error);
+        }
+        throw error;
+      }
+    };
     try {
-      return await operation(await this.session(projectId));
+      return await attempt();
     } catch (error) {
       const reconnectable = error instanceof CollabError
         && (error.group === 'connectivity' || error.code === 'operation-timeout');
       if (
-        !reconnectable
+        !replayAfterRecovery
+        || !reconnectable
         || options?.signal?.aborted
         || !await this.options.tryReconnect?.(projectId, options ?? {})
       ) throw error;
-      return operation(await this.session(projectId));
+      return attempt();
     }
   }
 
-  private async session(projectId: CollabProjectId): Promise<CollabAuthoritySession> {
+  private async session(
+    projectId: CollabProjectId,
+    onInitialSnapshot?: (snapshot: CollabProjectSnapshot) => void,
+  ): Promise<CollabAuthoritySession> {
     const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
     const session = await work.ensureAuthoritySession<CollabAuthoritySession>(async () => {
       const membership = await this.memberships.loadMembership(projectId);
       if (!membership || membership.project.id !== projectId) {
         throw routerError('authority-session-membership-missing');
       }
-      return this.factory.create(membership);
+      return this.factory.create(membership, { onInitialSnapshot });
     });
+    work.assertGeneration(generation);
     return session;
   }
 }

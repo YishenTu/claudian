@@ -178,7 +178,7 @@ export class MembershipAdminRepository {
       });
       return {
         promotedSuccessor: null,
-        termination: this.terminateMember(connection, {
+        termination: this.#terminateMember(connection, {
           expectedRole: 'member',
           projectId: input.projectId,
           status: 'left',
@@ -206,7 +206,7 @@ export class MembershipAdminRepository {
       });
       return {
         promotedSuccessor: null,
-        termination: this.terminateMember(connection, {
+        termination: this.#terminateMember(connection, {
           expectedRole: 'member',
           projectId: input.projectId,
           status: 'left',
@@ -234,7 +234,7 @@ export class MembershipAdminRepository {
       expectedGeneration: managerSet.generation,
       targetMemberId: consumed.targetMemberId,
     });
-    const termination = this.terminateMember(connection, {
+    const termination = this.#terminateMember(connection, {
       expectedRole: 'member',
       projectId: input.projectId,
       status: 'left',
@@ -277,7 +277,7 @@ export class MembershipAdminRepository {
     if (input.targetMemberId === context.hostMemberId) {
       throw membershipError('authorization-denied', 'membership-host-cannot-terminate');
     }
-    const target = this.requireActiveTarget(connection, input.targetMemberId);
+    const target = this.#requireActiveTarget(connection, input.targetMemberId);
     if (target.role === 'manager') {
       const managerSet = this.managerSet.requireActiveManager(connection, input.actorMemberId);
       this.managerResponsibilities.cancelRelatedNonterminal(connection, {
@@ -294,7 +294,7 @@ export class MembershipAdminRepository {
         memberId: input.targetMemberId,
       });
     }
-    return this.terminateMember(connection, {
+    return this.#terminateMember(connection, {
       expectedRole: 'member',
       projectId: input.projectId,
       status: input.status,
@@ -341,7 +341,7 @@ export class MembershipAdminRepository {
     };
   }
 
-  private requireActiveTarget(
+  #requireActiveTarget(
     connection: AuthorityDatabaseConnection,
     memberId: CollabMemberId,
   ): { readonly role: CollabRole } {
@@ -358,7 +358,7 @@ export class MembershipAdminRepository {
     return { role: target.role };
   }
 
-  private terminateMember(
+  #terminateMember(
     connection: AuthorityDatabaseConnection,
     input: {
       readonly expectedRole: CollabRole;

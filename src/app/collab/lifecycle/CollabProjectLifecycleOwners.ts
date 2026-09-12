@@ -4,19 +4,23 @@ import type { LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
 import type {
   ManagerResponsibilityReceiptRecord,
 } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
+import { managerResponsibilityReceiptState } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import type {
   CollabProjectLifecycleDurableOwner,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import type { CloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
+import type { CloudRetirementIntent } from '@/app/collab/retirement/CloudRetirementIntent';
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';
 import type { RetirementTombstoneRecord } from '@/app/collab/retirement/RetirementTombstoneRecord';
 
 export interface CollabProjectLifecycleOwnerStores {
-  readonly cloudBootstrapTransitions: {
-    inspectLifecycleOwner(
-      projectId: CollabProjectId,
-    ): Promise<'absent' | 'nonterminal' | 'terminal'>;
+  readonly cloudManagementIntents: {
+    load(projectId: CollabProjectId): Promise<CloudManagementIntent | null>;
+  };
+  readonly cloudRetirementIntents: {
+    load(projectId: CollabProjectId): Promise<CloudRetirementIntent | null>;
   };
   readonly hostTransferRecovery: {
     load(
@@ -50,12 +54,6 @@ export function createCollabProjectLifecycleDurableOwners(
 ): readonly CollabProjectLifecycleDurableOwner[] {
   return Object.freeze([
     Object.freeze({
-      inspect: (projectId: CollabProjectId) => (
-        stores.cloudBootstrapTransitions.inspectLifecycleOwner(projectId)
-      ),
-      name: 'cloud-bootstrap',
-    }),
-    Object.freeze({
       inspect: async (projectId: CollabProjectId) => {
         const [incoming, outgoing] = await Promise.all([
           stores.hostTransferRecovery.load(projectId, 'incoming'),
@@ -79,20 +77,34 @@ export function createCollabProjectLifecycleDurableOwners(
       name: 'host-transfer',
     }),
     Object.freeze({
+      inspect: async (projectId: CollabProjectId) => (
+        await stores.cloudManagementIntents.load(projectId)
+          ? 'nonterminal' as const
+          : 'absent' as const
+      ),
+      name: 'cloud-management',
+    }),
+    Object.freeze({
       inspect: async (projectId: CollabProjectId) => {
-        const [receipt, pendingLeave] = await Promise.all([
+        const [receipt, pendingLeave, retirement] = await Promise.all([
           stores.managerReceipts.load(projectId),
           stores.pendingLeaves.load(projectId),
+          stores.retirements.loadRetirementRecord(projectId),
         ]);
         if (!receipt) return 'absent' as const;
         // A durable pending Leave adopts responsibility for settling the
         // acknowledged receipt. It must be the only nonterminal owner after a
         // crash between recording the Leave and consuming the receipt.
-        if (pendingLeave) return 'terminal' as const;
+        if (pendingLeave || retirement) return 'terminal' as const;
+        if ('offer' in receipt) {
+          if (receipt.phase === 'prepared') return 'proposal' as const;
+          if (receipt.phase === 'submitted') return 'nonterminal' as const;
+        }
         // Source-created offers remain reversible authority proposals. This target-only
         // receipt becomes a local lifecycle owner only after acknowledgement.
-        if (receipt.status === 'offered') return 'proposal' as const;
-        return receipt.status === 'acknowledged'
+        const state = managerResponsibilityReceiptState(receipt);
+        if (state.status === 'offered') return 'proposal' as const;
+        return state.status === 'acknowledged'
           ? 'nonterminal' as const
           : 'terminal' as const;
       },
@@ -115,7 +127,8 @@ export function createCollabProjectLifecycleDurableOwners(
     }),
     Object.freeze({
       inspect: async (projectId: CollabProjectId) => {
-        const [retirement, cleanup, tombstone] = await Promise.all([
+        const [intent, retirement, cleanup, tombstone] = await Promise.all([
+          stores.cloudRetirementIntents.load(projectId),
           stores.retirements.loadRetirementRecord(projectId),
           stores.retiredCleanups.load(projectId),
           stores.retirementTombstones.loadRetirementTombstone(projectId),
@@ -129,7 +142,10 @@ export function createCollabProjectLifecycleDurableOwners(
         )
           ? tombstone
           : null;
-        return retirement || cleanup || ownedTombstone
+        if (intent?.phase === 'rejected' && !retirement && !cleanup && !ownedTombstone) {
+          return 'terminal' as const;
+        }
+        return intent || retirement || cleanup || ownedTombstone
           ? 'nonterminal' as const
           : 'absent' as const;
       },

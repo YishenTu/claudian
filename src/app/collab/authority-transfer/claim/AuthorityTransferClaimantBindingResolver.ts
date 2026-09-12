@@ -18,16 +18,16 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantBindingResolverOptions {
-  readonly createCloudLifecycle: (input: Readonly<{
-    readonly developmentActorId: string;
+  readonly createCloudConnection: (input: Readonly<{
+    readonly allowCredentialCreation: boolean;
     readonly projectId: CollabProjectId;
     readonly serverUrl: string;
-  }>) => Promise<CloudAuthorityLifecycleSession>;
+  }>) => Promise<CloudAuthorityConnection>;
   readonly createLanClient?: (
     input: ConstructorParameters<typeof LanAuthorityTransferClient>[0],
   ) => LanAuthorityTransferClient;
@@ -65,6 +65,36 @@ export class AuthorityTransferClaimantBindingResolver {
     if (!membership || membership.member.id !== record.memberId) {
       throw resolutionError('authority-transfer-claimant-membership-invalid');
     }
+    if (record.variant === 'manager-reissued') {
+      if (membership.member.personalRef !== record.memberPersonalRef) {
+        throw resolutionError('authority-transfer-claimant-membership-invalid');
+      }
+      if (isCollabLocalCloudMembership(membership)) {
+        if (
+          record.phase !== 'target-confirmed'
+          && record.phase !== 'membership-converged'
+          && record.phase !== 'completed'
+        ) throw resolutionError('authority-transfer-claimant-phase-invalid');
+        if (
+          membership.authority.authorityGeneration
+            !== record.descriptor.targetAuthorityGeneration
+          || membership.authority.serverUrl !== record.serverUrl
+        ) throw resolutionError('authority-transfer-claimant-target-invalid');
+        return { direction: 'lan-to-cloud', mode: 'local-only' };
+      }
+      if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority) {
+        throw resolutionError('authority-transfer-claimant-source-invalid');
+      }
+      return {
+        cloudSession: await this.options.createCloudConnection({
+          allowCredentialCreation: false,
+          projectId: record.projectId,
+          serverUrl: record.serverUrl,
+        }),
+        direction: 'lan-to-cloud',
+        mode: 'manager-reissued',
+      };
+    }
     const requiresSource = authorityTransferClaimantRequiresSource(record, this.now());
     if (record.status.direction === 'lan-to-cloud') {
       if (isCollabLocalCloudMembership(membership)) {
@@ -76,8 +106,8 @@ export class AuthorityTransferClaimantBindingResolver {
       if (!isCollabLocalLanMembership(membership)) {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
-      const cloudSession = await this.options.createCloudLifecycle({
-        developmentActorId: membership.member.id,
+      const cloudSession = await this.options.createCloudConnection({
+        allowCredentialCreation: false,
         projectId: record.projectId,
         serverUrl: record.status.targetUrl,
       });
@@ -94,6 +124,7 @@ export class AuthorityTransferClaimantBindingResolver {
           cloudSession,
           direction: 'lan-to-cloud',
           lanClient: this.createLanClient({
+            authorityGeneration: record.status.sourceAuthority.generation,
             caCertificatePem: membership.authority.hostCaCertificatePem,
             caFingerprint: membership.authority.hostCaFingerprint,
             endpoint: membership.authority.endpoint,
@@ -111,6 +142,9 @@ export class AuthorityTransferClaimantBindingResolver {
       if (record.phase !== 'source-acknowledged') {
         throw resolutionError('authority-transfer-claimant-phase-invalid');
       }
+      if (membership.authority.authorityGeneration !== record.status.targetAuthority.generation) {
+        throw resolutionError('authority-transfer-claimant-target-generation-mismatch');
+      }
       return { direction: 'cloud-to-lan', mode: 'local-only' };
     }
     if (!isCollabLocalCloudMembership(membership) || !record.lanTarget) {
@@ -123,8 +157,8 @@ export class AuthorityTransferClaimantBindingResolver {
         targetHost: record.lanTarget,
       };
     }
-    const cloudSession = await this.options.createCloudLifecycle({
-      developmentActorId: membership.authority.developmentActorId,
+    const cloudSession = await this.options.createCloudConnection({
+      allowCredentialCreation: false,
       projectId: record.projectId,
       serverUrl: membership.authority.serverUrl,
     });
@@ -134,6 +168,7 @@ export class AuthorityTransferClaimantBindingResolver {
         direction: 'cloud-to-lan',
         lanClient: this.createLanClient({
           ...record.lanTarget,
+          authorityGeneration: record.status.targetAuthority.generation,
           projectId: record.projectId,
         }),
         mode: 'full',

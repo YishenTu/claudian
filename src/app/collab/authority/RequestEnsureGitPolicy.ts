@@ -48,6 +48,7 @@ export class RequestEnsureGitPolicy implements RequestEnsureHeadPolicyPort {
     private readonly repositoryPath: string,
     private readonly git: RequestEnsureGitPort,
     treePolicy = new CollabGitTreePolicy(),
+    private readonly resourceAdmission: <T>(operation: () => Promise<T>) => Promise<T> = operation => operation(),
   ) {
     this.treePolicy = treePolicy;
   }
@@ -55,6 +56,10 @@ export class RequestEnsureGitPolicy implements RequestEnsureHeadPolicyPort {
   async validate(
     input: RequestEnsureHeadPolicyInput,
   ): Promise<{ readonly mainOid: string }> {
+    return this.resourceAdmission(() => this.#validate(input));
+  }
+
+  async #validate(input: RequestEnsureHeadPolicyInput): Promise<{ readonly mainOid: string }> {
     if (input.personalRef !== collabMemberRef(input.memberId)) {
       throw policyError('authority-integrity-error', 'request-personal-ref-mismatch');
     }
@@ -87,6 +92,7 @@ export class RequestEnsureGitPolicy implements RequestEnsureHeadPolicyPort {
 export function createRequestEnsureGitPolicy(
   repositoryPath: string,
   git: GitRepositoryService,
+  resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>,
 ): RequestEnsureGitPolicy {
-  return new RequestEnsureGitPolicy(repositoryPath, git);
+  return new RequestEnsureGitPolicy(repositoryPath, git, undefined, resourceAdmission);
 }

@@ -36,6 +36,9 @@ jobs:
       - name: Run full test suite
         run: npm run test
 
+      - name: Verify published LAN compatibility
+        run: npm run test:lan-compatibility
+
       - name: Build production plugin
         run: npm run build
 

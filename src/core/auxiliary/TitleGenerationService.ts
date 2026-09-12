@@ -52,7 +52,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
         ),
       });
       const title = parseTitleGenerationResponse(text);
-      await this.safeCallback(
+      await this.#safeCallback(
         callback,
         conversationId,
         title
@@ -60,7 +60,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
           : { success: false, error: 'Failed to parse title from response' },
       );
     } catch (error) {
-      await this.safeCallback(callback, conversationId, {
+      await this.#safeCallback(callback, conversationId, {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
@@ -79,7 +79,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
     this.activeGenerations.clear();
   }
 
-  private async safeCallback(
+  async #safeCallback(
     callback: TitleGenerationCallback,
     conversationId: string,
     result: TitleGenerationResult,

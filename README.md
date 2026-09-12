@@ -27,7 +27,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **`@mention`** — Type `@` to reference vault files, folders, and Collab member changes. Type `#` to reference Collab tickets.
 
-
 **Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
@@ -47,7 +46,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 - A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code) etc.
 - Obsidian v1.13.0+
 - Desktop only (macOS, Linux, Windows)
-- Collab Mode requires [Git](https://git-scm.com/install/)
+- Collab Mode requires [Git](https://git-scm.com/install/). If you plan to self-host a Cloud server, see the [Claudian Cloud Server repository](https://github.com/YishenTu/claudian-cloud-server) for deployment requirements.
 
 ## Installation
 
@@ -96,8 +95,9 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Depending on the selected provider, data is sent to Anthropic (Claude), OpenAI (Codex), xAI (Grok), or the providers configured in OpenCode or Pi. The destination can be configured through provider settings and environment variables.
-- **Collab LAN traffic**: When you explicitly Host or synchronize a Collab Project, Project Git data and authenticated coordination metadata travel directly between invited teammates' devices on the local network. Collab Mode itself does not send Project data to a Claudian cloud service or any third party.
-- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and explicitly started Collab LAN work.
+- **Collab LAN mode**: Project Git data and coordination records are shared within your Project team and stored on your designated Host computer. LAN collaboration traffic stays between your Project team's devices and that Host on the local network.
+- **Collab Cloud mode (self-hosted)**: Project Git data and coordination records are shared within your Project team and stored on your designated [self-hosted Claudian Cloud Server](https://github.com/YishenTu/claudian-cloud-server). Cloud collaboration traffic stays between your Project team's devices and your Cloud server.
+- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and configured Collab LAN or Cloud operations, synchronization, and recovery.
 
 ## Troubleshooting
 
@@ -145,8 +145,8 @@ For provider-specific installation and configuration guidance, refer to the prov
 src/
 ├── main.ts                      # Plugin entry point
 ├── app/                         # Application services, storage, and lazy Collab infrastructure
-├── core/                        # Provider-neutral runtime, registry, and type contracts
-│   ├── runtime/                 # ChatRuntime interface and approval types
+├── core/                        # Provider-neutral execution, registry, and type contracts
+│   ├── execution/               # Provider execution, session lifecycle, and interaction contracts
 │   ├── providers/               # Provider registry and workspace services
 │   ├── auxiliary/               # Shared provider auxiliary services
 │   ├── bootstrap/               # Plugin bootstrap wiring

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -10,14 +10,37 @@ import {
   type CollabTransferredMembershipClaimBatch,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
-import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import {
+  TEST_INSTALLATION_A,
+  TEST_INSTALLATION_B,
+} from '@test/helpers/installations';
 
+import {
+  createAuthorityTransferEntryDocument,
+  createAuthorityTransferEntryRecord as createOwnedAuthorityTransferEntryRecord,
+  createAuthorityTransferRequesterEntry as createOwnedAuthorityTransferRequesterEntry,
+  prepareAuthorityTransferSourceCancellation,
+} from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import {
   assertAuthorityTransferTransition,
   createAuthorityTransferRecord,
   decodeAuthorityTransferRecord,
   expireAuthorityTransferTerminalResponder,
+  markAuthorityTransferTerminalCleanupCompleted,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import {
+  createCloudToLanManagerEntry,
+  createCloudToLanTargetEntry,
+  decodeCloudToLanManagerEntryRecord,
+  markCloudToLanManagerBeginPossiblySent,
+  publishCloudToLanTargetEntry,
+  recordCloudToLanManagerStatus,
+  rejectCloudToLanManagerEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import { LanToCloudRequesterCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
 import {
   createAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -28,14 +51,44 @@ import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
+import type { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import {
+  CollabProjectLifecycleSubsystem,
+} from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 
 const PROJECT_ID = 'project-alpha';
 const TRANSFER_ID = 'transfer-one';
 const OPERATION_INTENT_ID = 'intent-one';
+const CLOUD_RELINQUISHMENT_INTENT_ID = 'intent-cloud-relinquishment';
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const MEMBER_ALICE = 'member-alice';
 const MEMBER_BOB = 'member-bob';
 const EXPIRES_AT = '2026-09-30T00:00:00.000Z';
+
+function createAuthorityTransferEntryRecord(
+  input: Omit<
+    Parameters<typeof createOwnedAuthorityTransferEntryRecord>[0],
+    'ownerInstallationKey'
+  >,
+) {
+  return createOwnedAuthorityTransferEntryRecord({
+    ...input,
+    ownerInstallationKey: TEST_INSTALLATION_A,
+  });
+}
+
+function createAuthorityTransferRequesterEntry(
+  input: Omit<
+    Parameters<typeof createOwnedAuthorityTransferRequesterEntry>[0],
+    'installationKey'
+  >,
+) {
+  return createOwnedAuthorityTransferRequesterEntry({
+    ...input,
+    installationKey: TEST_INSTALLATION_A,
+  });
+}
+const ENTRY_EXPIRES_AT = '2026-09-25T00:00:00.000Z';
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -132,6 +185,16 @@ function transferStatus(
   };
 }
 
+function proposalStatus(
+  overrides: Partial<CollabAuthorityTransferStatus> = {},
+): CollabAuthorityTransferStatus {
+  return {
+    ...transferStatus('collecting-readiness'),
+    expiresAt: ENTRY_EXPIRES_AT,
+    ...overrides,
+  };
+}
+
 function cloudToLanStatus(
   phase: CollabCloudToLanTransferPhase,
 ): CollabAuthorityTransferStatus {
@@ -156,7 +219,7 @@ function cloudToLanStatus(
           certificateAlgorithm: 'ed25519',
           checkpointSha256: CHECKPOINT_SHA256,
           committedAt: '2026-08-26T00:04:30.000Z',
-          operationIntentId: OPERATION_INTENT_ID,
+          operationIntentId: CLOUD_RELINQUISHMENT_INTENT_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'cloud' },
           sourceHostMemberId: null,
@@ -185,6 +248,2207 @@ describe('AuthorityTransferPersistence', () => {
   afterEach(async () => {
     jest.useRealTimers();
     await rm(vaultRoot, { force: true, recursive: true });
+  });
+
+  it('persists and replays a source-local proposal before handing it to one physical owner', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request,
+      status: proposalStatus(),
+    });
+
+    await expect(persistence.proposeEntry(entry)).resolves.toEqual(entry);
+    persistence = new AuthorityTransferPersistence(
+      new CollabLocalProjectRepository(vaultRoot),
+      { isRecoveryOwner: () => true },
+    );
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(entry);
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('proposal');
+    await expect(persistence.proposeEntry(createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request,
+      status: {
+        ...entry.status,
+        transferId: 'transfer-retry-must-not-replace-identity',
+      },
+    }))).resolves.toEqual(entry);
+    await expect(persistence.proposeEntry(createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_ALICE,
+      request,
+      status: entry.status,
+    }))).rejects.toMatchObject({
+      code: 'authority-transfer-stale',
+      safeContext: { reason: 'authority-transfer-entry-conflict' },
+    });
+
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    await expect(persistence.handoffEntry(entry, physical)).resolves.toEqual(physical);
+    await expect(persistence.load(PROJECT_ID)).resolves.toEqual(physical);
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      phase: 'handed-off',
+      successor: {
+        operationIntentId: OPERATION_INTENT_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        transferId: TRANSFER_ID,
+      },
+    });
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+  });
+
+  it('proves imported-claim management only for the matching completed LAN-to-Cloud source custody', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    }));
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    }));
+    await persistence.retainClaimBatch({
+      batch: claimBatch(),
+      operationIntentId: OPERATION_INTENT_ID,
+      purpose: 'source-terminal',
+    });
+    await persistence.acknowledgeClaimBatch({
+      batchRevision: 1,
+      batchSha256: claimBatch().batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:03:00.000Z',
+      custodyAuthority: { generation: 1, kind: 'lan' },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-imported-management',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    });
+
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).resolves.toBeUndefined();
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: 'member-not-imported',
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_BOB,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_ALICE,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 3,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: cloudToLanStatus('completed'),
+    }));
+    await expect(persistence.assertCloudImportedClaimManagementPredecessor(
+      PROJECT_ID,
+      {
+        actorMemberId: MEMBER_ALICE,
+        authorityGeneration: 2,
+        importedMemberId: MEMBER_BOB,
+      },
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+  });
+
+  it('persists coexisting target and Manager entries and recovers a physical-first target handoff', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const target = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(target, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await persistence.prepareCloudToLanTargetEntry(target);
+    await persistence.publishCloudToLanTargetEntry(target, published.descriptor!);
+    const manager = createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:00:45.000Z',
+      descriptor: published.descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId: OPERATION_INTENT_ID,
+    });
+    await persistence.prepareCloudToLanManagerEntry(manager);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: { operationIntentId: OPERATION_INTENT_ID, phase: 'prepared' },
+      target: { operationIntentId: 'intent-target-preparation', phase: 'published' },
+    });
+
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...cloudToLanStatus('collecting-readiness'),
+        targetUrl: published.descriptor!.targetUrl,
+      },
+    });
+    let injectSplit = true;
+    const splitEntryStore = {
+      ...repository.authorityTransferEntries,
+      saveTarget: async (record: typeof published) => {
+        if (record.phase === 'handed-off' && injectSplit) {
+          injectSplit = false;
+          throw new Error('injected-target-handoff-split');
+        }
+        await repository.authorityTransferEntries.saveTarget(record);
+      },
+    };
+    const splitPersistence = new AuthorityTransferPersistence({
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: splitEntryStore,
+      authorityTransferRecords: repository.authorityTransferRecords,
+    }, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+    await expect(splitPersistence.handoffCloudToLanTargetEntry(published, physical))
+      .rejects.toThrow('injected-target-handoff-split');
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toEqual(physical);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      target: { phase: 'published', successor: null },
+    });
+
+    const recovered = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await expect(recovered.load(PROJECT_ID)).resolves.toEqual(physical);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: { phase: 'prepared' },
+      target: {
+        phase: 'handed-off',
+        successor: {
+          operationIntentId: OPERATION_INTENT_ID,
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          transferId: TRANSFER_ID,
+        },
+      },
+    });
+    await expect(recovered.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+  });
+
+  it('rejects a Manager begin while an unrelated local target preparation exists', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const target = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-unrelated-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(target, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await persistence.prepareCloudToLanTargetEntry(target);
+    await persistence.publishCloudToLanTargetEntry(target, published.descriptor!);
+    const unrelatedDescriptor = {
+      ...published.descriptor!,
+      targetUrl: 'https://192.168.1.99:27001',
+    };
+
+    await expect(persistence.prepareCloudToLanManagerEntry(
+      createCloudToLanManagerEntry({
+        createdAt: '2026-08-26T00:00:45.000Z',
+        descriptor: unrelatedDescriptor,
+        expiresAt: ENTRY_EXPIRES_AT,
+        initiatingMemberId: MEMBER_ALICE,
+        initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        operationIntentId: OPERATION_INTENT_ID,
+      }),
+    )).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-manager-entry-conflict' },
+    });
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: null,
+      target: { operationIntentId: 'intent-unrelated-target-preparation' },
+    });
+  });
+
+  it('withdraws a preparing target before descriptor publication', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-26T00:00:30.000Z'),
+    });
+    const preparing = await persistence.prepareCloudToLanTargetEntry(
+      createCloudToLanTargetEntry({
+        createdAt: '2026-08-26T00:00:00.000Z',
+        expiresAt: ENTRY_EXPIRES_AT,
+        operationIntentId: 'intent-unpublished-target',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_BOB,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+        sourceAuthorityGeneration: 1,
+        sourceCloudUrl: 'https://cloud.example.test/',
+      }),
+    );
+
+    await expect(persistence.withdrawCloudToLanTargetEntry(preparing)).resolves.toMatchObject({
+      descriptor: null,
+      phase: 'withdrawn',
+      withdrawnAt: '2026-08-26T00:00:30.000Z',
+    });
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+  });
+
+  it('withdraws only the same-device target while its Manager begin remains unresolved', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const preparing = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-original-target',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_ALICE,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(preparing, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await persistence.prepareCloudToLanTargetEntry(preparing);
+    await persistence.publishCloudToLanTargetEntry(preparing, published.descriptor!);
+    await persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:00:45.000Z',
+      descriptor: published.descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId: OPERATION_INTENT_ID,
+    }));
+    await expect(persistence.withdrawCloudToLanTargetEntry(published)).resolves.toMatchObject({
+      phase: 'withdrawn',
+    });
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: { operationIntentId: OPERATION_INTENT_ID, phase: 'prepared' },
+      target: { operationIntentId: 'intent-original-target', phase: 'withdrawn' },
+    });
+    const replacement = createCloudToLanTargetEntry({
+      ...preparing,
+      operationIntentId: 'intent-replacement-target',
+    });
+
+    await expect(persistence.prepareCloudToLanTargetEntry(replacement)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-target-entry-conflict' },
+    });
+  });
+
+  it('observes an exact published foreign target while preparing its Manager entry', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const foreignTarget = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-foreign-target',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(foreignTarget, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await repository.authorityTransferEntries.saveTarget(published);
+
+    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:00:45.000Z',
+      descriptor: published.descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId: OPERATION_INTENT_ID,
+    }))).resolves.toMatchObject({ phase: 'prepared' });
+  });
+
+  it('rejects a Manager phase that disagrees with its observed status state', () => {
+    const prepared = createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:00:45.000Z',
+      descriptor: publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+        createdAt: '2026-08-26T00:00:00.000Z',
+        expiresAt: ENTRY_EXPIRES_AT,
+        operationIntentId: 'intent-decoder-target',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_BOB,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+        sourceAuthorityGeneration: 1,
+        sourceCloudUrl: 'https://cloud.example.test/',
+      }), {
+        caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+        caFingerprint: 'c'.repeat(64),
+        publishedAt: '2026-08-26T00:00:30.000Z',
+        targetUrl: 'https://192.168.1.20:27001',
+      }).descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId: OPERATION_INTENT_ID,
+    });
+    const observing = recordCloudToLanManagerStatus(
+      markCloudToLanManagerBeginPossiblySent(prepared),
+      { ...cloudToLanStatus('collecting-readiness'), targetUrl: prepared.descriptor.targetUrl },
+    );
+    const completed = recordCloudToLanManagerStatus(observing, {
+      ...cloudToLanStatus('completed'),
+      targetUrl: prepared.descriptor.targetUrl,
+    });
+
+    expect(() => decodeCloudToLanManagerEntryRecord({
+      ...observing,
+      phase: 'settled',
+    })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
+    expect(() => decodeCloudToLanManagerEntryRecord({
+      ...completed,
+      phase: 'observing',
+    })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
+    const rejected = rejectCloudToLanManagerEntry(
+      markCloudToLanManagerBeginPossiblySent(prepared),
+    );
+    expect(rejected).toMatchObject({ phase: 'rejected', status: null });
+    expect(() => decodeCloudToLanManagerEntryRecord({
+      ...rejected,
+      status: cloudToLanStatus('collecting-readiness'),
+    })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
+    const {
+      ownerInstallationKey: _legacyOwnerlessManager,
+      ...ownerlessManager
+    } = prepared;
+    expect(() => decodeCloudToLanManagerEntryRecord(ownerlessManager))
+      .toThrow('Invalid Cloud-to-LAN Manager entry');
+  });
+
+  it('recovers a crash after the definitive Manager rejection write without removing the target', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-rejected-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_ALICE,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    }), {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await repository.authorityTransferEntries.saveTarget(target);
+    const prepared = await persistence.prepareCloudToLanManagerEntry(
+      createCloudToLanManagerEntry({
+        createdAt: '2026-08-26T00:00:45.000Z',
+        descriptor: target.descriptor!,
+        expiresAt: ENTRY_EXPIRES_AT,
+        initiatingMemberId: MEMBER_ALICE,
+        initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        operationIntentId: OPERATION_INTENT_ID,
+      }),
+    );
+    const submitted = await persistence.markCloudToLanManagerBeginPossiblySent(prepared);
+    const rejected = await persistence.rejectCloudToLanManagerEntry(submitted);
+
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: { operationIntentId: OPERATION_INTENT_ID, phase: 'rejected' },
+      target: { operationIntentId: 'intent-rejected-target-preparation', phase: 'published' },
+    });
+
+    const restarted = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await restarted.settleCloudToLanManagerEntry(rejected);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      manager: null,
+      target: { operationIntentId: 'intent-rejected-target-preparation', phase: 'published' },
+    });
+  });
+
+  it.each([false, true])('retains completed target identity until a proposal replaces it (pending claims: %s)', async pendingClaims => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const preparing = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-terminal-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(preparing, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    await persistence.prepareCloudToLanTargetEntry(preparing);
+    await persistence.publishCloudToLanTargetEntry(preparing, published.descriptor!);
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...cloudToLanStatus('completed'),
+        targetUrl: published.descriptor!.targetUrl,
+      },
+    });
+    await persistence.handoffCloudToLanTargetEntry(published, physical);
+
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_BOB,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_BOB}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).resolves.toBeUndefined();
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_ALICE,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_BOB}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-identity-mismatch' },
+    });
+    await expect(persistence.assertCloudToLanCompletedTargetIdentity({
+      memberId: MEMBER_BOB,
+      operationIntentId: OPERATION_INTENT_ID,
+      personalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-identity-mismatch' },
+    });
+
+    if (pendingClaims) {
+      const stageIntent = authorityTransferChildIdempotencyKey(OPERATION_INTENT_ID, 'stage');
+      await persistence.retainClaimBatch({ batch: claimBatch(), operationIntentId: stageIntent, purpose: 'target-delivery' });
+      await persistence.acknowledgeClaimBatch({
+        batchRevision: 1, batchSha256: claimBatch().batchSha256, checkpointSha256: CHECKPOINT_SHA256,
+        committedAt: '2026-08-26T00:03:00.000Z', custodyAuthority: { generation: 1, kind: 'cloud' },
+        operationIntentId: stageIntent, projectId: PROJECT_ID, receiptId: 'custody-target-cycle',
+        submittedByMemberId: MEMBER_BOB, targetAuthorityGeneration: 2, transferId: TRANSFER_ID,
+      });
+    } else {
+      await persistence.completeTerminalCleanup({
+        operationIntentId: OPERATION_INTENT_ID, projectId: PROJECT_ID,
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`, transferId: TRANSFER_ID,
+      });
+    }
+
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      target: { phase: 'handed-off', selectedTargetMemberId: MEMBER_BOB },
+    });
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
+      terminalCleanupCompleted: !pendingClaims,
+      transferId: TRANSFER_ID,
+    });
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe(pendingClaims ? 'nonterminal' : 'terminal');
+    const nextProposal = (generation: number) => createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: generation,
+        idempotencyKey: 'intent-return-to-cloud',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus({
+        sourceAuthority: { generation, kind: 'lan' },
+        targetAuthority: { generation: generation + 1, kind: 'cloud' },
+        transferId: 'transfer-return-to-cloud',
+      }),
+    });
+    await expect(persistence.proposeEntry(nextProposal(1))).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-record-conflict' },
+    });
+    const next = nextProposal(2);
+    await expect(persistence.proposeEntry(next)).resolves.toEqual(next);
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(next);
+    await expect(persistence.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toBeNull();
+    const historyDirectory = path.join(vaultRoot, '.claudian', 'collab', 'projects', PROJECT_ID, 'authority-transfer-history');
+    await mkdir(historyDirectory, { recursive: true });
+    await writeFile(path.join(historyDirectory, `.${'a'.repeat(64)}.json.00000000-0000-4000-8000-000000000000.tmp`), '{"incomplete":');
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await expect(reopened.loadRetainedClaimBatch(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(pendingClaims ? claimBatch() : null);
+    await expect(reopened.load(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(pendingClaims ? physical : null);
+    await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toEqual(next);
+
+  });
+
+  it('recovers a next-move proposal interrupted after completed target identity removal', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const preparing = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-split-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    });
+    const published = publishCloudToLanTargetEntry(preparing, {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...cloudToLanStatus('completed'),
+        targetUrl: published.descriptor!.targetUrl,
+      },
+    });
+    await repository.authorityTransferEntries.saveTarget(
+      publishCloudToLanTargetEntry(preparing, published.descriptor!),
+    );
+    await repository.authorityTransferRecords.save(physical);
+    const removeTarget: typeof repository.authorityTransferEntries.removeTarget = async record => {
+      await repository.authorityTransferEntries.removeTarget(record);
+      throw new Error('simulated interruption after target identity removal');
+    };
+    const persistence = new AuthorityTransferPersistence({
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: {
+        ...repository.authorityTransferEntries,
+        removeTarget,
+      },
+      authorityTransferRecords: repository.authorityTransferRecords,
+    }, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await persistence.handoffCloudToLanTargetEntry(
+      publishCloudToLanTargetEntry(preparing, published.descriptor!),
+      physical,
+    );
+    const cleanup = {
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    };
+
+    await persistence.completeTerminalCleanup(cleanup);
+    const next = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 2,
+        idempotencyKey: 'intent-return-to-cloud',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus({
+        sourceAuthority: { generation: 2, kind: 'lan' },
+        targetAuthority: { generation: 3, kind: 'cloud' },
+        transferId: 'transfer-return-to-cloud',
+      }),
+    });
+    await expect(persistence.proposeEntry(next)).rejects.toThrow('simulated interruption');
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    await expect(reopened.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+    await expect(reopened.proposeEntry(next)).resolves.toEqual(next);
+    await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toEqual(next);
+    await expect(reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toBeNull();
+  });
+
+  it('keeps a locally initiated remote-target Manager handoff in lifecycle ownership', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-10-01T00:00:00.000Z'),
+    });
+    const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-remote-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    }), {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    }).descriptor!;
+    let manager = await persistence.prepareCloudToLanManagerEntry(
+      createCloudToLanManagerEntry({
+        createdAt: '2026-08-26T00:00:45.000Z',
+        descriptor,
+        expiresAt: ENTRY_EXPIRES_AT,
+        initiatingMemberId: MEMBER_ALICE,
+        initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        operationIntentId: OPERATION_INTENT_ID,
+      }),
+    );
+    manager = await persistence.markCloudToLanManagerBeginPossiblySent(manager);
+    manager = await persistence.recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('collecting-readiness'),
+      targetUrl: descriptor.targetUrl,
+    });
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: () => persistence.close(),
+      durableOwners: [{
+        inspect: projectId => persistence.inspectLifecycleOwner(projectId),
+        name: 'authority-transfer',
+      }],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const competingOperation = jest.fn().mockResolvedValue(undefined);
+    await expect(lifecycle.runExclusive(
+      PROJECT_ID,
+      'host-transfer',
+      'operation',
+      competingOperation,
+    )).rejects.toMatchObject({
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(competingOperation).not.toHaveBeenCalled();
+
+    await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('cloud-quiesced'),
+      targetUrl: descriptor.targetUrl,
+      updatedAt: '2026-08-26T00:03:00.000Z',
+      transferId: 'transfer-other',
+    }))).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-observed-identity-mismatch' },
+    });
+    manager = await persistence.recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('checkpoint-captured'),
+      targetUrl: descriptor.targetUrl,
+    });
+    await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('cloud-quiesced'),
+      targetUrl: descriptor.targetUrl,
+      updatedAt: '2026-08-26T00:03:00.000Z',
+    }))).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-observed-phase-regressed' },
+    });
+
+    manager = await persistence.recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('completed'),
+      targetUrl: descriptor.targetUrl,
+    });
+    expect(manager.phase).toBe('settled');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:06:00.000Z',
+      descriptor,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      operationIntentId: 'intent-replacement-manager',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    }))).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-manager-entry-conflict' },
+    });
+    await persistence.settleCloudToLanManagerEntry(manager);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+  });
+
+  it('admits target lifecycle work when foreign Manager deletion arrives after terminal convergence', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-remote-target-preparation',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'https://cloud.example.test/',
+    }), {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:00:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    }).descriptor!;
+    let manager = createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:00:45.000Z',
+      descriptor,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    });
+    manager = markCloudToLanManagerBeginPossiblySent(manager);
+    manager = recordCloudToLanManagerStatus(manager, {
+      ...cloudToLanStatus('completed'),
+      targetUrl: descriptor.targetUrl,
+    });
+    const physical = markAuthorityTransferTerminalCleanupCompleted(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...cloudToLanStatus('completed'),
+        targetUrl: descriptor.targetUrl,
+      },
+    }));
+    await repository.authorityTransferEntries.saveManager(manager);
+    await repository.authorityTransferRecords.save(physical);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+    });
+    const lifecycle = new CollabProjectLifecycleSubsystem({
+      closeRecovery: () => persistence.close(),
+      durableOwners: [{
+        inspect: projectId => persistence.inspectLifecycleOwner(projectId),
+        name: 'authority-transfer',
+      }],
+      hostTransfer: {} as never,
+      localExit: {} as never,
+      recoveryStages: [],
+      retirement: {} as never,
+    });
+    const operation = jest.fn().mockResolvedValue('admitted');
+
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+    await expect(lifecycle.runExclusive(
+      PROJECT_ID,
+      'host-transfer',
+      'operation',
+      operation,
+    )).resolves.toBe('admitted');
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a bounded raw HTTP Cloud endpoint in target preparation', () => {
+    expect(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:00:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-raw-http-target',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 1,
+      sourceCloudUrl: 'http://127.0.0.1:8787',
+    }).sourceCloudUrl).toBe('http://127.0.0.1:8787');
+  });
+
+  it('adopts the Cloud lifecycle timestamps only at the first physical source phase', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    }));
+    const canonical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...entry.status,
+        createdAt: '2026-08-26T00:00:05.000Z',
+        expiresAt: '2026-09-30T00:00:05.000Z',
+        phase: 'source-quiesced',
+        updatedAt: '2026-08-26T00:00:06.000Z',
+      },
+    });
+
+    await expect(persistence.adoptLanToCloudCanonicalIdentity(canonical))
+      .resolves.toBeUndefined();
+    await expect(persistence.load(PROJECT_ID)).resolves.toEqual(canonical);
+    await expect(persistence.adoptLanToCloudCanonicalIdentity(canonical)).rejects.toMatchObject({
+      code: 'authority-transfer-stale',
+      safeContext: { reason: 'authority-transfer-canonical-identity-adoption-invalid' },
+    });
+  });
+
+  it('fails closed when a handed-off source entry loses its physical successor', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, physical);
+    await repository.authorityTransferRecords.remove(PROJECT_ID);
+
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.loadRecoveryOwnerRecord(PROJECT_ID)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-entry-successor-missing' },
+    });
+    await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-entry-successor-missing' },
+    });
+  });
+
+  it('durably cancels the exact handed-off source before Cloud begin', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, physical);
+
+    const prepared = await persistence.cancelUnbegunLanToCloudSource({
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness',
+      idempotencyKey: 'intent-cancel-pre-begin',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    });
+    expect(prepared).toMatchObject({
+      status: { phase: 'target-cleaned', state: 'active' },
+    });
+    await expect(persistence.completeUnbegunLanToCloudCancellation(prepared))
+      .resolves.toMatchObject({
+      status: { phase: 'cancelled', state: 'cancelled' },
+    });
+  });
+
+  it.each([
+    ['no interruption', 'source-quiesced', 'not-sent', 'completed'],
+    ['before save', 'collecting-readiness', 'possibly-sent', 'interrupted cancellation refresh'],
+    ['after save', 'source-quiesced', 'not-sent', 'interrupted cancellation refresh'],
+  ])('retains cancellation across a stale-phase refresh with %s', async (fault, expectedPhase, submission, outcome) => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let refreshing = false;
+    const persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferEntries: {
+        ...repository.authorityTransferEntries,
+        saveSource: async entry => {
+          if (refreshing && fault === 'before save') throw new Error('interrupted cancellation refresh');
+          await repository.authorityTransferEntries.saveSource(entry);
+          if (refreshing && fault === 'after save') throw new Error('interrupted cancellation refresh');
+        },
+      },
+    }, { isRecoveryOwner: () => true });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    const cancellation = {
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness' as const,
+      idempotencyKey: 'intent-cancel-lost-begin',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    };
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, physical);
+    await persistence.markLanToCloudBeginPossiblySent(physical);
+    await persistence.prepareLanToCloudCancellation(cancellation);
+    await persistence.markLanToCloudCancellationPossiblySent(cancellation);
+    const advanced = {
+      ...physical,
+      status: {
+        ...transferStatus('source-quiesced'),
+        expiresAt: physical.status.expiresAt,
+      },
+    };
+    await persistence.advance(advanced, 'collecting-readiness');
+
+    refreshing = true;
+    const refresh = await persistence.settleRejectedLanToCloudCancellation(cancellation, advanced).then(
+      () => 'completed',
+      (error: unknown) => error instanceof Error ? error.message : 'unexpected failure',
+    );
+    expect(refresh).toBe(outcome);
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true,
+    });
+    await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      beginSubmission: 'possibly-sent',
+      cancellation: {
+        ...cancellation,
+        expectedPhase,
+        submission,
+      },
+    });
+  });
+
+  it('resumes local pre-begin cancellation after an interrupted durable phase', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let failAfterTargetInvalidated = true;
+    const persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferRecords: {
+        ...repository.authorityTransferRecords,
+        save: async record => {
+          await repository.authorityTransferRecords.save(record);
+          if (record.status.phase === 'target-invalidated' && failAfterTargetInvalidated) {
+            failAfterTargetInvalidated = false;
+            throw new Error('injected-local-cancellation-failure');
+          }
+        },
+      },
+    }, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, physical);
+    await expect(persistence.cancelUnbegunLanToCloudSource({
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness',
+      idempotencyKey: 'intent-cancel-pre-begin',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toThrow('injected-local-cancellation-failure');
+
+    const recovered = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const interrupted = await recovered.load(PROJECT_ID);
+    if (!interrupted) throw new Error('Missing interrupted cancellation');
+    const prepared = await recovered.resumeUnbegunLanToCloudCancellation(interrupted);
+    expect(prepared).toMatchObject({ status: { phase: 'target-cleaned', state: 'active' } });
+    await expect(recovered.completeUnbegunLanToCloudCancellation(prepared))
+      .resolves.toMatchObject({ status: { phase: 'cancelled', state: 'cancelled' } });
+  });
+
+  it('recovers cancellation when Cloud absence is durable before the first physical phase', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let failFirstCancellationPhase = true;
+    const persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferRecords: {
+        ...repository.authorityTransferRecords,
+        save: async record => {
+          if (record.status.phase === 'cancel-intent' && failFirstCancellationPhase) {
+            failFirstCancellationPhase = false;
+            throw new Error('injected-before-first-cancellation-phase');
+          }
+          await repository.authorityTransferRecords.save(record);
+        },
+      },
+    }, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    const cancellation = {
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness' as const,
+      idempotencyKey: 'intent-cancel-after-cloud-absence',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    };
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, physical);
+    await persistence.markLanToCloudBeginPossiblySent(physical);
+    await persistence.prepareLanToCloudCancellation(cancellation);
+    await persistence.markLanToCloudCancellationPossiblySent(cancellation);
+    await expect(persistence.cancelUnbegunLanToCloudSource(cancellation, true))
+      .rejects.toThrow('injected-before-first-cancellation-phase');
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      source: { beginSubmission: 'cloud-absent' },
+    });
+
+    const recovered = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const interrupted = await recovered.load(PROJECT_ID);
+    if (!interrupted) throw new Error('Missing interrupted cancellation');
+    await expect(recovered.markLanToCloudBeginPossiblySent(interrupted)).rejects.toMatchObject({
+      code: 'authority-transfer-stale',
+    });
+    const prepared = await recovered.resumeUnbegunLanToCloudCancellation(interrupted);
+    expect(prepared).toMatchObject({ status: { phase: 'target-cleaned', state: 'active' } });
+    await expect(recovered.completeUnbegunLanToCloudCancellation(prepared))
+      .resolves.toMatchObject({ status: { phase: 'cancelled', state: 'cancelled' } });
+  });
+
+  it('rejects a progressed physical status from the nonphysical entry document', () => {
+    expect(() => createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus({
+        phase: 'source-quiesced',
+        updatedAt: '2026-08-26T00:01:00.000Z',
+      }),
+    })).toThrow('Invalid authority transfer entry proposal status');
+  });
+
+  it('cancels and replays a source-local proposal without creating a physical transfer', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:01:00.000Z'),
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    const cancellation = {
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness' as const,
+      idempotencyKey: 'intent-cancel-proposal',
+      projectId: PROJECT_ID,
+      transferId: entry.status.transferId,
+    };
+
+    const cancelled = await persistence.cancelSourceEntry(cancellation);
+    expect(cancelled).toMatchObject({
+      phase: 'cancelled',
+      status: { phase: 'cancelled', state: 'cancelled' },
+    });
+    await expect(persistence.cancelSourceEntry(cancellation)).resolves.toEqual(cancelled);
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
+
+    await expect(persistence.proposeEntry(createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_ALICE,
+      request: {
+        ...entry.request,
+        targetUrl: 'https://different-cloud.example.test/',
+      },
+      status: proposalStatus({
+        targetUrl: 'https://different-cloud.example.test/',
+        transferId: 'transfer-reused-intent',
+      }),
+    }))).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+
+    const replacement = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_ALICE,
+      request: {
+        ...entry.request,
+        idempotencyKey: 'intent-after-cancelled-proposal',
+      },
+      status: proposalStatus({ transferId: 'transfer-after-cancelled-proposal' }),
+    });
+    await expect(persistence.proposeEntry(replacement)).resolves.toEqual(replacement);
+    await expect(persistence.cancelSourceEntry(cancellation)).rejects.toMatchObject({
+      code: 'authority-transfer-stale',
+      safeContext: { reason: 'authority-transfer-entry-cancel-stale' },
+    });
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(replacement);
+  });
+
+  it('rejects an unbounded source proposal lifetime', () => {
+    expect(() => createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: {
+        ...proposalStatus(),
+        expiresAt: '2027-08-26T00:00:00.000Z',
+      },
+    })).toThrow('Invalid authority transfer entry expiry');
+  });
+
+  it('recovers a crash after the physical successor is saved but before entry handoff', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let failHandedOffSave = true;
+    const persistence = new AuthorityTransferPersistence({
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: {
+        ...repository.authorityTransferEntries,
+        saveSource: async record => {
+          if (record.phase === 'handed-off' && failHandedOffSave) {
+            failHandedOffSave = false;
+            throw new Error('injected-entry-handoff-failure');
+          }
+          await repository.authorityTransferEntries.saveSource(record);
+        },
+      },
+      authorityTransferRecords: repository.authorityTransferRecords,
+    }, { isRecoveryOwner: () => true });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+
+    await expect(persistence.handoffEntry(entry, physical))
+      .rejects.toThrow('injected-entry-handoff-failure');
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toEqual(physical);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toEqual(
+      createAuthorityTransferEntryDocument({ projectId: PROJECT_ID, source: entry }),
+    );
+
+    const recovered = new AuthorityTransferPersistence(
+      new CollabLocalProjectRepository(vaultRoot),
+      { isRecoveryOwner: () => true },
+    );
+    await expect(recovered.load(PROJECT_ID)).resolves.toEqual(physical);
+    await expect(recovered.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      phase: 'handed-off',
+      successor: {
+        operationIntentId: OPERATION_INTENT_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        transferId: TRANSFER_ID,
+      },
+    });
+  });
+
+  it('keeps requester intent nonphysical and upgrades the same-device copy to source authority', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const requester = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    const otherRequester = createOwnedAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_B,
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_ALICE,
+      request: { ...request, idempotencyKey: 'intent-other-installation' },
+    });
+
+    await expect(persistence.submitRequesterEntry(requester)).resolves.toEqual(requester);
+    await expect(persistence.submitRequesterEntry(otherRequester)).resolves.toEqual(otherRequester);
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+    const source = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request,
+      status: proposalStatus(),
+    });
+    await expect(persistence.proposeEntry(source)).resolves.toEqual(source);
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(source);
+    await expect(persistence.completeRequesterEntry(
+      requester,
+      source.status,
+    )).resolves.toMatchObject({ status: source.status });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toMatchObject({ status: source.status });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B))
+      .resolves.toEqual(otherRequester);
+  });
+
+  it('does not clobber requester and source components written by separate installations', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    let waitingLoads = 0;
+    let releaseLoads!: () => void;
+    const bothLoaded = new Promise<void>(resolve => {
+      releaseLoads = resolve;
+    });
+    const entryStore = {
+      ...repository.authorityTransferEntries,
+      load: async (projectId: string) => {
+        const loaded = await repository.authorityTransferEntries.load(projectId);
+        waitingLoads += 1;
+        if (waitingLoads === 2) releaseLoads();
+        await bothLoaded;
+        return loaded;
+      },
+    };
+    const stores = {
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: entryStore,
+      authorityTransferRecords: repository.authorityTransferRecords,
+    };
+    const requesterPersistence = new AuthorityTransferPersistence(stores, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const sourcePersistence = new AuthorityTransferPersistence(stores, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+    });
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const requester = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    const source = createOwnedAuthorityTransferEntryRecord({
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      proposedByMemberId: MEMBER_BOB,
+      request,
+      status: proposalStatus(),
+    });
+
+    await Promise.all([
+      requesterPersistence.submitRequesterEntry(requester),
+      sourcePersistence.proposeEntry(source),
+    ]);
+
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toEqual(
+      createAuthorityTransferEntryDocument({
+        projectId: PROJECT_ID,
+        requesters: { [TEST_INSTALLATION_A]: requester },
+        source,
+      }),
+    );
+  });
+
+  it('preserves requester components synchronized while expiry removes an old snapshot', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const expired = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    const renewed = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request: { ...request, idempotencyKey: 'intent-renewed' },
+    });
+    const sibling = createOwnedAuthorityTransferRequesterEntry({
+      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request: { ...request, idempotencyKey: 'intent-sibling' },
+      installationKey: TEST_INSTALLATION_B,
+    });
+    await repository.authorityTransferEntries.saveRequester(expired);
+    let renewedBytes: Buffer | null = null;
+    let siblingBytes: Buffer | null = null;
+    const entryStore = {
+      ...repository.authorityTransferEntries,
+      removeRequester: async (record: typeof expired) => {
+        await repository.authorityTransferEntries.saveRequester(renewed);
+        await repository.authorityTransferEntries.saveRequester(sibling);
+        const requesterDirectory = repository.getProjectPaths(PROJECT_ID)
+          .authorityTransferEntry;
+        [renewedBytes, siblingBytes] = await Promise.all([
+          readFile(path.join(vaultRoot, requesterDirectory, 'requesters', `${TEST_INSTALLATION_A}.json`)),
+          readFile(path.join(vaultRoot, requesterDirectory, 'requesters', `${TEST_INSTALLATION_B}.json`)),
+        ]);
+        return repository.authorityTransferEntries.removeRequester(record);
+      },
+    };
+    const persistence = new AuthorityTransferPersistence({
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: entryStore,
+      authorityTransferRecords: repository.authorityTransferRecords,
+    }, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-09-25T00:00:00.000Z'),
+    });
+
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toEqual(renewed);
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B))
+      .resolves.toEqual(sibling);
+    const requesterDirectory = repository.getProjectPaths(PROJECT_ID).authorityTransferEntry;
+    await expect(readFile(path.join(
+      vaultRoot,
+      requesterDirectory,
+      'requesters',
+      `${TEST_INSTALLATION_A}.json`,
+    ))).resolves.toEqual(renewedBytes);
+    await expect(readFile(path.join(
+      vaultRoot,
+      requesterDirectory,
+      'requesters',
+      `${TEST_INSTALLATION_B}.json`,
+    ))).resolves.toEqual(siblingBytes);
+  });
+
+  it('expires a bounded nonphysical requester intent before admitting a replacement', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const requester = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    let persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-09-24T23:59:59.999Z'),
+    });
+    await persistence.submitRequesterEntry(requester);
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toEqual(requester);
+
+    persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-09-25T00:00:00.000Z'),
+    });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toBeNull();
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request: { ...request, idempotencyKey: 'intent-replacement' },
+    }))).resolves.toMatchObject({
+      request: { idempotencyKey: 'intent-replacement' },
+    });
+  });
+
+  it.each([false, true])('allows the same requester at a proved later LAN generation (old response saved: %s)', async responseSaved => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+    });
+    const oldRequest = {
+      expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const oldEntry = await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z', proposedByMemberId: MEMBER_BOB, request: oldRequest,
+    }));
+    if (responseSaved) await persistence.completeRequesterEntry(oldEntry, proposalStatus());
+    const foreign = createOwnedAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_ALICE, request: oldRequest,
+    });
+    await repository.authorityTransferEntries.saveRequester(foreign);
+    const nextStatus: CollabAuthorityTransferStatus = {
+      ...proposalStatus(), sourceAuthority: { generation: 3, kind: 'lan' },
+      targetAuthority: { generation: 4, kind: 'cloud' }, transferId: 'transfer-next',
+    };
+    const requestWithMember = jest.fn(async (operation: string) => {
+      if (operation !== 'requestLanToCloudTransfer') throw new Error('Former authority credential no longer valid');
+      return nextStatus;
+    });
+    const requester = new LanToCloudRequesterCoordinator({
+      authorityGeneration: 3, client: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      installationKey: TEST_INSTALLATION_A, memberCredential: Buffer.alloc(32, 9).toString('base64url'),
+      memberId: MEMBER_BOB, now: () => new Date('2026-08-27T00:00:00.000Z'), persistence, projectId: PROJECT_ID,
+    });
+    await expect(requester.propose({ ...oldRequest, expectedAuthorityGeneration: 3 }))
+      .rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
+    const nextRequest = { ...oldRequest, expectedAuthorityGeneration: 3, idempotencyKey: 'intent-next' };
+    await expect(requester.propose(nextRequest)).resolves.toEqual(nextStatus);
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A)).resolves.toMatchObject({ request: nextRequest, status: nextStatus });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B)).resolves.toEqual(foreign);
+    await expect(requester.propose(nextRequest)).resolves.toEqual(nextStatus);
+  });
+
+  it('rejects foreign and unproved requester succession without removing its intent', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const entry = createOwnedAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB, request: {
+        expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
+      },
+    });
+    await repository.authorityTransferEntries.saveRequester(entry);
+    const nextRequest = { ...entry.request, expectedAuthorityGeneration: 3, idempotencyKey: 'intent-next' };
+    const foreign = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+    await expect(foreign.settleSupersededRequester(entry, nextRequest, 3)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    const owner = new AuthorityTransferPersistence(repository, { isRecoveryOwner: key => key === TEST_INSTALLATION_B });
+    await expect(owner.settleSupersededRequester(entry, nextRequest, 1)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    await expect(owner.settleSupersededRequester(entry, { ...nextRequest, expectedAuthorityGeneration: 2 }, 2)).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    await expect(owner.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B)).resolves.toEqual(entry);
+  });
+
+  it('settles an exact requester cancellation before admitting a replacement intent', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const requester = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    const proposed = await persistence.completeRequesterEntry(
+      await persistence.submitRequesterEntry(requester),
+      proposalStatus(),
+    );
+    await persistence.settleRequesterCancellation(proposed, {
+      ...proposalStatus(),
+      phase: 'cancelled',
+      state: 'cancelled',
+      updatedAt: '2026-08-26T00:01:00.000Z',
+    });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toBeNull();
+
+    const replacement = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:01:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request: { ...request, idempotencyKey: 'intent-requester-replacement' },
+    });
+    await expect(persistence.submitRequesterEntry(replacement)).resolves.toEqual(replacement);
+  });
+
+  it('keeps requester state independent from a synchronized foreign physical transfer', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const request = {
+      expectedAuthorityGeneration: 1,
+      idempotencyKey: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      targetUrl: 'http://127.0.0.1:8787/',
+    };
+    const requester = createAuthorityTransferRequesterEntry({
+      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: MEMBER_BOB,
+      request,
+    });
+    await repository.authorityTransferEntries.saveRequester(requester);
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: proposalStatus(),
+    }));
+    let persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+      now: () => new Date('2026-09-24T23:59:59.999Z'),
+    });
+
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toEqual(requester);
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+    await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).resolves.toBeUndefined();
+
+    persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+      now: () => new Date('2026-09-25T00:00:00.000Z'),
+    });
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
+      .resolves.toBeNull();
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+    });
+  });
+
+  it('ignores a synchronized foreign source slot as lifecycle ownership', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const foreignSource = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await repository.authorityTransferEntries.saveSource(foreignSource);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+    });
+
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toBeNull();
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+    await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).resolves.toBeUndefined();
+  });
+
+  it('fails closed on a local handed-off source paired with a foreign physical record', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const localSource = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await repository.authorityTransferEntries.saveSource({
+      ...localSource,
+      phase: 'handed-off',
+      successor: {
+        operationIntentId: OPERATION_INTENT_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        transferId: TRANSFER_ID,
+      },
+    });
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: 'intent-foreign-physical',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: '.claudian-authority-transfer-transfer-foreign-physical',
+      status: proposalStatus({ transferId: 'transfer-foreign-physical' }),
+    }));
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+    await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+  });
+
+  it('preserves an expired foreign source until its owning installation removes it', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const foreignSource = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await repository.authorityTransferEntries.saveSource(foreignSource);
+    await repository.authorityTransferRecords.save({
+      ...createAuthorityTransferRecord({
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: 'intent-local-terminal',
+        ownerInstallationKey: TEST_INSTALLATION_B,
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        stagingDirectoryName: '.claudian-authority-transfer-transfer-local-terminal',
+        status: {
+          ...proposalStatus({ transferId: 'transfer-local-terminal' }),
+          phase: 'cancelled',
+          state: 'cancelled',
+        },
+      }),
+      terminalCleanupCompleted: true,
+    });
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
+      now: () => new Date(ENTRY_EXPIRES_AT),
+    });
+    const replacement = createOwnedAuthorityTransferEntryRecord({
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      proposedByMemberId: MEMBER_ALICE,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-local-replacement',
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus({ transferId: 'transfer-local-replacement' }),
+    });
+
+    await expect(persistence.proposeEntry(replacement)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+    });
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({
+      source: { ownerInstallationKey: TEST_INSTALLATION_A },
+    });
+  });
+
+  it('retains an exact cancelled tombstone with terminal physical cleanup', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    const physical = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    });
+    await persistence.handoffEntry(entry, physical);
+    await persistence.prepareLanToCloudCancellation({
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness',
+      idempotencyKey: 'intent-cancel-terminal',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    });
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...entry.status,
+        phase: 'cancelled',
+        state: 'cancelled',
+        updatedAt: '2026-08-26T00:08:00.000Z',
+      },
+    }));
+
+    await persistence.completeTerminalCleanup({
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    });
+
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      phase: 'cancelled',
+      status: { state: 'cancelled' },
+    });
+    await expect(persistence.prepareLanToCloudCancellation({
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness',
+      idempotencyKey: 'intent-cancel-terminal',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).resolves.toMatchObject({ status: { state: 'cancelled' } });
+    await expect(persistence.prepareLanToCloudCancellation({
+      expectedAuthorityGeneration: 1,
+      expectedPhase: 'collecting-readiness',
+      idempotencyKey: 'intent-cancel-terminal-changed',
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    })).rejects.toMatchObject({ code: 'authority-transfer-stale' });
+    await expect(persistence.load(PROJECT_ID)).resolves.toMatchObject({
+      terminalCleanupCompleted: true,
+    });
+    await expect(persistence.proposeEntry(createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: entry.request,
+      status: proposalStatus({ transferId: 'transfer-delayed-replay' }),
+    }))).resolves.toMatchObject({
+      phase: 'cancelled',
+      status: { transferId: TRANSFER_ID },
+    });
+
+    const expiredPersistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date(ENTRY_EXPIRES_AT),
+    });
+    await expect(expiredPersistence.loadSourceEntry(PROJECT_ID)).resolves.toBeNull();
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
+      terminalCleanupCompleted: true,
+      transferId: TRANSFER_ID,
+    });
+  });
+
+  it('keeps terminal cleanup recoverable until the handed-off entry is settled', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await repository.authorityTransferEntries.saveSource(
+      prepareAuthorityTransferSourceCancellation({
+        ...entry,
+        phase: 'handed-off',
+        successor: {
+          operationIntentId: OPERATION_INTENT_ID,
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          transferId: TRANSFER_ID,
+        },
+      }, {
+        expectedAuthorityGeneration: 1,
+        expectedPhase: 'collecting-readiness',
+        idempotencyKey: 'intent-cancel-terminal',
+        projectId: PROJECT_ID,
+        transferId: TRANSFER_ID,
+      }),
+    );
+    await repository.authorityTransferRecords.save({
+      ...createAuthorityTransferRecord({
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: OPERATION_INTENT_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+        status: {
+          ...entry.status,
+          phase: 'cancelled',
+          state: 'cancelled',
+          updatedAt: '2026-08-26T00:08:00.000Z',
+        },
+      }),
+      terminalCleanupCompleted: true,
+    });
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await persistence.completeTerminalCleanup({
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    });
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toMatchObject({
+      phase: 'cancelled',
+      status: { state: 'cancelled' },
+    });
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
+  });
+
+  it('admits a new source proposal after a safe cancelled physical cleanup', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...proposalStatus(),
+        phase: 'cancelled',
+        state: 'cancelled',
+        updatedAt: '2026-08-26T00:08:00.000Z',
+      },
+    }));
+    await persistence.completeTerminalCleanup({
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    });
+    const replacement = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-replacement-proposal',
+        projectId: PROJECT_ID,
+        targetUrl: 'https://replacement-cloud.example.test/',
+      },
+      status: proposalStatus({
+        targetUrl: 'https://replacement-cloud.example.test/',
+        transferId: 'transfer-replacement-proposal',
+      }),
+    });
+
+    await expect(persistence.proposeEntry(replacement)).resolves.toEqual(replacement);
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(persistence.loadSourceEntry(PROJECT_ID)).resolves.toEqual(replacement);
+  });
+
+  it('does not replace a synchronized physical record after stale cleanup inspection', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const cancelled = {
+      ...createAuthorityTransferRecord({
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: OPERATION_INTENT_ID,
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        sourceLanEndpoint: 'https://127.0.0.1:54545',
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+        status: {
+          ...proposalStatus(),
+          phase: 'cancelled',
+          state: 'cancelled',
+          updatedAt: '2026-08-26T00:08:00.000Z',
+        },
+      }),
+      terminalCleanupCompleted: true,
+    };
+    const synchronized = createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: 'intent-synchronized-physical',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      sourceLanEndpoint: 'https://127.0.0.1:54546',
+      stagingDirectoryName: '.claudian-authority-transfer-transfer-synchronized-physical',
+      status: proposalStatus({ transferId: 'transfer-synchronized-physical' }),
+    });
+    await repository.authorityTransferRecords.save(cancelled);
+    const physicalStore = {
+      ...repository.authorityTransferRecords,
+      removeExact: async (record: typeof cancelled) => {
+        await repository.authorityTransferRecords.save(synchronized);
+        return repository.authorityTransferRecords.removeExact(record);
+      },
+    };
+    const persistence = new AuthorityTransferPersistence({
+      authorityTransferClaimCommitments: repository.authorityTransferClaimCommitments,
+      authorityTransferClaims: repository.authorityTransferClaims,
+      authorityTransferEntries: repository.authorityTransferEntries,
+      authorityTransferRecords: physicalStore,
+    }, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+    });
+    const replacement = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-stale-cleanup-replacement',
+        projectId: PROJECT_ID,
+        targetUrl: 'https://replacement-cloud.example.test/',
+      },
+      status: proposalStatus({
+        targetUrl: 'https://replacement-cloud.example.test/',
+        transferId: 'transfer-stale-cleanup-replacement',
+      }),
+    });
+
+    await expect(persistence.proposeEntry(replacement)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-physical-record-stale' },
+    });
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID))
+      .resolves.toEqual(synchronized);
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+  });
+
+  it('fails closed when an entry and physical successor do not have one exact identity', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await repository.authorityTransferEntries.saveSource(entry);
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: 'intent-conflicting-successor',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    }));
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+    });
+
+    await expect(persistence.load(PROJECT_ID)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-entry-successor-mismatch' },
+    });
   });
 
   it('recovers every exact LAN source phase and permanently fences the old authority', async () => {
@@ -311,8 +2575,12 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('keeps an ownerless legacy authority fence visible and blocks Host restart', async () => {
-    const repository = new CollabLocalProjectRepository(vaultRoot);
+  it.each([
+    { missingKeys: [] },
+    { missingKeys: ['receiptVerifier'] },
+    { missingKeys: ['sourceLanEndpoint'] },
+    { missingKeys: ['receiptVerifier', 'sourceLanEndpoint'] },
+  ])('rejects legacy authority records missing $missingKeys', ({ missingKeys }) => {
     const current = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
       localRole: 'target',
@@ -320,23 +2588,56 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: cloudToLanStatus('cloud-quiesced'),
     });
-    const { ownerInstallationKey: _ownerInstallationKey, ...withoutOwner } = current;
-    await repository.authorityTransferRecords.save(decodeAuthorityTransferRecord({
-      ...withoutOwner,
-      schemaVersion: 1,
-    }));
+    const legacy: Record<string, unknown> = { ...current, schemaVersion: 1 };
+    delete legacy.ownerInstallationKey;
+    for (const key of missingKeys) delete legacy[key];
+    expect(() => decodeAuthorityTransferRecord(legacy)).toThrow('Invalid authority transfer record');
+    const ownerless: Record<string, unknown> = { ...current };
+    delete ownerless.ownerInstallationKey;
+    expect(() => decodeAuthorityTransferRecord(ownerless)).toThrow('Invalid authority transfer record');
+  });
+
+  it('admits only the exact completed Cloud-to-LAN target recovery Host start', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
     });
-
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
-    await expect(persistence.runWithAuthorityStartGuard(
-      PROJECT_ID,
-      async () => 'unexpected',
-    )).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'authority-transfer-legacy-owner-missing' },
+    const record = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: cloudToLanStatus('completed'),
     });
+    await repository.authorityTransferRecords.save(record);
+    const start = jest.fn(async () => 'running');
+
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      acceptedTargetUrl: record.status.targetUrl,
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    }, start)).resolves.toBe('running');
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      acceptedTargetUrl: record.status.targetUrl,
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: 'transfer-stale',
+    }, start)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-recovery-start-stale' },
+    });
+    await expect(persistence.runWithCloudToLanTargetRecoveryStartGuard({
+      acceptedTargetUrl: 'https://192.168.1.30:27001',
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      transferId: TRANSFER_ID,
+    }, start)).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'authority-transfer-target-recovery-start-stale' },
+    });
+
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
   it('isolates Project guards and closes new persistence admission while draining', async () => {
@@ -348,9 +2649,24 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence({
       authorityTransferClaimCommitments: emptyStore,
       authorityTransferClaims: emptyStore,
+      authorityTransferEntries: {
+        ...emptyStore,
+        removeManager: jest.fn().mockResolvedValue(false),
+        removeRequester: jest.fn().mockResolvedValue(false),
+        removeSource: jest.fn().mockResolvedValue(false),
+        removeTarget: jest.fn().mockResolvedValue(false),
+        saveManager: jest.fn().mockResolvedValue(undefined),
+        saveRequester: jest.fn().mockResolvedValue(undefined),
+        saveSource: jest.fn().mockResolvedValue(undefined),
+        saveTarget: jest.fn().mockResolvedValue(undefined),
+      },
       authorityTransferRecords: {
         ...emptyStore,
+        listRetained: jest.fn().mockResolvedValue([]),
+        loadRetained: jest.fn().mockResolvedValue(null),
+        saveRetained: jest.fn().mockResolvedValue(undefined),
         listProjectIds: jest.fn().mockResolvedValue([]),
+        removeExact: jest.fn().mockResolvedValue(false),
         scanProjectCatalog: jest.fn().mockResolvedValue({
           invalidEntryCount: 0,
           projectIds: [],
@@ -376,7 +2692,7 @@ describe('AuthorityTransferPersistence', () => {
       betaCompleted = true;
       return result;
     });
-    for (let index = 0; index < 10; index += 1) await Promise.resolve();
+    await beta;
     const projectsWereIsolated = betaCompleted;
 
     releaseAlpha();
@@ -406,6 +2722,48 @@ describe('AuthorityTransferPersistence', () => {
     await admittedBeforeClose;
     await expect(closing).resolves.toBeUndefined();
     expect(projectsWereIsolated).toBe(true);
+  });
+
+  it('retains an exact custody receipt when the Cloud clock is behind local retention', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-26T00:03:29.524Z'),
+    });
+    await persistence.create(createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('collecting-readiness'),
+    }));
+    const batch = claimBatch();
+    await persistence.retainClaimBatch({
+      batch,
+      operationIntentId: OPERATION_INTENT_ID,
+      purpose: 'source-terminal',
+    });
+    const receipt = {
+      batchRevision: batch.batchRevision,
+      batchSha256: batch.batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:03:29.474Z',
+      custodyAuthority: { generation: 1, kind: 'lan' as const },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-cloud-clock',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    };
+
+    await expect(persistence.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
+
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true,
+    });
+    await expect(reopened.acknowledgeClaimBatch(receipt)).resolves.toEqual(receipt);
+    await expect(reopened.loadRetainedClaimBatch(PROJECT_ID, TRANSFER_ID)).resolves.toEqual(batch);
   });
 
   it('rotates only an unacknowledged exact batch and scrubs one verified claim at a time', async () => {
@@ -691,9 +3049,13 @@ describe('AuthorityTransferPersistence', () => {
     for (const phase of CLOUD_TO_LAN_PHASES.slice(1)) {
       if (phase === 'claims-retained') {
         const batch = claimBatch();
+        const stageOperationIntentId = authorityTransferChildIdempotencyKey(
+          OPERATION_INTENT_ID,
+          'stage',
+        );
         await persistence.retainClaimBatch({
           batch,
-          operationIntentId: OPERATION_INTENT_ID,
+          operationIntentId: stageOperationIntentId,
           purpose: 'target-delivery',
         });
         await persistence.acknowledgeClaimBatch({
@@ -702,7 +3064,7 @@ describe('AuthorityTransferPersistence', () => {
           checkpointSha256: batch.checkpointSha256,
           committedAt: '2026-08-26T00:03:30.000Z',
           custodyAuthority: { generation: 1, kind: 'cloud' },
-          operationIntentId: OPERATION_INTENT_ID,
+          operationIntentId: stageOperationIntentId,
           projectId: PROJECT_ID,
           receiptId: 'target-custody-receipt',
           submittedByMemberId: MEMBER_ALICE,
@@ -853,6 +3215,214 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.load(PROJECT_ID)).resolves.toEqual(replacement);
   });
 
+  it('replaces a fully cleaned target cancellation with a fresh target preparation', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
+    const cancelled = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'target',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: {
+        ...cloudToLanStatus('cloud-quiesced'),
+        phase: 'cancelled',
+        state: 'cancelled',
+        updatedAt: '2026-08-26T00:08:00.000Z',
+      },
+    });
+    await repository.authorityTransferRecords.save(cancelled);
+    await persistence.completeTerminalCleanup({
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      transferId: TRANSFER_ID,
+    });
+    const replacement = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:09:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-replacement-target',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: 'http://127.0.0.1:8787',
+    });
+
+    await expect(persistence.prepareCloudToLanTargetEntry(replacement)).resolves.toEqual(
+      replacement,
+    );
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
+  });
+
+  it('retains an unexpired source claim while preparing the next LAN generation', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-26T00:10:00.000Z'),
+    });
+    const predecessor = createAuthorityTransferRecord({
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    });
+    await repository.authorityTransferRecords.save(predecessor);
+    await persistence.retainClaimBatch({
+      batch: claimBatch(), operationIntentId: OPERATION_INTENT_ID, purpose: 'source-terminal',
+    });
+    await persistence.acknowledgeClaimBatch({
+      batchRevision: 1,
+      batchSha256: claimBatch().batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:10:00.000Z',
+      custodyAuthority: { generation: 1, kind: 'lan' },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-cycle',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    });
+    const next = createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:11:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-next-lan-generation',
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_ALICE,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: predecessor.status.targetUrl,
+    });
+    await expect(persistence.prepareCloudToLanTargetEntry(next)).resolves.toEqual(next);
+    const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-26T00:12:00.000Z'),
+    });
+    await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(next);
+    await expect(reopened.loadClaim(PROJECT_ID, TRANSFER_ID, MEMBER_BOB))
+      .resolves.toMatchObject({ memberId: MEMBER_BOB, claim: claimBatch().claims[1].claim });
+  });
+
+  it.each(['none', 'after-remove', 'before-save', 'after-save'] as const)(
+    'prepares a LAN target after a settled Cloud move and recovers %s', async fault => {
+      const repository = new CollabLocalProjectRepository(vaultRoot);
+      const predecessor = markAuthorityTransferTerminalCleanupCompleted(
+        expireAuthorityTransferTerminalResponder(createAuthorityTransferRecord({
+          ownerInstallationKey: TEST_INSTALLATION_A,
+          lifecycleOwnership: 'owned',
+          localRole: 'source',
+          operationIntentId: OPERATION_INTENT_ID,
+          stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+          status: transferStatus('completed'),
+        })),
+      );
+      await repository.authorityTransferRecords.save(predecessor);
+      const replacement = createCloudToLanTargetEntry({
+        createdAt: '2026-09-30T00:01:00.000Z',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+        operationIntentId: 'intent-round-trip',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_ALICE,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        sourceAuthorityGeneration: 2,
+        sourceCloudUrl: predecessor.status.targetUrl,
+      });
+      let interrupted = false;
+      const persistence = new AuthorityTransferPersistence({
+        ...repository,
+        authorityTransferRecords: {
+          ...repository.authorityTransferRecords,
+          removeExact: async record => {
+            const removed = await repository.authorityTransferRecords.removeExact(record);
+            if (!interrupted && fault === 'after-remove') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+            return removed;
+          },
+        },
+        authorityTransferEntries: {
+          ...repository.authorityTransferEntries,
+          saveTarget: async entry => {
+            if (!interrupted && fault === 'before-save') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+            await repository.authorityTransferEntries.saveTarget(entry);
+            if (!interrupted && fault === 'after-save') {
+              interrupted = true;
+              throw new Error(fault);
+            }
+          },
+        },
+      }, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+      const result = await persistence.prepareCloudToLanTargetEntry(replacement).then(
+        () => 'prepared', error => (error as Error).message,
+      );
+      expect(result).toBe(fault === 'none' ? 'prepared' : fault);
+      const reopened = new AuthorityTransferPersistence(
+        new CollabLocalProjectRepository(vaultRoot),
+        { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A },
+      );
+      await expect(reopened.prepareCloudToLanTargetEntry(replacement)).resolves.toEqual(replacement);
+      await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
+      await expect(reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(replacement);
+    },
+  );
+
+  it.each(['active-responder', 'cleanup-pending', 'wrong-generation', 'wrong-cloud', 'foreign-owner', 'retained-custody'] as const)(
+    'preserves the Cloud move predecessor when LAN preparation has %s', async conflict => {
+      const repository = new CollabLocalProjectRepository(vaultRoot);
+      const active = createAuthorityTransferRecord({
+        ownerInstallationKey: conflict === 'foreign-owner' ? TEST_INSTALLATION_B : TEST_INSTALLATION_A,
+        lifecycleOwnership: 'owned',
+        localRole: 'source',
+        operationIntentId: OPERATION_INTENT_ID,
+        stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+        status: transferStatus('completed'),
+      });
+      const expired = expireAuthorityTransferTerminalResponder(active);
+      const predecessor = conflict === 'active-responder' ? active
+        : conflict === 'cleanup-pending' ? expired
+          : markAuthorityTransferTerminalCleanupCompleted(expired);
+      await repository.authorityTransferRecords.save(predecessor);
+      if (conflict === 'retained-custody') {
+        await repository.authorityTransferClaims.save(createAuthorityTransferClaimCustodyRecord({
+          batch: claimBatch(),
+          createdAt: '2026-08-26T00:01:00.000Z',
+          operationIntentId: OPERATION_INTENT_ID,
+          purpose: 'source-terminal',
+        }));
+      }
+      const persistence = new AuthorityTransferPersistence(repository, {
+        isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      });
+      const replacement = createCloudToLanTargetEntry({
+        createdAt: '2026-09-30T00:01:00.000Z',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+        operationIntentId: 'intent-round-trip',
+        ownerInstallationKey: TEST_INSTALLATION_A,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: MEMBER_ALICE,
+        selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+        sourceAuthorityGeneration: conflict === 'wrong-generation' ? 3 : 2,
+        sourceCloudUrl: conflict === 'wrong-cloud' ? 'https://other.example.test/' : predecessor.status.targetUrl,
+      });
+      await expect(persistence.prepareCloudToLanTargetEntry(replacement)).rejects.toMatchObject({
+        safeContext: { reason: 'authority-transfer-target-entry-conflict' },
+      });
+      await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toEqual(predecessor);
+      await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+    },
+  );
+
   it('refuses terminal cleanup when claim custody belongs to a different durable owner', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
@@ -939,7 +3509,7 @@ describe('AuthorityTransferPersistence', () => {
     });
   });
 
-  it('expires the terminal responder only after scrubbing every retained raw claim', async () => {
+  it.each(['none', 'custody-removal'] as const)('expires the terminal responder and recovers cleanup interruption: %s', async fault => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
@@ -1007,12 +3577,27 @@ describe('AuthorityTransferPersistence', () => {
       terminalResponder: { state: 'expired' },
     });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    persistence = new AuthorityTransferPersistence({
+      ...repository,
+      authorityTransferClaims: {
+        ...repository.authorityTransferClaims,
+        remove: async (projectId, transferId) => {
+          if (fault === 'custody-removal') throw new Error('simulated custody removal failure');
+          return repository.authorityTransferClaims.remove(projectId, transferId);
+        },
+      },
+    }, { isRecoveryOwner: () => true, now: () => new Date(EXPIRES_AT) });
+    const firstCleanup = await completeTerminalCleanup().then(() => null, (error: Error) => error.message);
+    expect(firstCleanup).toBe(fault === 'none' ? null : 'simulated custody removal failure');
+    persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
+      isRecoveryOwner: () => true, now: () => new Date(EXPIRES_AT),
+    });
     await expect(completeTerminalCleanup()).resolves.toBeUndefined();
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('terminal');
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toBeNull();
   });
 
-  it('expires and cleans a single-member transfer with an exact empty claim batch', async () => {
+  it('expires and cleans a single-member transfer with an exact empty claim batch immediately', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
@@ -1044,6 +3629,49 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status,
     });
+    const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      createdAt: '2026-08-26T00:05:00.000Z',
+      expiresAt: ENTRY_EXPIRES_AT,
+      operationIntentId: 'intent-next-target',
+      ownerInstallationKey: TEST_INSTALLATION_B,
+      projectId: PROJECT_ID,
+      selectedTargetMemberId: MEMBER_BOB,
+      selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
+      sourceAuthorityGeneration: 2,
+      sourceCloudUrl: 'http://127.0.0.1:8787/',
+    }), {
+      caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
+      caFingerprint: 'c'.repeat(64),
+      publishedAt: '2026-08-26T00:05:30.000Z',
+      targetUrl: 'https://192.168.1.20:27001',
+    });
+    const manager = createCloudToLanManagerEntry({
+      createdAt: '2026-08-26T00:06:00.000Z',
+      descriptor: target.descriptor!,
+      expiresAt: ENTRY_EXPIRES_AT,
+      initiatingMemberId: MEMBER_ALICE,
+      initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      operationIntentId: 'intent-next-manager',
+    });
+    const requester = await persistence.completeRequesterEntry(
+      await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+        proposedAt: '2026-08-26T00:00:00.000Z',
+        proposedByMemberId: MEMBER_ALICE,
+        request: {
+          expectedAuthorityGeneration: 1,
+          idempotencyKey: OPERATION_INTENT_ID,
+          projectId: PROJECT_ID,
+          targetUrl: status.targetUrl,
+        },
+      })),
+      {
+        ...transferStatus('collecting-readiness'),
+        createdAt: '2026-08-26T00:00:08.000Z',
+        expiresAt: '2026-09-30T00:00:08.000Z',
+        updatedAt: '2026-08-26T00:00:08.000Z',
+      },
+    );
     await repository.authorityTransferRecords.save(completed);
     await persistence.retainClaimBatch({
       batch,
@@ -1063,11 +3691,16 @@ describe('AuthorityTransferPersistence', () => {
       targetAuthorityGeneration: 2,
       transferId: TRANSFER_ID,
     });
+    await expect(persistence.prepareCloudToLanManagerEntry(manager)).rejects.toMatchObject({
+      safeContext: { reason: 'authority-transfer-manager-entry-conflict' },
+    });
 
     persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date(EXPIRES_AT),
+      now: () => new Date('2026-08-26T00:04:00.000Z'),
     });
+    await expect(persistence.isRetainedClaimBatchEmpty(PROJECT_ID, TRANSFER_ID))
+      .resolves.toBe(true);
     await persistence.expireTerminalResponder(PROJECT_ID, TRANSFER_ID);
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toMatchObject({
       claims: [],
@@ -1086,6 +3719,15 @@ describe('AuthorityTransferPersistence', () => {
     await expect(repository.authorityTransferClaims.load(PROJECT_ID)).resolves.toBeNull();
     await expect(repository.authorityTransferClaimCommitments.load(PROJECT_ID))
       .resolves.toBeNull();
+    await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
+    await expect(repository.authorityTransferEntries.removeRequester(requester))
+      .resolves.toBe(false);
+    await expect(persistence.prepareCloudToLanManagerEntry(manager)).resolves.toEqual(manager);
+    await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toMatchObject({
+      restartFence: 'permanent',
+      terminalCleanupCompleted: true,
+      transferId: TRANSFER_ID,
+    });
   });
 
   it('recovers terminal completion after claim files were removed before the record fence', async () => {

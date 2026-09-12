@@ -36,17 +36,17 @@ export class CodexAppServerProcess {
   }
 
   get stdin(): Writable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdin;
   }
 
   get stdout(): Readable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdout;
   }
 
   get stderr(): Readable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stderr;
   }
 
@@ -75,7 +75,7 @@ export class CodexAppServerProcess {
     return this.process.shutdown();
   }
 
-  private assertStarted(): void {
+  #assertStarted(): void {
     if (!this.process.isStarted()) {
       throw new Error('Process not started');
     }

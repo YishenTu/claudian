@@ -17,6 +17,7 @@ import {
   NodeSqlJsSnapshotStore,
   type SqlJsSnapshotStore,
 } from '@/app/collab/authority/SqlJsSnapshotStore';
+import { TicketService } from '@/app/collab/authority/TicketService';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
@@ -89,6 +90,95 @@ describe('SqlJsProjectDatabase', () => {
     });
     expect(await reopened.read(connection => projects.get(connection)?.name))
       .toBe('Second durable name');
+    await reopened.close();
+  });
+
+  it('shares one durable snapshot for queued writes and preserves read barriers', async () => {
+    const store = new RecordingSnapshotStore(new NodeSqlJsSnapshotStore(authorityDirectory));
+    const database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL, snapshotStore: store });
+    await database.open();
+    await database.mutate(c => new ProjectAuthorityRepository().initialize(c, projectInput()));
+    store.calls.length = 0;
+    const writes = Array.from({ length: 16 }, (_, index) => database.mutate(c => {
+      c.run('UPDATE project SET name = ? WHERE singleton = 1', [`Name ${index}`]);
+      return index;
+    }));
+    const barrier = database.read(c => c.get('SELECT name FROM project')?.name);
+    const later = database.mutate(c => c.run("UPDATE project SET name = 'After barrier' WHERE singleton = 1"));
+    expect((await Promise.all(writes)).map(result => result.generation))
+      .toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+    await expect(barrier).resolves.toBe('Name 15');
+    await later;
+    expect(store.calls.filter(call => call === 'writeTemporary')).toHaveLength(2);
+    await database.close();
+    const reopened = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await expect(reopened.open()).resolves.toMatchObject({ generation: 18 });
+    await expect(reopened.read(c => c.get('SELECT name FROM project')?.name)).resolves.toBe('After barrier');
+    await reopened.close();
+  });
+
+  it('shares persistence across concurrent Ticket service requests and replays them after restart', async () => {
+    const store = new RecordingSnapshotStore(new NodeSqlJsSnapshotStore(authorityDirectory));
+    const database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL, snapshotStore: store });
+    await database.open();
+    await database.mutate(c => new ProjectAuthorityRepository().initialize(c, projectInput()));
+    store.calls.length = 0;
+    const service = new TicketService(database);
+    const requests = Array.from({ length: 16 }, (_, index) => ({
+      projectId: projectInput().projectId, title: `Ticket ${index}`, body: 'Body', idempotencyKey: `create-${index}`,
+    }));
+    const tickets = await Promise.all(requests.map(request => service.create(projectInput().hostMemberId, request)));
+    expect(new Set(tickets.map(detail => detail.ticket.number)).size).toBe(16);
+    expect(store.calls.filter(call => call === 'writeTemporary')).toHaveLength(1);
+    await database.close();
+    const reopened = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await reopened.open();
+    const restored = new TicketService(reopened);
+    await expect(Promise.all(requests.map(request => restored.create(projectInput().hostMemberId, request))))
+      .resolves.toEqual(tickets);
+    await reopened.close();
+  });
+
+  it('bounds batches and preserves export and close ordering', async () => {
+    const store = new RecordingSnapshotStore(new NodeSqlJsSnapshotStore(authorityDirectory));
+    const database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL, snapshotStore: store });
+    await database.open();
+    await database.mutate(c => new ProjectAuthorityRepository().initialize(c, projectInput()));
+    store.calls.length = 0;
+    const writes = Array.from({ length: 33 }, (_, index) => database.mutate(c => (
+      c.run('UPDATE project SET name = ? WHERE singleton = 1', [`Name ${index}`])
+    )));
+    const exported = database.exportSnapshot();
+    const last = database.mutate(c => c.run("UPDATE project SET name = 'Final' WHERE singleton = 1"));
+    const closed = database.close();
+    await Promise.all(writes);
+    const image = new SQL.Database(await exported);
+    expect(image.exec('SELECT name, snapshot_generation FROM project')[0].values).toEqual([['Name 32', 34]]);
+    image.close();
+    await last;
+    await closed;
+    expect(store.calls.filter(call => call === 'writeTemporary')).toHaveLength(4);
+    const reopened = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await expect(reopened.open()).resolves.toMatchObject({ generation: 35 });
+    await expect(reopened.read(c => c.get('SELECT name FROM project')?.name)).resolves.toBe('Final');
+    await reopened.close();
+  });
+
+  it('rolls back a rejected transaction without dropping adjacent queued writes', async () => {
+    const database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await database.open();
+    await database.mutate(c => new ProjectAuthorityRepository().initialize(c, projectInput()));
+    const results = await Promise.allSettled([
+      database.mutate(c => c.run("UPDATE project SET name = 'First' WHERE singleton = 1")),
+      database.mutate(c => c.run("UPDATE members SET status = 'revoked'")),
+      database.mutate(c => c.run("UPDATE project SET name = 'Last' WHERE singleton = 1")),
+    ]);
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
+    expect(database.generation).toBe(3);
+    await database.close();
+    const reopened = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await reopened.open();
+    await expect(reopened.read(c => c.get('SELECT name FROM project')?.name)).resolves.toBe('Last');
     await reopened.close();
   });
 
@@ -416,6 +506,39 @@ describe('SqlJsProjectDatabase', () => {
     await recovered.close();
   });
 
+  it.each(['writeTemporary', 'rotatePrimaryToBackup', 'promoteTemporary', 'syncDirectory'] as const)(
+    'never acknowledges any member of a batch interrupted at %s', async failedOperation => {
+      const projects = new ProjectAuthorityRepository();
+      const seed = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+      await seed.open();
+      await seed.mutate(c => projects.initialize(c, projectInput()));
+      await seed.close();
+      const database = new SqlJsProjectDatabase(authorityDirectory, {
+        loadSqlJs: async () => SQL,
+        snapshotStore: new FaultingSnapshotStore(new NodeSqlJsSnapshotStore(authorityDirectory), failedOperation),
+      });
+      await database.open();
+      const listener = jest.fn();
+      database.subscribe(listener);
+      const results = await Promise.allSettled([
+        database.mutate(c => c.run("UPDATE project SET name = 'First' WHERE singleton = 1")),
+        database.mutate(c => c.run("UPDATE project SET name = 'Last' WHERE singleton = 1")),
+      ]);
+      expect(results).toEqual([
+        { status: 'rejected', reason: expect.objectContaining({ code: 'durable-progress-recovery-required' }) },
+        { status: 'rejected', reason: expect.objectContaining({ code: 'durable-progress-recovery-required' }) },
+      ]);
+      expect(listener).not.toHaveBeenCalled();
+      const reopened = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+      const expectedGeneration = failedOperation === 'writeTemporary' ? 1 : 3;
+      await expect(reopened.open()).resolves.toMatchObject({ generation: expectedGeneration });
+      await expect(reopened.read(c => projects.get(c)?.name)).resolves.toBe(
+        expectedGeneration === 1 ? 'Alpha' : 'Last',
+      );
+      await reopened.close();
+    },
+  );
+
   it('selects and promotes a valid backup when newer candidates are corrupt', async () => {
     const projects = new ProjectAuthorityRepository();
     const database = new SqlJsProjectDatabase(authorityDirectory, {
@@ -442,6 +565,63 @@ describe('SqlJsProjectDatabase', () => {
 
     expect((await readFile(path.join(authorityDirectory, 'collab.db'))).subarray(0, 16))
       .toEqual(Buffer.from('SQLite format 3\0'));
+  });
+
+  it.each([
+    { generations: [1, 2, 3], source: 'backup', generation: 3 },
+    { generations: [2, 3, 1], source: 'temporary', generation: 3 },
+    { generations: [3, 1, 2], source: 'primary', generation: 3 },
+    { generations: [3, 3, 3], source: 'primary', generation: 3 },
+    { generations: [1, 3, 3], source: 'temporary', generation: 3 },
+  ])('recovers $source from candidate generations $generations', async ({ generations, source, generation }) => {
+    const seed = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await seed.open();
+    await seed.mutate(connection => new ProjectAuthorityRepository().initialize(connection, projectInput()));
+    const bytes = await seed.exportSnapshot();
+    await seed.close();
+    const candidates = [
+      ['primary', 'collab.db'], ['temporary', 'collab.db.tmp'], ['backup', 'collab.db.bak'],
+    ];
+    for (const [index, [kind, filename]] of candidates.entries()) {
+      const image = new SQL.Database(bytes);
+      image.run('UPDATE project SET name = ?, snapshot_generation = ?', [kind, generations[index]]);
+      await writeFile(path.join(authorityDirectory, filename), image.export());
+      image.close();
+    }
+    const recovered = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    try {
+      await expect(recovered.open()).resolves.toEqual({ source, generation, migrated: false });
+      await expect(recovered.read(connection => connection.get('SELECT name FROM project')?.name)).resolves.toBe(source);
+      const backup = new SQL.Database(await readFile(path.join(authorityDirectory, 'collab.db.bak')));
+      try {
+        expect(backup.exec('SELECT name, snapshot_generation FROM project')[0].values).toEqual([
+          source === 'primary' ? ['backup', generations[2]] : ['primary', generations[0]],
+        ]);
+      } finally {
+        backup.close();
+      }
+    } finally {
+      await recovered.close();
+    }
+  });
+
+  it.each(['collab.db.tmp', 'collab.db.bak'])('rejects a newer schema in %s after finding a valid primary', async filename => {
+    const seed = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    await seed.open();
+    await seed.mutate(connection => new ProjectAuthorityRepository().initialize(connection, projectInput()));
+    const bytes = await seed.exportSnapshot();
+    await seed.close();
+    const newer = new SQL.Database(bytes);
+    newer.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION + 1}`);
+    await writeFile(path.join(authorityDirectory, filename), newer.export());
+    newer.close();
+    const recovered = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    try {
+      await expect(recovered.open()).rejects.toMatchObject({ code: 'schema-version-unsupported' });
+      expect(await readFile(path.join(authorityDirectory, 'collab.db'))).toEqual(Buffer.from(bytes));
+    } finally {
+      await recovered.close();
+    }
   });
 
   it('blocks corrupt authority state instead of creating a blank database beside it', async () => {

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/cloud-integration]
   pull_request:
-    branches: [main]
+    branches: [main, codex/cloud-integration]
   workflow_call:
 
 permissions:
@@ -100,7 +100,26 @@ jobs:
         run: npm ci
 
       - name: Test
-        run: npm run test
+        id: tests
+        run: |
+          mkdir -p test-results
+          npm run test -- --json --outputFile=test-results/jest.json
+
+      - name: Verify published LAN compatibility
+        run: npm run test:lan-compatibility
+
+      - name: Summarize test timings
+        if: always() && steps.tests.outcome != 'skipped'
+        run: node scripts/summarize-jest-results.mjs test-results/jest.json test-results/timings
+
+      - name: Upload test timings
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: jest-timings
+          path: test-results/timings/
+          if-no-files-found: error
+          retention-days: 14
 
   cross-platform-collab-scope:
     runs-on: ubuntu-latest

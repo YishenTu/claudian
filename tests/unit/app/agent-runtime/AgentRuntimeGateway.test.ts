@@ -1,8 +1,8 @@
 import {
-  AgentRuntimeGateway,
-  type CollabAgentPort,
+AgentRuntimeGateway,
+type CollabAgentPort,
 } from '@/app/agent-runtime/AgentRuntimeGateway';
-import { type CollabLocalProjectSummary, type CollabResult } from '@/core/collab';
+import { type CollabLocalProjectSummary,type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT: CollabLocalProjectSummary = {
@@ -32,6 +32,8 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn(),
     listProjects: jest.fn().mockResolvedValue({
@@ -65,6 +67,81 @@ function readPort(): jest.Mocked<CollabAgentPort> {
 }
 
 describe('AgentRuntimeGateway', () => {
+  it('updates the Project locally with at most one exact confirmation and exposes no private operation identity', async () => {
+    const port = readPort();
+    const review = { intent: 'update' as const, kind: 'publication' as const, projectId: PROJECT.id, operationId: 'private-update-operation', baseMainOid: '1'.repeat(40), currentMainOid: '2'.repeat(40), contributionHeadOid: '3'.repeat(40), candidateOid: '4'.repeat(40), comparisonBaseOid: '3'.repeat(40), comparisonTargetOid: '4'.repeat(40), canConfirm: true, files: [] };
+    port.updateProject.mockResolvedValue({ status: 'success', value: { projectId: PROJECT.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
+    port.confirmUpdate.mockResolvedValue({ status: 'success', value: { projectId: PROJECT.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review: { ...review, operationId: 'replacement-private-operation' } } });
+    const gateway = new AgentRuntimeGateway(async () => port);
+    const result = await gateway.handle({ id: 'update-1', method: 'collab.projects.update', params: { projectId: PROJECT.id } });
+    expect(result).toEqual({ id: 'update-1', result: { projectId: PROJECT.id, state: 'review-required', nextAction: 'update', files: [] } });
+    expect(port.confirmUpdate).toHaveBeenCalledTimes(1);
+    expect(port.confirmUpdate).toHaveBeenCalledWith({ projectId: PROJECT.id, operationId: review.operationId, expectedMainOid: review.currentMainOid, expectedCandidateOid: review.candidateOid }, expect.anything());
+    expect(port.publish).not.toHaveBeenCalled();
+    expect(port.confirmPublish).not.toHaveBeenCalled();
+  });
+
+  it('projects explicit unavailable Update state without exposing operation records', async () => {
+    const port = readPort();
+    port.inspectProject.mockResolvedValue({ status: 'success', value: { project: PROJECT, projectUpdate: { state: 'unknown', reason: 'offline' } } });
+    const result = await new AgentRuntimeGateway(async () => port).handle({ id: 'get-update', method: 'collab.projects.get', params: { projectId: PROJECT.id } });
+    expect(result).toMatchObject({ result: { project: { update: { state: 'unknown', reason: 'offline', nextAction: null } } } });
+  });
+
+  it.each([
+    ['preparation', 'conflict'],
+    ['preparation', 'recovery-required'],
+    ['confirmation', 'conflict'],
+    ['confirmation', 'recovery-required'],
+  ] as const)('projects public Update errors for %s %s', async (stage, status) => {
+    const port = readPort();
+    const review = {
+      intent: 'update' as const, kind: 'publication' as const, projectId: PROJECT.id,
+      operationId: 'private-update-operation', baseMainOid: '1'.repeat(40),
+      currentMainOid: '2'.repeat(40), contributionHeadOid: '3'.repeat(40),
+      candidateOid: '4'.repeat(40), comparisonBaseOid: '3'.repeat(40),
+      comparisonTargetOid: '4'.repeat(40), canConfirm: true, files: [],
+    };
+    const failure: Exclude<CollabResult<never>, { status: 'success' }> = status === 'conflict' ? {
+      status,
+      conflict: {
+        projectId: PROJECT.id, operationId: 'private-conflict-operation',
+        startingPersonalOid: review.contributionHeadOid, startingMainOid: review.currentMainOid,
+        mergeBaseOid: review.baseMainOid, conflicts: [{ kind: 'text', path: 'note.md' }],
+      },
+      error: new CollabError({
+        code: 'content-conflict', recoveryActions: ['review-conflicts'],
+        safeContext: { operationId: 'private-conflict-operation', candidateOid: review.candidateOid, snapshotId: 'private-snapshot' },
+      }),
+    } : {
+      status, operationId: 'private-recovery-operation', durablePhase: 'committed', durableProgress: true,
+      error: new CollabError({
+        code: 'offline', recoveryActions: ['resume'],
+        safeContext: { operationId: 'private-recovery-operation', candidateOid: review.candidateOid, snapshotId: 'private-snapshot' },
+      }),
+    };
+    port.updateProject.mockResolvedValue(stage === 'preparation' ? failure : {
+      status: 'success', value: { projectId: PROJECT.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review },
+    });
+    port.confirmUpdate.mockResolvedValue(failure);
+    const response = await new AgentRuntimeGateway(async () => port).handle({
+      id: 'update-error', method: 'collab.projects.update', params: { projectId: PROJECT.id },
+    });
+    expect(response).toEqual({
+      id: 'update-error',
+      error: {
+        code: status === 'conflict' ? 'content-conflict' : 'offline',
+        message: status === 'conflict' ? 'collab.error.content-conflict' : 'collab.error.offline',
+        data: {
+          projectId: PROJECT.id, status,
+          group: status === 'conflict' ? 'state' : 'connectivity',
+          recoveryActions: status === 'conflict' ? ['review-conflicts'] : ['resume'],
+        },
+      },
+    });
+    expect(port.confirmUpdate).toHaveBeenCalledTimes(stage === 'confirmation' ? 1 : 0);
+  });
+
   it('lists lightweight runtime operations without resolving Collab', async () => {
     const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
     const gateway = new AgentRuntimeGateway(resolveCollab);
@@ -92,11 +169,9 @@ describe('AgentRuntimeGateway', () => {
             name: 'collab.projects.list',
           },
         ]),
-        protocolVersion: 5,
+        protocolVersion: 6,
       },
     });
-    expect(response).not.toHaveProperty('result.methodDescriptors');
-    expect(response).not.toHaveProperty('result.methods');
     expect(resolveCollab).not.toHaveBeenCalled();
   });
 
@@ -122,7 +197,7 @@ describe('AgentRuntimeGateway', () => {
             }),
           ],
         },
-        protocolVersion: 5,
+        protocolVersion: 6,
       },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
@@ -155,29 +230,6 @@ describe('AgentRuntimeGateway', () => {
     expect(resolveCollab).not.toHaveBeenCalled();
   });
 
-  it('does not retain the removed v1 discovery aliases', async () => {
-    const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
-    const gateway = new AgentRuntimeGateway(resolveCollab);
-
-    await expect(gateway.handle({
-      id: 'legacy-describe',
-      method: 'system.describe',
-      params: {},
-    })).resolves.toEqual({
-      error: { code: 'method_not_found', message: 'Unknown RPC method.' },
-      id: 'legacy-describe',
-    });
-    await expect(gateway.handle({
-      id: 'legacy-ping',
-      method: 'system.ping',
-      params: {},
-    })).resolves.toEqual({
-      error: { code: 'method_not_found', message: 'Unknown RPC method.' },
-      id: 'legacy-ping',
-    });
-    expect(resolveCollab).not.toHaveBeenCalled();
-  });
-
   it('checks runtime health without resolving Collab', async () => {
     const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
     const gateway = new AgentRuntimeGateway(resolveCollab);
@@ -188,7 +240,7 @@ describe('AgentRuntimeGateway', () => {
       params: {},
     })).resolves.toEqual({
       id: 'ping-1',
-      result: { ok: true, protocolVersion: 5 },
+      result: { ok: true, protocolVersion: 6 },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
   });

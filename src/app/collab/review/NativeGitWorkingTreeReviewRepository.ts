@@ -57,15 +57,16 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
         }
         return session.listWorkingTreeChangedFiles(baseOid);
       },
+      signal,
     );
     const projected: CollabChangedFile[] = [];
     for (const change of changes) {
-      this.assertPath(change.path);
-      if (change.previousPath) this.assertPath(change.previousPath);
+      this.#assertPath(change.path);
+      if (change.previousPath) this.#assertPath(change.previousPath);
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
       const workingFile = change.kind === 'deleted'
         ? undefined
-        : await this.readStableWorkingFile(
+        : await this.#readStableWorkingFile(
           repositoryPath,
           change.path,
           false,
@@ -89,8 +90,8 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
     request: CollabWorkingTreeReviewFileRequest,
     signal?: AbortSignal,
   ): Promise<CollabReviewFileContent> {
-    this.assertPath(request.file.path);
-    if (request.file.previousPath) this.assertPath(request.file.previousPath);
+    this.#assertPath(request.file.path);
+    if (request.file.previousPath) this.#assertPath(request.file.previousPath);
     if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
 
     const oldPath = request.file.previousPath ?? request.file.path;
@@ -101,39 +102,39 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
           repositoryRelativePath: oldPath,
           treeish: request.baseOid,
         }]))[0] ?? null
-      ));
+      ), signal);
     if (request.file.kind !== 'added' && oldContents === null) {
       throw reviewError('working-tree-busy', 'working-tree-review-old-file-missing');
     }
     if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
 
     if (request.file.kind === 'deleted') {
-      await this.assertWorkingFileAbsent(repositoryPath, request.file.path);
+      await this.#assertWorkingFileAbsent(repositoryPath, request.file.path);
       return reviewFileContentFromBuffers(request.file, oldContents, null);
     }
     if (
       request.file.newBytes !== undefined
       && request.file.newBytes > CLAUDIAN_COLLAB_LIMITS.maxBlobBytes
     ) {
-      const workingFile = await this.readStableWorkingFile(
+      const workingFile = await this.#readStableWorkingFile(
         repositoryPath,
         request.file.path,
         false,
         signal,
       );
-      this.assertExpectedWorkingFile(request.file, workingFile);
+      this.#assertExpectedWorkingFile(request.file, workingFile);
       return {
         file: request.file,
         kind: request.file.binary ? 'binary' : 'large-text',
       };
     }
-    const workingFile = await this.readStableWorkingFile(
+    const workingFile = await this.#readStableWorkingFile(
       repositoryPath,
       request.file.path,
       true,
       signal,
     );
-    this.assertExpectedWorkingFile(request.file, workingFile);
+    this.#assertExpectedWorkingFile(request.file, workingFile);
     const newContents = workingFile.contents;
     if (!newContents) {
       throw reviewError('working-tree-busy', 'working-tree-review-file-read-missing');
@@ -142,12 +143,12 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
     return reviewFileContentFromBuffers(request.file, oldContents, newContents);
   }
 
-  private assertPath(repositoryPath: string): void {
+  #assertPath(repositoryPath: string): void {
     const result = this.pathPolicy.validateRepositoryPath(repositoryPath);
     if (!result.ok) throw result.error;
   }
 
-  private async assertWorkingFileAbsent(
+  async #assertWorkingFileAbsent(
     repositoryPath: string,
     repositoryRelativePath: string,
   ): Promise<void> {
@@ -160,7 +161,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
     }
   }
 
-  private assertExpectedWorkingFile(
+  #assertExpectedWorkingFile(
     expected: CollabChangedFile,
     actual: StableWorkingFile,
   ): void {
@@ -173,7 +174,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
     }
   }
 
-  private async readStableWorkingFile(
+  async #readStableWorkingFile(
     repositoryPath: string,
     repositoryRelativePath: string,
     includeContents: boolean,

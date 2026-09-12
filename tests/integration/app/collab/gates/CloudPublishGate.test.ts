@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -17,6 +17,8 @@ import {
   decodeCollabProtocolEnvelope,
   matchCollabCloudRoute,
 } from '@claudian-collab/protocol';
+import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
+import { runGitHttpBackendFixture } from '@test/helpers/collab/GitHttpBackendFixture';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -35,7 +37,7 @@ import {
   PublishCoordinator,
   type PublishProjectContext,
 } from '@/app/collab/publish/PublishCoordinator';
-import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
+import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import type { CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 
@@ -105,63 +107,6 @@ function writeJson(response: ServerResponse, status: number, value: unknown): vo
   response.end(JSON.stringify(value));
 }
 
-async function runGitHttpBackend(
-  request: IncomingMessage,
-  response: ServerResponse,
-  repository: RepositoryFixture,
-  suffix: string,
-): Promise<void> {
-  const gitProtocolHeader = request.headers['git-protocol'];
-  const gitProtocol = Array.isArray(gitProtocolHeader)
-    ? gitProtocolHeader[0]
-    : gitProtocolHeader;
-  const child = spawn(GIT_EXECUTABLE, ['http-backend'], {
-    env: {
-      GIT_HTTP_EXPORT_ALL: '1',
-      GIT_PROJECT_ROOT: path.dirname(repository.barePath),
-      HTTP_GIT_PROTOCOL: gitProtocol ?? '',
-      PATH_INFO: `/authority.git${suffix}`,
-      PATH: '/usr/bin:/bin',
-      QUERY_STRING: new URL(request.url ?? '/', 'http://127.0.0.1').search.slice(1),
-      REMOTE_ADDR: '127.0.0.1',
-      REMOTE_USER: String(request.headers['x-claudian-development-actor'] ?? ''),
-      REQUEST_METHOD: request.method ?? 'GET',
-      SERVER_PROTOCOL: 'HTTP/1.1',
-      ...(request.headers['content-length'] === undefined
-        ? {}
-        : { CONTENT_LENGTH: request.headers['content-length'] }),
-      ...(request.headers['content-type'] === undefined
-        ? {}
-        : { CONTENT_TYPE: request.headers['content-type'] }),
-    },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  const stdout: Buffer[] = [];
-  child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
-  child.stderr.resume();
-  request.pipe(child.stdin);
-  await new Promise<void>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', code => code === 0
-      ? resolve()
-      : reject(new Error(`git-http-backend:${String(code)}`)));
-  });
-  const output = Buffer.concat(stdout);
-  const headerEnd = output.indexOf('\r\n\r\n');
-  if (headerEnd < 0) throw new Error('git-http-backend-headers');
-  const headers: Record<string, string> = {};
-  let status = 200;
-  for (const line of output.subarray(0, headerEnd).toString('ascii').split('\r\n')) {
-    const separator = line.indexOf(':');
-    if (separator < 1) continue;
-    const name = line.slice(0, separator);
-    const value = line.slice(separator + 1).trim();
-    if (name.toLocaleLowerCase('en-US') === 'status') status = Number(value.slice(0, 3));
-    else headers[name] = value;
-  }
-  response.writeHead(status, headers);
-  response.end(output.subarray(headerEnd + 4));
-}
 
 function capabilityLimits() {
   return {
@@ -183,6 +128,34 @@ function capabilityLimits() {
   };
 }
 
+function projectSnapshot(actor: typeof ACTORS[number], mainOid: string) {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: actor,
+    id: actor,
+    personalRef: collabMemberRef(actor),
+    role: actor === ACTORS[0] ? 'manager' as const : 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 0,
+    members: [currentMember],
+    openRequests: [],
+    openTicketCount: 0,
+    project: {
+      authorityGeneration: 1,
+      createdAt: CREATED_AT,
+      expectedMainOid: mainOid,
+      id: PROJECT_ID,
+      mainRef: COLLAB_MAIN_REF,
+      name: 'Cloud Publish Gate',
+    },
+    ticketHighlights: [],
+  };
+}
+
 async function startGateServer(repository: RepositoryFixture): Promise<GateServer> {
   const attempts = new Map<string, string[]>();
   const errors: string[] = [];
@@ -190,11 +163,18 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
   let aliceResponseLost = false;
   const server = createServer((request, response) => {
     void (async () => {
-      const match = matchCollabCloudRoute(request.method ?? '', request.url ?? '');
+      if (!request.url?.startsWith('/operator/cloud/')) {
+        errors.push('deployment-prefix-missing');
+        response.writeHead(404).end();
+        return;
+      }
+      const target = request.url.slice('/operator/cloud'.length);
+      const match = matchCollabCloudRoute(request.method ?? '', target);
       if (match?.kind === 'capabilities') {
         writeJson(response, 200, collabCloudCapabilityDocument([
           'git-receive-pack-personal-ref',
           'git-upload-pack',
+          'project-snapshot',
           'requests',
         ], capabilityLimits()));
         return;
@@ -215,14 +195,25 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         || match.kind === 'git-receive-pack'
         || match.kind === 'git-upload-pack'
       ) {
-        const prefix = `/v2/projects/${PROJECT_ID}/repository.git`;
-        const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
-        await runGitHttpBackend(
+        const prefix = `/v6/projects/${PROJECT_ID}/repository.git`;
+        const pathname = new URL(target, 'http://127.0.0.1').pathname;
+        await runGitHttpBackendFixture(
           request,
           response,
-          repository,
+          { ...repository, executablePath: GIT_EXECUTABLE, remoteUser: actor },
           pathname.slice(prefix.length),
         );
+        return;
+      }
+      if (match.kind === 'project-operation' && match.operation === 'getProjectSnapshot') {
+        const envelope = decodeCollabProtocolEnvelope(
+          JSON.parse((await readBody(request)).toString('utf8')) as unknown,
+        );
+        if (envelope.status !== 'ok') throw new Error('snapshot-envelope-invalid');
+        writeJson(response, 200, collabCloudSuccessEnvelope(
+          envelope.value.requestId,
+          projectSnapshot(actor as typeof ACTORS[number], repository.mainOid),
+        ));
         return;
       }
       if (match.kind === 'project-operation' && match.operation === 'ensureMyRequest') {
@@ -288,7 +279,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
     close: () => new Promise<void>((resolve, reject) => server.close(error => (
       error ? reject(error) : resolve()
     ))),
-    origin: `http://127.0.0.1:${String(address.port)}`,
+    origin: `http://127.0.0.1:${String(address.port)}/operator/cloud`,
     requests,
   };
 }
@@ -299,12 +290,12 @@ function membership(
 ): CollabLocalCloudMembershipRecord {
   return {
     authority: {
-      bindingVersion: 2,
-      developmentActorId: actor,
-      gitRemoteUrl: `${origin}/v2/projects/${PROJECT_ID}/repository.git`,
+      authorityGeneration: 1,
+      bindingVersion: 6,
+      gitRemoteUrl: `${origin}/v6/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: origin,
-      wireVersion: 6,
+      wireVersion: 10,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -339,7 +330,7 @@ class SessionNetwork implements PublishGitNetworkPort {
     context: PublishProjectContext,
     operation: Parameters<PublishGitNetworkPort['withNetwork']>[1],
   ): Promise<T> {
-    return this.environment.resolve(context.projectId, this.session.git)
+    return this.environment.resolve(context.projectId, developmentCloudGitNetwork(this.session.git, context.memberId))
       .then(network => operation(network, this.session.git.remoteUrl) as Promise<T>);
   }
 }
@@ -434,11 +425,12 @@ describe('Cloud Publish gate', () => {
           'remote',
           'set-url',
           'origin',
-          `${server.origin}/v2/projects/${PROJECT_ID}/repository.git`,
+          `${server.origin}/v6/projects/${PROJECT_ID}/repository.git`,
         ]);
         await writeFile(path.join(repositoryPath, `${actor}.md`), `${actor}\n`);
 
-        const session = await new CloudAuthorityAdapter().create(
+        await new CloudProjectCredentialStore(clientRoot).getOrCreate(PROJECT_ID);
+        const session = await createDevelopmentCloudAuthorityAdapter(clientRoot, actor).create(
           membership(actor, server.origin),
         );
         sessions.push(session);
@@ -462,6 +454,7 @@ describe('Cloud Publish gate', () => {
           state,
           unusedCandidates(),
           { compare: async () => [] },
+          { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
           { createOperationId: () => `operation-${actor}` },
         );
 

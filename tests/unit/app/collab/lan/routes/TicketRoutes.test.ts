@@ -1,3 +1,4 @@
+import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
   CollabControlProjectService,
   CollabControlRouteRequest,
@@ -7,9 +8,9 @@ import { handleTicketRoute } from '@/app/collab/lan/routes/TicketRoutes';
 const CREDENTIAL = 'A'.repeat(43);
 
 function route(
-  overrides: Partial<CollabControlRouteRequest> = {},
+  overrides: Partial<CollabControlRouteRequest> & { method?: string; segments?: readonly string[] } = {},
 ): CollabControlRouteRequest {
-  return {
+  const { method, segments, ...request } = {
     authorization: `Bearer ${CREDENTIAL}`,
     body: {},
     idempotencyKey: null,
@@ -22,6 +23,9 @@ function route(
     service: {} as CollabControlProjectService,
     ...overrides,
   };
+  const operationMatch = matchCollabControlOperation(method, segments);
+  if (!operationMatch) throw new Error('Invalid route fixture');
+  return { ...request, operationMatch };
 }
 
 describe('handleTicketRoute', () => {

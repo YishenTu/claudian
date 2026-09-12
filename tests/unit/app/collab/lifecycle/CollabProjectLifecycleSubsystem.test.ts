@@ -2,6 +2,7 @@ import {
   type CollabProjectLifecycleRecoveryStage,
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 function ports() {
   return {
@@ -258,8 +259,11 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(authorityMutation).toHaveBeenCalledTimes(1);
   });
 
-  it('admits only the declared durable predecessor into an owner handoff', async () => {
-    const localExit = { leaveProject: jest.fn().mockResolvedValue(undefined) };
+  it('admits only declared durable predecessors into an owner handoff', async () => {
+    const localExit = {
+      leaveProject: jest.fn().mockResolvedValue(undefined),
+      resumeLeave: jest.fn().mockResolvedValue(undefined),
+    };
     const subsystem = new CollabProjectLifecycleSubsystem({
       ...ports(),
       durableOwners: [{
@@ -277,15 +281,12 @@ describe('CollabProjectLifecycleSubsystem', () => {
     })).resolves.toBeUndefined();
     expect(localExit.leaveProject).toHaveBeenCalledTimes(1);
 
-    const blockedRetirement = jest.fn().mockResolvedValue('retired');
+    const responsibilityRetirement = jest.fn().mockResolvedValue('retired');
     await expect(subsystem.runRetirementAdoption(
       'project-alpha',
-      blockedRetirement,
-    )).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'lifecycle-owner-pending' },
-    });
-    expect(blockedRetirement).not.toHaveBeenCalled();
+      responsibilityRetirement,
+    )).resolves.toBe('retired');
+    expect(responsibilityRetirement).toHaveBeenCalledTimes(1);
 
     const localExitOwner = new CollabProjectLifecycleSubsystem({
       ...ports(),
@@ -298,6 +299,294 @@ describe('CollabProjectLifecycleSubsystem', () => {
       retirement,
     )).resolves.toBe('retired');
     expect(retirement).toHaveBeenCalledTimes(1);
+
+    const unrelatedOwner = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [{ inspect: async () => 'nonterminal', name: 'host-transfer' }],
+      recoveryStages: [],
+    });
+    const blockedRetirement = jest.fn().mockResolvedValue('retired');
+    await expect(unrelatedOwner.runRetirementAdoption(
+      'project-alpha',
+      blockedRetirement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(blockedRetirement).not.toHaveBeenCalled();
+  });
+
+  it('admits only a Leave successor offer beside its queued local exit', async () => {
+    let cloudManagementPending = false;
+    const createManagerResponsibilityOffer = jest.fn().mockResolvedValue({});
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        { inspect: async () => 'nonterminal', name: 'local-exit' },
+      ],
+      recoveryStages: [],
+    });
+    const membership = subsystem.bindMembership({
+      createManagerResponsibilityOffer,
+    } as never);
+
+    await expect(membership.createManagerResponsibilityOffer({
+      projectId: 'project-alpha',
+      purpose: 'manager-leave',
+      targetMemberId: 'member-successor',
+    })).resolves.toEqual({});
+    expect(createManagerResponsibilityOffer).toHaveBeenCalledTimes(1);
+
+    cloudManagementPending = true;
+    await expect(membership.createManagerResponsibilityOffer({
+      projectId: 'project-alpha',
+      purpose: 'manager-leave',
+      targetMemberId: 'member-successor',
+    })).resolves.toEqual({});
+    expect(createManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
+
+    await expect(membership.createManagerResponsibilityOffer({
+      projectId: 'project-alpha',
+      purpose: 'manager-promotion',
+      targetMemberId: 'member-successor',
+    })).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-ambiguous' },
+    });
+    expect(createManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps Manager responsibility independent from Cloud management without opening other lifecycle lanes', async () => {
+    let responsibilityPending = false;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        { inspect: async () => 'nonterminal', name: 'cloud-management' },
+        {
+          inspect: async () => responsibilityPending ? 'nonterminal' : 'absent',
+          name: 'manager-responsibility',
+        },
+      ],
+      recoveryStages: [],
+    });
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'operation',
+      async () => 'started',
+    )).resolves.toBe('started');
+
+    responsibilityPending = true;
+    const reconcileResponsibility = jest.fn().mockResolvedValue('reconciled');
+
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'continuation',
+      reconcileResponsibility,
+    )).resolves.toBe('reconciled');
+    expect(reconcileResponsibility).toHaveBeenCalledTimes(1);
+
+    await expect(subsystem.runManagerResponsibility(
+      'project-alpha',
+      'operation',
+      async () => 'must-not-start',
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-recovery-required' },
+    });
+
+    responsibilityPending = false;
+    const retire = jest.fn().mockResolvedValue('retired');
+    await expect(subsystem.runExclusive(
+      'project-alpha',
+      'retirement',
+      'operation',
+      retire,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it('continues an existing Cloud management intent beside responsibility without starting behind responsibility alone', async () => {
+    let cloudManagementPending = true;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        { inspect: async () => 'nonterminal', name: 'manager-responsibility' },
+      ],
+      recoveryStages: [],
+    });
+    const continueCloudManagement = jest.fn().mockResolvedValue('continued');
+
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      continueCloudManagement,
+    )).resolves.toBe('continued');
+    expect(continueCloudManagement).toHaveBeenCalledTimes(1);
+
+    cloudManagementPending = false;
+    const startCloudManagement = jest.fn().mockResolvedValue('started');
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      startCloudManagement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(startCloudManagement).not.toHaveBeenCalled();
+  });
+
+  it('admits imported-claim management only behind its validated authority-transfer predecessor', async () => {
+    let cloudManagementPending = false;
+    let authorityTransferPending = true;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        {
+          inspect: async () => authorityTransferPending ? 'nonterminal' : 'absent',
+          name: 'authority-transfer',
+        },
+      ],
+      recoveryStages: [],
+    });
+    const assertPredecessor = jest.fn().mockResolvedValue(undefined);
+    const start = jest.fn().mockResolvedValue('started');
+
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertPredecessor,
+      start,
+    )).resolves.toBe('started');
+    expect(assertPredecessor).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(1);
+
+    cloudManagementPending = true;
+    const resume = jest.fn().mockResolvedValue('resumed');
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertPredecessor,
+      resume,
+    )).resolves.toBe('resumed');
+    expect(assertPredecessor).toHaveBeenCalledTimes(2);
+    expect(resume).toHaveBeenCalledTimes(1);
+
+    const generic = jest.fn().mockResolvedValue('must-not-start');
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      generic,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-ambiguous' },
+    });
+    expect(generic).not.toHaveBeenCalled();
+
+    const rejected = jest.fn().mockResolvedValue('must-not-start');
+    const predecessorError = new CollabError({
+      code: 'durable-progress-recovery-required',
+      recoveryActions: ['resume'],
+      safeContext: { reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+    });
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      jest.fn().mockRejectedValue(predecessorError),
+      rejected,
+    )).rejects.toBe(predecessorError);
+    expect(rejected).not.toHaveBeenCalled();
+
+    authorityTransferPending = false;
+    const absent = jest.fn().mockResolvedValue('must-not-start');
+    const assertAbsentPredecessor = jest.fn().mockRejectedValue(predecessorError);
+    await expect(subsystem.runCloudImportedClaimManagement(
+      'project-alpha',
+      assertAbsentPredecessor,
+      absent,
+    )).rejects.toBe(predecessorError);
+    expect(assertAbsentPredecessor).toHaveBeenCalledTimes(1);
+    expect(absent).not.toHaveBeenCalled();
+  });
+
+  it('admits only Manager continuation beside an authority-transfer claimant', async () => {
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        { inspect: async () => 'nonterminal', name: 'authority-transfer' },
+        { inspect: async () => 'nonterminal', name: 'authority-transfer-claimant' },
+      ],
+      recoveryStages: [],
+    });
+    const recovery = jest.fn().mockResolvedValue('recovered');
+    const managerContinuation = jest.fn().mockResolvedValue('continued');
+
+    await expect(subsystem.runAuthorityTransferManagerContinuation(
+      'project-alpha',
+      managerContinuation,
+    )).resolves.toBe('continued');
+    expect(managerContinuation).toHaveBeenCalledTimes(1);
+
+    await expect(subsystem.runAuthorityTransferRecovery(
+      'project-alpha',
+      recovery,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-ambiguous' },
+    });
+    expect(recovery).not.toHaveBeenCalled();
+  });
+
+  it('continues an existing Cloud management intent beside queued Leave without starting another intent', async () => {
+    let cloudManagementPending = true;
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(),
+      durableOwners: [
+        {
+          inspect: async () => cloudManagementPending ? 'nonterminal' : 'absent',
+          name: 'cloud-management',
+        },
+        { inspect: async () => 'nonterminal', name: 'local-exit' },
+      ],
+      recoveryStages: [],
+    });
+    const continueCloudManagement = jest.fn().mockResolvedValue('continued');
+
+    await expect(subsystem.runCloudManagerLeaveManagement(
+      'project-alpha',
+      continueCloudManagement,
+    )).resolves.toBe('continued');
+    expect(continueCloudManagement).toHaveBeenCalledTimes(1);
+
+    const unrelatedCloudManagement = jest.fn().mockResolvedValue('continued');
+    await expect(subsystem.runCloudManagement(
+      'project-alpha',
+      unrelatedCloudManagement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-ambiguous' },
+    });
+    expect(unrelatedCloudManagement).not.toHaveBeenCalled();
+
+    cloudManagementPending = false;
+    const startCloudManagement = jest.fn().mockResolvedValue('started');
+    await expect(subsystem.runCloudManagerLeaveManagement(
+      'project-alpha',
+      startCloudManagement,
+    )).rejects.toMatchObject({
+      code: 'durable-progress-recovery-required',
+      safeContext: { reason: 'lifecycle-owner-pending' },
+    });
+    expect(startCloudManagement).not.toHaveBeenCalled();
   });
 
   it('routes every locally stateful lifecycle mutation through the Project arbiter', async () => {
@@ -308,7 +597,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
       createHostTransfer: jest.fn().mockResolvedValue(undefined),
       declineHostTransfer: jest.fn().mockResolvedValue(undefined),
     };
-    const localExit = { leaveProject: jest.fn().mockResolvedValue(undefined) };
+    const localExit = {
+      leaveProject: jest.fn().mockResolvedValue(undefined),
+      resumeLeave: jest.fn().mockResolvedValue(undefined),
+    };
     const membership = {
       cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue({}),
       createInvitation: jest.fn().mockResolvedValue({}),
@@ -317,14 +609,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       promoteManager: jest.fn().mockResolvedValue(undefined),
       removeMember: jest.fn().mockResolvedValue(undefined),
       revokeInvitation: jest.fn().mockResolvedValue(undefined),
-    };
-    const cloudBootstrap = {
-      cancel: jest.fn().mockResolvedValue({}),
-      close: jest.fn().mockResolvedValue(undefined),
-      prepareLocalRecovery: jest.fn().mockResolvedValue(undefined),
-      recoverPending: jest.fn().mockResolvedValue(undefined),
-      startFormerHost: jest.fn().mockResolvedValue({}),
-      submitParticipant: jest.fn().mockResolvedValue({}),
     };
     const retirement = {
       close: jest.fn().mockResolvedValue(undefined),
@@ -340,7 +624,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       recoveryStages: [],
       retirement,
     });
-    const guardedCloudBootstrap = subsystem.bindCloudBootstrap(cloudBootstrap as never);
     const guardedMembership = subsystem.bindMembership(membership as never);
     subsystem.registerDurableOwner({
       inspect: async () => 'nonterminal',
@@ -364,22 +647,12 @@ describe('CollabProjectLifecycleSubsystem', () => {
         cleanupChoice: 'keep-files',
         projectId: 'project-alpha',
       }),
+      subsystem.localExit.resumeLeave('project-alpha'),
       subsystem.retirement.finalizeRetiredProject({
         cleanupChoice: 'keep-files',
         projectId: 'project-alpha',
       }),
       subsystem.retirement.retryProjectCleanup('project-alpha'),
-      guardedCloudBootstrap.startFormerHost({
-        memberId: 'member-host',
-        projectId: 'project-alpha',
-        serverUrl: 'https://cloud.example.test/',
-      }),
-      guardedCloudBootstrap.submitParticipant({
-        memberId: 'member-host',
-        projectId: 'project-alpha',
-        serverUrl: 'https://cloud.example.test/',
-      } as never),
-      guardedCloudBootstrap.cancel('project-alpha'),
       guardedMembership.createManagerResponsibilityOffer({
         projectId: 'project-alpha',
         purpose: 'manager-promotion',
@@ -401,8 +674,6 @@ describe('CollabProjectLifecycleSubsystem', () => {
       transferId: 'transfer-one',
     })).resolves.toBeUndefined();
     await expect(subsystem.retirement.retireProject({
-      expectedHostMemberId: 'member-host',
-      managerActorMemberId: 'member-manager',
       projectId: 'project-alpha',
     })).resolves.toBeUndefined();
     expect(hostTransfer.createHostTransfer).not.toHaveBeenCalled();
@@ -410,12 +681,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(hostTransfer.declineHostTransfer).not.toHaveBeenCalled();
     expect(hostTransfer.cancelHostTransfer).toHaveBeenCalledTimes(1);
     expect(localExit.leaveProject).not.toHaveBeenCalled();
+    expect(localExit.resumeLeave).not.toHaveBeenCalled();
     expect(retirement.retireProject).toHaveBeenCalledTimes(1);
     expect(retirement.finalizeRetiredProject).not.toHaveBeenCalled();
     expect(retirement.retryProjectCleanup).not.toHaveBeenCalled();
-    expect(cloudBootstrap.startFormerHost).not.toHaveBeenCalled();
-    expect(cloudBootstrap.submitParticipant).not.toHaveBeenCalled();
-    expect(cloudBootstrap.cancel).not.toHaveBeenCalled();
     expect(membership.createManagerResponsibilityOffer).not.toHaveBeenCalled();
     expect(membership.cancelManagerResponsibilityOffer).not.toHaveBeenCalled();
   });

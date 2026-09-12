@@ -191,6 +191,7 @@ describe('OutgoingHostTransferCoordinator', () => {
     );
     expect(events.indexOf('source-demoted')).toBeLessThan(events.indexOf('old-authority-finalized'));
     expect(projections.demoteSourceHost).toHaveBeenCalledWith({
+      proofChainDigest: '3'.repeat(64),
       autoStart: false,
       endpoint: 'https://192.168.1.9:54545',
       ownsAuthority: false,

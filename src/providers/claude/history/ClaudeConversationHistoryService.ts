@@ -403,11 +403,11 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   >();
   private relocatedSessionPathsByConversation = new Map<string, Map<string, string>>();
 
-  private getConversationSessionIds(conversation: Conversation): string[] {
+  #getConversationSessionIds(conversation: Conversation): string[] {
     return getClaudeConversationSessionIds(conversation);
   }
 
-  private synchronizeHistoryCache(
+  #synchronizeHistoryCache(
     conversation: Conversation,
     vaultPath: string,
     pathContext?: ProviderHistoryPathContext,
@@ -416,7 +416,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const cacheKey = JSON.stringify([
       getSDKProjectsPath(pathContext),
       encodeVaultPathForSDK(vaultPath),
-      this.getConversationSessionIds(conversation),
+      this.#getConversationSessionIds(conversation),
       conversation.resumeAtMessageId ?? null,
       state.forkSource?.resumeAt ?? null,
     ]);
@@ -438,7 +438,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     if (!vaultPath) {
       return 'unknown';
     }
-    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    this.#synchronizeHistoryCache(conversation, vaultPath, pathContext);
     if (!sessionId) return 'unknown';
 
     const location = await (pathContext
@@ -521,9 +521,9 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return 'preserve';
     }
 
-    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    this.#synchronizeHistoryCache(conversation, vaultPath, pathContext);
 
-    const sessionIds = this.getConversationSessionIds(conversation);
+    const sessionIds = this.#getConversationSessionIds(conversation);
     const locations = await (pathContext
       ? locateSDKSessions(vaultPath, sessionIds, pathContext)
       : locateSDKSessions(vaultPath, sessionIds));
@@ -641,9 +641,9 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     await this.recoverConversationSessionReference(conversation, vaultPath, pathContext);
-    const allSessionIds = this.getConversationSessionIds(conversation);
+    const allSessionIds = this.#getConversationSessionIds(conversation);
 
-    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    this.#synchronizeHistoryCache(conversation, vaultPath, pathContext);
     if (this.hydratedConversationIds.has(conversation.id)) return;
 
     const state = getClaudeState(conversation.providerState);

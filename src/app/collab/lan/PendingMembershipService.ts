@@ -198,7 +198,7 @@ export class PendingMembershipService {
     memberCredential: string,
     request: CreateInvitationRequest,
   ): Promise<LanCollabInvitation> {
-    const project = await this.requireProject(request.projectId);
+    const project = await this.#requireProject(request.projectId);
     const actor = await this.authenticateMemberCredential(memberCredential, ['active']);
     if (actor.member.role !== 'manager') {
       throw serviceError('authorization-denied', 'manager-role-required');
@@ -220,18 +220,18 @@ export class PendingMembershipService {
     }
     assertOpaqueId(request.idempotencyKey, 'idempotency-key');
     const host = this.options.getHostEndpoint();
-    const invitation = this.invitationCodec().createInvitation({
+    const invitation = this.#invitationCodec().createInvitation({
       caFingerprint: host.caFingerprint,
       endpoint: host.endpoint,
-      invitationId: this.createValidId('invitation'),
+      invitationId: this.#createValidId('invitation'),
       projectId: project.projectId,
     });
     const tokenHash = Buffer.from(
-      this.invitationCodec().hashSecret(invitation.invitationSecret),
+      this.#invitationCodec().hashSecret(invitation.invitationSecret),
       'base64url',
     );
     await this.authority.database.mutate(connection => {
-      const transactionActor = this.authenticateInConnection(
+      const transactionActor = this.#authenticateInConnection(
         connection,
         memberCredential,
         ['active'],
@@ -272,7 +272,7 @@ export class PendingMembershipService {
     memberCredential: string,
     request: RevokeInvitationRequest,
   ): Promise<void> {
-    await this.requireProject(request.projectId);
+    await this.#requireProject(request.projectId);
     const actor = await this.authenticateMemberCredential(memberCredential, ['active']);
     if (actor.member.role !== 'manager') {
       throw serviceError('authorization-denied', 'manager-role-required');
@@ -281,7 +281,7 @@ export class PendingMembershipService {
     const createdAt = this.now().toISOString();
     const fingerprint = requestFingerprint(request);
     await this.authority.database.mutate(connection => {
-      const transactionActor = this.authenticateInConnection(
+      const transactionActor = this.#authenticateInConnection(
         connection,
         memberCredential,
         ['active'],
@@ -312,7 +312,7 @@ export class PendingMembershipService {
   }
 
   async stopHosting(): Promise<void> {
-    const project = await this.requireProjectFromAuthority();
+    const project = await this.#requireProjectFromAuthority();
     const stoppedAt = this.now().toISOString();
     await this.authority.database.mutate(connection => {
       this.repository.revokeCurrentInvitation(connection, stoppedAt);
@@ -332,18 +332,18 @@ export class PendingMembershipService {
     options: CreateJoinAttemptOptions,
   ): Promise<CollabJoinAttempt> {
     await this.garbageCollectExpiredPending();
-    const project = await this.requireProject(request.projectId);
+    const project = await this.#requireProject(request.projectId);
     assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
     const displayName = assertDisplayName(request.displayName);
     const rateKey = `${request.projectId}:${options.remoteAddress}`;
-    await this.enforceJoinRateLimit(rateKey);
+    await this.#enforceJoinRateLimit(rateKey);
     const createdAt = this.now();
-    const credential = this.createValidCredential();
+    const credential = this.#createValidCredential();
     const credentialHash = hashCredential(credential);
     let result: AuthorityMemberCredentialRecord;
     try {
       result = (await this.authority.database.mutate(connection => {
-        this.requireInvitation(connection, invitationSecret, createdAt);
+        this.#requireInvitation(connection, invitationSecret, createdAt);
         const existing = this.repository.findByJoinAttempt(connection, request.joinAttemptId);
         if (existing) {
           if (
@@ -363,7 +363,7 @@ export class PendingMembershipService {
           credentialHash,
           displayName,
           joinAttemptId: request.joinAttemptId,
-          memberId: this.createValidId('member'),
+          memberId: this.#createValidId('member'),
         });
         this.authority.events.append(connection, {
           actorMemberId: null,
@@ -382,7 +382,7 @@ export class PendingMembershipService {
           || error.code === 'invitation-revoked'
         )
       ) {
-        this.recordJoinFailure(rateKey);
+        this.#recordJoinFailure(rateKey);
       }
       throw error;
     }
@@ -402,14 +402,14 @@ export class PendingMembershipService {
     memberCredential: string,
     request: ActivateJoinAttemptRequest,
   ): Promise<CollabLanProjectSnapshot> {
-    const project = await this.requireProject(request.projectId);
+    const project = await this.#requireProject(request.projectId);
     assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
     assertOpaqueId(request.idempotencyKey, 'idempotency-key');
     await this.authenticateMemberCredential(memberCredential, ['pending', 'active']);
-    const mainOid = await this.readMainOid();
+    const mainOid = await this.#readMainOid();
     const now = this.now();
     return (await this.authority.database.mutate(connection => {
-      const actor = this.authenticateInConnection(connection, memberCredential, [
+      const actor = this.#authenticateInConnection(connection, memberCredential, [
         'pending',
         'active',
       ]);
@@ -435,28 +435,30 @@ export class PendingMembershipService {
           payload: { memberId: active.member.id, projectId: project.projectId },
         });
       }
-      const snapshot = this.snapshotFromConnection(
+      const snapshot = this.#snapshotFromConnection(
         connection,
         active.member.id,
         mainOid,
       );
-      return this.authority.idempotency.store(connection, {
+      this.authority.idempotency.store(connection, {
         actorMemberId: active.member.id,
         createdAt: now.toISOString(),
         key: request.idempotencyKey,
         operationKind: 'join-project',
         requestFingerprint: requestFingerprint(request),
         response: snapshot,
-      }).response;
+      });
+      // Activation is idempotent; its acknowledgement carries the current authenticated snapshot.
+      return snapshot;
     })).value;
   }
 
   async readSnapshot(memberCredential: string): Promise<CollabLanProjectSnapshot> {
     await this.authenticateMemberCredential(memberCredential, ['active']);
-    const mainOid = await this.readMainOid();
+    const mainOid = await this.#readMainOid();
     return this.authority.database.read(connection => {
-      const actor = this.authenticateInConnection(connection, memberCredential, ['active']);
-      return this.snapshotFromConnection(connection, actor.member.id, mainOid);
+      const actor = this.#authenticateInConnection(connection, memberCredential, ['active']);
+      return this.#snapshotFromConnection(connection, actor.member.id, mainOid);
     });
   }
 
@@ -468,8 +470,8 @@ export class PendingMembershipService {
     if (actor.member.status !== 'active') {
       throw serviceError('authorization-denied', 'active-membership-required');
     }
-    const validated = this.invitationCodec().validateInvitation(invitation);
-    await this.requireProject(validated.projectId);
+    const validated = this.#invitationCodec().validateInvitation(invitation);
+    await this.#requireProject(validated.projectId);
     const host = this.options.getHostEndpoint();
     if (
       validated.endpoint !== host.endpoint
@@ -478,8 +480,8 @@ export class PendingMembershipService {
       throw serviceError('invitation-invalid', 'invitation-host-mismatch');
     }
     await this.authority.database.read(connection => {
-      this.authenticateInConnection(connection, memberCredential, ['active']);
-      const matched = this.requireInvitation(
+      this.#authenticateInConnection(connection, memberCredential, ['active']);
+      const matched = this.#requireInvitation(
         connection,
         validated.invitationSecret,
         this.now(),
@@ -496,12 +498,12 @@ export class PendingMembershipService {
     projectId: string,
   ): Promise<ConfirmEndpointResponse> {
     await this.authenticateMemberCredential(memberCredential, ['active']);
-    await this.requireProject(projectId);
+    await this.#requireProject(projectId);
     return this.options.getHostEndpoint();
   }
 
   encodeInvitation(invitation: LanCollabInvitation): string {
-    return this.invitationCodec().encode(invitation);
+    return this.#invitationCodec().encode(invitation);
   }
 
   authenticateMemberCredential(
@@ -509,7 +511,7 @@ export class PendingMembershipService {
     statuses: readonly CollabMemberStatus[],
   ): Promise<AuthenticatedCollabMember> {
     return this.authority.database.read(connection => {
-      const record = this.authenticateInConnection(connection, memberCredential, statuses);
+      const record = this.#authenticateInConnection(connection, memberCredential, statuses);
       return { member: record.member };
     });
   }
@@ -539,7 +541,7 @@ export class PendingMembershipService {
     return removed;
   }
 
-  private authenticateInConnection(
+  #authenticateInConnection(
     connection: AuthorityDatabaseConnection,
     credential: string,
     statuses: readonly CollabMemberStatus[],
@@ -579,7 +581,7 @@ export class PendingMembershipService {
     return matched;
   }
 
-  private createValidCredential(): string {
+  #createValidCredential(): string {
     const credential = this.createCredential();
     if (!CREDENTIAL_PATTERN.test(credential)) {
       throw serviceError('operation-failed', 'generated-credential-invalid');
@@ -587,14 +589,14 @@ export class PendingMembershipService {
     return credential;
   }
 
-  private createValidId(kind: 'invitation' | 'member'): string {
+  #createValidId(kind: 'invitation' | 'member'): string {
     const id = this.createId(kind);
     const valid = kind === 'member' ? isCollabMemberId(id) : isCollabOpaqueId(id);
     if (!valid) throw serviceError('operation-failed', `${kind}-id-invalid`);
     return id;
   }
 
-  private async enforceJoinRateLimit(key: string): Promise<void> {
+  async #enforceJoinRateLimit(key: string): Promise<void> {
     const state = this.joinFailures.get(key);
     const now = this.now().getTime();
     if (!state || now - state.windowStartedAt >= JOIN_FAILURE_WINDOW_MS) {
@@ -607,7 +609,7 @@ export class PendingMembershipService {
     throw serviceError('authorization-denied', 'join-rate-limited');
   }
 
-  private recordJoinFailure(key: string): void {
+  #recordJoinFailure(key: string): void {
     const now = this.now().getTime();
     const existing = this.joinFailures.get(key);
     const state = !existing || now - existing.windowStartedAt >= JOIN_FAILURE_WINDOW_MS
@@ -624,14 +626,14 @@ export class PendingMembershipService {
     this.joinFailures.set(key, state);
   }
 
-  private requireInvitation(
+  #requireInvitation(
     connection: AuthorityDatabaseConnection,
     secret: string,
     now: Date,
   ): AuthorityInvitationRecord {
     let actualHash: Buffer;
     try {
-      actualHash = Buffer.from(this.invitationCodec().hashSecret(secret), 'base64url');
+      actualHash = Buffer.from(this.#invitationCodec().hashSecret(secret), 'base64url');
     } catch {
       throw serviceError('authentication-failed', 'invitation-credential-invalid');
     }
@@ -651,7 +653,7 @@ export class PendingMembershipService {
     return matched;
   }
 
-  private async requireProject(projectId: string) {
+  async #requireProject(projectId: string) {
     if (!isCollabProjectId(projectId)) {
       throw serviceError('operation-failed', 'project-id-invalid');
     }
@@ -663,7 +665,7 @@ export class PendingMembershipService {
     return project;
   }
 
-  private async requireProjectFromAuthority() {
+  async #requireProjectFromAuthority() {
     const project = await this.authority.database.read(connection => (
       this.authority.projects.get(connection)
     ));
@@ -671,7 +673,7 @@ export class PendingMembershipService {
     return project;
   }
 
-  private async readMainOid(): Promise<string> {
+  async #readMainOid(): Promise<string> {
     const oid = await this.options.readMainOid();
     if (!isCollabGitOid(oid)) {
       throw serviceError('operation-failed', 'main-oid-invalid');
@@ -679,7 +681,7 @@ export class PendingMembershipService {
     return oid;
   }
 
-  private snapshotFromConnection(
+  #snapshotFromConnection(
     connection: AuthorityDatabaseConnection,
     currentMemberId: string,
     mainOid: string,
@@ -698,6 +700,7 @@ export class PendingMembershipService {
       openRequests: this.repository.listOpenRequests(connection),
       openTicketCount: this.tickets.countOpen(connection),
       project: {
+        authorityGeneration: project.authorityGeneration,
         authorityKind: 'lan',
         createdAt: project.createdAt,
         hostMemberId: project.hostMemberId,
@@ -714,7 +717,7 @@ export class PendingMembershipService {
     };
   }
 
-  private invitationCodec(): InvitationCodec {
+  #invitationCodec(): InvitationCodec {
     return this.options.getInvitationCodec?.() ?? this.options.invitationCodec;
   }
 }

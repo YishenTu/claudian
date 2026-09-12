@@ -7,6 +7,8 @@ import {
 
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
+import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
+import type { HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
 import type { LanTlsHostCaSigner } from '@/app/collab/lan/LanTlsIdentity';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
@@ -46,6 +48,7 @@ export interface SignHostActivationInput {
 }
 
 export interface VerifyHostTransitionChainInput {
+  readonly checkpoint?: HostTrustCheckpoint;
   readonly projectId: CollabProjectId;
   readonly pinnedCaCertificatePem: string;
   readonly proofs: readonly CollabHostTrustTransitionProof[];
@@ -253,20 +256,44 @@ export class HostTrustTransitionService {
     }
     let current = normalizeCaCertificate(input.pinnedCaCertificatePem, 'host-proof-pinned-ca-invalid');
     const transferIds = new Set<string>();
-    const previousFingerprints = new Set<string>();
+    let precedingFingerprint: string | undefined;
     for (const proof of input.proofs) {
+      assertId(proof.transferId, isCollabOpaqueId, 'host-proof-transfer-invalid');
+      if (proof.projectId !== input.projectId) throw trustError('host-proof-project-mismatch');
       if (transferIds.has(proof.transferId)) throw trustError('host-proof-transfer-duplicate');
-      if (previousFingerprints.has(proof.previousCaFingerprint)) {
+      if (precedingFingerprint !== undefined && proof.previousCaFingerprint !== precedingFingerprint) {
         throw trustError('host-proof-chain-fork');
       }
+      transferIds.add(proof.transferId);
+      precedingFingerprint = proof.nextCaFingerprint;
+    }
+    let start: number;
+    if (input.checkpoint) {
+      const checkpointIndex = input.proofs.findIndex(proof => proof.transferId === input.checkpoint!.transferId);
+      if (
+        checkpointIndex < 0
+        || input.proofs[checkpointIndex].nextCaFingerprint !== current.fingerprint
+        || digestHostTransitionProofChain(input.proofs.slice(0, checkpointIndex + 1)) !== input.checkpoint.proofChainDigest
+      ) throw trustError('host-proof-checkpoint-mismatch');
+      start = checkpointIndex + 1;
+    } else {
+      start = input.proofs.findIndex(proof => proof.previousCaFingerprint === current.fingerprint);
+      if (start < 0) {
+        if (input.proofs.length > 0 && precedingFingerprint !== current.fingerprint) {
+          throw trustError('host-proof-chain-disconnected');
+        }
+        start = input.proofs.length;
+      }
+    }
+    // Historical prefixes are retained for continuity, but only the continuation
+    // from the pinned key or committed checkpoint can change local trust.
+    for (const proof of input.proofs.slice(start)) {
       if (proof.previousCaFingerprint !== current.fingerprint) {
         throw trustError('host-proof-chain-disconnected');
       }
       const nextPem = this.verifyTransition(proof, current.certificatePem, {
         projectId: input.projectId,
       });
-      transferIds.add(proof.transferId);
-      previousFingerprints.add(proof.previousCaFingerprint);
       current = normalizeCaCertificate(nextPem, 'host-proof-next-ca-invalid');
     }
     if (

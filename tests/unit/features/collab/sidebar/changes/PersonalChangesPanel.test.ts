@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 
 import type {
+  CollabCoordinationSnapshot,
   CollabFeatureState,
   CollabLocalProjectSummary,
   CollabProjectInspection,
@@ -8,6 +9,7 @@ import type {
   CollabResult,
   CollabWorkingTreeReview,
 } from '@/core/collab';
+import { isCollabLanProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   PersonalChangesPanel,
@@ -78,6 +80,7 @@ function inspection(options: {
           id: 'project-a',
           mainOid: MAIN,
           mainRef: 'refs/heads/main',
+          authorityGeneration: 1,
           managerSetGeneration: 0,
           name: 'Alpha',
         },
@@ -139,12 +142,19 @@ function createPort(
     projects: [project()],
     selectedProjectId: 'project-a',
   };
-  const listeners = new Set<(next: CollabFeatureState) => void>();
+  const listeners = new Set<(next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => void>();
   const port = {
     get state() { return state; },
     inspectProject: jest.fn().mockResolvedValue(inspectResult),
     publish: jest.fn(),
-    subscribe: jest.fn((listener: (next: CollabFeatureState) => void) => {
+    observeProject: jest.fn((projectId: string, observer: (coordination?: CollabCoordinationSnapshot) => void) => {
+      const listener = (next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => {
+        if (next.selectedProjectId === projectId) observer(coordination);
+      };
+      listeners.add(listener);
+      return { dispose: jest.fn(() => listeners.delete(listener)) };
+    }),
+    subscribe: jest.fn((listener: (next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) => void) => {
       listeners.add(listener);
       return { dispose: jest.fn(() => listeners.delete(listener)) };
     }),
@@ -152,12 +162,13 @@ function createPort(
     inspectProject: jest.Mock;
     publish: jest.Mock;
     subscribe: jest.Mock;
+    observeProject: jest.Mock;
   };
   return {
     port,
-    update(next: CollabFeatureState) {
+    update(next: CollabFeatureState, coordination?: CollabCoordinationSnapshot) {
       state = next;
-      for (const listener of listeners) listener(state);
+      for (const listener of listeners) listener(state, coordination);
     },
     select(projectId: string) {
       state = { ...state, selectedProjectId: projectId };
@@ -492,6 +503,82 @@ describe('PersonalChangesPanel', () => {
     expect(fixture.port.inspectProject).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps personal files when only another Member request changes', async () => {
+    const container = document.body.createDiv();
+    const initial = inspection({ changed: true, openRequest: true });
+    const fixture = createPort(success(initial));
+    const panel = new PersonalChangesPanel(container, { port: fixture.port, project: project() });
+    await flush();
+    const file = container.querySelector('[data-path="note.md"]');
+    expect(file).not.toBeNull();
+    fixture.port.inspectProject.mockRejectedValue(new Error('Unrelated event must not inspect local Git'));
+    const coordination = initial.coordination!;
+    const next = {
+      ...coordination,
+      snapshot: {
+        ...coordination.snapshot,
+        eventSequence: 2,
+        openRequests: [
+          ...coordination.snapshot.openRequests,
+          { ...coordination.snapshot.openRequests[0], id: 'request-other', memberId: 'member-b', commentCount: 3 },
+        ],
+      },
+    };
+
+    fixture.update({ ...fixture.port.state }, next);
+    await flush();
+
+    expect(container.querySelector('[data-path="note.md"]')).toBe(file);
+    panel.setActive(false);
+    fixture.update({ ...fixture.port.state }, next);
+    panel.setActive(true);
+    await flush();
+    expect(container.querySelector('[data-path="note.md"]')).toBe(file);
+    panel.destroy();
+  });
+
+  it.each(['main', 'own-head', 'role', 'generation'])(
+    'refreshes personal files when %s changes', async change => {
+      const container = document.body.createDiv();
+      const initial = inspection({ openRequest: true });
+      const fixture = createPort(success(initial));
+      const panel = new PersonalChangesPanel(container, { port: fixture.port, project: project() });
+      await flush();
+      expect(container.querySelector('[data-path="note.md"]')).toBeNull();
+      const coordination = initial.coordination!;
+      if (!isCollabLanProjectSnapshot(coordination.snapshot)) throw new Error('Expected LAN fixture');
+      const next = {
+        ...coordination,
+        syncState: {
+          ...coordination.syncState,
+          generation: coordination.syncState.generation + (change === 'generation' ? 1 : 0),
+        },
+        snapshot: {
+          ...coordination.snapshot,
+          project: {
+            ...coordination.snapshot.project,
+            mainOid: change === 'main' ? 'c'.repeat(40) : coordination.snapshot.project.mainOid,
+          },
+          currentMember: {
+            ...coordination.snapshot.currentMember,
+            role: change === 'role' ? 'manager' as const : coordination.snapshot.currentMember.role,
+          },
+          openRequests: coordination.snapshot.openRequests.map(request => ({
+            ...request,
+            latestHeadOid: change === 'own-head' ? 'd'.repeat(40) : request.latestHeadOid,
+          })),
+        },
+      };
+      fixture.port.inspectProject.mockResolvedValue(success({
+        ...inspection({ changed: true, openRequest: true }), coordination: next,
+      }));
+      fixture.update({ ...fixture.port.state }, next);
+      await flush();
+      expect(container.querySelector('[data-path="note.md"]')).not.toBeNull();
+      panel.destroy();
+    },
+  );
+
   it('pauses inspections while inactive and coalesces them on resume', async () => {
     const container = document.body.createDiv();
     const fixture = createPort(success(inspection({ changed: true })));
@@ -701,7 +788,7 @@ describe('PersonalChangesPanel', () => {
 
     expect(signal.aborted).toBe(true);
     expect(container.querySelector('.claudian-collab-publish')).toBeNull();
-    const subscription = fixture.port.subscribe.mock.results[0]?.value as { dispose: jest.Mock };
+    const subscription = fixture.port.observeProject.mock.results[0]?.value as { dispose: jest.Mock };
     expect(subscription.dispose).toHaveBeenCalledTimes(1);
   });
 });

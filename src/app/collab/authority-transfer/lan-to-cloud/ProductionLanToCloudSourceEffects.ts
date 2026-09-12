@@ -1,8 +1,12 @@
 import {
+  constants,
   createHash,
   createPrivateKey,
   generateKeyPairSync,
   sign,
+  timingSafeEqual,
+  verify,
+  X509Certificate,
 } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -15,7 +19,6 @@ import {
 import path from 'node:path';
 
 import {
-  type AcceptLanToCloudTransferTargetRequest,
   COLLAB_MAIN_REF,
   COLLAB_MEMBER_REF_PREFIX,
   type CollabAuthorityRelinquishmentProof,
@@ -25,9 +28,11 @@ import {
   encodeCollabAuthorityRelinquishmentProofSigningInput,
   encodeCollabProjectCheckpointManifestCanonicalJson,
   isCollabGitOid,
+  isCollabMemberId,
   isCollabOpaqueId,
 } from '@claudian-collab/protocol';
 
+import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import type { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import {
   type AuthorityTransferRecord,
@@ -61,11 +66,8 @@ import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepos
 import {
   PersistentLanAuthorityTransferTerminalSourceService,
 } from '@/app/collab/lan/authority-transfer/PersistentLanAuthorityTransferServices';
-import {
-  AuthorityMemberCredentialAuthenticator,
-} from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -76,6 +78,39 @@ const BUNDLE_FILE = 'repository.bundle';
 const SOURCE_PROOF_FILE = 'source-proof.json';
 const SOURCE_KEY_FILE = 'source-proof-key.json';
 const RELINQUISHMENT_FILE = 'relinquishment-proof.json';
+const SOURCE_MEMBERS_FILE = 'source-members.json';
+
+interface SourceMemberCredentials {
+  readonly schemaVersion: 1;
+  readonly projectId: string;
+  readonly transferId: string;
+  readonly sourceAuthorityGeneration: number;
+  readonly members: readonly { readonly memberId: string; readonly credentialHash: string }[];
+}
+
+function decodeSourceMemberCredentials(value: unknown, record: AuthorityTransferRecord): SourceMemberCredentials {
+  const input = exactRecord(value, new Set(['schemaVersion', 'projectId', 'transferId', 'sourceAuthorityGeneration', 'members']));
+  if (!input || input.schemaVersion !== 1 || input.projectId !== record.projectId
+    || input.transferId !== record.transferId || input.sourceAuthorityGeneration !== record.status.sourceAuthority.generation
+    || !Array.isArray(input.members)) {
+    throw effectsError('authority-transfer-source-credentials-invalid');
+  }
+  const memberIds = new Set<string>();
+  const credentialHashes = new Set<string>();
+  const members = input.members.map(value => {
+    const member = exactRecord(value, new Set(['memberId', 'credentialHash']));
+    if (!member || typeof member.memberId !== 'string' || !isCollabMemberId(member.memberId)
+      || typeof member.credentialHash !== 'string' || !/^[0-9a-f]{64}$/.test(member.credentialHash)
+      || memberIds.has(member.memberId) || credentialHashes.has(member.credentialHash)) {
+      throw effectsError('authority-transfer-source-credentials-invalid');
+    }
+    memberIds.add(member.memberId);
+    credentialHashes.add(member.credentialHash);
+    return { memberId: member.memberId, credentialHash: member.credentialHash };
+  });
+  return { schemaVersion: 1, projectId: record.projectId, transferId: record.transferId,
+    sourceAuthorityGeneration: record.status.sourceAuthority.generation, members };
+}
 
 interface SourceProofKey {
   readonly privateKey: string;
@@ -92,21 +127,46 @@ interface SourceProofEnvelope {
     readonly projectId: string;
     readonly sourceAuthorityGeneration: number;
     readonly sourceHostMemberId: string;
+    readonly sourcePrincipalId: string;
     readonly targetAuthorityGeneration: number;
     readonly targetUrl: string;
     readonly transferId: string;
   }>;
   readonly receiptKeyId: string;
   readonly receiptPublicKey: string;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
 }
 
+const SOURCE_PROOF_KEYS = new Set([
+  'caCertificatePem',
+  'certificate',
+  'payload',
+  'receiptKeyId',
+  'receiptPublicKey',
+  'schemaVersion',
+]);
+const SOURCE_PROOF_PAYLOAD_KEYS = new Set([
+  'checkpointManifestSha256',
+  'projectId',
+  'sourceAuthorityGeneration',
+  'sourceHostMemberId',
+  'sourcePrincipalId',
+  'targetAuthorityGeneration',
+  'targetUrl',
+  'transferId',
+]);
+
 export interface ProductionLanToCloudSourceEffectsOptions {
-  readonly cloudSession: CloudAuthorityLifecycleSession | null;
+  readonly cloudSession: CloudAuthorityConnection | null;
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly foundation: ClaudianCollabService;
   readonly persistence: AuthorityTransferPersistence;
   readonly projectId: string;
+  readonly retainCommittedTargetRedemptions?: (
+    target: AuthorityTransferRecord,
+    source: AuthorityTransferRecord,
+    members: SourceMemberCredentials['members'],
+  ) => Promise<void>;
 }
 
 function effectsError(reason: string): CollabError {
@@ -115,6 +175,70 @@ function effectsError(reason: string): CollabError {
     recoveryActions: ['resume', 'open-diagnostics'],
     safeContext: { reason },
   });
+}
+
+function exactRecord(value: unknown, keys: ReadonlySet<string>): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const actual = Object.keys(record);
+  return actual.length === keys.size && actual.every(key => keys.has(key))
+    ? record
+    : null;
+}
+
+function currentSourceProof(
+  proof: unknown,
+  expectedPayload: SourceProofEnvelope['payload'],
+  expectedKey: SourceProofKey,
+): string | null {
+  if (typeof proof !== 'string') return null;
+  let decoded: Buffer;
+  let envelope: Record<string, unknown> | null;
+  try {
+    decoded = Buffer.from(proof, 'base64url');
+    if (decoded.toString('base64url') !== proof) return null;
+    envelope = exactRecord(JSON.parse(decoded.toString('utf8')), SOURCE_PROOF_KEYS);
+  } catch {
+    return null;
+  }
+  if (!envelope || envelope.schemaVersion !== 2) return null;
+  const payload = exactRecord(envelope.payload, SOURCE_PROOF_PAYLOAD_KEYS);
+  if (!payload) return null;
+  for (const [field, expected] of Object.entries(expectedPayload)) {
+    if (payload[field] !== expected) return null;
+  }
+  if (
+    envelope.receiptKeyId !== expectedKey.receiptKeyId
+    || envelope.receiptPublicKey !== expectedKey.publicKey
+    || typeof envelope.caCertificatePem !== 'string'
+    || typeof envelope.certificate !== 'string'
+  ) return null;
+  const signature = Buffer.from(envelope.certificate, 'base64url');
+  if (
+    signature.byteLength === 0
+    || signature.toString('base64url') !== envelope.certificate
+  ) return null;
+  try {
+    const certificate = new X509Certificate(envelope.caCertificatePem);
+    const signed = {
+      payload: expectedPayload,
+      receiptKeyId: expectedKey.receiptKeyId,
+      receiptPublicKey: expectedKey.publicKey,
+      schemaVersion: 2,
+    };
+    return verify(
+      'sha256',
+      Buffer.from(JSON.stringify(signed), 'utf8'),
+      {
+        key: certificate.publicKey,
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: 32,
+      },
+      signature,
+    ) ? proof : null;
+  } catch {
+    return null;
+  }
 }
 
 function projectsFolder(workspacePath: string): string {
@@ -243,48 +367,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
 
   async sourceEndpoint(record: AuthorityTransferRecord): Promise<string> {
     const endpoint = await this.options.foundation.lanHost
-      .pinAuthorityTransferSourceEndpoint(record.projectId);
-    try {
-      const membership = await this.requireLanMembership(record.projectId);
-      if (!membership.authority.endpoint || membership.authority.endpoint !== endpoint) {
-        throw effectsError('authority-transfer-source-endpoint-missing');
-      }
-      return endpoint;
-    } catch (error) {
-      await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-        record.projectId,
-        endpoint,
-      ).catch(() => undefined);
-      throw error;
+      .authorityTransferSourceEndpoint(record.projectId);
+    const membership = await this.requireLanMembership(record.projectId);
+    if (!membership.authority.endpoint) {
+      throw effectsError('authority-transfer-source-endpoint-missing');
     }
-  }
-
-  releaseSourceEndpoint(record: AuthorityTransferRecord, endpoint: string): Promise<void> {
-    return this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-      record.projectId,
-      endpoint,
-    );
-  }
-
-  acceptanceRequest(record: AuthorityTransferRecord): Promise<AcceptLanToCloudTransferTargetRequest> {
-    return Promise.resolve({
-      expectedAuthorityGeneration: record.status.sourceAuthority.generation,
-      idempotencyKey: `${record.operationIntentId}-accept`,
-      projectId: record.projectId,
-      targetUrl: record.status.targetUrl,
-      transferId: record.transferId,
-    });
-  }
-
-  acceptProposal(
-    request: AcceptLanToCloudTransferTargetRequest,
-    options: CollabOperationOptions = {},
-  ) {
-    return this.requireCloudSession().lifecycle.authorityTransfer(
-      'acceptLanToCloudTransferTarget',
-      request,
-      options,
-    );
+    return endpoint;
   }
 
   async activateTerminal(
@@ -293,16 +381,16 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
   ): Promise<void> {
     const proof = record.status.relinquishmentProof;
     if (!proof) throw effectsError('authority-transfer-relinquishment-proof-missing');
-    const service = await this.terminalService(record);
+    const service = await this.#terminalService(record);
     await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
     await this.options.foundation.lanHost.activateAuthorityTransferTerminalSource({
-      expectedEndpoint: this.requireSourceEndpoint(record),
       projectId: record.projectId,
       relinquishmentProof: proof,
       service,
       transferId: record.transferId,
     });
-    await this.convergeHost(record, options);
+    await this.#convergeHost(record, options);
+    await this.#settleEmptyClaimBatch(record, service);
   }
 
   async restoreCompleted(
@@ -312,57 +400,139 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (!record.status.relinquishmentProof) {
       throw effectsError('authority-transfer-relinquishment-proof-missing');
     }
-    const service = await this.terminalService(record);
+    const service = await this.#terminalService(record);
     if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
+      await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
       await service.expire();
+      await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+        record.projectId,
+        'terminal-source',
+        record.transferId,
+      );
       return;
     }
     await this.options.foundation.lanHost.startAuthorityTransferRoute({
-      expectedEndpoint: this.requireSourceEndpoint(record),
+      authorityGeneration: record.status.sourceAuthority.generation,
       projectId: record.projectId,
       service,
       state: 'terminal-source',
       transferId: record.transferId,
     });
-    await this.convergeHost(record, options);
+    await this.#convergeHost(record, options);
+    await this.#settleEmptyClaimBatch(record, service);
   }
 
-  private async terminalService(
+  async restoreRetained(record: AuthorityTransferRecord): Promise<void> {
+    const exact = await this.options.persistence.load(record.projectId, record.transferId);
+    if (!exact || exact.localRole !== 'source' || exact.status.state !== 'completed'
+      || !exact.status.relinquishmentProof || exact.operationIntentId !== record.operationIntentId) {
+      throw effectsError('authority-transfer-terminal-record-mismatch');
+    }
+    if (exact.terminalCleanupCompleted) return;
+    const service = await this.#terminalService(exact);
+    if (isAuthorityTransferTerminalResponderExpired(exact, new Date())) {
+      await service.expire();
+      await this.options.foundation.lanHost.stopAuthorityTransferRoute(exact.projectId, 'terminal-source', exact.transferId);
+      return;
+    }
+    decodeSourceMemberCredentials(await readJsonFile(await this.#sourceMemberCredentialsPath(exact)), exact);
+    await this.options.foundation.lanHost.startAuthorityTransferRoute({
+      authorityGeneration: exact.status.sourceAuthority.generation,
+      projectId: exact.projectId,
+      service, state: 'terminal-source', transferId: exact.transferId,
+    });
+  }
+
+  async #sourceMemberCredentialsPath(record: AuthorityTransferRecord): Promise<string> {
+    const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
+    if (!membership) throw effectsError('authority-transfer-membership-missing');
+    const staging = await this.options.foundation.local.workspace.reserveProjectsFolderChild(
+      projectsFolder(membership.project.workspacePath), {
+        childName: record.stagingDirectoryName, operationId: record.transferId,
+        projectId: record.projectId, purpose: 'authority-transfer-staging',
+      },
+    );
+    return path.join(staging.absolutePath, SOURCE_MEMBERS_FILE);
+  }
+
+  async #retainSourceMemberCredentials(record: AuthorityTransferRecord, stagingPath: string, authority: CollabAuthorityFoundation): Promise<SourceMemberCredentials> {
+    const filePath = path.join(stagingPath, SOURCE_MEMBERS_FILE);
+    const existing = await readJsonFile(filePath);
+    if (existing) {
+      return decodeSourceMemberCredentials(existing, record);
+    }
+    const members = await authority.database.read(connection => {
+      const project = authority.projects.get(connection);
+      if (!project || project.projectId !== record.projectId
+        || project.authorityGeneration !== record.status.sourceAuthority.generation) {
+        throw effectsError('authority-transfer-source-generation-mismatch');
+      }
+      return new PendingMembershipRepository().listCredentialRecords(connection, ['active'])
+        .filter(member => member.accessState === 'bound' && member.credentialHash !== null)
+        .map(member => ({ memberId: member.member.id, credentialHash: Buffer.from(member.credentialHash!).toString('hex') }));
+    });
+    const retained = decodeSourceMemberCredentials({ schemaVersion: 1, projectId: record.projectId,
+      transferId: record.transferId, sourceAuthorityGeneration: record.status.sourceAuthority.generation,
+      members }, record);
+    await writePrivateJson(filePath, retained);
+    return retained;
+  }
+
+  async #settleEmptyClaimBatch(
+    record: AuthorityTransferRecord,
+    service: PersistentLanAuthorityTransferTerminalSourceService,
+  ): Promise<void> {
+    const empty = await this.options.persistence.isRetainedClaimBatchEmpty(
+      record.projectId,
+      record.transferId,
+    );
+    if (!empty) return;
+    await service.expire();
+    await this.options.foundation.lanHost.stopAuthorityTransferRoute(
+      record.projectId,
+      'terminal-source',
+      record.transferId,
+    );
+  }
+
+  async #terminalService(
     record: AuthorityTransferRecord,
   ): Promise<PersistentLanAuthorityTransferTerminalSourceService> {
-    const authority = await this.options.foundation.inspectAuthority(record.projectId);
-    if (!authority) throw effectsError('authority-transfer-source-authority-missing');
-    const authenticator = new AuthorityMemberCredentialAuthenticator(authority.database);
     return new PersistentLanAuthorityTransferTerminalSourceService({
-      authenticate: async credential => ({
-        memberId: (await authenticator.authenticate(credential, ['active'])).member.id,
-      }),
-      cleanupStaging: current => this.cleanupStaging(current),
+      authenticate: async credential => {
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential)) throw new CollabError({ code: 'authentication-failed' });
+        const memberCredentials = decodeSourceMemberCredentials(
+          await readJsonFile(await this.#sourceMemberCredentialsPath(record)), record,
+        );
+        const actual = createHash('sha256').update(credential, 'utf8').digest();
+        const matched = memberCredentials.members.filter(member => timingSafeEqual(actual, Buffer.from(member.credentialHash, 'hex')));
+        if (matched.length !== 1) throw new CollabError({ code: 'authentication-failed' });
+        return { memberId: matched[0].memberId };
+      },
+      cleanupStaging: current => this.#cleanupStaging(current),
       expiresAt: record.status.expiresAt,
       persistence: this.options.persistence,
+      prepareExpiry: async () => {
+        const current = await this.options.persistence.load(record.projectId);
+        if (current?.transferId === record.transferId) {
+          await this.options.convergence.lanToCloudHostOffline(record.status);
+        }
+      },
       projectId: record.projectId,
       transferId: record.transferId,
     });
   }
 
-  private async convergeHost(
+  async #convergeHost(
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
-    const cloudSession = this.requireCloudSession();
+    const cloudSession = this.#requireCloudSession();
     const snapshot = await cloudSession.readSnapshot(record.projectId, options);
     await this.options.convergence.lanToCloudHost({
-      developmentActorId: cloudSession.developmentActorId,
       snapshot,
       status: record.status,
     });
-  }
-
-  private requireSourceEndpoint(record: AuthorityTransferRecord): string {
-    if (!record.sourceLanEndpoint) {
-      throw effectsError('authority-transfer-source-endpoint-missing');
-    }
-    return record.sourceLanEndpoint;
   }
 
   async capture(
@@ -378,6 +548,15 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     } else if (record.restartFence !== 'temporary') {
       throw effectsError('authority-transfer-source-capture-fence-invalid');
     }
+    const sourceMembers = await this.#retainSourceMemberCredentials(record, stagingPath, authority);
+    for (const target of await this.options.persistence.listRetained(record.projectId)) {
+      if (target.localRole !== 'target' || target.terminalCleanupCompleted
+        || target.status.targetAuthority.generation !== record.status.sourceAuthority.generation) continue;
+      if (!this.options.retainCommittedTargetRedemptions) {
+        throw effectsError('authority-transfer-target-redemption-recovery-unavailable');
+      }
+      await this.options.retainCommittedTargetRedemptions(target, record, sourceMembers.members);
+    }
     const existing = await readJsonFile<CollabProjectCheckpointManifest>(
       path.join(stagingPath, MANIFEST_FILE),
     );
@@ -388,6 +567,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (verifiedExisting && await stagedArtifactsMatch(stagingPath, verifiedExisting)) {
       manifest = verifiedExisting;
     } else {
+      await this.#assertSourceReplayMutable(record, false);
       await Promise.all([
         MANIFEST_FILE,
         COORDINATION_FILE,
@@ -396,37 +576,41 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         RELINQUISHMENT_FILE,
       ].map(fileName => rm(path.join(stagingPath, fileName), { force: true })));
       const repositoryPath = path.join(authority.authorityDirectory, 'repository.git');
-      await new AuthorityTransferAdmissionSettlement({
-        database: authority.database,
-        runner: git.runner,
-      }).settle({
-        repositoryPath,
-        settledAt: record.status.updatedAt,
-        ...(options.signal ? { signal: options.signal } : {}),
+      const physical = await this.options.foundation.local.projects.withAuthorityDirectory(authority.resource, async () => {
+        await new AuthorityTransferAdmissionSettlement({
+          database: authority.database,
+          runner: git.runner,
+        }).settle({
+          repositoryPath,
+          settledAt: record.status.updatedAt,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        const refs = parseRefs((await git.runner.run({
+          args: [
+            'for-each-ref',
+            '--format=%(objectname) %(refname)',
+            COLLAB_MAIN_REF,
+            COLLAB_MEMBER_REF_PREFIX,
+          ],
+          cwd: repositoryPath,
+          maxStdoutBytes: 1024 * 1024,
+          ...(options.signal ? { signal: options.signal } : {}),
+          suppressHooks: true,
+        })).stdout);
+        const objectFormatResult = await git.runner.run({
+          args: ['rev-parse', '--show-object-format'],
+          cwd: repositoryPath,
+          maxStdoutBytes: 64 * 1024,
+          ...(options.signal ? { signal: options.signal } : {}),
+          suppressHooks: true,
+        });
+        const objectFormat = objectFormatResult.stdout.toString('utf8').trim();
+        if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
+          throw effectsError('authority-transfer-object-format-invalid');
+        }
+        return { refs, objectFormat } as const;
       });
-      const refs = parseRefs((await git.runner.run({
-        args: [
-          'for-each-ref',
-          '--format=%(objectname) %(refname)',
-          COLLAB_MAIN_REF,
-          COLLAB_MEMBER_REF_PREFIX,
-        ],
-        cwd: repositoryPath,
-        maxStdoutBytes: 1024 * 1024,
-        ...(options.signal ? { signal: options.signal } : {}),
-        suppressHooks: true,
-      })).stdout);
-      const objectFormatResult = await git.runner.run({
-        args: ['rev-parse', '--show-object-format'],
-        cwd: repositoryPath,
-        maxStdoutBytes: 64 * 1024,
-        ...(options.signal ? { signal: options.signal } : {}),
-        suppressHooks: true,
-      });
-      const objectFormat = objectFormatResult.stdout.toString('utf8').trim();
-      if (objectFormat !== 'sha1' && objectFormat !== 'sha256') {
-        throw effectsError('authority-transfer-object-format-invalid');
-      }
+      const { refs, objectFormat } = physical;
       const expectedMainOid = refs[0].oid;
       const coordination = await authority.database.read(connection => (
         new AuthorityTransferCheckpointRepository().exportCoordination(connection, {
@@ -438,12 +622,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         flag: 'wx',
         mode: 0o600,
       });
-      const bundleFact = await new AuthorityTransferCheckpointGit(git.runner).createBundle({
+      const bundleFact = await this.options.foundation.local.projects.withAuthorityDirectory(authority.resource, () => new AuthorityTransferCheckpointGit(git.runner).createBundle({
         bundlePath: path.join(stagingPath, BUNDLE_FILE),
         refs,
         repositoryPath,
         ...(options.signal ? { signal: options.signal } : {}),
-      });
+      }));
       manifest = createAuthorityTransferCheckpointManifest({
         artifacts: [artifactFact('coordination.ndjson', coordinationBytes), bundleFact],
         createdAt: record.status.createdAt,
@@ -463,7 +647,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (manifest.projectId !== record.projectId || manifest.operationId !== record.transferId) {
       throw effectsError('authority-transfer-checkpoint-owner-mismatch');
     }
-    const sourceProof = await this.createSourceProof(record, manifest, stagingPath);
+    const sourceProof = await this.#createSourceProof(record, manifest, stagingPath);
     return {
       artifacts: [
         { artifact: MANIFEST_FILE, body: createReadStream(path.join(stagingPath, MANIFEST_FILE)), byteCount: (await lstat(path.join(stagingPath, MANIFEST_FILE))).size },
@@ -533,37 +717,26 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       await this.options.foundation.lanHost.reopenProjectAfterAuthorityTransferCancellation(
         record.projectId,
       );
-    } else {
+    } else if (record.restartFence === 'open') {
       await this.options.foundation.lanHost.startProject(record.projectId);
+    } else {
+      await this.options.foundation.lanHost.restartProjectAfterAuthorityTransferCancellation({
+        operationIntentId: record.operationIntentId,
+        projectId: record.projectId,
+        transferId: record.transferId,
+      });
     }
-    if (record.sourceLanEndpoint) {
-      await this.options.foundation.lanHost.unpinAuthorityTransferSourceEndpoint(
-        record.projectId,
-        record.sourceLanEndpoint,
-      );
-    }
-    await this.cleanupStaging(record);
+    await this.#cleanupStaging(record);
   }
 
-  requestProposal(
-    request: Parameters<LanToCloudSourceEffects['requestProposal']>[0],
-    options: CollabOperationOptions = {},
-  ) {
-    return this.requireCloudSession().lifecycle.authorityTransfer(
-      'requestLanToCloudTransfer',
-      request,
-      options,
-    );
-  }
-
-  private requireCloudSession(): CloudAuthorityLifecycleSession {
+  #requireCloudSession(): CloudAuthorityConnection {
     if (!this.options.cloudSession) {
       throw effectsError('authority-transfer-cloud-session-unavailable');
     }
     return this.options.cloudSession;
   }
 
-  private async cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
+  async #cleanupStaging(record: AuthorityTransferRecord): Promise<void> {
     const membership = await this.options.foundation.local.projects.loadMembership(record.projectId);
     if (!membership) throw effectsError('authority-transfer-membership-missing');
     await this.options.foundation.local.workspace.removeReservedProjectsFolderChild(
@@ -577,14 +750,13 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     );
   }
 
-  private async createSourceProof(
+  async #createSourceProof(
     record: AuthorityTransferRecord,
     manifest: CollabProjectCheckpointManifest,
     stagingPath: string,
   ): Promise<string> {
     const filePath = path.join(stagingPath, SOURCE_PROOF_FILE);
-    const existing = await readJsonFile<{ readonly proof: string }>(filePath);
-    if (existing) return existing.proof;
+    const existing = await readJsonFile<unknown>(filePath);
     const membership = await this.requireLanMembership(record.projectId);
     const key = await sourceProofKey(stagingPath);
     const payload = {
@@ -592,10 +764,15 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       projectId: record.projectId,
       sourceAuthorityGeneration: record.status.sourceAuthority.generation,
       sourceHostMemberId: membership.member.id,
+      sourcePrincipalId: this.#requireCloudSession().principalId,
       targetAuthorityGeneration: record.status.targetAuthority.generation,
       targetUrl: record.status.targetUrl,
       transferId: record.transferId,
     };
+    const existingRecord = exactRecord(existing, new Set(['proof']));
+    const reusable = currentSourceProof(existingRecord?.proof, payload, key);
+    if (reusable !== null) return reusable;
+    await this.#assertSourceReplayMutable(record, existing !== null);
     const signer = await this.options.foundation.lanHost.hostCaSigner();
     const envelope: SourceProofEnvelope = {
       caCertificatePem: signer.caCertificatePem,
@@ -603,16 +780,39 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         payload,
         receiptKeyId: key.receiptKeyId,
         receiptPublicKey: key.publicKey,
-        schemaVersion: 1,
+        schemaVersion: 2,
       }), 'utf8')),
       payload,
       receiptKeyId: key.receiptKeyId,
       receiptPublicKey: key.publicKey,
-      schemaVersion: 1,
+      schemaVersion: 2,
     };
     const proof = Buffer.from(JSON.stringify(envelope), 'utf8').toString('base64url');
     await writePrivateJson(filePath, { proof });
-    return (await readJsonFile<{ readonly proof: string }>(filePath))?.proof ?? proof;
+    const persisted = await readJsonFile<unknown>(filePath);
+    if (exactRecord(persisted, new Set(['proof']))?.proof !== proof) {
+      throw effectsError('authority-transfer-source-proof-replay-invalid');
+    }
+    return proof;
+  }
+
+  async #assertSourceReplayMutable(
+    record: AuthorityTransferRecord,
+    requireEntry: boolean,
+  ): Promise<void> {
+    const [physicalRecord, sourceEntry] = await Promise.all([
+      this.options.persistence.load(record.projectId),
+      this.options.persistence.loadSourceEntry(record.projectId),
+    ]);
+    if (!physicalRecord && !sourceEntry && !requireEntry) return;
+    if (
+      sourceEntry?.entryRole === 'source'
+      && sourceEntry.ownerInstallationKey === this.options.foundation.installationKey
+      && sourceEntry.successor?.operationIntentId === record.operationIntentId
+      && sourceEntry.successor.transferId === record.transferId
+      && sourceEntry.beginSubmission === 'not-sent'
+    ) return;
+    throw effectsError('authority-transfer-source-proof-replay-invalid');
   }
 
   private async prepare(record: AuthorityTransferRecord): Promise<{

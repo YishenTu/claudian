@@ -3,6 +3,9 @@ import { type CollabProjectId } from '@claudian-collab/protocol';
 import {
   type AuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import type {
+  CloudToLanTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
 import {
   type AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -15,8 +18,20 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
-  prepare?(record: AuthorityTransferRecord): Promise<void>;
+  managerHandoffEstablished?(
+    projectId: CollabProjectId,
+  ): Promise<boolean>;
+  prepare?(
+    record: AuthorityTransferRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
   resume(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
+  resumeRetained(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
+  resumeManager(projectId: CollabProjectId, options: CollabOperationOptions): Promise<void>;
+  resumeTargetPreparation(
+    entry: CloudToLanTargetEntryRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
 }
 
 function throwIfCancelled(signal?: AbortSignal): void {
@@ -33,7 +48,7 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
     private readonly persistence: AuthorityTransferPersistence,
     private readonly handler: AuthorityTransferRecoveryHandler,
     private readonly assertRecoveryOwner: (
-      ownerInstallationKey: string | undefined,
+      ownerInstallationKey: string,
       projectId: CollabProjectId,
     ) => Promise<void> | void,
   ) {
@@ -62,37 +77,38 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       : undefined;
     for (const projectId of catalog.projectIds) {
       throwIfCancelled(options.signal);
-      let catalogRecord: AuthorityTransferRecord | null = null;
-      try {
-        catalogRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
-      } catch {
-        // Let lifecycle inspection normalize corrupt owned state consistently below.
-      }
-      if (catalogRecord) {
-        try {
-          if (!await this.isCurrentRecoveryOwner(catalogRecord)) continue;
-        } catch (error) {
-          firstError ??= error;
-          continue;
-        }
-      }
-      await this.lifecycle.runExclusive(
+      await this.lifecycle.runAuthorityTransferRecovery(
         projectId,
-        this.durableOwner.name,
-        'recovery',
         async () => {
+          for (const retained of await this.persistence.listRetained(projectId)) {
+            if (retained.terminalCleanupCompleted) continue;
+            await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);
+            await this.handler.resumeRetained(retained, options);
+          }
+          await this.handler.resumeManager(projectId, options);
+          let ownerState = await this.persistence.inspectLifecycleOwner(projectId);
+          if (ownerState === 'absent' || ownerState === 'terminal') return;
           const ownerRecord = await this.persistence.loadRecoveryOwnerRecord(projectId);
-          if (!ownerRecord) return;
+          if (!ownerRecord) {
+            const targetEntry = await this.persistence.loadCloudToLanTargetEntry(projectId);
+            if (
+              !targetEntry
+              || (targetEntry.phase !== 'preparing' && targetEntry.phase !== 'published')
+            ) return;
+            await this.assertRecoveryOwner(targetEntry.ownerInstallationKey, projectId);
+            await this.handler.resumeTargetPreparation(targetEntry, options);
+            return;
+          }
           await this.assertRecoveryOwner(ownerRecord.ownerInstallationKey, projectId);
           await this.persistence.recoverInterruptedClaimCommitment(projectId);
-          const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
+          ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') {
             return;
           }
           const record = await this.persistence.load(projectId);
           if (!record) return;
           if (ownerState === 'proposal') {
-            await this.handler.prepare?.(record);
+            await this.handler.prepare?.(record, options);
             return;
           }
           await this.handler.resume(record, options);
@@ -114,21 +130,11 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
   private async inspect(
     projectId: CollabProjectId,
   ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
-    return this.persistence.inspectLifecycleOwner(projectId);
-  }
-
-  private async isCurrentRecoveryOwner(record: AuthorityTransferRecord): Promise<boolean> {
-    try {
-      await this.assertRecoveryOwner(record.ownerInstallationKey, record.projectId);
-      return true;
-    } catch (error) {
-      if (
-        record.ownerInstallationKey !== undefined
-        &&
-        error instanceof CollabError
-        && error.safeContext.reason === 'host-installation-recovery-owner-mismatch'
-      ) return false;
-      throw error;
-    }
+    const state = await this.persistence.inspectLifecycleOwner(projectId);
+    if (
+      state === 'nonterminal'
+      && await this.handler.managerHandoffEstablished?.(projectId)
+    ) return 'terminal';
+    return state;
   }
 }

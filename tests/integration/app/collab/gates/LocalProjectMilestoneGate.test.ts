@@ -27,6 +27,9 @@ import {
 } from '@/app/collab';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
+  authorityTransferChildIdempotencyKey,
+} from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
+import {
   createAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
@@ -42,10 +45,14 @@ import {
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimCustodyRecord';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
+import {
+  encodeCloudMembershipClaimInvitation,
+} from '@/app/collab/project/CloudProjectInvitation';
 import type {
-  CloudAuthorityLifecycleSession,
+  CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-m2';
 const MEMBER_ID = 'member-host';
@@ -78,8 +85,8 @@ describe('G3 local Project milestone gate', () => {
 
   function createFoundation(configuredGitPath = ''): ClaudianCollabService {
     return new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => configuredGitPath,
       installationKey: TEST_INSTALLATION_A,
@@ -88,6 +95,27 @@ describe('G3 local Project milestone gate', () => {
       vaultRoot,
     });
   }
+
+  it('derives LAN Retire authority from the authenticated Project rather than caller identities', async () => {
+    const foundation = createFoundation();
+    const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => CREDENTIAL,
+      createId: kind => kind === 'member' ? MEMBER_ID : kind === 'operation' ? OPERATION_ID : PROJECT_ID,
+      vaultRoot,
+    });
+    const feature = createCollabFeatureSubcomposition({ foundation, projectSetup: setup, vaultRoot }).feature;
+    try {
+      await expect(feature.initialize()).resolves.toMatchObject({ status: 'success' });
+      await expect(feature.createProject({ memberDisplayName: 'Alice', name: 'Retire intent' }))
+        .resolves.toMatchObject({ status: 'success' });
+      await expect(foundation.retireProject({ projectId: PROJECT_ID }))
+        .resolves.toMatchObject({ projectId: PROJECT_ID, retiredAt: expect.any(String) });
+    } finally {
+      await feature.close();
+      await foundation.close();
+    }
+  });
 
   it('creates and reloads one independent empty Project', async () => {
     const foundation = createFoundation();
@@ -182,8 +210,8 @@ describe('G3 local Project milestone gate', () => {
     let checkAddress!: () => Promise<void>;
     const invitationCodec = new InvitationCodec({ isAddressAllowed: () => true });
     const foundation = new ClaudianCollabService({
-      createAuthorityDatabase: authorityDirectory => (
-        new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
+        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,
@@ -229,7 +257,22 @@ describe('G3 local Project milestone gate', () => {
         .resolves.toMatchObject({ status: 'success' });
 
       addresses = [reboundAddress];
-      await checkAddress();
+      const rebindDeadline = Date.now() + 10_000;
+      for (;;) {
+        try {
+          await checkAddress();
+          break;
+        } catch (error) {
+          if (!(error instanceof CollabError) || error.code !== 'stale-project-selection'
+            || error.safeContext?.reason !== 'lan-host-route-projection-changed'
+            || Date.now() >= rebindDeadline) throw error;
+        }
+      }
+      const rebound = await foundation.local.projects.loadMembership(PROJECT_ID);
+      if (rebound?.authority.kind !== 'lan' || !rebound.authority.endpoint) {
+        throw new Error('Rebound LAN membership is missing');
+      }
+      expect(new URL(rebound.authority.endpoint).hostname).toBe(reboundAddress);
       await writeFile(path.join(repositoryPath, 'note.md'), 'after rebind\n');
 
       await expect(feature.publish({ description: 'After rebind', projectId: PROJECT_ID }))
@@ -357,6 +400,7 @@ describe('G3 local Project milestone gate', () => {
       openRequests: [],
       openTicketCount: 0,
       project: {
+        authorityGeneration: 2,
         authorityKind: 'cloud',
         createdAt: '2026-08-08T00:00:00.000Z',
         id: PROJECT_ID,
@@ -366,9 +410,22 @@ describe('G3 local Project milestone gate', () => {
       },
       ticketHighlights: [],
     });
-    const readSnapshot = jest.fn(async () => snapshot());
+    const snapshotSignals: AbortSignal[] = [];
+    let snapshotOutage = true;
+    const readSnapshot = jest.fn(async (
+      _projectId: string,
+      options: { readonly signal?: AbortSignal } = {},
+    ) => {
+      if (!options.signal) throw new Error('Missing terminal snapshot recovery signal');
+      snapshotSignals.push(options.signal);
+      if (snapshotOutage) {
+        snapshotOutage = false;
+        throw new Error('simulated Cloud snapshot outage');
+      }
+      return snapshot();
+    });
     const cloudSession = {
-      developmentActorId: MEMBER_ID,
+      principalId: 'vault-' + 'a'.repeat(64),
       dispose: jest.fn(),
       lifecycle: {
         authorityTransfer: jest.fn(async (operation: string) => {
@@ -391,7 +448,7 @@ describe('G3 local Project milestone gate', () => {
       supports: (capability: string) => (
         capability === 'authority-transfer' || capability === 'project-snapshot'
       ),
-    } as unknown as CloudAuthorityLifecycleSession;
+    } as unknown as CloudAuthorityConnection;
     await subcomposition.feature.initialize();
     await subcomposition.feature.createProject({
       memberDisplayName: 'Alice',
@@ -426,10 +483,26 @@ describe('G3 local Project milestone gate', () => {
     await foundation.close();
 
     const reopenedFoundation = createFoundation();
+    const connectionSignals: AbortSignal[] = [];
     const reopened = createCollabFeatureSubcomposition({
       cloudAuthority: {
+        authorityKind: 'cloud',
         create: jest.fn() as never,
-        createLifecycle: jest.fn(async () => cloudSession),
+        connect: jest.fn(async (
+          _binding: unknown,
+          options: { readonly signal?: AbortSignal } = {},
+        ) => {
+          if (!options.signal) throw new Error('Missing terminal connection recovery signal');
+          connectionSignals.push(options.signal);
+          return cloudSession;
+        }),
+        connectPendingLeave: async () => {
+          throw new Error('This recovery must not open a Cloud Leave connection');
+        },
+        connectPendingRetirement: async () => {
+          throw new Error('This recovery must not open a Cloud Retirement connection');
+        },
+        connectAuthorityTransfer: jest.fn() as never,
       },
       foundation: reopenedFoundation,
       projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
@@ -439,14 +512,17 @@ describe('G3 local Project milestone gate', () => {
       reopenedFoundation.lanHost,
       'startAuthorityTransferRoute',
     );
-    readSnapshot.mockRejectedValueOnce(new Error('simulated Cloud snapshot outage'));
-    await expect(reopened.feature.restoreLifecycle()).rejects.toThrow('simulated Cloud snapshot outage');
+    await expect(reopened.feature.restoreLifecycle()).rejects.toThrow(
+      'simulated Cloud snapshot outage',
+    );
     expect(restoreTerminalRoute).toHaveBeenCalledTimes(1);
     await expect(reopened.feature.restoreLifecycle()).resolves.toBeUndefined();
     const convergedMembership = await reopenedFoundation.local.projects.loadMembership(PROJECT_ID);
     expect(convergedMembership).toMatchObject({ authority: { kind: 'cloud' } });
     expect(convergedMembership).not.toHaveProperty('hostOwnership');
     expect(readSnapshot).toHaveBeenCalledTimes(2);
+    expect(snapshotSignals).toEqual(connectionSignals);
+    expect(snapshotSignals.every(signal => signal.aborted)).toBe(true);
     expect(restoreTerminalRoute).toHaveBeenCalledTimes(2);
     await expect(reopenedFoundation.lanHost.startProject(PROJECT_ID)).rejects.toMatchObject({
       code: 'durable-progress-recovery-required',
@@ -483,7 +559,10 @@ describe('G3 local Project milestone gate', () => {
         throw new Error('Expected initial LAN membership');
       }
       const transferId = `transfer-claimant-cross-write-${direction}`;
-      const operationIntentId = `intent-claimant-cross-write-${direction}`;
+      const managerOperationIntentId = `intent-source-${direction}`;
+      const operationIntentId = direction === 'cloud-to-lan'
+        ? authorityTransferChildIdempotencyKey(managerOperationIntentId, 'claims')
+        : `intent-claimant-cross-write-${direction}`;
       const checkpointSha256 = 'd'.repeat(64);
       const claimValue = Buffer.alloc(32, 8).toString('base64url');
       const targetCredential = Buffer.alloc(32, 9).toString('base64url');
@@ -519,7 +598,7 @@ describe('G3 local Project milestone gate', () => {
           certificateAlgorithm: 'ed25519',
           checkpointSha256,
           committedAt: '2026-08-27T00:00:08.000Z',
-          operationIntentId: `intent-source-${direction}`,
+          operationIntentId: managerOperationIntentId,
           projectId: PROJECT_ID,
           sourceAuthority,
           sourceHostMemberId: direction === 'lan-to-cloud' ? MEMBER_ID : null,
@@ -534,8 +613,22 @@ describe('G3 local Project milestone gate', () => {
         updatedAt: '2026-08-27T00:00:10.000Z',
       };
       let claimant = createAuthorityTransferClaimantRecord({
+        cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null,
         createdAt: '2026-08-27T00:00:00.000Z',
         lanTarget,
+        managerPredecessor: direction === 'cloud-to-lan'
+          ? {
+              initiatingPersonalRef: membership.member.personalRef,
+              operationIntentId: managerOperationIntentId,
+              ownerInstallationKey: TEST_INSTALLATION_A,
+              preparationId: authorityTransferChildIdempotencyKey(
+                managerOperationIntentId,
+                'stage',
+              ),
+              selectedTargetMemberId: 'member-target',
+              sourceCloudUrl: 'https://cloud.example.test/',
+            }
+          : null,
         memberId: MEMBER_ID,
         operationIntentId,
         status,
@@ -584,8 +677,7 @@ describe('G3 local Project milestone gate', () => {
           authority: {
             authorityGeneration: 2,
             bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-            developmentActorId: MEMBER_ID,
-            gitRemoteUrl: `https://cloud.example.test/v2/projects/${PROJECT_ID}/repository.git`,
+            gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
             kind: 'cloud',
             serverUrl: 'https://cloud.example.test/',
             wireVersion: COLLAB_PROTOCOL_VERSION,
@@ -606,6 +698,7 @@ describe('G3 local Project milestone gate', () => {
         await foundation.local.projects.saveMembership({
           ...membership,
           authority: {
+            authorityGeneration: 2,
             endpoint: new URL(targetUrl).origin,
             gitRemoteUrl: `${new URL(targetUrl).origin}/v1/git/${PROJECT_ID}/repository.git`,
             hostCaCertificatePem: lanTarget!.caCertificatePem,
@@ -622,11 +715,22 @@ describe('G3 local Project milestone gate', () => {
       await foundation.close();
 
       const reopenedFoundation = createFoundation();
-      const createLifecycle = jest.fn(async () => {
+      const connect = jest.fn(async () => {
         throw new Error('Cloud source must remain unavailable');
       });
       const reopened = createCollabFeatureSubcomposition({
-        cloudAuthority: { create: jest.fn() as never, createLifecycle },
+        cloudAuthority: {
+          authorityKind: 'cloud',
+          create: jest.fn() as never,
+          connect,
+          connectPendingLeave: async () => {
+            throw new Error('This recovery must not open a Cloud Leave connection');
+          },
+          connectPendingRetirement: async () => {
+            throw new Error('This recovery must not open a Cloud Retirement connection');
+          },
+          connectAuthorityTransfer: jest.fn() as never,
+        },
         foundation: reopenedFoundation,
         projectSetup: new CollabProjectSetupService(reopenedFoundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }),
         vaultRoot,
@@ -636,11 +740,198 @@ describe('G3 local Project milestone gate', () => {
       await expect(
         reopenedFoundation.local.projects.authorityTransferClaimants.load(PROJECT_ID),
       ).resolves.toBeNull();
-      expect(createLifecycle).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
       await reopened.feature.close();
       await reopenedFoundation.close();
     },
   );
+
+  it('redeems a Manager-reissued claim after original source expiry through the real local transition lane', async () => {
+    const foundation = createFoundation();
+    const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => CREDENTIAL,
+      createId: kind => {
+        if (kind === 'member') return MEMBER_ID;
+        if (kind === 'operation') return OPERATION_ID;
+        return PROJECT_ID;
+      },
+      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      vaultRoot,
+    });
+    const transferId = 'transfer-manager-reissued-gate';
+    const checkpointSha256 = 'e'.repeat(64);
+    const claimValue = Buffer.alloc(32, 6).toString('base64url');
+    const status: CollabAuthorityTransferStatus = {
+      batchRevision: 1,
+      batchSha256: 'b'.repeat(64),
+      checkpointSha256,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      direction: 'lan-to-cloud',
+      expiresAt: '2026-08-31T00:00:00.000Z',
+      phase: 'completed',
+      projectId: PROJECT_ID,
+      relinquishmentProof: {
+        batchRevision: 1,
+        batchSha256: 'b'.repeat(64),
+        certificate: Buffer.alloc(64, 2).toString('base64url'),
+        certificateAlgorithm: 'ed25519',
+        checkpointSha256,
+        committedAt: '2026-08-01T00:00:08.000Z',
+        operationIntentId: 'intent-manager-reissued-source',
+        projectId: PROJECT_ID,
+        sourceAuthority: { generation: 1, kind: 'lan' },
+        sourceHostMemberId: MEMBER_ID,
+        targetAuthority: { generation: 2, kind: 'cloud' },
+        transferId,
+      },
+      sourceAuthority: { generation: 1, kind: 'lan' },
+      state: 'completed',
+      targetAuthority: { generation: 2, kind: 'cloud' },
+      targetUrl: 'https://cloud.example.test/',
+      transferId,
+      updatedAt: '2026-08-01T00:00:10.000Z',
+    };
+    const descriptor = {
+      claim: claimValue,
+      claimGeneration: 4,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      expiresAt: '2026-10-01T00:00:00.000Z',
+      memberId: MEMBER_ID,
+      projectId: PROJECT_ID,
+      secretReplayExpiresAt: '2026-10-01T00:00:00.000Z',
+      targetAuthorityGeneration: 2,
+      transferId,
+    };
+    let repositoryHead = '';
+    const readSnapshot = jest.fn(async (): Promise<CollabCloudProjectSnapshot> => ({
+      currentMember: {
+        activatedAt: '2026-08-01T00:00:00.000Z',
+        createdAt: '2026-08-01T00:00:00.000Z',
+        displayName: 'Alice',
+        id: MEMBER_ID,
+        personalRef: `refs/heads/members/${MEMBER_ID}`,
+        role: 'manager',
+        status: 'active',
+      },
+      eventSequence: 11,
+      members: [],
+      openRequests: [],
+      openTicketCount: 0,
+      project: {
+        authorityGeneration: 2,
+        authorityKind: 'cloud',
+        createdAt: '2026-08-08T00:00:00.000Z',
+        id: PROJECT_ID,
+        mainOid: repositoryHead,
+        mainRef: 'refs/heads/main',
+        name: 'M2 Notes',
+      },
+      ticketHighlights: [],
+    }));
+    const authorityTransfer = jest.fn(async (
+      operation: string,
+      request: Readonly<{ readonly idempotencyKey?: string }>,
+    ) => operation === 'claimTransferredMembership'
+      ? {
+          checkpointSha256,
+          claimSha256: createHash('sha256').update(claimValue, 'utf8').digest('hex'),
+          memberId: MEMBER_ID,
+          operationIntentId: request.idempotencyKey!,
+          projectId: PROJECT_ID,
+          receiptId: 'receipt-manager-reissued-gate',
+          receiptKeyId: 'receipt-key-manager-reissued-gate',
+          redeemedAt: '2026-09-02T00:00:00.000Z',
+          signature: Buffer.alloc(64, 3).toString('base64url'),
+          signatureAlgorithm: 'ed25519',
+          targetAuthorityGeneration: 2,
+          transferId,
+        }
+      : status);
+    const cloudSession = {
+      principalId: 'vault-' + 'a'.repeat(64),
+      dispose: jest.fn(),
+      lifecycle: { authorityTransfer },
+      projectId: PROJECT_ID,
+      readSnapshot,
+      serverUrl: 'https://cloud.example.test/',
+      supports: (capability: string) => (
+        capability === 'authority-transfer' || capability === 'project-snapshot'
+      ),
+    } as unknown as CloudAuthorityConnection;
+    const subcomposition = createCollabFeatureSubcomposition({
+      cloudAuthority: {
+        authorityKind: 'cloud',
+        create: jest.fn() as never,
+        connect: jest.fn(async () => cloudSession),
+        connectPendingLeave: async () => {
+          throw new Error('This recovery must not open a Cloud Leave connection');
+        },
+        connectPendingRetirement: async () => {
+          throw new Error('This recovery must not open a Cloud Retirement connection');
+        },
+        connectAuthorityTransfer: jest.fn() as never,
+      },
+      foundation,
+      projectSetup: setup,
+      vaultRoot,
+    });
+    try {
+      await expect(subcomposition.feature.initialize()).resolves.toMatchObject({
+        status: 'success',
+      });
+      await expect(subcomposition.feature.createProject({
+        memberDisplayName: 'Alice',
+        name: 'M2 Notes',
+      })).resolves.toMatchObject({ status: 'success' });
+      await foundation.lanHost.stopProject(PROJECT_ID);
+      const membership = await foundation.local.projects.loadMembership(PROJECT_ID);
+      if (!membership || membership.authority.kind !== 'lan') {
+        throw new Error('Expected initial LAN membership');
+      }
+      await foundation.local.projects.saveMembership({
+        ...membership,
+        hostOwnership: { ownsAuthority: false },
+      });
+      const repositoryPath = path.join(vaultRoot, 'workspace', 'm2-notes');
+      repositoryHead = git(repositoryPath, ['rev-parse', 'HEAD']);
+
+      await expect(subcomposition.feature.reconnectProject({
+        encodedInvitation: encodeCloudMembershipClaimInvitation({
+          claim: descriptor,
+          serverUrl: 'https://cloud.example.test/',
+        }),
+        projectId: PROJECT_ID,
+      })).resolves.toMatchObject({
+        status: 'success',
+        value: { authorityKind: 'cloud', id: PROJECT_ID },
+      });
+
+      await expect(foundation.local.projects.loadMembership(PROJECT_ID)).resolves.toMatchObject({
+        authority: {
+          authorityGeneration: 2,
+          kind: 'cloud',
+          serverUrl: 'https://cloud.example.test/',
+        },
+        member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}` },
+      });
+      expect(git(repositoryPath, ['remote', 'get-url', 'origin'])).toBe(
+        `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
+      );
+      await expect(
+        foundation.local.projects.authorityTransferClaimants.load(PROJECT_ID),
+      ).resolves.toBeNull();
+      expect(authorityTransfer.mock.calls.map(([operation]) => operation)).toEqual([
+        'claimTransferredMembership',
+        'getProjectAuthorityTransfer',
+      ]);
+      expect(readSnapshot).toHaveBeenCalledTimes(2);
+      expect(cloudSession.dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      await subcomposition.feature.close();
+      await foundation.close();
+    }
+  });
 
   it('finishes expired terminal-source staging cleanup after restart', async () => {
     const foundation = createFoundation();

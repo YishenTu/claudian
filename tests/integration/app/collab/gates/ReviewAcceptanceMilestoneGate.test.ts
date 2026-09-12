@@ -1,4 +1,5 @@
 import {
+  access,
   mkdir,
   mkdtemp,
   rm,
@@ -60,7 +61,7 @@ describe('M5 review and Accept gate', () => {
     if (root) await rm(root, { force: true, recursive: true });
   });
 
-  it('binds Tickets to the latest Publish and guards a remote Manager Accept across three Vaults', async () => {
+  it.each(['complete', 'page'] as const)('binds Tickets and serializes %s Review with remote Manager Accept across three Vaults', async reviewKind => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-m5-gate-'));
     const hostRoot = path.join(root, 'host-vault');
     const memberARoot = path.join(root, 'member-a-vault');
@@ -320,6 +321,15 @@ describe('M5 review and Accept gate', () => {
     const expectedResolvingTickets = currentReview.detail.request.ticketRelations
       .filter(relation => relation.kind === 'resolves')
       .map(relation => ({ revision: relation.ticketRevision, ticketId: relation.ticketId }));
+    await memberAFeature.close();
+    await memberA.close();
+    const preparedMarker = path.join(memberBRoot, 'prepared-fetch');
+    await writeFile(
+      path.join(memberBRoot, joinedB.workspacePath, '.git', 'hooks', 'reference-transaction'),
+      '#!/usr/bin/env node\n'
+        + `if (process.argv[2] === 'prepared') { require('node:fs').writeFileSync(${JSON.stringify(preparedMarker)}, 'ready'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200); }\n`,
+      { mode: 0o700 },
+    );
     const accepted = unwrap(await managerFeature.acceptRequest({
       expectedHeadOid: currentReview.detail.reviewedHeadOid,
       expectedMainOid: currentReview.detail.currentMainOid,
@@ -339,8 +349,17 @@ describe('M5 review and Accept gate', () => {
       'Post-Accept snapshot',
     );
     expect(afterAccept.snapshot.openRequests).toEqual([]);
+    unwrap(await managerFeature.selectProject(projectId), 'Select Manager project');
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try { await access(preparedMarker); break; }
+      catch { await new Promise(resolve => setTimeout(resolve, 10)); }
+    }
+    await access(preparedMarker);
     expect(unwrap(
-      await managerFeature.prepareReview(projectId, requestId),
+      await (reviewKind === 'complete'
+        ? managerFeature.prepareReview(projectId, requestId)
+        : managerFeature.boundedQueries.prepareReview(projectId, requestId)),
       'Merged request',
     ).detail).toMatchObject({
       comments: { comments: [{ id: comment.id }] },
@@ -381,6 +400,9 @@ describe('M5 review and Accept gate', () => {
       source: 'online',
     });
 
+    const managerGit = await memberB.requireGitFoundation();
+    expect(await managerGit.repositories.resolveRef(path.join(memberBRoot, joinedB.workspacePath), 'HEAD'))
+      .toBe(accepted.mainOid);
     const hostGit = await host.requireGitFoundation();
     const bareRepository = path.join(
       hostRoot,
@@ -417,8 +439,8 @@ describe('M5 review and Accept gate', () => {
     const foundation = new ClaudianCollabService({
       ...(ownsAuthority
         ? {
-          createAuthorityDatabase: (authorityDirectory: string) => (
-            new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL })
+          createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
+            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

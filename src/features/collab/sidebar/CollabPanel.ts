@@ -23,6 +23,7 @@ import {
   GitSetupPanel,
   type GitSetupResolution,
 } from '@/features/collab/sidebar/GitSetupPanel';
+import { ProjectUpdatePanel } from '@/features/collab/sidebar/ProjectUpdatePanel';
 import {
   type TicketFocusPort,
   TicketListPanel,
@@ -46,7 +47,7 @@ export interface CollabPanelOptions {
   readonly onOpenConflict?: (
     project: CollabLocalProjectSummary,
     operationId: CollabOperationId,
-    location: 'my-changes' | 'request',
+    location: 'my-changes' | 'request' | 'update',
     requestId?: string,
   ) => void;
   readonly onOpenRequest?: (
@@ -79,7 +80,10 @@ export interface CollabPanelOptions {
   readonly projectSetup: CollabPanelProjectSetupPort;
   readonly resolveGit: (rescan: boolean) => Promise<GitSetupResolution>;
   readonly ticketFocus?: TicketFocusPort;
-  readonly transientSurfaces?: Pick<CollabTransientSurfaceRegistry, 'open'>;
+  readonly transientSurfaces?: Pick<
+    CollabTransientSurfaceRegistry,
+    'closeAll' | 'open'
+  >;
 }
 
 interface CollabPanelViewState {
@@ -114,6 +118,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
   private fallbackProjectSelection: FallbackProjectSelectionState | null = null;
   private initialGitResolution: Promise<GitSetupResolution> | null;
   private initializationPromise: Promise<void> | null = null;
+  private updatePanel: ProjectUpdatePanel | null = null;
   private personalPanel: PersonalChangesPanel | null = null;
   private pendingRecoveryAction: PendingRecoveryAction | null = null;
   private retiredAction: RetiredActionState | null = null;
@@ -132,17 +137,17 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     this.initialGitResolution = options.initialGitResolution ?? null;
     this.rootEl = containerEl.createDiv({ cls: 'claudian-collab-panel' });
     this.subscription = options.port.subscribe(state => {
-      if (this.active && this.shellSignature(state) !== this.shellStateSignature) {
+      if (this.active && this.#shellSignature(state) !== this.shellStateSignature) {
         this.render();
       }
     });
     this.vaultEventRefs = [
-      options.app.vault.on('modify', file => this.handleVaultPathChange(file.path)),
-      options.app.vault.on('create', file => this.handleVaultPathChange(file.path)),
-      options.app.vault.on('delete', file => this.handleVaultPathChange(file.path)),
+      options.app.vault.on('modify', file => this.#handleVaultPathChange(file.path)),
+      options.app.vault.on('create', file => this.#handleVaultPathChange(file.path)),
+      options.app.vault.on('delete', file => this.#handleVaultPathChange(file.path)),
       options.app.vault.on('rename', (file, oldPath) => {
-        this.handleVaultPathChange(oldPath);
-        this.handleVaultPathChange(file.path);
+        this.#handleVaultPathChange(oldPath);
+        this.#handleVaultPathChange(file.path);
       }),
     ];
   }
@@ -152,19 +157,21 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     this.active = active;
     this.rootEl.classList.toggle('claudian-collab-panel--inactive', !active);
     if (!active) {
+      this.updatePanel?.setActive(false);
       this.personalPanel?.setActive(false);
       this.teamPanel?.setActive(false);
       this.ticketPanel?.setActive(false);
       return;
     }
     if (!this.gitResolution) {
-      if (!this.initializationPromise) this.startInitialization();
-      else this.renderLoading();
+      if (!this.initializationPromise) this.#startInitialization();
+      else this.#renderLoading();
       return;
     }
-    const state = this.readState();
-    if (this.shellSignature(state) === this.shellStateSignature) {
-      this.renderPendingRecoveryAction();
+    const state = this.#readState();
+    if (this.#shellSignature(state) === this.shellStateSignature) {
+      this.#renderPendingRecoveryAction();
+      this.updatePanel?.setActive(true);
       const personalRefreshScheduled = this.personalPanel?.setActive(true) ?? false;
       this.teamPanel?.setActive(true, !personalRefreshScheduled);
       this.ticketPanel?.setActive(true);
@@ -179,16 +186,16 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       || this.gitResolution
       || this.initializationPromise
     ) return;
-    this.startInitialization();
+    this.#startInitialization();
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     this.active = false;
-    this.destroyPersonalPanel();
-    this.destroyTeamPanel();
-    this.destroyTicketPanel();
+    this.#destroyPersonalPanel();
+    this.#destroyTeamPanel();
+    this.#destroyTicketPanel();
     this.fallbackProjectSelection = null;
     this.retiredAction = null;
     this.subscription.dispose();
@@ -198,14 +205,14 @@ export class CollabPanel implements CollabSidebarSurfaceController {
 
   openCreateProject(): void {
     if (this.destroyed) return;
-    this.openTransientSurface(onClosed => (
+    this.#openTransientSurface(onClosed => (
       new CreateProjectModal(this.options.app, this.options.port, { onClosed })
     ));
   }
 
   openJoinProject(): void {
     if (this.destroyed) return;
-    this.openTransientSurface(onClosed => new JoinProjectModal(
+    this.#openTransientSurface(onClosed => new JoinProjectModal(
       this.options.app,
       this.options.port,
       {
@@ -219,7 +226,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
 
   openReconnectProject(project: CollabLocalProjectSummary): void {
     if (this.destroyed) return;
-    this.openTransientSurface(onClosed => new ReconnectProjectModal(
+    this.#openTransientSurface(onClosed => new ReconnectProjectModal(
       this.options.app,
       this.options.port,
       {
@@ -232,20 +239,20 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     ));
   }
 
-  private startInitialization(): void {
+  #startInitialization(): void {
     if (this.destroyed || this.gitResolution || this.initializationPromise) return;
     const pending = this.initialize();
     this.initializationPromise = pending;
     void pending.finally(() => {
       if (this.initializationPromise === pending) this.initializationPromise = null;
       if (this.active && !this.destroyed && !this.gitResolution) {
-        this.startInitialization();
+        this.#startInitialization();
       }
     });
   }
 
   private async initialize(): Promise<void> {
-    this.renderLoading();
+    this.#renderLoading();
     try {
       const initialGitResolution = this.initialGitResolution;
       this.initialGitResolution = null;
@@ -258,7 +265,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       if (
         !this.destroyed
         && this.active
-        && this.shellSignature(this.readState()) !== this.shellStateSignature
+        && this.#shellSignature(this.#readState()) !== this.shellStateSignature
       ) this.render();
     } catch {
       if (this.destroyed) return;
@@ -269,14 +276,14 @@ export class CollabPanel implements CollabSidebarSurfaceController {
 
   private render(): void {
     if (!this.active || this.destroyed) return;
-    const viewState = this.captureViewState();
+    const viewState = this.#captureViewState();
     try {
-      this.clearRoot();
+      this.#clearRoot();
       if (!this.gitResolution) {
-        this.renderLoading();
+        this.#renderLoading();
         return;
       }
-      const state = this.readState();
+      const state = this.#readState();
       const selectedProject = state.projects.find(
         project => project.id === state.selectedProjectId,
       );
@@ -284,37 +291,37 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         this.gitResolution.status !== 'available'
         && selectedProject?.lifecycle !== 'retired'
       ) {
-        this.renderGitSetup(this.gitResolution);
+        this.#renderGitSetup(this.gitResolution);
         return;
       }
 
-      this.shellStateSignature = this.shellSignature(state);
+      this.shellStateSignature = this.#shellSignature(state);
       if (state.lifecycle === 'initializing' || state.lifecycle === 'uninitialized') {
-        this.renderLoading();
+        this.#renderLoading();
         return;
       }
       if (state.lifecycle === 'failed') {
-        this.renderFailure();
+        this.#renderFailure();
         return;
       }
-      this.renderProjects(state);
+      this.#renderProjects(state);
     } finally {
-      this.restoreViewState(viewState);
+      this.#restoreViewState(viewState);
     }
   }
 
-  private renderGitSetup(resolution: GitSetupResolution): void {
+  #renderGitSetup(resolution: GitSetupResolution): void {
     const host = this.rootEl.createDiv({ cls: 'claudian-collab-panel-git' });
     new GitSetupPanel(host, {
       configuredPath: this.options.configuredGitPath(),
       ...(this.options.copyText ? { copyText: this.options.copyText } : {}),
-      onRescan: () => this.refreshGit(true),
-      onSaveConfiguredPath: path => this.saveGitPath(path),
+      onRescan: () => this.#refreshGit(true),
+      onSaveConfiguredPath: path => this.#saveGitPath(path),
       resolution,
     }).render();
   }
 
-  private async refreshGit(rescan: boolean): Promise<GitSetupResolution> {
+  async #refreshGit(rescan: boolean): Promise<GitSetupResolution> {
     const resolution = await this.options.resolveGit(rescan);
     this.gitResolution = resolution;
     if (resolution.status === 'available') await this.options.port.initialize();
@@ -322,7 +329,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     return resolution;
   }
 
-  private async saveGitPath(path: string): Promise<GitSetupResolution | void> {
+  async #saveGitPath(path: string): Promise<GitSetupResolution | void> {
     const saved = await this.options.onSaveConfiguredGitPath(path);
     if (saved) {
       this.gitResolution = saved;
@@ -332,10 +339,10 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     return saved;
   }
 
-  private renderProjects(state: CollabFeatureState): void {
+  #renderProjects(state: CollabFeatureState): void {
     if (state.projects.length === 0) {
-      this.renderEmptyProjectHeader();
-      this.renderEmptyState();
+      this.#renderEmptyProjectHeader();
+      this.#renderEmptyState();
       return;
     }
 
@@ -344,7 +351,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       state.selectedProjectId,
     );
     if (state.selectedProjectId !== effectiveProjectId) {
-      this.renderFallbackProjectSelection(effectiveProjectId!);
+      this.#renderFallbackProjectSelection(effectiveProjectId!);
       return;
     }
     this.fallbackProjectSelection = null;
@@ -367,7 +374,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       text: selected.name,
     });
     picker.addEventListener('click', () => {
-      this.showProjectMenu(picker, state.projects, selected.id);
+      this.#showProjectMenu(picker, state.projects, selected.id);
     });
     const projectActions = projectToolbar.createDiv({
       cls: 'claudian-collab-project-header-actions',
@@ -383,11 +390,11 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       cls: 'clickable-icon claudian-collab-panel-header-action',
     });
     setIcon(addButton, 'plus');
-    addButton.addEventListener('click', () => this.showAddProjectMenu(addButton));
-    this.renderProjectHome(selected, projectActions);
+    addButton.addEventListener('click', () => this.#showAddProjectMenu(addButton));
+    this.#renderProjectHome(selected, projectActions);
   }
 
-  private renderFallbackProjectSelection(projectId: string): void {
+  #renderFallbackProjectSelection(projectId: string): void {
     const current = this.fallbackProjectSelection;
     if (current?.projectId === projectId && current.failed) {
       this.rootEl.createDiv({
@@ -420,11 +427,12 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       projectId,
     };
     this.fallbackProjectSelection = selection;
+    this.options.transientSurfaces?.closeAll();
     void this.options.port.selectProject(projectId).then(result => {
       if (this.destroyed || this.fallbackProjectSelection !== selection) return;
       selection.pending = false;
       selection.failed = result.status !== 'success'
-        || this.readState().selectedProjectId !== projectId;
+        || this.#readState().selectedProjectId !== projectId;
       if (selection.failed) this.shellStateSignature = null;
       if (this.active) this.render();
     }).catch(() => {
@@ -436,7 +444,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
   }
 
-  private showAddProjectMenu(anchor: HTMLButtonElement): void {
+  #showAddProjectMenu(anchor: HTMLButtonElement): void {
     const menu = new Menu().setUseNativeMenu(false);
     menu.addItem(item => item
       .setTitle(t('collab.panel.createProject'))
@@ -450,7 +458,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
 
-  private showProjectMenu(
+  #showProjectMenu(
     anchor: HTMLButtonElement,
     projects: readonly CollabLocalProjectSummary[],
     selectedProjectId: string,
@@ -462,6 +470,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         .setChecked(project.id === selectedProjectId)
         .onClick(() => {
           if (this.destroyed || project.id === selectedProjectId) return;
+          this.options.transientSurfaces?.closeAll();
           void this.options.port.selectProject(project.id).then(() => {
             if (this.active) this.render();
           });
@@ -479,12 +488,12 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
 
-  private renderEmptyProjectHeader(): void {
+  #renderEmptyProjectHeader(): void {
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-panel-header' });
     header.createEl('h3', { text: t('collab.panel.title') });
   }
 
-  private renderEmptyState(): void {
+  #renderEmptyState(): void {
     const empty = this.rootEl.createDiv({ cls: 'claudian-collab-empty' });
     empty.createDiv({ text: t('collab.panel.emptyDescription') });
     const actions = empty.createDiv({ cls: 'claudian-collab-empty-actions' });
@@ -502,14 +511,16 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     join.addEventListener('click', () => this.openJoinProject());
   }
 
-  private renderProjectHome(
+  #renderProjectHome(
     project: CollabLocalProjectSummary,
     projectHeaderActions: HTMLDivElement,
   ): void {
     const home = this.rootEl.createDiv({ cls: 'claudian-collab-project-home' });
 
     if (project.lifecycle === 'retired') {
-      this.renderRetiredProject(home, project);
+      this.#renderRetiredProject(home, project);
+    } else if (project.lifecycle === 'leaving') {
+      this.#renderLeaveRecovery(home, project);
     } else if (project.health === 'needs-attention') {
       const recovery = home.createDiv({ cls: 'claudian-collab-project-recovery' });
       recovery.createDiv({ text: t('collab.panel.setupIncomplete') });
@@ -525,7 +536,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
             || !recovery.isConnected
           ) return;
           pendingRecoveryAction.operationId = operationId;
-          if (this.active) this.renderPendingRecoveryAction();
+          if (this.active) this.#renderPendingRecoveryAction();
         })
         .catch(() => undefined);
     } else if (project.health === 'missing') {
@@ -534,9 +545,18 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         text: t('collab.panel.workingCopyMissing'),
       });
     } else {
+      this.updatePanel = new ProjectUpdatePanel(home.createDiv(), {
+        projectId: project.id,
+        port: this.options.port,
+        onReview: review => this.options.onOpenPublicationReview?.(project, review),
+        onConflict: operationId => this.options.onOpenConflict?.(project, operationId, 'update'),
+        refresh: () => { void this.personalPanel?.refresh(); },
+      });
+      this.updatePanel.setActive(this.active);
       const personal = home.createDiv({ cls: 'claudian-collab-personal-home' });
       this.personalPanel = new PersonalChangesPanel(personal, {
         onInspection: result => {
+          this.updatePanel?.adopt(result.status === 'success' ? result.value.projectUpdate : undefined);
           if (result.status === 'success' && result.value.coordination) {
             const coordination = result.value.coordination;
             const operationId = result.value.personalChanges?.action === 'resolve-changes'
@@ -602,14 +622,14 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     }
 
     if (project.lifecycle !== 'retired') {
-      this.renderProjectManagementControl(
+      this.#renderProjectManagementControl(
         project,
         projectHeaderActions,
       );
     }
   }
 
-  private renderRetiredProject(
+  #renderRetiredProject(
     home: HTMLDivElement,
     project: CollabLocalProjectSummary,
   ): void {
@@ -644,7 +664,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       });
       retry.disabled = action?.pending === true;
       retry.addEventListener('click', () => {
-        void this.runRetiredAction(project.id, () => (
+        void this.#runRetiredAction(project.id, () => (
           this.options.port.retryProjectCleanup(project.id)
         ));
       });
@@ -658,8 +678,8 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       });
     } else {
       const actions = retired.createDiv({ cls: 'claudian-collab-retired-actions' });
-      this.createRetiredFinalizationButton(actions, project, 'keep-files');
-      this.createRetiredFinalizationButton(actions, project, 'delete-files');
+      this.#createRetiredFinalizationButton(actions, project, 'keep-files');
+      this.#createRetiredFinalizationButton(actions, project, 'delete-files');
     }
     if (action?.failed) {
       retired.createDiv({
@@ -670,7 +690,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     }
   }
 
-  private createRetiredFinalizationButton(
+  #createRetiredFinalizationButton(
     container: HTMLElement,
     project: CollabLocalProjectSummary,
     cleanupChoice: CollabLocalCleanupChoice,
@@ -690,13 +710,13 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     button.disabled = this.retiredAction?.projectId === project.id
       && this.retiredAction.pending;
     button.addEventListener('click', () => {
-      void this.runRetiredAction(project.id, () => (
+      void this.#runRetiredAction(project.id, () => (
         this.options.port.finalizeRetiredProject({ cleanupChoice, projectId: project.id })
       ));
     });
   }
 
-  private async runRetiredAction(
+  async #runRetiredAction(
     projectId: string,
     operation: () => Promise<{ readonly status: string }>,
   ): Promise<void> {
@@ -720,13 +740,13 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     if (
       this.active
       && resolveEffectiveCollabProjectId(
-        this.readState().projects,
-        this.readState().selectedProjectId,
+        this.#readState().projects,
+        this.#readState().selectedProjectId,
       ) === projectId
     ) this.render();
   }
 
-  private renderProjectManagementControl(
+  #renderProjectManagementControl(
     project: CollabLocalProjectSummary,
     projectHeaderActions: HTMLDivElement,
   ): void {
@@ -742,7 +762,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     const icon = management.createSpan({ cls: 'claudian-collab-project-management-icon' });
     setIcon(icon, 'settings');
     management.addEventListener('click', () => {
-      this.openTransientSurface(onClosed => new ProjectManagementModal(
+      this.#openTransientSurface(onClosed => new ProjectManagementModal(
         this.options.app,
         this.options.port,
         {
@@ -757,7 +777,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
   }
 
-  private openTransientSurface(factory: CollabTransientSurfaceFactory): void {
+  #openTransientSurface(factory: CollabTransientSurfaceFactory): void {
     if (this.options.transientSurfaces) {
       this.options.transientSurfaces.open(factory);
       return;
@@ -775,7 +795,35 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     if (this.active) this.render();
   }
 
-  private renderPendingRecoveryAction(): void {
+  #renderLeaveRecovery(
+    container: HTMLElement,
+    project: CollabLocalProjectSummary,
+  ): void {
+    const recovery = container.createDiv({ cls: 'claudian-collab-project-recovery' });
+    recovery.createDiv({ text: t('collab.panel.leaveRecovery') });
+    const resume = recovery.createEl('button', {
+      attr: { 'data-action': 'resume-leave', type: 'button' },
+      text: t('collab.panel.resumeLeave'),
+    });
+    resume.addEventListener('click', () => {
+      resume.disabled = true;
+      void this.options.port.resumeLeave(project.id).then(result => {
+        if (this.destroyed) return;
+        if (result.status !== 'success') {
+          resume.disabled = false;
+          recovery.querySelector('[role="alert"]')?.remove();
+          recovery.createDiv({
+            attr: { role: 'alert' },
+            text: t('collab.panel.leaveRecoveryFailed'),
+          });
+          return;
+        }
+        if (this.active) this.render();
+      });
+    });
+  }
+
+  #renderPendingRecoveryAction(): void {
     const pending = this.pendingRecoveryAction;
     const operationId = pending?.operationId;
     if (
@@ -793,9 +841,9 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
   }
 
-  private renderLoading(): void {
+  #renderLoading(): void {
     if (!this.active || this.destroyed) return;
-    this.clearRoot();
+    this.#clearRoot();
     this.rootEl.createDiv({
       attr: { 'aria-live': 'polite', role: 'status' },
       cls: 'claudian-collab-panel-status',
@@ -803,7 +851,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
   }
 
-  private renderFailure(): void {
+  #renderFailure(): void {
     this.rootEl.createDiv({
       attr: { role: 'alert' },
       cls: 'claudian-collab-panel-status claudian-collab-panel-status--warning',
@@ -818,13 +866,13 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
   }
 
-  private readState(): CollabFeatureState {
+  #readState(): CollabFeatureState {
     return this.options.port.state;
   }
 
-  private handleVaultPathChange(path: string): void {
+  #handleVaultPathChange(path: string): void {
     if (this.destroyed || !this.personalPanel) return;
-    const state = this.readState();
+    const state = this.#readState();
     const projectId = resolveEffectiveCollabProjectId(
       state.projects,
       state.selectedProjectId,
@@ -836,7 +884,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     this.personalPanel.invalidateWorkingTree();
   }
 
-  private captureViewState(): CollabPanelViewState {
+  #captureViewState(): CollabPanelViewState {
     const activeElement = this.rootEl.ownerDocument.activeElement;
     let focus: CollabPanelViewState['focus'] = null;
     if (activeElement instanceof HTMLElement && this.rootEl.contains(activeElement)) {
@@ -857,7 +905,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     return { focus, scrollTop: this.rootEl.scrollTop };
   }
 
-  private restoreViewState(state: CollabPanelViewState): void {
+  #restoreViewState(state: CollabPanelViewState): void {
     this.rootEl.scrollTop = state.scrollTop;
     if (!state.focus) return;
     const candidates = this.rootEl.querySelectorAll<HTMLElement>(
@@ -871,30 +919,32 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     }
   }
 
-  private clearRoot(): void {
+  #clearRoot(): void {
     this.pendingRecoveryAction = null;
-    this.destroyPersonalPanel();
-    this.destroyTeamPanel();
-    this.destroyTicketPanel();
+    this.updatePanel?.destroy();
+    this.updatePanel = null;
+    this.#destroyPersonalPanel();
+    this.#destroyTeamPanel();
+    this.#destroyTicketPanel();
     this.rootEl.replaceChildren();
   }
 
-  private destroyPersonalPanel(): void {
+  #destroyPersonalPanel(): void {
     this.personalPanel?.destroy();
     this.personalPanel = null;
   }
 
-  private destroyTeamPanel(): void {
+  #destroyTeamPanel(): void {
     this.teamPanel?.destroy();
     this.teamPanel = null;
   }
 
-  private destroyTicketPanel(): void {
+  #destroyTicketPanel(): void {
     this.ticketPanel?.destroy();
     this.ticketPanel = null;
   }
 
-  private shellSignature(state: CollabFeatureState): string {
+  #shellSignature(state: CollabFeatureState): string {
     return JSON.stringify({
       error: state.error?.code ?? null,
       lifecycle: state.lifecycle,

@@ -31,7 +31,7 @@ export class GrokExecutionInteractionRouter {
   async handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
     const normalized = method.startsWith('_x.ai/') ? method.slice(1) : method;
     if (normalized === 'x.ai/ask_user_question') {
-      return this.handleQuestion(params, signal);
+      return this.#handleQuestion(params, signal);
     }
     if (normalized === 'x.ai/exit_plan_mode') {
       return { outcome: 'abandoned' };
@@ -47,11 +47,11 @@ export class GrokExecutionInteractionRouter {
     this.pending.clear();
   }
 
-  private async handleQuestion(params: unknown, signal?: AbortSignal): Promise<unknown> {
+  async #handleQuestion(params: unknown, signal?: AbortSignal): Promise<unknown> {
     const turnId = this.getTurnId();
     const request = parseQuestionRequest(params, this.getSessionId());
     if (!turnId || !request || signal?.aborted) return { outcome: 'cancelled' };
-    const interactionId = this.nextId('question');
+    const interactionId = this.#nextId('question');
     const controller = this.begin(interactionId);
     let dismissReason: ProviderInteractionDismissReason = 'cancelled';
     try {
@@ -90,7 +90,7 @@ export class GrokExecutionInteractionRouter {
     }
   }
 
-  private nextId(kind: string): string {
+  #nextId(kind: string): string {
     return `${this.sessionInstanceId}:${kind}:${++this.sequence}`;
   }
 

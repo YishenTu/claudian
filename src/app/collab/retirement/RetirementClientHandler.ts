@@ -13,7 +13,11 @@ import {
   type LocalCleanupRecord,
 } from '@/app/collab/exit/LocalCleanupRecord';
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
-import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
+import {
+  isCloudPendingLeaveRecord,
+  isLanPendingLeaveRecord,
+  type PendingLeaveRecord,
+} from '@/app/collab/exit/PendingLeaveRecord';
 import type {
   RetirementAcknowledgementScheduler,
   RetirementClientStore,
@@ -93,7 +97,7 @@ export class RetirementClientHandler {
   }
 
   handle(result: CollabRetirementResult, source: RetirementDeliverySource): Promise<void> {
-    return this.enqueue(result.projectId, () => this.handleUnlocked(result, source));
+    return this.enqueue(result.projectId, () => this.#handleUnlocked(result, source));
   }
 
   async resume(projectId: CollabProjectId): Promise<void> {
@@ -101,15 +105,15 @@ export class RetirementClientHandler {
       const record = await this.store.loadRetirementRecord(projectId);
       if (!record) throw new CollabError({ code: 'project-not-found' });
       const pendingLeave = await this.pendingLeaves?.load(projectId) ?? null;
-      if (pendingLeave && await this.adoptPendingLeaveCleanup(pendingLeave)) {
-        await this.seedCompletedRetirementCleanup(
+      if (pendingLeave && await this.#adoptPendingLeaveCleanup(pendingLeave)) {
+        await this.#seedCompletedRetirementCleanup(
           pendingLeave,
           record.createdAt,
         );
       }
       await this.store.transitionProjectToRetired(
         record,
-        pendingLeave ? this.projectionSeedFromPendingLeave(pendingLeave) : undefined,
+        pendingLeave ? this.#projectionSeedFromPendingLeave(pendingLeave) : undefined,
       );
       await this.pendingLeaves?.remove(projectId);
       await this.converge(record);
@@ -123,28 +127,31 @@ export class RetirementClientHandler {
     return this.closePromise;
   }
 
-  private async handleUnlocked(
+  async #handleUnlocked(
     result: CollabRetirementResult,
     source: RetirementDeliverySource,
   ): Promise<void> {
     const existing = await this.store.loadRetirementRecord(result.projectId);
     if (existing) {
-      if (existing.retiredAt !== result.retiredAt) {
+      if (
+        existing.retiredAt !== result.retiredAt
+        || existing.cloudRetirementId !== (result.retirementId ?? null)
+      ) {
         throw new CollabError({
           code: 'authority-integrity-error',
           safeContext: { reason: 'retirement-result-changed' },
         });
       }
       const pendingLeave = await this.pendingLeaves?.load(result.projectId) ?? null;
-      if (pendingLeave && await this.adoptPendingLeaveCleanup(pendingLeave)) {
-        await this.seedCompletedRetirementCleanup(
+      if (pendingLeave && await this.#adoptPendingLeaveCleanup(pendingLeave)) {
+        await this.#seedCompletedRetirementCleanup(
           pendingLeave,
           existing.createdAt,
         );
       }
       await this.store.transitionProjectToRetired(
         existing,
-        pendingLeave ? this.projectionSeedFromPendingLeave(pendingLeave) : undefined,
+        pendingLeave ? this.#projectionSeedFromPendingLeave(pendingLeave) : undefined,
       );
       await this.pendingLeaves?.remove(result.projectId);
       await this.converge(existing);
@@ -167,29 +174,41 @@ export class RetirementClientHandler {
     const pendingLeave = membership
       ? null
       : await this.pendingLeaves?.load(result.projectId) ?? null;
+    const pendingLanLeave = pendingLeave && isLanPendingLeaveRecord(pendingLeave)
+      ? pendingLeave
+      : null;
+    const pendingCloudLeave = pendingLeave && isCloudPendingLeaveRecord(pendingLeave)
+      ? pendingLeave
+      : null;
     if (!membership && !pendingLeave) throw new CollabError({ code: 'project-not-found' });
+    if (pendingCloudLeave && !result.retirementId) {
+      throw new CollabError({
+        code: 'durable-progress-recovery-required',
+        recoveryActions: ['retry', 'open-diagnostics'],
+        safeContext: { reason: 'cloud-retirement-acknowledgement-unavailable' },
+      });
+    }
     const createdAt = maxTimestamp(this.now().toISOString(), result.retiredAt);
     const pendingLeaveCleanupComplete = pendingLeave
-      ? await this.adoptPendingLeaveCleanup(pendingLeave)
+      ? await this.#adoptPendingLeaveCleanup(pendingLeave)
       : false;
     const record = decodeRetirementRecord({
       acknowledgedAt: null,
       acknowledgementStatus: 'pending',
       cleanupOperationId: this.createOperationId(),
       cleanupStatus: pendingLeaveCleanupComplete ? 'complete' : 'pending',
-      cloudDevelopmentActorId: cloudMembership?.authority.developmentActorId ?? null,
-      cloudRetirementId: cloudMembership ? result.retirementId : null,
-      cloudServerUrl: cloudMembership?.authority.serverUrl ?? null,
+      cloudRetirementId: cloudMembership || pendingCloudLeave ? result.retirementId : null,
+      cloudServerUrl: cloudMembership?.authority.serverUrl ?? pendingCloudLeave?.serverUrl ?? null,
       createdAt,
       hostCaCertificatePem: lanMembership?.authority.hostCaCertificatePem
-        ?? pendingLeave?.hostCaCertificatePem
+        ?? pendingLanLeave?.hostCaCertificatePem
         ?? null,
       hostCaFingerprint: lanMembership?.authority.hostCaFingerprint
-        ?? pendingLeave?.hostCaFingerprint
+        ?? pendingLanLeave?.hostCaFingerprint
         ?? null,
-      hostEndpoint: lanMembership?.authority.endpoint ?? pendingLeave?.hostEndpoint ?? null,
+      hostEndpoint: lanMembership?.authority.endpoint ?? pendingLanLeave?.hostEndpoint ?? null,
       kind: 'retirement',
-      memberCredential: lanMembership?.member.credential ?? pendingLeave?.memberCredential ?? null,
+      memberCredential: lanMembership?.member.credential ?? pendingLanLeave?.memberCredential ?? null,
       memberId: membership?.member.id ?? pendingLeave?.memberId,
       projectId: result.projectId,
       retiredAt: result.retiredAt,
@@ -204,17 +223,17 @@ export class RetirementClientHandler {
           workspacePath: membership.project.workspacePath,
         }
       : {
-          ...this.projectionSeedFromPendingLeave(pendingLeave!),
+          ...this.#projectionSeedFromPendingLeave(pendingLeave!),
         };
     if (pendingLeave && pendingLeaveCleanupComplete) {
-      await this.seedCompletedRetirementCleanup(pendingLeave, createdAt);
+      await this.#seedCompletedRetirementCleanup(pendingLeave, createdAt);
     }
     await this.store.transitionProjectToRetired(record, projectionSeed);
     await this.pendingLeaves?.remove(result.projectId);
     await this.converge(record);
   }
 
-  private async adoptPendingLeaveCleanup(
+  async #adoptPendingLeaveCleanup(
     pendingLeave: PendingLeaveRecord,
   ): Promise<boolean> {
     if (pendingLeave.localCleanupComplete) return true;
@@ -248,7 +267,7 @@ export class RetirementClientHandler {
     return true;
   }
 
-  private async seedCompletedRetirementCleanup(
+  async #seedCompletedRetirementCleanup(
     pendingLeave: PendingLeaveRecord,
     timestamp: string,
   ): Promise<void> {
@@ -291,11 +310,11 @@ export class RetirementClientHandler {
     }));
   }
 
-  private projectionSeedFromPendingLeave(
+  #projectionSeedFromPendingLeave(
     record: PendingLeaveRecord,
   ): CollabRetiredProjectProjectionSeed {
     return {
-      authorityKind: 'lan',
+      authorityKind: isCloudPendingLeaveRecord(record) ? 'cloud' : 'lan',
       createdAt: record.projectCreatedAt,
       name: record.projectName,
       workspacePath: record.workspacePath,

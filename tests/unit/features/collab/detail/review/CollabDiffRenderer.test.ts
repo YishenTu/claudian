@@ -1,297 +1,193 @@
 /** @jest-environment jsdom */
 
+import { getOriginalDoc } from '@codemirror/merge';
+import { EditorView } from '@codemirror/view';
+import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom';
+import { axe } from 'jest-axe';
+
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import {
   CollabDiffRenderer,
   type CollabDiffThemeSource,
-  type PierreDiffInstance,
-  type PierreDiffModule,
-  type PierreDiffOptions,
-  type PierreDiffRenderInput,
 } from '@/features/collab/detail/review/CollabDiffRenderer';
 
 describe('CollabDiffRenderer', () => {
-  it('loads Diffs lazily and renders exactly one text file without annotation controls', async () => {
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('dark'),
-    });
-    const container = document.createElement('div');
+  let container: HTMLElement;
+  let renderer: CollabDiffRenderer;
 
-    expect(harness.load).not.toHaveBeenCalled();
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    renderer = new CollabDiffRenderer({ themeSource: themes('light') });
+  });
+
+  afterEach(() => {
+    renderer.destroy();
+    document.body.replaceChildren();
+  });
+
+  it('shows read-only plain-text evidence with a file-scoped open action', async () => {
+    const opened: string[] = [];
     await renderer.render({
       container,
-      newText: 'new\n',
+      newText: '<img src=x onerror=alert(1)>\nnew\n',
       oldText: 'old\n',
+      onOpenFile: () => opened.push('note.md'),
       path: 'note.md',
     });
 
-    expect(harness.load).toHaveBeenCalledTimes(1);
-    expect(harness.options).toEqual([{
-      diffStyle: 'unified',
-      disableErrorHandling: true,
-      overflow: 'wrap',
-      preferredHighlighter: 'shiki-js',
-      themeType: 'dark',
-      unsafeCSS: expect.stringContaining(
-        '--diffs-bg-separator-override: var(--background-primary);',
-      ),
-    }]);
-    expect(harness.instances[0].render).toHaveBeenCalledWith({
-      containerWrapper: container,
-      newFile: { contents: 'new\n', lang: 'text', name: 'note.md' },
-      oldFile: { contents: 'old\n', lang: 'text', name: 'note.md' },
-    });
+    const content = getByRole(container, 'textbox', { name: 'note.md' });
+    expect(content.getAttribute('contenteditable')).toBe('false');
+    expect(EditorView.findFromDOM(content)?.state.doc.toString()).toBe(
+      '<img src=x onerror=alert(1)>\nnew\n',
+    );
+    expect(container.querySelector('img')).toBeNull();
+    fireEvent.click(getByRole(container, 'button', { name: 'Open this file' }));
+    expect(opened).toEqual(['note.md']);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+  it('supports keyboard selection without editing the reviewed text', async () => {
+    await renderer.render({ container, oldText: 'old', newText: 'new', path: 'note.md' });
+    const content = getByRole(container, 'textbox');
+    const editor = EditorView.findFromDOM(content)!;
+    content.focus();
+    fireEvent.keyDown(content, { key: 'ArrowRight', shiftKey: true });
+    expect(editor.state.selection.main.from).toBe(0);
+    expect(editor.state.selection.main.to).toBe(1);
+    fireEvent.keyDown(content, { key: 'Backspace' });
+    expect(editor.state.doc.toString()).toBe('new');
   });
 
-  it('switches an active diff between unified and split layouts without reloading it', async () => {
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('dark'),
-    });
-
-    await renderer.render({ ...input('note.md'), layout: 'split' });
+  it('switches split and unified layouts while keeping both reviewed snapshots', async () => {
+    await renderer.render({ container, layout: 'split', oldText: 'before\n', newText: 'after\n', path: 'new.md', previousPath: 'old.md' });
+    expect(EditorView.findFromDOM(getByRole(container, 'textbox', { name: 'old.md' }))?.state.doc.toString()).toBe('before\n');
+    expect(EditorView.findFromDOM(getByRole(container, 'textbox', { name: 'new.md' }))?.state.doc.toString()).toBe('after\n');
     renderer.setLayout('unified');
-
-    expect(harness.load).toHaveBeenCalledTimes(1);
-    expect(harness.instances[0].render).toHaveBeenCalledTimes(1);
-    expect(harness.options[0]).toEqual(expect.objectContaining({ diffStyle: 'split' }));
-    expect(harness.instances[0].setOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ diffStyle: 'unified' }),
-    );
-    expect(harness.instances[0].rerender).toHaveBeenCalledTimes(1);
+    const unified = EditorView.findFromDOM(getByRole(container, 'textbox', { name: 'new.md' }))!;
+    expect(getAllByRole(container, 'textbox')).toHaveLength(1);
+    expect(getOriginalDoc(unified.state).toString()).toBe('before\n');
+    expect(unified.state.doc.toString()).toBe('after\n');
+    expect(queryByRole(container, 'button')).toBeNull();
+    renderer.setLayout('split');
+    expect(getAllByRole(container, 'textbox')).toHaveLength(2);
   });
 
-  it('renders a file-scoped open action in the Pierre filename header', async () => {
-    const harness = diffsHarness();
-    const onOpenFile = jest.fn();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('dark'),
-    });
-
-    await renderer.render({ ...input('note.md'), onOpenFile });
-
-    const action = harness.options[0].renderHeaderFilenameSuffix?.();
-    expect(action).toBeInstanceOf(HTMLButtonElement);
-    expect(action?.getAttribute('data-collab-review-open-file')).toBe('');
-    expect(action?.getAttribute('aria-label')).toBe('Open this file');
-    expect(action?.querySelector('svg')?.classList.contains('lucide-external-link')).toBe(true);
-
-    action?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(onOpenFile).toHaveBeenCalledTimes(1);
+  it('preserves the selection when identical evidence moves to a new wrapper', async () => {
+    const input = { container, oldText: 'old', newText: 'new', path: 'note.md' };
+    await renderer.render(input);
+    const content = getByRole(container, 'textbox');
+    const editor = EditorView.findFromDOM(content)!;
+    editor.dispatch({ selection: { anchor: 1, head: 3 } });
+    const next = document.createElement('div');
+    document.body.appendChild(next);
+    await renderer.render({ ...input, container: next });
+    expect(queryByRole(container, 'textbox')).toBeNull();
+    expect(getByRole(next, 'textbox')).toBe(content);
+    expect(editor.state.selection.main.from).toBe(1);
+    expect(editor.state.selection.main.to).toBe(3);
   });
 
-  it('reuses the active instance and suppresses stale lazy-load completion', async () => {
-    let resolveModule: ((module: PierreDiffModule) => void) | undefined;
-    const delayed = new Promise<PierreDiffModule>(resolve => { resolveModule = resolve; });
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: jest.fn(() => delayed),
-      themeSource: themeSource('light'),
-    });
-    const first = renderer.render(input('first.md'));
-    const second = renderer.render(input('second.md'));
-
-    resolveModule?.(harness.module);
-    await Promise.all([first, second]);
-    expect(harness.instances).toHaveLength(1);
-    expect(harness.instances[0].render).toHaveBeenCalledWith(expect.objectContaining({
-      newFile: expect.objectContaining({ name: 'second.md' }),
-    }));
-    await renderer.render(input('third.md'));
-    expect(harness.instances).toHaveLength(1);
-    expect(harness.instances[0].render).toHaveBeenCalledTimes(2);
-    expect(harness.instances[0].cleanUp).not.toHaveBeenCalled();
+  it.each([
+    [null, '', 'Added'],
+    ['', null, 'Deleted'],
+    ['before\r\n', 'after\r\n', ''],
+    ['line\n', 'line', ''],
+  ])('preserves empty files and exact line endings (%p, %p)', async (oldText, newText, status) => {
+    await renderer.render({ container, oldText, newText, path: 'note.md' });
+    const editor = EditorView.findFromDOM(getByRole(container, 'textbox'))!;
+    expect(editor.state.doc.toString()).toBe(newText ?? '');
+    expect(getOriginalDoc(editor.state).toString()).toBe(oldText ?? '');
+    expect(container.textContent).toContain(status);
   });
 
-  it('forces Pierre to reattach an unchanged diff when its wrapper changes', async () => {
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('light'),
-    });
-    const first = input('note.md');
-    const second = { ...input('note.md'), container: document.createElement('div') };
-
-    await renderer.render(first);
-    await renderer.render(second);
-
-    expect(harness.instances[0].render).toHaveBeenNthCalledWith(
-      1,
-      expect.not.objectContaining({ forceRender: true }),
-    );
-    expect(harness.instances[0].render).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ containerWrapper: second.container, forceRender: true }),
-    );
+  it('lets keyboard users expand collapsed unchanged evidence', async () => {
+    const unchanged = Array.from({ length: 30 }, (_, index) => `context ${index}\n`).join('');
+    await renderer.render({ container, oldText: unchanged + 'old\n', newText: unchanged + 'new\n', path: 'note.md' });
+    const expand = getByRole(container, 'button', { name: /unchanged lines/ });
+    expect(expand.tabIndex).toBe(0);
+    expand.focus();
+    fireEvent.keyDown(expand, { key: 'Enter' });
+    expect(document.activeElement).toBe(getByRole(container, 'textbox'));
+    expect(queryByRole(container, 'button', { name: /unchanged lines/ })).toBeNull();
+    expect(container.textContent).toContain('context 0');
   });
 
-  it('updates the active instance when the Obsidian theme changes', async () => {
-    const themes = themeSource('light');
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themes,
-    });
-    await renderer.render(input('note.md'));
-
-    themes.set('dark');
-    expect(harness.instances[0].setThemeType).toHaveBeenCalledWith('dark');
-    expect(harness.instances[0].onThemeChange).toHaveBeenCalledTimes(1);
-  });
-
-  it('forces every filename to plain text', async () => {
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('light'),
-    });
-    const container = document.createElement('div');
-
-    await renderer.render({
-      container,
-      newText: 'fn main() {}\n',
-      oldText: '# Before\n',
-      path: 'src/main.rs',
-      previousPath: 'notes/before.md',
-    });
-
-    expect(harness.instances[0].render).toHaveBeenCalledWith({
-      containerWrapper: container,
-      newFile: { contents: 'fn main() {}\n', lang: 'text', name: 'src/main.rs' },
-      oldFile: { contents: '# Before\n', lang: 'text', name: 'notes/before.md' },
-    });
-  });
-
-  it('rejects malformed or over-limit text before loading Diffs', async () => {
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themeSource('light'),
-    });
-
-    await expect(renderer.render({
-      container: document.createElement('div'),
-      newText: null,
-      oldText: null,
-      path: 'note.md',
-    })).rejects.toMatchObject({ code: 'operation-failed' });
-    await expect(renderer.render({
-      ...input('large.md'),
-      newText: 'x'.repeat(CLAUDIAN_COLLAB_LIMITS.maxTextDiffBytes + 1),
-    })).rejects.toMatchObject({ code: 'quota-exceeded' });
-    expect(harness.load).not.toHaveBeenCalled();
-  });
-
-  it('disposes the instance and theme listener even while a load is pending', async () => {
-    let resolveModule: ((module: PierreDiffModule) => void) | undefined;
-    const delayed = new Promise<PierreDiffModule>(resolve => { resolveModule = resolve; });
-    const themes = themeSource('light');
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: jest.fn(() => delayed),
-      themeSource: themes,
-    });
-    const pending = renderer.render(input('note.md'));
-
+  it('reconfigures theme without replacing evidence or selection and releases it on clear', async () => {
+    const source = themes('light');
     renderer.destroy();
-    resolveModule?.(harness.module);
+    renderer = new CollabDiffRenderer({ themeSource: source });
+    await renderer.render({ container, oldText: 'old', newText: 'new', path: 'note.md' });
+    const content = getByRole(container, 'textbox');
+    const editor = EditorView.findFromDOM(content)!;
+    editor.dispatch({ selection: { anchor: 1 } });
+    source.set('dark');
+    expect(editor.state.facet(EditorView.darkTheme)).toBe(true);
+    expect(getByRole(container, 'textbox')).toBe(content);
+    expect(editor.state.selection.main.anchor).toBe(1);
+    renderer.clear();
+    expect(queryByRole(container, 'textbox')).toBeNull();
+    source.set('light');
+  });
+
+  it('rejects malformed and over-limit evidence before creating an editor', async () => {
+    const input = { container, oldText: 'old', newText: 'new', path: 'note.md' };
+    await expect(renderer.render({ ...input, oldText: null, newText: null })).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(renderer.render({ ...input, newText: 'x'.repeat(CLAUDIAN_COLLAB_LIMITS.maxTextDiffBytes + 1) })).rejects.toMatchObject({ code: 'quota-exceeded' });
+    await expect(renderer.render({ ...input, newText: '\n'.repeat(CLAUDIAN_COLLAB_LIMITS.maxTextDiffLines) })).rejects.toMatchObject({ code: 'quota-exceeded' });
+    expect(queryByRole(container, 'textbox')).toBeNull();
+  });
+
+  it.each(['clear', 'destroy'] as const)('fences pending module completion after %s', async action => {
+    const module = await import('@/features/collab/detail/review/CollabCodeMirrorDiffModule');
+    let complete!: (value: typeof module) => void;
+    renderer.destroy();
+    renderer = new CollabDiffRenderer({
+      loadDiffs: () => new Promise(resolve => { complete = resolve; }),
+      themeSource: themes('light'),
+    });
+    const pending = renderer.render({ container, oldText: 'old', newText: 'new', path: 'note.md' });
+    renderer[action]();
+    complete(module);
     await pending;
-    themes.set('dark');
-
-    expect(harness.instances).toHaveLength(0);
-    expect(themes.dispose).toHaveBeenCalledTimes(1);
+    expect(queryByRole(container, 'textbox')).toBeNull();
   });
 
-  it('retains exactly one Diffs instance across a 100-file review', async () => {
-    const themes = themeSource('light');
-    const harness = diffsHarness();
-    const renderer = new CollabDiffRenderer({
-      loadDiffs: harness.load,
-      themeSource: themes,
-    });
-
-    for (let index = 0; index < 100; index += 1) {
-      await renderer.render(input(`notes/note-${index}.md`));
-    }
-
-    expect(harness.load).toHaveBeenCalledTimes(1);
-    expect(harness.instances).toHaveLength(1);
-    expect(harness.instances[0].render).toHaveBeenCalledTimes(100);
-    expect(harness.instances[0].cleanUp).not.toHaveBeenCalled();
-
+  it('renders only the latest pending file and retries a failed lazy load', async () => {
+    const module = await import('@/features/collab/detail/review/CollabCodeMirrorDiffModule');
+    let fail = true;
+    let complete!: (value: typeof module) => void;
     renderer.destroy();
-
-    expect(harness.instances[0].cleanUp).toHaveBeenCalledTimes(1);
-    expect(themes.dispose).toHaveBeenCalledTimes(1);
+    renderer = new CollabDiffRenderer({
+      loadDiffs: () => {
+        if (fail) { fail = false; return Promise.reject(new Error('load failed')); }
+        return new Promise(resolve => { complete = resolve; });
+      },
+      themeSource: themes('light'),
+    });
+    const input = { container, oldText: 'old', newText: 'new', path: 'first.md' };
+    await expect(renderer.render(input)).rejects.toThrow('load failed');
+    const first = renderer.render(input);
+    const second = renderer.render({ ...input, path: 'second.md' });
+    complete(module);
+    await Promise.all([first, second]);
+    expect(queryByRole(container, 'textbox', { name: 'first.md' })).toBeNull();
+    expect(getByRole(container, 'textbox', { name: 'second.md' })).toBeDefined();
   });
+
 });
 
-function input(path: string) {
-  return {
-    container: document.createElement('div'),
-    newText: 'new\n',
-    oldText: 'old\n',
-    path,
-  };
-}
-
-function themeSource(initial: 'dark' | 'light') {
+function themes(initial: 'dark' | 'light') {
   let current = initial;
   const listeners = new Set<(theme: 'dark' | 'light') => void>();
-  const dispose = jest.fn();
-  const source: CollabDiffThemeSource & {
-    dispose: jest.Mock;
-    set(theme: 'dark' | 'light'): void;
-  } = {
+  return {
     current: () => current,
-    dispose,
-    set(theme) {
+    set(theme: 'dark' | 'light') {
       current = theme;
       for (const listener of listeners) listener(theme);
     },
-    subscribe(listener) {
+    subscribe(listener: (theme: 'dark' | 'light') => void) {
       listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-        dispose();
-      };
+      return () => { listeners.delete(listener); };
     },
-  };
-  return source;
-}
-
-function diffsHarness() {
-  const instances: Array<PierreDiffInstance & {
-    cleanUp: jest.Mock;
-    onThemeChange: jest.Mock;
-    render: jest.Mock;
-    rerender: jest.Mock;
-    setOptions: jest.Mock;
-    setThemeType: jest.Mock;
-  }> = [];
-  const options: PierreDiffOptions[] = [];
-  class FakeFileDiff implements PierreDiffInstance {
-    readonly cleanUp = jest.fn();
-    readonly onThemeChange = jest.fn();
-    readonly render = jest.fn((_input: PierreDiffRenderInput) => true);
-    readonly rerender = jest.fn();
-    readonly setOptions = jest.fn();
-    readonly setThemeType = jest.fn();
-
-    constructor(value: PierreDiffOptions) {
-      options.push(value);
-      instances.push(this);
-    }
-  }
-  const module: PierreDiffModule = { FileDiff: FakeFileDiff };
-  return {
-    instances,
-    load: jest.fn(async () => module),
-    module,
-    options,
-  };
+  } satisfies CollabDiffThemeSource & { set(theme: 'dark' | 'light'): void };
 }

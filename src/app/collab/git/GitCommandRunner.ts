@@ -91,8 +91,7 @@ function invalidNetworkEnvironment(
   network: GitNetworkEnvironment,
 ): CollabError | null {
   if (
-    network.headers.length < 1
-    || network.headers.length > 4
+    network.headers.length > 4
     || network.headers.some(header => (
       !/^[A-Za-z][A-Za-z0-9-]{0,63}$/u.test(header.name)
       || header.value.length < 1
@@ -152,6 +151,7 @@ export function buildIsolatedGitEnvironment(
   const runtimeConfig: Array<{ key: string; value: string }> = [
     { key: 'credential.helper', value: '' },
     { key: 'credential.useHttpPath', value: 'true' },
+    { key: 'http.followRedirects', value: 'false' },
     { key: 'core.askPass', value: '' },
     { key: 'fetch.fsckObjects', value: 'true' },
     { key: 'transfer.fsckObjects', value: 'true' },
@@ -223,21 +223,6 @@ function redactGitDiagnostic(
     redacted = redacted.split(sensitiveValue).join('[REDACTED]');
   }
   return redacted;
-}
-
-function summarizeGitFailure(diagnostic: string): string {
-  const firstLine = diagnostic
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(line => line.length > 0) ?? '';
-  const token = firstLine
-    .replace(/https?:\/\/[^\s'"]+/gi, 'url')
-    .replace(/\[[^\]]+\]/g, 'redacted')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9._:-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 128);
-  return token || 'git-command-failed';
 }
 
 function commandFailure(
@@ -488,8 +473,6 @@ export class GitCommandRunner {
           if (!(request.acceptedExitCodes ?? [0]).includes(exitCode)) {
             reject(commandFailure('operation-failed', 'git-command-failed', {
               exitCode,
-              status: summarizeGitFailure(stderr),
-              stderr,
             }));
             return;
           }

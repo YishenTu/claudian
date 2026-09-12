@@ -41,7 +41,7 @@ export class ImageContextManager {
     void this.handleDrop(event);
   };
   private readonly pasteHandler = (event: ClipboardEvent): void => {
-    void this.handlePaste(event);
+    void this.#handlePaste(event);
   };
 
   constructor(
@@ -63,8 +63,8 @@ export class ImageContextManager {
     }
 
     try {
-      this.setupDragAndDrop();
-      this.setupPasteHandler();
+      this.#setupDragAndDrop();
+      this.#setupPasteHandler();
     } catch (error) {
       this.destroy();
       throw error;
@@ -122,7 +122,7 @@ export class ImageContextManager {
     this.ownedContextTray = null;
   }
 
-  private setupDragAndDrop() {
+  #setupDragAndDrop() {
     const inputWrapper = this.containerEl.querySelector('.claudian-input-wrapper') as HTMLElement;
     if (!inputWrapper) return;
     this.dropZoneEl = inputWrapper;
@@ -208,11 +208,11 @@ export class ImageContextManager {
     }
   }
 
-  private setupPasteHandler() {
+  #setupPasteHandler() {
     this.inputEl.addEventListener('paste', this.pasteHandler, true);
   }
 
-  private async handlePaste(e: ClipboardEvent): Promise<void> {
+  async #handlePaste(e: ClipboardEvent): Promise<void> {
     if (this.destroyed) return;
     const items = e.clipboardData?.items;
     if (!items) return;

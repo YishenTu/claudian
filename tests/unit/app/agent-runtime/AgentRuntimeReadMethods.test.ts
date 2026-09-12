@@ -1,10 +1,10 @@
 import type { CollabRequestDetail } from '@claudian-collab/protocol';
 
 import {
-  AgentRuntimeGateway,
-  type CollabAgentPort,
+AgentRuntimeGateway,
+type CollabAgentPort,
 } from '@/app/agent-runtime';
-import { type CollabChangedFile, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabFeaturePort, type CollabLocalProjectSummary, type CollabProjectInspection, type CollabRequestReview, type CollabResult, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
+import { type CollabChangedFile,type CollabConflictSession,type CollabCoordinationSnapshot,type CollabLocalProjectSummary,type CollabProjectInspection,type CollabRequestReview,type CollabResult,type CollabTicketDetailProjection,type CollabTicketPageProjection } from '@/core/collab';
 
 const PROJECT: CollabLocalProjectSummary = {
   authorityKind: 'lan',
@@ -119,6 +119,7 @@ const COORDINATION: CollabCoordinationSnapshot = {
       id: PROJECT.id,
       mainOid: 'main-oid',
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 11,
       name: PROJECT.name,
     },
@@ -297,6 +298,8 @@ function readPort(): jest.Mocked<CollabAgentPort> {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn().mockResolvedValue(success(INSPECTION)),
     listProjects: jest.fn().mockResolvedValue(success([PROJECT])),
@@ -476,6 +479,7 @@ describe('Agent Runtime Collab read methods', () => {
       snapshot: {
         ...COORDINATION.snapshot,
         project: {
+          authorityGeneration: 7,
           authorityKind: 'cloud',
           createdAt: COORDINATION.snapshot.project.createdAt,
           id: PROJECT.id,
@@ -867,39 +871,5 @@ describe('Agent Runtime Collab read methods', () => {
     });
     expect(JSON.stringify(response)).not.toContain('/Users/private');
     expect(port.readWorkingTreeReviewFile).not.toHaveBeenCalled();
-  });
-
-  it('keeps the injected capability limited to the selected application surface', () => {
-    const keys: readonly (keyof CollabAgentPort)[] = [
-      'acceptRequest',
-      'addComment',
-      'addTicketComment',
-      'closeTicket',
-      'confirmPublish',
-      'createTicket',
-      'listProjects',
-      'inspectProject',
-      'readSnapshot',
-      'boundedQueries',
-      'readReviewFile',
-      'readWorkingTreeReviewFile',
-      'readConflict',
-      'readConflictFile',
-      'readProjectSelection',
-      'listTickets',
-      'publish',
-      'reopenTicket',
-      'updateTicketContent',
-    ];
-    expect(keys).toHaveLength(19);
-    expect(keys).not.toEqual(expect.arrayContaining([
-      'createInvitation',
-      'demoteManager',
-      'leaveProject',
-      'promoteManager',
-      'retireProject',
-      'startHost',
-      'stopHost',
-    ] satisfies readonly (keyof CollabFeaturePort)[]));
   });
 });

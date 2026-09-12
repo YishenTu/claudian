@@ -320,6 +320,7 @@ function recoveryHarness(input: {
     return {
       prepareLeave: pendingAuthority.prepare.bind(pendingAuthority),
       refreshLeave: pendingAuthority.refresh.bind(pendingAuthority),
+      recoverRejectedLeave: pendingAuthority.recoverRejected.bind(pendingAuthority),
       resolveLeaveHost: pendingAuthority.resolveHost.bind(pendingAuthority),
       settleLeave: pendingAuthority.settle.bind(pendingAuthority),
     };
@@ -392,6 +393,7 @@ function localMembership(
 ): CollabLocalMembershipRecord {
   return {
     authority: {
+      authorityGeneration: 1,
       endpoint: 'https://192.168.1.10:54545',
       gitRemoteUrl: 'https://192.168.1.10:54545/v1/git/project-alpha/repository.git',
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
@@ -439,6 +441,7 @@ function snapshot(
     openRequests: [],
     openTicketCount: 0,
     project: {
+      authorityGeneration: 1,
       authorityKind: 'lan',
       createdAt: NOW,
       hostMemberId: 'member-host',

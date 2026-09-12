@@ -1,26 +1,24 @@
 import {
-  COLLAB_AUTHORITY_TRANSFER_OPERATIONS,
+COLLAB_AUTHORITY_TRANSFER_OPERATIONS,
 } from '@claudian-collab/protocol';
 
 import {
-  COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
-  collabLanAuthorityTransferOperationPath,
-  matchCollabLanAuthorityTransferRoute,
+collabLanAuthorityTransferOperationPath,
+matchCollabLanAuthorityTransferRoute
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferBinding';
 
 describe('LAN authority-transfer binding', () => {
   it('owns an independent version and round-trips every package operation', () => {
-    expect(COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION).toBe(1);
 
     for (const operation of COLLAB_AUTHORITY_TRANSFER_OPERATIONS) {
       const path = collabLanAuthorityTransferOperationPath('project-alpha', operation);
       expect(path).toBe(
-        `/authority-transfer/v1/projects/project-alpha/operations/${operation}`,
+        `/authority-transfer/v3/projects/project-alpha/operations/${operation}`,
       );
       expect(matchCollabLanAuthorityTransferRoute('POST', path)).toEqual({
         operation,
         projectId: 'project-alpha',
-        version: 1,
+        version: 3,
       });
     }
   });
@@ -36,14 +34,14 @@ describe('LAN authority-transfer binding', () => {
     expect(matchCollabLanAuthorityTransferRoute(method, path)).toBeNull();
   });
 
-  it('recognizes an unsupported binding version without treating it as v1', () => {
+  it('recognizes the prior binding version without treating it as v3', () => {
     expect(matchCollabLanAuthorityTransferRoute(
       'POST',
-      '/authority-transfer/v2/projects/project-alpha/operations/getProjectAuthorityTransfer',
+      '/authority-transfer/v1/projects/project-alpha/operations/getProjectAuthorityTransfer',
     )).toEqual({
       operation: 'getProjectAuthorityTransfer',
       projectId: 'project-alpha',
-      version: 2,
+      version: 1,
     });
   });
 });

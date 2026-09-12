@@ -14,6 +14,9 @@ import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
+import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
+import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import {
   JoinProjectCoordinator,
   type JoinProjectFoundationPort,
@@ -36,6 +39,8 @@ const NOW = new Date('2026-08-08T00:00:00.000Z');
 const OID = 'a'.repeat(40);
 const CA_FINGERPRINT = 'ab'.repeat(32);
 const CA_PEM = '-----BEGIN CERTIFICATE-----\nTEST CA\n-----END CERTIFICATE-----\n';
+
+jest.setTimeout(30_000);
 
 interface TestHarness {
   readonly cloneInputs: unknown[];
@@ -147,7 +152,7 @@ describe('JoinProjectCoordinator', () => {
     });
   });
 
-  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v9', async () => {
+  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v10', async () => {
     const legacyInvitation = {
       ...createInvitation('project-alpha'),
       protocolVersion: 7 as const,
@@ -394,7 +399,7 @@ describe('JoinProjectCoordinator', () => {
     let indexPath = 'note.md';
     let currentProjectId = 'project-alpha';
     const credential = Buffer.alloc(32, 9).toString('base64url');
-    const git = fakeGitFoundation(
+    const git = await fakeGitFoundation(
       root,
       cloneInputs,
       () => cloneFailure,
@@ -481,6 +486,7 @@ describe('JoinProjectCoordinator', () => {
       seedTrustedPendingJoin: async encodedInvitation => {
         await workspace.claimProjectsFolder('workspace');
         const record: JoinProjectRecord = {
+          authorityGeneration: null,
           createdAt: NOW.toISOString(),
           encodedInvitation,
           endpoint: 'https://127.0.0.1:54545',
@@ -537,15 +543,23 @@ describe('JoinProjectCoordinator', () => {
   }
 });
 
-function fakeGitFoundation(
+async function fakeGitFoundation(
   root: string,
   cloneInputs: unknown[],
   shouldFailClone: () => boolean,
   indexPath: () => string,
-): CollabGitFoundation {
+): Promise<CollabGitFoundation> {
+  const resolution = await new GitRuntimeResolver().resolve();
+  if (resolution.status !== 'available') throw new Error('Native Git is required for local identity validation');
+  const emptyConfigPath = path.join(root, 'fixture-empty.gitconfig');
+  await writeFile(emptyConfigPath, '');
+  const actualRepositories = new GitRepositoryService(new GitCommandRunner({
+    emptyConfigPath, executablePath: resolution.runtime.executablePath,
+  }));
   return {
     repositories: {
       assertHealthy: jest.fn(),
+      assertLocalRepositoryIdentity: actualRepositories.assertLocalRepositoryIdentity.bind(actualRepositories),
       cloneRepository: jest.fn(async input => {
         cloneInputs.push(input);
         if (shouldFailClone()) throw new CollabError({
@@ -554,11 +568,12 @@ function fakeGitFoundation(
           safeContext: { reason: 'test-clone-failed' },
         });
         const clonePath = path.join(input.parentDirectory, input.directoryName);
-        await mkdir(path.join(clonePath, '.git'), { recursive: true });
+        await mkdir(clonePath, { recursive: true });
+        await actualRepositories.initializeWorkingRepository(clonePath);
         await writeFile(path.join(clonePath, 'note.md'), 'joined\n');
         return clonePath;
       }),
-      configureLocalRepository: jest.fn(),
+      configureLocalRepository: actualRepositories.configureLocalRepository.bind(actualRepositories),
       fetch: jest.fn(),
       getWorkingTreeStatus: jest.fn(async () => []),
       resolveRef: jest.fn(async () => OID),
@@ -608,7 +623,7 @@ function fakePinnedClient(
   const request = async <T>(definition: CollabJsonRequest<T>): Promise<T> => {
     controlPaths.push(definition.path);
     const id = projectId();
-    if (definition.path.endsWith('/activate')) {
+    if (definition.path.endsWith('/activate') || definition.path.endsWith('/snapshot')) {
       return definition.decode(envelope({
         currentMember: member('active'),
         eventSequence: 3,
@@ -622,6 +637,7 @@ function fakePinnedClient(
           id,
           mainOid: OID,
           mainRef: COLLAB_MAIN_REF,
+          authorityGeneration: 1,
           managerSetGeneration: 0,
           name: id === 'project-alpha'
             ? 'Alpha'

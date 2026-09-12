@@ -22,6 +22,7 @@ export interface CollabPreparedReviewEntry {
 
 export type CollabPreparedPublicationReviewIdentity = Pick<
   CollabPublicationReview,
+  | 'intent'
   | 'candidateOid'
   | 'comparisonBaseOid'
   | 'comparisonTargetOid'
@@ -82,6 +83,7 @@ function requestSourceKey(
 function publicationIdentityKey(identity: CollabPreparedPublicationReviewIdentity): string {
   return [
     identity.projectId,
+    identity.intent ?? 'publish',
     identity.operationId,
     identity.currentMainOid,
     identity.candidateOid,
@@ -158,7 +160,7 @@ export class CollabPreparedReviewCache {
     while (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next().value;
       if (!oldest) break;
-      this.deleteEntry(oldest);
+      this.#deleteEntry(oldest);
     }
   }
 
@@ -167,7 +169,7 @@ export class CollabPreparedReviewCache {
     const cached = this.entries.get(key);
     if (!cached) return null;
     if (cached.expiresAt <= this.now()) {
-      this.deleteEntry(key);
+      this.#deleteEntry(key);
       return null;
     }
     return cached.entry;
@@ -184,12 +186,12 @@ export class CollabPreparedReviewCache {
       request,
       coordination,
     );
-    this.discardStaleRequestEntries(projectId, request.id, sourceKey);
+    this.#discardStaleRequestEntries(projectId, request.id, sourceKey);
     const key = this.requestEntries.get(sourceKey);
     if (!key) return null;
     const cached = this.entries.get(key);
     if (!cached || cached.expiresAt <= this.now()) {
-      if (cached) this.deleteEntry(key);
+      if (cached) this.#deleteEntry(key);
       else this.requestEntries.delete(sourceKey);
       return null;
     }
@@ -197,7 +199,7 @@ export class CollabPreparedReviewCache {
   }
 
   discard(identity: CollabPreparedReviewIdentity): void {
-    this.deleteEntry(identityKey(identity));
+    this.#deleteEntry(identityKey(identity));
   }
 
   storePublication(review: CollabPublicationReview): void {
@@ -237,13 +239,13 @@ export class CollabPreparedReviewCache {
     this.requestEntries.clear();
   }
 
-  private deleteEntry(key: string): void {
+  #deleteEntry(key: string): void {
     const cached = this.entries.get(key);
     if (cached) this.requestEntries.delete(cached.sourceKey);
     this.entries.delete(key);
   }
 
-  private discardStaleRequestEntries(
+  #discardStaleRequestEntries(
     projectId: string,
     requestId: string,
     sourceKey: string,
@@ -254,7 +256,7 @@ export class CollabPreparedReviewCache {
         && cached.entry.review.detail.request.id === requestId
         && cached.sourceKey !== sourceKey
       ) {
-        this.deleteEntry(key);
+        this.#deleteEntry(key);
       }
     }
   }

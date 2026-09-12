@@ -1,13 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CollabParsedTicketReference, type CollabRequestTicketRelation, type EnsureMyRequestRequest, type EnsureMyRequestResponse, isCollabGitOid, isCollabOpaqueId, parseCollabTicketReferences, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse } from '@claudian-collab/protocol';
+import { collabControlOperationCodec, type CollabMemberId, type CollabParsedTicketReference, type EnsureMyRequestRequest, type EnsureMyRequestResponse, parseCollabTicketReferences, type UpdateMyRequestMetadataRequest, type UpdateMyRequestMetadataResponse } from '@claudian-collab/protocol';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
-import {
-  decodeAuthorityChangeRequest,
-  RequestEnsureRepository,
-} from '@/app/collab/authority/RequestEnsureRepository';
+import { RequestEnsureRepository } from '@/app/collab/authority/RequestEnsureRepository';
 import type {
   AuthorityDatabaseConnection,
   SqlJsMutationResult,
@@ -75,91 +72,20 @@ function normalizeDescription(description: string): string {
   return normalized;
 }
 
-function decodeStoredRelations(value: unknown): readonly CollabRequestTicketRelation[] {
-  if (!Array.isArray(value)) throw serviceError('request-relations-invalid');
-  return value.map(entry => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw serviceError('request-relations-invalid');
-    }
-    const relation = entry as Readonly<Record<string, unknown>>;
-    if (
-      typeof relation.id !== 'string'
-      || !isCollabOpaqueId(relation.id)
-      || typeof relation.ticketId !== 'string'
-      || !isCollabOpaqueId(relation.ticketId)
-      || typeof relation.ticketNumber !== 'number'
-      || !Number.isSafeInteger(relation.ticketNumber)
-      || relation.ticketNumber < 1
-      || typeof relation.ticketTitle !== 'string'
-      || typeof relation.ticketRevision !== 'number'
-      || !Number.isSafeInteger(relation.ticketRevision)
-      || relation.ticketRevision < 1
-      || typeof relation.commitOid !== 'string'
-      || !isCollabGitOid(relation.commitOid)
-      || (relation.kind !== 'references' && relation.kind !== 'resolves')
-      || (relation.state !== 'pending' && relation.state !== 'accepted')
-    ) {
-      throw serviceError('request-relations-invalid');
-    }
-    return relation as unknown as CollabRequestTicketRelation;
-  });
-}
-
 function decodeResponse(value: unknown): EnsureMyRequestResponse {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  try {
+    return collabControlOperationCodec('ensureMyRequest').decodeResponse(value);
+  } catch {
     throw serviceError('request-idempotency-response-invalid');
   }
-  const request = (value as Readonly<Record<string, unknown>>).request;
-  const mainOid = (value as Readonly<Record<string, unknown>>).mainOid;
-  if (!request || typeof request !== 'object' || Array.isArray(request)) {
-    throw serviceError('request-idempotency-response-invalid');
-  }
-  const row = request as Readonly<Record<string, unknown>>;
-  if (!isCollabGitOid(mainOid)) {
-    throw serviceError('request-idempotency-response-invalid');
-  }
-  return {
-    mainOid,
-    request: decodeAuthorityChangeRequest({
-      ...row,
-      comment_count: row.commentCount,
-      created_at: row.createdAt,
-      description: row.description,
-      first_base_oid: row.firstBaseOid,
-      latest_head_oid: row.latestHeadOid,
-      member_id: row.memberId,
-      merged_oid: row.mergedOid ?? null,
-      request_id: row.id,
-      revision: row.revision,
-      updated_at: row.updatedAt,
-    }, decodeStoredRelations(row.ticketRelations)),
-  };
 }
 
 function decodeMetadataResponse(value: unknown): UpdateMyRequestMetadataResponse {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  try {
+    return collabControlOperationCodec('updateMyRequestMetadata').decodeResponse(value);
+  } catch {
     throw serviceError('request-idempotency-response-invalid');
   }
-  const request = (value as Readonly<Record<string, unknown>>).request;
-  if (!request || typeof request !== 'object' || Array.isArray(request)) {
-    throw serviceError('request-idempotency-response-invalid');
-  }
-  const row = request as Readonly<Record<string, unknown>>;
-  return {
-    request: decodeAuthorityChangeRequest({
-      ...row,
-      comment_count: row.commentCount,
-      created_at: row.createdAt,
-      description: row.description,
-      first_base_oid: row.firstBaseOid,
-      latest_head_oid: row.latestHeadOid,
-      member_id: row.memberId,
-      merged_oid: row.mergedOid ?? null,
-      request_id: row.id,
-      revision: row.revision,
-      updated_at: row.updatedAt,
-    }, decodeStoredRelations(row.ticketRelations)),
-  };
 }
 
 export class RequestEnsureService {
@@ -242,7 +168,7 @@ export class RequestEnsureService {
         firstBaseOid: validated.mainOid,
         headOid: request.headOid,
         memberId: actorMemberId,
-        relations: this.resolveRelations(
+        relations: this.#resolveRelations(
           connection,
           parsed.references,
         ),
@@ -316,7 +242,7 @@ export class RequestEnsureService {
         description,
         expectedHeadOid: request.expectedHeadOid,
         expectedRequestRevision: request.expectedRequestRevision,
-        relations: this.resolveRelations(
+        relations: this.#resolveRelations(
           connection,
           parsed.references,
         ),
@@ -344,7 +270,7 @@ export class RequestEnsureService {
     return mutation.value;
   }
 
-  private resolveRelations(
+  #resolveRelations(
     connection: AuthorityDatabaseConnection,
     references: readonly CollabParsedTicketReference[],
   ) {

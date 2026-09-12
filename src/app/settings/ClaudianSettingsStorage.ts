@@ -449,9 +449,9 @@ export class ClaudianSettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
   async load(): Promise<StoredClaudianSettings> {
-    const settingsPath = await this.getLoadPath();
+    const settingsPath = await this.#getLoadPath();
     if (!settingsPath) {
-      return this.getDefaults();
+      return this.#getDefaults();
     }
 
     const content = await this.adapter.read(settingsPath);
@@ -532,7 +532,7 @@ export class ClaudianSettingsStorage {
     };
 
     const merged = {
-      ...this.getDefaults(),
+      ...this.#getDefaults(),
       ...legacyNormalized,
     };
 
@@ -625,7 +625,7 @@ export class ClaudianSettingsStorage {
       2,
     );
     await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
-    await this.deleteLegacyFileIfPresent();
+    await this.#deleteLegacyFileIfPresent();
   }
 
   async exists(): Promise<boolean> {
@@ -641,11 +641,11 @@ export class ClaudianSettingsStorage {
     await this.save({ ...current, ...updates });
   }
 
-  private getDefaults(): StoredClaudianSettings {
+  #getDefaults(): StoredClaudianSettings {
     return DEFAULT_CLAUDIAN_SETTINGS;
   }
 
-  private async getLoadPath(): Promise<string | null> {
+  async #getLoadPath(): Promise<string | null> {
     if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
       return CLAUDIAN_SETTINGS_PATH;
     }
@@ -657,7 +657,7 @@ export class ClaudianSettingsStorage {
     return null;
   }
 
-  private async deleteLegacyFileIfPresent(): Promise<void> {
+  async #deleteLegacyFileIfPresent(): Promise<void> {
     if (await this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH)) {
       await this.adapter.delete(LEGACY_CLAUDIAN_SETTINGS_PATH);
     }

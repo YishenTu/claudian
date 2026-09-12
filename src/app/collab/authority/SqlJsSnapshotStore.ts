@@ -40,7 +40,7 @@ export class NodeSqlJsSnapshotStore implements SqlJsSnapshotStore {
   constructor(private readonly authorityDirectory: string) {}
 
   async readCandidate(kind: SqlJsSnapshotKind): Promise<Uint8Array | null> {
-    const candidatePath = this.pathFor(kind);
+    const candidatePath = this.#pathFor(kind);
     const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
     const handle = await open(candidatePath, fsConstants.O_RDONLY | noFollow).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -72,8 +72,8 @@ export class NodeSqlJsSnapshotStore implements SqlJsSnapshotStore {
   }
 
   async writeTemporary(contents: Uint8Array): Promise<void> {
-    await this.removeCandidate('temporary');
-    const temporaryPath = this.pathFor('temporary');
+    await this.#removeCandidate('temporary');
+    const temporaryPath = this.#pathFor('temporary');
     let handle: Awaited<ReturnType<typeof open>> | null = null;
     try {
       handle = await open(temporaryPath, 'wx', 0o600);
@@ -89,24 +89,24 @@ export class NodeSqlJsSnapshotStore implements SqlJsSnapshotStore {
   }
 
   removeBackup(): Promise<void> {
-    return this.removeCandidate('backup');
+    return this.#removeCandidate('backup');
   }
 
   async rotatePrimaryToBackup(): Promise<void> {
     try {
-      await rename(this.pathFor('primary'), this.pathFor('backup'));
+      await rename(this.#pathFor('primary'), this.#pathFor('backup'));
     } catch {
       throw snapshotError('authority-primary-rotation-failed');
     }
   }
 
   removePrimary(): Promise<void> {
-    return this.removeCandidate('primary');
+    return this.#removeCandidate('primary');
   }
 
   async promoteTemporary(): Promise<void> {
     try {
-      await rename(this.pathFor('temporary'), this.pathFor('primary'));
+      await rename(this.#pathFor('temporary'), this.#pathFor('primary'));
     } catch {
       throw snapshotError('authority-temporary-promotion-failed');
     }
@@ -125,12 +125,12 @@ export class NodeSqlJsSnapshotStore implements SqlJsSnapshotStore {
     }
   }
 
-  private pathFor(kind: SqlJsSnapshotKind): string {
+  #pathFor(kind: SqlJsSnapshotKind): string {
     return path.join(this.authorityDirectory, SNAPSHOT_NAMES[kind]);
   }
 
-  private async removeCandidate(kind: SqlJsSnapshotKind): Promise<void> {
-    const candidatePath = this.pathFor(kind);
+  async #removeCandidate(kind: SqlJsSnapshotKind): Promise<void> {
+    const candidatePath = this.#pathFor(kind);
     const candidateStat = await lstat(candidatePath).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw snapshotError('authority-snapshot-inspection-failed');

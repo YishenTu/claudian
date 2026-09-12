@@ -60,11 +60,11 @@ export class OpencodeAgentStorage {
   ) {}
 
   async loadAll(): Promise<OpencodeAgentDefinition[]> {
-    return this.scanAdapter(this.vaultAdapter);
+    return this.#scanAdapter(this.vaultAdapter);
   }
 
   async load(agent: OpencodeAgentDefinition): Promise<OpencodeAgentDefinition | null> {
-    const filePath = this.resolveCurrentPath(agent);
+    const filePath = this.#resolveCurrentPath(agent);
     try {
       if (!(await this.vaultAdapter.exists(filePath))) return null;
       const content = await this.vaultAdapter.read(filePath);
@@ -75,8 +75,8 @@ export class OpencodeAgentStorage {
   }
 
   async save(agent: OpencodeAgentDefinition, previous?: OpencodeAgentDefinition | null): Promise<void> {
-    const filePath = this.resolveTargetPath(agent, previous);
-    const previousPath = previous ? this.resolveCurrentPath(previous) : null;
+    const filePath = this.#resolveTargetPath(agent, previous);
+    const previousPath = previous ? this.#resolveCurrentPath(previous) : null;
     await this.vaultAdapter.ensureFolder(path.posix.dirname(filePath));
     const content = serializeOpencodeAgentMarkdown(agent);
     await this.vaultAdapter.write(filePath, content);
@@ -87,11 +87,11 @@ export class OpencodeAgentStorage {
   }
 
   async delete(agent: OpencodeAgentDefinition): Promise<void> {
-    const filePath = this.resolveCurrentPath(agent);
+    const filePath = this.#resolveCurrentPath(agent);
     await this.vaultAdapter.delete(filePath);
   }
 
-  private resolveCurrentPath(agent: OpencodeAgentDefinition): string {
+  #resolveCurrentPath(agent: OpencodeAgentDefinition): string {
     const persistedLocation = parseOpencodeAgentPersistenceKey(agent.persistenceKey);
     if (persistedLocation) {
       return persistedLocation.filePath;
@@ -100,18 +100,18 @@ export class OpencodeAgentStorage {
     return `${OPENCODE_DEFAULT_AGENT_SAVE_PATH}/${agent.name}.md`;
   }
 
-  private resolveTargetPath(
+  #resolveTargetPath(
     agent: OpencodeAgentDefinition,
     previous?: OpencodeAgentDefinition | null,
   ): string {
     if (previous && previous.name === agent.name) {
-      return this.resolveCurrentPath(previous);
+      return this.#resolveCurrentPath(previous);
     }
 
     return `${OPENCODE_DEFAULT_AGENT_SAVE_PATH}/${agent.name}.md`;
   }
 
-  private async scanAdapter(
+  async #scanAdapter(
     adapter: Pick<VaultFileAdapter, 'read' | 'listFilesRecursive'>,
   ): Promise<OpencodeAgentDefinition[]> {
     const agentsByName = new Map<string, OpencodeAgentDefinition>();

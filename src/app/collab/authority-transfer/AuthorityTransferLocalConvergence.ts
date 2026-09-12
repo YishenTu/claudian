@@ -6,8 +6,17 @@ import {
 } from '@claudian-collab/protocol';
 
 import type {
+  AuthorityTransferImportedTargetIdentity,
+} from '@/app/collab/authority-transfer/AuthorityTransferImportedTargetIdentity';
+import type {
   AuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import {
+  authorityTransferClaimantStatus,
+} from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type {
+  AuthorityProjectionTransitionPort,
+} from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type {
   CollabLocalLanMembershipRecord,
   CollabLocalMembershipRecord,
@@ -18,8 +27,8 @@ import {
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
-  canonicalCloudOrigin,
   cloudProjectGitRemoteUrl,
+  validateCloudServerUrl,
 } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -37,7 +46,9 @@ interface AuthorityTransferConvergenceWorkspace {
 interface AuthorityTransferConvergenceGit {
   rotate(input: {
     readonly newRemoteUrl: string;
+    readonly newServerUrl: string | null;
     readonly oldRemoteUrl: string;
+    readonly oldServerUrl: string | null;
     readonly projectId: CollabProjectId;
     readonly repositoryPath: string;
   }): Promise<void>;
@@ -47,6 +58,7 @@ export interface AuthorityTransferLocalConvergenceOptions {
   readonly activity: {
     transitionProject(projectId: CollabProjectId, operation: () => Promise<void>): Promise<void>;
   };
+  readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly git: AuthorityTransferConvergenceGit;
   readonly now?: () => Date;
   readonly projects: AuthorityTransferConvergenceProjects;
@@ -54,18 +66,26 @@ export interface AuthorityTransferLocalConvergenceOptions {
 }
 
 export interface LanToCloudHostConvergenceInput {
-  readonly developmentActorId: string;
   readonly snapshot: CollabProjectSnapshot;
   readonly status: CollabAuthorityTransferStatus;
 }
 
-export interface CloudToLanHostConvergenceInput {
+type LanToCloudMemberProjection = Pick<
+  CollabProjectSnapshot['currentMember'],
+  'displayName' | 'id' | 'personalRef' | 'role'
+>;
+
+export interface CloudToLanMemberConvergenceInput {
   readonly endpoint: string;
   readonly hostCaCertificatePem: string;
   readonly hostCaFingerprint: string;
+  readonly identity: AuthorityTransferImportedTargetIdentity;
   readonly memberCredential: string;
-  readonly snapshot: CollabProjectSnapshot;
   readonly status: CollabAuthorityTransferStatus;
+}
+
+export interface CloudToLanHostConvergenceInput extends Omit<CloudToLanMemberConvergenceInput, 'endpoint'> {
+  withEndpoint(operation: (endpoint: string) => Promise<void>): Promise<void>;
 }
 
 function convergenceError(reason: string): CollabError {
@@ -136,69 +156,93 @@ export class AuthorityTransferLocalConvergence {
 
   async lanToCloudHost(input: LanToCloudHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.options.activity.transitionProject(
+    return this.#transitionProject(
       input.status.projectId,
-      () => this.lanToCloud(input, true),
+      () => this.#lanToCloud(input, true),
     );
+  }
+
+  async lanToCloudHostOffline(status: CollabAuthorityTransferStatus): Promise<void> {
+    assertCompleted(status, 'lan-to-cloud');
+    return this.#transitionProject(status.projectId, async () => {
+      const membership = await this.#requireMembership(status.projectId);
+      if (status.relinquishmentProof?.sourceHostMemberId !== membership.member.id) {
+        throw convergenceError('authority-transfer-source-member-mismatch');
+      }
+      await this.#convergeLanMembershipToCloud(
+        membership,
+        status,
+        membership.member,
+        membership.lastEventSequence,
+        true,
+      );
+    });
   }
 
   async lanToCloudMember(input: LanToCloudHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.options.activity.transitionProject(
+    return this.#transitionProject(
       input.status.projectId,
-      () => this.lanToCloud(input, false),
+      () => this.#lanToCloud(input, false),
     );
   }
 
   async cloudToLanHost(input: CloudToLanHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
-    return this.options.activity.transitionProject(
-      input.status.projectId,
-      () => this.cloudToLan(input, true),
-    );
+    return this.options.activity.transitionProject(input.status.projectId, () => (
+      input.withEndpoint(endpoint => this.options.authorityProjectionTransitions.run(
+        input.status.projectId,
+        () => this.#cloudToLan({ ...input, endpoint }, true),
+      ))
+    ));
   }
 
-  async cloudToLanMember(input: CloudToLanHostConvergenceInput): Promise<void> {
+  async cloudToLanMember(input: CloudToLanMemberConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'cloud-to-lan');
-    return this.options.activity.transitionProject(
+    return this.#transitionProject(
       input.status.projectId,
-      () => this.cloudToLan(input, false),
+      () => this.#cloudToLan(input, false),
     );
   }
 
   async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
-    assertCompleted(record.status, record.status.direction);
-    return this.options.activity.transitionProject(record.projectId, async () => {
-      const membership = await this.requireMembership(record.projectId);
+    const status = authorityTransferClaimantStatus(record);
+    if (!status) throw convergenceError('authority-transfer-claimant-status-missing');
+    assertCompleted(status, status.direction);
+    return this.#transitionProject(record.projectId, async () => {
+      const membership = await this.#requireMembership(record.projectId);
       if (membership.member.id !== record.memberId) {
         throw convergenceError('authority-transfer-claimant-member-conflict');
       }
-      if (record.status.direction === 'lan-to-cloud') {
-        const serverUrl = canonicalCloudOrigin(
-          record.status.targetUrl,
+      if (status.direction === 'lan-to-cloud') {
+        const serverUrl = validateCloudServerUrl(
+          status.targetUrl,
           'authorityTransferTargetUrl',
         );
         if (
           !isCollabLocalCloudMembership(membership)
-          || membership.authority.developmentActorId !== record.memberId
-          || (membership.authority.authorityGeneration ?? 1)
-            !== record.status.targetAuthority.generation
+          || membership.authority.authorityGeneration
+            !== status.targetAuthority.generation
           || membership.authority.serverUrl !== serverUrl
           || membership.authority.gitRemoteUrl
-            !== cloudRemoteUrl(record.status.targetUrl, record.projectId)
+            !== cloudRemoteUrl(status.targetUrl, record.projectId)
         ) throw convergenceError('authority-transfer-cloud-membership-conflict');
         await this.finish(record.projectId, 'cloud');
         return;
+      }
+      if (record.variant !== 'source-issued') {
+        throw convergenceError('authority-transfer-claimant-direction-invalid');
       }
       const lanTarget = record.lanTarget;
       const targetCredential = record.targetCredential;
       if (!lanTarget || !targetCredential || !isCollabLocalLanMembership(membership)) {
         throw convergenceError('authority-transfer-lan-membership-conflict');
       }
-      const endpoint = new URL(lanTarget.endpoint).origin;
+      const endpoint = membership.authority.endpoint;
       if (
-        membership.authority.endpoint !== endpoint
-        || membership.authority.gitRemoteUrl !== lanRemoteUrl(lanTarget.endpoint, record.projectId)
+        membership.authority.authorityGeneration !== status.targetAuthority.generation
+        || endpoint === null
+        || membership.authority.gitRemoteUrl !== lanRemoteUrl(endpoint, record.projectId)
         || membership.authority.hostCaCertificatePem !== lanTarget.caCertificatePem
         || membership.authority.hostCaFingerprint !== lanTarget.caFingerprint
         || membership.member.credential !== targetCredential
@@ -209,15 +253,44 @@ export class AuthorityTransferLocalConvergence {
     });
   }
 
-  private async lanToCloud(
+  #transitionProject(
+    projectId: CollabProjectId,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    return this.options.activity.transitionProject(projectId, () => (
+      this.options.authorityProjectionTransitions.run(projectId, operation)
+    ));
+  }
+
+  async #lanToCloud(
     input: LanToCloudHostConvergenceInput,
     sourceOwnsAuthority: boolean,
   ): Promise<void> {
-    const membership = await this.requireMembership(input.status.projectId);
+    const membership = await this.#requireMembership(input.status.projectId);
     assertSnapshot(membership, input.snapshot);
-    const newRemoteUrl = cloudRemoteUrl(input.status.targetUrl, input.status.projectId);
-    const serverUrl = canonicalCloudOrigin(
-      input.status.targetUrl,
+    if (
+      input.snapshot.project.authorityKind !== 'cloud'
+      || input.snapshot.project.authorityGeneration !== input.status.targetAuthority.generation
+    ) throw convergenceError('authority-transfer-convergence-generation-mismatch');
+    await this.#convergeLanMembershipToCloud(
+      membership,
+      input.status,
+      input.snapshot.currentMember,
+      input.snapshot.eventSequence,
+      sourceOwnsAuthority,
+    );
+  }
+
+  async #convergeLanMembershipToCloud(
+    membership: CollabLocalMembershipRecord,
+    status: CollabAuthorityTransferStatus,
+    member: LanToCloudMemberProjection,
+    lastEventSequence: number,
+    sourceOwnsAuthority: boolean,
+  ): Promise<void> {
+    const newRemoteUrl = cloudRemoteUrl(status.targetUrl, status.projectId);
+    const serverUrl = validateCloudServerUrl(
+      status.targetUrl,
       'authorityTransferTargetUrl',
     );
     if (isCollabLocalLanMembership(membership)) {
@@ -228,25 +301,24 @@ export class AuthorityTransferLocalConvergence {
       ) {
         throw convergenceError('authority-transfer-source-membership-invalid');
       }
-      await this.rotate(membership, oldRemoteUrl, newRemoteUrl);
+      await this.#rotate(membership, oldRemoteUrl, newRemoteUrl, serverUrl);
       await this.options.projects.saveMembership({
         authority: {
-          authorityGeneration: input.status.targetAuthority.generation,
+          authorityGeneration: status.targetAuthority.generation,
           bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-          developmentActorId: input.developmentActorId,
           gitRemoteUrl: newRemoteUrl,
           kind: 'cloud',
           serverUrl,
           wireVersion: COLLAB_PROTOCOL_VERSION,
         },
         createdAt: membership.createdAt,
-        lastEventSequence: input.snapshot.eventSequence,
+        lastEventSequence,
         ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }),
         member: {
-          displayName: input.snapshot.currentMember.displayName,
-          id: input.snapshot.currentMember.id,
-          personalRef: input.snapshot.currentMember.personalRef,
-          role: input.snapshot.currentMember.role,
+          displayName: member.displayName,
+          id: member.id,
+          personalRef: member.personalRef,
+          role: member.role,
         },
         project: membership.project,
         schemaVersion: membership.schemaVersion,
@@ -254,27 +326,34 @@ export class AuthorityTransferLocalConvergence {
       });
     } else {
       if (
-        membership.authority.developmentActorId !== input.developmentActorId
-        || (membership.authority.authorityGeneration ?? 1)
-          !== input.status.targetAuthority.generation
+        membership.authority.authorityGeneration
+          !== status.targetAuthority.generation
         || membership.authority.gitRemoteUrl !== newRemoteUrl
         || membership.authority.serverUrl !== serverUrl
       ) throw convergenceError('authority-transfer-cloud-membership-conflict');
     }
-    await this.finish(input.status.projectId, 'cloud');
+    await this.finish(status.projectId, 'cloud');
   }
 
-  private async cloudToLan(
-    input: CloudToLanHostConvergenceInput,
+  async #cloudToLan(
+    input: CloudToLanMemberConvergenceInput,
     targetOwnsAuthority: boolean,
   ): Promise<void> {
-    const membership = await this.requireMembership(input.status.projectId);
-    assertSnapshot(membership, input.snapshot);
+    const membership = await this.#requireMembership(input.status.projectId);
+    const identity = input.identity;
+    if (
+      identity.project.id !== membership.project.id
+      || identity.project.name !== membership.project.name
+      || identity.currentMember.id !== membership.member.id
+      || identity.currentMember.personalRef !== membership.member.personalRef
+      || identity.authorityGeneration !== input.status.targetAuthority.generation
+    ) throw convergenceError('authority-transfer-convergence-target-identity-mismatch');
     const newRemoteUrl = lanRemoteUrl(input.endpoint, input.status.projectId);
     if (isCollabLocalCloudMembership(membership)) {
-      await this.rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl);
+      await this.#rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
       const candidate: CollabLocalLanMembershipRecord = {
         authority: {
+          authorityGeneration: input.status.targetAuthority.generation,
           endpoint: new URL(input.endpoint).origin,
           gitRemoteUrl: newRemoteUrl,
           hostCaCertificatePem: input.hostCaCertificatePem,
@@ -286,30 +365,40 @@ export class AuthorityTransferLocalConvergence {
           autoStart: targetOwnsAuthority,
           ownsAuthority: targetOwnsAuthority,
         },
-        lastEventSequence: input.snapshot.eventSequence,
+        lastEventSequence: identity.eventSequence,
         ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }),
         member: {
           credential: input.memberCredential,
-          displayName: input.snapshot.currentMember.displayName,
-          id: input.snapshot.currentMember.id,
-          personalRef: input.snapshot.currentMember.personalRef,
-          role: input.snapshot.currentMember.role,
+          displayName: identity.currentMember.displayName,
+          id: identity.currentMember.id,
+          personalRef: identity.currentMember.personalRef,
+          role: identity.currentMember.role,
         },
         project: membership.project,
         schemaVersion: membership.schemaVersion,
         updatedAt: this.timestamp(membership.updatedAt),
       };
       await this.options.projects.saveMembership(candidate);
-    } else if (
-      membership.authority.endpoint !== new URL(input.endpoint).origin
-      || membership.authority.gitRemoteUrl !== newRemoteUrl
+    } else {
+      if (membership.authority.authorityGeneration
+        !== input.status.targetAuthority.generation
       || membership.authority.hostCaCertificatePem !== input.hostCaCertificatePem
       || membership.authority.hostCaFingerprint !== input.hostCaFingerprint
       || membership.member.credential !== input.memberCredential
-      || membership.hostOwnership.autoStart !== targetOwnsAuthority
       || membership.hostOwnership.ownsAuthority !== targetOwnsAuthority
-    ) {
-      throw convergenceError('authority-transfer-lan-membership-conflict');
+      || typeof membership.hostOwnership.autoStart !== 'boolean'
+      || (!targetOwnsAuthority && membership.hostOwnership.autoStart !== false)
+      || membership.authority.endpoint === null
+      || membership.authority.gitRemoteUrl !== lanRemoteUrl(membership.authority.endpoint, input.status.projectId)
+      ) throw convergenceError('authority-transfer-lan-membership-conflict');
+      if (membership.authority.endpoint !== new URL(input.endpoint).origin) {
+        await this.#rotate(membership, membership.authority.gitRemoteUrl, newRemoteUrl, null);
+        await this.options.projects.saveMembership({
+          ...membership,
+          authority: { ...membership.authority, endpoint: new URL(input.endpoint).origin, gitRemoteUrl: newRemoteUrl },
+          updatedAt: this.timestamp(membership.updatedAt),
+        });
+      }
     }
     await this.finish(input.status.projectId, 'lan');
   }
@@ -321,7 +410,7 @@ export class AuthorityTransferLocalConvergence {
     }
   }
 
-  private async requireMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord> {
+  async #requireMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord> {
     const membership = await this.options.projects.loadMembership(projectId);
     if (!membership || membership.project.id !== projectId) {
       throw convergenceError('authority-transfer-membership-missing');
@@ -329,16 +418,21 @@ export class AuthorityTransferLocalConvergence {
     return membership;
   }
 
-  private rotate(
+  #rotate(
     membership: CollabLocalMembershipRecord,
     oldRemoteUrl: string,
     newRemoteUrl: string,
+    newServerUrl: string | null,
   ): Promise<void> {
     return this.options.workspace.resolveManagedProjectPath(
       membership.project.workspacePath,
     ).then(repositoryPath => this.options.git.rotate({
       newRemoteUrl,
+      newServerUrl,
       oldRemoteUrl,
+      oldServerUrl: isCollabLocalCloudMembership(membership)
+        ? membership.authority.serverUrl
+        : null,
       projectId: membership.project.id,
       repositoryPath,
     }));

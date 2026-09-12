@@ -48,15 +48,15 @@ export class TabBar {
    * @param items Tab items to render.
    */
   update(items: TabBarItem[]): void {
-    this.captureStableScrollPosition();
-    this.pruneExpandedTitleState(items);
+    this.#captureStableScrollPosition();
+    this.#pruneExpandedTitleState(items);
 
     // Clear existing badges
     this.containerEl.empty();
 
     // Render badges
     for (const item of items) {
-      this.renderBadge(item);
+      this.#renderBadge(item);
     }
 
     this.restoreScrollPosition();
@@ -71,7 +71,7 @@ export class TabBar {
   }
 
   /** Renders a single tab badge. */
-  private renderBadge(item: TabBarItem): void {
+  #renderBadge(item: TabBarItem): void {
     // Determine state class (priority: active > action required > working > review > idle)
     let stateClass = 'claudian-tab-badge-idle';
     if (item.isActive) {
@@ -93,11 +93,11 @@ export class TabBar {
         stateClass,
         isTitleExpanded ? 'claudian-tab-badge-expanded' : '',
       ].filter(Boolean).join(' '),
-      text: this.getBadgeLabel(item),
+      text: this.#getBadgeLabel(item),
     });
 
     // Obsidian uses aria-label for hover tooltips here; adding title causes duplicate tooltip text.
-    badgeEl.setAttribute('aria-label', `${item.title}, ${this.getBadgeStatusLabel(item)}`);
+    badgeEl.setAttribute('aria-label', `${item.title}, ${this.#getBadgeStatusLabel(item)}`);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
 
     // Click handler to switch tab
@@ -109,7 +109,7 @@ export class TabBar {
     badgeEl.addEventListener('dblclick', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.toggleBadgeTitle(item, badgeEl);
+      this.#toggleBadgeTitle(item, badgeEl);
     });
 
     // Right-click to close (if allowed)
@@ -145,14 +145,14 @@ export class TabBar {
     }, this.containerEl.ownerDocument.defaultView ?? null);
   }
 
-  private captureStableScrollPosition(): void {
+  #captureStableScrollPosition(): void {
     const currentScrollLeft = this.containerEl.scrollLeft;
     if (currentScrollLeft > 0 || this.lastKnownScrollLeft === 0) {
       this.lastKnownScrollLeft = currentScrollLeft;
     }
   }
 
-  private pruneExpandedTitleState(items: TabBarItem[]): void {
+  #pruneExpandedTitleState(items: TabBarItem[]): void {
     const visibleTabIds = new Set(items.map(item => item.id));
     for (const tabId of this.expandedTitleTabIds) {
       if (!visibleTabIds.has(tabId)) {
@@ -161,7 +161,7 @@ export class TabBar {
     }
   }
 
-  private toggleBadgeTitle(item: TabBarItem, badgeEl: HTMLElement): void {
+  #toggleBadgeTitle(item: TabBarItem, badgeEl: HTMLElement): void {
     if (this.expandedTitleTabIds.has(item.id)) {
       this.expandedTitleTabIds.delete(item.id);
     } else {
@@ -169,21 +169,21 @@ export class TabBar {
     }
 
     const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
-    badgeEl.textContent = this.getBadgeLabel(item);
+    badgeEl.textContent = this.#getBadgeLabel(item);
     badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
     this.callbacks.onTitleExpansionChanged?.(this.getExpandedTitleTabIds());
   }
 
-  private getBadgeLabel(item: TabBarItem): string {
+  #getBadgeLabel(item: TabBarItem): string {
     if (!this.expandedTitleTabIds.has(item.id)) {
       return String(item.index);
     }
 
-    return this.truncateExpandedTitle(item.title);
+    return this.#truncateExpandedTitle(item.title);
   }
 
-  private getBadgeStatusLabel(item: TabBarItem): string {
+  #getBadgeStatusLabel(item: TabBarItem): string {
     if (item.isActive) return 'active';
     if (item.attention?.kind === 'action-required') return 'needs your input';
     if (item.isWorking) return 'working';
@@ -195,7 +195,7 @@ export class TabBar {
     return 'idle';
   }
 
-  private truncateExpandedTitle(title: string): string {
+  #truncateExpandedTitle(title: string): string {
     const chars = Array.from(title);
     if (chars.length <= EXPANDED_TITLE_MAX_LENGTH) {
       return title;

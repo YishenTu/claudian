@@ -119,6 +119,7 @@ describe('Publish offline recovery integration', () => {
       publicationState,
       candidates,
       comparisons,
+      { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
       { createOperationId: () => 'offline-publish' },
     );
     const publishRequest = { description: 'Offline note', projectId: PROJECT_ID };
@@ -145,6 +146,7 @@ describe('Publish offline recovery integration', () => {
       publicationState,
       candidates,
       comparisons,
+      { prepare: async () => { throw new Error('Unexpected Update'); }, releaseObsolete: async () => undefined },
       { createOperationId: () => 'resumed-publish' },
     );
     const second = await resumed.publish(publishRequest);

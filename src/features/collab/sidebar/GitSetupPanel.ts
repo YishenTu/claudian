@@ -110,7 +110,7 @@ export class GitSetupPanel {
           text: this.resolution.missingCapabilities.join(', '),
         });
       }
-      this.renderInstallSupport();
+      this.#renderInstallSupport();
     }
 
     const actions = this.containerEl.createDiv({ cls: 'claudian-collab-git-actions' });
@@ -141,11 +141,11 @@ export class GitSetupPanel {
       text: t('collab.gitSetup.savePath'),
     });
     saveButton.addEventListener('click', () => {
-      void this.savePath(pathInput.value, saveButton).catch(() => undefined);
+      void this.#savePath(pathInput.value, saveButton).catch(() => undefined);
     });
   }
 
-  private renderInstallSupport(): void {
+  #renderInstallSupport(): void {
     const support = getGitInstallSupport(this.platform);
     const supportEl = this.containerEl.createDiv({ cls: 'claudian-collab-git-support' });
     supportEl.createEl('a', {
@@ -186,7 +186,7 @@ export class GitSetupPanel {
     }
   }
 
-  private async savePath(pathValue: string, button: HTMLButtonElement): Promise<void> {
+  async #savePath(pathValue: string, button: HTMLButtonElement): Promise<void> {
     button.disabled = true;
     try {
       const resolution = await this.options.onSaveConfiguredPath(pathValue.trim());

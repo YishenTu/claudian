@@ -16,7 +16,7 @@ import {
   createHostTransferRecoveryRecord,
   parseHostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
-import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
+import { bindHostTransferSourceResource, type HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -24,6 +24,7 @@ import type { InstallationKey } from '@/core/device/InstallationKey';
 
 export interface OutgoingHostTransferCoordinatorOptions {
   readonly installationKey: InstallationKey | string;
+  readonly sourceResourceId?: string;
   readonly now?: () => Date;
   readonly syncProjection?: (projectId: CollabProjectId) => void;
   readonly trust?: HostTrustTransitionService;
@@ -92,7 +93,7 @@ export class OutgoingHostTransferCoordinator {
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<void> {
-    return this.operationQueue.run(() => this.runUnlocked(projectId, transferId, signal));
+    return this.operationQueue.run(() => this.#runUnlocked(projectId, transferId, signal));
   }
 
   prepareAccepted(
@@ -100,7 +101,7 @@ export class OutgoingHostTransferCoordinator {
     transferId: CollabOperationId,
   ): Promise<void> {
     return this.operationQueue.run(async () => {
-      await this.loadOrCreateRecord(projectId, transferId);
+      await this.#loadOrCreateRecord(projectId, transferId);
     });
   }
 
@@ -119,7 +120,7 @@ export class OutgoingHostTransferCoordinator {
         && authority.phase !== 'quiescing'
         && authority.phase !== 'staged'
       ) throw outgoingError('host-transfer-cancellation-unavailable');
-      await this.loadOrCreateRecord(projectId, transferId);
+      await this.#loadOrCreateRecord(projectId, transferId);
     });
   }
 
@@ -186,13 +187,13 @@ export class OutgoingHostTransferCoordinator {
         || !authorityRecord
         || authorityRecord.transferId !== transferId
       ) throw outgoingError('host-transfer-startup-recovery-missing');
-      const reconciled = await this.reconcileRecovery(record, authorityRecord);
+      const reconciled = await this.#reconcileRecovery(record, authorityRecord);
       if (
         reconciled.phase !== 'cancelled'
         && reconciled.phase !== 'declined'
         && reconciled.phase !== 'expired'
       ) throw outgoingError('host-transfer-startup-terminal-recovery-missing');
-      await this.checkpointTargetCancellation(reconciled);
+      await this.#checkpointTargetCancellation(reconciled);
     });
   }
 
@@ -212,20 +213,20 @@ export class OutgoingHostTransferCoordinator {
       if (!authorityRecord || authorityRecord.phase !== 'cancelled') {
         throw outgoingError('host-transfer-cancellation-not-durable');
       }
-      const reconciled = await this.reconcileRecovery(record, authorityRecord);
+      const reconciled = await this.#reconcileRecovery(record, authorityRecord);
       if (reconciled.phase !== 'cancelled') {
         throw outgoingError('host-transfer-cancellation-phase-mismatch');
       }
-      await this.finishTerminalRecovery(reconciled);
+      await this.#finishTerminalRecovery(reconciled);
     });
   }
 
-  private async runUnlocked(
+  async #runUnlocked(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<void> {
-    let record = await this.loadOrCreateRecord(projectId, transferId);
+    let record = await this.#loadOrCreateRecord(projectId, transferId);
     try {
       while (record.phase !== 'completed') {
         throwIfCancelled(signal);
@@ -270,7 +271,7 @@ export class OutgoingHostTransferCoordinator {
             transferId,
             ...(signal ? { signal } : {}),
           });
-          this.assertPreparedPackage(record, prepared);
+          this.#assertPreparedPackage(record, prepared);
           const acknowledgement = await this.target.stage({
             authoritySnapshot: prepared.authoritySnapshot,
             endpoint: record.targetEndpoint!,
@@ -307,7 +308,7 @@ export class OutgoingHostTransferCoordinator {
             transferId,
             ...(signal ? { signal } : {}),
           });
-          this.assertPreparedPackage(record, prepared);
+          this.#assertPreparedPackage(record, prepared);
           const signer = await this.identity.hostCaSigner();
           const activationCertificate = await this.trust.signActivation(signer, {
             cutoverAt: this.now().toISOString(),
@@ -386,6 +387,7 @@ export class OutgoingHostTransferCoordinator {
             ownsAuthority: false,
             projectId,
             proof: prepared.proof,
+            proofChainDigest: prepared.manifest.proofChainDigest,
             targetCaCertificatePem: record.targetCaCertificatePem!,
             targetCaFingerprint: record.targetCaFingerprint!,
             targetHostMemberId: record.targetHostMemberId,
@@ -410,7 +412,7 @@ export class OutgoingHostTransferCoordinator {
           || record.phase === 'declined'
           || record.phase === 'expired'
         ) {
-          await this.finishTerminalRecovery(record);
+          await this.#finishTerminalRecovery(record);
           return;
         }
         throw outgoingError('host-transfer-outgoing-phase-invalid');
@@ -432,7 +434,7 @@ export class OutgoingHostTransferCoordinator {
       );
       await this.recovery.save(record);
       await this.admission.finalizeOldAuthority(projectId, transferId);
-      await this.confirmTargetTerminalReceipt(record, signal).catch(() => undefined);
+      await this.#confirmTargetTerminalReceipt(record, signal).catch(() => undefined);
       await this.recovery.remove(projectId, 'outgoing');
     } catch (error) {
       if (isAfterRelinquishment(record.phase)) {
@@ -442,7 +444,7 @@ export class OutgoingHostTransferCoordinator {
     }
   }
 
-  private async loadOrCreateRecord(
+  async #loadOrCreateRecord(
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<HostTransferRecoveryRecord> {
@@ -455,7 +457,10 @@ export class OutgoingHostTransferCoordinator {
       if (existing.transferId !== transferId) {
         throw outgoingError('host-transfer-outgoing-operation-mismatch');
       }
-      return this.reconcileRecovery(existing, authorityRecord);
+      const bound = this.options.sourceResourceId === undefined ? existing
+        : bindHostTransferSourceResource(existing, this.options.sourceResourceId);
+      if (bound !== existing) await this.recovery.save(bound);
+      return this.#reconcileRecovery(bound, authorityRecord);
     }
     if (
       (authorityRecord.phase !== 'accepted'
@@ -479,11 +484,13 @@ export class OutgoingHostTransferCoordinator {
       targetHostMemberId: authorityRecord.targetHostMemberId,
       transferId,
     });
-    await this.recovery.save(record);
-    return this.reconcileRecovery(record, authorityRecord);
+    const bound = this.options.sourceResourceId === undefined ? record
+      : bindHostTransferSourceResource(record, this.options.sourceResourceId);
+    await this.recovery.save(bound);
+    return this.#reconcileRecovery(bound, authorityRecord);
   }
 
-  private async reconcileRecovery(
+  async #reconcileRecovery(
     local: HostTransferRecoveryRecord,
     authority: HostTransferAuthorityRecord,
   ): Promise<HostTransferRecoveryRecord> {
@@ -575,19 +582,19 @@ export class OutgoingHostTransferCoordinator {
     return reconciled;
   }
 
-  private async finishTerminalRecovery(
+  async #finishTerminalRecovery(
     record: HostTransferRecoveryRecord,
   ): Promise<void> {
-    const checkpoint = await this.checkpointTargetCancellation(record);
+    const checkpoint = await this.#checkpointTargetCancellation(record);
     await this.admission.reopenBeforeRelinquishment(
       checkpoint.projectId,
       checkpoint.transferId,
     );
-    await this.confirmTargetTerminalReceipt(checkpoint).catch(() => undefined);
+    await this.#confirmTargetTerminalReceipt(checkpoint).catch(() => undefined);
     await this.recovery.remove(checkpoint.projectId, 'outgoing');
   }
 
-  private async checkpointTargetCancellation(
+  async #checkpointTargetCancellation(
     record: HostTransferRecoveryRecord,
   ): Promise<HostTransferRecoveryRecord> {
     if (record.targetTerminalResponseReceived) return record;
@@ -608,7 +615,7 @@ export class OutgoingHostTransferCoordinator {
     return checkpoint;
   }
 
-  private async confirmTargetTerminalReceipt(
+  async #confirmTargetTerminalReceipt(
     record: HostTransferRecoveryRecord,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -623,7 +630,7 @@ export class OutgoingHostTransferCoordinator {
     });
   }
 
-  private assertPreparedPackage(
+  #assertPreparedPackage(
     record: HostTransferRecoveryRecord,
     prepared: PreparedHostTransferPackage,
   ): void {

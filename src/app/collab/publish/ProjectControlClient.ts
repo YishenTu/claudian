@@ -1,4 +1,4 @@
-import { type AcceptResponse, type CollabChangeRequest, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse } from '@claudian-collab/protocol';
+import { type AcceptResponse, type CollabChangeRequest, type CollabCommentPage, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketAcceptedRelationPage, type CollabTicketCommentPage, type CollabTicketDetail, type CollabTicketPage, type CollabTicketStatus, type CollabTicketSummary, type CreateCommentResponse, type CreateTicketCommentResponse, type EnsureMyRequestResponse, type ResolveTicketNumberRequest, type ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
@@ -8,8 +8,11 @@ import type {
   CollabHttpOperationOptions,
   CollabJsonRequest,
 } from '@/app/collab/lan/CollabHttpClient';
+import { decodeLanCollabCapabilities, type LanCollabCapability } from '@/app/collab/lan/LanCollabCapabilities';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { decodeLanCollabEnvelopeData } from '@/app/collab/lan/LanCollabEnvelope';
 import type { CollabLanProjectSnapshot } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ProjectControlTransport {
   requestWithMember<T>(
@@ -216,6 +219,56 @@ export class ProjectControlClient {
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 
+  async resolveTicketNumber(
+    input: ResolveTicketNumberRequest & {
+      readonly memberCredential: string;
+      readonly signal?: AbortSignal;
+    },
+  ): Promise<ResolveTicketNumberResponse> {
+    const decoded = lanCollabControlOperationCodec('resolveTicketNumber').decodeRequest({
+      projectId: input.projectId,
+      ticketNumber: input.ticketNumber,
+    });
+    if (decoded.status !== 'ok') return Promise.reject(decoded.error);
+    await this.#requireCapability(
+      'ticket-number-lookup-v1', input.projectId, input.memberCredential,
+      input.signal ? { signal: input.signal } : {},
+    );
+    return this.transport.requestWithMember({
+      decode: lanCollabControlOperationCodec('resolveTicketNumber').decodeResponse,
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.resolveTicketNumber.method,
+      path: collabControlOperationPath('resolveTicketNumber', input.projectId, {
+        ticketNumber: String(decoded.value.ticketNumber),
+      }),
+    }, input.memberCredential, input.signal ? { signal: input.signal } : {});
+  }
+
+  async #requireCapability(
+    capability: LanCollabCapability,
+    projectId: string,
+    memberCredential: string,
+    options: CollabHttpOperationOptions,
+  ): Promise<void> {
+    const capabilities = await this.transport.requestWithMember({
+      decode: input => {
+        const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse(input);
+        if (snapshot.project.id !== projectId) {
+          throw new CollabError({ code: 'authority-integrity-error' });
+        }
+        const data = decodeLanCollabEnvelopeData(input) as Readonly<Record<string, unknown>>;
+        return decodeLanCollabCapabilities(data.capabilities);
+      },
+      method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,
+      path: collabControlOperationPath('getSnapshot', projectId),
+    }, memberCredential, options);
+    if (!capabilities.includes(capability)) {
+      throw new CollabError({
+        code: 'operation-failed',
+        safeContext: { reason: 'lan-capability-unavailable' },
+      });
+    }
+  }
+
   listTickets(input: ListProjectTicketsInput): Promise<CollabTicketPage> {
     const query = new URLSearchParams({ status: input.status });
     if (input.cursor !== undefined) query.set('cursor', input.cursor);
@@ -299,7 +352,7 @@ export class ProjectControlClient {
   updateTicketContent(
     input: UpdateProjectTicketContentInput,
   ): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'content', {
+    return this.#ticketMutation(input, 'content', {
       body: input.body,
       title: input.title,
     });
@@ -325,14 +378,14 @@ export class ProjectControlClient {
   }
 
   closeTicket(input: ChangeProjectTicketStatusInput): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'close');
+    return this.#ticketMutation(input, 'close');
   }
 
   reopenTicket(input: ChangeProjectTicketStatusInput): Promise<CollabTicketSummary> {
-    return this.ticketMutation(input, 'reopen');
+    return this.#ticketMutation(input, 'reopen');
   }
 
-  private ticketMutation(
+  #ticketMutation(
     input: UpdateProjectTicketContentInput
       | ChangeProjectTicketStatusInput,
     action: 'close' | 'content' | 'reopen',

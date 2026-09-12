@@ -1,5 +1,4 @@
 import { randomUUID, X509Certificate } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
 
 import {
   type ClaimTransferredMembershipRequest,
@@ -16,10 +15,16 @@ import {
   isCollabProjectId,
 } from '@claudian-collab/protocol';
 
+import type { CollabLanDiscoveryPort } from '@/app/collab/discovery/CollabLanDiscoveryService';
 import {
   COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+  collabLanAuthorityTransferIdentityPath,
   collabLanAuthorityTransferOperationPath,
+  decodeLanAuthorityTransferEndpointIdentity,
+  type LanAuthorityTransferEndpointIdentity,
+  matchesLanAuthorityTransferEndpointIdentity,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferBinding';
+import { HttpsRequestError, requestHttpsBytes } from '@/app/collab/lan/httpsRequest';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -57,6 +62,7 @@ type LanClaimTransferredMembershipRequest = Extract<
 >;
 
 export interface LanAuthorityTransferTrustedHost {
+  readonly authorityGeneration?: number;
   readonly caCertificatePem: string;
   readonly caFingerprint: string;
   readonly endpoint: string;
@@ -64,6 +70,7 @@ export interface LanAuthorityTransferTrustedHost {
 }
 
 export interface LanAuthorityTransferClientOptions {
+  readonly discovery?: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidates'>;
   readonly timeoutMs?: number;
 }
 
@@ -165,16 +172,6 @@ function validateTrust(trust: LanAuthorityTransferTrustedHost): ValidatedTrust {
     throw clientError('operation-failed', 'authority-transfer-endpoint-invalid');
   }
   return { caCertificatePem, endpoint };
-}
-
-function isTlsValidationError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException)?.code ?? '';
-  return code.includes('CERT')
-    || code.includes('TLS')
-    || code === 'DEPTH_ZERO_SELF_SIGNED_CERT'
-    || code === 'SELF_SIGNED_CERT_IN_CHAIN'
-    || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
-    || code === 'ERR_TLS_CERT_ALTNAME_INVALID';
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | null {
@@ -284,16 +281,60 @@ function statusError(statusCode: number): CollabError {
 export class LanAuthorityTransferClient {
   private readonly caCertificatePem: string;
   private readonly defaultTimeoutMs: number;
-  private readonly endpoint: URL;
+  private endpoint: URL;
 
   constructor(
     private readonly trust: LanAuthorityTransferTrustedHost,
-    options: LanAuthorityTransferClientOptions = {},
+    private readonly options: LanAuthorityTransferClientOptions = {},
   ) {
     const validatedTrust = validateTrust(trust);
     this.caCertificatePem = validatedTrust.caCertificatePem;
     this.endpoint = validatedTrust.endpoint;
     this.defaultTimeoutMs = validateTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  }
+
+  get currentEndpoint(): string {
+    return this.endpoint.origin;
+  }
+
+  async resolveCurrentAuthorityEndpoint(
+    authorityGeneration: number,
+    options: LanAuthorityTransferOperationOptions = {},
+  ): Promise<string> {
+    await this.resolveCurrentIdentity(authorityGeneration, options);
+    return this.currentEndpoint;
+  }
+
+  async readCurrentTransferStatus(
+    memberCredential: string,
+    options: LanAuthorityTransferOperationOptions = {},
+  ): Promise<OperationResponse<'getProjectAuthorityTransfer'>> {
+    validateCredential(memberCredential);
+    if (this.trust.authorityGeneration === undefined) {
+      throw clientError('operation-failed', 'authority-transfer-source-generation-missing');
+    }
+    const identity = await this.resolveCurrentIdentity(this.trust.authorityGeneration, options);
+    if (!identity.transferId) {
+      throw clientError('operation-failed', 'authority-transfer-source-not-transferred');
+    }
+    return this.requestWithMember('getProjectAuthorityTransfer', {
+      projectId: this.trust.projectId, transferId: identity.transferId,
+    }, memberCredential, options);
+  }
+
+  private async resolveCurrentIdentity(
+    authorityGeneration: number,
+    options: LanAuthorityTransferOperationOptions,
+  ): Promise<LanAuthorityTransferEndpointIdentity> {
+    const expected = decodeLanAuthorityTransferEndpointIdentity({
+      authorityGeneration, projectId: this.trust.projectId, transferId: null,
+    });
+    const identity = await this.probeEndpoint(expected, this.endpoint, options);
+    if (identity) return identity;
+    const resolved = this.options.discovery ? await this.resolveEndpoint(expected, options) : null;
+    if (!resolved) throw clientError('endpoint-unreachable', 'authority-transfer-connection-failed');
+    this.endpoint = resolved.endpoint;
+    return resolved.identity;
   }
 
   requestWithMember<Operation extends LanAuthorityTransferMemberOperation>(
@@ -356,112 +397,175 @@ export class LanAuthorityTransferClient {
     }
     const timeoutMs = validateTimeout(options.timeoutMs ?? this.defaultTimeoutMs);
     const requestId = randomUUID();
+    const send = (endpoint: URL) => this.requestAtEndpoint(
+      operation, decodedRequest, authentication, { body, endpoint, requestId, signal: options.signal, timeoutMs },
+    );
+    try {
+      return await send(this.endpoint);
+    } catch (error) {
+      if (!this.options.discovery || !(error instanceof CollabError)
+        || (error.code !== 'endpoint-unreachable' && error.code !== 'operation-timeout'
+          && error.code !== 'tls-untrusted')) throw error;
+      const expected = decodeLanAuthorityTransferEndpointIdentity({
+        authorityGeneration: this.trust.authorityGeneration
+          ?? ('expectedAuthorityGeneration' in decodedRequest ? decodedRequest.expectedAuthorityGeneration : null),
+        projectId: this.trust.projectId,
+        transferId: 'transferId' in decodedRequest ? decodedRequest.transferId : null,
+      });
+      const resolved = await this.resolveEndpoint(expected, options);
+      if (!resolved) throw error;
+      this.endpoint = resolved.endpoint;
+      return send(resolved.endpoint);
+    }
+  }
+
+  private async resolveEndpoint(
+    expected: LanAuthorityTransferEndpointIdentity,
+    options: LanAuthorityTransferOperationOptions,
+  ): Promise<{ readonly endpoint: URL; readonly identity: LanAuthorityTransferEndpointIdentity } | null> {
+    const candidates = await this.options.discovery!.discoverProjectCandidates(
+      this.trust.projectId, this.trust.caFingerprint, options,
+    );
+    if (options.signal?.aborted) throw clientError('cancelled', 'authority-transfer-request-cancelled');
+    if (candidates.length > 8) throw clientError('operation-failed', 'authority-transfer-endpoint-ambiguous');
+    const endpoints = new Map<string, URL>();
+    for (const candidate of candidates) {
+      if (candidate.projectId !== this.trust.projectId || candidate.caFingerprint !== this.trust.caFingerprint) continue;
+      try {
+        const validated = validateTrust({ ...this.trust, endpoint: candidate.endpoint });
+        endpoints.set(validated.endpoint.origin, validated.endpoint);
+      } catch { /* Discovery metadata is untrusted. */ }
+    }
+    const probes = await Promise.all([...endpoints.values()].map(async endpoint => {
+      const identity = await this.probeEndpoint(expected, endpoint, options);
+      return identity ? { endpoint, identity } : null;
+    }));
+    const verified = probes.filter(resolved => resolved !== null);
+    if (verified.length > 1) throw clientError('operation-failed', 'authority-transfer-endpoint-ambiguous');
+    return verified[0] ?? null;
+  }
+
+  private async probeEndpoint(
+    expected: LanAuthorityTransferEndpointIdentity,
+    endpoint: URL,
+    options: LanAuthorityTransferOperationOptions,
+  ): Promise<LanAuthorityTransferEndpointIdentity | null> {
+    const requestId = randomUUID();
+    const body = Buffer.from(JSON.stringify(expected), 'utf8');
+    const response = await requestHttpsBytes({
+      ca: this.caCertificatePem,
+      headers: {
+        accept: 'application/json', 'content-length': String(body.byteLength),
+        'content-type': 'application/json', 'x-request-id': requestId,
+      },
+      hostname: endpoint.hostname, method: 'POST',
+      path: collabLanAuthorityTransferIdentityPath(this.trust.projectId), port: Number(endpoint.port),
+    }, {
+      body, maxResponseBytes: 4_096, signal: options.signal,
+      timeoutMs: Math.min(2_000, options.timeoutMs ?? this.defaultTimeoutMs),
+    }).catch((error: unknown) => {
+      if (!(error instanceof HttpsRequestError)) throw error;
+      if (error.reason === 'cancelled') throw clientError('cancelled', 'authority-transfer-request-cancelled');
+      if (error.reason === 'response-too-large') {
+        throw clientError('protocol-payload-invalid', 'authority-transfer-endpoint-identity-mismatch');
+      }
+      return null;
+    });
+    if (!response) return null;
+    const contentType = response.headers['content-type'];
+    let envelope: Record<string, unknown> | null = null;
+    try { envelope = record(JSON.parse(response.body.toString('utf8'))); } catch { /* Reject below. */ }
+    if (envelope) {
+      const versionError = responseVersionError(envelope);
+      if (versionError) throw versionError;
+    }
+    if (response.statusCode !== 200 || !envelope || typeof contentType !== 'string'
+      || !/^application\/json(?:\s*;|$)/i.test(contentType)
+      || !exactKeys(envelope, ['bindingVersion', 'data', 'protocolVersion', 'requestId'])
+      || envelope.requestId !== requestId) {
+      throw clientError('operation-failed', 'authority-transfer-endpoint-identity-mismatch');
+    }
+    let actual: LanAuthorityTransferEndpointIdentity;
+    try { actual = decodeLanAuthorityTransferEndpointIdentity(envelope.data); } catch {
+      throw clientError('protocol-payload-invalid', 'authority-transfer-endpoint-identity-mismatch');
+    }
+    if (!matchesLanAuthorityTransferEndpointIdentity(expected, actual)) {
+      throw clientError('operation-failed', 'authority-transfer-endpoint-identity-mismatch');
+    }
+    return actual;
+  }
+
+  private async requestAtEndpoint<Operation extends CollabAuthorityTransferOperation>(
+    operation: Operation,
+    decodedRequest: OperationRequest<Operation>,
+    authentication: RequestAuthentication,
+    options: {
+      readonly body: Buffer;
+      readonly endpoint: URL;
+      readonly requestId: string;
+      readonly signal?: AbortSignal;
+      readonly timeoutMs: number;
+    },
+  ): Promise<OperationResponse<Operation>> {
+    const { body, endpoint, requestId, timeoutMs } = options;
     const path = collabLanAuthorityTransferOperationPath(
       this.trust.projectId,
       operation,
     );
-    const responseValue = await new Promise<unknown>((resolve, reject) => {
-      let settled = false;
-      const finish = (action: () => void) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        options.signal?.removeEventListener('abort', onAbort);
-        action();
-      };
-      const outgoing = httpsRequest({
-        ca: this.caCertificatePem,
-        headers: {
-          accept: 'application/json',
-          authorization: authentication.authorization,
-          'content-length': String(body.byteLength),
-          'content-type': 'application/json',
-          'x-request-id': requestId,
-        },
-        hostname: this.endpoint.hostname,
-        method: 'POST',
-        minVersion: 'TLSv1.2',
-        path,
-        port: Number(this.endpoint.port),
-        rejectUnauthorized: true,
-      }, incoming => {
-        const chunks: Buffer[] = [];
-        let observed = 0;
-        incoming.on('data', chunk => {
-          const bytes = Buffer.from(chunk as Uint8Array);
-          observed += bytes.byteLength;
-          if (observed > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) {
-            incoming.destroy();
-            finish(() => reject(clientError(
-              'protocol-payload-invalid',
-              'authority-transfer-response-too-large',
-            )));
-            return;
-          }
-          chunks.push(bytes);
-        });
-        incoming.once('error', () => finish(() => reject(clientError(
-          'endpoint-unreachable',
-          'authority-transfer-response-failed',
-        ))));
-        incoming.once('end', () => {
-          if (settled) return;
-          const statusCode = incoming.statusCode ?? 0;
-          const contentType = incoming.headers['content-type'];
-          if (
-            typeof contentType !== 'string'
-            || !/^application\/json(?:\s*;|$)/i.test(contentType)
-          ) {
-            finish(() => reject(clientError(
-              'protocol-payload-invalid',
-              'authority-transfer-response-content-type-invalid',
-            )));
-            return;
-          }
-          try {
-            const value = JSON.parse(
-              Buffer.concat(chunks).toString('utf8'),
-            ) as unknown;
-            if (statusCode !== 200) {
-              finish(() => reject(
-                decodeErrorEnvelope(value, requestId) ?? statusError(statusCode),
-              ));
-              return;
-            }
-            finish(() => resolve(value));
-          } catch {
-            finish(() => reject(
-              statusCode === 200
-                ? clientError(
-                  'protocol-payload-invalid',
-                  'authority-transfer-response-json-invalid',
-                )
-                : statusError(statusCode),
-            ));
-          }
-        });
-      });
-      const onAbort = () => finish(() => {
-        outgoing.destroy();
-        reject(clientError('cancelled', 'authority-transfer-request-cancelled'));
-      });
-      const timer = window.setTimeout(() => finish(() => {
-        outgoing.destroy();
-        reject(clientError('operation-timeout', 'authority-transfer-request-timeout'));
-      }), timeoutMs);
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-      outgoing.once('error', error => finish(() => reject(clientError(
-        isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
-        isTlsValidationError(error)
-          ? 'authority-transfer-tls-validation-failed'
-          : 'authority-transfer-connection-failed',
-      ))));
-      if (options.signal?.aborted) {
-        onAbort();
-        return;
+    const response = await requestHttpsBytes({
+      ca: this.caCertificatePem,
+      headers: {
+        accept: 'application/json',
+        authorization: authentication.authorization,
+        'content-length': String(body.byteLength),
+        'content-type': 'application/json',
+        'x-request-id': requestId,
+      },
+      hostname: endpoint.hostname,
+      method: 'POST',
+      path,
+      port: Number(endpoint.port),
+    }, {
+      body,
+      maxResponseBytes: COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
+      signal: options.signal,
+      timeoutMs,
+    }).catch((error: unknown) => {
+      if (!(error instanceof HttpsRequestError)) throw error;
+      switch (error.reason) {
+        case 'cancelled':
+          throw clientError('cancelled', 'authority-transfer-request-cancelled');
+        case 'timeout':
+          throw clientError('operation-timeout', 'authority-transfer-request-timeout');
+        case 'response-too-large':
+          throw clientError('protocol-payload-invalid', 'authority-transfer-response-too-large');
+        case 'response-failed':
+          throw clientError('endpoint-unreachable', 'authority-transfer-response-failed');
+        case 'tls-untrusted':
+          throw clientError('tls-untrusted', 'authority-transfer-tls-validation-failed');
+        case 'connection-failed':
+          throw clientError('endpoint-unreachable', 'authority-transfer-connection-failed');
       }
-      outgoing.end(body);
     });
+    const { statusCode } = response;
+    const contentType = response.headers['content-type'];
+    if (
+      typeof contentType !== 'string'
+      || !/^application\/json(?:\s*;|$)/i.test(contentType)
+    ) {
+      throw clientError('protocol-payload-invalid', 'authority-transfer-response-content-type-invalid');
+    }
+    let responseValue: unknown;
+    try {
+      responseValue = JSON.parse(response.body.toString('utf8')) as unknown;
+    } catch {
+      throw statusCode === 200
+        ? clientError('protocol-payload-invalid', 'authority-transfer-response-json-invalid')
+        : statusError(statusCode);
+    }
+    if (statusCode !== 200) {
+      throw decodeErrorEnvelope(responseValue, requestId) ?? statusError(statusCode);
+    }
     const envelope = record(responseValue);
     if (!envelope) {
       throw clientError('protocol-payload-invalid', 'authority-transfer-response-invalid');

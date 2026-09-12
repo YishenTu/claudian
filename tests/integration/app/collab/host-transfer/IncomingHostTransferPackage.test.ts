@@ -3,9 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+
+import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import { createHostTransferPackageManifest, digestHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import { advanceHostTransferRecoveryRecord, createHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecovery';
+import type { IncomingHostTransferPackageOptions } from '@/app/collab/host-transfer/IncomingHostTransferPackage';
 import { IncomingHostTransferPackage } from '@/app/collab/host-transfer/IncomingHostTransferPackage';
 
 const NOW = '2026-08-13T00:00:00.000Z';
@@ -18,9 +23,14 @@ describe('IncomingHostTransferPackage', () => {
   let authorityDirectory: string;
   let stagingDirectory: string;
   let run: jest.Mock;
+  let resources: CollabLocalProjectRepository;
+  let binding: HostInstallationBindingService;
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-incoming-package-'));
+    resources = new CollabLocalProjectRepository(root, { installationKey: TEST_INSTALLATION_A });
+    binding = new HostInstallationBindingService({ projects: resources, installationKey: TEST_INSTALLATION_A, prepareLegacyRuntime: async () => undefined, bindEligibleLegacyRecovery: async () => undefined });
+    await resources.createOwnedAuthorityDirectory('project-alpha');
     workspace = new CollabWorkspaceService(root);
     await workspace.claimProjectsFolder('Projects');
     const reserved = await workspace.reserveProjectsFolderChild('Projects', {
@@ -49,6 +59,14 @@ describe('IncomingHostTransferPackage', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  const installAuthority: IncomingHostTransferPackageOptions['installAuthority'] = async input => {
+    const resource = await binding.bindTransferTarget(input.record.projectId, {
+      kind: 'host-transfer', operationId: input.record.transferId, transferId: input.record.transferId,
+      sourceGeneration: input.authorityGeneration, targetGeneration: input.authorityGeneration,
+    }, input.validateLegacy);
+    await resources.withAuthorityDirectory(resource, () => input.install(resource.authorityDirectory));
+  };
+
   it('streams, validates, installs, and activates one exact package idempotently', async () => {
     const git = Buffer.from('bundle bytes');
     const authority = Buffer.from('inert database bytes');
@@ -68,7 +86,7 @@ describe('IncomingHostTransferPackage', () => {
     });
     const record = stagedRecord(digestHostTransferPackageManifest(manifest));
     const snapshots = {
-      activate: jest.fn().mockResolvedValue({ bytes: activated, eventSequence: 12 }),
+      activate: jest.fn().mockResolvedValue({ bytes: activated, authorityGeneration: 1, eventSequence: 12 }),
       inspectInert: jest.fn().mockResolvedValue({
         eventSequence: 11,
         expectedRefs: ['refs/heads/main', 'refs/heads/members/member-target'],
@@ -82,10 +100,7 @@ describe('IncomingHostTransferPackage', () => {
       resolveRef: jest.fn().mockResolvedValue(MAIN_OID),
     };
     const service = new IncomingHostTransferPackage({
-      ensureAuthorityDirectory: async () => {
-        await mkdir(authorityDirectory, { recursive: true });
-        return authorityDirectory;
-      },
+      installAuthority,
       projectsFolder: 'Projects',
       readPinnedSourceCa: jest.fn().mockResolvedValue('source-ca'),
       repositories: repositories as never,
@@ -121,7 +136,7 @@ describe('IncomingHostTransferPackage', () => {
       manifestDigest: certificate.manifestDigest,
       record,
     })).resolves.toEqual({
-      eventSequence: 12,
+      eventSequence: 12, proofChainDigest: '3'.repeat(64),
     });
     await expect(readFile(path.join(authorityDirectory, 'collab.db')))
       .resolves.toEqual(activated);
@@ -149,7 +164,7 @@ describe('IncomingHostTransferPackage', () => {
       transferId: 'transfer-alpha',
     });
     const service = new IncomingHostTransferPackage({
-      ensureAuthorityDirectory: jest.fn(),
+      installAuthority,
       projectsFolder: 'Projects',
       readPinnedSourceCa: jest.fn(),
       repositories: {} as never,
@@ -193,6 +208,7 @@ describe('IncomingHostTransferPackage', () => {
     const snapshots = {
       activate: jest.fn().mockResolvedValue({
         bytes: migratedActivated,
+        authorityGeneration: 1,
         eventSequence: 12,
         legacyActivatedBytes: legacyActivated,
       }),
@@ -235,7 +251,7 @@ describe('IncomingHostTransferPackage', () => {
       activationCertificate: certificate,
       manifestDigest,
       record,
-    })).resolves.toEqual({ eventSequence: 12 });
+    })).resolves.toEqual({ eventSequence: 12, proofChainDigest: '3'.repeat(64) });
     await expect(readFile(path.join(authorityDirectory, 'collab.db')))
       .resolves.toEqual(migratedActivated);
 
@@ -251,7 +267,7 @@ describe('IncomingHostTransferPackage', () => {
       activationCertificate: certificate,
       manifestDigest,
       record,
-    })).resolves.toEqual({ eventSequence: 12 });
+    })).resolves.toEqual({ eventSequence: 12, proofChainDigest: '3'.repeat(64) });
     await expect(readFile(
       path.join(authorityDirectory, '.host-transfer-install-owner.json'),
       'utf8',
@@ -278,10 +294,7 @@ describe('IncomingHostTransferPackage', () => {
       resolveRef: jest.fn().mockResolvedValue(MAIN_OID),
     };
     return new IncomingHostTransferPackage({
-      ensureAuthorityDirectory: async () => {
-        await mkdir(authorityDirectory, { recursive: true });
-        return authorityDirectory;
-      },
+      installAuthority,
       projectsFolder: 'Projects',
       readPinnedSourceCa: jest.fn().mockResolvedValue('source-ca'),
       repositories: repositories as never,

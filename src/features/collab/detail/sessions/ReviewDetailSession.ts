@@ -7,7 +7,7 @@ import {
   type WorkspaceLeaf,
 } from 'obsidian';
 
-import { type CollabAcceptRequest, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabPublicationReview, type CollabRequestReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
+import { type CollabAcceptRequest, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabProjectUpdateOutcome, type CollabPublicationReview, type CollabPublishOutcome, type CollabRequestReview, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabConflictDetailViewState,
@@ -47,9 +47,10 @@ export type ReviewDetailSessionPort = Pick<
   | 'addComment'
   | 'addTicketComment'
   | 'closeTicket'
+  | 'confirmUpdate'
   | 'confirmPublish'
   | 'createTicket'
-  | 'listTickets'
+  | 'resolveTicketNumber'
   | 'preparePublicationReview'
   | 'prepareReview'
   | 'prepareWorkingTreeReview'
@@ -125,6 +126,7 @@ export class ReviewDetailSession {
   }
 
   get displayText(): string {
+    if (this.state?.kind === 'publication' && this.state.intent === 'update') return t('collab.update.reviewTitle');
     return this.state?.kind === 'publication' || this.state?.kind === 'working-tree'
       ? t('collab.review.publicationTitle')
       : t('collab.review.title');
@@ -171,9 +173,9 @@ export class ReviewDetailSession {
       this.state = selected
         ? { ...state, selectedPath: selected.path }
         : { ...state, selectedPath: undefined };
-      this.publishState();
+      this.#publishState();
       if (isRequestReview(this.review) && this.requestReviewTab === 'overview') {
-        if (this.reviewPresentationChanged(previousReview, this.review)) {
+        if (this.#reviewPresentationChanged(previousReview, this.review)) {
           const ownsRequest = this.coordination?.snapshot.currentMember.id
             === this.review.detail.request.memberId;
           if (
@@ -182,7 +184,7 @@ export class ReviewDetailSession {
           ) {
             this.descriptionEditor?.setValue(this.review.detail.request.description);
           }
-          this.renderRequestCommentItems(this.review);
+          this.#renderRequestCommentItems(this.review);
         }
         return;
       }
@@ -193,37 +195,37 @@ export class ReviewDetailSession {
       }
       return;
     }
-    this.cancelWork({ retainDiff: true });
+    this.#cancelWork({ retainDiff: true });
     this.state = state;
-    this.publishState();
-    await this.loadReview(state);
+    this.#publishState();
+    await this.#loadReview(state);
   }
 
   selectPath(path: string): void {
     if (!this.state) return;
     this.state = { ...this.state, selectedPath: path };
-    this.publishState();
+    this.#publishState();
   }
 
   refresh(): Promise<void> {
     const state = this.state;
     return state?.kind === 'request'
-      ? this.refreshRequestCoordination(state)
+      ? this.#refreshRequestCoordination(state)
       : Promise.resolve();
   }
 
   destroy(options: { readonly retainDiff?: boolean } = {}): void {
     this.generation += 1;
-    this.cancelWork(options);
+    this.#cancelWork(options);
   }
 
-  private async loadReview(state: CollabReviewDetailViewState): Promise<void> {
+  async #loadReview(state: CollabReviewDetailViewState): Promise<void> {
     const generation = ++this.generation;
-    this.renderMessage(t('collab.review.loading'));
+    this.#renderMessage(t('collab.review.loading'));
     const controller = new AbortController();
     this.reviewController = controller;
     try {
-      this.publishDescription = await this.port.readPublishDescription(
+      this.publishDescription = state.kind === 'publication' && state.intent === 'update' ? null : await this.port.readPublishDescription(
         state.projectId,
         { signal: controller.signal },
       ).then(result => result.status === 'success' ? result.value : null, () => null);
@@ -271,7 +273,7 @@ export class ReviewDetailSession {
       if (controller.signal.aborted || generation !== this.generation) return;
       assertReviewMatchesState(review, state);
       this.review = review;
-      this.renderReview(review, snapshot, state.selectedPath);
+      this.#renderReview(review, snapshot, state.selectedPath);
       if (isRequestReview(review)) {
         if (this.requestReviewTab === 'overview') return;
         this.requestChangesLoaded = true;
@@ -280,18 +282,18 @@ export class ReviewDetailSession {
     } catch {
       if (controller.signal.aborted || generation !== this.generation) return;
       this.diffSession.clear();
-      this.renderMessage(t('collab.review.loadFailed'), true);
+      this.#renderMessage(t('collab.review.loadFailed'), true);
     } finally {
       if (this.reviewController === controller) this.reviewController = null;
     }
   }
 
-  private renderReview(
+  #renderReview(
     review: CollabDisplayReview,
     coordination: CollabCoordinationSnapshot | null,
     selectedPath?: string,
   ): void {
-    this.destroyDescriptionEditor();
+    this.#destroyDescriptionEditor();
     this.rootEl.replaceChildren();
     this.coordination = coordination;
     this.requestChangesLoaded = false;
@@ -313,24 +315,26 @@ export class ReviewDetailSession {
     const header = this.rootEl.createDiv({ cls: 'claudian-collab-review-header' });
     if (isRequestReview(review)) header.classList.add('is-request');
     header.createEl('h2', {
-      text: !isRequestReview(review)
+      text: isPublicationReview(review) && review.intent === 'update' ? t('collab.update.reviewTitle') : !isRequestReview(review)
         ? t('collab.review.publicationTitle')
         : `${t('collab.review.title')} @${memberNames.get(review.detail.request.memberId)
           ?? t('collab.team.unknownMember')}`,
     });
-    if (!isRequestReview(review)) {
-      this.renderDescriptionEditor(header, review, coordination);
+    if (isPublicationReview(review) && review.intent === 'update') {
+      this.#renderReviewDisplayControls(header);
+    } else if (!isRequestReview(review)) {
+      this.#renderDescriptionEditor(header, review, coordination);
     }
     if (isRequestReview(review)) {
-      this.renderRequestAcceptAction(header, review, coordination);
+      this.#renderRequestAcceptAction(header, review, coordination);
     } else if (isPublicationReview(review) && review.canConfirm) {
       header.classList.add('has-primary-action');
       const confirm = header.createEl('button', {
-        attr: { 'data-collab-action': 'confirm-publish', type: 'button' },
+        attr: { 'data-collab-action': review.intent === 'update' ? 'confirm-update' : 'confirm-publish', type: 'button' },
         cls: 'claudian-collab-review-accept',
-        text: t('collab.publish.action'),
+        text: review.intent === 'update' ? t('collab.update.action') : t('collab.publish.action'),
       });
-      this.requireDescription(confirm);
+      if (review.intent !== 'update') this.#requireDescription(confirm);
       confirm.addEventListener('click', () => {
         void this.confirmPublish(review, confirm);
       });
@@ -341,9 +345,9 @@ export class ReviewDetailSession {
         cls: 'claudian-collab-review-accept',
         text: t('collab.publish.action'),
       });
-      this.requireDescription(publish);
+      this.#requireDescription(publish);
       publish.addEventListener('click', () => {
-        void this.publishWorkingTree(review, publish);
+        void this.#publishWorkingTree(review, publish);
       });
     }
     const selected = review.files.find(file => file.path === selectedPath) ?? review.files[0];
@@ -351,7 +355,7 @@ export class ReviewDetailSession {
       this.state = selected
         ? { ...this.state, selectedPath: selected.path }
         : { ...this.state, selectedPath: undefined };
-      this.publishState();
+      this.#publishState();
     }
     if (isRequestReview(review)) {
       const tabs = header.createDiv({
@@ -366,7 +370,7 @@ export class ReviewDetailSession {
         attr: { role: 'tab', type: 'button' },
         text: t('collab.review.changes', { count: review.files.length }),
       });
-      const condition = this.reviewCondition(review);
+      const condition = this.#reviewCondition(review);
       if (condition) {
         tabs.createDiv({
           cls: `claudian-collab-review-condition is-${condition.kind}`,
@@ -379,7 +383,7 @@ export class ReviewDetailSession {
           'claudian-collab-review-overview-controls',
         ],
       });
-      const changesControls = this.renderReviewDisplayControls(tabs);
+      const changesControls = this.#renderReviewDisplayControls(tabs);
       changesControls.classList.add('claudian-collab-review-changes-controls');
       const overview = this.rootEl.createDiv({
         attr: { role: 'tabpanel' },
@@ -390,8 +394,8 @@ export class ReviewDetailSession {
         cls: 'claudian-collab-review-content claudian-collab-review-changes',
       });
       this.contentHostEl = changes;
-      this.renderDescriptionEditor(overview, review, coordination, overviewControls);
-      this.renderRequestComments(overview, review, coordination);
+      this.#renderDescriptionEditor(overview, review, coordination, overviewControls);
+      this.#renderRequestComments(overview, review, coordination);
       const activate = (tab: 'changes' | 'overview', loadChanges: boolean): void => {
         this.requestReviewTab = tab;
         const showingOverview = tab === 'overview';
@@ -409,7 +413,7 @@ export class ReviewDetailSession {
             : selected?.path;
           const current = this.review;
           if (current && isRequestReview(current)) {
-            this.startRequestChanges(current, activePath);
+            this.#startRequestChanges(current, activePath);
           }
         }
       };
@@ -427,7 +431,7 @@ export class ReviewDetailSession {
     }
   }
 
-  private renderRequestAcceptAction(
+  #renderRequestAcceptAction(
     header: HTMLElement,
     review: CollabRequestReview,
     coordination: CollabCoordinationSnapshot | null,
@@ -454,7 +458,7 @@ export class ReviewDetailSession {
     });
   }
 
-  private async refreshRequestCoordination(state: CollabRequestDetailViewState): Promise<void> {
+  async #refreshRequestCoordination(state: CollabRequestDetailViewState): Promise<void> {
     if (this.acceptController) {
       this.requestCoordinationRefreshPending = true;
       return;
@@ -524,7 +528,7 @@ export class ReviewDetailSession {
       const normalizedReview = refreshFailed
         ? { ...mergedReview, canAccept: false }
         : withFreshAcceptEligibility(mergedReview, coordination);
-      this.applyRefreshedRequestReview(currentReview, normalizedReview, coordination);
+      this.#applyRefreshedRequestReview(currentReview, normalizedReview, coordination);
     } finally {
       if (this.requestCoordinationController === controller) {
         this.requestCoordinationController = null;
@@ -532,19 +536,19 @@ export class ReviewDetailSession {
     }
   }
 
-  private applyRefreshedRequestReview(
+  #applyRefreshedRequestReview(
     previous: CollabRequestReview,
     review: CollabRequestReview,
     coordination: CollabCoordinationSnapshot | null,
   ): void {
     const identityChanged = !reviewsShareIdentity(previous, review);
-    const presentationChanged = this.reviewPresentationChanged(previous, review);
+    const presentationChanged = this.#reviewPresentationChanged(previous, review);
     const selected = review.files.find(file => (
       this.state?.kind === 'request' && file.path === this.state.selectedPath
     )) ?? review.files[0];
     this.review = review;
     this.state = requestState(review, selected?.path);
-    this.publishState();
+    this.#publishState();
     this.coordination = coordination;
     this.memberNames = new Map(
       coordination?.snapshot.members.map(member => [member.id, member.displayName]) ?? [],
@@ -552,14 +556,14 @@ export class ReviewDetailSession {
     if (coordination) this.preparedReviews?.store({ coordination, review });
 
     if (previous.detail.request.status === 'open' && review.detail.request.status !== 'open') {
-      this.renderReview(review, coordination, selected?.path);
-      if (this.requestReviewTab === 'changes') this.startRequestChanges(review, selected?.path);
+      this.#renderReview(review, coordination, selected?.path);
+      if (this.requestReviewTab === 'changes') this.#startRequestChanges(review, selected?.path);
       return;
     }
 
     const header = this.rootEl.querySelector<HTMLElement>('.claudian-collab-review-header');
     if (header) {
-      this.renderRequestAcceptAction(header, review, coordination);
+      this.#renderRequestAcceptAction(header, review, coordination);
       const title = header.querySelector('h2');
       if (title) {
         title.textContent = `${t('collab.review.title')} @${this.memberNames.get(
@@ -569,7 +573,7 @@ export class ReviewDetailSession {
       const tabs = header.querySelectorAll<HTMLButtonElement>('[role="tab"]');
       if (tabs[1]) tabs[1].textContent = t('collab.review.changes', { count: review.files.length });
       const conditionEl = header.querySelector<HTMLElement>('.claudian-collab-review-condition');
-      const condition = this.reviewCondition(review);
+      const condition = this.#reviewCondition(review);
       if (conditionEl && condition) {
         conditionEl.className = `claudian-collab-review-condition is-${condition.kind}`;
         conditionEl.textContent = condition.text;
@@ -587,7 +591,7 @@ export class ReviewDetailSession {
       }
     }
     if (presentationChanged || identityChanged) {
-      this.renderRequestCommentItems(review);
+      this.#renderRequestCommentItems(review);
     }
 
     if (identityChanged) {
@@ -597,15 +601,15 @@ export class ReviewDetailSession {
     }
     if (this.requestReviewTab === 'changes' && identityChanged) {
       this.requestChangesLoaded = false;
-      this.startRequestChanges(review, selected?.path);
+      this.#startRequestChanges(review, selected?.path);
     }
   }
 
-  private renderReviewDisplayControls(metadata: HTMLElement): HTMLElement {
+  #renderReviewDisplayControls(metadata: HTMLElement): HTMLElement {
     return this.diffSession.createControls(metadata);
   }
 
-  private renderDescriptionEditor(
+  #renderDescriptionEditor(
     host: HTMLElement,
     review: CollabDisplayReview,
     coordination: CollabCoordinationSnapshot | null,
@@ -625,14 +629,14 @@ export class ReviewDetailSession {
         cls: 'claudian-collab-review-summary',
         text: t('collab.review.fileCount', { count: review.files.length }),
       });
-      const condition = this.reviewCondition(review);
+      const condition = this.#reviewCondition(review);
       if (condition) {
         metadata.createDiv({
           cls: `claudian-collab-review-condition is-${condition.kind}`,
           text: condition.text,
         });
       }
-      this.renderReviewDisplayControls(metadata);
+      this.#renderReviewDisplayControls(metadata);
     }
     const request = isRequestReview(review)
       ? review.detail.request
@@ -663,7 +667,7 @@ export class ReviewDetailSession {
       initialValue,
       ...(this.openTicketInNewTab ? {
         onOpenTicket: (ticketNumber: number) => (
-          this.openTicketReference(review.projectId, ticketNumber)
+          this.#openTicketReference(review.projectId, ticketNumber)
         ),
       } : {}),
       ...(isRequestReview(review) ? {
@@ -731,13 +735,13 @@ export class ReviewDetailSession {
       text: t('collab.publish.saveDescription'),
     });
     save.addEventListener('click', () => {
-      void this.saveRequestDescription(review, input, save, status).then(saved => {
+      void this.#saveRequestDescription(review, input, save, status).then(saved => {
         if (saved) exitEditing();
       });
     });
   }
 
-  private async saveRequestDescription(
+  async #saveRequestDescription(
     review: CollabRequestReview,
     input: MarkdownDraftEditor,
     button: HTMLButtonElement,
@@ -766,7 +770,7 @@ export class ReviewDetailSession {
         ...mutation,
         intentId,
       }, { signal: controller.signal });
-      const currentReview = this.currentRequestMutationReview(activeReview);
+      const currentReview = this.#currentRequestMutationReview(activeReview);
       if (
         controller.signal.aborted
         || !currentReview
@@ -814,7 +818,7 @@ export class ReviewDetailSession {
     } catch {
       if (
         controller.signal.aborted
-        || !this.currentRequestMutationReview(activeReview)
+        || !this.#currentRequestMutationReview(activeReview)
       ) return false;
       button.disabled = false;
       status.setText(t('collab.publish.descriptionSaveFailed'));
@@ -826,7 +830,7 @@ export class ReviewDetailSession {
     }
   }
 
-  private currentRequestMutationReview(
+  #currentRequestMutationReview(
     expected: CollabRequestReview,
   ): CollabRequestReview | null {
     const current = this.review;
@@ -838,7 +842,7 @@ export class ReviewDetailSession {
       : null;
   }
 
-  private renderRequestComments(
+  #renderRequestComments(
     host: HTMLElement,
     review: CollabRequestReview,
     coordination: CollabCoordinationSnapshot | null,
@@ -848,7 +852,7 @@ export class ReviewDetailSession {
     this.requestCommentsListEl = section.createDiv({
       cls: 'claudian-collab-request-comment-list',
     });
-    this.renderRequestCommentItems(review);
+    this.#renderRequestCommentItems(review);
     if (review.detail.request.status !== 'open') return;
     const composer = new CollabCommentComposer(section, {
       actionName: 'request-comment',
@@ -857,10 +861,10 @@ export class ReviewDetailSession {
       label: t('collab.comments.input'),
       ...(this.openTicketInNewTab ? {
         onOpenTicket: (ticketNumber: number) => (
-          this.openTicketReference(review.projectId, ticketNumber)
+          this.#openTicketReference(review.projectId, ticketNumber)
         ),
       } : {}),
-      onSubmit: (body, button, status) => this.submitRequestComment(
+      onSubmit: (body, button, status) => this.#submitRequestComment(
         review,
         body,
         button,
@@ -882,7 +886,7 @@ export class ReviewDetailSession {
     this.requestCommentComposer = composer;
   }
 
-  private renderRequestCommentItems(review: CollabRequestReview): void {
+  #renderRequestCommentItems(review: CollabRequestReview): void {
     const title = this.requestCommentsTitleEl;
     const list = this.requestCommentsListEl;
     if (!title || !list) return;
@@ -909,7 +913,7 @@ export class ReviewDetailSession {
       }, {
         ...(this.openTicketInNewTab ? {
           onOpenTicket: (ticketNumber: number) => (
-            this.openTicketReference(review.projectId, ticketNumber)
+            this.#openTicketReference(review.projectId, ticketNumber)
           ),
         } : {}),
         renderMarkdown: (markdown, markdownHost) => MarkdownRenderer.render(
@@ -923,7 +927,7 @@ export class ReviewDetailSession {
     }
   }
 
-  private async submitRequestComment(
+  async #submitRequestComment(
     renderedReview: CollabRequestReview,
     body: string,
     button: HTMLButtonElement,
@@ -958,7 +962,7 @@ export class ReviewDetailSession {
       status.setText(t('collab.comments.submitFailed'));
       return;
     }
-    this.adoptRequestComment(review, result.value);
+    this.#adoptRequestComment(review, result.value);
     this.mutationIntents.clear('comment', intentId);
     this.requestCommentComposer?.editor.setValue('');
     button.disabled = false;
@@ -966,11 +970,11 @@ export class ReviewDetailSession {
     status.setText('');
   }
 
-  private currentDescription(): string {
+  #currentDescription(): string {
     return this.descriptionEditor?.getValue() ?? '';
   }
 
-  private async openTicketReference(projectId: string, ticketNumber: number): Promise<void> {
+  async #openTicketReference(projectId: string, ticketNumber: number): Promise<void> {
     const openTicketInNewTab = this.openTicketInNewTab;
     if (!openTicketInNewTab) return;
     const generation = this.generation;
@@ -982,7 +986,7 @@ export class ReviewDetailSession {
     );
   }
 
-  private requireDescription(button: HTMLButtonElement): void {
+  #requireDescription(button: HTMLButtonElement): void {
     const input = this.descriptionEditor;
     if (!input) return;
     const update = () => {
@@ -998,7 +1002,7 @@ export class ReviewDetailSession {
     update();
   }
 
-  private startRequestChanges(review: CollabRequestReview, selectedPath?: string): void {
+  #startRequestChanges(review: CollabRequestReview, selectedPath?: string): void {
     if (this.requestChangesLoaded || this.review !== review) return;
     this.requestChangesLoaded = true;
     const host = this.contentHostEl;
@@ -1006,7 +1010,7 @@ export class ReviewDetailSession {
     this.diffSession.show(host, review, selectedPath);
   }
 
-  private reviewPresentationChanged(
+  #reviewPresentationChanged(
     previous: CollabDisplayReview,
     current: CollabDisplayReview,
   ): boolean {
@@ -1037,7 +1041,7 @@ export class ReviewDetailSession {
     this.acceptController = controller;
     button.disabled = true;
     button.textContent = t('collab.review.accepting');
-    const mutation = this.acceptMutation(review);
+    const mutation = this.#acceptMutation(review);
     const intentId = this.mutationIntents.intent('accept', mutation);
     const mutationIdentity = JSON.stringify(mutation);
     try {
@@ -1050,7 +1054,7 @@ export class ReviewDetailSession {
         !controller.signal.aborted
         && current
         && isRequestReview(current)
-        && JSON.stringify(this.acceptMutation(current)) === mutationIdentity
+        && JSON.stringify(this.#acceptMutation(current)) === mutationIdentity
       ) {
         this.mutationIntents.clear('accept', intentId);
         const detail = {
@@ -1079,13 +1083,13 @@ export class ReviewDetailSession {
         const state = this.state;
         if (this.requestCoordinationRefreshPending && state?.kind === 'request') {
           this.requestCoordinationRefreshPending = false;
-          void this.refreshRequestCoordination(state);
+          void this.#refreshRequestCoordination(state);
         }
       }
     }
   }
 
-  private acceptMutation(review: CollabRequestReview): AcceptMutation {
+  #acceptMutation(review: CollabRequestReview): AcceptMutation {
     const expectedResolvingTickets = review.detail.request.ticketRelations
       .filter(relation => relation.kind === 'resolves')
       .map(relation => ({
@@ -1113,19 +1117,21 @@ export class ReviewDetailSession {
     const controller = new AbortController();
     this.acceptController = controller;
     button.disabled = true;
-    button.textContent = t('collab.review.confirmingPublish');
+    button.textContent = review.intent === 'update' ? t('collab.update.updating') : t('collab.review.confirmingPublish');
     try {
-      const result = await this.port.confirmPublish({
-        description: this.currentDescription(),
+      const confirmation = {
         expectedCandidateOid: review.candidateOid,
         expectedMainOid: review.currentMainOid,
         operationId: review.operationId,
         projectId: review.projectId,
-      }, { signal: controller.signal });
+      };
+      const result = review.intent === 'update'
+        ? await this.port.confirmUpdate(confirmation, { signal: controller.signal })
+        : await this.port.confirmPublish({ ...confirmation, description: this.#currentDescription() }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (result.status === 'conflict') {
         this.preparedReviews?.discardPublication(review);
-        const conflictState = await this.conflictState(result.conflict, controller.signal);
+        const conflictState = await this.#conflictState(result.conflict, controller.signal, review.intent);
         if (controller.signal.aborted) return;
         await this.leaf.setViewState({
           active: true,
@@ -1134,7 +1140,7 @@ export class ReviewDetailSession {
         });
         return;
       }
-      const outcome = requireSuccess(result);
+      const outcome = requireSuccess<CollabPublishOutcome | CollabProjectUpdateOutcome>(result);
       if (outcome.state === 'review-required' && outcome.review) {
         this.preparedReviews?.discardPublication(review);
         this.preparedReviews?.storePublication(outcome.review);
@@ -1150,13 +1156,13 @@ export class ReviewDetailSession {
     } catch {
       if (controller.signal.aborted) return;
       button.disabled = false;
-      button.textContent = t('collab.review.confirmPublishFailed');
+      button.textContent = review.intent === 'update' ? t('collab.update.failed') : t('collab.review.confirmPublishFailed');
     } finally {
       if (this.acceptController === controller) this.acceptController = null;
     }
   }
 
-  private async publishWorkingTree(
+  async #publishWorkingTree(
     review: CollabWorkingTreeReview,
     button: HTMLButtonElement,
   ): Promise<void> {
@@ -1167,14 +1173,14 @@ export class ReviewDetailSession {
     button.textContent = t('collab.publish.publishing');
     try {
       const result = await this.port.publish({
-        description: this.currentDescription(),
+        description: this.#currentDescription(),
         projectId: review.projectId,
       }, {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
       if (result.status === 'conflict') {
-        const conflictState = await this.conflictState(result.conflict, controller.signal);
+        const conflictState = await this.#conflictState(result.conflict, controller.signal);
         if (controller.signal.aborted) return;
         await this.leaf.setViewState({
           active: true,
@@ -1199,8 +1205,8 @@ export class ReviewDetailSession {
     }
   }
 
-  private renderMessage(message: string, warning = false): void {
-    this.destroyDescriptionEditor();
+  #renderMessage(message: string, warning = false): void {
+    this.#destroyDescriptionEditor();
     this.rootEl.replaceChildren();
     this.rootEl.createDiv({
       cls: warning ? 'claudian-collab-review-message mod-warning' : 'claudian-collab-review-message',
@@ -1208,10 +1214,12 @@ export class ReviewDetailSession {
     });
   }
 
-  private async conflictState(
+  async #conflictState(
     conflict: CollabConflictDescriptor,
     signal: AbortSignal,
+    intent?: 'publish' | 'update',
   ): Promise<CollabConflictDetailViewState> {
+    if (intent === 'update') return { kind: 'conflict', location: 'update', projectId: conflict.projectId, operationId: conflict.operationId };
     let coordination = this.coordination;
     if (coordination?.snapshot.project.id !== conflict.projectId) {
       try {
@@ -1240,7 +1248,7 @@ export class ReviewDetailSession {
         };
   }
 
-  private adoptRequestComment(
+  #adoptRequestComment(
     review: CollabRequestReview,
     comment: CollabComment,
   ): CollabRequestReview {
@@ -1270,18 +1278,11 @@ export class ReviewDetailSession {
         review: updatedReview,
       });
     }
-    this.renderRequestCommentItems(updatedReview);
+    this.#renderRequestCommentItems(updatedReview);
     return updatedReview;
   }
 
-  private reviewMatchesState(
-    review: CollabDisplayReview,
-    state: CollabReviewDetailViewState,
-  ): boolean {
-    return reviewMatchesState(review, state);
-  }
-
-  private reviewCondition(review: CollabDisplayReview): {
+  #reviewCondition(review: CollabDisplayReview): {
     readonly kind: 'clean' | 'conflicting' | 'merged' | 'stale';
     readonly text: string;
   } | null {
@@ -1301,8 +1302,8 @@ export class ReviewDetailSession {
     return { kind: 'stale', text: t('collab.review.stale') };
   }
 
-  private cancelWork(options: { readonly retainDiff?: boolean } = {}): void {
-    this.destroyDescriptionEditor();
+  #cancelWork(options: { readonly retainDiff?: boolean } = {}): void {
+    this.#destroyDescriptionEditor();
     this.ticketReferences.cancel();
     this.reviewController?.abort();
     this.reviewController = null;
@@ -1320,7 +1321,7 @@ export class ReviewDetailSession {
     this.contentHostEl = null;
   }
 
-  private destroyDescriptionEditor(): void {
+  #destroyDescriptionEditor(): void {
     this.requestDescriptionController?.abort();
     this.requestDescriptionController = null;
     this.descriptionEditor?.destroy();
@@ -1331,7 +1332,7 @@ export class ReviewDetailSession {
     this.requestCommentsTitleEl = null;
   }
 
-  private publishState(): void {
+  #publishState(): void {
     if (this.state) this.onStateChange?.({ ...this.state });
   }
 
@@ -1445,6 +1446,7 @@ export function reviewMatchesState(
   if (state.kind === 'publication') {
     return isPublicationReview(review)
       && review.projectId === state.projectId
+      && (review.intent ?? 'publish') === (state.intent ?? 'publish')
       && review.operationId === state.operationId
       && review.currentMainOid === state.currentMainOid
       && review.candidateOid === state.candidateOid
@@ -1472,6 +1474,7 @@ export function publicationState(
   selectedPath?: string,
 ): CollabPublicationDetailViewState {
   return {
+    ...(review.intent ? { intent: review.intent } : {}),
     candidateOid: review.candidateOid,
     comparisonBaseOid: review.comparisonBaseOid,
     comparisonTargetOid: review.comparisonTargetOid,
