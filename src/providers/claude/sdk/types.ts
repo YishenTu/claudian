@@ -19,6 +19,8 @@ export interface SessionInitEvent {
 export interface ContextWindowEvent {
   type: 'context_window';
   contextWindow: number;
+  /** Actual model served by the provider runtime, when known. */
+  model?: string;
 }
 
 export type TransformEvent =

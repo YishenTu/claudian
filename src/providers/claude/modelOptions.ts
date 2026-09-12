@@ -4,6 +4,7 @@ import {
   type ClaudeModelEnvType,
   getModelsFromEnvironment,
 } from './env/claudeModelEnv';
+import { getClaudeUserSettingsModelEnvironment } from './env/claudeUserSettingsEnv';
 import { formatCustomModelLabel } from './modelLabels';
 import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { isClaudeModelTier } from './modelTiers';
@@ -53,13 +54,29 @@ function normalizeCustomModelAliases(value: unknown): Record<string, string> {
 
 export function getClaudeModelOptions(settings: Record<string, unknown>): ClaudeModelOption[] {
   const customModelAliases = normalizeCustomModelAliases(settings.customModelAliases);
+  const userModelEnvironment = getClaudeUserSettingsModelEnvironment();
+  const modelAliases = {
+    ...userModelEnvironment.displayNames,
+    ...customModelAliases,
+  };
   const customModels = getModelsFromEnvironment(
-    getRuntimeEnvironmentVariables(settings, 'claude'),
-    customModelAliases,
+    // The user-level Claude Code settings file (rewritten by CC Switch on
+    // provider switches) backs the plugin environment, which wins on conflicts.
+    {
+      ...userModelEnvironment.env,
+      ...getRuntimeEnvironmentVariables(settings, 'claude'),
+    },
+    modelAliases,
   );
   if (customModels.length > 0) {
+    const settingsConfiguredModelIds = new Set(Object.values(userModelEnvironment.env));
     return customModels.map((model) => ({
       ...model,
+      // Settings file models show the display name when present, otherwise
+      // their raw request name; other models keep the author-derived label.
+      ...(!modelAliases[model.value] && settingsConfiguredModelIds.has(model.value)
+        ? { label: model.value }
+        : {}),
       value: encodeClaudeModelSelectionId(model.value),
     }));
   }
