@@ -80,7 +80,6 @@ const localizedKeys = [
   'settings.codex.skills.name',
   'settings.codex.subagents.name',
   'settings.codex.environment.name',
-  'settings.codexSkills.noSkills',
   'settings.codexSubagents.noAgents',
   'collab.access.managerCount',
   'collab.access.makeManager',

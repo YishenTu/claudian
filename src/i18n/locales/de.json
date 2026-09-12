@@ -750,30 +750,6 @@
       "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
       "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "Codex-Fähigkeit bearbeiten",
-        "titleAdd": "Codex-Fähigkeit hinzufügen",
-        "directory": "Verzeichnis",
-        "directoryDesc": "Speicherort der Fähigkeit",
-        "skillName": "Name der Fähigkeit",
-        "skillNameDesc": "Der Name nach $ (z. B. \"analyze\" für $analyze)",
-        "description": "Beschreibung",
-        "descriptionDesc": "Optionale Beschreibung im Dropdown",
-        "instructions": "Anweisungen",
-        "instructionsDesc": "Anweisungen der Fähigkeit (SKILL.md-Inhalt)",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "Anweisungen sind erforderlich",
-      "saveFailed": "Codex-Fähigkeit konnte nicht gespeichert werden",
-      "header": "Codex-Fähigkeiten",
-      "noSkills": "Keine Codex-Fähigkeiten im Vault. Klicke auf +, um eine zu erstellen.",
-      "skillBadge": "Fähigkeit",
-      "deleted": "Codex-Fähigkeit \"{name}\" gelöscht",
-      "deleteFailed": "Codex-Fähigkeit konnte nicht gelöscht werden",
-      "created": "Codex-Fähigkeit \"{name}\" erstellt",
-      "updated": "Codex-Fähigkeit \"{name}\" aktualisiert"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "Codex-Sub-Agent bearbeiten",

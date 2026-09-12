@@ -750,30 +750,6 @@
       "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
       "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "Modifier la compétence Codex",
-        "titleAdd": "Ajouter une compétence Codex",
-        "directory": "Répertoire",
-        "directoryDesc": "Où stocker la compétence",
-        "skillName": "Nom de la compétence",
-        "skillNameDesc": "Le nom utilisé après $ (par ex. \"analyze\" pour $analyze)",
-        "description": "Description",
-        "descriptionDesc": "Description facultative affichée dans le menu déroulant",
-        "instructions": "Instructions",
-        "instructionsDesc": "Instructions de la compétence (contenu de SKILL.md)",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "Les instructions sont obligatoires",
-      "saveFailed": "Échec de l’enregistrement de la compétence Codex",
-      "header": "Compétences Codex",
-      "noSkills": "Aucune compétence Codex dans le vault. Cliquez sur + pour en créer une.",
-      "skillBadge": "compétence",
-      "deleted": "Compétence Codex \"{name}\" supprimée",
-      "deleteFailed": "Échec de la suppression de la compétence Codex",
-      "created": "Compétence Codex \"{name}\" créée",
-      "updated": "Compétence Codex \"{name}\" mise à jour"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "Modifier le sous-agent Codex",

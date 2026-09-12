@@ -750,30 +750,6 @@
       "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
       "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "编辑 Codex 技能",
-        "titleAdd": "添加 Codex 技能",
-        "directory": "目录",
-        "directoryDesc": "技能的存储位置",
-        "skillName": "技能名称",
-        "skillNameDesc": "在 $ 后使用的名称（例如 $analyze 的名称为 “analyze”）",
-        "description": "描述",
-        "descriptionDesc": "下拉菜单中显示的可选描述",
-        "instructions": "指令",
-        "instructionsDesc": "技能指令（SKILL.md 内容）",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "指令为必填项",
-      "saveFailed": "保存 Codex 技能失败",
-      "header": "Codex 技能",
-      "noSkills": "Vault 中没有 Codex 技能。点击 + 创建一个。",
-      "skillBadge": "技能",
-      "deleted": "已删除 Codex 技能“{name}”",
-      "deleteFailed": "删除 Codex 技能失败",
-      "created": "已创建 Codex 技能“{name}”",
-      "updated": "已更新 Codex 技能“{name}”"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "编辑 Codex 子代理",

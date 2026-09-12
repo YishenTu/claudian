@@ -750,30 +750,6 @@
       "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
       "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "Codex スキルを編集",
-        "titleAdd": "Codex スキルを追加",
-        "directory": "ディレクトリ",
-        "directoryDesc": "スキルの保存先",
-        "skillName": "スキル名",
-        "skillNameDesc": "$ の後に使う名前（例: $analyze の場合は \"analyze\"）",
-        "description": "説明",
-        "descriptionDesc": "ドロップダウンに表示される任意の説明",
-        "instructions": "指示",
-        "instructionsDesc": "スキルの指示（SKILL.md の内容）",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "指示は必須です",
-      "saveFailed": "Codex スキルの保存に失敗しました",
-      "header": "Codex スキル",
-      "noSkills": "Vault に Codex スキルがありません。+ をクリックして作成してください。",
-      "skillBadge": "スキル",
-      "deleted": "Codex スキル「{name}」を削除しました",
-      "deleteFailed": "Codex スキルの削除に失敗しました",
-      "created": "Codex スキル「{name}」を作成しました",
-      "updated": "Codex スキル「{name}」を更新しました"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "Codex サブエージェントを編集",

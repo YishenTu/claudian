@@ -750,30 +750,6 @@
       "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
       "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "Редактировать навык Codex",
-        "titleAdd": "Добавить навык Codex",
-        "directory": "Каталог",
-        "directoryDesc": "Где хранить навык",
-        "skillName": "Имя навыка",
-        "skillNameDesc": "Имя, используемое после $ (например, \"analyze\" для $analyze)",
-        "description": "Описание",
-        "descriptionDesc": "Необязательное описание, отображаемое в списке",
-        "instructions": "Инструкции",
-        "instructionsDesc": "Инструкции навыка (содержимое SKILL.md)",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "Инструкции обязательны",
-      "saveFailed": "Не удалось сохранить навык Codex",
-      "header": "Навыки Codex",
-      "noSkills": "В vault нет навыков Codex. Нажмите +, чтобы создать навык.",
-      "skillBadge": "навык",
-      "deleted": "Навык Codex \"{name}\" удален",
-      "deleteFailed": "Не удалось удалить навык Codex",
-      "created": "Навык Codex \"{name}\" создан",
-      "updated": "Навык Codex \"{name}\" обновлен"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "Редактировать субагента Codex",

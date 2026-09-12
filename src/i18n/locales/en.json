@@ -781,30 +781,6 @@
         "confirm": "Move to trash"
       }
     },
-    "codexSkills": {
-      "modal": {
-        "titleEdit": "Edit Codex Skill",
-        "titleAdd": "Add Codex Skill",
-        "directory": "Directory",
-        "directoryDesc": "Where to store the skill",
-        "skillName": "Skill name",
-        "skillNameDesc": "The name used after $ (e.g., \"analyze\" for $analyze)",
-        "description": "Description",
-        "descriptionDesc": "Optional description shown in dropdown",
-        "instructions": "Instructions",
-        "instructionsDesc": "The skill instructions (SKILL.md content)",
-        "instructionsPlaceholder": "Analyze the code for..."
-      },
-      "instructionsRequired": "Instructions are required",
-      "saveFailed": "Failed to save Codex skill",
-      "header": "Codex Skills",
-      "noSkills": "No Codex skills in vault. Click + to create one.",
-      "skillBadge": "skill",
-      "deleted": "Codex skill \"{name}\" deleted",
-      "deleteFailed": "Failed to delete Codex skill",
-      "created": "Codex skill \"{name}\" created",
-      "updated": "Codex skill \"{name}\" updated"
-    },
     "codexSubagents": {
       "modal": {
         "titleEdit": "Edit Codex Subagent",
