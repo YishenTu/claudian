@@ -45,8 +45,6 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- Setup ---
 
-    new Setting(container).setName(t('settings.setup')).setHeading();
-
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getCodexProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Codex' }),

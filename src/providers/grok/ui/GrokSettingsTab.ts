@@ -61,8 +61,6 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         : 'empty';
     };
 
-    new Setting(container).setName('Setup').setHeading();
-
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getGrokProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Grok' }),

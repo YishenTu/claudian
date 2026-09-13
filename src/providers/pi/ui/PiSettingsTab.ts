@@ -43,8 +43,6 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetPiWorkspaceServices();
 
-    new Setting(container).setName('Setup').setHeading();
-
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getPiProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Pi' }),

@@ -269,16 +269,17 @@
   background: transparent;
 }
 
-/* The installation card already frames the first provider section. */
-.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child {
-  border: 0;
+/* Installation cards stand on their own above the named provider groups. */
+.claudian-settings .claudian-settings-provider-content > div:has(> .claudian-cli-installation) {
+  margin-bottom: var(--size-4-5);
 }
 
-.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child > .setting-item-heading {
-  padding: 0 0 var(--size-4-3);
-  border: 0;
+.claudian-settings .claudian-settings-provider-tabs {
+  gap: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: var(--size-4-4);
 }
 
-.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child > .claudian-settings-group-body {
-  padding: 0;
+.claudian-settings button.claudian-settings-provider-tab {
+  padding: 8px 16px;
 }

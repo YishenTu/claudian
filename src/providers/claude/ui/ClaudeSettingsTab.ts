@@ -56,8 +56,6 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- Setup ---
 
-    new Setting(container).setName(t('settings.setup')).setHeading();
-
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getClaudeProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Claude' }),
