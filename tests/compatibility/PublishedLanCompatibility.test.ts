@@ -97,8 +97,14 @@ describe('published 2.2.6 LAN compatibility', () => {
       await waitFor(async () => observedSequence >= snapshot.eventSequence);
       const beforeTicket = observedSequence;
       const ticket = unwrap(await host.feature.createTicket({ projectId, title: 'Shared ticket', body: 'Original LAN operation' }));
-      await waitFor(async () => observedSequence > beforeTicket);
-      expect(unwrap(await peer.feature.readSnapshot(projectId)).snapshot.openTicketCount).toBe(1);
+      // The independent event socket can advance while the published client is
+      // still completing a coalesced snapshot read that started before the write.
+      await waitFor(async () => {
+        const observed = unwrap(await peer.feature.readSnapshot(projectId)).snapshot;
+        return observed.openTicketCount === 1
+          && observed.eventSequence > beforeTicket
+          && observedSequence >= observed.eventSequence;
+      });
 
       let lookupResult: unknown = null;
       if (peer.api === current) {
@@ -129,7 +135,8 @@ describe('published 2.2.6 LAN compatibility', () => {
       });
       const accepted = unwrap(await host.feature.acceptRequest(accept));
       expect(accepted.request.status).toBe('merged');
-      expect(unwrap(await peer.feature.readSnapshot(projectId)).snapshot.project.mainOid).toBe(accepted.mainOid);
+      await waitFor(async () =>
+        unwrap(await peer.feature.readSnapshot(projectId)).snapshot.project.mainOid === accepted.mainOid);
       await waitFor(async () => {
         unwrap(await host.feature.inspectProject(projectId));
         return await readFile(path.join(host.root, project.workspacePath, 'contribution.md'), 'utf8').catch(() => null)
@@ -146,8 +153,11 @@ describe('published 2.2.6 LAN compatibility', () => {
       unwrap(await host.feature.promoteManager({
         projectId, targetMemberId: snapshot.currentMember.id, managerResponsibilityOfferId: offer.offerId,
       }));
-      expect(unwrap(await peer.feature.readSnapshot(projectId)).snapshot.currentMember.role).toBe('manager');
+      await waitFor(async () =>
+        unwrap(await peer.feature.readSnapshot(projectId)).snapshot.currentMember.role === 'manager');
       unwrap(await peer.feature.demoteManager({ projectId, targetMemberId: hostIdentity }));
+      await waitFor(async () =>
+        unwrap(await host.feature.readSnapshot(projectId)).snapshot.currentMember.role === 'member');
       expect(unwrap(await host.feature.readSnapshot(projectId)).snapshot).toMatchObject({
         currentMember: { id: hostIdentity, role: 'member' },
         project: { hostMemberId: hostIdentity },
