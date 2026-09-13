@@ -252,6 +252,7 @@ function defaultLocalExit(): CollabLocalExitPort {
 
 function defaultMembership(): CollabMembershipPort {
   return {
+    openInvitation: () => { throw new Error('Unexpected invitation operation'); },
     listInvitations: () => unexpected('listInvitations'),
     listMembers: () => unexpected('listMembers'),
     reissueMemberClaim: () => unexpected('reissueMemberClaim'),

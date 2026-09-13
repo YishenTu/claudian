@@ -466,15 +466,6 @@
   width: min(520px, calc(100vw - 32px));
 }
 
-.claudian-collab-project-invitation-modal .modal-content > button,
-.claudian-collab-project-invitation-modal .claudian-collab-access-member > button {
-  align-self: flex-end;
-}
-
-.claudian-collab-project-invitation-modal .claudian-collab-access-member > span {
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 520px) {
   .claudian-collab-management-section-header,
   .claudian-collab-management-action-row {
@@ -496,51 +487,30 @@
   }
 }
 
-.claudian-collab-project-invitation-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-}
-
 .claudian-collab-modal--filled-actions button.claudian-collab-project-invitation-copy {
-  flex: 1 1 auto;
   justify-content: flex-start;
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
+  height: auto;
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-normal);
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.claudian-collab-project-invitation-row > button:not(.claudian-collab-project-invitation-copy) {
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .claudian-collab-project-invitation-modal .modal-title {
   display: none;
 }
 
-.claudian-collab-project-invitation-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
+.claudian-collab-project-invitation-modal .modal-content {
   padding-right: 24px;
 }
 
-.claudian-collab-project-invitation-header h2 {
-  margin: 0;
-  font-size: var(--font-ui-large);
-  font-weight: var(--font-semibold);
-}
-
-.claudian-collab-project-invitation-header > .claudian-collab-access-actions:empty {
-  display: none;
+.claudian-collab-project-invitation-expiry {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 .claudian-collab-modal--filled-actions button.claudian-collab-project-invitation-copy,
@@ -562,14 +532,4 @@
 .claudian-collab-modal--filled-actions button.claudian-collab-project-invitation-copy:disabled:is(:hover, :focus-visible, :active) {
   color: var(--text-faint);
   cursor: default;
-}
-
-.claudian-collab-project-invitation-row > .claudian-collab-access-badge {
-  flex-shrink: 0;
-  background: transparent;
-}
-
-.claudian-collab-project-invitation-modal .claudian-collab-access-list {
-  padding-top: 4px;
-  border-top: 1px solid var(--background-modifier-border);
 }

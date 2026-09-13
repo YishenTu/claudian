@@ -218,7 +218,7 @@ export class PendingMembershipRepository {
     `).map(decodeInvitation);
   }
 
-  rotateInvitation(
+  createInvitation(
     connection: AuthorityDatabaseConnection,
     input: CreateAuthorityInvitationInput,
   ): AuthorityInvitationRecord {
@@ -229,10 +229,6 @@ export class PendingMembershipRepository {
     if (input.tokenHash.byteLength !== 32) {
       throw membershipError('invitation-token-hash-invalid');
     }
-    connection.run(
-      'UPDATE invitations SET revoked_at = ? WHERE revoked_at IS NULL',
-      [input.createdAt],
-    );
     connection.run(
       `INSERT INTO invitations (
         invitation_id, token_hash, expires_at, revoked_at,
@@ -253,7 +249,7 @@ export class PendingMembershipRepository {
     return created;
   }
 
-  revokeCurrentInvitation(
+  revokeAllInvitations(
     connection: AuthorityDatabaseConnection,
     revokedAt: string,
   ): number {

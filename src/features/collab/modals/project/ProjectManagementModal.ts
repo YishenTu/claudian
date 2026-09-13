@@ -49,7 +49,7 @@ export type ProjectManagementModalPort = Pick<
   | 'cancelManagerResponsibilityOffer'
   | 'claimLegacyHostInstallation'
   | 'completeManagementOperation'
-  | 'createInvitation'
+  | 'openInvitation'
   | 'createHostTransfer'
   | 'createManagerResponsibilityOffer'
   | 'declineHostTransfer'
@@ -863,10 +863,12 @@ export class ProjectManagementModal extends Modal {
     if (current?.status === 'active') {
       const recoversInvitation = this.#managementOperation?.action === 'create-invitation';
       if (isManager && (this.#capabilities?.invitations || recoversInvitation)) {
+        const intent = recoversInvitation && this.#managementOperation?.status === 'pending'
+          ? 'resume' : 'create';
         const invite = invitationActions.createEl('button', {
           attr: { 'data-action': 'create-invitation', type: 'button' },
           cls: 'mod-cta',
-          text: recoversInvitation
+          text: intent === 'resume'
             ? t('collab.access.resumeInvitation')
             : t('collab.access.createInvitation'),
         });
@@ -874,7 +876,7 @@ export class ProjectManagementModal extends Modal {
           || !!this.#invitationModal
           || (this.#managementOperation !== null && !recoversInvitation);
         invite.addEventListener('click', () => {
-          this.#openInvitationModal();
+          this.#openInvitationModal(intent);
         });
       }
       if (this.#capabilities?.leave) this.#renderLeaveAction(lifecycleActions);
@@ -901,15 +903,15 @@ export class ProjectManagementModal extends Modal {
     }
   }
 
-  #openInvitationModal(): void {
+  #openInvitationModal(intent: 'create' | 'resume'): void {
     if (this.#invitationModal) return;
     const modal = new ProjectInvitationModal(this.#appInstance, this.#port, {
-      authorityKind: this.#capabilities?.authorityKind ?? this.#options.project.authorityKind,
+      intent,
       copyText: this.#options.copyText,
       onClosed: () => {
         if (this.#invitationModal !== modal) return;
         this.#invitationModal = null;
-        if (this.#opened) this.#refreshProjectActions();
+        if (this.#opened) void this.#loadMembers();
       },
       projectId: this.#options.project.id,
     });

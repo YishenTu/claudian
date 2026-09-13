@@ -431,6 +431,7 @@ export class CollabProjectLifecycleSubsystem {
     }
     this.membershipBound = true;
     return Object.freeze<CollabMembershipPort>({
+      openInvitation: request => membership.openInvitation(request),
       listMembers: (...args) => membership.listMembers(...args),
       reissueMemberClaim: (...args) => membership.reissueMemberClaim(...args),
       revokeMemberClaim: (...args) => membership.revokeMemberClaim(...args),

@@ -219,6 +219,7 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
     targetMemberId: 'member-a',
   };
   return {
+    openInvitation: jest.fn(),
     cancelManagerResponsibilityOffer: jest.fn().mockResolvedValue({
       ...offer,
       status: 'cancelled',
@@ -802,6 +803,58 @@ describe('CollabFeatureService', () => {
     await proposing;
     await draining;
     expect(service.resumeProjectAdmission(suspension)).toBe(true);
+  });
+
+  it('admits invitation execution and keeps its local read/completion available during suspension', async () => {
+    const membership = membershipControl();
+    const operation = {
+      run: jest.fn().mockResolvedValue({ status: 'unavailable', reason: 'unavailable' }),
+      read: jest.fn().mockResolvedValue({ status: 'unavailable', reason: 'unavailable' }),
+      acknowledge: jest.fn().mockResolvedValue(undefined), dispose: jest.fn(),
+    };
+    membership.openInvitation.mockReturnValue(operation);
+    const service = createService({ membership });
+    const invitation = service.openInvitation({ projectId: 'project-alpha', intent: 'create' });
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    await expect(invitation.run()).rejects.toMatchObject({ code: 'cancelled' });
+    expect(operation.run).not.toHaveBeenCalled();
+    await expect(invitation.read()).resolves.toMatchObject({ status: 'success' });
+    await expect(invitation.acknowledge()).resolves.toMatchObject({ status: 'success' });
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
+    await expect(invitation.run()).resolves.toMatchObject({ status: 'success' });
+    await service.close();
+    await expect(invitation.read()).rejects.toMatchObject({ code: 'cancelled' });
+    invitation.dispose();
+    expect(operation.dispose).toHaveBeenCalled();
+  });
+
+  it('drains an admitted invitation execution before Project transition', async () => {
+    const membership = membershipControl();
+    const entered = deferred<void>();
+    const released = deferred<void>();
+    membership.openInvitation.mockReturnValue({
+      run: async () => {
+        entered.resolve();
+        await released.promise;
+        return { status: 'unavailable', reason: 'unavailable' };
+      },
+      read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
+    });
+    const service = createService({ membership });
+    const operation = service.openInvitation({ projectId: 'project-alpha', intent: 'create' });
+    const running = operation.run();
+    await entered.promise;
+    const suspension = service.suspendProjectAdmission('project-alpha');
+    let drained = false;
+    const draining = service.drainAdmittedOperations('project-alpha').then(() => { drained = true; });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    released.resolve();
+    await running;
+    await draining;
+    expect(service.resumeProjectAdmission(suspension)).toBe(true);
+    operation.dispose();
+    await service.close();
   });
 
   it('keeps durable management read and local completion reachable after admission closes', async () => {

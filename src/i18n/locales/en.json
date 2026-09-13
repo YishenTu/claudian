@@ -214,6 +214,11 @@
       "revokeInvitation": "Revoke invitation",
       "invitationCopied": "Invitation copied.",
       "invitationRevoked": "Invitation revoked.",
+      "invitationExpiresIn": "This link will expire in {minutes} min.",
+      "invitationExpired": "This link has expired.",
+      "invitationUnavailable": "This invitation is no longer available.",
+      "createNewInvitation": "Create new invitation",
+      "invitationManagementPending": "Finish the pending action in Project management first.",
       "invitationFailed": "The invitation action could not be completed.",
       "invitationStatus": {
         "active": "Active",

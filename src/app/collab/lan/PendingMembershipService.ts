@@ -242,7 +242,7 @@ export class PendingMembershipService {
       ) {
         throw serviceError('authorization-denied', 'manager-role-required');
       }
-      this.repository.rotateInvitation(connection, {
+      this.repository.createInvitation(connection, {
         createdAt: now.toISOString(),
         createdByMemberId: actor.member.id,
         expiresAt: invitation.expiresAt,
@@ -301,7 +301,7 @@ export class PendingMembershipService {
         response: { revoked: true },
       });
       if (stored.status === 'existing') return;
-      this.repository.revokeCurrentInvitation(connection, createdAt);
+      this.repository.revokeAllInvitations(connection, createdAt);
       this.authority.events.append(connection, {
         actorMemberId: actor.member.id,
         createdAt,
@@ -315,7 +315,7 @@ export class PendingMembershipService {
     const project = await this.#requireProjectFromAuthority();
     const stoppedAt = this.now().toISOString();
     await this.authority.database.mutate(connection => {
-      this.repository.revokeCurrentInvitation(connection, stoppedAt);
+      this.repository.revokeAllInvitations(connection, stoppedAt);
       this.authority.events.append(connection, {
         actorMemberId: project.hostMemberId,
         createdAt: stoppedAt,

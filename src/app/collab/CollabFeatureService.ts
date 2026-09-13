@@ -15,6 +15,7 @@ import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService
 import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import { CollabMembershipOutcomeError } from '@/app/collab/membership/CollabMembershipService';
+import type { InvitationOperation } from '@/app/collab/membership/InvitationOperation';
 import {
   type CollabPendingProjectOperation,
   decodeCollabPendingProjectOperation,
@@ -31,7 +32,7 @@ import {
   type ProjectOperationPolicy,
   type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
-import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabRevokeInvitationRequest } from '@/core/collab';
+import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationOperation, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabOpenInvitationRequest, CollabRevokeInvitationRequest } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConnectionStatus, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabProjectUpdateInspection, type CollabProjectUpdateOutcome, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
@@ -90,6 +91,7 @@ export interface CollabLanHostPort {
 }
 
 export interface CollabMembershipPort {
+  openInvitation(request: CollabOpenInvitationRequest): Pick<InvitationOperation, 'run' | 'read' | 'acknowledge' | 'dispose'>;
   reissueMemberClaim(request: CollabImportedMemberClaimRequest, options?: CollabOperationOptions): Promise<CollabInvitationView>;
   revokeMemberClaim(request: CollabImportedMemberClaimRequest, options?: CollabOperationOptions): Promise<void>;
   listManagerResponsibilityOffers(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<readonly CollabManagerResponsibilityOfferSummary[]>;
@@ -1271,6 +1273,23 @@ class CollabFeatureServiceCore {
     } catch (error) {
       return this.#failureResult(error);
     }
+  }
+
+  openInvitation(request: CollabOpenInvitationRequest): CollabInvitationOperation {
+    const operation = this.options.membership.openInvitation(request);
+    const result = async <T>(run: () => Promise<T>): Promise<CollabResult<T>> => {
+      try {
+        return { status: 'success', value: await run() };
+      } catch (error) {
+        return this.#failureResult(error);
+      }
+    };
+    return {
+      run: () => result(() => operation.run()),
+      read: () => result(() => operation.read()),
+      acknowledge: () => result(() => operation.acknowledge()),
+      dispose: () => operation.dispose(),
+    };
   }
 
   async createInvitation(
@@ -2527,6 +2546,17 @@ export class CollabFeatureService implements CollabFeaturePort {
   readConflictFile: CollabFeaturePort['readConflictFile'] = (...args) => (
     this.runGlobal(() => this.core.readConflictFile(...args))
   );
+  openInvitation(request: CollabOpenInvitationRequest): CollabInvitationOperation {
+    const projectId = request.projectId;
+    const operation = this.core.openInvitation(request);
+    return {
+      run: () => this.project(() => projectId, 'active', () => operation.run()),
+      read: () => this.runGlobal(() => operation.read()),
+      acknowledge: () => this.runGlobal(() => operation.acknowledge()),
+      dispose: () => operation.dispose(),
+    };
+  }
+
   createInvitation: CollabFeaturePort['createInvitation'] = (...args) => (
     this.project(() => args[0], 'active', () => this.core.createInvitation(...args))
   );

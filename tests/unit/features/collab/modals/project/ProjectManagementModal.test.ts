@@ -7,6 +7,8 @@ import { configureAxe } from 'jest-axe';
 import { type CollabCoordinationSnapshot, type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
+const mockModals: { contentEl: HTMLElement; close: () => void }[] = [];
+
 jest.mock('obsidian', () => ({
   Modal: class MockModal {
     readonly contentEl = document.createElement('div');
@@ -14,6 +16,7 @@ jest.mock('obsidian', () => ({
     close = jest.fn(() => this.onClose());
     open = jest.fn(() => this.onOpen());
     setTitle = jest.fn();
+    constructor() { mockModals.push(this); }
     onClose(): void {}
     onOpen(): void {}
   },
@@ -80,10 +83,13 @@ function createPort(
     moveCloudToLan: jest.fn().mockResolvedValue(success({} as never)),
     moveLanToCloud: jest.fn().mockResolvedValue(success({} as never)),
     acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
-    createInvitation: jest.fn().mockResolvedValue(success({
-      encodedInvitation: 'claudian-collab:v2:invite-alpha',
-      expiresAt: '2026-08-08T00:15:00.000Z',
-    })),
+    openInvitation: jest.fn().mockReturnValue({
+      run: jest.fn().mockResolvedValue(success({
+        status: 'ready', invitation: { encodedInvitation: 'claudian-collab:v2:invite-alpha', expiresAt: '2030-08-08T00:15:00.000Z' },
+        availableUntil: '2030-08-08T00:15:00.000Z',
+      })),
+      read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
+    }),
     acceptHostTransfer: jest.fn().mockResolvedValue(success(undefined)),
     acceptLanToCloudTransfer: jest.fn().mockResolvedValue(success({} as never)),
     beginCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
@@ -1167,6 +1173,34 @@ describe('ProjectManagementModal', () => {
     expect(invitation).not.toBeNull();
     expect(invitation?.disabled).toBe(false);
     expect(invitation?.textContent).toBe('Resume invitation');
+
+    port.readManagementOperation.mockResolvedValue(success({
+      action: 'create-invitation', completionId: 'completion-invitation',
+      invitation: {
+        encodedInvitation: 'claudian-cloud:v1:recovered',
+        expiresAt: '2030-09-02T00:15:00.000Z',
+      },
+      secretAvailableUntil: '2030-09-02T00:15:00.000Z', status: 'result-retained',
+    }));
+    port.openInvitation.mockReturnValue({
+      run: jest.fn().mockResolvedValue(success({
+        status: 'ready', invitation: { encodedInvitation: 'claudian-cloud:v1:recovered', expiresAt: '2030-09-02T00:15:00.000Z' },
+        availableUntil: '2030-09-02T00:15:00.000Z',
+      })),
+      read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
+    });
+    invitation?.click();
+    await flush();
+    const child = mockModals[mockModals.length - 1];
+    expect(within(child.contentEl).getByRole('button', { name: 'Copy invitation' }).textContent)
+      .toBe('claudian-cloud:v1:recovered');
+    expect(port.completeManagementOperation).not.toHaveBeenCalled();
+    expect(port.openInvitation).toHaveBeenCalledWith({ projectId: 'project-alpha', intent: 'resume' });
+    child.close();
+    await flush();
+    expect(within(modal.contentEl).getByRole('button', { name: 'Create invitation' }))
+      .toHaveProperty('disabled', false);
+    modal.close();
   });
 
   it('fails closed when the durable management read fails with capabilities disabled', async () => {
@@ -1974,7 +2008,7 @@ describe('ProjectManagementModal', () => {
       '[data-action="create-invitation"]',
     )?.click();
     await flush();
-    expect(port.createInvitation).not.toHaveBeenCalled();
+    expect(port.openInvitation).toHaveBeenCalledWith({ projectId: 'project-alpha', intent: 'create' });
     expect(modal.contentEl.textContent).not.toContain('claudian-collab:v2:invite-alpha');
     expect(modal.contentEl.querySelector('[data-action="create-invitation"]'))
       .not.toBeNull();

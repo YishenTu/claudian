@@ -29,6 +29,7 @@ describe('PendingMembershipService', () => {
   let ids: Record<'invitation' | 'member', number>;
   let expiredMembers: string[];
   let service: PendingMembershipService;
+  let createService: () => PendingMembershipService;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -61,7 +62,7 @@ describe('PendingMembershipService', () => {
       isAddressAllowed: address => address === '127.0.0.1',
       now: () => now,
     });
-    service = new PendingMembershipService({
+    createService = () => new PendingMembershipService({
       database,
       events,
       idempotency,
@@ -81,6 +82,7 @@ describe('PendingMembershipService', () => {
       },
       readMainOid: async () => MAIN_OID,
     });
+    service = createService();
   });
 
   afterEach(async () => {
@@ -98,7 +100,7 @@ describe('PendingMembershipService', () => {
     ])).rejects.toMatchObject({ code: 'authentication-failed' });
   });
 
-  it('rotates and revokes invitations while persisting only their digest', async () => {
+  it('creates independent invitations and revokes them while persisting only their digest', async () => {
     const first = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-1',
       projectId: PROJECT_ID,
@@ -107,20 +109,20 @@ describe('PendingMembershipService', () => {
       idempotencyKey: 'create-invite-1',
       projectId: PROJECT_ID,
     });
-    const rotated = await service.createInvitation(HOST_CREDENTIAL, {
+    const second = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-2',
       projectId: PROJECT_ID,
     });
 
     expect(replay).toEqual(first);
-    expect(rotated.invitationSecret).not.toBe(first.invitationSecret);
+    expect(second.invitationSecret).not.toBe(first.invitationSecret);
     const rows = await database.read(connection => connection.all(
       'SELECT token_hash, revoked_at FROM invitations ORDER BY created_at, invitation_id',
     ));
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.revoked_at).toBe(now.toISOString());
+    expect(rows[0]?.revoked_at).toBeNull();
     expect(Buffer.from(rows[1]?.token_hash as Uint8Array).toString('utf8'))
-      .not.toContain(rotated.invitationSecret);
+      .not.toContain(second.invitationSecret);
 
     await service.revokeInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'revoke-invite-1',
@@ -130,13 +132,85 @@ describe('PendingMembershipService', () => {
       idempotencyKey: 'revoke-invite-1',
       projectId: PROJECT_ID,
     });
-    await expect(service.createJoinAttempt(rotated.invitationSecret, {
+    await expect(service.createJoinAttempt(second.invitationSecret, {
       displayName: 'Member',
       joinAttemptId: 'join-revoked',
       projectId: PROJECT_ID,
     }, { remoteAddress: '127.0.0.2' })).rejects.toMatchObject({
       code: 'invitation-revoked',
     });
+  });
+
+  it('lets two people join with separately created invitations after reopening the database', async () => {
+    const first = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-alice', projectId: PROJECT_ID,
+    });
+    const second = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-bob', projectId: PROJECT_ID,
+    });
+    expect(service.encodeInvitation(first)).not.toBe(service.encodeInvitation(second));
+    await database.close();
+    database = new SqlJsProjectDatabase(path.join(root, 'authority'), {
+      loadSqlJs: async () => SQL,
+    });
+    await database.open();
+    service = createService();
+
+    const alice = await service.createJoinAttempt(first.invitationSecret, {
+      displayName: 'Alice', joinAttemptId: 'join-alice', projectId: PROJECT_ID,
+    }, { remoteAddress: '127.0.0.2' });
+    await service.activateJoinAttempt(alice.memberCredential, {
+      idempotencyKey: 'activate-alice', joinAttemptId: 'join-alice', projectId: PROJECT_ID,
+    });
+    const bob = await service.createJoinAttempt(second.invitationSecret, {
+      displayName: 'Bob', joinAttemptId: 'join-bob', projectId: PROJECT_ID,
+    }, { remoteAddress: '127.0.0.3' });
+    await service.activateJoinAttempt(bob.memberCredential, {
+      idempotencyKey: 'activate-bob', joinAttemptId: 'join-bob', projectId: PROJECT_ID,
+    });
+    const snapshot = await service.readSnapshot(HOST_CREDENTIAL);
+    expect(snapshot.members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ displayName: 'Alice', status: 'active' }),
+      expect.objectContaining({ displayName: 'Bob', status: 'active' }),
+    ]));
+    await expect(service.refreshEndpoint(alice.memberCredential, first)).resolves.toEqual({
+      caFingerprint: CA_FINGERPRINT, endpoint: 'https://127.0.0.1:54545',
+    });
+  });
+
+  it('expires each invitation at its own deadline', async () => {
+    const first = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-first', projectId: PROJECT_ID,
+    });
+    now = new Date(now.getTime() + 60_000);
+    const second = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-second', projectId: PROJECT_ID,
+    });
+    now = new Date(first.expiresAt);
+    await expect(service.createJoinAttempt(first.invitationSecret, {
+      displayName: 'Alice', joinAttemptId: 'join-alice', projectId: PROJECT_ID,
+    }, { remoteAddress: '127.0.0.2' })).rejects.toMatchObject({ code: 'invitation-expired' });
+    await expect(service.createJoinAttempt(second.invitationSecret, {
+      displayName: 'Bob', joinAttemptId: 'join-bob', projectId: PROJECT_ID,
+    }, { remoteAddress: '127.0.0.3' })).resolves.toMatchObject({ member: { displayName: 'Bob' } });
+  });
+
+  it.each(['revoke', 'stop'] as const)('invalidates all outstanding invitations on %s', async action => {
+    const first = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-first', projectId: PROJECT_ID,
+    });
+    const second = await service.createInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'invite-second', projectId: PROJECT_ID,
+    });
+    if (action === 'stop') await service.stopHosting();
+    else await service.revokeInvitation(HOST_CREDENTIAL, {
+      idempotencyKey: 'revoke-all', projectId: PROJECT_ID,
+    });
+    for (const invitation of [first, second]) {
+      await expect(service.createJoinAttempt(invitation.invitationSecret, {
+        displayName: 'Member', joinAttemptId: 'join-member', projectId: PROJECT_ID,
+      }, { remoteAddress: '127.0.0.2' })).rejects.toMatchObject({ code: 'invitation-revoked' });
+    }
   });
 
   it('rejects an imported active Member until an exact credential is bound', async () => {
@@ -280,7 +354,7 @@ describe('PendingMembershipService', () => {
     });
   });
 
-  it('confirms endpoint refresh only for an active member and the current invitation', async () => {
+  it('confirms endpoint refresh only for an active member and a valid invitation', async () => {
     const invitation = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-1',
       projectId: PROJECT_ID,

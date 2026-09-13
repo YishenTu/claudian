@@ -306,6 +306,24 @@ export interface CollabInvitationView {
   expiresAt: CollabIsoTimestamp;
 }
 
+export interface CollabOpenInvitationRequest {
+  readonly projectId: CollabProjectId;
+  readonly intent: 'create' | 'resume';
+}
+
+export type CollabInvitationState =
+  | { readonly status: 'ready'; readonly invitation: CollabInvitationView; readonly availableUntil: string }
+  | { readonly status: 'unavailable'; readonly reason: 'expired' | 'unavailable' }
+  | { readonly status: 'blocked' };
+
+/** Application-owned request identity and recovery; closing only releases this operation's presentation. */
+export interface CollabInvitationOperation {
+  run(): Promise<CollabResult<CollabInvitationState>>;
+  read(): Promise<CollabResult<CollabInvitationState>>;
+  acknowledge(): Promise<CollabResult<void>>;
+  dispose(): void;
+}
+
 export interface CollabInvitationSummaryView {
   readonly invitationId: string;
   readonly state: CollabProjectInvitationState;
@@ -333,7 +351,7 @@ export interface CollabManagementOperationView {
   readonly status: 'pending' | 'result-retained';
 }
 
-/** LAN revokes its singleton invitation; Cloud requires the selected invitation identity. */
+/** LAN revokes all outstanding invitations; Cloud requires the selected invitation identity. */
 export type CollabRevokeInvitationRequest = CollabProjectId | {
   readonly projectId: CollabProjectId;
   readonly invitationId: string;
@@ -556,6 +574,7 @@ export interface CollabRemoveMemberRequest {
 }
 
 export interface CollabFeaturePort {
+  openInvitation(request: CollabOpenInvitationRequest): CollabInvitationOperation;
   initialize(options?: CollabOperationOptions): Promise<CollabResult<CollabFeatureState>>;
   listProjects(options?: CollabOperationOptions): Promise<CollabResult<readonly CollabLocalProjectSummary[]>>;
   readProjectSelection(options?: CollabOperationOptions): Promise<CollabResult<CollabProjectSelectionProjection>>;

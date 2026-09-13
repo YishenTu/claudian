@@ -11,6 +11,7 @@ import type {
   CollabProjectLifecycleImportedClaimAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
 import { type CloudManagementIntent, type CloudManagementMutation, decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
+import { InvitationOperation } from '@/app/collab/membership/InvitationOperation';
 import type {
   CollabMembershipManagerReceiptPort,
   CollabMembershipPendingLeavePort,
@@ -30,6 +31,7 @@ import type {
   CollabManagementOperationView,
   CollabManagerResponsibilityOfferSummary,
   CollabMemberSummaryView,
+  CollabOpenInvitationRequest,
   CollabProjectSnapshot,
   CollabResult,
   CollabRevokeInvitationRequest,
@@ -87,6 +89,34 @@ export class CollabMembershipService {
     ));
   }
 
+  openInvitation(request: CollabOpenInvitationRequest): InvitationOperation {
+    const { projectId, intent } = request;
+    let lanKey: string | undefined;
+    return new InvitationOperation({
+      readBinding: async () => {
+        const membership = await this.safety.projects.loadMembership(projectId);
+        if (!membership) throw new CollabError({ code: 'project-not-found' });
+        return {
+          kind: membership.authority.kind,
+          identity: JSON.stringify([
+            membership.member.id, membership.authority.kind, membership.authority.authorityGeneration,
+            isCollabLocalCloudMembership(membership)
+              ? membership.authority.serverUrl : membership.authority.hostCaFingerprint,
+          ]),
+        };
+      },
+      createLan: options => this.control.membership('createInvitation', {
+        projectId, idempotencyKey: lanKey ??= this.createIdempotencyKey('create-invitation'),
+      }, options),
+      createCloud: select => this.#runCloudManagementMutation(
+        projectId, {}, () => this.#createCloudInvitation(projectId, {}, select),
+      ),
+      readManagement: options => this.readManagementOperation(projectId, options),
+      resumeManagement: completionId => this.#resumeManagementOperation(projectId, {}, completionId),
+      completeManagement: completionId => this.completeManagementOperation({ projectId, completionId }),
+    }, intent);
+  }
+
   async createInvitation(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
@@ -109,6 +139,7 @@ export class CollabMembershipService {
   async #createCloudInvitation(
     projectId: CollabProjectId,
     options: CollabOperationOptions,
+    select?: (completionId: string) => void,
   ): Promise<CollabInvitationView> {
     let intent = await this.#loadCloudIntent(projectId);
     if (intent && intent.operation !== 'createProjectInvitation') throw managementPending();
@@ -117,7 +148,9 @@ export class CollabMembershipService {
       intent = await this.#prepareCloudIntent(binding, 'createProjectInvitation', {
         expectedManagerSetGeneration: members.managerSetGeneration,
         idempotencyKey: this.createIdempotencyKey('create-invitation'), projectId,
-      });
+      }, select);
+    } else {
+      select?.(intent.completionId);
     }
     await this.#executeCloudIntent(intent, options);
     intent = await this.#loadCloudIntent(projectId);
@@ -299,12 +332,15 @@ export class CollabMembershipService {
     binding: CloudMembershipBinding,
     operation: Operation,
     request: CollabProjectMembershipOperationMap[Operation]['request'],
+    select?: (completionId: string) => void,
   ): Promise<CloudManagementIntent> {
     const now = new Date().toISOString();
     const intent = decodeCloudManagementIntent({
       ...binding, completionId: randomUUID(), createdAt: now, updatedAt: now, kind: 'cloud-management-intent', operation,
       phase: 'prepared', request, response: null, schemaVersion: 1,
     });
+    // Capture identity before a durable write whose acknowledgement can be lost.
+    select?.(intent.completionId);
     await this.#saveCloudIntent(intent);
     return intent;
   }
@@ -340,12 +376,23 @@ export class CollabMembershipService {
     });
   }
 
-  async resumeManagementOperation(
+  resumeManagementOperation(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagementOperationView> {
+    return this.#resumeManagementOperation(projectId, options);
+  }
+
+  async #resumeManagementOperation(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+    completionId?: string,
+  ): Promise<CollabManagementOperationView> {
     const selectedIntent = await this.#loadCloudIntent(projectId);
     if (!selectedIntent) throw new CollabError({ code: 'project-not-found' });
+    if (completionId !== undefined && selectedIntent.completionId !== completionId) {
+      throw managementPending('cloud-management-intent-changed');
+    }
     const admission = this.#cloudManagementAdmissionFor(selectedIntent);
     return admission(projectId, () => this.#runSelectedCloudMutation(
       projectId,
