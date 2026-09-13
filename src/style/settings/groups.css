@@ -1,0 +1,284 @@
+/* Shared settings hierarchy; provider controls keep their existing behavior. */
+.claudian-settings .claudian-settings-group {
+  min-width: 0;
+  container-type: inline-size;
+  margin: 0 0 var(--size-4-5);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  background: transparent;
+}
+
+.claudian-settings .claudian-settings-group > .setting-item-heading {
+  margin: 0;
+  padding: var(--size-4-4);
+  border: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.claudian-settings .claudian-settings-group > .setting-item-heading .setting-item-name {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-settings-group-body {
+  min-width: 0;
+  padding: var(--size-4-4);
+}
+
+.claudian-settings .claudian-settings-group .setting-item:not(.setting-item-heading),
+:is(.claudian-sp-modal, .claudian-agent-skill-modal, .claudian-env-snippet-modal) .setting-item {
+  margin: 0;
+  padding: var(--size-4-3) 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.claudian-settings .claudian-settings-group .setting-item::before {
+  content: none;
+}
+
+.claudian-settings .claudian-settings-group-body > .setting-item:first-child {
+  padding-top: 0;
+}
+
+.claudian-settings .claudian-settings-group-body > .setting-item:last-child {
+  padding-bottom: 0;
+}
+
+.claudian-settings .setting-item-name,
+:is(.claudian-sp-modal, .claudian-agent-skill-modal, .claudian-env-snippet-modal) .setting-item-name {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+}
+
+.claudian-settings .setting-item-description,
+.claudian-settings .claudian-sp-item-desc,
+.claudian-settings .claudian-context-limits-desc,
+:is(.claudian-sp-modal, .claudian-agent-skill-modal, .claudian-env-snippet-modal) .setting-item-description {
+  margin-top: var(--size-4-1);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Existing named subgroups retain outlines, without filled nested panels. */
+.claudian-settings :is(
+  .claudian-provider-model-picker-selected,
+  .claudian-provider-model-picker-catalog,
+  .claudian-env-snippets-container,
+  .claudian-context-limits-container:not(:empty)
+) {
+  min-width: 0;
+  margin-top: var(--size-4-3);
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: transparent;
+}
+
+.claudian-settings :is(
+  .claudian-sp-label,
+  .claudian-plugin-label,
+  .claudian-plugin-section-header,
+  .claudian-snippet-label,
+  .claudian-context-limits-label,
+  .claudian-provider-model-picker-selected-label,
+  .claudian-provider-model-picker-catalog-summary,
+  .claudian-provider-model-picker-catalog-title
+),
+:is(.claudian-sp-modal, .claudian-agent-skill-modal, .claudian-env-snippet-modal) .claudian-sp-advanced-summary {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-normal);
+}
+
+.claudian-settings :is(
+  .claudian-sp-header,
+  .claudian-plugin-header,
+  .claudian-snippet-header,
+  .claudian-context-limits-header
+) {
+  margin: 0 0 var(--size-4-3);
+  padding: 0;
+  gap: var(--size-4-3);
+}
+
+.claudian-settings :is(
+  .claudian-sp-settings-desc,
+  .claudian-mcp-settings-desc,
+  .claudian-plugin-settings-desc,
+  .claudian-context-limits-desc,
+  .claudian-provider-model-picker-summary
+) {
+  padding-inline: 0;
+}
+
+.claudian-settings :is(
+  .claudian-sp-item,
+  .claudian-sp-empty-state,
+  .claudian-plugin-item,
+  .claudian-plugin-empty,
+  .claudian-snippet-item,
+  .claudian-context-limits-item,
+  .claudian-provider-model-picker-selected-row,
+  .claudian-provider-model-picker-list,
+  .claudian-provider-model-picker-row,
+  .claudian-provider-model-picker-row:hover
+),
+.claudian-settings :is(
+  .claudian-sp-item,
+  .claudian-plugin-item,
+  .claudian-snippet-item,
+  .claudian-context-limits-item,
+  .claudian-hotkey-item
+):hover {
+  background: transparent;
+}
+
+.claudian-settings :is(.claudian-sp-item, .claudian-plugin-item, .claudian-snippet-item) {
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.claudian-settings .claudian-cli-installation {
+  margin: 0;
+}
+
+.claudian-settings .claudian-cli-installation-enablement .setting-item {
+  padding: 0;
+}
+
+/* Native host button defaults must not restore filled chrome. */
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:hover,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:focus-visible,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:hover,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:focus-visible {
+  color: var(--text-normal);
+}
+
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:disabled,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:disabled:hover,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:disabled:focus-visible,
+:is(.setting-item.claudian-settings, .modal.claudian-sp-modal, .modal.claudian-agent-skill-modal, .modal.claudian-env-snippet-modal) button:disabled:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-settings button.claudian-settings-tab,
+.claudian-settings button.claudian-settings-provider-tab {
+  border-radius: 0;
+  font-size: var(--font-ui-small);
+  box-shadow: none;
+}
+
+.claudian-settings button.claudian-settings-tab--active,
+.claudian-settings button.claudian-settings-provider-tab--active,
+.claudian-settings button.claudian-settings-tab--active:is(:hover, :focus-visible, :active),
+.claudian-settings button.claudian-settings-provider-tab--active:is(:hover, :focus-visible, :active) {
+  color: var(--text-normal);
+  box-shadow: inset 0 -2px var(--interactive-accent);
+}
+
+.claudian-settings .claudian-settings-tabs {
+  flex-wrap: wrap;
+}
+
+.claudian-settings .claudian-settings-group-body > :last-child {
+  margin-bottom: 0;
+}
+
+:is(.claudian-sp-modal, .claudian-agent-skill-modal, .claudian-env-snippet-modal) .claudian-sp-advanced-section {
+  padding: var(--size-4-3);
+  border-radius: var(--radius-m);
+  background: transparent;
+}
+
+@container (max-width: 500px) {
+  .claudian-settings .claudian-context-limits-item {
+    flex-wrap: wrap;
+    gap: var(--size-4-2);
+  }
+
+  .claudian-settings .claudian-context-limits-input-wrapper {
+    flex-wrap: wrap;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .claudian-settings .claudian-context-alias-input {
+    width: min(180px, 100%);
+  }
+}
+
+.claudian-settings .setting-item:has(textarea) {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.claudian-settings .setting-item:has(textarea) .setting-item-info {
+  margin-inline-end: 0;
+}
+
+.claudian-settings .setting-item:has(textarea) .setting-item-control {
+  width: 100%;
+}
+
+.claudian-settings .setting-item textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Pages without a heading still retain their existing visual boundaries. */
+.claudian-settings .claudian-settings-collab,
+.claudian-settings .claudian-settings-general > .setting-item {
+  padding: var(--size-4-4);
+  margin-bottom: var(--size-4-5);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  background: transparent;
+}
+
+.claudian-settings .claudian-settings-collab .setting-item {
+  padding: var(--size-4-3) 0;
+  border: 0;
+  background: transparent;
+}
+
+/* The installation card already frames the first provider section. */
+.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child {
+  border: 0;
+}
+
+.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child > .setting-item-heading {
+  padding: 0 0 var(--size-4-3);
+  border: 0;
+}
+
+.claudian-settings .claudian-settings-provider-content > .claudian-settings-group:first-child > .claudian-settings-group-body {
+  padding: 0;
+}

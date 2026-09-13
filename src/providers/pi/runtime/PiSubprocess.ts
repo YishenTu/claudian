@@ -109,7 +109,7 @@ export class PiSubprocess {
   }
 }
 
-function resolvePiProcessSpec(
+export function resolvePiProcessSpec(
   launchSpec: PiSubprocessLaunchSpec,
   enhancedPath: string,
 ): Pick<

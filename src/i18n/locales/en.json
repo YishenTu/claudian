@@ -663,6 +663,17 @@
       "leftSidebar": "Left sidebar",
       "mainTab": "Main editor tab"
     },
+    "cliInstallation": {
+      "disclosure": "{name} installation",
+      "description": "Optional CLI path for this computer. Leave empty to detect automatically.",
+      "checking": "Checking CLI…",
+      "versionUnavailable": "Version unavailable",
+      "notFound": "Not found",
+      "custom": "Custom path",
+      "auto": "Auto-detected",
+      "checkFailed": "Could not check CLI",
+      "saveFailed": "Could not save the path. Try again."
+    },
     "cliPath": {
       "name": "Claude CLI path",
       "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection.",

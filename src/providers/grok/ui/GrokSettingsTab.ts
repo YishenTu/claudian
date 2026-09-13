@@ -3,6 +3,11 @@ import * as path from 'node:path';
 
 import { Notice, Setting } from 'obsidian';
 
+import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { GROK_PROVIDER_ICON } from '@/shared/icons';
+import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -12,9 +17,8 @@ import type {
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
-import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
+import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -59,9 +63,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Setup').setHeading();
 
-    renderProviderEnablementSetting({
-      container,
-      description: t('settings.providerEnablement.desc', { provider: 'Grok' }),
+    const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getGrokProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Grok' }),
       onChange: async (enabled) => {
@@ -92,8 +94,9 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         }
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
       },
-    });
+    };
 
+    const installationContainer = container.createDiv();
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
@@ -106,9 +109,21 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Grok',
     });
 
-    renderHostnameCliPathSetting({
-      container,
-      description: 'Optional absolute path to the Grok CLI for this computer. Leave empty to prefer known installs, then `grok` from PATH.',
+    renderCliInstallationSetting({
+      cliName: 'Grok CLI',
+      icon: GROK_PROVIDER_ICON,
+      inspect: async () => {
+        const settings = context.plugin.settings as unknown as Record<string, unknown>;
+        const config = getGrokProviderSettings(settings);
+        return probeCliInstallation({
+          path: await context.plugin.getResolvedProviderCliPath('grok'),
+          configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
+          args: ['--version'],
+          env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'grok') },
+        });
+      },
+      container: installationContainer,
+      enablement,
       getValue: () => {
         const current = getGrokProviderSettings(settingsBag);
         return current.cliPathsByHost[hostnameKey] ?? current.cliPath ?? '';

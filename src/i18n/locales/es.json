@@ -663,6 +663,17 @@
       "leftSidebar": "Barra lateral izquierda",
       "mainTab": "Pestaña del editor principal"
     },
+    "cliInstallation": {
+      "disclosure": "Instalación de {name}",
+      "description": "Ruta CLI opcional para este equipo. Déjala vacía para detectar automáticamente.",
+      "checking": "Comprobando CLI…",
+      "versionUnavailable": "Versión no disponible",
+      "notFound": "No encontrado",
+      "custom": "Ruta personalizada",
+      "auto": "Detectado automáticamente",
+      "checkFailed": "No se pudo comprobar el CLI",
+      "saveFailed": "No se pudo guardar la ruta. Inténtalo de nuevo."
+    },
     "cliPath": {
       "name": "Ruta CLI Claude",
       "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",

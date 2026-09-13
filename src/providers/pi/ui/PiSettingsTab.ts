@@ -2,6 +2,11 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { PI_PROVIDER_ICON } from '@/shared/icons';
+import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -9,8 +14,7 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
-import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
+import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -26,6 +30,7 @@ import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
 import { sameDiscoveredModels, sameStringList } from '../internal/compareCollections';
 import { decodePiModelId, type PiDiscoveredModel } from '../models';
 import { PiModelDiscoveryService } from '../runtime/PiModelDiscoveryService';
+import { resolvePiProcessSpec } from '../runtime/PiSubprocess';
 import {
   getPiProviderSettings,
   normalizePiVisibleModels,
@@ -40,9 +45,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Setup').setHeading();
 
-    renderProviderEnablementSetting({
-      container,
-      description: t('settings.providerEnablement.desc', { provider: 'Pi' }),
+    const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getPiProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Pi' }),
       onChange: async (value) => {
@@ -72,8 +75,9 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         }
         modelWarning.context.notifyProviderModelOptionsChanged('pi');
       },
-    });
+    };
 
+    const installationContainer = container.createDiv();
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
@@ -83,10 +87,26 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Pi',
     });
 
-    renderHostnameCliPathSetting({
-      container,
-      description: 'Optional absolute path to the Pi CLI for this computer. Leave empty to use `pi` from PATH.',
-      getValue: () => getPiProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+    renderCliInstallationSetting({
+      cliName: 'Pi CLI',
+      icon: PI_PROVIDER_ICON,
+      inspect: async () => {
+        const settings = context.plugin.settings as unknown as Record<string, unknown>;
+        const config = getPiProviderSettings(settings);
+        return probeCliInstallation({
+          path: await context.plugin.getResolvedProviderCliPath('pi'),
+          configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
+          args: ['--version'],
+          env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'pi') },
+          prepareLaunch: (spec) => ({ ...spec, ...resolvePiProcessSpec(spec, spec.env.PATH ?? '') }),
+        });
+      },
+      container: installationContainer,
+      enablement,
+      getValue: () => {
+        const config = getPiProviderSettings(settingsBag);
+        return config.cliPathsByHost[hostnameKey] || config.cliPath;
+      },
       name: 'CLI path',
       onChange: async (value) => {
         const cliPathsByHost = {

@@ -663,6 +663,17 @@
       "leftSidebar": "左侧边栏",
       "mainTab": "主编辑器标签页"
     },
+    "cliInstallation": {
+      "disclosure": "{name} 安装",
+      "description": "此电脑的可选 CLI 路径。留空以自动检测。",
+      "checking": "正在检测 CLI…",
+      "versionUnavailable": "版本未知",
+      "notFound": "未找到",
+      "custom": "自定义路径",
+      "auto": "自动检测",
+      "checkFailed": "无法检测 CLI",
+      "saveFailed": "无法保存路径，请重试。"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",

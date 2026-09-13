@@ -39,6 +39,7 @@ export function renderHostnameCliPathSetting(
     setElementText(validationEl, error ?? '');
     toggleElementClass(validationEl, 'claudian-hidden', !error);
     toggleElementClass(text.inputEl, 'claudian-input-error', Boolean(error));
+    text.inputEl.setAttribute?.('aria-invalid', String(Boolean(error)));
     return !error;
   };
 

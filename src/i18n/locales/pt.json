@@ -663,6 +663,17 @@
       "leftSidebar": "Barra lateral esquerda",
       "mainTab": "Aba do editor principal"
     },
+    "cliInstallation": {
+      "disclosure": "Instalação de {name}",
+      "description": "Caminho CLI opcional para este computador. Deixe vazio para detectar automaticamente.",
+      "checking": "Verificando CLI…",
+      "versionUnavailable": "Versão indisponível",
+      "notFound": "Não encontrado",
+      "custom": "Caminho personalizado",
+      "auto": "Detectado automaticamente",
+      "checkFailed": "Não foi possível verificar o CLI",
+      "saveFailed": "Não foi possível salvar o caminho. Tente novamente."
+    },
     "cliPath": {
       "name": "Caminho CLI Claude",
       "desc": "Caminho personalizado para Claude Code CLI. Deixe vazio para detecção automática.",

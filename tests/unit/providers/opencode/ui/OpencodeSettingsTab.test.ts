@@ -1,3 +1,5 @@
+import { createMockEl } from '@test/helpers/MockElement';
+import { applyTextInput } from '@test/helpers/settingsControls';
 import * as fs from 'fs';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -128,6 +130,7 @@ interface MockTextComponent {
   setValue: jest.MockedFunction<(value: string) => MockTextComponent>;
   onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
   inputEl: {
+    [key: string]: unknown;
     value: string;
     style: Record<string, string>;
     addClass: jest.Mock;
@@ -166,6 +169,8 @@ function createTextComponent(): MockTextComponent {
   component.placeholder = '';
   component.onChangeCallback = null;
   component.inputEl = {
+    ...createMockEl('input'),
+    addEventListener: jest.fn(),
     value: '',
     style: {},
     addClass: jest.fn(),
@@ -206,6 +211,7 @@ function createElement(): any {
   const classes = new Set<string>();
   const eventListeners = new Map<string, Array<(...args: unknown[]) => void>>();
   const element: any = {
+    ...createMockEl('div'),
     value: '',
     checked: false,
     open: false,
@@ -453,15 +459,27 @@ describe('OpencodeSettingsTab', () => {
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
 
+  it.each([false, true])('clears legacy CLI configuration when restoring automatic detection (host override: %s)', async (hasHostOverride) => {
+    const config = {
+      cliPath: '/legacy/opencode',
+      cliPathsByHost: { 'other-host': '/keep/opencode', ...(hasHostOverride ? { 'host-a': '/host/opencode' } : {}) },
+    };
+    const plugin = createPlugin();
+    Object.assign(plugin.settings.providerConfigs.opencode, config);
+    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const input = findSetting('CLI path').textComponents[0];
+    expect(input.value).toBe(hasHostOverride ? '/host/opencode' : '/legacy/opencode');
+    await applyTextInput(input, '');
+    expect(plugin.settings.providerConfigs.opencode.cliPath).toBe('');
+    expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({ 'other-host': '/keep/opencode' });
+  });
+
   it('refreshes title model options after OpenCode enablement changes', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
     const enableSetting = findSetting('Enable OpenCode');
-    expect(enableSetting.desc).toBe(
-      'Make enabled OpenCode models available for new conversations. Existing sessions are preserved when disabled.',
-    );
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
@@ -560,7 +578,7 @@ describe('OpencodeSettingsTab', () => {
     });
 
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('"/my tools/opencode"');
+    await applyTextInput(findSetting('CLI path').textComponents[0], '"/my tools/opencode"');
 
     expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({
       'host-a': '"/my tools/opencode"',
@@ -597,7 +615,7 @@ describe('OpencodeSettingsTab', () => {
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     const cliPathSetting = findSetting('CLI path');
-    await cliPathSetting.textComponents[0].onChangeCallback?.('/custom/opencode');
+    await applyTextInput(cliPathSetting.textComponents[0], '/custom/opencode');
 
     expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({
       'host-a': '/custom/opencode',

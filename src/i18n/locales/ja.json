@@ -663,6 +663,17 @@
       "leftSidebar": "左サイドバー",
       "mainTab": "メインエディタタブ"
     },
+    "cliInstallation": {
+      "disclosure": "{name} のインストール",
+      "description": "このコンピューター用の任意の CLI パス。空欄で自動検出します。",
+      "checking": "CLI を確認中…",
+      "versionUnavailable": "バージョンを取得できません",
+      "notFound": "見つかりません",
+      "custom": "カスタムパス",
+      "auto": "自動検出",
+      "checkFailed": "CLI を確認できません",
+      "saveFailed": "パスを保存できません。再試行してください。"
+    },
     "cliPath": {
       "name": "Claude CLI パス",
       "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",

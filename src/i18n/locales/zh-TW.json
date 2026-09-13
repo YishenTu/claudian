@@ -663,6 +663,17 @@
       "leftSidebar": "左側邊欄",
       "mainTab": "主編輯器分頁"
     },
+    "cliInstallation": {
+      "disclosure": "{name} 安裝",
+      "description": "此電腦的選用 CLI 路徑。留空以自動偵測。",
+      "checking": "正在偵測 CLI…",
+      "versionUnavailable": "版本未知",
+      "notFound": "未找到",
+      "custom": "自訂路徑",
+      "auto": "自動偵測",
+      "checkFailed": "無法偵測 CLI",
+      "saveFailed": "無法儲存路徑，請重試。"
+    },
     "cliPath": {
       "name": "Claude CLI 路徑",
       "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",

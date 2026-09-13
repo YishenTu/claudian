@@ -1,0 +1,229 @@
+/* CLI installation summary and manual path override. */
+.claudian-cli-installation {
+  margin: 12px 0 20px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header:hover,
+.claudian-cli-installation button.claudian-cli-installation-header:focus-visible,
+.claudian-cli-installation button.claudian-cli-installation-header:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -3px;
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header:disabled,
+.claudian-cli-installation button.claudian-cli-installation-header:disabled:hover,
+.claudian-cli-installation button.claudian-cli-installation-header:disabled:focus-visible,
+.claudian-cli-installation button.claudian-cli-installation-header:disabled:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  text-align: left;
+  white-space: normal;
+}
+
+.claudian-cli-installation button.claudian-cli-installation-header svg {
+  width: 26px;
+  height: 26px;
+  color: inherit;
+}
+
+.claudian-cli-installation-icon {
+  position: relative;
+  display: flex;
+  flex: 0 0 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-normal);
+}
+
+.claudian-cli-installation-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.claudian-cli-installation-dot[data-state="found"] {
+  background: var(--color-green);
+}
+
+.claudian-cli-installation-dot[data-state="missing"] {
+  background: var(--color-yellow);
+}
+
+.claudian-cli-installation-summary {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.claudian-cli-installation-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-cli-installation-version {
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+}
+
+.claudian-cli-installation-location {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-cli-installation-path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-cli-installation-chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+}
+
+.claudian-cli-installation-heading {
+  display: flex;
+  align-items: center;
+}
+
+.claudian-cli-installation-enablement {
+  flex-shrink: 0;
+  padding-right: 16px;
+}
+
+.claudian-cli-installation-enablement .setting-item {
+  padding: 0;
+  border: 0;
+}
+
+.claudian-cli-installation-enablement .setting-item-info {
+  display: none;
+}
+
+.claudian-cli-installation-enablement .setting-item-control {
+  padding: 0;
+}
+
+.claudian-cli-installation-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-cli-installation-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.claudian-cli-installation-body[hidden] {
+  display: none;
+}
+
+.claudian-cli-installation-body .setting-item {
+  display: contents;
+}
+
+.claudian-cli-installation-body .setting-item-info {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.claudian-cli-installation-body .setting-item-control {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input {
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+  color: var(--text-normal);
+  font: inherit;
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input:hover {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input::placeholder {
+  color: var(--text-muted);
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-cli-installation-body .claudian-settings-cli-path-input.claudian-input-error,
+.claudian-cli-installation-body .claudian-settings-cli-path-input.claudian-input-error:hover,
+.claudian-cli-installation-body .claudian-settings-cli-path-input.claudian-input-error:focus {
+  border-color: var(--text-error);
+}
+
+.claudian-cli-installation-body .claudian-cli-path-validation {
+  grid-column: 1 / -1;
+  margin: 0;
+}

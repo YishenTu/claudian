@@ -187,7 +187,7 @@ interface MockContainer extends Record<string, any> {
   click(): void;
 }
 
-function createContainer(options: { text?: string } = {}): MockContainer {
+function createContainer(options: { text?: string; cls?: string } = {}): MockContainer {
   const listeners = new Map<string, () => void>();
   const children: MockContainer[] = [];
   const attributes = new Map<string, string>();
@@ -195,6 +195,7 @@ function createContainer(options: { text?: string } = {}): MockContainer {
     attributes,
     children,
     classList: {
+      contains: (name: string) => options?.cls?.split(' ').includes(name) ?? false,
       add: jest.fn(),
       remove: jest.fn(),
     },

@@ -1,5 +1,8 @@
 import * as fs from 'node:fs';
 
+import { createMockEl } from '@test/helpers/MockElement';
+import { applyTextInput } from '@test/helpers/settingsControls';
+
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockCliResolverReset = jest.fn();
 const mockDiscoverModels = jest.fn();
@@ -25,6 +28,7 @@ interface MockToggleComponent {
 
 interface MockTextComponent {
   inputEl: {
+    [key: string]: unknown;
     addClass: jest.Mock;
     style: Record<string, string>;
     toggleClass: jest.Mock;
@@ -168,6 +172,8 @@ function createToggleComponent(): MockToggleComponent {
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
   component.inputEl = {
+    ...createMockEl('input'),
+    addEventListener: jest.fn(),
     addClass: jest.fn(),
     style: {},
     toggleClass: jest.fn(),
@@ -232,6 +238,7 @@ function createElement(): any {
   const classes = new Set<string>();
   const eventListeners = new Map<string, Array<(...args: unknown[]) => void>>();
   const element: any = {
+    ...createMockEl('div'),
     checked: false,
     open: false,
     placeholder: '',
@@ -420,14 +427,25 @@ describe('PiSettingsTab', () => {
     });
   });
 
+  it.each([false, true])('clears legacy CLI configuration when restoring automatic detection (host override: %s)', async (hasHostOverride) => {
+    const config = {
+      cliPath: '/legacy/pi',
+      cliPathsByHost: { 'other-host': '/keep/pi', ...(hasHostOverride ? { 'current-host': '/host/pi' } : {}) },
+    };
+    const settings: Record<string, unknown> = { providerConfigs: { pi: config } };
+    render(settings);
+    const input = findSetting('CLI path').textComponents[0];
+    expect(input.value).toBe(hasHostOverride ? '/host/pi' : '/legacy/pi');
+    await applyTextInput(input, '');
+    expect(getPiProviderSettings(settings).cliPath).toBe('');
+    expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({ 'other-host': '/keep/pi' });
+  });
+
   it('updates provider config when Pi is enabled', async () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: { enabled: false } } };
     const context = render(settings);
 
     const enableSetting = findSetting('Enable Pi');
-    expect(enableSetting.desc).toBe(
-      'Make enabled Pi models available for new conversations. Existing sessions are preserved when disabled.',
-    );
     await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(getPiProviderSettings(settings).enabled).toBe(true);
@@ -549,13 +567,13 @@ describe('PiSettingsTab', () => {
     const cliInput = findSetting('CLI path').textComponents[0];
 
     mockedExists.mockReturnValue(false);
-    await cliInput.onChangeCallback?.('/missing/pi');
+    await applyTextInput(cliInput, '/missing/pi');
     expect(context.plugin.saveSettings).not.toHaveBeenCalled();
     expect(mockCliResolverReset).not.toHaveBeenCalled();
 
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
-    await cliInput.onChangeCallback?.('/valid/pi');
+    await applyTextInput(cliInput, '/valid/pi');
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '/valid/pi',
     });
@@ -570,7 +588,7 @@ describe('PiSettingsTab', () => {
 
     mockedExists.mockImplementation((filePath: unknown) => String(filePath) === '/my tools/pi');
     mockedStat.mockReturnValue({ isFile: () => true });
-    await cliInput.onChangeCallback?.('"/my tools/pi"');
+    await applyTextInput(cliInput, '"/my tools/pi"');
 
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '"/my tools/pi"',
@@ -607,7 +625,7 @@ describe('PiSettingsTab', () => {
       order.push('transition-end');
     });
 
-    await cliInput.onChangeCallback?.('/new/pi');
+    await applyTextInput(cliInput, '/new/pi');
 
     expect(order).toEqual([
       'transition-start',
@@ -625,7 +643,7 @@ describe('PiSettingsTab', () => {
     );
   });
 
-  it('resynchronizes the Pi CLI input when transition setup fails before mutation', async () => {
+  it('retains the Pi CLI draft when transition setup fails before mutation', async () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: { cliPathsByHost: { 'current-host': '/old/pi' } },
@@ -638,14 +656,12 @@ describe('PiSettingsTab', () => {
       new Error('transition failed'),
     );
 
-    await expect(cliInput.onChangeCallback?.('/failed/pi')).rejects.toThrow(
-      'transition failed',
-    );
+    await applyTextInput(cliInput, '/failed/pi');
 
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '/old/pi',
     });
-    expect(cliInput.inputEl.value).toBe('/old/pi');
+    expect(cliInput.inputEl.value).toBe('/failed/pi');
     expect(mockCliResolverReset).not.toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
@@ -663,9 +679,7 @@ describe('PiSettingsTab', () => {
       throw new Error('resolver reset failed');
     });
 
-    await expect(cliInput.onChangeCallback?.('/new/pi')).rejects.toThrow(
-      'resolver reset failed',
-    );
+    await applyTextInput(cliInput, '/new/pi');
 
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '/new/pi',

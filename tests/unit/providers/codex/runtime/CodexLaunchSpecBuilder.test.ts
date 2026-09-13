@@ -43,6 +43,19 @@ describe('buildCodexLaunchSpec', () => {
     });
   });
 
+  it('uses the same WSL shell and working directory for an auxiliary CLI command', () => {
+    const spec = buildCodexLaunchSpec({
+      settings: {},
+      resolvedCliCommand: 'codex',
+      cliArgs: ['--version'],
+      hostVaultPath: 'C:\\repo',
+      env: {},
+      executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
+    });
+    expect(spec.command).toBe('wsl.exe');
+    expect(spec.args).toEqual(['--distribution', 'Ubuntu', '--cd', '/mnt/c/repo', 'codex', '--version']);
+  });
+
   it('builds a WSL launch spec with translated cwd and distro targeting', () => {
     const spec = buildCodexLaunchSpec({
       settings: {

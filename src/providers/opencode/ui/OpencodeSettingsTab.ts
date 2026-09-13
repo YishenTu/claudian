@@ -1,6 +1,11 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { OPENCODE_PROVIDER_ICON } from '@/shared/icons';
+import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -8,9 +13,8 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
-import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
+import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -48,9 +52,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Setup').setHeading();
 
-    renderProviderEnablementSetting({
-      container,
-      description: t('settings.providerEnablement.desc', { provider: 'OpenCode' }),
+    const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getOpencodeProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'OpenCode' }),
       onChange: async (value) => {
@@ -80,8 +82,9 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         }
         modelWarning.context.notifyProviderModelOptionsChanged('opencode');
       },
-    });
+    };
 
+    const installationContainer = container.createDiv();
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
@@ -91,10 +94,25 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'OpenCode',
     });
 
-    renderHostnameCliPathSetting({
-      container,
-      description: 'Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.',
-      getValue: () => getOpencodeProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+    renderCliInstallationSetting({
+      cliName: 'OpenCode CLI',
+      icon: OPENCODE_PROVIDER_ICON,
+      inspect: async () => {
+        const settings = context.plugin.settings as unknown as Record<string, unknown>;
+        const config = getOpencodeProviderSettings(settings);
+        return probeCliInstallation({
+          path: await context.plugin.getResolvedProviderCliPath('opencode'),
+          configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
+          args: ['--version'],
+          env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'opencode') },
+        });
+      },
+      container: installationContainer,
+      enablement,
+      getValue: () => {
+        const config = getOpencodeProviderSettings(settingsBag);
+        return config.cliPathsByHost[hostnameKey] || config.cliPath;
+      },
       name: 'CLI path',
       onChange: async (value) => {
         const cliPathsByHost = {

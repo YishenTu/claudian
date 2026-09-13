@@ -59,12 +59,14 @@
 
 /* Settings */
 @import "./settings/base.css";
+@import "./settings/cli-installation.css";
 @import "./settings/env-snippets.css";
 @import "./settings/slash-settings.css";
 @import "./settings/plugin-settings.css";
 @import "./settings/agent-settings.css";
 @import "./settings/agent-skills.css";
 @import "./settings/provider-model-picker.css";
+@import "./settings/groups.css";
 
 /* Accessibility */
 @import "./accessibility.css";

@@ -1,6 +1,8 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
+import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
+
 import {
   getHiddenProviderCommands,
   normalizeHiddenCommandList,
@@ -243,6 +245,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.renderCustomContextLimits(target, targetProviderId)
           ),
         });
+        frameSettingsGroups(providerContent);
       } catch (error) {
         if (renderGeneration !== this.renderGeneration) return;
         renderedProviderIds.delete(providerId);
@@ -279,12 +282,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     for (const id of tabIds.filter(id => id !== 'providers')) {
       const content = containerEl.createDiv({
-        cls: `claudian-settings-tab-content${id === this.activeTab ? ' claudian-settings-tab-content--active' : ''}`,
+        cls: `claudian-settings-tab-content claudian-settings-${id}${id === this.activeTab ? ' claudian-settings-tab-content--active' : ''}`,
       });
       tabContents.set(id, content);
     }
 
     this.renderGeneralTab(tabContents.get('general')!);
+    frameSettingsGroups(tabContents.get('general')!);
     activateCollabTab = this.renderCollabTab(tabContents.get('collab')!);
 
     for (const providerId of providerTabs) {

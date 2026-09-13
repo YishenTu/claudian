@@ -1,5 +1,8 @@
 import * as fs from 'node:fs';
 
+import { createMockEl } from '@test/helpers/MockElement';
+import { applyTextInput } from '@test/helpers/settingsControls';
+
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
 
@@ -94,6 +97,7 @@ jest.mock('@/utils/env', () => ({
 
 interface MockTextComponent {
   inputEl: {
+    [key: string]: unknown;
     addClass: jest.Mock;
     toggleClass: jest.Mock;
     value: string;
@@ -141,6 +145,8 @@ const notices: string[] = [];
 function createTextComponent(): MockTextComponent {
   const component: MockTextComponent = {
     inputEl: {
+      ...createMockEl('input'),
+      addEventListener: jest.fn(),
       addClass: jest.fn(),
       toggleClass: jest.fn(),
       value: '',
@@ -186,6 +192,7 @@ function createElement(
   options?: { cls?: string; href?: string; text?: string },
 ): MockElement {
   const element: MockElement = {
+    ...createMockEl('div'),
     children: [],
     cls: options?.cls,
     href: options?.href,
@@ -350,9 +357,6 @@ describe('GrokSettingsTab', () => {
     grokSettingsTabRenderer.render(createContainer(), context);
 
     const enableSetting = findSetting('Enable Grok');
-    expect(enableSetting.desc).toBe(
-      'Make enabled Grok models available for new conversations. Existing sessions are preserved when disabled.',
-    );
     await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(plugin.settings.providerConfigs.grok.enabled).toBe(true);
@@ -408,11 +412,11 @@ describe('GrokSettingsTab', () => {
     mockedAccessSync.mockImplementation(() => {
       throw new Error('not executable');
     });
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('/opt/grok');
+    await applyTextInput(findSetting('CLI path').textComponents[0], '/opt/grok');
     expect(plugin.mutateSettings).not.toHaveBeenCalled();
 
     mockedAccessSync.mockImplementation(() => undefined);
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('/opt/grok');
+    await applyTextInput(findSetting('CLI path').textComponents[0], '/opt/grok');
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({
       'device:current': '/opt/grok',
     });
@@ -423,14 +427,14 @@ describe('GrokSettingsTab', () => {
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/my tools/grok');
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('"/my tools/grok"');
+    await applyTextInput(findSetting('CLI path').textComponents[0], '"/my tools/grok"');
 
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({
       'device:current': '"/my tools/grok"',
     });
   });
 
-  it('restores CLI path closure and input state after a pre-commit write failure', async () => {
+  it('retains the CLI path draft for retry after a pre-commit write failure', async () => {
     const plugin = createPlugin();
     const writeError = new Error('write failed');
     plugin.mutateSettings.mockRejectedValueOnce(writeError);
@@ -438,13 +442,13 @@ describe('GrokSettingsTab', () => {
     const input = findSetting('CLI path').textComponents[0];
 
     input.inputEl.value = '/opt/grok';
-    await expect(input.onChangeCallback?.('/opt/grok')).rejects.toBe(writeError);
+    await applyTextInput(input, '/opt/grok');
 
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({});
-    expect(input.inputEl.value).toBe('');
+    expect(input.inputEl.value).toBe('/opt/grok');
 
     input.inputEl.value = '/opt/grok';
-    await expect(input.onChangeCallback?.('/opt/grok')).resolves.toBeUndefined();
+    await expect(applyTextInput(input, '/opt/grok')).resolves.toBeUndefined();
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(2);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
@@ -463,7 +467,7 @@ describe('GrokSettingsTab', () => {
     const input = findSetting('CLI path').textComponents[0];
 
     input.inputEl.value = '/opt/grok';
-    await expect(input.onChangeCallback?.('/opt/grok')).rejects.toBe(recycleError);
+    await applyTextInput(input, '/opt/grok');
 
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({
       'device:current': '/opt/grok',
@@ -471,7 +475,7 @@ describe('GrokSettingsTab', () => {
     expect(input.inputEl.value).toBe('/opt/grok');
 
     input.inputEl.value = '';
-    await expect(input.onChangeCallback?.('')).resolves.toBeUndefined();
+    await expect(applyTextInput(input, '')).resolves.toBeUndefined();
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(2);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
@@ -483,7 +487,7 @@ describe('GrokSettingsTab', () => {
     const plugin = createPlugin();
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('bin/grok');
+    await applyTextInput(findSetting('CLI path').textComponents[0], 'bin/grok');
 
     expect(plugin.mutateSettings).not.toHaveBeenCalled();
     expect(mockedExistsSync).not.toHaveBeenCalled();
@@ -511,7 +515,7 @@ describe('GrokSettingsTab', () => {
     });
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    await findSetting('CLI path').textComponents[0].onChangeCallback?.('/opt/grok');
+    await applyTextInput(findSetting('CLI path').textComponents[0], '/opt/grok');
 
     expect(getGrokProviderSettings(plugin.settings).currentCatalog).toBeNull();
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);

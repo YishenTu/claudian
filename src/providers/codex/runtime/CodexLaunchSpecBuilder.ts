@@ -8,6 +8,7 @@ import { createCodexPathMapper } from './CodexPathMapper';
 export interface BuildCodexLaunchSpecOptions {
   settings: Record<string, unknown>;
   resolvedCliCommand: string | null;
+  cliArgs?: readonly string[];
   hostVaultPath: string | null;
   env: Record<string, string>;
   executionTarget?: CodexExecutionTarget;
@@ -61,7 +62,7 @@ export function buildCodexLaunchSpec(
       '--cd',
       targetCwd,
       resolvedCliCommand,
-      ...CODEX_APP_SERVER_ARGS,
+      ...(options.cliArgs ?? CODEX_APP_SERVER_ARGS),
     ];
 
     return {
@@ -78,7 +79,7 @@ export function buildCodexLaunchSpec(
   return {
     target,
     command: resolvedCliCommand,
-    args: [...CODEX_APP_SERVER_ARGS],
+    args: [...(options.cliArgs ?? CODEX_APP_SERVER_ARGS)],
     spawnCwd,
     targetCwd,
     env: options.env,

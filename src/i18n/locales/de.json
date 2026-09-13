@@ -663,6 +663,17 @@
       "leftSidebar": "Linke Seitenleiste",
       "mainTab": "Haupteditor-Tab"
     },
+    "cliInstallation": {
+      "disclosure": "{name}-Installation",
+      "description": "Optionaler CLI-Pfad für diesen Computer. Für automatische Erkennung leer lassen.",
+      "checking": "CLI wird geprüft…",
+      "versionUnavailable": "Version nicht verfügbar",
+      "notFound": "Nicht gefunden",
+      "custom": "Benutzerdefinierter Pfad",
+      "auto": "Automatisch erkannt",
+      "checkFailed": "CLI konnte nicht geprüft werden",
+      "saveFailed": "Pfad konnte nicht gespeichert werden. Erneut versuchen."
+    },
     "cliPath": {
       "name": "Claude CLI-Pfad",
       "desc": "Benutzerdefinierter Pfad zum Claude Code CLI. Leer lassen für automatische Erkennung.",

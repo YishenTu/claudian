@@ -26,6 +26,7 @@ export interface ManagedStdioProcessOptions {
   killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
   stderrBufferLimit?: number;
+  windowsVerbatimArguments?: boolean;
   stdio?: 'pipe' | ['pipe', 'pipe', 'pipe'];
 }
 
@@ -83,6 +84,7 @@ export class ManagedStdioProcess {
         env: this.options.env,
         stdio: this.options.stdio ?? 'pipe',
         windowsHide: true,
+        ...(this.options.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
     } catch (error) {
       const spawnError = toError(error);

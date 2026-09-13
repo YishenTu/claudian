@@ -77,11 +77,16 @@
 }
 
 /* Settings page - remove separator lines from setting items */
+.setting-group > .setting-items:has(> .claudian-settings) {
+  background: transparent;
+}
+
 .setting-item.claudian-settings {
   display: block;
   width: 100%;
   padding: 0;
   border-top: none;
+  background: transparent;
 }
 
 .claudian-settings .setting-item {

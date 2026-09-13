@@ -1,13 +1,15 @@
 import * as fs from 'fs';
 import { Notice, Setting } from 'obsidian';
 
+import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
+import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
-import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
+import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -18,6 +20,7 @@ import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { getCodexModelOptions } from '../modelOptions';
 import { getDefaultCodexModel } from '../models';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
+import { inspectCodexInstallation } from '../runtime/CodexCliInstallation';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { renderCodexModelPicker } from './CodexModelPicker';
 import { CodexSubagentSettings } from './CodexSubagentSettings';
@@ -44,9 +47,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.setup')).setHeading();
 
-    renderProviderEnablementSetting({
-      container,
-      description: t('settings.providerEnablement.desc', { provider: 'Codex' }),
+    const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getCodexProviderSettings(settingsBag).enabled,
       name: t('settings.providerEnablement.name', { provider: 'Codex' }),
       onChange: async (value) => {
@@ -76,8 +77,9 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         }
         modelWarning.context.notifyProviderModelOptionsChanged('codex');
       },
-    });
+    };
 
+    const installationContainer = container.createDiv();
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
@@ -106,28 +108,26 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
                 () => codexWorkspace.cliResolver.reset(),
               );
               refreshInstallationMethodUI();
+              void cliPathControl.refresh();
               await refreshCodexModelCatalog();
             });
         });
     }
 
-    const getCliPathCopy = (): { desc: string; placeholder: string } => {
+    const getCliPathCopy = (): { placeholder: string } => {
       if (!isWindowsHost) {
         return {
-          desc: t('settings.codex.cliPath.descUnix'),
           placeholder: '/usr/local/bin/codex',
         };
       }
 
       if (installationMethod === 'wsl') {
         return {
-          desc: t('settings.codex.cliPath.descWsl'),
           placeholder: 'codex',
         };
       }
 
       return {
-        desc: t('settings.codex.cliPath.descWindows'),
         placeholder: 'C:\\Users\\you\\AppData\\Roaming\\npm\\codex.exe',
       };
     };
@@ -160,10 +160,16 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     let wslDistroSettingEl: HTMLElement | null = null;
     let wslDistroInputEl: HTMLInputElement | null = null;
 
-    const cliPathControl = renderHostnameCliPathSetting({
-      container,
-      description: getCliPathCopy().desc,
-      getValue: () => getCodexProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+    const cliPathControl = renderCliInstallationSetting({
+      cliName: 'Codex CLI',
+      icon: OPENAI_PROVIDER_ICON,
+      inspect: () => inspectCodexInstallation(context.plugin),
+      container: installationContainer,
+      enablement,
+      getValue: () => {
+        const config = getCodexProviderSettings(settingsBag);
+        return config.cliPathsByHost[hostnameKey] || config.cliPath;
+      },
       name: t('settings.codex.cliPath.name'),
       onChange: async (value) => {
         const cliPathsByHost = {
@@ -178,7 +184,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         await context.plugin.applyProviderRuntimeSettings(
           ['codex'],
           (settings) => {
-            updateCodexProviderSettings(settings, { cliPathsByHost });
+            updateCodexProviderSettings(settings, { cliPathsByHost, cliPath: '' });
           },
           () => codexWorkspace.cliResolver.reset(),
         );
@@ -189,7 +195,6 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const refreshInstallationMethodUI = (): void => {
       const cliCopy = getCliPathCopy();
-      cliPathControl.setDescription(cliCopy.desc);
       cliPathControl.setPlaceholder(cliCopy.placeholder);
       cliPathControl.revalidate();
       if (wslDistroSettingEl) {
@@ -218,6 +223,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
               },
               () => codexWorkspace.cliResolver.reset(),
             );
+            void cliPathControl.refresh();
           });
 
         text.inputEl.addClass('claudian-settings-cli-path-input');

@@ -1,3 +1,5 @@
+import { createMockEl } from '@test/helpers/MockElement';
+import { applyTextInput } from '@test/helpers/settingsControls';
 import * as fs from 'fs';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -180,6 +182,7 @@ const createdSettings: Array<{
 }> = [];
 
 interface MockInputEl {
+  [key: string]: unknown;
   rows: number;
   cols: number;
   value: string;
@@ -192,6 +195,7 @@ interface MockInputEl {
 function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => void>> } {
   const listeners = new Map<string, Array<() => void>>();
   return {
+    ...createMockEl('input'),
     rows: 0,
     cols: 0,
     value: '',
@@ -282,6 +286,7 @@ function createToggleComponent(): MockToggleComponent {
 function createElement(): any {
   const classes = new Set<string>();
   const element: any = {
+    ...createMockEl('div'),
     value: '',
     style: {},
     appendText: jest.fn(),
@@ -453,6 +458,22 @@ describe('CodexSettingsTab', () => {
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
 
+  it.each([false, true])('clears legacy CLI configuration when restoring automatic detection (host override: %s)', async (hasHostOverride) => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const config = {
+      cliPath: '/legacy/codex',
+      cliPathsByHost: { 'other-host': '/keep/codex', ...(hasHostOverride ? { 'host-a': '/host/codex' } : {}) },
+    };
+    const plugin = createPlugin();
+    Object.assign(plugin.settings.providerConfigs.codex, config);
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const input = findSetting('Codex CLI path').textComponents[0];
+    expect(input.value).toBe(hasHostOverride ? '/host/codex' : '/legacy/codex');
+    await applyTextInput(input, '');
+    expect(plugin.settings.providerConfigs.codex.cliPath).toBe('');
+    expect(plugin.settings.providerConfigs.codex.cliPathsByHost).toEqual({ 'other-host': '/keep/codex' });
+  });
+
   it('renders installation method and WSL distro override controls on Windows', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
@@ -461,6 +482,25 @@ describe('CodexSettingsTab', () => {
 
     expect(findSetting('Installation method').dropdownComponents).toHaveLength(1);
     expect(findSetting('WSL distro override').textComponents).toHaveLength(1);
+  });
+
+  it('checks the newly selected WSL distro after its setting is applied', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.codex.installationMethodsByHost = { 'host-a': 'wsl' };
+    plugin.settings.providerConfigs.codex.wslDistroOverridesByHost = { 'host-a': 'Ubuntu' };
+    let checkedDistro: string | undefined;
+    plugin.getResolvedProviderCliPath = async (_provider: string, context: { executionTarget: { distroName: string } }) => {
+      checkedDistro = context.executionTarget.distroName;
+      return null;
+    };
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(checkedDistro).toBe('Ubuntu');
+
+    await findSetting('WSL distro override').textComponents[0].onChangeCallback?.('Debian');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(checkedDistro).toBe('Debian');
   });
 
   it('hides Windows-only installation controls on non-Windows platforms', () => {
@@ -510,9 +550,6 @@ describe('CodexSettingsTab', () => {
 
     codexSettingsTabRenderer.render(createContainer(), context);
     const enableSetting = findSetting('Enable Codex');
-    expect(enableSetting.desc).toBe(
-      'Make enabled Codex models available for new conversations. Existing sessions are preserved when disabled.',
-    );
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
@@ -686,10 +723,10 @@ describe('CodexSettingsTab', () => {
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     const cliPathSetting = findSetting('Codex CLI path');
-    expect(cliPathSetting.desc).toBe('Custom path to the local Codex CLI. Leave empty to prefer known Codex installs, then PATH.');
+    expect(cliPathSetting.desc).toBe('Optional CLI path for this computer. Leave empty to detect automatically.');
     expect(cliPathSetting.textComponents[0].placeholder).toBe('/usr/local/bin/codex');
 
-    await cliPathSetting.textComponents[0].onChangeCallback?.('codex');
+    await applyTextInput(cliPathSetting.textComponents[0], 'codex');
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBeUndefined();
     expect(mockSaveSettings).toHaveBeenCalledTimes(0);
@@ -711,7 +748,7 @@ describe('CodexSettingsTab', () => {
     });
 
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    await findSetting('Codex CLI path').textComponents[0].onChangeCallback?.('"/my tools/codex"');
+    await applyTextInput(findSetting('Codex CLI path').textComponents[0], '"/my tools/codex"');
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('"/my tools/codex"');
   });
@@ -745,7 +782,7 @@ describe('CodexSettingsTab', () => {
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
 
     const cliPathSetting = findSetting('Codex CLI path');
-    await cliPathSetting.textComponents[0].onChangeCallback?.('codex');
+    await applyTextInput(cliPathSetting.textComponents[0], 'codex');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
       'host-a': 'wsl',
@@ -772,7 +809,7 @@ describe('CodexSettingsTab', () => {
     mockSaveSettings.mockClear();
 
     const cliPathSetting = findSetting('Codex CLI path');
-    await cliPathSetting.textComponents[0].onChangeCallback?.('"/home/user/my tools/codex"');
+    await applyTextInput(cliPathSetting.textComponents[0], '"/home/user/my tools/codex"');
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe(
       '"/home/user/my tools/codex"',
@@ -800,7 +837,7 @@ describe('CodexSettingsTab', () => {
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
 
     const cliPathSetting = findSetting('Codex CLI path');
-    await cliPathSetting.textComponents[0].onChangeCallback?.('C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe');
+    await applyTextInput(cliPathSetting.textComponents[0], 'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
       'host-a': 'wsl',
@@ -822,22 +859,13 @@ describe('CodexSettingsTab', () => {
     mockSaveSettings.mockClear();
 
     const cliPathSetting = findSetting('Codex CLI path');
-    await cliPathSetting.textComponents[0].onChangeCallback?.(
+    await applyTextInput(cliPathSetting.textComponents[0],
       '"C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe"',
     );
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBeUndefined();
     expect(mockSaveSettings).not.toHaveBeenCalled();
 
-    const validationCallIndex = container.createDiv.mock.calls.findIndex(
-      ([options]: [{ cls?: string }?]) => options?.cls?.includes('claudian-cli-path-validation'),
-    );
-    const validationEl = container.createDiv.mock.results[validationCallIndex]?.value;
-    expect(validationCallIndex).toBeGreaterThanOrEqual(0);
-    expect(validationEl.setText).toHaveBeenLastCalledWith(
-      'WSL mode expects a Linux command or Linux absolute path, not a Windows executable path.',
-    );
-    expect(validationEl.hasClass('claudian-hidden')).toBe(false);
     expect(cliPathSetting.textComponents[0].inputEl.toggleClass).toHaveBeenLastCalledWith(
       'claudian-input-error',
       true,

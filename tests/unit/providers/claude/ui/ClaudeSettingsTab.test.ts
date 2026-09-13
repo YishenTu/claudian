@@ -1,3 +1,5 @@
+import { createMockEl } from '@test/helpers/MockElement';
+import { applyTextInput } from '@test/helpers/settingsControls';
 import * as fs from 'fs';
 
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
@@ -154,6 +156,7 @@ jest.mock('@/utils/env', () => {
 });
 
 interface MockInputEl {
+  [key: string]: unknown;
   rows: number;
   cols: number;
   value: string;
@@ -207,6 +210,7 @@ const createdSettings: Array<{
 function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => void>> } {
   const listeners = new Map<string, Array<() => void>>();
   return {
+    ...createMockEl('input'),
     rows: 0,
     cols: 0,
     value: '',
@@ -298,6 +302,7 @@ function createToggleComponent(): MockToggleComponent {
 function createElement(): any {
   const classes = new Set<string>();
   const element: any = {
+    ...createMockEl('div'),
     value: '',
     style: {},
     dataset: {},
@@ -427,6 +432,21 @@ describe('ClaudeSettingsTab', () => {
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
 
+  it.each([false, true])('clears legacy CLI configuration when restoring automatic detection (host override: %s)', async (hasHostOverride) => {
+    const config = {
+      cliPath: '/legacy/claude',
+      cliPathsByHost: { 'other-host': '/keep/claude', ...(hasHostOverride ? { 'host-a': '/host/claude' } : {}) },
+    };
+    const plugin = createPlugin();
+    Object.assign(plugin.settings.providerConfigs.claude, config);
+    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const input = findSetting('settings.cliPath.name').textComponents[0];
+    expect(input.value).toBe(hasHostOverride ? '/host/claude' : '/legacy/claude');
+    await applyTextInput(input, '');
+    expect(plugin.settings.providerConfigs.claude.cliPath).toBe('');
+    expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({ 'other-host': '/keep/claude' });
+  });
+
   it('uses the current npm package wrapper path as the CLI placeholder', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
@@ -530,9 +550,8 @@ describe('ClaudeSettingsTab', () => {
     });
 
     claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    await findSetting('settings.cliPath.name')
-      .textComponents[0]
-      .onChangeCallback?.('/custom/claude');
+    await applyTextInput(findSetting('settings.cliPath.name')
+      .textComponents[0], '/custom/claude');
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['claude'],
@@ -567,9 +586,8 @@ describe('ClaudeSettingsTab', () => {
     mockCliResolverReset.mockImplementation(() => undefined);
 
     claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    await findSetting('settings.cliPath.name')
-      .textComponents[0]
-      .onChangeCallback?.('"/custom dir/claude"');
+    await applyTextInput(findSetting('settings.cliPath.name')
+      .textComponents[0], '"/custom dir/claude"');
 
     expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({
       'host-a': '"/custom dir/claude"',
