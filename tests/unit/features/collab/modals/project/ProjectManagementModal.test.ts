@@ -163,18 +163,241 @@ function createPort(
 }
 
 async function flush(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
 }
 
 describe('ProjectManagementModal', () => {
+it.each([false, true])('automatically restores management after Host startup with publication before response=%s', async publishBeforeResponse => {
+  const host = member('member-host', 'Host operator', { role: 'manager' });
+  const summary = project({ role: 'manager', hostInstallationStatus: 'hosted-here', hostStatus: 'stopped' });
+  let publish!: (state: CollabFeatureState) => void;
+  const port = createPort([host], {
+    subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+  }, { currentMemberId: host.id, hostMemberId: host.id });
+  port.readSnapshot.mockResolvedValueOnce({ status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) });
+  port.startHost.mockImplementation(async () => {
+    if (publishBeforeResponse) publish({ lifecycle: 'ready', projects: [{ ...summary, hostStatus: 'running' }], selectedProjectId: summary.id });
+    return success({ projectId: summary.id, status: 'running' });
+  });
+  const modal = new ProjectManagementModal({} as never, port, { project: summary });
+  document.body.appendChild(modal.contentEl);
+  try {
+    modal.onOpen(); await flush(); await flush();
+    const ui = within(modal.contentEl);
+    expect(ui.queryByRole('button', { name: 'Create invitation' })).toBeNull();
+    expect(ui.getByRole('button', { name: 'Retry' })).not.toBeNull();
+    fireEvent.click(ui.getByRole('button', { name: 'Start Host' }));
+    await flush(); await flush(); await flush();
+    expect(ui.getByRole('button', { name: 'Stop Host' })).not.toBeNull();
+    expect(ui.getByRole('button', { name: 'Create invitation' })).not.toBeNull();
+  } finally { modal.onClose(); modal.contentEl.remove(); }
+});
+
   beforeEach(() => {
     jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z'));
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('preserves an unsubmitted Cloud URL and focus across ordinary Project invalidation', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let publish!: (state: CollabFeatureState) => void;
+    const summary = project({ connectionStatus: 'connected' });
+    const port = createPort(members, { subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }) });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    document.body.appendChild(modal.contentEl); modal.onOpen(); await flush();
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    const input = ui.getByRole('textbox', { name: 'Cloud server URL' }) as HTMLInputElement;
+    input.focus(); fireEvent.input(input, { target: { value: 'https://cloud.example.test/' } });
+    input.setSelectionRange(8, 15);
+    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id } as CollabFeatureState);
+    await flush();
+    expect((ui.getByRole('textbox', { name: 'Cloud server URL' }) as HTMLInputElement).value).toBe('https://cloud.example.test/');
+    expect(document.activeElement).toBe(ui.getByRole('textbox', { name: 'Cloud server URL' }));
+    expect((document.activeElement as HTMLInputElement).selectionStart).toBe(8);
+    expect((document.activeElement as HTMLInputElement).selectionEnd).toBe(15);
+    modal.onClose();
+    modal.onOpen(); await flush();
+    fireEvent.click(ui.getByRole('button', { name: 'Move to Cloud' }));
+    expect((ui.getByRole('textbox', { name: 'Cloud server URL' }) as HTMLInputElement).value).toBe('');
+    modal.onClose(); modal.contentEl.remove();
+  });
+
+  it('recovers pending management reads when the local Host starts', async () => {
+    const host = member('member-host', 'Host', { role: 'manager' });
+    const summary = project({ hostInstallationStatus: 'hosted-here', hostStatus: 'stopped' });
+    let publish!: (state: CollabFeatureState) => void;
+    let finish!: (value: ReturnType<typeof success<CollabCoordinationSnapshot>>) => void;
+    const port = createPort([host], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+    }, { currentMemberId: host.id, hostMemberId: host.id });
+    port.readSnapshot.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    port.startHost.mockImplementation(async () => {
+      publish({ lifecycle: 'ready', projects: [{ ...summary, hostStatus: 'running' }], selectedProjectId: summary.id });
+      return success({ projectId: summary.id, status: 'running' });
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    modal.onOpen(); await flush();
+    try {
+      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Start Host' }));
+      await flush();
+      expect(within(modal.contentEl).getByRole('button', { name: 'Create invitation' })).not.toBeNull();
+    } finally { modal.onClose(); finish(success({} as never)); await flush(); }
+  });
+
+  it('updates the Host control when subscribed application state changes', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let publish!: (state: CollabFeatureState) => void;
+    const summary = project({ connectionStatus: 'connected', hostInstallationStatus: 'hosted-here', hostStatus: 'running' });
+    const port = createPort(members, { subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }) }, { currentMemberId: 'member-manager', hostMemberId: 'member-manager' });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    document.body.appendChild(modal.contentEl); modal.onOpen(); await flush();
+    const ui = within(modal.contentEl);
+    expect(ui.getByRole('button', { name: 'Stop Host' })).not.toBeNull();
+    publish({ lifecycle: 'ready', projects: [{ ...summary, hostStatus: 'stopped' }], selectedProjectId: summary.id } as CollabFeatureState);
+    await flush();
+    expect(ui.getByRole('button', { name: 'Start Host' })).not.toBeNull();
+    modal.onClose(); modal.contentEl.remove();
+  });
+  it.each(['online', 'offline', 'pending', 'refresh-pending'] as const)('mounts Host controls when local ownership arrives with %s management reads', async readState => {
+    let publish!: (state: CollabFeatureState) => void;
+    const summary = project({ connectionStatus: 'connected', role: 'member' });
+    const port = createPort([member('member-manager', 'Alice')], { subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }) });
+    let release: (() => void) | undefined;
+    if (readState === 'offline' || readState === 'pending') {
+      const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+      port.readSnapshot.mockImplementation(() => readState === 'offline'
+        ? Promise.resolve(offline)
+        : new Promise(resolve => { release = () => resolve(offline); }));
+    }
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      expect(within(modal.contentEl).queryByRole('button', { name: 'Start Host' })).toBeNull();
+      if (readState === 'refresh-pending') {
+        port.readSnapshot.mockImplementation(() => new Promise(resolve => {
+          release = () => resolve({ status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) });
+        }));
+      }
+      publish({ lifecycle: 'ready', projects: [{ ...summary, hostInstallationStatus: 'hosted-here', hostStatus: 'stopped' }], selectedProjectId: summary.id });
+      await flush();
+      expect(within(modal.contentEl).getByRole('button', { name: 'Start Host' })).not.toBeNull();
+      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      await flush();
+      expect(within(modal.contentEl).queryByRole('button', { name: 'Start Host' })).toBeNull();
+    } finally { release?.(); modal.onClose(); modal.contentEl.remove(); await flush(); }
+  });
+
+  it.each(['descriptor', 'destination', 'actor-change'] as const)('preserves identity-bound transfer form state for %s', async scenario => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
+    let publish!: (state: CollabFeatureState) => void;
+    const port = createPort(members, {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({ authorityKind: 'cloud', authorityTransfer: true })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: { currentMember: members[0], members, project: { authorityKind: 'cloud' } },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      })),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      const ui = within(modal.contentEl);
+      fireEvent.click(ui.getByRole('button', { name: 'Move to LAN' }));
+      fireEvent.change(ui.getByRole('combobox', { name: 'LAN host' }), { target: { value: 'another-device' } });
+      const input = ui.getByRole('textbox', { name: 'LAN target descriptor' });
+      input.focus();
+      const draft = '{"preparationId":"draft-not-yet-submitted"}';
+      fireEvent.input(input, { target: { value: draft } });
+      const destination = ui.getByRole('combobox', { name: 'LAN host' });
+      if (scenario === 'destination') destination.focus();
+      if (scenario === 'actor-change') {
+        const replacementMember = member('member-replacement', 'Replacement', { role: 'manager' });
+        port.readSnapshot.mockResolvedValue(success({
+          snapshot: { currentMember: replacementMember, members: [replacementMember], project: { authorityKind: 'cloud' } },
+          source: 'online', stale: false, syncState: { status: 'synchronized' },
+        } as never));
+      }
+      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      await flush();
+      if (scenario === 'actor-change') {
+        const toggle = ui.getByRole('button', { name: 'Move to LAN' });
+        if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle);
+      }
+      const descriptor = ui.queryByRole('textbox', { name: 'LAN target descriptor' }) as HTMLTextAreaElement | null;
+      expect(descriptor?.value ?? null).toBe(scenario === 'actor-change' ? null : draft);
+      expect((ui.getByRole('combobox', { name: 'LAN host' }) as HTMLSelectElement).value)
+        .toBe(scenario === 'actor-change' ? 'this-device' : 'another-device');
+      const focusedField = document.activeElement?.getAttribute('data-field') ?? null;
+      expect(focusedField).toBe(scenario === 'actor-change' ? null
+        : scenario === 'destination' ? 'lan-destination' : 'cloud-to-lan-descriptor');
+      expect(port.beginCloudToLanTransfer).not.toHaveBeenCalled();
+    } finally { modal.onClose(); modal.contentEl.remove(); }
+  });
+
+  it('keeps a retained remote transfer actionable after the current member changes', async () => {
+    const original = member('member-manager', 'Alice', { role: 'manager' });
+    const replacement = member('member-replacement', 'Replacement', { role: 'manager' });
+    const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
+    const handle = { operationIntentId: 'intent-one', projectId: summary.id, transferId: 'transfer-one' };
+    let publish!: (state: CollabFeatureState) => void;
+    const port = createPort([original], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({ authorityKind: 'cloud', authorityTransfer: true })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: { currentMember: original, members: [original], project: { authorityKind: 'cloud' } },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      })),
+    });
+    const copyText = jest.fn().mockResolvedValue(undefined);
+    const modal = new ProjectManagementModal({} as never, port, { copyText, project: summary });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      port.readSnapshot.mockResolvedValue(success({
+        snapshot: { currentMember: replacement, members: [replacement], project: { authorityKind: 'cloud' } },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never));
+      port.readCloudToLanTransfer.mockResolvedValue(success({
+        manager: {
+          descriptor: { preparationId: 'preparation-one', projectId: summary.id, transferId: 'transfer-one' },
+          handle, status: { phase: 'source-quiesced', state: 'active' },
+        }, target: null,
+      } as never));
+      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      await flush();
+      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Copy transfer data: Transfer handle' }));
+      await flush();
+      expect(copyText).toHaveBeenCalledWith(JSON.stringify(handle));
+      expect(port.moveCloudToLan).not.toHaveBeenCalled();
+    } finally { modal.onClose(); modal.contentEl.remove(); }
+  });
+
+  it.each(['initial', 'retry'] as const)('keeps offline Leave available during pending %s reads', async phase => {
+    const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+    let release!: (value: typeof offline) => void;
+    const delayed = new Promise<typeof offline>(resolve => { release = resolve; });
+    const readSnapshot = jest.fn();
+    if (phase === 'retry') readSnapshot.mockResolvedValueOnce(offline);
+    readSnapshot.mockReturnValue(delayed);
+    const port = createPort([], { readSnapshot, readProjectCapabilities: jest.fn().mockResolvedValue(offline) });
+    const modal = new ProjectManagementModal({} as never, port, { project: project({ role: 'member' }) });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      const ui = within(modal.contentEl);
+      if (phase === 'retry') fireEvent.click(ui.getByRole('button', { name: 'Retry' }));
+      fireEvent.click(ui.getByRole('button', { name: 'Leave project' }));
+      expect((ui.getByRole('radio', { name: 'Keep files' }) as HTMLInputElement).checked).toBe(true);
+      fireEvent.click(ui.getByRole('button', { name: 'Confirm' })); await flush();
+      expect(port.leaveProject.mock.calls[0]?.[0]).toEqual({ projectId: 'project-alpha', cleanupChoice: 'keep-files' });
+    } finally { release(offline); modal.onClose(); modal.contentEl.remove(); await flush(); }
   });
 
   it('identifies the Project and groups management into named sections', async () => {
@@ -247,37 +470,45 @@ describe('ProjectManagementModal', () => {
     modal.contentEl.remove();
   });
 
-  it('keeps ordinary-member Cloud Leave reachable while the authority is offline', async () => {
+  it.each(['lan', 'cloud'] as const)('explains immediate local Leave and deferred remote settlement while %s is offline', async authorityKind => {
+    const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
     const port = createPort([], {
-      readProjectCapabilities: jest.fn().mockResolvedValue({
-        error: new CollabError({ code: 'endpoint-unreachable' }),
-        status: 'failure',
-      }),
-      readSnapshot: jest.fn().mockResolvedValue({
-        error: new CollabError({ code: 'endpoint-unreachable' }),
-        status: 'failure',
-      }),
+      readSnapshot: jest.fn().mockResolvedValue(offline),
+      readProjectCapabilities: jest.fn().mockResolvedValue(offline),
     });
     const modal = new ProjectManagementModal({} as never, port, {
-      project: project({
-        authorityKind: 'cloud',
-        connectionStatus: 'offline',
-        role: 'member',
-      }),
+      project: project({ authorityKind, connectionStatus: 'offline', role: 'member' }),
     });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      const ui = within(modal.contentEl);
+      fireEvent.click(ui.getByRole('button', { name: 'Leave project' }));
+      expect(ui.getByText(authorityKind === 'lan'
+        ? 'You are offline. You will leave this Project locally now. Your departure will be synced when this device reconnects to the Host.'
+        : 'You are offline. You will leave this Project locally now. Your departure will be synced when this device reconnects to the server.')).not.toBeNull();
+      expect((ui.getByRole('radio', { name: 'Keep files' }) as HTMLInputElement).checked).toBe(true);
+      const deleteChoice = ui.getByRole('radio', { name: 'Delete files' });
+      fireEvent.click(deleteChoice);
+      fireEvent.change(deleteChoice, { target: { checked: true } });
+      expect(ui.getByText('Local files will be deleted immediately.')).not.toBeNull();
+      expect(await axe(modal.contentEl)).toHaveNoViolations();
+      fireEvent.click(ui.getByRole('button', { name: 'Confirm' })); await flush();
+      expect(port.leaveProject.mock.calls[0]?.[0]).toEqual({ projectId: 'project-alpha', cleanupChoice: 'delete-files' });
+    } finally { modal.onClose(); modal.contentEl.remove(); }
+  });
 
-    modal.onOpen();
-    await flush();
-    modal.contentEl.querySelector<HTMLButtonElement>('[data-action="leave-project"]')?.click();
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="confirm-access-action"]',
-    )?.click();
-    await flush();
-
-    expect(port.leaveProject).toHaveBeenCalledWith({
-      cleanupChoice: 'keep-files',
-      projectId: 'project-alpha',
-    });
+  it.each([
+    { role: 'manager' as const },
+    { role: 'member' as const, hostInstallationStatus: 'hosted-here' as const, hostStatus: 'stopped' as const },
+    { role: 'member' as const, hostInstallationStatus: 'hosted-elsewhere' as const },
+  ])('keeps offline responsibility holders out of local Leave: %j', async overrides => {
+    const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+    const port = createPort([], { readSnapshot: jest.fn().mockResolvedValue(offline), readProjectCapabilities: jest.fn().mockResolvedValue(offline) });
+    const modal = new ProjectManagementModal({} as never, port, { project: project(overrides) });
+    document.body.appendChild(modal.contentEl);
+    try { modal.onOpen(); await flush(); expect(within(modal.contentEl).queryByRole('button', { name: 'Leave project' })).toBeNull(); }
+    finally { modal.onClose(); modal.contentEl.remove(); }
   });
 
   it('renders Cloud membership without exposing LAN lifecycle actions', async () => {
@@ -498,7 +729,7 @@ describe('ProjectManagementModal', () => {
     }
   });
 
-  it('revalidates a retained member claim immediately before copying it', async () => {
+  it.each([500, 1_000])('revalidates a retained member claim before copying at %s ms', async elapsed => {
     jest.useFakeTimers();
     try {
       jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
@@ -539,13 +770,12 @@ describe('ProjectManagementModal', () => {
       modal.onOpen();
       await flush();
       await flush();
-      jest.setSystemTime(Date.parse('2026-09-02T00:00:01.000Z'));
+      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z') + elapsed);
       modal.contentEl.querySelector<HTMLButtonElement>(
         '[data-action="copy-member-claim"]',
       )?.click();
       await flush();
 
-      expect(port.readManagementOperation).toHaveBeenCalledTimes(2);
       expect(copyText).not.toHaveBeenCalled();
       expect(modal.contentEl.textContent)
         .not.toContain('claudian-cloud-claim:v1:stale-secret');
@@ -1342,6 +1572,48 @@ describe('ProjectManagementModal', () => {
     modal.contentEl.remove();
   });
 
+  it.each(['lan', 'cloud'] as const)('consumes terminal transfer results after %s authority publication', async authorityKind => {
+    const manager = member('member-manager', 'Alice', { role: 'manager' });
+    const summary = project({ authorityKind, connectionStatus: 'connected',
+      hostInstallationStatus: authorityKind === 'lan' ? 'hosted-here' : 'not-host',
+      hostStatus: authorityKind === 'lan' ? 'running' : 'not-host',
+    });
+    let publish!: (state: CollabFeatureState) => void;
+    const complete = async () => {
+      const target = authorityKind === 'lan' ? 'cloud' : 'lan';
+      publish({ lifecycle: 'ready', selectedProjectId: summary.id, projects: [{
+        ...summary, authorityKind: target,
+        hostInstallationStatus: target === 'lan' ? 'hosted-here' : 'not-host',
+        hostStatus: target === 'lan' ? 'running' : 'not-host',
+      }] });
+      return success({ phase: 'completed', state: 'completed', transferId: 'transfer-one' } as never);
+    };
+    const port = createPort([manager], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      moveLanToCloud: jest.fn().mockImplementation(complete),
+      moveCloudToLan: jest.fn().mockImplementation(complete),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: { currentMember: manager, members: [manager], project: { authorityKind, hostMemberId: manager.id } },
+        source: 'online', stale: false, syncState: { status: 'synchronized' },
+      } as never)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({ authorityKind, authorityTransfer: true })),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, { project: summary, onChanged });
+    document.body.appendChild(modal.contentEl);
+    modal.onOpen(); await flush();
+    const title = authorityKind === 'lan' ? 'Move to Cloud' : 'Move to LAN';
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: title }));
+    const input = within(modal.contentEl).queryByRole('textbox', { name: 'Cloud server URL' });
+    if (input) fireEvent.input(input, { target: { value: 'https://cloud.example.test/' } });
+    fireEvent.click(within(modal.contentEl.querySelector<HTMLElement>('#claudian-collab-transfer-form')!).getByRole('button', { name: title }));
+    await flush();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(modal.close).toHaveBeenCalledTimes(1);
+    expect(modal.contentEl.childElementCount).toBe(0);
+    modal.onClose(); modal.contentEl.remove();
+  });
+
   it('treats a persisted cancelled Cloud move as no current move', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const port = createPort(members, {
@@ -1695,6 +1967,46 @@ describe('ProjectManagementModal', () => {
     expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).not.toBeNull();
   });
 
+  it('preserves offline recovery editing while a background management read is pending', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    const summary = project({ authorityKind: 'cloud', connectionStatus: 'offline' });
+    const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+    let publish!: (state: CollabFeatureState) => void;
+    let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['readSnapshot']>>) => void;
+    const port = createPort(members, {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      readSnapshot: jest.fn().mockResolvedValue(offline),
+      readProjectCapabilities: jest.fn().mockResolvedValue(offline),
+      readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
+        manager: null,
+        target: { canWithdraw: true, descriptor: { preparationId: 'preparation-one' }, handle: null, status: null },
+      } as never)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen(); await flush();
+      const ui = within(modal.contentEl);
+      const input = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
+      const draft = '{"transferId":"in-progress"}';
+      fireEvent.input(input, { target: { value: draft } });
+      input.focus();
+      input.setSelectionRange(3, 9);
+      port.readSnapshot.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      await flush();
+      const pendingInput = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
+      expect(document.activeElement).toBe(pendingInput);
+      expect(pendingInput.value).toBe(draft);
+      expect([pendingInput.selectionStart, pendingInput.selectionEnd]).toEqual([3, 9]);
+      finish(offline); await flush();
+      const settledInput = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
+      expect(document.activeElement).toBe(settledInput);
+      expect(settledInput.value).toBe(draft);
+      expect([settledInput.selectionStart, settledInput.selectionEnd]).toEqual([3, 9]);
+    } finally { modal.onClose(); modal.contentEl.remove(); }
+  });
+
   it('restores durable Cloud-to-LAN Manager and target controls after close and offline reopen', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const descriptor = {
@@ -1879,51 +2191,123 @@ describe('ProjectManagementModal', () => {
     expect(await axe(modal.contentEl)).toHaveNoViolations();
   });
 
-  it('cancels a superseded snapshot read when a newer read starts', async () => {
-    const members = [member('member-manager', 'Alice', { role: 'manager' })];
-    const signals: AbortSignal[] = [];
-    let invalidate: () => void = () => undefined;
-    const port = createPort(members, {
-      readSnapshot: jest.fn().mockImplementation((
-        _projectId: string,
-        options?: { signal?: AbortSignal },
-      ) => {
-        signals.push(options!.signal!);
-        return Promise.resolve(success({
-          snapshot: {
-            currentMember: members[0],
-            members,
-            project: { authorityKind: 'lan', hostMemberId: 'member-host' },
-          },
-          source: 'online',
-          stale: false,
-          syncState: { status: 'synchronized' },
-        } as never));
-      }),
-      subscribe: jest.fn().mockImplementation((listener: (state: unknown) => void) => {
-        invalidate = () => listener({
-          lifecycle: 'ready',
-          projects: [project()],
-          selectedProjectId: 'project-alpha',
-        });
-        return { dispose: jest.fn() };
-      }),
+  it('publishes refreshed Cloud management as a complete bundle', async () => {
+    const original = member('member-manager', 'Original manager', { role: 'manager' });
+    const replacement = member('member-manager', 'Replacement manager', { role: 'manager' });
+    const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
+    let publish!: (state: CollabFeatureState) => void;
+    let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['listMembers']>>) => void;
+    const snapshot = (current: CollabMember) => success({
+      snapshot: { currentMember: current, members: [current], project: { authorityKind: 'cloud' } },
+      source: 'online', stale: false, syncState: { status: 'synchronized' },
+    } as never);
+    const port = createPort([original], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      readSnapshot: jest.fn().mockResolvedValue(snapshot(original)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', authorityTransfer: true, membershipManagement: true,
+      })),
     });
-    const modal = new ProjectManagementModal({} as never, port, {
-      project: project({ connectionStatus: 'connected' }),
-    });
-
-    modal.onOpen();
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    modal.onOpen(); await flush();
+    port.readSnapshot.mockResolvedValue(snapshot(replacement));
+    port.listMembers.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
     await flush();
-    expect(signals).toHaveLength(1);
-
-    invalidate();
-    await flush();
-    expect(signals).toHaveLength(2);
-    expect(signals[0].aborted).toBe(true);
-
+    // Another publication can render the current view while the richer member read is pending.
+    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    expect(within(modal.contentEl).getByText('Original manager')).not.toBeNull();
+    expect(within(modal.contentEl).queryByText('Replacement manager')).toBeNull();
+    finish(success([])); await flush();
+    expect(within(modal.contentEl).getByText('Replacement manager')).not.toBeNull();
     modal.onClose();
-    expect(signals[1].aborted).toBe(true);
+  });
+
+  it.each(['success', 'failure'] as const)('discards old actor confirmation before pending Cloud member read ends with %s', async outcome => {
+    const original = member('member-manager', 'Original manager', { role: 'manager' });
+    const replacement = member('member-replacement', 'Replacement manager', { role: 'manager' });
+    const other = member('member-other', 'Other');
+    const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
+    let publish!: (state: CollabFeatureState) => void;
+    let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['listMembers']>>) => void;
+    const snapshot = (current: CollabMember) => success({
+      snapshot: { currentMember: current, members: [current, other], project: { authorityKind: 'cloud' } },
+      source: 'online', stale: false, syncState: { status: 'synchronized' },
+    } as never);
+    const port = createPort([original, other], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      readSnapshot: jest.fn().mockResolvedValue(snapshot(original)),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'cloud', membershipManagement: true,
+      })),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    modal.onOpen(); await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Remove: Other' }));
+    expect(within(modal.contentEl).getByRole('button', { name: 'Confirm' })).not.toBeNull();
+    port.readSnapshot.mockResolvedValue(snapshot(replacement));
+    port.listMembers.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    await flush();
+    expect(within(modal.contentEl).queryByRole('button', { name: 'Confirm' })).toBeNull();
+    expect(within(modal.contentEl).queryByRole('button', { name: 'Remove: Other' })).toBeNull();
+    finish(outcome === 'success' ? success([]) : {
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    await flush();
+    expect(within(modal.contentEl).queryByRole('button', { name: 'Confirm' })).toBeNull();
+    if (outcome === 'success') {
+      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Remove: Other' }));
+      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+      await flush();
+    }
+    expect(port.removeMember).toHaveBeenCalledTimes(outcome === 'success' ? 1 : 0);
+    modal.onClose();
+  });
+
+  it('replays invalidation deferred during a failed management command', async () => {
+    const manager = member('member-manager', 'Alice', { role: 'manager' });
+    const other = member('member-other', 'Other');
+    let publish!: (state: CollabFeatureState) => void;
+    let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['removeMember']>>) => void;
+    const port = createPort([manager, other], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+      removeMember: jest.fn<ReturnType<ProjectManagementModalPort['removeMember']>, Parameters<ProjectManagementModalPort['removeMember']>>(() => new Promise(resolve => { finish = resolve; })),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    modal.onOpen(); await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Remove: Other' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    await flush();
+    const updated = { ...manager, displayName: 'Updated manager' };
+    port.readSnapshot.mockResolvedValue(success({
+      snapshot: { currentMember: updated, members: [updated, other], project: { authorityKind: 'lan', hostMemberId: 'member-host' } },
+      source: 'online', stale: false, syncState: { status: 'synchronized' },
+    } as never));
+    publish({ lifecycle: 'ready', projects: [project()], selectedProjectId: 'project-alpha' });
+    finish({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) });
+    await flush();
+    expect(within(modal.contentEl).getByText('Updated manager')).not.toBeNull();
+    modal.onClose();
+  });
+
+  it('refreshes members on feature invalidation without changing the local summary', async () => {
+    const original = member('member-manager', 'Alice', { role: 'manager' });
+    let publish!: (state: CollabFeatureState) => void;
+    const port = createPort([original], {
+      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    modal.onOpen(); await flush();
+    const updated = { ...original, displayName: 'Updated member' };
+    port.readSnapshot.mockResolvedValue(success({
+      snapshot: { currentMember: updated, members: [updated], project: { authorityKind: 'lan', hostMemberId: 'member-host' } },
+      source: 'online', stale: false, syncState: { status: 'synchronized' },
+    } as never));
+    publish({ lifecycle: 'ready', projects: [project()], selectedProjectId: 'project-alpha' });
+    await flush();
+    expect(within(modal.contentEl).getByText('Updated member')).not.toBeNull();
+    modal.onClose();
   });
 
   it('omits left Members from the visible list and Member count', async () => {
@@ -2857,6 +3241,7 @@ describe('ProjectManagementModal', () => {
       project: project(),
     });
     modal.onOpen();
+    await flush();
 
     modal.onClose();
     finish(success({} as CollabCoordinationSnapshot));
@@ -2864,6 +3249,26 @@ describe('ProjectManagementModal', () => {
 
     expect(signal?.aborted).toBe(true);
     expect(modal.contentEl.childElementCount).toBe(0);
+  });
+
+  it('ignores a completed mutation from a closed management session after reopening', async () => {
+    let finish!: (result: ReturnType<typeof success<void>>) => void;
+    const manager = member('member-manager', 'Alice', { role: 'manager' });
+    const other = member('member-other', 'Other');
+    const port = createPort([manager, other], {
+      removeMember: jest.fn<ReturnType<ProjectManagementModalPort['removeMember']>, Parameters<ProjectManagementModalPort['removeMember']>>(() => new Promise(resolve => { finish = resolve; })),
+    });
+    const onChanged = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, { project: project(), onChanged });
+    modal.onOpen(); await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Remove: Other' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Confirm' }));
+    await flush();
+    modal.onClose(); modal.onOpen(); await flush();
+    finish(success(undefined)); await flush();
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(modal.contentEl.textContent).not.toContain('Action complete');
+    modal.onClose();
   });
 
   it('offers every role explicit Keep or Delete when leaving and defaults to Keep', async () => {

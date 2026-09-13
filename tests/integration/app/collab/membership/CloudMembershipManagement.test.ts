@@ -42,6 +42,31 @@ const MAIN_OID = 'a'.repeat(40);
 jest.setTimeout(30_000);
 
 describe('Cloud membership management', () => {
+  it.each([false, true])('preserves acknowledged member removal with catalog fault=%s', async injectFault => {
+    const fixture = await createFixture();
+    const client = fixture.client();
+    let fault: jest.SpyInstance | undefined;
+    try {
+      await fixture.seed(client.foundation);
+      const request = { projectId: PROJECT_ID, memberId: 'member-bob' };
+      expect(await client.feature.removeMember(request)).toMatchObject({ status: 'recovery-required' });
+      const actualReadFile = fs.readFile;
+      fault = jest.spyOn(fs, 'readFile').mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
+        if (injectFault && fixture.removals.length >= 2 && String(args[0]) === path.join(fixture.vaultRoot, '.claudian/collab/index.json')) {
+          throw Object.assign(new Error('Injected catalog read failure'), { code: 'EIO' });
+        }
+        return actualReadFile(...args);
+      });
+      const result = await client.feature.removeMember(request);
+      fault.mockRestore(); fault = undefined;
+      expect(fixture.failures).toEqual([]);
+      expect(fixture.removals).toHaveLength(2);
+      expect(fixture.removals[1]).toEqual(fixture.removals[0]);
+      expect(await client.feature.readManagementOperation(PROJECT_ID)).toMatchObject({ status: 'success', value: null });
+      expect(result).toMatchObject({ status: 'success' });
+    } finally { fault?.mockRestore(); await client.close(); await fixture.close(); }
+  });
+
   it('does not create a receipt when the authority returns multiple active responsibility offers', async () => {
     const fixture = await createFixture({ receiptTarget: true, multipleReceiptOffers: true });
     const client = fixture.client();

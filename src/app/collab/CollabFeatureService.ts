@@ -1905,7 +1905,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<void>> {
     try {
       await this.options.membership.removeMember(request, options);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
@@ -1919,7 +1919,7 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.localExit.leaveProject(request, options);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
@@ -1933,7 +1933,7 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(options.signal);
       await this.options.localExit.resumeLeave(projectId, options);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
@@ -1964,7 +1964,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<void>> {
     try {
       await this.options.membership.promoteManager(request, options);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
@@ -1977,7 +1977,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<void>> {
     try {
       await this.options.membership.demoteManager(request, options);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);
@@ -2275,7 +2275,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<T>> {
     try {
       const value = await mutation(this.options.membership);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value };
     } catch (error) {
       return this.#failureResult(error);
@@ -2288,7 +2288,7 @@ class CollabFeatureServiceCore {
   ): Promise<CollabResult<void>> {
     try {
       await mutation(port);
-      await this.#refreshProjects();
+      await this.#refreshAfterMutation({ status: 'success', value: undefined });
       return { status: 'success', value: undefined };
     } catch (error) {
       return this.#failureResult(error);

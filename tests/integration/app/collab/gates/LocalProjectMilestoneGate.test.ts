@@ -53,6 +53,7 @@ import type {
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabCloudProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { ProjectManagementSession } from '@/features/collab/modals/project/ProjectManagementSession';
 
 const PROJECT_ID = 'project-m2';
 const MEMBER_ID = 'member-host';
@@ -95,6 +96,51 @@ describe('G3 local Project milestone gate', () => {
       vaultRoot,
     });
   }
+
+  it('restores management through real Host publication before command completion', async () => {
+    const foundation = createFoundation();
+    const setup = new CollabProjectSetupService(foundation, {
+      installationKey: TEST_INSTALLATION_A,
+      createCredential: () => CREDENTIAL,
+      createId: kind => kind === 'member' ? MEMBER_ID : kind === 'operation' ? OPERATION_ID : PROJECT_ID,
+      vaultRoot,
+    });
+    const feature = createCollabFeatureSubcomposition({ foundation, projectSetup: setup, vaultRoot }).feature;
+    let session: ProjectManagementSession | null = null;
+    let sawRunningBeforeCompletion = false;
+    try {
+      await feature.initialize();
+      const created = await feature.createProject({ memberDisplayName: 'Alice', name: 'Management Host' });
+      if (created.status !== 'success') throw new Error('Project creation failed');
+      await expect(feature.stopHost(PROJECT_ID)).resolves.toMatchObject({ status: 'success' });
+      const projects = await feature.listProjects();
+      if (projects.status !== 'success') throw new Error('Project listing failed');
+      const project = projects.value.find(item => item.id === PROJECT_ID)!;
+      session = new ProjectManagementSession({
+        project, port: feature, confirmLegacyClaim: async () => false,
+        onResetInteraction() {}, onClose() {},
+        onChange: () => {
+          if (session?.host.status === 'running' && session.host.pending) sawRunningBeforeCompletion = true;
+        },
+      });
+      session.open();
+      await session.refresh();
+      expect(session.status).toBe('unavailable');
+      await session.runHostAction('start');
+      const deadline = Date.now() + 5_000;
+      while (session.status !== 'ready' && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(sawRunningBeforeCompletion).toBe(true);
+      expect(session.host.status).toBe('running');
+      expect(session.data?.capabilities.invitations).toBe(true);
+      expect(session.status).toBe('ready');
+    } finally {
+      session?.close();
+      await feature.close();
+      await foundation.close();
+    }
+  });
 
   it('derives LAN Retire authority from the authenticated Project rather than caller identities', async () => {
     const foundation = createFoundation();

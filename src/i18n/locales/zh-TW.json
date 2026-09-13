@@ -291,6 +291,9 @@
       "retireProject": "Retire project",
       "confirmRetire": "Retire this project for everyone?",
       "leaveCleanupWarning": "Choose what happens to this local copy. Git history and unpublished Git-only work cannot be recovered after cleanup.",
+      "offlineLeaveLan": "目前離線。你將在本機立即退出此 Project，退出請求會在此裝置重新連接 Host 後同步。",
+      "offlineLeaveCloud": "目前離線。你將在本機立即退出此 Project，退出請求會在此裝置重新連接伺服器後同步。",
+      "immediateLocalDeletion": "本機檔案將立即刪除。",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "權限已更新。"
     },
