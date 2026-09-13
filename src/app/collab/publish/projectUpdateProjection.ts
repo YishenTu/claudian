@@ -11,7 +11,7 @@ export function projectUpdateProjection(
     : operation.kind === 'update-conflict' || operation.kind === 'update-recovery' ? 'continue-update'
     : operation.kind === 'update-review' ? 'review-update'
     : incoming === 'available' ? 'update'
-    : incoming === 'included' ? 'sync' : 'none';
+    : 'none';
   const enabled = kind !== 'none' && (kind === 'complete-publish' || kind === 'review-update' || freshness === 'fresh');
   return { ...facts, operation, action: { kind, enabled } };
 }

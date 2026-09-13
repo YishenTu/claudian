@@ -212,7 +212,7 @@ describe('Project Update milestone gate', () => {
     },
   );
 
-  it.each(['own-merge', 'later-local-commit', 'other-team-changes', 'resume-empty-review'] as const)('classifies an accepted own request by incoming content: %s', async scenario => {
+  it.each(['own-merge', 'publish-without-sync', 'later-local-commit', 'other-team-changes', 'resume-empty-review'] as const)('classifies an accepted own request by incoming content: %s', async scenario => {
     const otherTeamChanges = scenario === 'other-team-changes';
     root = await mkdtemp(path.join(tmpdir(), 'claudian-update-content-'));
     const hostRoot = path.join(root, 'host');
@@ -260,10 +260,34 @@ describe('Project Update milestone gate', () => {
         && inspected.coordination?.snapshot.openRequests.length === 0;
     });
     const inspected = unwrap(await memberFeature.inspectProject(projectId));
-    expect(inspected.projectUpdate).toMatchObject({ incoming: otherTeamChanges ? 'available' : 'included' });
+    expect(inspected.projectUpdate).toMatchObject({
+      incoming: otherTeamChanges ? 'available' : 'included',
+      action: { kind: otherTeamChanges ? 'update' : 'none', enabled: otherTeamChanges },
+    });
+    expect(inspected.personalChanges!.updateAvailable).toBe(otherTeamChanges);
     expect(await git.repositories.resolveRef(memberPath, 'HEAD')).toBe(headBefore);
     expect((await git.runner.run({ args: ['diff', '--cached', '--binary'], cwd: memberPath })).stdout).toEqual(indexBefore.stdout);
     expect(await readFile(path.join(memberPath, 'draft.md'), 'utf8')).toBe('staged draft\nmore local work\n');
+    let publicationWithoutSync: {
+      newRequest: boolean; incoming: string | undefined; operation: string | undefined;
+      files: string[]; draft: string;
+    } | undefined;
+    if (scenario === 'publish-without-sync') {
+      const published = await publishFully(memberFeature, projectId);
+      const after = unwrap(await memberFeature.inspectProject(projectId));
+      const newReview = unwrap(await memberFeature.prepareReview(projectId, published.request!.id));
+      publicationWithoutSync = {
+        newRequest: !!published.request && published.request.id !== request.id,
+        incoming: after.projectUpdate?.incoming, operation: after.projectUpdate?.operation.kind,
+        files: newReview.files.map(file => file.path),
+        draft: await readFile(path.join(memberPath, 'draft.md'), 'utf8'),
+      };
+    }
+    expect(publicationWithoutSync).toEqual(scenario === 'publish-without-sync' ? {
+      newRequest: true, incoming: 'current', operation: 'none', files: ['draft.md'],
+      draft: 'staged draft\nmore local work\n',
+    } : undefined);
+    if (scenario === 'publish-without-sync') return;
     const remoteBefore = inspected.gitStatus!.personalRemoteOid;
     let interruption: { status: string; injected: boolean; resumedState: string | undefined } | undefined;
     if (scenario === 'resume-empty-review') {
@@ -354,7 +378,7 @@ describe('Project Update milestone gate', () => {
     const inspected = unwrap(await memberFeature.inspectProject(projectId));
     expect(preparation).toBe(scenario === 'pending-publish' || scenario === 'offline-review' ? 'review-required' : scenario === 'offline-update' ? 'conflict' : undefined);
     expect(inspected.projectUpdate).toMatchObject(scenario === 'matching-working-content'
-      ? { freshness: 'fresh', incoming: 'included', operation: { kind: 'none' }, action: { kind: 'sync', enabled: true } }
+      ? { freshness: 'fresh', incoming: 'included', operation: { kind: 'none' }, action: { kind: 'none', enabled: false } }
       : scenario === 'pending-publish'
         ? { freshness: 'fresh', operation: { kind: 'publish' }, action: { kind: 'complete-publish', enabled: true } }
         : scenario === 'offline-update'

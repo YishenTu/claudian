@@ -102,8 +102,8 @@ describe('AgentRuntimeGateway', () => {
     port.inspectProject.mockResolvedValue({ status: 'success', value: { project: PROJECT, projectUpdate } });
     const result = await new AgentRuntimeGateway(async () => port).handle({ id: 'get-update', method: 'collab.projects.get', params: { projectId: PROJECT.id } });
     expect(result).toMatchObject({ result: { project: { update: {
-      state: scenario === 'included' ? 'sync-required' : scenario === 'offline-recovery' ? 'conflict' : 'publish-pending',
-      nextAction: scenario === 'included' ? 'update' : scenario === 'offline-recovery' ? null : 'complete-publish',
+      state: scenario === 'included' ? 'current' : scenario === 'offline-recovery' ? 'conflict' : 'publish-pending',
+      nextAction: scenario === 'included' ? null : scenario === 'offline-recovery' ? null : 'complete-publish',
       incoming: projectUpdate.incoming, freshness: projectUpdate.freshness,
     } } } });
     expect(JSON.stringify(result)).not.toContain('private-conflict');

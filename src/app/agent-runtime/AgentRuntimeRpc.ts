@@ -110,7 +110,7 @@ export interface AgentRuntimeSyncState {
 }
 
 export interface AgentRuntimeProjectUpdateState {
-  readonly state: 'unknown' | 'current' | 'available' | 'sync-required' | 'review-required' | 'conflict' | 'recovery-required' | 'publish-pending';
+  readonly state: 'unknown' | 'current' | 'available' | 'review-required' | 'conflict' | 'recovery-required' | 'publish-pending';
   readonly freshness: 'fresh' | 'offline' | 'not-fetched';
   readonly incoming: 'unknown' | 'current' | 'available' | 'included';
   readonly reason?: 'offline' | 'not-fetched';

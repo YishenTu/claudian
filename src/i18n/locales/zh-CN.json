@@ -319,23 +319,17 @@
       "stopFailed": "无法正常停止 Host，请查看诊断后重试。"
     },
     "update": {
-      "publishPending": "请先完成待处理的发布，再更新项目。",
-      "conflictPending": "更新存在待解决的冲突。",
-      "recoveryPending": "有更新操作待完成。",
-      "reviewPending": "有更新等待审阅。",
       "reconnect": "请重新连接后继续。",
       "finishPublish": "完成发布",
-      "syncRequired": "团队改动已包含，待同步项目状态。",
-      "syncAction": "同步状态",
-      "available": "有可用更新",
       "action": "更新",
       "updating": "正在更新…",
-      "continue": "继续更新",
-      "review": "审阅更新",
       "reviewTitle": "审阅项目更新",
       "failed": "更新失败，请重试",
       "conflictTitle": "项目更新冲突",
-      "editAndContinue": "编辑项目文件，然后从项目侧栏继续更新。"
+      "editAndContinue": "编辑项目文件，然后从项目侧栏继续更新。",
+      "reviewAction": "审阅",
+      "conflictAction": "冲突",
+      "resumeAction": "继续"
     },
     "publish": {
       "title": "我的修改",

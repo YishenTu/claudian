@@ -229,7 +229,7 @@ export interface CollabProjectUpdateInspection {
   readonly incoming: 'unknown' | 'current' | 'available' | 'included';
   readonly operation: CollabProjectUpdateOperation;
   readonly action: {
-    readonly kind: 'none' | 'update' | 'sync' | 'review-update' | 'continue-update' | 'complete-publish';
+    readonly kind: 'none' | 'update' | 'review-update' | 'continue-update' | 'complete-publish';
     readonly enabled: boolean;
   };
 }

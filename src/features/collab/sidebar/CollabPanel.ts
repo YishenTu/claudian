@@ -551,12 +551,6 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         onReview: review => this.options.onOpenPublicationReview?.(project, review),
         onConflict: operationId => this.options.onOpenConflict?.(project, operationId, 'update'),
         refresh: () => { void this.personalPanel?.refresh(); },
-        onCompletePublish: operation => {
-          if (operation.requestId) this.teamPanel?.revealRequest(operation.requestId);
-          else if (operation.conflictOperationId) this.options.onOpenConflict?.(project, operation.conflictOperationId, 'my-changes');
-          else if (operation.review) this.options.onOpenPublicationReview?.(project, operation.review);
-          else this.options.onOpenWorkingTreeReview?.(project, operation.workingReview);
-        },
       });
       this.updatePanel.setActive(this.active);
       const personal = home.createDiv({ cls: 'claudian-collab-personal-home' });

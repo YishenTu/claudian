@@ -217,7 +217,6 @@
 }
 
 .claudian-collab-project-update[hidden] { display: none; }
-.claudian-collab-project-update > span { flex: 1; }
 .claudian-collab-project-update > button,
 .claudian-collab-project-update > button:hover,
 .claudian-collab-project-update > button:focus-visible,

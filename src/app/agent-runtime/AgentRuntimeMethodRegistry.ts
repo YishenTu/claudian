@@ -1098,7 +1098,7 @@ function toProjectUpdate(update: CollabProjectInspection['projectUpdate']): Agen
       : operation === 'update-conflict' ? 'conflict'
       : operation === 'update-review' ? 'review-required'
       : operation === 'update-recovery' ? 'recovery-required'
-      : incoming === 'included' ? 'sync-required' : incoming,
+      : incoming === 'included' ? 'current' : incoming,
     freshness, incoming,
     ...(freshness === 'fresh' ? {} : { reason: freshness }),
     nextAction: !update || !update.action.enabled || freshness !== 'fresh' ? null

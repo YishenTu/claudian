@@ -436,7 +436,7 @@ describe('CollabPanel', () => {
     jest.useRealTimers();
   });
 
-  it('places Update above My changes and removes it after the Project observer reports confirmation', async () => {
+  it('places Review above My changes and removes it after the Project observer reports confirmation', async () => {
     const currentProject = project({ connectionStatus: 'connected', hostStatus: 'running' });
     const port = createPort({ lifecycle: 'ready', projects: [currentProject], selectedProjectId: currentProject.id });
     const originalInspection = await port.inspectProject(currentProject.id);
@@ -444,13 +444,13 @@ describe('CollabPanel', () => {
     let updateState: 'available' | 'current' = 'available';
     jest.spyOn(port, 'inspectProject').mockImplementation(async () => ({ status: 'success', value: { ...originalInspection.value, projectUpdate: { freshness: 'fresh', incoming: updateState, operation: { kind: 'none' }, action: { kind: updateState === 'available' ? 'update' : 'none', enabled: updateState === 'available' } } } }));
     const onOpenPublicationReview = jest.fn();
-    const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [], canConfirm: true };
+    const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [{ binary: false, kind: 'modified' as const, largeForReview: false, path: 'team.md' }], canConfirm: true };
     port.updateProject = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: currentProject.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
     const container = document.body.createDiv();
     const panel = new CollabPanel(container, {} as never, { app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, projectSetup: { getPendingSetupOperationId: jest.fn() }, resolveGit: async () => AVAILABLE, onOpenPublicationReview });
     panel.setActive(true);
     await new Promise(resolve => setTimeout(resolve, 0));
-    const update = getByRole(container, 'button', { name: 'Update' });
+    const update = getByRole(container, 'button', { name: 'Review' });
     const personal = container.querySelector('.claudian-collab-personal-home')!;
     expect(update.compareDocumentPosition(personal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     update.click();
@@ -459,7 +459,7 @@ describe('CollabPanel', () => {
     updateState = 'current';
     for (const [, observer] of port.observeProject.mock.calls) observer();
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(queryByRole(container, 'button', { name: 'Update' })).toBeNull();
+    expect(queryByRole(container, 'button', { name: 'Review' })).toBeNull();
     expect(container.querySelector('.claudian-collab-project-update')?.textContent).toBe('');
     panel.destroy();
     container.remove();
@@ -1147,7 +1147,7 @@ describe('CollabPanel', () => {
     );
   });
 
-  it('opens publication recovery from Finish publishing through the existing Request', async () => {
+  it('keeps publication recovery accessible through the existing Request', async () => {
     const container = document.body.createDiv();
     const port = createPort({
       lifecycle: 'ready',
@@ -1242,6 +1242,7 @@ describe('CollabPanel', () => {
     panel.setActive(true);
     await flush();
 
+    getByRole(container, 'button', { name: 'You' }).click();
     getByRole(container, 'button', { name: 'Finish publishing' }).click();
     expect(onOpenWorkingTreeReview).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'project-alpha' }), workingReview,

@@ -319,23 +319,17 @@
       "stopFailed": "Não foi possível parar o Host corretamente. Verifique o diagnóstico e tente novamente."
     },
     "update": {
-      "publishPending": "Conclua a publicação pendente antes de atualizar.",
-      "conflictPending": "Uma atualização tem conflitos não resolvidos.",
-      "recoveryPending": "Uma atualização precisa ser concluída.",
-      "reviewPending": "Uma atualização está pronta para revisão.",
       "reconnect": "Reconecte-se para continuar.",
       "finishPublish": "Concluir publicação",
-      "syncRequired": "As alterações da equipe já estão incluídas. Falta sincronizar o estado do projeto.",
-      "syncAction": "Sincronizar estado",
-      "available": "Atualização disponível",
       "action": "Atualizar",
       "updating": "Atualizando…",
-      "continue": "Continuar atualização",
-      "review": "Revisar atualização",
       "reviewTitle": "Revisar atualização do projeto",
       "failed": "Falha na atualização. Tentar novamente",
       "conflictTitle": "Conflitos na atualização do projeto",
-      "editAndContinue": "Edite os arquivos do projeto e continue a atualização pela barra lateral do projeto."
+      "editAndContinue": "Edite os arquivos do projeto e continue a atualização pela barra lateral do projeto.",
+      "reviewAction": "Revisar",
+      "conflictAction": "Conflito",
+      "resumeAction": "Retomar"
     },
     "publish": {
       "title": "Minhas alterações",

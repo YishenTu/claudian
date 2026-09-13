@@ -341,23 +341,17 @@
       "stopFailed": "Host could not be stopped cleanly. Check diagnostics and retry."
     },
     "update": {
-      "publishPending": "Finish the pending publication before updating.",
-      "conflictPending": "An Update has unresolved conflicts.",
-      "recoveryPending": "An Update needs finishing.",
-      "reviewPending": "An Update is ready for review.",
       "reconnect": "Reconnect to continue.",
       "finishPublish": "Finish publishing",
-      "syncRequired": "Team changes already included. Project status needs syncing.",
-      "syncAction": "Sync status",
-      "available": "Update available",
       "action": "Update",
       "updating": "Updating…",
-      "continue": "Continue update",
-      "review": "Review update",
       "reviewTitle": "Review project update",
       "failed": "Update failed. Retry",
       "conflictTitle": "Project update conflicts",
-      "editAndContinue": "Edit the project files, then continue Update from the project sidebar."
+      "editAndContinue": "Edit the project files, then continue Update from the project sidebar.",
+      "reviewAction": "Review",
+      "conflictAction": "Conflict",
+      "resumeAction": "Resume"
     },
     "publish": {
       "title": "My changes",

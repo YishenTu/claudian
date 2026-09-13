@@ -319,23 +319,17 @@
       "stopFailed": "Host を正常に停止できませんでした。診断を確認して再試行してください。"
     },
     "update": {
-      "publishPending": "更新する前に保留中の公開を完了してください。",
-      "conflictPending": "更新に未解決の競合があります。",
-      "recoveryPending": "完了が必要な更新があります。",
-      "reviewPending": "更新のレビュー準備ができました。",
       "reconnect": "再接続して続行してください。",
       "finishPublish": "公開を完了",
-      "syncRequired": "チームの変更は反映済みです。プロジェクトの状態を同期してください。",
-      "syncAction": "状態を同期",
-      "available": "更新があります",
       "action": "更新",
       "updating": "更新中…",
-      "continue": "更新を続ける",
-      "review": "更新を確認",
       "reviewTitle": "プロジェクトの更新を確認",
       "failed": "更新に失敗しました。再試行",
       "conflictTitle": "プロジェクト更新の競合",
-      "editAndContinue": "プロジェクトのファイルを編集してから、プロジェクトのサイドバーで更新を続けてください。"
+      "editAndContinue": "プロジェクトのファイルを編集してから、プロジェクトのサイドバーで更新を続けてください。",
+      "reviewAction": "レビュー",
+      "conflictAction": "競合",
+      "resumeAction": "再開"
     },
     "publish": {
       "title": "自分の変更",
