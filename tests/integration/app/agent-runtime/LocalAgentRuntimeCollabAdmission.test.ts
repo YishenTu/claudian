@@ -15,7 +15,11 @@ import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSub
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 
-it('rejects foreign Host/Origin before a real Collab Ticket mutation', async () => {
+async function withRuntimeProject(run: (context: {
+  readonly feature: ReturnType<typeof createCollabFeatureSubcomposition>['feature'];
+  readonly projectId: string;
+  readonly endpoint: Awaited<ReturnType<LocalAgentRuntimeHttpServer['start']>>;
+}) => Promise<void>): Promise<void> {
   const SQL = await initSqlJs();
   const root = await mkdtemp(path.join(tmpdir(), 'claudian-runtime-admission-'));
   const listener = createServer();
@@ -58,11 +62,22 @@ it('rejects foreign Host/Origin before a real Collab Ticket mutation', async () 
     const projectId = created.value.id;
     expect((await feature.startHost(projectId)).status).toBe('success');
     const endpoint = await runtime.start();
+    await run({ feature, projectId, endpoint });
+  } finally {
+    await runtime.close();
+    await feature.close();
+    await foundation.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+it('rejects foreign Host/Origin before a real Collab Ticket mutation', async () => {
+  await withRuntimeProject(async ({ feature, projectId, endpoint }) => {
     const result = await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
       const body = JSON.stringify({
         id: 'foreign-origin-write',
         method: 'collab.tickets.create',
-        params: { projectId, title: 'Foreign Origin mutation', body: 'Synthetic fixture.' },
+        params: { mutationId: 'foreign-origin-write', projectId, title: 'Foreign Origin mutation', body: 'Synthetic fixture.' },
       });
       const call = request(endpoint.rpcUrl, {
         method: 'POST',
@@ -85,10 +100,31 @@ it('rejects foreign Host/Origin before a real Collab Ticket mutation', async () 
     const mutated = tickets.value.page.tickets.some(ticket => ticket.title === 'Foreign Origin mutation');
     expect(result.status).toBe(403);
     expect(mutated).toBe(false);
-  } finally {
-    await runtime.close();
-    await feature.close();
-    await foundation.close();
-    await rm(root, { recursive: true, force: true });
-  }
+  });
+}, 30_000);
+
+it('replays one mutation across HTTP requests while admitting distinct new intents', async () => {
+  await withRuntimeProject(async ({ feature, projectId, endpoint }) => {
+    const invoke = async (id: string, mutationId: string, title = 'Ticket') => {
+      const response = await fetch(endpoint.rpcUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, method: 'collab.tickets.create', params: {
+          mutationId, projectId, title, body: 'Synthetic fixture.',
+        } }),
+      });
+      return response.json();
+    };
+    const first = await invoke('call-a', 'intent-a');
+    const replay = await invoke('call-b', 'intent-a');
+    expect(first.result.ticket.id).toEqual(expect.any(String));
+    expect(replay.result.ticket.id).toBe(first.result.ticket.id);
+    const distinct = await invoke('call-a', 'intent-b');
+    expect(distinct.result.ticket.id).not.toBe(first.result.ticket.id);
+    expect(await invoke('call-c', 'intent-a', 'Different title')).toMatchObject({
+      error: { code: 'idempotency-conflict' },
+    });
+    const tickets = await feature.listTickets({ projectId, status: 'open' });
+    if (tickets.status !== 'success') throw new Error('Fixture Ticket read failed');
+    expect(tickets.value.page.tickets).toHaveLength(2);
+  });
 }, 30_000);

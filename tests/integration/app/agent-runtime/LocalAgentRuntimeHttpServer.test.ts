@@ -106,7 +106,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       result: {
         access: 'read-write',
         name: 'claudian-agent-runtime',
-        protocolVersion: 6,
+        protocolVersion: 7,
       },
     });
 
@@ -116,7 +116,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       params: {},
     })).json()).resolves.toEqual({
       id: 'health-1',
-      result: { ok: true, protocolVersion: 6 },
+      result: { ok: true, protocolVersion: 7 },
     });
     await expect((await post(endpoint, {
       id: 'operation-1',
@@ -126,7 +126,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
       id: 'operation-1',
       result: {
         operation: { name: 'collab.projects.get' },
-        protocolVersion: 6,
+        protocolVersion: 7,
       },
     });
   });
@@ -169,6 +169,27 @@ describe('LocalAgentRuntimeHttpServer', () => {
     expect(resolveCollab).not.toHaveBeenCalled();
   });
 
+  it.each(['"', '\u0001'])('accepts maximum Ticket content after JSON escaping %j', async character => {
+    const port = readPort();
+    port.createTicket.mockImplementation(async input => ({ status: 'success', value: {
+      body: input.body, comments: { comments: [] }, acceptedRelations: { acceptedRelations: [] },
+      ticket: { id: 'large-ticket', number: 1, title: input.title, revision: 1, status: 'open',
+        authorMemberId: 'member-a', commentCount: 0, acceptedRelationCount: 0,
+        createdAt: '2026-09-13T00:00:00Z', updatedAt: '2026-09-13T00:00:00Z' },
+    } }));
+    const endpoint = await runtime(async () => port).start();
+    const request = { id: 'large-create', method: 'collab.tickets.create', params: {
+      projectId: 'project-a', mutationId: 'large-ticket-intent', title: 'Large Ticket', body: character.repeat(32768),
+    } };
+    const response = await post(endpoint, request);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.result.ticket.id).toBe('large-ticket');
+    expect(result.result.body.length).toBe(32768);
+    const catalog = await (await post(endpoint, { id: 'catalog', method: 'runtime.operations.list', params: {} })).json();
+    expect(catalog.result.limits.maxRequestBytes).toBeGreaterThanOrEqual(Buffer.byteLength(JSON.stringify(request)));
+  });
+
   it('rejects invalid and oversized RPC bodies before dispatch', async () => {
     const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
     const endpoint = await runtime(resolveCollab).start();
@@ -180,11 +201,12 @@ describe('LocalAgentRuntimeHttpServer', () => {
       id: null,
     });
 
+    const catalog = await (await post(endpoint, { id: 'limits', method: 'runtime.operations.list', params: {} })).json();
     const oversized = await fetch(endpoint.rpcUrl, {
       body: JSON.stringify({
         id: 'large-1',
         method: 'runtime.health.check',
-        padding: 'x'.repeat(65_536),
+        padding: 'x'.repeat(catalog.result.limits.maxRequestBytes + 1),
         params: {},
       }),
       headers: { 'Content-Type': 'application/json' },
@@ -450,7 +472,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
     const request = post(endpoint, {
       id: 'write-close-1',
       method: 'collab.tickets.create',
-      params: {
+      params: { mutationId: 'write-close-1',
         body: 'Runtime lifecycle test.',
         projectId: 'project-alpha',
         title: 'Lifecycle test',
@@ -512,7 +534,7 @@ describe('LocalAgentRuntimeHttpServer', () => {
     const rpcRequest = {
       id: 'write-timeout-retry',
       method: 'collab.tickets.create',
-      params: {
+      params: { mutationId: 'write-timeout-retry',
         body: ticket.body,
         projectId: 'project-alpha',
         title: ticket.ticket.title,
@@ -521,16 +543,17 @@ describe('LocalAgentRuntimeHttpServer', () => {
 
     const timedOut = post(endpoint, rpcRequest);
     await started;
-    await expect((await timedOut).json()).resolves.toEqual({
+    await expect((await timedOut).json()).resolves.toMatchObject({
       error: {
         code: 'request_timeout',
+        data: { outcome: 'unknown', retry: { strategy: 'same-mutation' } },
         message: 'Agent Runtime request timed out.',
       },
       id: rpcRequest.id,
     });
 
-    await expect((await post(endpoint, rpcRequest)).json()).resolves.toMatchObject({
-      id: rpcRequest.id,
+    await expect((await post(endpoint, { ...rpcRequest, id: 'retry-response' })).json()).resolves.toMatchObject({
+      id: 'retry-response',
       result: { ticket: { id: ticket.ticket.id } },
     });
     expect(intentIds).toHaveLength(2);

@@ -3,7 +3,8 @@ import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTic
 import type { CollabAuthorityKind, CollabAuthoritySyncStatus, CollabConflictKind, CollabConnectionStatus, CollabHostStatus, CollabLocalCleanupStatus, CollabPersonalAction, CollabProjectHealth, CollabProjectLifecycle, CollabReviewComparisonKind } from '@/core/collab';
 import type { CollabErrorCode } from '@/core/collab/ClaudianCollabError';
 
-export const AGENT_RUNTIME_PROTOCOL_VERSION = 6 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION = 7 as const;
+export const AGENT_RUNTIME_RPC_ID_MAX_LENGTH = 64;
 
 export type AgentRuntimeRpcOwnedErrorCode =
   | 'invalid_request'
@@ -78,7 +79,13 @@ export interface AgentRuntimeOperationSummary {
   readonly description: string;
 }
 
+export interface AgentRuntimeRetryPolicy {
+  readonly strategy: 'read' | 'same-mutation' | 'inspect-before-repeat';
+  readonly description: string;
+}
+
 export interface AgentRuntimeOperationDescriptor extends AgentRuntimeOperationSummary {
+  readonly retry: AgentRuntimeRetryPolicy;
   readonly name: string;
   readonly description: string;
   readonly parameters: readonly AgentRuntimeParameterDescriptor[];
@@ -292,6 +299,7 @@ export type AgentRuntimeConflictFileContent =
   };
 
 export interface AgentRuntimeOperationsListResult {
+  readonly limits: { readonly maxRequestBytes: number };
   readonly access: 'read-write';
   readonly operations: readonly AgentRuntimeOperationSummary[];
   readonly name: 'claudian-agent-runtime';
@@ -561,7 +569,7 @@ export type AgentRuntimeRpcEnvelopeDecodeResult =
   | { readonly status: 'success'; readonly envelope: AgentRuntimeRpcEnvelope }
   | { readonly status: 'invalid-request' };
 
-const RPC_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const RPC_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const REQUEST_KEYS = new Set(['id', 'method', 'params']);
 
 export function decodeAgentRuntimeRpcEnvelope(
@@ -572,7 +580,7 @@ export function decodeAgentRuntimeRpcEnvelope(
   if (keys.length !== REQUEST_KEYS.size || keys.some(key => !REQUEST_KEYS.has(key))) {
     return { status: 'invalid-request' };
   }
-  if (typeof input.id !== 'string' || !RPC_ID_PATTERN.test(input.id)) {
+  if (typeof input.id !== 'string' || input.id.length > AGENT_RUNTIME_RPC_ID_MAX_LENGTH || !RPC_ID_PATTERN.test(input.id)) {
     return { status: 'invalid-request' };
   }
   if (typeof input.method !== 'string' || !isPlainRecord(input.params)) {

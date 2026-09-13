@@ -35,13 +35,13 @@ describe('AgentRuntimeMethodRegistry', () => {
       projectId: 'project-1',
       ticketId: 'ticket-1',
     }],
-    ['legacy comment kind', 'collab.requests.comments.create', {
+    ['legacy comment kind', 'collab.requests.comments.create', { mutationId: 'legacy-kind',
       body: 'Comment',
       kind: 'general',
       projectId: 'project-1',
       requestId: 'request-1',
     }],
-    ['legacy inline anchor', 'collab.requests.comments.create', {
+    ['legacy inline anchor', 'collab.requests.comments.create', { mutationId: 'legacy-anchor',
       anchor: { path: 'note.md' },
       body: 'Comment',
       projectId: 'project-1',

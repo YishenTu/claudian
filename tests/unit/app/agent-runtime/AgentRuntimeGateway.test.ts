@@ -191,7 +191,7 @@ describe('AgentRuntimeGateway', () => {
             name: 'collab.projects.list',
           },
         ]),
-        protocolVersion: 6,
+        protocolVersion: 7,
       },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
@@ -219,7 +219,7 @@ describe('AgentRuntimeGateway', () => {
             }),
           ],
         },
-        protocolVersion: 6,
+        protocolVersion: 7,
       },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
@@ -262,7 +262,7 @@ describe('AgentRuntimeGateway', () => {
       params: {},
     })).resolves.toEqual({
       id: 'ping-1',
-      result: { ok: true, protocolVersion: 6 },
+      result: { ok: true, protocolVersion: 7 },
     });
     expect(resolveCollab).not.toHaveBeenCalled();
   });

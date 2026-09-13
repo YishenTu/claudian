@@ -657,20 +657,19 @@ describe('Agent Runtime Collab read methods', () => {
     });
   });
 
-  it('reports one request-owned conflict without duplicating its action in My Changes', async () => {
+  it('preserves private publication recovery when the author has an open Request', async () => {
     const port = readPort();
 
     const changes = await call(port, 'collab.changes.mine', { projectId: PROJECT.id });
     expect(changes).toMatchObject({
       result: {
         changes: {
-          action: 'none',
+          action: 'resolve-changes',
+          preparedPublication: { canConfirm: true, candidateOid: 'candidate-oid' },
           unpublishedReview: { files: [{ path: CHANGED_FILE.path }] },
         },
       },
     });
-    expect(JSON.stringify(changes)).not.toContain('conflictOperationId');
-    expect(JSON.stringify(changes)).not.toContain('preparedPublication');
     expect(JSON.stringify(changes)).not.toContain('private-snapshot-id');
 
     const conflict = await call(port, 'collab.conflicts.get', { projectId: PROJECT.id });
@@ -681,9 +680,8 @@ describe('Agent Runtime Collab read methods', () => {
             { kind: 'text', path: CHANGED_FILE.path },
             { kind: 'binary', path: 'assets/image.png' },
           ],
-          location: 'request',
+          location: 'my-changes',
           operationId: 'operation-1',
-          requestId: REQUEST.id,
         },
       },
     });
@@ -776,9 +774,8 @@ describe('Agent Runtime Collab read methods', () => {
             { id: 'hunk-1', kind: 'conflict' },
           ],
         },
-        location: 'request',
+        location: 'my-changes',
         operationId: 'operation-1',
-        requestId: REQUEST.id,
       },
     });
     expect(port.readConflict).toHaveBeenCalledWith(
