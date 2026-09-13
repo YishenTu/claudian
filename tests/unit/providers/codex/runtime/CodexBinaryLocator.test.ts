@@ -118,6 +118,53 @@ describe('CodexBinaryLocator', () => {
     expect(findCodexBinaryPath('', 'win32')).toBe(newerCompleteCliPath);
   });
 
+  it('breaks equal desktop runtime timestamps by path regardless of directory enumeration order', () => {
+    process.env.LOCALAPPDATA = tempDir;
+    delete process.env.CODEX_INSTALL_DIR;
+    const root = path.join(tempDir, 'OpenAI', 'Codex', 'bin');
+    const first = createCompleteWindowsCodexRuntime(path.join(root, 'aaa'));
+    const second = createCompleteWindowsCodexRuntime(path.join(root, 'bbb'));
+    const timestamp = new Date('2026-01-01T00:00:00Z');
+    fs.utimesSync(first, timestamp, timestamp);
+    fs.utimesSync(second, timestamp, timestamp);
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    entries.sort((left, right) => right.name.localeCompare(left.name));
+    jest.spyOn(jest.requireActual<typeof fs>('fs'), 'readdirSync').mockReturnValueOnce(entries as never);
+
+    expect(findCodexBinaryPath('', 'win32')).toBe(first);
+  });
+
+  it('honors configured files and quoted runtime PATH before a Windows desktop runtime', () => {
+    process.env.LOCALAPPDATA = tempDir;
+    delete process.env.CODEX_INSTALL_DIR;
+    createCompleteWindowsCodexRuntime(path.join(tempDir, 'OpenAI', 'Codex', 'bin', 'hash'));
+    const explicitDir = path.join(tempDir, 'my tools');
+    fs.mkdirSync(explicitDir);
+    const shim = path.join(explicitDir, 'codex.cmd');
+    fs.writeFileSync(shim, '');
+    const configured = path.join(tempDir, 'configured.exe');
+    fs.writeFileSync(configured, '');
+    const runtimePath = `"${path.join(tempDir, 'missing')}";"${explicitDir}"`;
+
+    expect(findCodexBinaryPath(runtimePath, 'win32')).toBe(shim);
+    expect(resolveCodexCliPath(configured, '', `PATH=${runtimePath}`, {
+      hostPlatform: 'win32',
+    })).toBe(configured);
+  });
+
+  it('falls back from an incomplete install override to a complete desktop runtime', () => {
+    process.env.LOCALAPPDATA = tempDir;
+    const override = path.join(tempDir, 'incomplete');
+    fs.mkdirSync(override);
+    fs.writeFileSync(path.join(override, 'codex.exe'), '');
+    process.env.CODEX_INSTALL_DIR = override;
+    const desktop = createCompleteWindowsCodexRuntime(
+      path.join(tempDir, 'OpenAI', 'Codex', 'bin', 'hash'),
+    );
+
+    expect(findCodexBinaryPath('', 'win32')).toBe(desktop);
+  });
+
   it('prefers the macOS Codex app bundle over the ChatGPT app fallback', () => {
     process.env.HOME = tempDir;
     const appDir = path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources');

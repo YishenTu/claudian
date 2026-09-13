@@ -113,7 +113,11 @@ function getCompleteCodexDesktopRuntimeDirs(runtimeRoot: string): string[] {
       .filter(entry => entry.isDirectory())
       .map(entry => path.join(runtimeRoot, entry.name))
       .filter(isCompleteWindowsCodexRuntimeDir)
-      .sort((left, right) => getCodexBinaryMtime(right) - getCodexBinaryMtime(left));
+      // Executable timestamps are a freshness heuristic, not an app-owned active-version marker.
+      .map(dir => ({ dir, mtime: getCodexBinaryMtime(dir) }))
+      .sort((left, right) => right.mtime - left.mtime
+        || (left.dir < right.dir ? -1 : left.dir > right.dir ? 1 : 0))
+      .map(candidate => candidate.dir);
   } catch {
     return [];
   }
