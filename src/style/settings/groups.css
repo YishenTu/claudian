@@ -206,6 +206,7 @@
 
 .claudian-settings .claudian-settings-tabs {
   flex-wrap: wrap;
+  margin-inline-end: 0;
 }
 
 .claudian-settings .claudian-settings-group-body > :last-child {
