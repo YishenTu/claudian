@@ -109,6 +109,8 @@ If Claudian cannot auto-detect a provider CLI, verify that the CLI is installed 
 
 Leave the CLI path setting empty first so Claudian can auto-detect the CLI. If auto-detection fails, find the executable path and set it in Settings → Advanced → Claude CLI path.
 
+For Codex on Windows, auto-detection also checks `CODEX_INSTALL_DIR`, the default standalone install directory, and complete native runtimes extracted by the ChatGPT desktop app. Desktop runtime directories must contain both `codex.exe` and `codex-code-mode-host.exe`; incomplete update directories are ignored.
+
 | Platform | Command | Example Path |
 |----------|---------|--------------|
 | macOS/Linux | `which claude` | `/Users/you/.volta/bin/claude` |

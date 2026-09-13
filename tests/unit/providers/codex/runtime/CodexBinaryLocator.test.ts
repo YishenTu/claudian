@@ -9,19 +9,45 @@ import {
 
 describe('CodexBinaryLocator', () => {
   let tempDir: string;
-  const originalHome = process.env.HOME;
+  const originalEnvironment = {
+    CODEX_INSTALL_DIR: process.env.CODEX_INSTALL_DIR,
+    HOME: process.env.HOME,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    PATH: process.env.PATH,
+    USERPROFILE: process.env.USERPROFILE,
+  };
+
+  function restoreEnvironmentVariable(
+    name: keyof typeof originalEnvironment,
+  ): void {
+    const value = originalEnvironment[name];
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+
+  function createCompleteWindowsCodexRuntime(dir: string): string {
+    fs.mkdirSync(dir, { recursive: true });
+    const cliPath = path.join(dir, 'codex.exe');
+    fs.writeFileSync(cliPath, '');
+    fs.writeFileSync(path.join(dir, 'codex-code-mode-host.exe'), '');
+    return cliPath;
+  }
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-binary-locator-'));
+    process.env.PATH = '';
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+    restoreEnvironmentVariable('CODEX_INSTALL_DIR');
+    restoreEnvironmentVariable('HOME');
+    restoreEnvironmentVariable('LOCALAPPDATA');
+    restoreEnvironmentVariable('PATH');
+    restoreEnvironmentVariable('USERPROFILE');
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -41,6 +67,55 @@ describe('CodexBinaryLocator', () => {
     fs.writeFileSync(pathBinary, '');
 
     expect(findCodexBinaryPath(pathDir, 'win32')).toBe(pathBinary);
+  });
+
+  it('finds a complete Codex install from CODEX_INSTALL_DIR on Windows', () => {
+    const installDir = path.join(tempDir, 'custom-codex-install');
+    const cliPath = createCompleteWindowsCodexRuntime(installDir);
+    process.env.CODEX_INSTALL_DIR = installDir;
+    process.env.LOCALAPPDATA = path.join(tempDir, 'empty-local-app-data');
+
+    expect(findCodexBinaryPath('', 'win32')).toBe(cliPath);
+  });
+
+  it('finds the default standalone Codex install on Windows', () => {
+    process.env.LOCALAPPDATA = tempDir;
+    delete process.env.CODEX_INSTALL_DIR;
+    const installDir = path.join(tempDir, 'Programs', 'OpenAI', 'Codex', 'bin');
+    const cliPath = createCompleteWindowsCodexRuntime(installDir);
+
+    expect(findCodexBinaryPath('', 'win32')).toBe(cliPath);
+  });
+
+  it('finds the newest complete Codex desktop runtime on Windows', () => {
+    process.env.LOCALAPPDATA = tempDir;
+    delete process.env.CODEX_INSTALL_DIR;
+    const runtimeRoot = path.join(tempDir, 'OpenAI', 'Codex', 'bin');
+    const olderCompleteDir = path.join(runtimeRoot, 'older-complete-runtime');
+    const olderCompleteCliPath = createCompleteWindowsCodexRuntime(olderCompleteDir);
+    const newerCompleteDir = path.join(runtimeRoot, 'newer-complete-runtime');
+    const newerCompleteCliPath = createCompleteWindowsCodexRuntime(newerCompleteDir);
+    const incompleteDir = path.join(runtimeRoot, 'newer-incomplete-runtime');
+    fs.mkdirSync(incompleteDir, { recursive: true });
+    const incompleteCliPath = path.join(incompleteDir, 'codex.exe');
+    fs.writeFileSync(incompleteCliPath, '');
+    fs.utimesSync(
+      olderCompleteCliPath,
+      new Date('2026-01-01T00:00:00Z'),
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    fs.utimesSync(
+      newerCompleteCliPath,
+      new Date('2027-01-01T00:00:00Z'),
+      new Date('2027-01-01T00:00:00Z'),
+    );
+    fs.utimesSync(
+      incompleteCliPath,
+      new Date('2028-01-01T00:00:00Z'),
+      new Date('2028-01-01T00:00:00Z'),
+    );
+
+    expect(findCodexBinaryPath('', 'win32')).toBe(newerCompleteCliPath);
   });
 
   it('prefers the macOS Codex app bundle over the ChatGPT app fallback', () => {
