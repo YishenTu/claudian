@@ -1,3 +1,6 @@
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
+
 import { collabMemberRef, type CollabOperationId, isCollabGitOid, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
@@ -80,6 +83,44 @@ export class NativeGitPublicationCandidateRepository {
     private readonly git: PublicationCandidateGitPort,
     private readonly runner: Pick<GitCommandRunner, 'run'>,
   ) {}
+
+  async hasIncomingChanges(
+    repositoryPath: string,
+    contributionHeadOid: string,
+    currentMainOid: string,
+    includeWorkingTree = false,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    requireOid(contributionHeadOid, 'publication-contribution-head-invalid');
+    requireOid(currentMainOid, 'publication-current-main-invalid');
+    if (includeWorkingTree) {
+      const temporaryRoot = await mkdtemp(path.join(repositoryPath, '.git', 'update-preview-'));
+      const indexFilePath = path.join(temporaryRoot, 'index');
+      try {
+        await copyFile(path.join(repositoryPath, '.git', 'index'), indexFilePath);
+        await this.runner.run({ args: ['add', '--all'], cwd: repositoryPath, indexFilePath, signal, suppressHooks: true });
+        const tree = await this.runner.run({ args: ['write-tree'], cwd: repositoryPath, indexFilePath, signal, suppressHooks: true, maxStdoutBytes: 128 });
+        // This object has no ref: the real HEAD, index and working files remain unchanged.
+        const preview = await this.runner.run({
+          args: ['commit-tree', requireOid(tree.stdout.toString('utf8').trim(), 'update-preview-tree-invalid'), '-p', contributionHeadOid],
+          cwd: repositoryPath, identity: CANDIDATE_IDENTITY, stdin: 'Preview local update\n', signal, maxStdoutBytes: 128,
+        });
+        return this.hasIncomingChanges(repositoryPath,
+          requireOid(preview.stdout.toString('utf8').trim(), 'update-preview-head-invalid'), currentMainOid, false, signal);
+      } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+      }
+    }
+    const merge = await this.git.mergeTree(repositoryPath, currentMainOid, contributionHeadOid);
+    if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    if (merge.kind !== 'clean') return true;
+    const headTree = await this.runner.run({
+      args: ['show', '-s', '--format=%T', contributionHeadOid],
+      cwd: repositoryPath, maxStdoutBytes: 128, signal,
+    });
+    return merge.treeOid !== requireOid(headTree.stdout.toString('utf8').trim(), 'publication-head-tree-invalid');
+  }
 
   async prepare(
     context: PublishProjectContext,

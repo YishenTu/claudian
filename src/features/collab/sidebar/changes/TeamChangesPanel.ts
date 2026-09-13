@@ -1,6 +1,6 @@
 import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian-collab/protocol';
 
-import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult } from '@/core/collab';
+import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult, CollabWorkingTreeReview } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import {
   collabReviewSourceKey,
@@ -26,6 +26,7 @@ export interface TeamChangesPanelPort extends TeamReviewLoaderPort {
 }
 
 export interface TeamChangesPanelOptions {
+  readonly onOpenWorkingTreeReview?: (review: CollabWorkingTreeReview) => void;
   readonly deferInitialRefresh?: boolean;
   readonly onOpenConflict?: (
     operationId: CollabOperationId,
@@ -57,7 +58,12 @@ export interface OwnRequestPublicationReview {
   readonly selectedPath?: string;
 }
 
-type OwnRequestActivity = OwnRequestConflict | OwnRequestPublicationReview;
+interface OwnRequestPublicationRecovery {
+  readonly requestId: CollabRequestId;
+  readonly workingReview: CollabWorkingTreeReview;
+}
+
+type OwnRequestActivity = OwnRequestConflict | OwnRequestPublicationReview | OwnRequestPublicationRecovery;
 
 interface TeamViewState {
   readonly kind: 'error' | 'loading' | 'ready';
@@ -423,6 +429,13 @@ export class TeamChangesPanel {
       });
       return;
     }
+    const recovery = this.#recoveryFor(request);
+    if (recovery) {
+      const resume = body.createEl('button', { text: t('collab.update.finishPublish'), attr: { type: 'button' } });
+      resume.disabled = !this.options.onOpenWorkingTreeReview;
+      resume.addEventListener('click', () => this.options.onOpenWorkingTreeReview?.(recovery.workingReview));
+      return;
+    }
     const publication = this.#publicationFor(request);
     if (publication) {
       const selectedPath = publication.selectedPath
@@ -513,6 +526,15 @@ export class TeamChangesPanel {
     }
   }
 
+  revealRequest(requestId: string): void {
+    if (!this.active || this.destroyed) return;
+    const coordination = this.viewState.snapshot;
+    const request = coordination?.snapshot.openRequests.find(candidate => candidate.id === requestId);
+    if (!request || !coordination) return;
+    this.expandedRequestId = null;
+    this.#toggleRequest(request, coordination);
+  }
+
   #toggleRequest(
     request: CollabChangeRequest,
     coordination: CollabCoordinationSnapshot,
@@ -533,6 +555,16 @@ export class TeamChangesPanel {
       this.expandedReviewState = null;
       this.render();
       this.options.onOpenConflict?.(conflict.operationId, request.id);
+      return;
+    }
+
+    const recovery = this.#recoveryFor(request);
+    if (recovery) {
+      this.reviewLoader.cancelPending();
+      this.expandedRequestId = request.id;
+      this.expandedReviewState = null;
+      this.render();
+      this.options.onOpenWorkingTreeReview?.(recovery.workingReview);
       return;
     }
 
@@ -665,6 +697,11 @@ export class TeamChangesPanel {
       : null;
   }
 
+  #recoveryFor(request: CollabChangeRequest): OwnRequestPublicationRecovery | null {
+    return this.ownRequestActivity && 'workingReview' in this.ownRequestActivity
+      && this.ownRequestActivity.requestId === request.id ? this.ownRequestActivity : null;
+  }
+
   #publicationFor(
     request: CollabChangeRequest,
   ): OwnRequestPublicationReview | null {
@@ -685,6 +722,7 @@ export class TeamChangesPanel {
     );
     if (request?.memberId !== currentMemberId) return null;
     if ('review' in activity && activity.review.projectId !== this.project.id) return null;
+    if ('workingReview' in activity && activity.workingReview.projectId !== this.project.id) return null;
     return activity;
   }
 

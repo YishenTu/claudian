@@ -164,10 +164,11 @@ export class ReviewDetailSession {
         const prepared = this.preparedReviews?.readPublication(state) ?? null;
         if (prepared) {
           this.review = prepared;
-          this.coordination = null;
+          if (prepared.intent !== 'update') this.coordination = null;
           this.memberNames = new Map();
         }
       }
+      if (isPublicationReview(this.review) && this.review.intent === 'update') this.#updateConfirmationAvailability();
       const selected = this.review.files.find(file => file.path === state.selectedPath)
         ?? this.review.files[0];
       this.state = selected
@@ -211,7 +212,8 @@ export class ReviewDetailSession {
     const state = this.state;
     return state?.kind === 'request'
       ? this.#refreshRequestCoordination(state)
-      : Promise.resolve();
+      : state?.kind === 'publication' && state.intent === 'update'
+        ? this.#refreshUpdateCoordination(state) : Promise.resolve();
   }
 
   destroy(options: { readonly retainDiff?: boolean } = {}): void {
@@ -271,6 +273,8 @@ export class ReviewDetailSession {
         }).then(result => result.status === 'success' ? result.value : null, () => null);
       }
       if (controller.signal.aborted || generation !== this.generation) return;
+      if (isPublicationReview(review) && review.intent === 'update'
+        && (snapshot?.source !== 'online' || snapshot.stale)) review = { ...review, canConfirm: false };
       assertReviewMatchesState(review, state);
       this.review = review;
       this.#renderReview(review, snapshot, state.selectedPath);
@@ -322,12 +326,14 @@ export class ReviewDetailSession {
     });
     if (isPublicationReview(review) && review.intent === 'update') {
       this.#renderReviewDisplayControls(header);
+      const offline = header.createSpan({ text: t('collab.update.reconnect'), attr: { 'data-collab-update-offline': '' } });
+      offline.hidden = coordination?.source === 'online' && !coordination.stale;
     } else if (!isRequestReview(review)) {
       this.#renderDescriptionEditor(header, review, coordination);
     }
     if (isRequestReview(review)) {
       this.#renderRequestAcceptAction(header, review, coordination);
-    } else if (isPublicationReview(review) && review.canConfirm) {
+    } else if (isPublicationReview(review) && (review.canConfirm || review.intent === 'update')) {
       header.classList.add('has-primary-action');
       const confirm = header.createEl('button', {
         attr: { 'data-collab-action': review.intent === 'update' ? 'confirm-update' : 'confirm-publish', type: 'button' },
@@ -335,8 +341,12 @@ export class ReviewDetailSession {
         text: review.intent === 'update' ? t('collab.update.action') : t('collab.publish.action'),
       });
       if (review.intent !== 'update') this.#requireDescription(confirm);
+      else this.#updateConfirmationAvailability();
       confirm.addEventListener('click', () => {
-        void this.confirmPublish(review, confirm);
+        if (review.intent === 'update') {
+          const current = this.review;
+          if (!confirm.disabled && current && isPublicationReview(current) && current.canConfirm) void this.confirmPublish(current, confirm);
+        } else void this.confirmPublish(review, confirm);
       });
     } else if (isWorkingTreeReview(review)) {
       header.classList.add('has-primary-action');
@@ -456,6 +466,40 @@ export class ReviewDetailSession {
         && canAcceptFromCoordination(this.coordination)
       ) void this.accept(current, accept);
     });
+  }
+
+  #updateConfirmationAvailability(): void {
+    const confirm = this.rootEl.querySelector<HTMLButtonElement>('[data-collab-action="confirm-update"]');
+    const online = this.coordination?.source === 'online' && !this.coordination.stale;
+    if (confirm) confirm.disabled = !!this.acceptController || !online
+      || !this.review || !isPublicationReview(this.review) || !this.review.canConfirm;
+    const offline = this.rootEl.querySelector<HTMLElement>('[data-collab-update-offline]');
+    if (offline) offline.hidden = online;
+  }
+
+  async #refreshUpdateCoordination(state: Extract<CollabReviewDetailViewState, { kind: 'publication' }>): Promise<void> {
+    this.requestCoordinationController?.abort();
+    const controller = new AbortController();
+    const generation = this.generation;
+    this.requestCoordinationController = controller;
+    try {
+      const snapshot = await this.port.readSnapshot(state.projectId, { signal: controller.signal }).then(requireSuccess);
+      const review = snapshot.source === 'online' && !snapshot.stale
+        ? await this.port.preparePublicationReview(state.projectId, state.operationId, { signal: controller.signal }).then(requireSuccess)
+        : null;
+      if (controller.signal.aborted || generation !== this.generation) return;
+      if (review) assertReviewMatchesState(review, state);
+      this.coordination = snapshot;
+      if (review) this.review = review;
+    } catch {
+      if (controller.signal.aborted || generation !== this.generation) return;
+      this.coordination = null;
+    } finally {
+      if (this.requestCoordinationController === controller) {
+        this.requestCoordinationController = null;
+        this.#updateConfirmationAvailability();
+      }
+    }
   }
 
   async #refreshRequestCoordination(state: CollabRequestDetailViewState): Promise<void> {
@@ -1159,6 +1203,7 @@ export class ReviewDetailSession {
       button.textContent = review.intent === 'update' ? t('collab.update.failed') : t('collab.review.confirmPublishFailed');
     } finally {
       if (this.acceptController === controller) this.acceptController = null;
+      if (review.intent === 'update') this.#updateConfirmationAvailability();
     }
   }
 

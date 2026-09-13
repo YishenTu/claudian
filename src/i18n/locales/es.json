@@ -314,6 +314,14 @@
       "stopFailed": "No se pudo detener correctamente el Host. Revisa el diagnóstico y reintenta."
     },
     "update": {
+      "publishPending": "Completa la publicación pendiente antes de actualizar.",
+      "conflictPending": "Una actualización tiene conflictos sin resolver.",
+      "recoveryPending": "Hay una actualización pendiente de finalizar.",
+      "reviewPending": "Una actualización está lista para revisar.",
+      "reconnect": "Vuelve a conectarte para continuar.",
+      "finishPublish": "Completar publicación",
+      "syncRequired": "Los cambios del equipo ya están incluidos. Falta sincronizar el estado del proyecto.",
+      "syncAction": "Sincronizar estado",
       "available": "Actualización disponible",
       "action": "Actualizar",
       "updating": "Actualizando…",

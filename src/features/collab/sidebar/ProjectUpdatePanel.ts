@@ -1,4 +1,4 @@
-import type { CollabFeaturePort, CollabProjectUpdateInspection, CollabPublicationReview } from '@/core/collab';
+import type { CollabFeaturePort, CollabProjectUpdateInspection, CollabProjectUpdateOperation, CollabPublicationReview } from '@/core/collab';
 import { t } from '@/i18n/i18n';
 
 export interface ProjectUpdatePanelOptions {
@@ -6,6 +6,7 @@ export interface ProjectUpdatePanelOptions {
   readonly port: Pick<CollabFeaturePort, 'updateProject'>;
   readonly onReview: (review: CollabPublicationReview) => void;
   readonly onConflict: (operationId: string) => void;
+  readonly onCompletePublish: (operation: Extract<CollabProjectUpdateOperation, { kind: 'publish' }>) => void;
   readonly refresh: () => void;
 }
 
@@ -23,7 +24,6 @@ export class ProjectUpdatePanel {
 
   adopt(inspection: CollabProjectUpdateInspection | undefined): void {
     this.#inspection = inspection;
-    this.#failed = false;
     this.#render();
   }
 
@@ -41,22 +41,32 @@ export class ProjectUpdatePanel {
     if (this.#destroyed) return;
     this.root.replaceChildren();
     const inspection = this.#inspection;
-    this.root.hidden = !inspection || inspection.state === 'unknown' || inspection.state === 'current';
+    this.root.hidden = !inspection || inspection.action.kind === 'none';
     if (this.root.hidden || !inspection) return;
-    this.root.createSpan({ text: this.#failed ? t('collab.update.failed') : t('collab.update.available') });
-    if (inspection.state === 'conflict') {
+    const { operation, action, freshness } = inspection;
+    this.root.createSpan({ text: this.#failed ? t('collab.update.failed')
+      : operation.kind === 'publish' ? t('collab.update.publishPending')
+      : operation.kind === 'update-conflict' ? t('collab.update.conflictPending')
+      : operation.kind === 'update-recovery' ? t('collab.update.recoveryPending')
+      : operation.kind === 'update-review' ? t('collab.update.reviewPending')
+      : inspection.incoming === 'included' ? t('collab.update.syncRequired') : t('collab.update.available') });
+    if (freshness !== 'fresh') this.root.createSpan({ text: t('collab.update.reconnect') });
+    if (operation.kind === 'update-conflict') {
       const conflicts = this.#button(t('collab.conflict.title'));
       conflicts.addEventListener('click', () => {
-        if (this.#active && !this.#destroyed) this.options.onConflict(inspection.conflictOperationId);
+        if (this.#active && !this.#destroyed) this.options.onConflict(operation.conflictOperationId);
       });
     }
-    const action = this.#button(this.#pending ? t('collab.update.updating')
-      : inspection.state === 'review-required' ? t('collab.update.review')
-      : inspection.state === 'conflict' || inspection.state === 'recovery-required' ? t('collab.update.continue')
-      : t('collab.update.action'));
-    action.addEventListener('click', () => {
-      if (!this.#active || this.#pending || this.#destroyed) return;
-      if (inspection.state === 'review-required') this.options.onReview(inspection.review);
+    const label = action.kind === 'sync' ? t('collab.update.syncAction')
+      : action.kind === 'review-update' ? t('collab.update.review')
+      : action.kind === 'continue-update' ? t('collab.update.continue')
+      : action.kind === 'complete-publish' ? t('collab.update.finishPublish') : t('collab.update.action');
+    const button = this.#button(this.#pending ? t('collab.update.updating') : label);
+    button.disabled ||= !action.enabled;
+    button.addEventListener('click', () => {
+      if (!this.#active || this.#pending || this.#destroyed || !action.enabled) return;
+      if (action.kind === 'complete-publish' && operation.kind === 'publish') this.options.onCompletePublish(operation);
+      else if (action.kind === 'review-update' && operation.kind === 'update-review') this.options.onReview(operation.review);
       else void this.#update();
     });
   }
@@ -73,15 +83,12 @@ export class ProjectUpdatePanel {
     this.#render();
     try {
       const result = await this.options.port.updateProject(this.options.projectId);
-      if (this.#destroyed || !this.#inspection
-        || this.#inspection.state === 'unknown' || this.#inspection.state === 'current') return;
+      if (this.#destroyed) return;
       if (result.status === 'success') {
-        if (result.value.state === 'review-required' && result.value.review) {
-          this.#inspection = { state: 'review-required', review: result.value.review };
-          if (this.#active) this.options.onReview(result.value.review);
-        } else this.#inspection = { state: 'current' };
+        this.#failed = false;
+        if (this.#active && this.#inspection?.freshness === 'fresh'
+          && result.value.state === 'review-required' && result.value.review) this.options.onReview(result.value.review);
       } else if (result.status === 'conflict') {
-        this.#inspection = { state: 'conflict', conflictOperationId: result.conflict.operationId };
         if (this.#active) this.options.onConflict(result.conflict.operationId);
       } else this.#failed = true;
     } catch {

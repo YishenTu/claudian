@@ -336,6 +336,14 @@
       "stopFailed": "Host could not be stopped cleanly. Check diagnostics and retry."
     },
     "update": {
+      "publishPending": "Finish the pending publication before updating.",
+      "conflictPending": "An Update has unresolved conflicts.",
+      "recoveryPending": "An Update needs finishing.",
+      "reviewPending": "An Update is ready for review.",
+      "reconnect": "Reconnect to continue.",
+      "finishPublish": "Finish publishing",
+      "syncRequired": "Team changes already included. Project status needs syncing.",
+      "syncAction": "Sync status",
       "available": "Update available",
       "action": "Update",
       "updating": "Updating…",

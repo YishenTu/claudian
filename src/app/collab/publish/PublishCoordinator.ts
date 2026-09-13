@@ -1235,6 +1235,15 @@ export class PublishCoordinator {
     signal?: AbortSignal,
   ): Promise<CollabResult<ContributionOutcome>> {
     const review = await this.#buildReview(state, context, operation, signal);
+    if (operation.intent === 'update' && review.files.length === 0) {
+      return this.#confirmExclusive({
+        projectId: context.projectId,
+        operationId: operation.operationId,
+        expectedCandidateOid: review.candidateOid,
+        expectedMainOid: review.currentMainOid,
+        description: '',
+      }, signal, 'update');
+    }
     return {
       status: 'success',
       value: {

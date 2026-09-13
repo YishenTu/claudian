@@ -442,7 +442,7 @@ describe('CollabPanel', () => {
     const originalInspection = await port.inspectProject(currentProject.id);
     if (originalInspection.status !== 'success') throw new Error('Inspection required');
     let updateState: 'available' | 'current' = 'available';
-    jest.spyOn(port, 'inspectProject').mockImplementation(async () => ({ status: 'success', value: { ...originalInspection.value, projectUpdate: { state: updateState } } }));
+    jest.spyOn(port, 'inspectProject').mockImplementation(async () => ({ status: 'success', value: { ...originalInspection.value, projectUpdate: { freshness: 'fresh', incoming: updateState, operation: { kind: 'none' }, action: { kind: updateState === 'available' ? 'update' : 'none', enabled: updateState === 'available' } } } }));
     const onOpenPublicationReview = jest.fn();
     const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [], canConfirm: true };
     port.updateProject = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: currentProject.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
@@ -1145,6 +1145,109 @@ describe('CollabPanel', () => {
       'request-alpha',
       expect.anything(),
     );
+  });
+
+  it('opens publication recovery from Finish publishing through the existing Request', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({
+      lifecycle: 'ready',
+      projects: [project({ connectionStatus: 'connected', hostStatus: 'running' })],
+      selectedProjectId: 'project-alpha',
+    });
+    const snapshotResult = await port.readSnapshot('project-alpha');
+    if (snapshotResult.status !== 'success') throw new Error('Expected coordination snapshot');
+    const ownRequest = {
+      commentCount: 0,
+      createdAt: '2026-08-08T00:00:00.000Z',
+      firstBaseOid: 'a'.repeat(40),
+      id: 'request-alpha',
+      latestHeadOid: 'b'.repeat(40),
+      memberId: 'member-host',
+      status: 'open' as const,
+      updatedAt: '2026-08-08T00:10:00.000Z',
+    };
+    const coordination = {
+      ...snapshotResult.value,
+      snapshot: {
+        ...snapshotResult.value.snapshot,
+        openRequests: [ownRequest, ...snapshotResult.value.snapshot.openRequests],
+      },
+    };
+    const review = {
+      baseMainOid: 'a'.repeat(40),
+      candidateOid: 'c'.repeat(40),
+      canConfirm: true,
+      comparisonBaseOid: 'a'.repeat(40),
+      comparisonTargetOid: 'c'.repeat(40),
+      contributionHeadOid: 'b'.repeat(40),
+      currentMainOid: 'a'.repeat(40),
+      files: [{
+        binary: false,
+        kind: 'modified' as const,
+        largeForReview: false,
+        path: 'notes/resolved.md',
+      }],
+      kind: 'publication' as const,
+      operationId: 'operation-review',
+      projectId: 'project-alpha',
+    };
+    (port.readSnapshot as jest.Mock).mockClear().mockResolvedValue({
+      status: 'success',
+      value: coordination,
+    });
+    const workingReview = { baseOid: 'b'.repeat(40), files: [], headOid: 'b'.repeat(40), kind: 'working-tree' as const, projectId: 'project-alpha', snapshotId: 'd'.repeat(64) };
+    (port.inspectProject as jest.Mock).mockResolvedValue({
+      status: 'success',
+      value: {
+        coordination,
+        gitStatus: {
+          acceptedMainOid: 'a'.repeat(40),
+          aheadBy: 0,
+          behindBy: 0,
+          changedFiles: [],
+          headOid: 'b'.repeat(40),
+          includesAcceptedMain: false,
+          personalRemoteOid: 'b'.repeat(40),
+          workingTreeClean: true,
+        },
+        projectUpdate: { freshness: 'fresh', incoming: 'available', operation: { kind: 'publish', requestId: 'request-alpha', workingReview }, action: { kind: 'complete-publish', enabled: true } },
+        personalChanges: {
+          action: 'retry',
+          hasContribution: true,
+          review,
+          unpublishedReview: {
+            baseOid: 'b'.repeat(40),
+            files: [],
+            headOid: 'b'.repeat(40),
+            kind: 'working-tree',
+            projectId: 'project-alpha',
+            snapshotId: 'd'.repeat(64),
+          },
+          updateAvailable: true,
+        },
+        project: project({ connectionStatus: 'connected', hostStatus: 'running' }),
+      },
+    });
+    const onOpenWorkingTreeReview = jest.fn();
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(),
+      configuredGitPath: () => '',
+      onOpenWorkingTreeReview,
+      onSaveConfiguredGitPath: jest.fn(),
+      port,
+      projectSetup: { getPendingSetupOperationId: jest.fn() },
+      resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
+    });
+
+    panel.setActive(true);
+    await flush();
+
+    getByRole(container, 'button', { name: 'Finish publishing' }).click();
+    expect(onOpenWorkingTreeReview).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'project-alpha' }), workingReview,
+    );
+    expect(port.prepareReview).not.toHaveBeenCalled();
+    panel.destroy();
   });
 
   it('refreshes My changes for coalesced Vault events inside the selected Project only', async () => {

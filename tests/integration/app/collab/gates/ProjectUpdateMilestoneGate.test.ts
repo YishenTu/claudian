@@ -90,7 +90,7 @@ describe('Project Update milestone gate', () => {
         const conflicted = unwrap(await memberFeature.inspectProject(projectId));
         const opposite = await memberFeature.publish({ projectId, description: 'Do not change the pending Update' });
         const afterOpposite = unwrap(await memberFeature.inspectProject(projectId));
-        conflictObservation = { state: conflicted.projectUpdate?.state, intent: conflicted.conflict?.intent, oppositeStatus: opposite.status, retainedIntent: afterOpposite.conflict?.intent };
+        conflictObservation = { state: conflicted.projectUpdate?.operation.kind, intent: conflicted.conflict?.intent, oppositeStatus: opposite.status, retainedIntent: afterOpposite.conflict?.intent };
         await writeFile(path.join(memberPath, 'shared.md'), 'resolved locally\n');
         if (conflictCleanupFailure && result.status === 'conflict') {
           const operationPath = path.join(memberRoot, member.local.projects.getConflictDirectoryPath(), result.conflict.operationId);
@@ -122,7 +122,7 @@ describe('Project Update milestone gate', () => {
         }
         result = await memberFeature.updateProject(projectId);
       }
-      expect(conflictObservation).toEqual(hasConflict ? { state: 'conflict', intent: 'update', oppositeStatus: 'stale', retainedIntent: 'update' } : null);
+      expect(conflictObservation).toEqual(hasConflict ? { state: 'update-conflict', intent: 'update', oppositeStatus: 'stale', retainedIntent: 'update' } : null);
       expect(conflictCleanupStatus).toBe(conflictCleanupFailure ? 'recovery-required' : null);
       expect(conflictCleanupInjected).toBe(conflictCleanupFailure);
       const prepared = unwrap(result);
@@ -195,7 +195,7 @@ describe('Project Update milestone gate', () => {
       const after = unwrap(await memberFeature.inspectProject(projectId));
       expect(after.coordination!.snapshot.openRequests).toEqual(previousRequests);
       expect(after.gitStatus!.personalRemoteOid).toBe(personalRemoteOid);
-      expect(after.projectUpdate).toMatchObject({ state: scenario === 'state-save-new-main' ? 'available' : 'current' });
+      expect(after.projectUpdate).toMatchObject({ incoming: scenario === 'state-save-new-main' ? 'available' : 'current' });
       await expect(readFile(path.join(memberPath, 'team.md'), 'utf8')).resolves.toBe('accepted team update\n');
       const expectedPaths = scenario === 'unchanged-request' ? [] : conflictCleanupFailure ? ['draft.md', 'later.md', 'shared.md'] : hasConflict ? ['draft.md', 'shared.md'] : interruptedUpdate ? ['draft.md', 'later.md'] : ['draft.md'];
       expect(after.personalChanges!.unpublishedReview.files.map(file => file.path).sort()).toEqual(expectedPaths);
@@ -211,6 +211,162 @@ describe('Project Update milestone gate', () => {
       await waitFor(async () => unwrap(await memberFeature.inspectProject(projectId)).personalChanges!.unpublishedReview.files.length === 0);
     },
   );
+
+  it.each(['own-merge', 'later-local-commit', 'other-team-changes', 'resume-empty-review'] as const)('classifies an accepted own request by incoming content: %s', async scenario => {
+    const otherTeamChanges = scenario === 'other-team-changes';
+    root = await mkdtemp(path.join(tmpdir(), 'claudian-update-content-'));
+    const hostRoot = path.join(root, 'host');
+    const memberRoot = path.join(root, 'member');
+    await Promise.all([mkdir(hostRoot), mkdir(memberRoot)]);
+    const codec = new InvitationCodec({ isAddressAllowed: address => address === '127.0.0.1' });
+    const host = createFoundation(hostRoot, codec, await availablePort());
+    let member = createFoundation(memberRoot, codec);
+    const hostFeature = createFeature(host, hostRoot, TEST_INSTALLATION_A);
+    let memberFeature = createFeature(member, memberRoot, TEST_INSTALLATION_B);
+    unwrap(await hostFeature.initialize());
+    unwrap(await memberFeature.initialize());
+    const project = unwrap(await hostFeature.createProject({ memberDisplayName: 'Manager', name: 'Own request' }));
+    const projectId = project.id;
+    const invitation = unwrap(await hostFeature.createInvitation(projectId));
+    const joined = unwrap(await memberFeature.joinProject({ encodedInvitation: invitation.encodedInvitation, memberDisplayName: 'Member' }));
+    const memberPath = path.join(memberRoot, joined.workspacePath);
+    const hostPath = path.join(hostRoot, project.workspacePath);
+    await writeFile(path.join(memberPath, 'published.md'), 'my submitted change\n');
+    const request = (await publishFully(memberFeature, projectId)).request!;
+    const git = await member.requireGitFoundation();
+    if (scenario === 'later-local-commit') {
+      await writeFile(path.join(memberPath, 'local-commit.md'), 'unpublished commit\n');
+      const membership = await member.local.projects.loadMembership(projectId);
+      if (!membership) throw new Error('Membership required');
+      await git.repositories.stageAll(memberPath);
+      await git.repositories.createCommitFromIndex(memberPath, {
+        expectedRefOid: request.latestHeadOid, message: 'Continue local work',
+        parents: [request.latestHeadOid], ref: membership.member.personalRef,
+      });
+    }
+    await writeFile(path.join(memberPath, 'draft.md'), 'staged draft\n');
+    await git.repositories.stageAll(memberPath);
+    await writeFile(path.join(memberPath, 'draft.md'), 'staged draft\nmore local work\n');
+    const headBefore = await git.repositories.resolveRef(memberPath, 'HEAD');
+    const indexBefore = await git.runner.run({ args: ['diff', '--cached', '--binary'], cwd: memberPath });
+    if (otherTeamChanges) {
+      await writeFile(path.join(hostPath, 'team.md'), 'another member change\n');
+      await accept(hostFeature, projectId, (await publishFully(hostFeature, projectId)).request!.id);
+    }
+    await accept(hostFeature, projectId, request.id);
+    await waitFor(async () => {
+      const inspected = unwrap(await memberFeature.inspectProject(projectId));
+      return inspected.projectUpdate?.incoming !== 'unknown'
+        && inspected.coordination?.snapshot.openRequests.length === 0;
+    });
+    const inspected = unwrap(await memberFeature.inspectProject(projectId));
+    expect(inspected.projectUpdate).toMatchObject({ incoming: otherTeamChanges ? 'available' : 'included' });
+    expect(await git.repositories.resolveRef(memberPath, 'HEAD')).toBe(headBefore);
+    expect((await git.runner.run({ args: ['diff', '--cached', '--binary'], cwd: memberPath })).stdout).toEqual(indexBefore.stdout);
+    expect(await readFile(path.join(memberPath, 'draft.md'), 'utf8')).toBe('staged draft\nmore local work\n');
+    const remoteBefore = inspected.gitStatus!.personalRemoteOid;
+    let interruption: { status: string; injected: boolean; resumedState: string | undefined } | undefined;
+    if (scenario === 'resume-empty-review') {
+      let interrupted = false;
+      const realRename = fs.rename;
+      const fault = jest.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+        if (!interrupted && String(target).startsWith(memberRoot) && String(target).endsWith('/publication-state.json')) {
+          const record = JSON.parse(await readFile(source, 'utf8'));
+          if (record.operation?.intent === 'update' && record.operation.phase === 'confirmed') {
+            interrupted = true;
+            throw Object.assign(new Error('Status sync interrupted'), { code: 'EIO' });
+          }
+        }
+        return realRename(source, target);
+      });
+      let interruptedStatus: string;
+      try { interruptedStatus = (await memberFeature.updateProject(projectId)).status; }
+      finally { fault.mockRestore(); }
+      await memberFeature.close();
+      await member.close();
+      member = createFoundation(memberRoot, codec);
+      memberFeature = createFeature(member, memberRoot, TEST_INSTALLATION_B);
+      unwrap(await memberFeature.initialize());
+      await waitFor(async () => unwrap(await memberFeature.inspectProject(projectId)).projectUpdate?.incoming !== 'unknown');
+      interruption = { status: interruptedStatus, injected: interrupted,
+        resumedState: unwrap(await memberFeature.inspectProject(projectId)).projectUpdate?.operation.kind };
+    }
+    expect(interruption).toEqual(scenario === 'resume-empty-review'
+      ? { status: 'recovery-required', injected: true, resumedState: 'update-recovery' } : undefined);
+    const result = unwrap(await memberFeature.updateProject(projectId));
+    expect(result.state).toBe(otherTeamChanges ? 'review-required' : 'updated');
+    expect(result.review?.files.map(file => file.path)).toEqual(otherTeamChanges ? ['team.md'] : undefined);
+    if (otherTeamChanges) {
+      unwrap(await memberFeature.confirmUpdate({ projectId, operationId: result.review!.operationId,
+        expectedMainOid: result.review!.currentMainOid, expectedCandidateOid: result.review!.candidateOid }));
+    }
+    const after = unwrap(await memberFeature.inspectProject(projectId));
+    expect(after.projectUpdate).toMatchObject({ incoming: 'current', operation: { kind: 'none' } });
+    expect(after.personalChanges!.unpublishedReview.files.map(file => file.path).sort()).toEqual(
+      scenario === 'later-local-commit' ? ['draft.md', 'local-commit.md'] : ['draft.md']);
+    expect(after.gitStatus!.personalRemoteOid).toBe(remoteBefore);
+    expect(after.coordination!.snapshot.openRequests).toEqual([]);
+    expect(await readFile(path.join(memberPath, 'draft.md'), 'utf8')).toBe('staged draft\nmore local work\n');
+  });
+
+  it.each(['matching-working-content', 'pending-publish', 'offline-update', 'offline-review'] as const)('projects the actionable Update state for %s', async scenario => {
+    root = await mkdtemp(path.join(tmpdir(), 'claudian-update-projection-'));
+    const hostRoot = path.join(root, 'host');
+    const memberRoot = path.join(root, 'member');
+    await Promise.all([mkdir(hostRoot), mkdir(memberRoot)]);
+    const codec = new InvitationCodec({ isAddressAllowed: address => address === '127.0.0.1' });
+    const host = createFoundation(hostRoot, codec, await availablePort());
+    const member = createFoundation(memberRoot, codec);
+    const hostFeature = createFeature(host, hostRoot, TEST_INSTALLATION_A);
+    const memberFeature = createFeature(member, memberRoot, TEST_INSTALLATION_B);
+    unwrap(await hostFeature.initialize());
+    unwrap(await memberFeature.initialize());
+    const project = unwrap(await hostFeature.createProject({ memberDisplayName: 'Manager', name: 'Update projection' }));
+    const projectId = project.id;
+    const hostPath = path.join(hostRoot, project.workspacePath);
+    await writeFile(path.join(hostPath, 'shared.md'), 'base\n');
+    await accept(hostFeature, projectId, (await publishFully(hostFeature, projectId)).request!.id);
+    const invitation = unwrap(await hostFeature.createInvitation(projectId));
+    const joined = unwrap(await memberFeature.joinProject({ encodedInvitation: invitation.encodedInvitation, memberDisplayName: 'Member' }));
+    const memberPath = path.join(memberRoot, joined.workspacePath);
+    await writeFile(path.join(memberPath, 'draft.md'), 'private staged work\n');
+    const git = await member.requireGitFoundation();
+    await git.repositories.stageAll(memberPath);
+    await writeFile(path.join(memberPath, 'draft.md'), 'private staged work\nand unstaged work\n');
+    await writeFile(path.join(memberPath, 'shared.md'), scenario === 'offline-update' ? 'conflicting local edit\n' : 'team content\n');
+    const headBefore = await git.repositories.resolveRef(memberPath, 'HEAD');
+    const indexBefore = await readFile(path.join(memberPath, '.git', 'index'));
+    await writeFile(path.join(hostPath, 'shared.md'), 'team content\n');
+    if (scenario === 'offline-review') await writeFile(path.join(hostPath, 'team.md'), 'incoming review file\n');
+    await accept(hostFeature, projectId, (await publishFully(hostFeature, projectId)).request!.id);
+    const acceptedMain = unwrap(await hostFeature.inspectProject(projectId)).coordination!.snapshot.project.mainOid;
+    await waitFor(async () => {
+      const current = unwrap(await memberFeature.inspectProject(projectId));
+      return current.coordination?.snapshot.project.mainOid === acceptedMain && current.gitStatus?.acceptedMainOid === acceptedMain;
+    });
+    let preparation: string | undefined;
+    if (scenario === 'pending-publish') preparation = unwrap(await memberFeature.publish({ projectId, description: 'Review my work' })).state;
+    if (scenario === 'offline-update' || scenario === 'offline-review') {
+      const updated = await memberFeature.updateProject(projectId);
+      preparation = updated.status === 'success' ? updated.value.state : updated.status;
+      unwrap(await hostFeature.stopHost(projectId));
+    }
+    const inspected = unwrap(await memberFeature.inspectProject(projectId));
+    expect(preparation).toBe(scenario === 'pending-publish' || scenario === 'offline-review' ? 'review-required' : scenario === 'offline-update' ? 'conflict' : undefined);
+    expect(inspected.projectUpdate).toMatchObject(scenario === 'matching-working-content'
+      ? { freshness: 'fresh', incoming: 'included', operation: { kind: 'none' }, action: { kind: 'sync', enabled: true } }
+      : scenario === 'pending-publish'
+        ? { freshness: 'fresh', operation: { kind: 'publish' }, action: { kind: 'complete-publish', enabled: true } }
+        : scenario === 'offline-update'
+          ? { freshness: 'offline', incoming: 'unknown', operation: { kind: 'update-conflict' }, action: { kind: 'continue-update', enabled: false } }
+          : { freshness: 'offline', incoming: 'unknown', operation: { kind: 'update-review', review: { canConfirm: false } }, action: { kind: 'review-update', enabled: true } });
+    if (scenario === 'matching-working-content') {
+      const afterHead = await git.repositories.resolveRef(memberPath, 'HEAD');
+      const afterIndex = await readFile(path.join(memberPath, '.git', 'index'));
+      if (afterHead !== headBefore || !afterIndex.equals(indexBefore)) throw new Error('Inspection changed the real HEAD or index');
+    }
+    expect(await readFile(path.join(memberPath, 'draft.md'), 'utf8')).toBe('private staged work\nand unstaged work\n');
+  });
 
   function createFoundation(vaultRoot: string, invitationCodec: InvitationCodec, hostPort?: number): ClaudianCollabService {
     const installationKey = hostPort === undefined ? TEST_INSTALLATION_B : TEST_INSTALLATION_A;

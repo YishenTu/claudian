@@ -1089,6 +1089,25 @@ function toProjectSummary(project: CollabLocalProjectSummary): AgentRuntimeProje
   };
 }
 
+function toProjectUpdate(update: CollabProjectInspection['projectUpdate']): AgentRuntimeProjectDetail['update'] {
+  const operation = update?.operation.kind;
+  const incoming = update?.incoming ?? 'unknown';
+  const freshness = update?.freshness ?? 'offline';
+  return {
+    state: operation === 'publish' ? 'publish-pending'
+      : operation === 'update-conflict' ? 'conflict'
+      : operation === 'update-review' ? 'review-required'
+      : operation === 'update-recovery' ? 'recovery-required'
+      : incoming === 'included' ? 'sync-required' : incoming,
+    freshness, incoming,
+    ...(freshness === 'fresh' ? {} : { reason: freshness }),
+    nextAction: !update || !update.action.enabled || freshness !== 'fresh' ? null
+      : update.action.kind === 'complete-publish' ? 'complete-publish'
+      : operation === 'update-conflict' ? 'resolve-conflicts'
+      : update.action.kind === 'none' ? null : 'update',
+  };
+}
+
 function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProjectDetail {
   const coordination = inspection.coordination;
   const currentMember = coordination?.snapshot.currentMember;
@@ -1103,12 +1122,7 @@ function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProje
     .map(member => member.id);
   return {
     ...toProjectSummary(inspection.project),
-    update: {
-      state: inspection.projectUpdate?.state ?? 'unknown',
-      ...(inspection.projectUpdate?.state === 'unknown' ? { reason: inspection.projectUpdate.reason } : {}),
-      nextAction: !inspection.projectUpdate || inspection.projectUpdate.state === 'unknown' || inspection.projectUpdate.state === 'current'
-        ? null : inspection.projectUpdate.state === 'conflict' ? 'resolve-conflicts' : 'update',
-    },
+    update: toProjectUpdate(inspection.projectUpdate),
     authorityKind: inspection.project.authorityKind,
     coordination: !coordination || !currentMember
       ? null

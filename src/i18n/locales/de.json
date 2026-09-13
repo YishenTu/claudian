@@ -314,6 +314,14 @@
       "stopFailed": "Der Host konnte nicht ordnungsgemäß gestoppt werden. Prüfe die Diagnose und versuche es erneut."
     },
     "update": {
+      "publishPending": "Schließe die ausstehende Veröffentlichung vor der Aktualisierung ab.",
+      "conflictPending": "Eine Aktualisierung enthält ungelöste Konflikte.",
+      "recoveryPending": "Eine Aktualisierung muss abgeschlossen werden.",
+      "reviewPending": "Eine Aktualisierung kann geprüft werden.",
+      "reconnect": "Verbinde dich erneut, um fortzufahren.",
+      "finishPublish": "Veröffentlichung abschließen",
+      "syncRequired": "Teamänderungen sind bereits enthalten. Der Projektstatus muss synchronisiert werden.",
+      "syncAction": "Status synchronisieren",
       "available": "Update verfügbar",
       "action": "Aktualisieren",
       "updating": "Wird aktualisiert…",

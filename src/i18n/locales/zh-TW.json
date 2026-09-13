@@ -314,6 +314,14 @@
       "stopFailed": "無法正常停止 Host，請查看診斷後重試。"
     },
     "update": {
+      "publishPending": "請先完成待處理的發佈，再更新專案。",
+      "conflictPending": "更新存在待解決的衝突。",
+      "recoveryPending": "有更新操作待完成。",
+      "reviewPending": "有更新等待審閱。",
+      "reconnect": "請重新連線後繼續。",
+      "finishPublish": "完成發佈",
+      "syncRequired": "已包含團隊變更，待同步專案狀態。",
+      "syncAction": "同步狀態",
       "available": "有可用更新",
       "action": "更新",
       "updating": "正在更新…",

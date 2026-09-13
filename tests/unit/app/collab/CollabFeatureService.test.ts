@@ -2786,6 +2786,7 @@ describe('CollabFeatureService', () => {
       'project-alpha',
       expect.objectContaining({ source: 'online', stale: false }),
       {},
+      null,
     );
     expect(publish.readPresentationSnapshot).toHaveBeenCalledTimes(1);
   });
@@ -3035,7 +3036,7 @@ describe('CollabFeatureService', () => {
     });
     await expect(inspection).resolves.toMatchObject({ status: 'success' });
     expect(publish.findConflict).toHaveBeenCalledWith('project-alpha', {});
-    expect(publish.inspectLocalChanges).toHaveBeenCalledWith('project-alpha', expect.anything(), {});
+    expect(publish.inspectLocalChanges).toHaveBeenCalledWith('project-alpha', expect.anything(), {}, null);
   });
 
   it('registers selection synchronization before notifying inspection subscribers', async () => {

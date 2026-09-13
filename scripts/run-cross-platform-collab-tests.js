@@ -36,6 +36,7 @@ const tests = [
   'tests/integration/app/collab/project/CloudProjectEntryCoordinator.test.ts',
   'tests/integration/app/collab/remote-authority/CloudProjectCredentialStore.test.ts',
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
+  'tests/integration/app/collab/publish/NativeGitPublicationCandidateRepository.test.ts',
   'tests/integration/app/collab/review/NativeGitReviewRepository.test.ts',
 ];
 

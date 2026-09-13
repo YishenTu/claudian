@@ -938,6 +938,44 @@ describe('CollabDetailView', () => {
     expect(leaf.detach).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps an offline Update review readable without enabling confirmation', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: { ...coordination(requestReview()), source: 'cache', stale: true } });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    const view = createView(port, diffPort(), objectUrlPort());
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    expect(view.getDisplayText()).toBe('Review project update');
+    expect((getByRole(view.contentEl, 'button', { name: 'Update' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(view.contentEl.textContent).toContain('Reconnect to continue');
+    expect(port.confirmUpdate).not.toHaveBeenCalled();
+  });
+
+  it('disables and restores an open Update confirmation as connectivity changes', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    const view = createView(port, diffPort(), objectUrlPort());
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    const confirm = getByRole(view.contentEl, 'button', { name: 'Update' }) as HTMLButtonElement;
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: { ...coordination(requestReview()), source: 'cache', stale: true } });
+    const observer = (port.observeProject as jest.Mock).mock.calls.at(-1)[1];
+    observer();
+    await nextTurn();
+    expect(confirm.disabled).toBe(true);
+    confirm.click();
+    expect(port.confirmUpdate).not.toHaveBeenCalled();
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: coordination(requestReview()) });
+    observer();
+    await nextTurn();
+    expect(confirm.disabled).toBe(false);
+    expect(getByRole(view.contentEl, 'button', { name: 'Update' })).toBe(confirm);
+  });
+
   it('renders publication review without comments and confirms the exact candidate', async () => {
     const review = publicationReview();
     const port = detailPort(requestReview());

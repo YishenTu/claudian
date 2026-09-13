@@ -319,7 +319,7 @@ export class CollabDetailView extends ItemView {
     this.featureSubscription = this.port.observeProject(projectId, () => {
       const current = this.state;
       if (current?.kind === 'ticket') void this.loadTicket(current);
-      if (current?.kind === 'request') void this.reviewSession?.refresh();
+      if (current?.kind === 'request' || (current?.kind === 'publication' && current.intent === 'update')) void this.reviewSession?.refresh();
     });
   }
 

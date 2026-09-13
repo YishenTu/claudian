@@ -216,11 +216,23 @@ export interface CollabProjectUpdateOutcome {
   review?: CollabPublicationReview;
 }
 
-export type CollabProjectUpdateInspection =
-  | { readonly state: 'unknown'; readonly reason: 'offline' | 'not-fetched' }
-  | { readonly state: 'current' | 'available' | 'recovery-required' }
-  | { readonly state: 'review-required'; readonly review: CollabPublicationReview }
-  | { readonly state: 'conflict'; readonly conflictOperationId: CollabOperationId };
+export type CollabProjectUpdateOperation =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'update-review'; readonly review: CollabPublicationReview }
+  | { readonly kind: 'update-conflict'; readonly conflictOperationId: CollabOperationId }
+  | { readonly kind: 'update-recovery' }
+  | { readonly kind: 'publish'; readonly requestId?: CollabRequestId; readonly review?: CollabPublicationReview;
+      readonly conflictOperationId?: CollabOperationId; readonly workingReview: CollabWorkingTreeReview };
+
+export interface CollabProjectUpdateInspection {
+  readonly freshness: 'fresh' | 'offline' | 'not-fetched';
+  readonly incoming: 'unknown' | 'current' | 'available' | 'included';
+  readonly operation: CollabProjectUpdateOperation;
+  readonly action: {
+    readonly kind: 'none' | 'update' | 'sync' | 'review-update' | 'continue-update' | 'complete-publish';
+    readonly enabled: boolean;
+  };
+}
 
 export type CollabReconciliationState =
   | 'already-current'

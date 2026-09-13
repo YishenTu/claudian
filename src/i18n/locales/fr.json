@@ -314,6 +314,14 @@
       "stopFailed": "Le Host n’a pas pu être arrêté correctement. Consultez le diagnostic et réessayez."
     },
     "update": {
+      "publishPending": "Terminez la publication en attente avant de mettre à jour.",
+      "conflictPending": "Une mise à jour contient des conflits non résolus.",
+      "recoveryPending": "Une mise à jour doit être terminée.",
+      "reviewPending": "Une mise à jour est prête à être examinée.",
+      "reconnect": "Reconnectez-vous pour continuer.",
+      "finishPublish": "Terminer la publication",
+      "syncRequired": "Les modifications de l’équipe sont déjà incluses. L’état du projet doit être synchronisé.",
+      "syncAction": "Synchroniser l’état",
       "available": "Mise à jour disponible",
       "action": "Mettre à jour",
       "updating": "Mise à jour…",

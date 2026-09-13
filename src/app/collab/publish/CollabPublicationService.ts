@@ -48,6 +48,7 @@ import { NativeGitPublicationCandidateRepository } from '@/app/collab/publish/Na
 import {
   NativeGitPublishRepository,
 } from '@/app/collab/publish/NativeGitPublishRepository';
+import { projectUpdateProjection } from '@/app/collab/publish/projectUpdateProjection';
 import {
   normalizeCollabPublishDescription,
   PublishCoordinator,
@@ -142,6 +143,7 @@ interface ReviewOutcome {
 }
 
 interface PublicationRuntime {
+  readonly candidates: NativeGitPublicationCandidateRepository;
   readonly comparisons: NativeGitExactComparisonRepository;
   readonly conflicts: ConflictResolutionCoordinator;
   readonly coordinator: PublishCoordinator;
@@ -425,6 +427,7 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     coordination: CollabCoordinationSnapshot | undefined,
     options: CollabOperationOptions = {},
+    conflict?: CollabConflictSession | null,
   ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection; readonly projectUpdate: CollabProjectUpdateInspection }> {
     return this.#enqueueProjectMutation(projectId, async () => {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
@@ -470,45 +473,64 @@ export class CollabPublicationService {
       const gitStatus = toCollabGitStatus(captured.snapshot);
       const fresh = coordination?.source === 'online' && !coordination.stale
         && coordination.snapshot.project.mainOid === gitStatus.acceptedMainOid;
-      let projectUpdate: CollabProjectUpdateInspection = !fresh
-        ? { state: 'unknown', reason: coordination?.source === 'online' && !coordination.stale ? 'not-fetched' : 'offline' }
-        : { state: gitStatus.includesAcceptedMain === false ? 'available' : 'current' };
-      if (fresh && state.operation?.intent === 'update') {
-        if (state.operation.phase === 'review-ready') {
+      const freshness = fresh ? 'fresh' : coordination?.source === 'online' && !coordination.stale ? 'not-fetched' : 'offline';
+      let incoming: CollabProjectUpdateInspection['incoming'] = !fresh ? 'unknown'
+        : gitStatus.includesAcceptedMain === false ? 'available' : 'current';
+      let operation: CollabProjectUpdateInspection['operation'] = { kind: 'none' };
+      if (state.operation?.intent === 'update') {
+        operation = { kind: 'update-recovery' };
+        if (conflict) operation = { kind: 'update-conflict', conflictOperationId: conflict.descriptor.operationId };
+        else if (state.operation.phase === 'review-ready') {
           try {
-            projectUpdate = { state: 'review-required', review: await runtime.coordinator.prepareReview(projectId, state.operation.operationId, options) };
+            const review = await runtime.coordinator.prepareReview(projectId, state.operation.operationId, options);
+            if (review.files.length > 0) operation = { kind: 'update-review', review };
           } catch (error) {
             if (!(error instanceof CollabError) || error.code === 'cancelled') throw error;
-            projectUpdate = { state: 'recovery-required' };
           }
-        } else {
-          projectUpdate = { state: 'recovery-required' };
+        }
+      } else if (state.operation && state.operation.origin !== 'background') {
+        operation = { kind: 'publish', workingReview: captured.review,
+          ...(ownRequest ? { requestId: ownRequest.id } : {}),
+          ...(conflict ? { conflictOperationId: conflict.descriptor.operationId } : {}) };
+        if (!conflict && state.operation.phase === 'review-ready') {
+          try {
+            operation = { ...operation, review: await runtime.coordinator.prepareReview(projectId, state.operation.operationId, options) };
+          } catch (error) {
+            if (!(error instanceof CollabError) || error.code === 'cancelled') throw error;
+          }
         }
       }
-      const inspected = (value: Omit<CollabPersonalChangesInspection, 'unpublishedReview'>) => ({
+      if (incoming === 'available' && operation.kind === 'none' && gitStatus.headOid && gitStatus.acceptedMainOid) {
+        const hasIncoming = await runtime.candidates.hasIncomingChanges(
+          captured.repositoryPath, gitStatus.headOid, gitStatus.acceptedMainOid, !gitStatus.workingTreeClean, options.signal,
+        );
+        const verified = await runtime.workingTreeReview.prepare(projectId, captured.review.baseOid, options);
+        if (verified.snapshotId !== captured.review.snapshotId) throw new CollabError({ code: 'working-tree-busy' });
+        if (!hasIncoming) incoming = 'included';
+      }
+      const projectUpdate = projectUpdateProjection({ freshness, incoming, operation });
+      const inspected = (value: Omit<CollabPersonalChangesInspection, 'unpublishedReview' | 'updateAvailable'>) => ({
         gitStatus,
         projectUpdate,
-        personalChanges: { ...value, unpublishedReview: captured.review },
+        personalChanges: { ...value, unpublishedReview: captured.review,
+          updateAvailable: fresh && projectUpdate.action.enabled
+            && projectUpdate.action.kind !== 'none' && projectUpdate.action.kind !== 'complete-publish' },
       });
       if (state.operation?.phase === 'review-ready' && state.operation.intent !== 'update') {
         try {
-          const review = await runtime.coordinator.prepareReview(
-            projectId,
-            state.operation.operationId,
-            options,
-          );
+          const review = operation.kind === 'publish' && operation.review
+            ? operation.review
+            : await runtime.coordinator.prepareReview(projectId, state.operation.operationId, options);
           return inspected({
             action: 'review-and-publish',
             hasContribution: true,
             review,
-            updateAvailable: true,
           });
         } catch (error) {
           if (!(error instanceof CollabError) || error.code === 'cancelled') throw error;
           return inspected({
             action: 'retry',
             hasContribution: true,
-            updateAvailable: gitStatus.includesAcceptedMain === false,
           });
         }
       }
@@ -516,13 +538,12 @@ export class CollabPublicationService {
         return inspected({
           action: 'retry',
           hasContribution: true,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         });
       }
       const hasOpenRequest = ownRequest !== undefined;
       if (hasProjectedBaseline || state.operation?.intent === 'update') {
         const hasChanges = captured.review.files.length > 0;
-        return inspected({ action: hasChanges ? 'publish' : 'none', hasContribution: hasOpenRequest || hasChanges || state.operation !== null, updateAvailable: fresh && gitStatus.includesAcceptedMain === false });
+        return inspected({ action: hasChanges ? 'publish' : 'none', hasContribution: hasOpenRequest || hasChanges || state.operation !== null });
       }
       const hasUnpublishedLocalState = hasUnpublishedPersonalState({
         headOid: gitStatus.headOid,
@@ -534,7 +555,6 @@ export class CollabPublicationService {
         return inspected({
           action: 'publish',
           hasContribution: true,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         });
       }
       const cleanAtRecordedBase = gitStatus.workingTreeClean
@@ -546,7 +566,6 @@ export class CollabPublicationService {
         return inspected({
           action: 'none',
           hasContribution: hasOpenRequest,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         });
       }
       const hasContribution = gitStatus.aheadBy > 0
@@ -555,20 +574,18 @@ export class CollabPublicationService {
         return inspected({
           action: 'publish',
           hasContribution: true,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         });
       }
       if (gitStatus.behindBy > 0 || coordination === undefined) {
         return inspected({
           action: 'retry',
           hasContribution: false,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         });
       }
       return inspected({
         action: 'none',
         hasContribution: false,
-        updateAvailable: gitStatus.includesAcceptedMain === false,
+
       });
     });
   }
@@ -1228,6 +1245,7 @@ export class CollabPublicationService {
       ),
     );
     return {
+      candidates,
       comparisons,
       conflicts,
       coordinator,

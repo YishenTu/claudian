@@ -511,8 +511,7 @@ describe('TeamChangesPanel', () => {
     expect(container.textContent).toContain('notes/resolved-b.md');
     expect(onOpenPublicationReview).not.toHaveBeenCalled();
 
-    ownRequest().click();
-    ownRequest().click();
+    panel.revealRequest('request-mine');
     expect(onOpenPublicationReview).toHaveBeenCalledWith(
       prepared,
       'notes/resolved-a.md',

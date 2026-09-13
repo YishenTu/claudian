@@ -51,6 +51,7 @@ export interface GitCommandRunnerOptions {
 }
 
 export interface GitCommandRequest {
+  readonly indexFilePath?: string;
   readonly acceptedExitCodes?: readonly number[];
   readonly args: readonly string[];
   readonly cwd: string;
@@ -348,6 +349,12 @@ export class GitCommandRunner {
       network: request.network,
       suppressHooks: request.suppressHooks,
     });
+    if (request.indexFilePath !== undefined) {
+      if (!path.isAbsolute(request.indexFilePath) || request.indexFilePath.includes('\0')) {
+        return Promise.reject(commandFailure('operation-failed', 'unsafe-git-index-path'));
+      }
+      environment.GIT_INDEX_FILE = request.indexFilePath;
+    }
     const spawnSpec = resolveWindowsCmdShimSpawnSpec({
       args,
       command: this.options.executablePath,

@@ -220,6 +220,7 @@ export interface CollabPublicationPort {
     projectId: CollabProjectId,
     coordination: CollabCoordinationSnapshot | undefined,
     options?: CollabOperationOptions,
+    conflict?: CollabConflictSession | null,
   ): Promise<{ readonly gitStatus: CollabGitStatus; readonly personalChanges: CollabPersonalChangesInspection; readonly projectUpdate?: CollabProjectUpdateInspection }>;
   resolveTicketNumber(
     request: ResolveTicketNumberRequest,
@@ -856,6 +857,7 @@ class CollabFeatureServiceCore {
         projectId,
         coordination,
         options,
+        conflictResult.value,
       );
       const personalChanges = conflictResult.value && conflictResult.value.intent !== 'update'
         ? {
@@ -863,7 +865,6 @@ class CollabFeatureServiceCore {
           action: 'resolve-changes' as const,
           conflictOperationId: conflictResult.value.descriptor.operationId,
           hasContribution: true,
-          updateAvailable: gitStatus.includesAcceptedMain === false,
         }
         : inspectedPersonalChanges;
       return {
@@ -872,9 +873,7 @@ class CollabFeatureServiceCore {
           ...(conflictResult.value ? { conflict: conflictResult.value } : {}),
           ...(coordination ? { coordination } : {}),
           gitStatus,
-          projectUpdate: projectUpdate?.state !== 'unknown' && conflictResult.value?.intent === 'update'
-            ? { state: 'conflict', conflictOperationId: conflictResult.value.descriptor.operationId }
-            : projectUpdate,
+          projectUpdate,
           personalChanges,
           project,
         },

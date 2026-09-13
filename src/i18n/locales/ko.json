@@ -314,6 +314,14 @@
       "stopFailed": "Host를 정상적으로 중지하지 못했습니다. 진단을 확인하고 다시 시도하세요."
     },
     "update": {
+      "publishPending": "업데이트 전에 대기 중인 게시를 완료하세요.",
+      "conflictPending": "업데이트에 해결되지 않은 충돌이 있습니다.",
+      "recoveryPending": "완료해야 할 업데이트가 있습니다.",
+      "reviewPending": "업데이트를 검토할 수 있습니다.",
+      "reconnect": "다시 연결하여 계속하세요.",
+      "finishPublish": "게시 완료",
+      "syncRequired": "팀 변경 사항이 이미 포함되어 있습니다. 프로젝트 상태를 동기화하세요.",
+      "syncAction": "상태 동기화",
       "available": "사용 가능한 업데이트",
       "action": "업데이트",
       "updating": "업데이트 중…",
