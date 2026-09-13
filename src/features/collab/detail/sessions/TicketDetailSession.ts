@@ -7,9 +7,8 @@ import {
 } from '@/features/collab/detail/sessions/TicketReferenceResolver';
 import {
   TicketEditorPanel,
-  type TicketMutationKind,
 } from '@/features/collab/detail/ticket/TicketEditorPanel';
-import { MutationIntentStore } from '@/features/collab/shared/MutationIntentStore';
+import { TicketEditorState } from '@/features/collab/detail/ticket/TicketEditorState';
 import { t } from '@/i18n/i18n';
 
 export interface TicketDetailSessionOptions {
@@ -30,7 +29,6 @@ interface LoadedTicketIdentity {
 export class TicketDetailSession {
   private destroyed = false;
   private loaded: LoadedTicketIdentity | null = null;
-  private readonly mutationIntents = new MutationIntentStore<TicketMutationKind>();
   private panel: TicketEditorPanel | null = null;
   private state: CollabTicketDetailViewState | null = null;
   private readonly ticketReferences: TicketReferenceResolver;
@@ -90,7 +88,7 @@ export class TicketDetailSession {
       port: this.options.port,
       projectId: state.projectId,
       renderMarkdown: this.options.renderMarkdown,
-      mutationIntents: this.mutationIntents,
+      state: new TicketEditorState(),
       ...(state.ticketId ? { ticketId: state.ticketId } : {}),
     });
     this.panel = panel;
@@ -107,7 +105,6 @@ export class TicketDetailSession {
     this.ticketReferences.cancel();
     this.panel?.destroy();
     this.panel = null;
-    this.mutationIntents.clearAll();
     this.options.rootEl.replaceChildren();
   }
 
