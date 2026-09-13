@@ -9,7 +9,7 @@ import {
   type CollabPublicationStateRecord,
   decodeCollabPublicationStateRecord,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
-import { type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictDescriptor, type CollabContributionIntent, type CollabOperationPhase, type CollabProjectUpdateOutcome, type CollabPublicationReview, type CollabPublishOutcome, type CollabPublishRequest, type CollabResult } from '@/core/collab';
+import { type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictDescriptor, type CollabContributionIntent, type CollabOperationPhase, type CollabProjectUpdateOutcome, type CollabPublicationReview, type CollabPublishOutcome, type CollabPublishRequest, type CollabResult, type CollabWorkingTreeReview } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError, type CollabRecoveryAction } from '@/core/collab/ClaudianCollabError';
 
@@ -202,7 +202,13 @@ function updateResult(result: CollabResult<ContributionOutcome>): CollabResult<C
   return { status: 'success', value: { ...result.value, state: result.value.state } };
 }
 
+export interface PublishWorkingReviewPort {
+  assertCurrent(projectId: CollabProjectId, expected: NonNullable<CollabPublishRequest['expectedWorkingTree']>, signal?: AbortSignal): Promise<CollabWorkingTreeReview>;
+  matchesCommit(repositoryPath: string, review: CollabWorkingTreeReview, commitOid: string, signal?: AbortSignal): Promise<boolean>;
+}
+
 export interface PublishCoordinatorOptions {
+  readonly workingReviews?: PublishWorkingReviewPort;
   readonly createOperationId?: () => CollabOperationId;
   readonly now?: () => Date;
   readonly onPhase?: (phase: CollabOperationPhase) => void | Promise<void>;
@@ -375,6 +381,8 @@ export class PublishCoordinator {
       request.projectId,
       normalizeCollabPublishDescription(request.description),
       options.signal,
+      'publish',
+      request.expectedWorkingTree,
     )).then(publicationResult);
   }
 
@@ -509,11 +517,17 @@ export class PublishCoordinator {
     });
   }
 
+  #workingReviews(): PublishWorkingReviewPort {
+    if (!this.options.workingReviews) throw publishError('repository-invalid', 'publication-review-validation-unavailable');
+    return this.options.workingReviews;
+  }
+
    async #publishExclusive(
     projectId: CollabProjectId,
     description: string,
     signal?: AbortSignal,
     intent: CollabContributionIntent = 'publish',
+    expectedWorkingTree?: CollabPublishRequest['expectedWorkingTree'],
   ): Promise<CollabResult<ContributionOutcome>> {
     const nextOperationId = this.#createOperationId();
     let operationId = nextOperationId;
@@ -529,6 +543,9 @@ export class PublishCoordinator {
       await this.projects.revalidate(context);
       let state = await this.#loadState(projectId);
       state = await this.#adoptIntent(state, intent);
+      const reviewed = expectedWorkingTree
+        ? await this.#workingReviews().assertCurrent(projectId, expectedWorkingTree, signal)
+        : undefined;
       if (state.operation) {
         const activeOperation = state.operation;
         operationId = activeOperation.operationId;
@@ -574,7 +591,7 @@ export class PublishCoordinator {
               context,
               progress,
               description,
-              false,
+              state.operation.requiresReview === true,
               signal,
             );
           }
@@ -647,6 +664,7 @@ export class PublishCoordinator {
         ...state,
         operation: {
           intent,
+          ...((reviewed || state.operation?.requiresReview) ? { requiresReview: true as const } : {}),
           candidateOid: null,
           contributionHeadOid,
           createdAt: timestamp,
@@ -659,12 +677,15 @@ export class PublishCoordinator {
       };
       await this.publicationState.save(state);
       progress.durablePhase = 'committed';
+      const requiresReview = reviewed
+        ? !await this.#workingReviews().matchesCommit(context.repositoryPath, reviewed, contributionHeadOid, signal)
+        : state.operation?.requiresReview === true;
       return await this.#prepareCaptured(
         state,
         context,
         progress,
         description,
-        false,
+        requiresReview,
         signal,
       );
     } catch (error) {
@@ -1321,7 +1342,7 @@ export class PublishCoordinator {
 
    async #assertStateExact(expected: CollabPublicationStateRecord): Promise<void> {
     const actual = await this.publicationState.load(expected.projectId);
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    if (JSON.stringify(decodeCollabPublicationStateRecord(actual)) !== JSON.stringify(decodeCollabPublicationStateRecord(expected))) {
       throw publishError('working-tree-busy', 'publication-state-changed', ['retry']);
     }
   }

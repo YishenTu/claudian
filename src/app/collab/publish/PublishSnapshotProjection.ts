@@ -42,6 +42,7 @@ export function changedFileForReview(input: {
   readonly path: string;
   readonly previousPath?: string;
   readonly workingTreeContentHash?: string;
+  readonly workingTreeMode?: number;
 }): CollabChangedFile {
   const binary = !TEXT_EXTENSIONS.has(
     path.posix.extname(input.path).toLocaleLowerCase('en-US'),
@@ -53,6 +54,7 @@ export function changedFileForReview(input: {
     ...(input.newBytes === undefined ? {} : { newBytes: input.newBytes }),
     path: input.path,
     ...(input.previousPath ? { previousPath: input.previousPath } : {}),
+    ...(input.workingTreeMode === undefined ? {} : { workingTreeMode: input.workingTreeMode }),
     ...(input.workingTreeContentHash
       ? { workingTreeContentHash: input.workingTreeContentHash }
       : {}),

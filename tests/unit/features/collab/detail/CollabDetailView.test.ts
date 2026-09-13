@@ -145,7 +145,7 @@ describe('CollabDetailView', () => {
       value: {
         localHeadOid: HEAD,
         projectId: 'project-a',
-        state: 'pushed',
+        state: 'request-synchronized',
       },
     });
     const view = createView(port, renderer, objectUrlPort(), undefined, leaf);
@@ -205,7 +205,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(port.publish).toHaveBeenCalledWith(
-      { description: 'Published change', projectId: 'project-a' },
+      { description: 'Published change', projectId: 'project-a', expectedWorkingTree: { baseOid: review.baseOid, headOid: review.headOid, snapshotId: review.snapshotId } },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(leaf.detach).toHaveBeenCalledTimes(1);
@@ -820,7 +820,7 @@ describe('CollabDetailView', () => {
     expect(openTicketInNewTab).toHaveBeenCalledWith('project-a', 'ticket-a');
   });
 
-  it('closes the working-tree review when Publish prepares a final review', async () => {
+  it('continues in the same leaf when Publish requires a final review', async () => {
     const review = workingTreeReview();
     const finalReview = publicationReview();
     const port = detailPort(requestReview());
@@ -868,9 +868,79 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(preparedReviews.readPublication(publicationViewState(finalReview))).toBe(finalReview);
-    expect(leaf.setViewState).not.toHaveBeenCalled();
-    expect(leaf.detach).toHaveBeenCalledTimes(1);
+    expect(leaf.setViewState).toHaveBeenCalledWith({ active: true, state: publicationViewState(finalReview), type: expect.any(String) });
+    expect(leaf.detach).not.toHaveBeenCalled();
   });
+
+  it.each(['stale', 'committed-locally', 'pushed'] as const)('keeps incomplete publication visible with a current working preview: %s', async outcome => {
+    const review = workingTreeReview();
+    const refreshed = { ...review, snapshotId: '5'.repeat(64) };
+    const port = detailPort(requestReview());
+    const leaf = { detach: jest.fn(), setViewState: jest.fn().mockResolvedValue(undefined) } as unknown as WorkspaceLeaf;
+    port.prepareWorkingTreeReview.mockResolvedValueOnce({ status: 'success', value: review })
+      .mockResolvedValue({ status: 'success', value: refreshed });
+    port.readWorkingTreeReviewFile.mockResolvedValue({ status: 'success', value: {
+      file: review.files[0], kind: 'text', newText: 'working\n', oldText: 'head\n',
+    } });
+    port.publish.mockResolvedValue(outcome === 'stale'
+      ? { status: 'stale', staleKind: 'working-copy', error: new CollabError({ code: 'working-tree-busy' }) }
+      : { status: 'success', value: { state: outcome, projectId: review.projectId, localHeadOid: HEAD } });
+    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    await view.setState(workingTreeViewState(), { history: false });
+    await nextTurn();
+    setMarkdownValue(view.contentEl.querySelector<HTMLElement>('[data-collab-description="true"]')!, 'My description');
+    view.contentEl.querySelector<HTMLButtonElement>('[data-collab-action="publish-working-tree"]')!.click();
+    await nextTurn();
+    expect(leaf.setViewState).toHaveBeenCalledWith({ active: true, type: expect.any(String), state: {
+      ...workingTreeViewState(), snapshotId: refreshed.snapshotId, selectedPath: 'note.md',
+    } });
+    expect(port.publish).toHaveBeenCalledTimes(1);
+    expect(leaf.detach).not.toHaveBeenCalled();
+  });
+
+  it.each(['review-required', 'committed-locally', 'pushed', 'recovery-required'] as const)(
+    'continues a publication through the replacement session to completion: %s', async outcome => {
+      const working = workingTreeReview();
+      const publication = publicationReview();
+      const port = detailPort(requestReview());
+      const leaf = {
+        detach: jest.fn(),
+        setViewState: jest.fn(async state => view.setState(state.state, { history: false })),
+      } as unknown as WorkspaceLeaf;
+      const view = createView(port, diffPort(), objectUrlPort(), new CollabPreparedReviewCache(), leaf);
+      port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: working });
+      port.preparePublicationReview.mockResolvedValue({ status: 'success', value: publication });
+      port.readWorkingTreeReviewFile.mockResolvedValue({ status: 'success', value: {
+        file: working.files[0], kind: 'text', newText: 'working\n', oldText: 'head\n',
+      } });
+      port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: {
+        file: publication.files[0], kind: 'text', newText: 'candidate\n', oldText: 'main\n',
+      } });
+      port.readPublishDescription.mockResolvedValue({ status: 'success', value: 'My description' });
+      port.confirmPublish.mockResolvedValue({ status: 'success', value: {
+        state: 'request-synchronized', projectId: working.projectId, localHeadOid: HEAD,
+      } });
+      port.publish.mockResolvedValueOnce(outcome === 'recovery-required'
+        ? { status: 'recovery-required', operationId: publication.operationId, durablePhase: 'committed', durableProgress: true, error: new CollabError({ code: 'operation-failed' }) }
+        : { status: 'success', value: { state: outcome, projectId: working.projectId, localHeadOid: HEAD, ...(outcome === 'review-required' ? { review: publication } : {}) } })
+        .mockResolvedValue({ status: 'success', value: { state: 'request-synchronized', projectId: working.projectId, localHeadOid: HEAD } });
+      await view.setState(workingTreeViewState(), { history: false });
+      await nextTurn();
+      getByRole(view.contentEl, 'button', { name: 'Publish' }).click();
+      await nextTurn();
+      expect(leaf.setViewState).toHaveBeenCalledTimes(1);
+      expect(leaf.detach).not.toHaveBeenCalled();
+      const finalAction = getByRole(view.contentEl, 'button', { name: 'Publish' });
+      expect((finalAction as HTMLButtonElement).disabled).toBe(false);
+      finalAction.click();
+      await nextTurn();
+      expect(leaf.detach).toHaveBeenCalledTimes(1);
+      expect(outcome === 'review-required' ? port.confirmPublish : port.publish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ description: 'My description', projectId: working.projectId }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    },
+  );
 
   it('opens an unpublished conflict under My changes', async () => {
     const review = workingTreeReview();
@@ -1050,7 +1120,7 @@ describe('CollabDetailView', () => {
     expect(leaf.detach).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a conflict on the current Member existing Request', async () => {
+  it('opens private publication conflicts under My changes with an existing Request', async () => {
     const request = requestReview();
     const review = publicationReview();
     const port = detailPort(request);
@@ -1101,10 +1171,9 @@ describe('CollabDetailView', () => {
       active: true,
       state: {
         kind: 'conflict',
-        location: 'request',
+        location: 'my-changes',
         operationId: 'conflict-a',
         projectId: 'project-a',
-        requestId: 'request-a',
       },
       type: COLLAB_DETAIL_VIEW_TYPE,
     });

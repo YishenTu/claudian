@@ -10,7 +10,7 @@ import {
   reviewFileContentFromBuffers,
 } from '@/app/collab/review/NativeGitExactComparisonRepository';
 import type { WorkingTreeReviewFilePort } from '@/app/collab/review/WorkingTreeReviewService';
-import { type CollabChangedFile, type CollabReviewFileContent, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
+import { type CollabChangedFile, type CollabReviewFileContent, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -79,10 +79,41 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
         ...(change.previousPath ? { previousPath: change.previousPath } : {}),
         ...(workingFile === undefined
           ? {}
-          : { workingTreeContentHash: workingFile.contentHash }),
+          : { workingTreeContentHash: workingFile.contentHash, workingTreeMode: workingFile.mode }),
       }));
     }
     return projected;
+  }
+
+  async matchesCommit(
+    repositoryPath: string,
+    review: CollabWorkingTreeReview,
+    commitOid: string,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return this.git.withReadSession(repositoryPath, 'working', async session => {
+      const base = new Map((await session.listTreeRecursive(review.baseOid)).map(entry => [entry.path, entry]));
+      const actual = new Map((await session.listTreeRecursive(commitOid)).map(entry => [entry.path, entry]));
+      const replacements = new Map<string, CollabChangedFile>();
+      for (const file of review.files) {
+        base.delete(file.previousPath ?? file.path);
+        if (file.kind !== 'deleted') replacements.set(file.path, file);
+      }
+      if (actual.size !== base.size + replacements.size) return false;
+      for (const [filePath, expected] of base) {
+        const entry = actual.get(filePath);
+        if (!entry || entry.oid !== expected.oid || entry.mode !== expected.mode || entry.type !== expected.type) return false;
+      }
+      for (const [filePath, expected] of replacements) {
+        const entry = actual.get(filePath);
+        if (!entry || entry.type !== 'blob' || expected.workingTreeMode === undefined
+          || entry.mode !== ((expected.workingTreeMode & 0o111) === 0 ? '100644' : '100755')
+          || entry.size !== expected.newBytes || !expected.workingTreeContentHash) return false;
+        const [contents] = await session.readBlobsAtPaths([{ repositoryRelativePath: filePath, treeish: commitOid }]);
+        if (!contents || createHash('sha256').update(contents).digest('hex') !== expected.workingTreeContentHash) return false;
+      }
+      return true;
+    }, signal);
   }
 
   async readFile(
@@ -252,6 +283,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
       if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
       return {
         contentHash: hash.digest('hex'),
+        mode: before.mode,
         ...(contents ? { contents } : {}),
         size: bytesRead,
       };
@@ -263,6 +295,7 @@ export class NativeGitWorkingTreeReviewRepository implements WorkingTreeReviewFi
 
 interface StableWorkingFile {
   readonly contentHash: string;
+  readonly mode: number;
   readonly contents?: Buffer;
   readonly size: number;
 }

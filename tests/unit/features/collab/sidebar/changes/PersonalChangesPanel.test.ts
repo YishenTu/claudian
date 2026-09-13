@@ -313,7 +313,7 @@ describe('PersonalChangesPanel', () => {
     const review = publicationReview();
     const onOpenPublicationReview = jest.fn();
     const resumedContainer = document.body.createDiv();
-    const resumed = inspection();
+    const resumed = inspection({ openRequest: true });
     resumed.personalChanges = {
       action: 'review-and-publish',
       hasContribution: true,
@@ -437,7 +437,7 @@ describe('PersonalChangesPanel', () => {
     expect(fixture.port.publish).not.toHaveBeenCalled();
   });
 
-  it('leaves an existing request conflict out of the My changes action', async () => {
+  it('opens private publication conflicts from My changes even with an existing request', async () => {
     const container = document.body.createDiv();
     const conflicted = inspection({ openRequest: true });
     conflicted.personalChanges = {
@@ -457,8 +457,9 @@ describe('PersonalChangesPanel', () => {
     await flush();
 
     const action = container.querySelector<HTMLButtonElement>('[data-action="open-conflict"]');
-    expect(action).toBeNull();
-    expect(onOpenConflict).not.toHaveBeenCalled();
+    expect(action?.textContent).toBe('View conflicts');
+    action?.click();
+    expect(onOpenConflict).toHaveBeenCalledWith('operation-a');
   });
 
   it('refreshes after a Publish started outside the personal panel finishes', async () => {

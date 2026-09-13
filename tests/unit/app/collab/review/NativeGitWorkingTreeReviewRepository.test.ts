@@ -88,6 +88,7 @@ describe('NativeGitWorkingTreeReviewRepository', () => {
       newBytes: 8,
       path: 'note.md',
       workingTreeContentHash: contentHash('working\n'),
+      workingTreeMode: expect.any(Number),
     }]);
     expect(session.listWorkingTreeChangedFiles).toHaveBeenCalledWith('1'.repeat(40));
   });

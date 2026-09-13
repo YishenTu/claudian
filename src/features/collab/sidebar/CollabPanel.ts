@@ -558,27 +558,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         onInspection: result => {
           this.updatePanel?.adopt(result.status === 'success' ? result.value.projectUpdate : undefined);
           if (result.status === 'success' && result.value.coordination) {
-            const coordination = result.value.coordination;
-            const operationId = result.value.personalChanges?.action === 'resolve-changes'
-              ? result.value.personalChanges.conflictOperationId
-              : undefined;
-            const publicationReview = result.value.personalChanges?.action
-              === 'review-and-publish'
-              ? result.value.personalChanges.review
-              : undefined;
-            const ownRequest = coordination.snapshot.openRequests.find(
-              request => request.memberId === coordination.snapshot.currentMember.id,
-            );
-            const pending = result.value.projectUpdate?.operation;
-            this.teamPanel?.adoptSnapshot(
-              coordination,
-              operationId && ownRequest
-                ? { operationId, requestId: ownRequest.id }
-                : publicationReview && ownRequest
-                  ? { requestId: ownRequest.id, review: publicationReview }
-                  : pending?.kind === 'publish' && ownRequest ? { requestId: ownRequest.id, workingReview: pending.workingReview }
-                : null,
-            );
+            this.teamPanel?.adoptSnapshot(result.value.coordination);
           } else {
             void this.teamPanel?.refresh();
           }
@@ -597,16 +577,9 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       });
       const team = home.createDiv({ cls: 'claudian-collab-team-home' });
       this.teamPanel = new TeamChangesPanel(team, {
-        onOpenWorkingTreeReview: review => this.options.onOpenWorkingTreeReview?.(project, review),
         deferInitialRefresh: true,
-        onOpenConflict: (operationId, requestId) => (
-          this.options.onOpenConflict?.(project, operationId, 'request', requestId)
-        ),
         onOpenFile: (review, coordination, selectedPath) => {
           this.options.onOpenRequest?.(project, review, coordination, selectedPath);
-        },
-        onOpenPublicationReview: (review, selectedPath) => {
-          this.options.onOpenPublicationReview?.(project, review, selectedPath);
         },
         onReviewIntent: this.options.onReviewIntent,
         port: this.options.port,

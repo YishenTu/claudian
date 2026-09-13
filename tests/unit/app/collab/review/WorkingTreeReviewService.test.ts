@@ -79,6 +79,7 @@ function reviewFiles(): jest.Mocked<WorkingTreeReviewFilePort> {
       path: 'note.md',
     }]),
     readFile: jest.fn(),
+    matchesCommit: jest.fn(),
   };
 }
 

@@ -294,17 +294,7 @@ export class PersonalChangesPanel {
     }
     const unpublishedReview = personal.unpublishedReview;
     const changedFiles = unpublishedReview.files;
-    const ownRequestId = inspection.coordination?.snapshot.openRequests.find(
-      request => request.memberId === inspection.coordination?.snapshot.currentMember.id,
-    )?.id;
     if (personal.action === 'resolve-changes') {
-      if (ownRequestId) {
-        return {
-          changedFiles,
-          kind: changedFiles.length > 0 ? 'dirty' : 'clean',
-          unpublishedReview,
-        };
-      }
       return {
         changedFiles,
         ...(personal.conflictOperationId
@@ -315,13 +305,6 @@ export class PersonalChangesPanel {
       };
     }
     if (personal.action === 'review-and-publish') {
-      if (ownRequestId) {
-        return {
-          changedFiles,
-          kind: changedFiles.length > 0 ? 'dirty' : 'clean',
-          unpublishedReview,
-        };
-      }
       return {
         changedFiles,
         kind: 'review',

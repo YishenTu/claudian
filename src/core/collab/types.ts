@@ -144,6 +144,7 @@ export function isCollabCloudProjectSnapshot(
 /** Client-local review metadata captured from the working tree. */
 export interface CollabChangedFile extends SharedCollabChangedFile {
   workingTreeContentHash?: string;
+  workingTreeMode?: number;
 }
 
 export type CollabProjectLifecycle = 'active' | 'leaving' | 'retired';

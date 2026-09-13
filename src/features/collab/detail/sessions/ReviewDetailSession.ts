@@ -1175,13 +1175,18 @@ export class ReviewDetailSession {
       if (controller.signal.aborted) return;
       if (result.status === 'conflict') {
         this.preparedReviews?.discardPublication(review);
-        const conflictState = await this.#conflictState(result.conflict, controller.signal, review.intent);
+        const conflictState = this.#conflictState(result.conflict, review.intent);
         if (controller.signal.aborted) return;
         await this.leaf.setViewState({
           active: true,
           state: { ...conflictState },
           type: this.viewType,
         });
+        return;
+      }
+      if (review.intent !== 'update' && (result.status === 'recovery-required'
+        || result.status === 'stale' && result.staleKind === 'working-copy')) {
+        await this.#refreshWorkingReview(review.projectId, review.comparisonBaseOid, controller.signal, button);
         return;
       }
       const outcome = requireSuccess<CollabPublishOutcome | CollabProjectUpdateOutcome>(result);
@@ -1196,7 +1201,8 @@ export class ReviewDetailSession {
         return;
       }
       this.preparedReviews?.discardPublication(review);
-      this.leaf.detach();
+      if (outcome.state === 'request-synchronized' || outcome.state === 'updated' || outcome.state === 'already-current') this.leaf.detach();
+      else await this.#refreshWorkingReview(review.projectId, review.comparisonBaseOid, controller.signal, button);
     } catch {
       if (controller.signal.aborted) return;
       button.disabled = false;
@@ -1220,12 +1226,13 @@ export class ReviewDetailSession {
       const result = await this.port.publish({
         description: this.#currentDescription(),
         projectId: review.projectId,
+        expectedWorkingTree: { baseOid: review.baseOid, headOid: review.headOid, snapshotId: review.snapshotId },
       }, {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
       if (result.status === 'conflict') {
-        const conflictState = await this.#conflictState(result.conflict, controller.signal);
+        const conflictState = this.#conflictState(result.conflict);
         if (controller.signal.aborted) return;
         await this.leaf.setViewState({
           active: true,
@@ -1234,19 +1241,46 @@ export class ReviewDetailSession {
         });
         return;
       }
+      if (result.status === 'recovery-required' || result.status === 'stale' && result.staleKind === 'working-copy') {
+        await this.#refreshWorkingReview(review.projectId, review.baseOid, controller.signal, button);
+        return;
+      }
       const outcome = requireSuccess(result);
       if (outcome.state === 'review-required' && outcome.review) {
         this.preparedReviews?.storePublication(outcome.review);
-        this.leaf.detach();
+        await this.leaf.setViewState({
+          active: true,
+          state: { ...publicationState(outcome.review, outcome.review.files[0]?.path) },
+          type: this.viewType,
+        });
         return;
       }
-      this.leaf.detach();
+      if (outcome.state === 'request-synchronized') this.leaf.detach();
+      else await this.#refreshWorkingReview(review.projectId, review.baseOid, controller.signal, button);
     } catch {
       if (controller.signal.aborted) return;
       button.disabled = false;
       button.textContent = t('collab.publish.error');
     } finally {
       if (this.acceptController === controller) this.acceptController = null;
+    }
+  }
+
+  async #refreshWorkingReview(projectId: string, baseOid: string, signal: AbortSignal, button: HTMLButtonElement): Promise<void> {
+    const refreshed = requireSuccess(await this.port.prepareWorkingTreeReview(projectId, baseOid, { signal }));
+    if (signal.aborted) return;
+    await this.leaf.setViewState({
+      active: true,
+      state: {
+        kind: 'working-tree', projectId: refreshed.projectId,
+        baseOid: refreshed.baseOid, headOid: refreshed.headOid, snapshotId: refreshed.snapshotId,
+        selectedPath: refreshed.files.find(file => file.path === this.state?.selectedPath)?.path ?? refreshed.files[0]?.path,
+      },
+      type: this.viewType,
+    });
+    if (!signal.aborted && this.rootEl.contains(button)) {
+      button.textContent = t('collab.publish.action');
+      button.disabled = this.#currentDescription().trim().length === 0;
     }
   }
 
@@ -1259,38 +1293,14 @@ export class ReviewDetailSession {
     });
   }
 
-  async #conflictState(
+  #conflictState(
     conflict: CollabConflictDescriptor,
-    signal: AbortSignal,
     intent?: 'publish' | 'update',
-  ): Promise<CollabConflictDetailViewState> {
-    if (intent === 'update') return { kind: 'conflict', location: 'update', projectId: conflict.projectId, operationId: conflict.operationId };
-    let coordination = this.coordination;
-    if (coordination?.snapshot.project.id !== conflict.projectId) {
-      try {
-        const result = await this.port.readSnapshot(conflict.projectId, { signal });
-        coordination = result.status === 'success' ? result.value : null;
-      } catch {
-        coordination = null;
-      }
-    }
-    const ownRequest = coordination?.snapshot.openRequests.find(
-      request => request.memberId === coordination?.snapshot.currentMember.id,
-    );
-    return ownRequest
-      ? {
-          kind: 'conflict',
-          location: 'request',
-          operationId: conflict.operationId,
-          projectId: conflict.projectId,
-          requestId: ownRequest.id,
-        }
-      : {
-          kind: 'conflict',
-          location: 'my-changes',
-          operationId: conflict.operationId,
-          projectId: conflict.projectId,
-        };
+  ): CollabConflictDetailViewState {
+    return {
+      kind: 'conflict', location: intent === 'update' ? 'update' : 'my-changes',
+      projectId: conflict.projectId, operationId: conflict.operationId,
+    };
   }
 
   #adoptRequestComment(

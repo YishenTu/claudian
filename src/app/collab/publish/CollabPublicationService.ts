@@ -1228,6 +1228,7 @@ export class CollabPublicationService {
       candidates,
       comparisons,
       new PersonalChangesReviewBaseline(git.repositories, git.runner, this.control),
+      { workingReviews: workingTreeReview },
     );
     const conflicts = new ConflictResolutionCoordinator(
       projects,

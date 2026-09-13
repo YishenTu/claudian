@@ -190,6 +190,7 @@ export interface CollabPublishOutcome {
 }
 
 export interface CollabPublishRequest {
+  readonly expectedWorkingTree?: Pick<CollabWorkingTreeReview, 'baseOid' | 'headOid' | 'snapshotId'>;
   projectId: CollabProjectId;
   description: string;
 }

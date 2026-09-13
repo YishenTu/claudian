@@ -19,6 +19,7 @@ export interface CollabPersonalReviewBaselineRecord {
 
 interface CollabPublicationOperationCommon {
   readonly intent?: CollabContributionIntent;
+  readonly requiresReview?: true;
   readonly origin?: 'background';
   readonly reviewBaseline?: CollabPersonalReviewBaselineRecord;
   readonly contributionHeadOid: CollabGitOid;
@@ -138,14 +139,18 @@ function phaseField(value: unknown): CollabPublicationOperationPhase {
 function decodeOperation(value: unknown): CollabPublicationOperationRecord | null {
   if (value === null) return null;
   if (!isRecord(value)) throw new TypeError('Invalid publication operation');
-  exactKeys(value, OPERATION_KEYS, ['intent', 'origin', 'reviewBaseline']);
+  exactKeys(value, OPERATION_KEYS, ['intent', 'origin', 'reviewBaseline', 'requiresReview']);
+  if (value.requiresReview !== undefined && value.requiresReview !== true) {
+    throw new TypeError('Invalid publication review requirement');
+  }
   if (value.intent !== undefined && value.intent !== 'publish' && value.intent !== 'update') {
     throw new TypeError('Invalid contribution intent');
   }
   if (value.origin !== undefined && (value.origin !== 'background' || value.intent !== undefined || value.phase !== 'captured')) {
     throw new TypeError('Invalid contribution origin');
   }
-  const optional: Pick<CollabPublicationOperationCommon, 'intent' | 'origin' | 'reviewBaseline'> = {
+  const optional: Pick<CollabPublicationOperationCommon, 'intent' | 'origin' | 'reviewBaseline' | 'requiresReview'> = {
+    ...(value.requiresReview === true ? { requiresReview: true } : {}),
     ...(value.origin === undefined ? {} : { origin: value.origin }),
     ...(value.intent === undefined ? {} : { intent: value.intent }),
     ...(value.reviewBaseline === undefined ? {} : { reviewBaseline: decodeReviewBaseline(value.reviewBaseline) }),

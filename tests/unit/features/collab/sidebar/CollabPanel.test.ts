@@ -1035,7 +1035,7 @@ describe('CollabPanel', () => {
     expect(container.textContent).not.toContain('notes/alpha.md');
   });
 
-  it('keeps a resolved review-ready operation on the current Member request', async () => {
+  it('opens private publication review from My changes and published contents from Team changes', async () => {
     const container = document.body.createDiv();
     const port = createPort({
       lifecycle: 'ready',
@@ -1114,11 +1114,17 @@ describe('CollabPanel', () => {
         project: project({ connectionStatus: 'connected', hostStatus: 'running' }),
       },
     });
+    const published = await port.prepareReview('project-alpha', 'request-maya');
+    if (published.status !== 'success') throw new Error('Expected published review');
+    const publishedReview = { ...published.value, detail: { ...published.value.detail, request: ownRequest } };
+    (port.prepareReview as jest.Mock).mockResolvedValue({ status: 'success', value: publishedReview });
     const onOpenPublicationReview = jest.fn();
+    const onOpenRequest = jest.fn();
     const panel = new CollabPanel(container, {} as never, {
       app: createApp(),
       configuredGitPath: () => '',
       onOpenPublicationReview,
+      onOpenRequest,
       onSaveConfiguredGitPath: jest.fn(),
       port,
       projectSetup: { getPendingSetupOperationId: jest.fn() },
@@ -1130,24 +1136,22 @@ describe('CollabPanel', () => {
 
     expect(container.querySelector('[data-action="publish"]')).toBeNull();
     expect(container.textContent).not.toContain('notes/resolved.md');
-    container.querySelector<HTMLButtonElement>(
-      '[data-request-id="request-alpha"]',
-    )?.click();
-
-    expect(container.textContent).toContain('notes/resolved.md');
+    getByRole(container, 'button', { name: 'Review changes' }).click();
     expect(onOpenPublicationReview).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'project-alpha' }), review, undefined,
+    );
+    getByRole(container, 'button', { name: 'You' }).click();
+    await flush();
+    expect(onOpenRequest).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'project-alpha' }),
-      review,
-      'notes/resolved.md',
+      publishedReview,
+      coordination,
+      'notes/alpha.md',
     );
-    expect(port.prepareReview).not.toHaveBeenCalledWith(
-      'project-alpha',
-      'request-alpha',
-      expect.anything(),
-    );
+    panel.destroy();
   });
 
-  it('keeps publication recovery accessible through the existing Request', async () => {
+  it('keeps publication recovery under My changes when an existing Request is open', async () => {
     const container = document.body.createDiv();
     const port = createPort({
       lifecycle: 'ready',
@@ -1242,10 +1246,9 @@ describe('CollabPanel', () => {
     panel.setActive(true);
     await flush();
 
-    getByRole(container, 'button', { name: 'You' }).click();
-    getByRole(container, 'button', { name: 'Finish publishing' }).click();
+    getByRole(container, 'button', { name: 'Review changes' }).click();
     expect(onOpenWorkingTreeReview).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'project-alpha' }), workingReview,
+      expect.objectContaining({ id: 'project-alpha' }), workingReview, undefined,
     );
     expect(port.prepareReview).not.toHaveBeenCalled();
     panel.destroy();

@@ -1,6 +1,6 @@
-import type { CollabChangeRequest, CollabOperationId, CollabRequestId } from '@claudian-collab/protocol';
+import type { CollabChangeRequest } from '@claudian-collab/protocol';
 
-import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabPublicationReview, CollabRequestReview, CollabResult, CollabWorkingTreeReview } from '@/core/collab';
+import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import {
   collabReviewSourceKey,
@@ -26,44 +26,17 @@ export interface TeamChangesPanelPort extends TeamReviewLoaderPort {
 }
 
 export interface TeamChangesPanelOptions {
-  readonly onOpenWorkingTreeReview?: (review: CollabWorkingTreeReview) => void;
   readonly deferInitialRefresh?: boolean;
-  readonly onOpenConflict?: (
-    operationId: CollabOperationId,
-    requestId: string,
-  ) => void;
   readonly onOpenFile: (
     review: CollabRequestReview,
     coordination: CollabCoordinationSnapshot,
     path?: string,
-  ) => void;
-  readonly onOpenPublicationReview?: (
-    review: CollabPublicationReview,
-    selectedPath?: string,
   ) => void;
   readonly onReviewIntent?: () => void;
   readonly port: TeamChangesPanelPort;
   readonly preparedReviews?: CollabPreparedReviewCache;
   readonly project: CollabLocalProjectSummary;
 }
-
-export interface OwnRequestConflict {
-  readonly operationId: CollabOperationId;
-  readonly requestId: CollabRequestId;
-}
-
-export interface OwnRequestPublicationReview {
-  readonly requestId: CollabRequestId;
-  readonly review: CollabPublicationReview;
-  readonly selectedPath?: string;
-}
-
-interface OwnRequestPublicationRecovery {
-  readonly requestId: CollabRequestId;
-  readonly workingReview: CollabWorkingTreeReview;
-}
-
-type OwnRequestActivity = OwnRequestConflict | OwnRequestPublicationReview | OwnRequestPublicationRecovery;
 
 interface TeamViewState {
   readonly kind: 'error' | 'loading' | 'ready';
@@ -92,7 +65,6 @@ export class TeamChangesPanel {
   private destroyed = false;
   private expandedRequestId: string | null = null;
   private expandedReviewState: ExpandedReviewState | null = null;
-  private ownRequestActivity: OwnRequestActivity | null = null;
   private project: CollabLocalProjectSummary;
   private refreshQueued = false;
   private refreshOnResume = false;
@@ -152,36 +124,12 @@ export class TeamChangesPanel {
 
   adoptSnapshot(
     snapshot: CollabCoordinationSnapshot,
-    ownRequestActivity: OwnRequestActivity | null | undefined = undefined,
   ): void {
     if (this.destroyed || snapshot.snapshot.project.id !== this.project.id) return;
     this.refreshOnResume = false;
     this.refreshQueued = false;
     this.snapshotTasks.cancel();
-    this.#applySnapshot(
-      snapshot,
-      ownRequestActivity === undefined ? this.ownRequestActivity : ownRequestActivity,
-    );
-  }
-
-  adoptOwnRequestConflict(conflict: OwnRequestConflict | null): void {
-    if (this.destroyed) return;
-    const snapshot = this.viewState.snapshot;
-    this.ownRequestActivity = snapshot && conflict
-      ? this.#validOwnRequestActivity(conflict, snapshot)
-      : conflict;
-    this.render();
-  }
-
-  adoptOwnRequestPublicationReview(
-    publication: OwnRequestPublicationReview | null,
-  ): void {
-    if (this.destroyed) return;
-    const snapshot = this.viewState.snapshot;
-    this.ownRequestActivity = snapshot && publication
-      ? this.#validOwnRequestActivity(publication, snapshot)
-      : publication;
-    this.render();
+    this.#applySnapshot(snapshot);
   }
 
   setProject(project: CollabLocalProjectSummary): void {
@@ -197,7 +145,6 @@ export class TeamChangesPanel {
     this.expandedRequestId = null;
     this.expandedReviewState = null;
     this.reviewOnResume = false;
-    this.ownRequestActivity = null;
     this.subscription.dispose();
     this.project = project;
     this.subscription = this.observeProject();
@@ -225,7 +172,7 @@ export class TeamChangesPanel {
         this.render();
         return;
       }
-      this.#applySnapshot(result.value, this.ownRequestActivity);
+      this.#applySnapshot(result.value);
     } catch {
       if (this.isCurrent(task, projectId)) {
         this.viewState = { kind: 'error' };
@@ -239,32 +186,16 @@ export class TeamChangesPanel {
 
   #applySnapshot(
     snapshot: CollabCoordinationSnapshot,
-    ownRequestActivity: OwnRequestActivity | null,
   ): void {
     const current = this.viewState.snapshot;
     if (current && snapshot.source === 'online' && current.source === 'online'
       && snapshot.syncState.generation === current.syncState.generation
       && snapshot.snapshot.eventSequence < current.snapshot.eventSequence
     ) {
-      const ownRequest = snapshot.snapshot.openRequests.find(
-        request => request.memberId === snapshot.snapshot.currentMember.id,
-      );
-      const currentOwnRequest = current.snapshot.openRequests.find(
-        request => request.memberId === current.snapshot.currentMember.id,
-      );
-      if (snapshot.snapshot.project.mainOid !== current.snapshot.project.mainOid
-        || snapshot.snapshot.currentMember.id !== current.snapshot.currentMember.id
-        || ownRequest?.id !== currentOwnRequest?.id
-        || ownRequest?.firstBaseOid !== currentOwnRequest?.firstBaseOid
-        || ownRequest?.latestHeadOid !== currentOwnRequest?.latestHeadOid
-      ) ownRequestActivity = this.ownRequestActivity;
       snapshot = current;
     }
     this.reviewOnResume = false;
     this.viewState = { kind: 'ready', snapshot };
-    this.ownRequestActivity = ownRequestActivity
-      ? this.#validOwnRequestActivity(ownRequestActivity, snapshot)
-      : null;
     this.reviewLoader.update(this.project.id, snapshot);
     const previousCacheKey = this.expandedReviewState?.cacheKey;
     const request = this.#reconcileExpandedRequest(snapshot);
@@ -373,7 +304,6 @@ export class TeamChangesPanel {
       const displayName = request.memberId === coordination.snapshot.currentMember.id
         ? t('collab.team.ownMember')
         : memberName;
-      const conflict = this.#conflictFor(request);
       const expanded = request.id === this.expandedRequestId;
       const item = list.createDiv({ cls: 'claudian-collab-team-request-item' });
       const bodyId = `claudian-collab-request-${request.id}`;
@@ -390,17 +320,9 @@ export class TeamChangesPanel {
         cls: 'claudian-collab-team-member',
         text: displayName,
       });
-      if (conflict) {
-        row.createSpan({
-          cls: 'claudian-collab-team-request-conflict',
-          text: t('collab.conflict.title'),
-        });
-      }
       row.addEventListener('click', () => this.#toggleRequest(request, coordination));
-      if (!conflict && !this.#publicationFor(request)) {
-        row.addEventListener('pointerenter', () => this.options.onReviewIntent?.());
-        row.addEventListener('focus', () => this.options.onReviewIntent?.());
-      }
+      row.addEventListener('pointerenter', () => this.options.onReviewIntent?.());
+      row.addEventListener('focus', () => this.options.onReviewIntent?.());
       if (expanded) this.#renderExpandedReview(item, bodyId, request, coordination);
     }
     this.#restoreFocus(focus);
@@ -416,56 +338,6 @@ export class TeamChangesPanel {
       attr: { id: bodyId },
       cls: 'claudian-collab-team-request-body',
     });
-    const conflict = this.#conflictFor(request);
-    if (conflict) {
-      const resolve = body.createEl('button', {
-        attr: { 'data-action': 'resolve-request-conflict', type: 'button' },
-        cls: 'claudian-collab-team-request-resolve',
-        text: t('collab.conflict.title'),
-      });
-      resolve.disabled = !this.options.onOpenConflict;
-      resolve.addEventListener('click', () => {
-        this.options.onOpenConflict?.(conflict.operationId, request.id);
-      });
-      return;
-    }
-    const recovery = this.#recoveryFor(request);
-    if (recovery) {
-      const resume = body.createEl('button', { text: t('collab.update.finishPublish'), attr: { type: 'button' } });
-      resume.disabled = !this.options.onOpenWorkingTreeReview;
-      resume.addEventListener('click', () => this.options.onOpenWorkingTreeReview?.(recovery.workingReview));
-      return;
-    }
-    const publication = this.#publicationFor(request);
-    if (publication) {
-      const selectedPath = publication.selectedPath
-        ?? publication.review.files[0]?.path;
-      renderCollabChangedFileList({
-        accessibleLabel: t('collab.publish.changedFiles', {
-          count: publication.review.files.length,
-        }),
-        container: body,
-        files: publication.review.files,
-        focusOnSelect: false,
-        onSelect: path => {
-          const currentSelection = this.#publicationFor(request)?.selectedPath
-            ?? publication.review.files[0]?.path;
-          if (path !== currentSelection) {
-            this.ownRequestActivity = { ...publication, selectedPath: path };
-          }
-          this.options.onOpenPublicationReview?.(publication.review, path);
-        },
-        selectedPath,
-        semantics: 'flat',
-      });
-      if (publication.review.files.length === 0) {
-        body.createDiv({
-          cls: 'claudian-collab-team-request-status',
-          text: t('collab.review.noFiles'),
-        });
-      }
-      return;
-    }
     const state = this.expandedReviewState;
     if (!state || state.requestId !== request.id || state.kind === 'loading') {
       body.createDiv({
@@ -548,41 +420,6 @@ export class TeamChangesPanel {
       return;
     }
 
-    const conflict = this.#conflictFor(request);
-    if (conflict) {
-      this.reviewLoader.cancelPending();
-      this.expandedRequestId = request.id;
-      this.expandedReviewState = null;
-      this.render();
-      this.options.onOpenConflict?.(conflict.operationId, request.id);
-      return;
-    }
-
-    const recovery = this.#recoveryFor(request);
-    if (recovery) {
-      this.reviewLoader.cancelPending();
-      this.expandedRequestId = request.id;
-      this.expandedReviewState = null;
-      this.render();
-      this.options.onOpenWorkingTreeReview?.(recovery.workingReview);
-      return;
-    }
-
-    const publication = this.#publicationFor(request);
-    if (publication) {
-      this.reviewLoader.cancelPending();
-      const selectedPath = publication.selectedPath
-        ?? publication.review.files[0]?.path;
-      this.ownRequestActivity = selectedPath
-        ? { ...publication, selectedPath }
-        : publication;
-      this.expandedRequestId = request.id;
-      this.expandedReviewState = null;
-      this.render();
-      this.options.onOpenPublicationReview?.(publication.review, selectedPath);
-      return;
-    }
-
     this.options.onReviewIntent?.();
 
     this.expandedRequestId = request.id;
@@ -655,10 +492,6 @@ export class TeamChangesPanel {
       return null;
     }
     const request = requests.find(candidate => candidate.id === this.expandedRequestId)!;
-    if (this.#conflictFor(request) || this.#publicationFor(request)) {
-      this.expandedReviewState = null;
-      return null;
-    }
     const cacheKey = this.reviewLoader.currentKey(request.id)
       ?? this.#reviewCacheKey(request, coordination);
     if (this.expandedReviewState?.cacheKey === cacheKey) return null;
@@ -687,43 +520,6 @@ export class TeamChangesPanel {
       currentMemberRole: coordination.snapshot.currentMember.role,
       mainOid: coordination.snapshot.project.mainOid,
     });
-  }
-
-  #conflictFor(request: CollabChangeRequest): OwnRequestConflict | null {
-    return this.ownRequestActivity
-      && 'operationId' in this.ownRequestActivity
-      && this.ownRequestActivity.requestId === request.id
-      ? this.ownRequestActivity
-      : null;
-  }
-
-  #recoveryFor(request: CollabChangeRequest): OwnRequestPublicationRecovery | null {
-    return this.ownRequestActivity && 'workingReview' in this.ownRequestActivity
-      && this.ownRequestActivity.requestId === request.id ? this.ownRequestActivity : null;
-  }
-
-  #publicationFor(
-    request: CollabChangeRequest,
-  ): OwnRequestPublicationReview | null {
-    return this.ownRequestActivity
-      && 'review' in this.ownRequestActivity
-      && this.ownRequestActivity.requestId === request.id
-      ? this.ownRequestActivity
-      : null;
-  }
-
-  #validOwnRequestActivity<T extends OwnRequestActivity>(
-    activity: T,
-    coordination: CollabCoordinationSnapshot,
-  ): T | null {
-    const currentMemberId = coordination.snapshot.currentMember.id;
-    const request = coordination.snapshot.openRequests.find(
-      candidate => candidate.id === activity.requestId,
-    );
-    if (request?.memberId !== currentMemberId) return null;
-    if ('review' in activity && activity.review.projectId !== this.project.id) return null;
-    if ('workingReview' in activity && activity.workingReview.projectId !== this.project.id) return null;
-    return activity;
   }
 
   #queueRefresh(): void {

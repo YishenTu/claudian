@@ -3,6 +3,7 @@ import { type CollabProjectId } from '@claudian-collab/protocol';
 import type {
   PublishProjectPort,
   PublishRepositorySnapshot,
+  PublishWorkingReviewPort,
 } from '@/app/collab/publish/PublishCoordinator';
 import { workingTreeSnapshotId } from '@/app/collab/publish/PublishSnapshotProjection';
 import { type CollabChangedFile, type CollabOperationOptions, type CollabReviewFileContent, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
@@ -16,6 +17,7 @@ export interface WorkingTreeSnapshotPort {
 }
 
 export interface WorkingTreeReviewFilePort {
+  matchesCommit(repositoryPath: string, review: CollabWorkingTreeReview, commitOid: string, signal?: AbortSignal): Promise<boolean>;
   listChanges(
     repositoryPath: string,
     baseOid: string,
@@ -46,6 +48,7 @@ function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boo
     && left.kind === right.kind
     && left.binary === right.binary
     && left.workingTreeContentHash === right.workingTreeContentHash
+    && left.workingTreeMode === right.workingTreeMode
     && left.oldBytes === right.oldBytes
     && left.newBytes === right.newBytes
     && left.additions === right.additions
@@ -53,12 +56,28 @@ function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boo
     && left.largeForReview === right.largeForReview;
 }
 
-export class WorkingTreeReviewService {
+export class WorkingTreeReviewService implements PublishWorkingReviewPort {
   constructor(
     private readonly projects: PublishProjectPort,
     private readonly snapshots: WorkingTreeSnapshotPort,
     private readonly files: WorkingTreeReviewFilePort,
   ) {}
+
+  async assertCurrent(
+    projectId: CollabProjectId,
+    expected: Pick<CollabWorkingTreeReview, 'baseOid' | 'headOid' | 'snapshotId'>,
+    signal?: AbortSignal,
+  ): Promise<CollabWorkingTreeReview> {
+    const review = await this.prepare(projectId, expected.baseOid, { signal });
+    if (review.headOid !== expected.headOid || review.snapshotId !== expected.snapshotId) {
+      throw reviewError('working-tree-busy', 'working-tree-review-stale');
+    }
+    return review;
+  }
+
+  matchesCommit(repositoryPath: string, review: CollabWorkingTreeReview, commitOid: string, signal?: AbortSignal): Promise<boolean> {
+    return this.files.matchesCommit(repositoryPath, review, commitOid, signal);
+  }
 
   async prepare(
     projectId: CollabProjectId,
