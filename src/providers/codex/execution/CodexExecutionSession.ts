@@ -593,6 +593,7 @@ export class CodexExecutionSession
         serviceTier,
         effort,
         summary: getEffectiveCodexReasoningSummary(settings, model),
+        personality: getCodexProviderSettings(settings).responseStyle,
         sandboxPolicy: policy.sandboxPolicy,
         collaborationMode,
       });

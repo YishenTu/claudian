@@ -250,6 +250,10 @@ implements ClaudeExecutionStrategy {
       await query.applyFlagSettings({ effortLevel: request.effort });
       if (this.query !== query || this.disposed) return;
     }
+    if (request.responseStyle !== current.responseStyle) {
+      await query.applyFlagSettings({ outputStyle: request.responseStyle });
+      if (this.query !== query || this.disposed) return;
+    }
     if (request.sdkPermissionMode !== current.sdkPermissionMode) {
       await query.setPermissionMode(request.sdkPermissionMode);
       if (this.query !== query || this.disposed) return;

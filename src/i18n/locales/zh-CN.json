@@ -486,12 +486,6 @@
       "desc": "从下拉菜单中隐藏特定的命令与技能。适用于隐藏与 Claudian 无关的 Claude Code 条目。每行输入一个名称，无需前导斜杠。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP 服务器",
-      "descBeforeCommand": "Claude Code 通过自己的 CLI 管理 MCP 服务器。请使用 ",
-      "descAfterCommand": " 进行配置，它们会在 Claudian 中可用。",
-      "learnMore": "了解更多"
-    },
     "plugins": {
       "name": "Claude Code 插件",
       "desc": "管理从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储在 .claude/settings.json 中。"
@@ -694,6 +688,14 @@
       "lastProviderWarning": "至少需要启用一个提供商，Claudian 才能正常工作。",
       "noModelsWarning": "未启用任何 {provider} 模型。请前往下方的“模型”部分并至少启用一个模型。"
     },
+    "claude": {
+      "responseStyle": {
+        "name": "回复风格",
+        "desc": "默认使用 Claude 的常规风格。简洁模式先给出结果，省略开场白。需要 Claude Code 2.1.237 或更高版本。",
+        "default": "默认",
+        "concise": "简洁"
+      }
+    },
     "codex": {
       "installationMethod": {
         "name": "安装方式",
@@ -723,6 +725,12 @@
         "desc": "向选择器追加额外的 Codex 模型 ID，每行一个。设置 `OPENAI_MODEL` 时仍优先生效。",
         "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
+      "responseStyle": {
+        "name": "回复风格",
+        "desc": "选择支持此功能的模型中 Codex 的沟通风格。从下一条消息开始生效。",
+        "pragmatic": "务实",
+        "friendly": "友好"
+      },
       "reasoningSummary": {
         "name": "推理摘要",
         "desc": "在思考块中显示模型推理过程的摘要。",
@@ -745,11 +753,6 @@
       "subagents": {
         "name": "Codex 子代理",
         "desc": "管理存储在 .codex/agents/ 中的 Vault 级 Codex 子代理。每个 TOML 文件定义一个自定义代理。"
-      },
-      "mcp": {
-        "descBeforeCommand": "Codex 通过自己的 CLI 管理 MCP 服务器。请使用 ",
-        "descAfterCommand": " 进行配置，它们会在 Claudian 中可用。",
-        "learnMore": "了解更多"
       },
       "environment": {
         "name": "Codex 环境",

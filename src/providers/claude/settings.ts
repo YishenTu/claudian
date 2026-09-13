@@ -13,11 +13,13 @@ import {
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
+export type ClaudeResponseStyle = 'Default' | 'Concise';
 export type ClaudeSettingSource = 'user' | 'project' | 'local';
 
 export interface ClaudeProviderSettings {
   enabled: boolean;
   safeMode: ClaudeSafeMode;
+  responseStyle: ClaudeResponseStyle;
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
   loadUserSettings: boolean;
@@ -34,6 +36,7 @@ export interface ClaudeProviderSettings {
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
   enabled: true,
   safeMode: 'acceptEdits',
+  responseStyle: 'Default',
   cliPath: '',
   cliPathsByHost: {},
   loadUserSettings: true,
@@ -84,6 +87,7 @@ export function getClaudeProviderSettings(
       config.enabled,
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.enabled,
     ),
+    responseStyle: config.responseStyle === 'Concise' ? 'Concise' : 'Default',
     safeMode: readStoredClaudeSafeMode(
       config.safeMode,
       readStoredClaudeSafeMode(

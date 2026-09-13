@@ -45,6 +45,7 @@ import {
   UNSUPPORTED_SDK_TOOLS,
 } from '../runtime/types';
 import {
+  type ClaudeResponseStyle,
   getClaudeProviderSettings,
   resolveClaudeSettingSources,
 } from '../settings';
@@ -81,6 +82,7 @@ export interface ClaudeEncodedExecutionRequest {
   readonly options: Options;
   readonly model: string;
   readonly effort: EffortLevel;
+  readonly responseStyle: ClaudeResponseStyle;
   readonly sdkPermissionMode: SDKPermissionMode;
   readonly restartKey: string;
   readonly allowedTools: ReadonlySet<string> | null;
@@ -154,6 +156,7 @@ export class ClaudeExecutionRequestEncoder {
       },
       model,
       effort,
+      settings: { outputStyle: claudeSettings.responseStyle },
       thinking: { type: 'adaptive' },
       abortController,
       pathToClaudeCodeExecutable: cliPath,
@@ -214,6 +217,7 @@ export class ClaudeExecutionRequestEncoder {
       model,
       effort,
       sdkPermissionMode,
+      responseStyle: claudeSettings.responseStyle,
       restartKey: JSON.stringify({
         systemPrompt,
         tools: policy.tools,

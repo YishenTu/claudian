@@ -486,12 +486,6 @@
       "desc": "Bestimmte Befehle und Fähigkeiten aus dem Dropdown ausblenden. Nützlich, um Claude Code-Einträge auszublenden, die für Claudian nicht relevant sind. Gib Namen ohne führenden Schrägstrich ein, einen pro Zeile.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP-Server",
-      "descBeforeCommand": "Claude Code verwaltet MCP-Server über seine eigene CLI. Konfiguriere mit ",
-      "descAfterCommand": ", dann sind sie in Claudian verfügbar. ",
-      "learnMore": "Mehr erfahren"
-    },
     "plugins": {
       "name": "Claude Code-Plugins",
       "desc": "Verwalte Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault in .claude/settings.json gespeichert."
@@ -694,6 +688,14 @@
       "lastProviderWarning": "Damit Claudian funktioniert, muss mindestens ein Anbieter aktiviert bleiben.",
       "noModelsWarning": "Keine {provider}-Modelle sind aktiviert. Aktivieren Sie unten unter „Modelle“ mindestens ein Modell."
     },
+    "claude": {
+      "responseStyle": {
+        "name": "Antwortstil",
+        "desc": "Standard verwendet Claudes üblichen Stil. Knapp beginnt mit Ergebnissen und verzichtet auf Einleitungen. Erfordert Claude Code 2.1.237 oder neuer.",
+        "default": "Standard",
+        "concise": "Knapp"
+      }
+    },
     "codex": {
       "installationMethod": {
         "name": "Installationsmethode",
@@ -723,6 +725,12 @@
         "desc": "Füge zusätzliche Codex-Modell-IDs zur Auswahl hinzu, eine pro Zeile. `OPENAI_MODEL` hat weiterhin Vorrang, wenn gesetzt.",
         "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
+      "responseStyle": {
+        "name": "Antwortstil",
+        "desc": "Wähle den Kommunikationsstil von Codex bei unterstützten Modellen. Gilt ab der nächsten Nachricht.",
+        "pragmatic": "Pragmatisch",
+        "friendly": "Freundlich"
+      },
       "reasoningSummary": {
         "name": "Reasoning-Zusammenfassung",
         "desc": "Zeigt eine Zusammenfassung des Reasoning-Prozesses des Modells im Denkblock.",
@@ -745,11 +753,6 @@
       "subagents": {
         "name": "Codex-Sub-Agenten",
         "desc": "Verwalte Vault-Codex-Sub-Agenten in .codex/agents/. Jede TOML-Datei definiert einen benutzerdefinierten Agenten."
-      },
-      "mcp": {
-        "descBeforeCommand": "Codex verwaltet MCP-Server über seine eigene CLI. Konfiguriere mit ",
-        "descAfterCommand": ", dann sind sie in Claudian verfügbar. ",
-        "learnMore": "Mehr erfahren"
       },
       "environment": {
         "name": "Codex-Umgebung",

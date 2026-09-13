@@ -20,6 +20,7 @@ import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
+export type CodexResponseStyle = 'pragmatic' | 'friendly';
 export type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type CodexInstallationMethod = 'native-windows' | 'wsl';
 export type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
@@ -37,6 +38,7 @@ export interface CodexProviderConfig {
   modelAliases: Record<string, string>;
   visibleModels: string[] | null;
   enableUltraEffort: boolean;
+  responseStyle: CodexResponseStyle;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
@@ -124,6 +126,7 @@ export interface CodexProviderSettings {
   modelAliases: CodexProviderConfig['modelAliases'];
   visibleModels: CodexProviderConfig['visibleModels'];
   enableUltraEffort: CodexProviderConfig['enableUltraEffort'];
+  responseStyle: CodexProviderConfig['responseStyle'];
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
@@ -145,6 +148,7 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   modelAliases: {},
   visibleModels: null,
   enableUltraEffort: false,
+  responseStyle: 'pragmatic',
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
@@ -423,6 +427,7 @@ function getCodexStoredConfig(
     ),
     visibleModels,
     enableUltraEffort: config.enableUltraEffort === true,
+    responseStyle: config.responseStyle === 'friendly' ? 'friendly' : 'pragmatic',
     reasoningSummary: readStoredCodexReasoningSummary(
       config.reasoningSummary,
       readStoredCodexReasoningSummary(
@@ -636,6 +641,7 @@ export function updateCodexProviderSettings(
     modelAliases: next.modelAliases,
     visibleModels: next.visibleModels,
     enableUltraEffort: next.enableUltraEffort,
+    responseStyle: next.responseStyle,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,

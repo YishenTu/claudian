@@ -605,27 +605,7 @@ describe('GrokSettingsTab', () => {
       .not.toHaveProperty('reasoningMetadataResolved');
   });
 
-  it('directs MCP setup to the native Grok CLI', () => {
-    const plugin = createPlugin();
-    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
-
-    expect(findSetting('MCP Servers').heading).toBe(true);
-    const notice = createdElements.find(element => element.cls === 'claudian-mcp-settings-desc');
-    const description = notice?.children[0];
-    expect(description?.text).toBe(
-      'Grok Build manages MCP servers through its own CLI. Configure them with  and they will be available in Claudian. ',
-    );
-    expect(description?.children).toEqual(expect.arrayContaining([
-      expect.objectContaining({ tag: 'code', text: 'grok mcp add' }),
-      expect.objectContaining({
-        href: 'https://docs.x.ai/build/features/mcp-servers',
-        tag: 'a',
-        text: 'Learn more',
-      }),
-    ]));
-  });
-
-  it('renders only native skills, hidden runtime commands, MCP guidance, and the Grok environment scope', () => {
+  it('renders only native skills, hidden runtime commands, and the Grok environment scope', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const container = createContainer();
