@@ -7,7 +7,7 @@ const tests = [
   'tests/unit/utils/windowsCmdShim.test.ts',
   'tests/unit/core/process/ManagedStdioProcess.test.ts',
   'tests/unit/core/collab/CollabProjectsFolder.test.ts',
-  'tests/unit/app/collab/local/CollabPathPolicy.test.ts',
+  'tests/unit/app/collab/CollabPathPolicy.test.ts',
   'tests/unit/app/collab/git/CollabGitOriginPolicy.test.ts',
   'tests/unit/app/collab/git/CollabGitTreePolicy.test.ts',
   'tests/unit/app/collab/git/GitCommandRunner.test.ts',
