@@ -20,19 +20,44 @@ function hasControlCharacter(value: string): boolean {
   });
 }
 
+// Exact entity set produced by escapePromptXmlAttribute (src/utils/promptXml.ts).
+// Escaped values must never survive normalization as literal path text: the
+// rendered prompt attribute is the only path signal the agent sees, so it can
+// copy the escaped form into file operations (issue #1230). Single pass, one
+// level only.
+const ESCAPED_ENTITY_PATTERN = /&(?:amp|quot|lt|gt|#9|#10|#13);/g;
+
+const ENTITY_DECODE: Record<string, string> = {
+  '&amp;': '&',
+  '&quot;': '"',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&#9;': '\t',
+  '&#10;': '\n',
+  '&#13;': '\r',
+};
+
+function decodeEscapedXmlEntities(value: string): string {
+  return value.replace(
+    ESCAPED_ENTITY_PATTERN,
+    (entity) => ENTITY_DECODE[entity] ?? entity,
+  );
+}
+
 export function normalizeLinkedContentPath(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null;
+  const decoded = decodeEscapedXmlEntities(value);
   if (
-    hasControlCharacter(value)
-    || value.startsWith('/')
-    || value.startsWith('\\')
-    || WINDOWS_DRIVE_PATTERN.test(value)
-    || WINDOWS_UNC_PATTERN.test(value)
+    hasControlCharacter(decoded)
+    || decoded.startsWith('/')
+    || decoded.startsWith('\\')
+    || WINDOWS_DRIVE_PATTERN.test(decoded)
+    || WINDOWS_UNC_PATTERN.test(decoded)
   ) {
     return null;
   }
 
-  const segments = value.replace(/\\/g, '/').split('/');
+  const segments = decoded.replace(/\\/g, '/').split('/');
   const normalized: string[] = [];
   for (const segment of segments) {
     if (segment === '' || segment === '.') continue;

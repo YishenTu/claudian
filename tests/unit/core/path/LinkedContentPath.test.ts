@@ -87,3 +87,47 @@ describe('decodeLinkedContentPathFields', () => {
     });
   });
 });
+
+describe('XML-escaped vault paths (issue #1230)', () => {
+  it.each([
+    ['Calendar/Meetings/People &amp; Teams/note.md', 'Calendar/Meetings/People & Teams/note.md'],
+    ['R&amp;D Team/note.md', 'R&D Team/note.md'],
+    ['a &lt; b &gt; c.md', 'a < b > c.md'],
+    ['A &quot;quoted&quot; name.md', 'A "quoted" name.md'],
+  ])('repairs escaped path %p to %p', (input, expected) => {
+    expect(normalizeLinkedContentPath(input)).toBe(expected);
+  });
+
+  it('decodes one level only', () => {
+    expect(normalizeLinkedContentPath('a &amp;lt; b.md')).toBe('a &lt; b.md');
+  });
+
+  it('leaves raw ampersand paths untouched', () => {
+    expect(normalizeLinkedContentPath('People & Teams/R&D/note.md'))
+      .toBe('People & Teams/R&D/note.md');
+  });
+
+  it('flags escaped canonical paths for migration', () => {
+    expect(decodeLinkedContentPathFields({
+      linkedContentPath: 'People &amp; Teams/note.md',
+    })).toEqual({
+      path: 'People & Teams/note.md',
+      needsMigration: true,
+      source: 'canonical',
+    });
+  });
+
+  it('flags escaped legacy paths for migration', () => {
+    expect(decodeLinkedContentPathFields({ currentNote: 'R&amp;D/note.md' }))
+      .toEqual({
+        path: 'R&D/note.md',
+        needsMigration: true,
+        source: 'legacy',
+      });
+  });
+
+  it('rejects escapes that decode to control characters', () => {
+    expect(normalizeLinkedContentPath('Notes/&#10;x.md')).toBeNull();
+    expect(normalizeLinkedContentPath('Notes/&#9;x.md')).toBeNull();
+  });
+});
