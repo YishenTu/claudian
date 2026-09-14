@@ -7,6 +7,7 @@ import type {
   CollabMutationContext,
   CollabOperationId,
   CollabProjectId,
+  CollabProjectRecoveryOperationMap,
   CollabRequestId,
   CollabRequestTicketOperation,
 } from '@claudian-collab/protocol';
@@ -185,7 +186,7 @@ export interface LanRefreshEndpointRequest {
 
 type SharedCollabControlOperationMap = Pick<
   CollabControlOperationMap,
-  CollabRequestTicketOperation | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'
+  CollabRequestTicketOperation | keyof CollabProjectRecoveryOperationMap | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'
 >;
 
 export interface LanCollabControlOperationMap extends SharedCollabControlOperationMap {

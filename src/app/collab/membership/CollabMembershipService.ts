@@ -19,7 +19,9 @@ import type {
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import { encodeCloudMembershipClaimInvitation, encodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { encodeLanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
+import { encodeProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
+import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CloudMembershipBinding,
   CollabAuthorityMembershipRouterPort,
@@ -114,16 +116,47 @@ export class CollabMembershipService {
           ]),
         };
       },
-      createLan: options => this.control.membership('createInvitation', {
-        projectId, idempotencyKey: lanKey ??= this.createIdempotencyKey('create-invitation'),
-      }, options),
+      createLan: async options => {
+        if (request.purpose !== 'recovery') return this.control.membership('createInvitation', {
+          projectId, idempotencyKey: lanKey ??= this.createIdempotencyKey('create-invitation'),
+        }, options);
+        const membership = await this.safety.projects.loadMembership(projectId);
+        if (!membership || !isCollabLocalLanMembership(membership)) throw new CollabError({ code: 'project-not-found' });
+        const { endpoint, hostCaCertificatePem, hostCaFingerprint, authorityGeneration } = membership.authority;
+        if (!endpoint || !hostCaCertificatePem || !hostCaFingerprint) throw new CollabError({ code: 'authority-integrity-error' });
+        const link = await this.control.membership('createProjectRecoveryLink', {
+          projectId, expectedAuthorityGeneration: authorityGeneration,
+          idempotencyKey: lanKey ??= this.createIdempotencyKey('create-recovery-link'),
+        }, options);
+        return { encodedInvitation: encodeProjectRecoveryInvitation({ link, target: { kind: 'lan', endpoint,
+          caCertificatePem: hostCaCertificatePem, caFingerprint: hostCaFingerprint } }), expiresAt: link.expiresAt };
+      },
       createCloud: select => this.#runCloudManagementMutation(
-        projectId, {}, () => this.#createCloudInvitation(projectId, {}, select),
+        projectId, {}, () => request.purpose === 'recovery'
+          ? this.#createCloudRecoveryLink(projectId, select) : this.#createCloudInvitation(projectId, {}, select),
       ),
       readManagement: options => this.readManagementOperation(projectId, options),
       resumeManagement: completionId => this.#resumeManagementOperation(projectId, {}, completionId),
       completeManagement: completionId => this.completeManagementOperation({ projectId, completionId }),
-    }, intent);
+    }, intent, request.purpose === 'recovery' ? 'create-recovery-link' : 'create-invitation');
+  }
+
+  async #createCloudRecoveryLink(projectId: CollabProjectId, select: (completionId: string) => void): Promise<CollabInvitationView> {
+    let intent = await this.#loadCloudIntent(projectId);
+    if (intent && intent.operation !== 'createProjectRecoveryLink') throw managementPending();
+    if (!intent) {
+      const { binding } = await this.#readCloudManagerMembers(projectId, {});
+      intent = await this.#prepareCloudIntent(binding, 'createProjectRecoveryLink', {
+        projectId, expectedAuthorityGeneration: binding.authorityGeneration,
+        idempotencyKey: this.createIdempotencyKey('create-recovery-link'),
+      }, select);
+    } else select(intent.completionId);
+    await this.#executeCloudIntent(intent, {});
+    intent = await this.#loadCloudIntent(projectId);
+    if (!intent || intent.operation !== 'createProjectRecoveryLink') throw managementPending();
+    const invitation = retainedInvitation(intent);
+    if (!invitation) throw new CollabError({ code: 'invitation-expired' });
+    return invitation;
   }
 
   async createInvitation(
@@ -397,7 +430,7 @@ export class CollabMembershipService {
   async #prepareCloudIntent<Operation extends CloudManagementMutation>(
     binding: CloudMembershipBinding,
     operation: Operation,
-    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    request: CloudMembershipOperationMap[Operation]['request'],
     select?: (completionId: string) => void,
   ): Promise<CloudManagementIntent> {
     const now = new Date().toISOString();
@@ -964,6 +997,10 @@ function cloudManagerOfferSummary(offer: CollabManagerResponsibilityOffer): Coll
 }
 
 function retainedInvitation(intent: CloudManagementIntent): CollabInvitationView | null {
+  if (intent.operation === 'createProjectRecoveryLink' && intent.response) {
+    if (retainedSecretExpired(intent.response)) return null;
+    return { encodedInvitation: encodeProjectRecoveryInvitation({ link: intent.response, target: { kind: 'cloud', serverUrl: intent.serverUrl } }), expiresAt: intent.response.expiresAt };
+  }
   if (intent.operation === 'createProjectInvitation' && intent.response) {
     if (retainedSecretExpired(intent.response)) return null;
     return { encodedInvitation: encodeCloudProjectInvitation({ invitation: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
@@ -995,7 +1032,7 @@ function managementSecretAvailableUntil(
   intent: CloudManagementIntent,
 ): string | null {
   if (
-    (intent.operation === 'createProjectInvitation'
+    (intent.operation === 'createProjectInvitation' || intent.operation === 'createProjectRecoveryLink'
       || intent.operation === 'reissueTransferredMembershipClaim')
     && intent.response
   ) return retainedSecretAvailableUntil(intent.response);
@@ -1008,6 +1045,7 @@ function managementOperationView(
   return {
     action: ({
       createProjectInvitation: 'create-invitation',
+      createProjectRecoveryLink: 'create-recovery-link',
       revokeProjectInvitation: 'revoke-invitation',
       demoteManager: 'demote-manager',
       removeMember: 'remove-member',

@@ -1464,6 +1464,37 @@ function assertAuthorityV14Schema(database: Database): void {
   }
 }
 
+const AUTHORITY_SCHEMA_V15_OBJECTS = [
+  { type: 'table', name: 'member_recovery_credentials', sql: `CREATE TABLE member_recovery_credentials (
+    credential_sha256 TEXT PRIMARY KEY CHECK(length(credential_sha256) = 64 AND credential_sha256 NOT GLOB '*[^0-9a-f]*'),
+    member_id TEXT NOT NULL REFERENCES members(member_id)
+  );` },
+  { type: 'index', name: 'member_recovery_credentials_owner', sql: `CREATE INDEX member_recovery_credentials_owner ON member_recovery_credentials(member_id);` },
+  { type: 'table', name: 'project_recovery_links', sql: `CREATE TABLE project_recovery_links (
+    recovery_link_id TEXT PRIMARY KEY,
+    authority_generation INTEGER NOT NULL CHECK(authority_generation >= 1),
+    actor_member_id TEXT NOT NULL REFERENCES members(member_id),
+    issued_key TEXT NOT NULL,
+    request_sha256 TEXT NOT NULL CHECK(length(request_sha256) = 64),
+    token_sha256 TEXT NOT NULL UNIQUE CHECK(length(token_sha256) = 64),
+    expires_at TEXT NOT NULL,
+    secret_replay_expires_at TEXT NOT NULL,
+    descriptor_json TEXT CHECK(descriptor_json IS NULL OR json_valid(descriptor_json)),
+    redemption_sha256 TEXT CHECK(redemption_sha256 IS NULL OR length(redemption_sha256) = 64),
+    receipt_json TEXT CHECK(receipt_json IS NULL OR json_valid(receipt_json)),
+    recovered_member_id TEXT REFERENCES members(member_id),
+    UNIQUE(actor_member_id, issued_key),
+    CHECK((receipt_json IS NULL AND redemption_sha256 IS NULL AND recovered_member_id IS NULL)
+      OR (receipt_json IS NOT NULL AND redemption_sha256 IS NOT NULL AND recovered_member_id IS NOT NULL))
+  );` },
+] as const;
+
+function assertAuthorityV15Schema(database: Database): void {
+  if (AUTHORITY_SCHEMA_V15_OBJECTS.some(object => !hasExactSchemaSql(database, object.type, object.name, object.sql))) {
+    throw new Error('Authority V15 Project recovery schema is incomplete');
+  }
+}
+
 export function applyAuthorityMigrations(database: Database): boolean {
   const version = pragmaNumber(database, 'PRAGMA user_version');
   if (version > COLLAB_AUTHORITY_SCHEMA_VERSION) {
@@ -1475,6 +1506,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
       const repaired = repairAndAssertAuthorityV12Schema(database);
       assertAuthorityV13Schema(database);
       assertAuthorityV14Schema(database);
+      assertAuthorityV15Schema(database);
       database.run('COMMIT');
       return repaired;
     } catch (error) {
@@ -1505,6 +1537,8 @@ export function applyAuthorityMigrations(database: Database): boolean {
       for (const object of AUTHORITY_SCHEMA_V14_OBJECTS) database.run(object.sql);
     }
     assertAuthorityV14Schema(database);
+    if (version < 15) for (const object of AUTHORITY_SCHEMA_V15_OBJECTS) database.run(object.sql);
+    assertAuthorityV15Schema(database);
     database.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION}`);
     database.run('COMMIT');
     transactionStarted = false;

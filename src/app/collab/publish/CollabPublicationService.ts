@@ -286,6 +286,7 @@ export class CollabPublicationService {
           && membership.authority.authorityGeneration > 1
           && capabilities.includes('imported-membership-claims-v1'),
         invitations: true,
+        projectRecovery: capabilities.includes('project-recovery-v1'),
         leave: true,
         managerResponsibility: true,
         membershipManagement: true,
@@ -297,6 +298,7 @@ export class CollabPublicationService {
       authorityTransfer: authority.supports('authority-transfer'),
       importedMemberClaims: authority.supports('cloud-imported-membership-claims'),
       invitations: authority.supports('cloud-project-invitations'),
+      projectRecovery: authority.supports('project-recovery'),
       leave: authority.supports('cloud-project-leave'),
       managerResponsibility: authority.supports('cloud-project-manager-responsibility'),
       membershipManagement: authority.supports('cloud-project-membership'),

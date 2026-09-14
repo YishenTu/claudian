@@ -163,6 +163,7 @@ export interface CollabProjectCapabilities {
   readonly authorityKind: 'lan' | 'cloud';
   readonly authorityTransfer: boolean;
   readonly importedMemberClaims: boolean;
+  readonly projectRecovery?: boolean;
   readonly invitations: boolean;
   readonly leave: boolean;
   readonly managerResponsibility: boolean;
@@ -318,6 +319,7 @@ export interface CollabInvitationView {
 export interface CollabOpenInvitationRequest {
   readonly projectId: CollabProjectId;
   readonly intent: 'create' | 'resume';
+  readonly purpose?: 'join' | 'recovery';
 }
 
 export type CollabInvitationState =
@@ -351,7 +353,7 @@ export interface CollabMemberSummaryView {
 }
 
 export interface CollabManagementOperationView {
-  readonly action: 'create-invitation' | 'revoke-invitation' | 'demote-manager' | 'remove-member' | 'create-manager-offer' | 'cancel-manager-offer' | 'promote-manager' | 'reissue-member-claim' | 'revoke-member-claim';
+  readonly action: 'create-invitation' | 'create-recovery-link' | 'revoke-invitation' | 'demote-manager' | 'remove-member' | 'create-manager-offer' | 'cancel-manager-offer' | 'promote-manager' | 'reissue-member-claim' | 'revoke-member-claim';
   /** Opaque local result identity; it is never the authority idempotency key. */
   readonly completionId: string;
   readonly invitation: CollabInvitationView | null;

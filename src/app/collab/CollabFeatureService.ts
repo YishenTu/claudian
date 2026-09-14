@@ -29,6 +29,7 @@ import {
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import type { CollabWorkingCopyLocationService, CollabWorkingCopyRenameHint } from '@/app/collab/project/CollabWorkingCopyLocationService';
 import { decodeLanMembershipClaimInvitation, type LanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
+import { decodeProjectRecoveryInvitation, type ProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import {
   ProjectOperationAdmission,
   type ProjectOperationPolicy,
@@ -449,6 +450,7 @@ export interface CollabAuthorityTransferEntryPort {
     projectId: CollabProjectId,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferView | null>;
+  redeemProjectRecoveryLink?(invitation: ProjectRecoveryInvitation, options?: CollabOperationOptions): Promise<void>;
   redeemManagerReissuedClaim(
     invitation: CloudMembershipClaimInvitation | LanMembershipClaimInvitation,
     options?: CollabOperationOptions,
@@ -1052,7 +1054,12 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(controller.signal);
       let result: CollabResult<CollabLocalProjectSummary>;
-      if ('encodedInvitation' in request && /^claudian-(?:cloud|lan)-claim:/.test(request.encodedInvitation.trim())) {
+      if ('encodedInvitation' in request && request.encodedInvitation.trim().startsWith('claudian-recovery:')) {
+        const invitation = decodeProjectRecoveryInvitation(request.encodedInvitation);
+        if (invitation.link.projectId !== request.projectId || !this.options.authorityTransfer.redeemProjectRecoveryLink) throw operationError('project-recovery-invitation-invalid');
+        await this.options.authorityTransfer.redeemProjectRecoveryLink(invitation, { signal: controller.signal });
+        result = await this.#reconnectedProject(request.projectId);
+      } else if ('encodedInvitation' in request && /^claudian-(?:cloud|lan)-claim:/.test(request.encodedInvitation.trim())) {
         result = await this.#reconnectManagerReissuedClaim(request, { signal: controller.signal });
       } else if ('authority' in request && await this.options.authorityTransfer.reconnectLanToCloud(
         request.projectId, request.authority.serverUrl, { signal: controller.signal },

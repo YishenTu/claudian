@@ -2,6 +2,7 @@ import {
   COLLAB_CONTROL_OPERATION_CODECS,
   type CollabControlOperationCodec,
   type CollabDecodeResult,
+  type CollabProjectRecoveryOperationMap,
   type CollabRequestTicketOperation,
 } from '@claudian-collab/protocol';
 
@@ -79,7 +80,7 @@ function lifecycleCodec<Operation extends LanCollabLifecycleControlOperation>(
   );
 }
 
-function sharedCodec<Operation extends CollabRequestTicketOperation | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'>(
+function sharedCodec<Operation extends CollabRequestTicketOperation | keyof CollabProjectRecoveryOperationMap | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'>(
   operation: Operation,
 ): LanCodecMap[Operation] {
   const shared = COLLAB_CONTROL_OPERATION_CODECS[operation];
@@ -92,6 +93,8 @@ function sharedCodec<Operation extends CollabRequestTicketOperation | 'listProje
 }
 
 export const LAN_COLLAB_CONTROL_OPERATION_CODECS = Object.freeze({
+  createProjectRecoveryLink: sharedCodec('createProjectRecoveryLink'),
+  redeemProjectRecoveryLink: sharedCodec('redeemProjectRecoveryLink'),
   listProjectMembers: sharedCodec('listProjectMembers'),
   reissueTransferredMembershipClaim: sharedCodec('reissueTransferredMembershipClaim'),
   claimTransferredMembership: sharedCodec('claimTransferredMembership'),

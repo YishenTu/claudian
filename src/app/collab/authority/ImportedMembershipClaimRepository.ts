@@ -166,6 +166,7 @@ export class ImportedMembershipClaimRepository {
         || Buffer.from(member.credentialHash).toString('hex') !== request.credentialHash) throw invalid();
       return decodeCollabTransferredMembershipRedemptionReceipt(JSON.parse(String(current.receipt_json)));
     }
+    if (connection.get('SELECT recovery_link_id FROM project_recovery_links WHERE recovered_member_id = ? LIMIT 1', [memberId])) throw invalid();
     if (now.getTime() >= Date.parse(String(current.expires_at))) throw new CollabError({ code: 'membership-claim-expired' });
     if (member.accessState !== 'unbound') throw denied();
     const payload = {

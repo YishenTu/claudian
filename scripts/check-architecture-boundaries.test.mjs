@@ -671,8 +671,8 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
     lockfile.packages?.[protocolInstallPath]?.resolved,
     `https://registry.npmjs.org/@claudian-collab/protocol/-/protocol-${protocolVersion}.tgz`,
   );
-  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 11);
-  assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 7);
+  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 12);
+  assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 8);
   assert.equal(protocol.COLLAB_PROJECT_BACKUP_COORDINATION_FORMAT_VERSION, 3);
   assert.deepEqual(
     protocol.COLLAB_PROJECT_MEMBERSHIP_OPERATIONS,
@@ -823,8 +823,8 @@ test('Collab consumer CI runs production and cross-platform checks', () => {
     'utf8',
   );
   const crossPlatformJob = workflow
-    .split(/^  build:/mu)[0]
-    .split(/^  cross-platform-smoke:/mu)[1] ?? '';
+    .split(/^ {2}build:/mu)[0]
+    .split(/^ {2}cross-platform-smoke:/mu)[1] ?? '';
   assert.match(crossPlatformJob, /npm run build/);
   assert.match(
     crossPlatformJob,
@@ -840,8 +840,8 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   const nightly = fs.readFileSync(path.join(workflowsRoot, 'nightly.yml'), 'utf8');
   const codeql = fs.readFileSync(path.join(workflowsRoot, 'codeql.yml'), 'utf8');
 
-  assert.match(ci, /^  push:\n    branches: \[main, codex\/cloud-integration\]$/m);
-  assert.match(ci, /^  pull_request:\n    branches: \[main, codex\/cloud-integration\]$/m);
+  assert.match(ci, /^ {2}push:\n {4}branches: \[main, codex\/cloud-integration\]$/m);
+  assert.match(ci, /^ {2}pull_request:\n {4}branches: \[main, codex\/cloud-integration\]$/m);
   assert.match(ci, /workflow_call:/);
   assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
   assert.match(ci, /diff-hygiene:/);
@@ -857,7 +857,7 @@ test('CI gates releases, cross-platform behavior, and security', () => {
   assert.match(ci, /needs:\s*cross-platform-collab-scope/);
   assert.match(ci, /needs\.cross-platform-collab-scope\.outputs\.run == 'true'/);
 
-  assert.match(release, /^on:\n  push:\n    tags:\n      - '\*'\n\njobs:/m);
+  assert.match(release, /^on:\n {2}push:\n {4}tags:\n {6}- '\*'\n\njobs:/m);
   assert.match(release, /uses:\s*\.\/\.github\/workflows\/ci\.yml/);
   assert.match(release, /needs:\s*verify/);
 

@@ -247,6 +247,8 @@ describe('SqlJsProjectDatabase', () => {
       DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
       DROP TRIGGER request_ticket_relations_accepted_capacity_update;
       DROP TABLE ticket_mentions;
+      DROP TABLE project_recovery_links;
+      DROP TABLE member_recovery_credentials;
       PRAGMA user_version = 3;
     `);
     await writeFile(primaryPath, versionThree.export());
@@ -328,6 +330,8 @@ describe('SqlJsProjectDatabase', () => {
         'comment-legacy', 'request-legacy', 'member-host',
         'Legacy inline comment', '${CREATED_AT}', 'notes/legacy.md'
       );
+      DROP TABLE project_recovery_links;
+      DROP TABLE member_recovery_credentials;
       PRAGMA user_version = 6;
     `);
     await writeFile(primaryPath, versionSix.export());
@@ -706,6 +710,8 @@ describe('SqlJsProjectDatabase', () => {
       DROP TRIGGER comments_request_capacity_insert;
       DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
       DROP TRIGGER request_ticket_relations_accepted_capacity_update;
+      DROP TABLE project_recovery_links;
+      DROP TABLE member_recovery_credentials;
       PRAGMA user_version = 0;
     `);
     await writeFile(primaryPath, legacy.export());

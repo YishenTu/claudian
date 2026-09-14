@@ -187,6 +187,8 @@
       "title": "Projektverwaltung"
     },
     "access": {
+      "copyRecoveryLink": "Wiederherstellungslink kopieren",
+      "recoveryLinkCopied": "Wiederherstellungslink kopiert.",
       "activeInvitations": "Aktive Einladungen",
       "loadingInvitations": "Einladungen werden geladen…",
       "noInvitations": "Keine aktiven Einladungen.",

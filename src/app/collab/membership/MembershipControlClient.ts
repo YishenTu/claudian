@@ -1,4 +1,5 @@
 import {
+  type CreateProjectRecoveryLinkRequest,
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
@@ -281,6 +282,15 @@ function decodeInvitationRevocationResponse(
 }
 
 export class MembershipControlClient {
+  createProjectRecoveryLink(input: CreateProjectRecoveryLinkRequest & { memberCredential: string; signal?: AbortSignal }) {
+    const { memberCredential, signal, ...body } = input;
+    return this.transport.requestWithMember({ method: 'POST', path: collabControlOperationPath('createProjectRecoveryLink', input.projectId),
+      body, idempotencyKey: input.idempotencyKey, decode: value => {
+        const response = lanCollabControlOperationCodec('createProjectRecoveryLink').decodeResponse(value);
+        if (response.projectId !== input.projectId || response.authorityGeneration !== input.expectedAuthorityGeneration) throw decodeError('recoveryLink');
+        return response;
+      } }, memberCredential, signal ? { signal } : {});
+  }
   constructor(private readonly transport: MembershipControlTransport) {}
 
   listProjectMembers(input: { projectId: string; memberCredential: string; signal?: AbortSignal }) {

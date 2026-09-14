@@ -56,6 +56,7 @@ import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/C
 import type {
   CollabAuthorityLifecyclePort,
 } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
+import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CloudAuthorityMembershipControlPort, CloudMembershipBinding, CloudMembershipOperation } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabAuthorityAdapter,
@@ -90,6 +91,7 @@ const IMPLEMENTED_CLOUD_CAPABILITIES: ReadonlySet<CollabCloudCapability> = new S
   'git-receive-pack-personal-ref',
   'git-upload-pack',
   'project-events',
+  'project-recovery',
   'project-retirement',
   'project-snapshot',
   'requests',
@@ -217,6 +219,7 @@ export interface CloudPendingRetirementConnection {
 }
 
 export interface CloudAuthorityConnection {
+  redeemProjectRecoveryLink?(request: CollabControlOperationMap['redeemProjectRecoveryLink']['request'], options?: CollabOperationOptions): Promise<CollabControlOperationMap['redeemProjectRecoveryLink']['response']>;
   readonly principalId: string;
   joinProject(
     input: CollabControlOperationMap['joinCloudProject']['request'],
@@ -348,18 +351,23 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     assertRequestActive(this.#lifetime.signal);
   }
 
+  redeemProjectRecoveryLink(request: CollabControlOperationMap['redeemProjectRecoveryLink']['request'], options: CollabOperationOptions = {}) {
+    return this.execute('project-recovery', 'redeemProjectRecoveryLink', request, options);
+  }
+
   cloudMembership<Operation extends CloudMembershipOperation>(
     operation: Operation,
-    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    request: CloudMembershipOperationMap[Operation]['request'],
     binding: CloudMembershipBinding,
     options: CollabOperationOptions = {},
-  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+  ): Promise<CloudMembershipOperationMap[Operation]['response']> {
     if (!this.identity || binding.serverUrl !== this.origin || binding.projectId !== this.projectId
       || binding.memberId !== this.identity.memberId
       || binding.authorityGeneration !== this.identity.authorityGeneration) {
       throw cloudAuthorityOperationError('cloud-membership-binding-mismatch');
     }
     switch (operation) {
+      case 'createProjectRecoveryLink': return this.execute('project-recovery', operation, request, options);
       case 'listProjectMembers': return this.execute('cloud-project-membership', operation, request, options);
       case 'demoteManager': return this.execute('cloud-project-membership', operation, request, options);
       case 'removeMember': return this.execute('cloud-project-membership', operation, request, options);
@@ -1399,6 +1407,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       headers,
     );
     return {
+      redeemProjectRecoveryLink: (input, options) => lifecycle.redeemProjectRecoveryLink(input, options),
       createProject: (input, options) => lifecycle.createProject(input, options),
       joinProject: (input, options) => lifecycle.joinProject(input, options),
       dispose: () => lifecycle.dispose(),

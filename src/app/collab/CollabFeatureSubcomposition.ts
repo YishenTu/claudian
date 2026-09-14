@@ -894,6 +894,7 @@ export function createCollabFeatureSubcomposition(
       })
     ),
     lifecycle,
+    loadClaimantProofCredential: async projectId => (await cloudCredentials.require(projectId)).credential,
     loadClaimantMembership: projectId => foundation.local.projects.loadMembership(projectId),
     installationKey: foundation.installationKey,
     persistence: foundation.authorityTransfers,

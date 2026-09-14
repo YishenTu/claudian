@@ -6,6 +6,7 @@ import { CollabLocalProjectRepository, isCollabLocalCloudMembership } from '@/ap
 import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
 import { ManagerResponsibilityOperationCoordinator } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
+import { decodeProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import type { CollabAuthorityMembershipRouterPort } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -39,9 +40,9 @@ async function setup(kind: 'lan' | 'cloud') {
   await projects.saveMembership(kind === 'cloud' ? {
     ...shared,
     authority: {
-      kind, authorityGeneration: 7, bindingVersion: 7, wireVersion: 11,
+      kind, authorityGeneration: 7, bindingVersion: 8, wireVersion: 12,
       serverUrl: 'https://cloud.example',
-      gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
+      gitRemoteUrl: 'https://cloud.example/v8/projects/project-alpha/repository.git',
     },
   } : {
     ...shared,
@@ -64,6 +65,13 @@ async function setup(kind: 'lan' | 'cloud') {
           membershipRevision: 1,
         }],
       };
+      if (operation === 'createProjectRecoveryLink') {
+        if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
+          projectId, authorityGeneration: 7, recoveryLinkId: `recovery-${++count}`, token: String(count).padStart(64, '0'),
+          expiresAt, secretReplayExpiresAt: '2026-09-02T00:10:00.000Z',
+        });
+        return cloudReplies.get(request.idempotencyKey);
+      }
       if (operation !== 'createProjectInvitation') throw new Error(`Unexpected operation: ${operation}`);
       if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
         projectId, invitationId: `invitation-${++count}`, secret: 'A'.repeat(43),
@@ -106,6 +114,27 @@ async function storePending() {
 }
 
 describe('application-owned invitation operation', () => {
+  it('creates a fresh generic recovery link after close while retaining an exact result for clipboard retry', async () => {
+    const { service, createService } = await setup('cloud');
+    const first = service.openInvitation({ projectId, intent: 'create', purpose: 'recovery' });
+    const initial = await first.run();
+    expect(initial.status).toBe('ready');
+    expect(await first.read()).toEqual(initial);
+    first.dispose();
+    const resumed = createService().openInvitation({ projectId, intent: 'resume', purpose: 'recovery' });
+    expect(await resumed.run()).toEqual(initial);
+    await resumed.acknowledge();
+    resumed.dispose();
+    const next = service.openInvitation({ projectId, intent: 'create', purpose: 'recovery' });
+    const result = await next.run();
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready' || initial.status !== 'ready') throw new Error('Expected links');
+    expect(result.invitation.encodedInvitation).not.toBe(initial.invitation.encodedInvitation);
+    expect(decodeProjectRecoveryInvitation(result.invitation.encodedInvitation)).toMatchObject({
+      target: { kind: 'cloud', serverUrl: 'https://cloud.example' }, link: { projectId, authorityGeneration: 7 },
+    });
+    next.dispose();
+  });
   it.each(['lan', 'cloud'] as const)('creates independent %s links across closed operations', async kind => {
     const { service } = await setup(kind);
     const first = service.openInvitation({ projectId, intent: 'create' });

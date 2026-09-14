@@ -187,6 +187,8 @@
       "title": "Управление проектом"
     },
     "access": {
+      "copyRecoveryLink": "Скопировать ссылку восстановления",
+      "recoveryLinkCopied": "Ссылка восстановления скопирована.",
       "activeInvitations": "Активные приглашения",
       "loadingInvitations": "Загрузка приглашений…",
       "noInvitations": "Активных приглашений нет.",

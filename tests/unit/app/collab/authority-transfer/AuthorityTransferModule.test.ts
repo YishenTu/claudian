@@ -15,6 +15,7 @@ import {
   createAuthorityTransferRequesterEntry,
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
+import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import {
   AuthorityTransferModule as ProductionAuthorityTransferModule,
   type AuthorityTransferModuleOptions,
@@ -64,6 +65,7 @@ import type {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { AuthorityTransferPersistence as ProductionAuthorityTransferPersistence } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
+import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   LanAuthorityTransferClient,
@@ -376,6 +378,42 @@ function managerClaimantSnapshot() {
 }
 
 describe('AuthorityTransferModule', () => {
+  it('redeems a self-contained recovery link through the durable owner with the original member identity', async () => {
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-project-recovery-'));
+    const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+    const persistence = new ProductionAuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
+    const lifecycle = new CollabProjectLifecycleSubsystem({ closeRecovery: () => undefined, durableOwners: [], recoveryStages: [],
+      hostTransfer: {} as never, localExit: {} as never, retirement: {} as never });
+    const initial = managerClaimantMembership();
+    const now = () => new Date('2026-09-14T00:01:00.000Z');
+    const receipt = { projectId: PROJECT_ID, recoveryLinkId: 'link-one', authorityGeneration: 2, memberId: initial.member.id,
+      personalRef: initial.member.personalRef, receiptId: 'receipt-one', recoveredAt: now().toISOString() };
+    const session = { projectId: PROJECT_ID, serverUrl: 'https://cloud.example.test/', principalId: `vault-${'a'.repeat(64)}`,
+      supports: () => true, dispose: () => undefined,
+      redeemProjectRecoveryLink: async (request: { proofCredential: string }) => {
+        expect(request.proofCredential).toBe(initial.member.credential);
+        expect(await repository.authorityTransferClaimants.load(PROJECT_ID)).toMatchObject({ variant: 'project-recovery', phase: 'redemption-prepared' });
+        return receipt;
+      }, readSnapshot: async () => managerClaimantSnapshot() } as unknown as CloudAuthorityConnection;
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_id, operation) => operation() }, authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
+      projects: repository, workspace: { resolveManagedProjectPath: async () => vaultRoot }, git: { rotate: async () => undefined }, now,
+    });
+    const module = new AuthorityTransferModule({ claimantStore: repository.authorityTransferClaimants, convergence,
+      assertRecoveryOwner: () => undefined, assertLanToCloudSourceOwner: () => { throw new Error('Not a source action'); },
+      createLanToCloudSource: () => { throw new Error('Source is offline'); }, createManagerReissuedClaimConnection: async () => session,
+      installationKey: TEST_INSTALLATION_A, lifecycle, persistence, now, loadClaimantMembership: id => repository.loadMembership(id) });
+    try {
+      await repository.saveMembership(initial);
+      await module.redeemProjectRecoveryLink({ target: { kind: 'cloud', serverUrl: session.serverUrl },
+        link: { projectId: PROJECT_ID, recoveryLinkId: 'link-one', authorityGeneration: 2, token: 'a'.repeat(64),
+          expiresAt: '2026-09-14T00:15:00.000Z', secretReplayExpiresAt: '2026-09-14T00:10:00.000Z' } });
+      expect(await repository.loadMembership(PROJECT_ID)).toMatchObject({ project: initial.project,
+        member: { id: initial.member.id, personalRef: initial.member.personalRef }, authority: { kind: 'cloud', authorityGeneration: 2 } });
+      expect(await repository.authorityTransferClaimants.load(PROJECT_ID)).toBeNull();
+    } finally { await rm(vaultRoot, { recursive: true, force: true }); }
+  });
+
   it.each(['completed', 'claim-retained'] as const)('releases an ordinary Cloud-to-LAN %s claimant before future discovery', async phase => {
     const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-ordinary-claimant-'));
     const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
@@ -905,12 +943,12 @@ describe('AuthorityTransferModule', () => {
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
-          bindingVersion: 7,
+          bindingVersion: 8,
           developmentActorId: 'member-host',
-          gitRemoteUrl: `https://cloud.example.test/v7/projects/${PROJECT_ID}/repository.git`,
+          gitRemoteUrl: `https://cloud.example.test/v8/projects/${PROJECT_ID}/repository.git`,
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test/',
-          wireVersion: 11,
+          wireVersion: 12,
         },
         createdAt: '2026-08-27T00:00:00.000Z',
         lastEventSequence: 1,

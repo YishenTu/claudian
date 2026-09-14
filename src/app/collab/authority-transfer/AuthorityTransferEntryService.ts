@@ -22,6 +22,7 @@ import {
   type LanAuthorityTransferTrustedHost,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import type { CloudMembershipClaimInvitation } from '@/app/collab/project/CloudProjectInvitation';
+import type { ProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type {
   CollabBeginCloudToLanTransferRequest,
@@ -319,6 +320,10 @@ export class AuthorityTransferEntryService {
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
     return this.#module.cancelCloudToLanTransfer(handle, options);
+  }
+
+  redeemProjectRecoveryLink(invitation: ProjectRecoveryInvitation, options?: CollabOperationOptions): Promise<void> {
+    return this.#module.redeemProjectRecoveryLink(invitation, options);
   }
 
   redeemManagerReissuedClaim(

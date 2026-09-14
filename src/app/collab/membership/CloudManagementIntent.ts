@@ -1,6 +1,7 @@
-import { collabControlOperationCodec, type CollabProjectMembershipOperationMap, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
+import { collabControlOperationCodec, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CloudMembershipBinding } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 
 interface CloudManagementIntentBase extends CloudMembershipBinding {
@@ -12,13 +13,13 @@ interface CloudManagementIntentBase extends CloudMembershipBinding {
   readonly updatedAt: string;
 }
 
-const MUTATIONS = ['createProjectInvitation', 'revokeProjectInvitation', 'demoteManager', 'removeMember', 'createManagerResponsibilityOffer', 'cancelManagerResponsibilityOffer', 'promoteManager', 'reissueTransferredMembershipClaim', 'revokeTransferredMembershipClaim'] as const satisfies readonly (keyof CollabProjectMembershipOperationMap)[];
+const MUTATIONS = ['createProjectRecoveryLink', 'createProjectInvitation', 'revokeProjectInvitation', 'demoteManager', 'removeMember', 'createManagerResponsibilityOffer', 'cancelManagerResponsibilityOffer', 'promoteManager', 'reissueTransferredMembershipClaim', 'revokeTransferredMembershipClaim'] as const satisfies readonly (keyof CloudMembershipOperationMap)[];
 export type CloudManagementMutation = typeof MUTATIONS[number];
 export type CloudManagementIntent = {
   [Operation in CloudManagementMutation]: CloudManagementIntentBase & {
     readonly operation: Operation;
-    readonly request: CollabProjectMembershipOperationMap[Operation]['request'];
-    readonly response: CollabProjectMembershipOperationMap[Operation]['response'] | null;
+    readonly request: CloudMembershipOperationMap[Operation]['request'];
+    readonly response: CloudMembershipOperationMap[Operation]['response'] | null;
   }
 }[CloudManagementMutation];
 
@@ -45,6 +46,10 @@ export function decodeCloudManagementIntent(value: unknown): CloudManagementInte
     throw new TypeError('Invalid Cloud management request');
   }
   const response = input.response === null ? null : codec.decodeResponse(input.response);
+  if (input.operation === 'createProjectRecoveryLink' && (
+    !('expectedAuthorityGeneration' in request.value) || request.value.expectedAuthorityGeneration !== input.authorityGeneration
+    || response && (!('authorityGeneration' in response) || response.authorityGeneration !== input.authorityGeneration)
+  )) throw new TypeError('Invalid Project recovery generation');
   if (response && 'projectId' in response && response.projectId !== input.projectId) throw new TypeError('Invalid Cloud management response');
   if (input.operation === 'revokeProjectInvitation' && response
     && (!('invitationId' in request.value) || !('invitationId' in response) || request.value.invitationId !== response.invitationId)) {

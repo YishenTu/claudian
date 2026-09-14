@@ -22,6 +22,7 @@ import {
 import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
+import { decodeProjectRecoveryClaimantRecord, type ProjectRecoveryClaimantRecord } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import {
   type InstallationKey,
@@ -79,12 +80,12 @@ interface AuthorityTransferClaimantRecordBase {
   readonly operationIntentId: string;
   readonly projectId: CollabProjectId;
   readonly schemaVersion: typeof AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION;
-  readonly transferId: string;
   readonly updatedAt: CollabIsoTimestamp;
 }
 
 export interface SourceIssuedAuthorityTransferClaimantRecord
   extends AuthorityTransferClaimantRecordBase {
+  readonly transferId: string;
   readonly claim: CollabTransferredMembershipClaim | null;
   readonly convergenceProof: 'existing-binding' | null;
   readonly lanTarget: AuthorityTransferClaimantLanTarget | null;
@@ -98,6 +99,7 @@ export interface SourceIssuedAuthorityTransferClaimantRecord
 
 export interface ManagerReissuedAuthorityTransferClaimantRecord
   extends AuthorityTransferClaimantRecordBase {
+  readonly transferId: string;
   readonly convergenceProof: 'receipt' | 'existing-binding' | null;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
   readonly retainedAttempts: readonly AuthorityTransferClaimantRecord[];
@@ -114,7 +116,8 @@ export interface ManagerReissuedAuthorityTransferClaimantRecord
 
 export type AuthorityTransferClaimantRecord =
   | SourceIssuedAuthorityTransferClaimantRecord
-  | ManagerReissuedAuthorityTransferClaimantRecord;
+  | ManagerReissuedAuthorityTransferClaimantRecord
+  | ProjectRecoveryClaimantRecord;
 
 const SOURCE_KEYS = new Set([
   'cloudPrincipalId', 'claim', 'convergenceProof', 'createdAt', 'kind', 'lanTarget', 'managerPredecessor', 'memberId',
@@ -500,6 +503,7 @@ export function decodeAuthorityTransferClaimantRecord(
     throw new TypeError('Invalid authority-transfer claimant record');
   }
   const source = value as Readonly<Record<string, unknown>>;
+  if (source.variant === 'project-recovery') return decodeProjectRecoveryClaimantRecord(value, decodeAuthorityTransferClaimantRecord);
   if (source.variant === 'source-issued') return decodeSourceIssuedRecord(source);
   if (source.variant === 'manager-reissued') return decodeManagerReissuedRecord(source);
   throw new TypeError('Invalid authority-transfer claimant variant');
@@ -623,5 +627,5 @@ interface AuthorityTransferClaimantRecordUpdate {
 export function authorityTransferClaimantStatus(
   record: AuthorityTransferClaimantRecord,
 ): CollabAuthorityTransferStatus | null {
-  return record.variant === 'source-issued' ? record.status : record.targetStatus;
+  return record.variant === 'source-issued' ? record.status : record.variant === 'manager-reissued' ? record.targetStatus : null;
 }

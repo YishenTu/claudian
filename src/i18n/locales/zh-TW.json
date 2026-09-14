@@ -187,6 +187,8 @@
       "title": "專案管理"
     },
     "access": {
+      "copyRecoveryLink": "複製復原連結",
+      "recoveryLinkCopied": "已複製復原連結。",
       "activeInvitations": "有效邀請",
       "loadingInvitations": "正在載入邀請…",
       "noInvitations": "沒有有效邀請。",

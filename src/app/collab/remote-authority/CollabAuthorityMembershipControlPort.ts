@@ -1,4 +1,4 @@
-import type { CollabMemberId, CollabOperationId, CollabProjectId, CollabProjectMembershipOperation, CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
+import type { CollabMemberId, CollabOperationId, CollabProjectId, CollabProjectMembershipOperation, CollabProjectMembershipOperationMap, CollabProjectRecoveryOperationMap } from '@claudian-collab/protocol';
 
 import type {
   CollabInvitationView,
@@ -21,6 +21,10 @@ interface MemberRoleInput extends MembershipMutationInput {
 }
 
 export interface CollabAuthorityMembershipOperationMap {
+  readonly createProjectRecoveryLink: {
+    readonly input: CollabProjectRecoveryOperationMap['createProjectRecoveryLink']['request'];
+    readonly result: CollabProjectRecoveryOperationMap['createProjectRecoveryLink']['response'];
+  };
   readonly listProjectMembers: {
     readonly input: CollabProjectMembershipOperationMap['listProjectMembers']['request'];
     readonly result: CollabProjectMembershipOperationMap['listProjectMembers']['response'];
@@ -91,16 +95,18 @@ export interface CloudMembershipBinding {
 }
 
 export type CloudMembershipOperation = Exclude<CollabProjectMembershipOperation,
-  'createCloudProject' | 'joinCloudProject'>;
+  'createCloudProject' | 'joinCloudProject'> | 'createProjectRecoveryLink';
+
+export type CloudMembershipOperationMap = CollabProjectMembershipOperationMap & CollabProjectRecoveryOperationMap;
 
 export interface CloudAuthorityMembershipControlPort {
   readonly authorityKind: 'cloud';
   cloudMembership<Operation extends CloudMembershipOperation>(
     operation: Operation,
-    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    request: CloudMembershipOperationMap[Operation]['request'],
     binding: CloudMembershipBinding,
     options?: CollabOperationOptions,
-  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']>;
+  ): Promise<CloudMembershipOperationMap[Operation]['response']>;
 }
 
 export type CollabAuthorityMembershipRouterPort =

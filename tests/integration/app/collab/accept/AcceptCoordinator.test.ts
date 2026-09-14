@@ -472,6 +472,8 @@ function downgradeToV8(database: Database): void {
 
     CREATE UNIQUE INDEX members_one_active_manager
       ON members(role) WHERE role = 'manager' AND status = 'active';
+    DROP TABLE project_recovery_links;
+    DROP TABLE member_recovery_credentials;
     PRAGMA user_version = 8;
   `);
 }

@@ -32,6 +32,8 @@ function downgradeCurrentSchemaToV13(database: Database): void {
     DROP TABLE imported_member_claims;
     DROP TABLE imported_claim_authority;
     ALTER TABLE members DROP COLUMN membership_revision;
+    DROP TABLE project_recovery_links;
+    DROP TABLE member_recovery_credentials;
     PRAGMA user_version = 13;`);
 }
 

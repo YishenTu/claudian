@@ -187,6 +187,8 @@
       "title": "项目管理"
     },
     "access": {
+      "copyRecoveryLink": "复制恢复链接",
+      "recoveryLinkCopied": "已复制恢复链接。",
       "activeInvitations": "有效邀请",
       "loadingInvitations": "正在加载邀请…",
       "noInvitations": "没有有效邀请。",

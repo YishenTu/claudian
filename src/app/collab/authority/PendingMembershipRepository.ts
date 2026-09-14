@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
+import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -370,6 +371,7 @@ export class PendingMembershipRepository {
     if (existing.member.status !== 'active') {
       throw membershipError('imported-member-not-active');
     }
+    new MemberRecoveryCredentialRepository().retainHashes(connection, memberId, [Buffer.from(credentialHash).toString('hex')]);
     if (existing.accessState === 'bound') {
       if (
         existing.credentialHash !== null

@@ -1,5 +1,8 @@
 /** @jest-environment jsdom */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { type CollabMember } from '@claudian-collab/protocol';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
@@ -125,7 +128,8 @@ function createPort(
     readProjectCapabilities: jest.fn().mockResolvedValue(success({
       authorityKind: 'lan',
       authorityTransfer: true,
-      importedMemberClaims: false,
+    importedMemberClaims: false,
+    projectRecovery: true,
       invitations: true,
       leave: true,
       managerResponsibility: true,
@@ -167,6 +171,30 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  it('copies a fresh general recovery link next to Invite without displaying the string', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' })];
+    let count = 0;
+    const port = createPort(members, { openInvitation: jest.fn().mockImplementation(() => {
+      const state = success({ status: 'ready', invitation: { encodedInvitation: `recovery-${++count}`, expiresAt: '2030-08-08T00:15:00.000Z' }, availableUntil: '2030-08-08T00:15:00.000Z' });
+      return { run: async () => state, read: async () => state, acknowledge: async () => success(undefined), dispose: () => {} };
+    }) });
+    const copyText = jest.fn().mockResolvedValue(undefined);
+    const modal = new ProjectManagementModal({} as never, port, { project: project(), copyText });
+    modal.open();
+    await flush();
+    const invite = within(modal.contentEl).getByRole('button', { name: 'Create invitation' });
+    const copy = within(modal.contentEl).getByRole('button', { name: 'Copy recovery link' });
+    expect(copy.parentElement).toBe(invite.parentElement);
+    fireEvent.click(copy);
+    await flush();
+    expect(copyText).toHaveBeenLastCalledWith('recovery-1');
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Copy recovery link' }));
+    await flush();
+    expect(copyText).toHaveBeenLastCalledWith('recovery-2');
+    expect(modal.contentEl.textContent).not.toContain('recovery-2');
+    expect(port.openInvitation).toHaveBeenLastCalledWith({ projectId: 'project-alpha', intent: 'create', purpose: 'recovery' });
+    modal.close();
+  });
 it.each([false, true])('automatically restores management after Host startup with publication before response=%s', async publishBeforeResponse => {
   const host = member('member-host', 'Host operator', { role: 'manager' });
   const summary = project({ role: 'manager', hostInstallationStatus: 'hosted-here', hostStatus: 'stopped' });
@@ -574,38 +602,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     }
   });
 
-  it('shows LAN imported-member recovery and retains its result across refresh', async () => {
-    const members = [member('member-manager', 'Alice', { role: 'manager' }), member('member-maya', 'Maya')];
-    const invitation = { encodedInvitation: 'claudian-lan-claim:v1:replacement', expiresAt: '2030-09-10T00:00:00.000Z' };
-    const port = createPort(members, {
-      listMembers: jest.fn().mockResolvedValue(success([
-        { memberId: 'member-manager', displayName: 'Alice', role: 'manager', importedClaim: null },
-        { memberId: 'member-maya', displayName: 'Maya', role: 'member', importedClaim: { bindingState: 'unbound', state: 'expired' } },
-      ])),
-      readProjectCapabilities: jest.fn().mockResolvedValue(success({
-        authorityKind: 'lan', authorityTransfer: true, importedMemberClaims: true,
-        invitations: true, leave: true, managerResponsibility: true, membershipManagement: true, retirement: true,
-      })),
-      reissueMemberClaim: jest.fn().mockResolvedValue(success(invitation)),
-    });
-    const modal = new ProjectManagementModal({} as never, port, { project: project({ connectionStatus: 'connected' }) });
-    modal.onOpen();
-    await flush();
-    const button = within(modal.contentEl).getByRole('button', { name: /reissue.*Maya/i });
-    port.readManagementOperation.mockResolvedValue(success({
-      action: 'reissue-member-claim', completionId: 'lan-claim-result', invitation,
-      secretAvailableUntil: invitation.expiresAt, status: 'result-retained',
-    }));
-    fireEvent.click(button);
-    await flush();
-    expect(modal.contentEl.textContent).toContain(invitation.encodedInvitation);
-    port.subscribe.mock.calls[0][0]({ lifecycle: 'ready', selectedProjectId: 'project-alpha', projects: [project({ connectionStatus: 'connected' })] } as CollabFeatureState);
-    await flush();
-    expect(modal.contentEl.textContent).toContain(invitation.encodedInvitation);
-    modal.onClose();
-  });
-
-  it('renders negotiated Cloud lifecycle, membership, and imported-claim actions', async () => {
+  it('renders negotiated Cloud lifecycle and membership actions', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),
       member('member-maya', 'Maya'),
@@ -641,22 +638,6 @@ it.each([false, true])('automatically restores management after Host startup wit
         stale: false,
         syncState: { status: 'synchronized' },
       } as never)),
-      reissueMemberClaim: jest.fn().mockResolvedValue(success({
-        encodedInvitation: 'claudian-cloud-claim:v1:replacement',
-        expiresAt: '2026-09-10T00:00:00.000Z',
-      })),
-      readManagementOperation: jest.fn()
-        .mockResolvedValueOnce(success(null))
-        .mockResolvedValue(success({
-          action: 'reissue-member-claim',
-          completionId: 'completion-reissued-claim',
-          invitation: {
-            encodedInvitation: 'claudian-cloud-claim:v1:replacement',
-            expiresAt: '2026-09-10T00:00:00.000Z',
-          },
-          secretAvailableUntil: '2026-09-10T00:00:00.000Z',
-          status: 'result-retained',
-        })),
     });
     const copyText = jest.fn().mockResolvedValue(undefined);
     const modal = new ProjectManagementModal({} as never, port, {
@@ -674,8 +655,6 @@ it.each([false, true])('automatically restores management after Host startup wit
       'retire-project',
       'make-manager',
       'remove-member',
-      'reissue-member-claim',
-      'revoke-member-claim',
     ]) {
       expect(modal.contentEl.querySelector(`[data-action="${action}"]`)).not.toBeNull();
     }
@@ -687,25 +666,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     )).toBe('Remove: Maya');
     expect(modal.contentEl.querySelector('[data-action="start-host"]')).toBeNull();
 
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="reissue-member-claim"]',
-    )?.click();
-    await flush();
-    expect(port.reissueMemberClaim).toHaveBeenCalledWith({
-      memberId: 'member-maya',
-      projectId: 'project-alpha',
-    });
-    expect(modal.contentEl.textContent).toContain('claudian-cloud-claim:v1:replacement');
-
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="copy-member-claim"]',
-    )?.click();
-    await flush();
-    expect(copyText).toHaveBeenCalledWith('claudian-cloud-claim:v1:replacement');
-    expect(port.completeManagementOperation).toHaveBeenCalledWith({
-      completionId: 'completion-reissued-claim',
-      projectId: 'project-alpha',
-    });
+    modal.close();
   });
 
   it('redacts a retained member claim when its secret availability expires', async () => {
@@ -744,8 +705,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       modal.onOpen();
       await flush();
       await flush();
-      expect(modal.contentEl.textContent)
-        .toContain('claudian-cloud-claim:v1:expiring-secret');
+      expect(within(modal.contentEl).getByRole('button', { name: 'Copy membership claim' })).not.toBeNull();
 
       jest.advanceTimersByTime(1_000);
 
@@ -1008,6 +968,54 @@ it.each([false, true])('automatically restores management after Host startup wit
     );
     expect(modal.contentEl.querySelector('[data-action="complete-management-operation"]'))
       .not.toBeNull();
+  });
+
+  it.each(['lan', 'cloud'] as const)('follows %s connection changes when displaying link recovery', async authorityKind => {
+    const summary = project({ authorityKind, role: 'member', connectionStatus: 'offline' });
+    const failure = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+    const port = createPort([], {
+      readSnapshot: jest.fn().mockResolvedValue(failure),
+      readProjectCapabilities: jest.fn().mockResolvedValue(failure),
+    });
+    const onReconnect = jest.fn();
+    const modal = new ProjectManagementModal({} as never, port, { project: summary, onReconnect });
+    const style = document.createElement('style');
+    style.textContent = 'button { display: flex; }\n' + readFileSync(
+      resolve(process.cwd(), 'src/style/features/collab-access.css'), 'utf8',
+    );
+    document.head.appendChild(style);
+    document.body.appendChild(modal.contentEl);
+    try {
+      modal.onOpen();
+      await flush();
+      const view = within(modal.contentEl);
+      const name = 'Use a link to restore connection';
+      const recovery = view.getByRole('button', { name });
+      expect(getComputedStyle(recovery).display).toBe('flex');
+
+      const publishConnection = (connectionStatus: CollabLocalProjectSummary['connectionStatus']) => {
+        port.subscribe.mock.calls[0][0]({
+          lifecycle: 'ready', selectedProjectId: summary.id,
+          projects: [{ ...summary, connectionStatus }],
+        } as CollabFeatureState);
+      };
+      publishConnection('connected');
+      await flush();
+      expect(view.queryByRole('button', { name })).toBeNull();
+      expect(getComputedStyle(recovery).display).toBe('none');
+
+      publishConnection('offline');
+      await flush();
+      expect(getComputedStyle(recovery).display).toBe('flex');
+      fireEvent.click(view.getByRole('button', { name }));
+      expect(onReconnect).toHaveBeenCalledWith(expect.objectContaining({
+        id: summary.id, authorityKind, connectionStatus: 'offline',
+      }));
+    } finally {
+      modal.onClose();
+      modal.contentEl.remove();
+      style.remove();
+    }
   });
 
   it('keeps recovery navigation available when a migrated Project no longer loads members', async () => {

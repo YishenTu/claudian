@@ -197,7 +197,8 @@
   gap: 14px;
 }
 
-.claudian-collab-project-actions[hidden] {
+.claudian-collab-project-actions[hidden],
+.claudian-collab-project-actions button[hidden] {
   display: none;
 }
 

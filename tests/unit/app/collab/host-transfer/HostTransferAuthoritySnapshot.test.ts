@@ -489,6 +489,8 @@ function downgradeInertToV8(database: Database): Uint8Array {
       WHERE status IN ('offered', 'acknowledged');
     CREATE UNIQUE INDEX members_one_active_manager
       ON members(role) WHERE role = 'manager' AND status = 'active';
+    DROP TABLE project_recovery_links;
+    DROP TABLE member_recovery_credentials;
     PRAGMA user_version = 8;
   `);
   const bytes = Uint8Array.from(database.export());

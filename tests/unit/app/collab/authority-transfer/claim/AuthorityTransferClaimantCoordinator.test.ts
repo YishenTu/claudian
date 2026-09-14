@@ -868,7 +868,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const outcome = await coordinator.resume(PROJECT_ID).then(() => 'completed', error => error.code as string);
     expect(outcome).toBe(bound ? 'completed' : 'authorization-denied');
     expect(store.record).toEqual(bound ? null : record);
-    expect(converged.map(value => ({ phase: value.phase, convergenceProof: value.convergenceProof, redemptionReceipt: value.redemptionReceipt })))
+    expect(converged.map(value => ({ phase: value.phase, convergenceProof: 'convergenceProof' in value ? value.convergenceProof : null, redemptionReceipt: value.redemptionReceipt })))
       .toEqual(bound ? [{ phase: 'source-acknowledged', convergenceProof: 'existing-binding', redemptionReceipt: null }] : []);
   });
 

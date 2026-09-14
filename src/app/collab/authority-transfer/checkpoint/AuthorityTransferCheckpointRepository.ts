@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 import {
   COLLAB_MAIN_REF,
+  COLLAB_PROJECT_RECOVERY_LIMITS,
   type CollabCheckpointPortableRecord,
   type CollabMemberId,
   type CollabProjectCheckpointManifest,
@@ -11,6 +12,7 @@ import {
 } from '@claudian-collab/protocol';
 
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
+import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import type {
   AuthorityDatabaseConnection,
   AuthoritySqlRow,
@@ -177,6 +179,7 @@ function portableRecords(
         status: memberStatus,
         revokedAt,
         updatedAt: revokedAt ?? activatedAt ?? createdAt,
+        recoveryCredentialHashes: new MemberRecoveryCredentialRepository().readHashes(connection, text(row, 'member_id')!),
       },
     });
   }
@@ -504,6 +507,10 @@ export class AuthorityTransferCheckpointRepository {
     if (targetHost?.kind !== 'member' || targetHost.value.status !== 'active') {
       throw checkpointError('checkpoint-target-host-invalid');
     }
+    if (members.some(member => member.value.status === 'active' && member.value.memberId !== input.targetHostMemberId
+      && (member.value.recoveryCredentialHashes?.length ?? 0) >= COLLAB_PROJECT_RECOVERY_LIMITS.maxCredentialVerifiersPerMember)) {
+      throw checkpointError('checkpoint-recovery-credential-capacity');
+    }
     requireEmptyAuthority(connection);
 
     for (const record of members) {
@@ -526,6 +533,9 @@ export class AuthorityTransferCheckpointRepository {
         record.value.activatedAt,
         record.value.revokedAt,
       ], 'checkpoint-import-member-failed');
+    }
+    for (const record of members) {
+      new MemberRecoveryCredentialRepository().retainHashes(connection, record.value.memberId, record.value.recoveryCredentialHashes ?? []);
     }
 
     new AuthorityMetadataRepository().installGeneration(connection, target.generation);

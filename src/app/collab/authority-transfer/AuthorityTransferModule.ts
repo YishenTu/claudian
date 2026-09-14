@@ -100,6 +100,7 @@ import type {
   CloudMembershipClaimInvitation,
 } from '@/app/collab/project/CloudProjectInvitation';
 import type { LanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
+import type { ProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -165,6 +166,7 @@ export interface AuthorityTransferModuleOptions {
     options: CollabOperationOptions,
   ) => Promise<() => Promise<void>>;
   readonly lifecycle: CollabProjectLifecycleSubsystem;
+  readonly loadClaimantProofCredential?: (projectId: string) => Promise<string>;
   readonly loadClaimantMembership?: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;
@@ -278,6 +280,7 @@ export interface BindManagerReissuedClaimantInput {
 }
 
 export type RecoveredAuthorityTransferClaimantBinding =
+  | Readonly<{ direction: 'cloud-to-lan' | 'lan-to-cloud'; mode: 'project-recovery'; cloudSession?: CloudAuthorityConnection }>
   | Readonly<{
       readonly direction: 'cloud-to-lan';
       readonly mode: 'manager-reissued';
@@ -2542,6 +2545,67 @@ export class AuthorityTransferModule {
     });
   }
 
+  redeemProjectRecoveryLink(invitation: ProjectRecoveryInvitation, options: CollabOperationOptions = {}): Promise<void> {
+    return this.options.lifecycle.runExclusive(invitation.link.projectId, this.claimantRecovery.durableOwner.name, 'continuation', async () => {
+      const projectId = invitation.link.projectId;
+      const membership = await this.options.loadClaimantMembership?.(projectId);
+      if (!membership || membership.authority.authorityGeneration > invitation.link.authorityGeneration
+        || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw moduleError('project-recovery-membership-invalid');
+      await this.#assertCloudToLanManagerSettled(projectId);
+      const pending = await this.options.claimantStore.load(projectId);
+      const proofCredential = isCollabLocalLanMembership(membership) ? membership.member.credential
+        : await this.options.loadClaimantProofCredential?.(projectId);
+      if (!proofCredential) throw moduleError('project-recovery-proof-unavailable');
+      const pinned = pending && (pending.cloudPrincipalId !== null || pending.variant !== 'source-issued'
+        && pending.retainedAttempts.some(attempt => attempt.cloudPrincipalId !== null));
+      const cloudSession = invitation.target.kind === 'cloud'
+        ? await this.options.createManagerReissuedClaimConnection?.({ projectId, serverUrl: invitation.target.serverUrl, allowCredentialCreation: !pinned }, options) : undefined;
+      try {
+        if (invitation.target.kind === 'cloud' && !cloudSession) throw moduleError('project-recovery-target-unavailable');
+        const binding = this.#bindProjectRecoveryClaimant(projectId, invitation, cloudSession);
+        try {
+          await binding.coordinator.startProjectRecovery({ invitation, memberId: membership.member.id,
+            memberPersonalRef: membership.member.personalRef, proofCredential,
+            ...(invitation.target.kind === 'lan' && isCollabLocalLanMembership(membership) ? { targetCredential: membership.member.credential } : {}) }, options);
+        } finally { await binding.dispose(); }
+      } finally { cloudSession?.dispose(); }
+    });
+  }
+
+  #bindProjectRecoveryClaimant(projectId: string, invitation: ProjectRecoveryInvitation, cloudSession?: CloudAuthorityConnection): AuthorityTransferDirectionBinding<AuthorityTransferClaimantCoordinator> {
+    const target = invitation.target;
+    if (cloudSession && (target.kind !== 'cloud' || cloudSession.serverUrl !== target.serverUrl || cloudSession.projectId !== projectId
+      || !cloudSession.supports('project-recovery'))) throw moduleError('project-recovery-target-invalid');
+    const lan = target.kind === 'lan' ? new LanMembershipClaimClient({ ...target, projectId, authorityGeneration: invitation.link.authorityGeneration }) : null;
+    return this.#bindClaimant({ projectId,
+      target: {
+        cloudPrincipalId: cloudSession?.principalId ?? null,
+        claimTransferredMembership: () => { throw moduleError('project-recovery-variant-invalid'); },
+        redeemProjectRecoveryLink: (record, options) => {
+          if (lan) return lan.redeemProjectRecoveryLink(record.redemptionRequest, options);
+          if (!cloudSession?.redeemProjectRecoveryLink) throw moduleError('project-recovery-target-unavailable');
+          return cloudSession.redeemProjectRecoveryLink(record.redemptionRequest, options);
+        },
+        confirmProjectRecoveryBinding: async (record, options) => {
+          const snapshot = lan && record.targetCredential ? await lan.snapshots.readSnapshot(projectId, record.targetCredential, options)
+            : await cloudSession?.readSnapshot(projectId, options);
+          if (!snapshot || snapshot.project.id !== projectId || snapshot.project.authorityGeneration !== invitation.link.authorityGeneration
+            || snapshot.currentMember.id !== record.memberId || snapshot.currentMember.personalRef !== record.memberPersonalRef) throw moduleError('project-recovery-target-identity-invalid');
+          return this.convergence.prepareProjectRecovery(record, {
+            target: target.kind === 'lan' && lan ? { ...target, endpoint: lan.snapshots.currentEndpoint } : target,
+            identity: { authorityGeneration: snapshot.project.authorityGeneration, project: { id: snapshot.project.id, name: snapshot.project.name },
+              currentMember: { id: snapshot.currentMember.id, personalRef: snapshot.currentMember.personalRef,
+                role: snapshot.currentMember.role, displayName: snapshot.currentMember.displayName }, eventSequence: snapshot.eventSequence },
+          });
+        },
+      },
+      convergence: { converge: record => {
+        if (record.variant !== 'project-recovery') throw moduleError('project-recovery-variant-invalid');
+        return this.convergence.restoreProjectRecovery(record);
+      } },
+    });
+  }
+
   redeemManagerReissuedClaim(
     invitation: CloudMembershipClaimInvitation | LanMembershipClaimInvitation,
     options: CollabOperationOptions = {},
@@ -2729,7 +2793,7 @@ export class AuthorityTransferModule {
         converge: current => this.convergence.recoverConvertedClaimant(current),
       },
       projectId: record.projectId,
-      lanTarget: record.lanTarget,
+      lanTarget: record.variant === 'project-recovery' ? null : record.lanTarget,
       source: {
         acknowledgeRedemption: () => {
           throw moduleError('authority-transfer-claimant-source-unavailable');
@@ -2873,8 +2937,16 @@ export class AuthorityTransferModule {
     if (!recover) return null;
     const recovered = await recover(record);
     const disposeCloudSession = (): void => {
-      if ('cloudSession' in recovered) recovered.cloudSession.dispose();
+      if ('cloudSession' in recovered) recovered.cloudSession?.dispose();
     };
+    if (record.variant === 'project-recovery') {
+      if (recovered.mode !== 'project-recovery') { disposeCloudSession(); throw moduleError('project-recovery-runtime-invalid'); }
+      try {
+        const binding = this.#bindProjectRecoveryClaimant(record.projectId, record.invitation, recovered.cloudSession);
+        return { runtime: binding.coordinator, dispose: async () => { await binding.dispose(); disposeCloudSession(); } };
+      } catch (error) { disposeCloudSession(); throw error; }
+    }
+    if (recovered.mode === 'project-recovery') { disposeCloudSession(); throw moduleError('project-recovery-runtime-invalid'); }
     const direction = record.variant === 'source-issued'
       ? record.status.direction
       : record.lanTarget ? 'cloud-to-lan' : 'lan-to-cloud';

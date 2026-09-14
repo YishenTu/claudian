@@ -46,6 +46,8 @@ export type HostedMembershipControlPort = Pick<
   | 'listProjectMembers'
   | 'reissueTransferredMembershipClaim'
   | 'claimTransferredMembership'
+  | 'createProjectRecoveryLink'
+  | 'redeemProjectRecoveryLink'
   | 'activateJoinAttempt'
   | 'authenticateMemberCredential'
   | 'confirmEndpoint'
@@ -244,6 +246,16 @@ export class HostedProjectControlService implements CollabControlProjectService 
   reissueTransferredMembershipClaim: CollabControlProjectService['reissueTransferredMembershipClaim'] = (...args) => {
     if (!this.membership.reissueTransferredMembershipClaim) throw new CollabError({ code: 'operation-failed' });
     return this.membership.reissueTransferredMembershipClaim(...args);
+  };
+
+  createProjectRecoveryLink: CollabControlProjectService['createProjectRecoveryLink'] = (...args) => {
+    if (!this.membership.createProjectRecoveryLink) throw new CollabError({ code: 'operation-failed' });
+    return this.membership.createProjectRecoveryLink(...args);
+  };
+
+  redeemProjectRecoveryLink: CollabControlProjectService['redeemProjectRecoveryLink'] = (...args) => {
+    if (!this.membership.redeemProjectRecoveryLink) throw new CollabError({ code: 'operation-failed' });
+    return this.membership.redeemProjectRecoveryLink(...args);
   };
 
   claimTransferredMembership: CollabControlProjectService['claimTransferredMembership'] = (...args) => {

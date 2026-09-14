@@ -32,6 +32,7 @@ export class InvitationOperation {
   constructor(
     private readonly port: InvitationOperationPort,
     private readonly intent: 'create' | 'resume',
+    private readonly action: 'create-invitation' | 'create-recovery-link' = 'create-invitation',
   ) {
     this.#inspected = intent === 'resume';
   }
@@ -47,7 +48,7 @@ export class InvitationOperation {
           this.#result = { status: 'unavailable', reason: 'unavailable' };
           return this.#result;
         }
-        if (existing && existing.action !== 'create-invitation') return { status: 'blocked' };
+        if (existing && existing.action !== this.action) return { status: 'blocked' };
         if (!this.#inspected) {
           this.#inspected = true;
           this.#previousCompletionId = existing?.status === 'result-retained' ? existing.completionId : null;
@@ -105,7 +106,7 @@ export class InvitationOperation {
         this.#result = null;
         throw error;
       }
-      if (retained?.action !== 'create-invitation' || retained.status !== 'result-retained'
+      if (retained?.action !== this.action || retained.status !== 'result-retained'
         || retained.completionId !== this.#completionId) {
         this.#result = { status: 'unavailable', reason: 'unavailable' };
         this.#completionId = null;
@@ -141,7 +142,7 @@ export class InvitationOperation {
 
   #retain(operation: CollabManagementOperationView): CollabInvitationState {
     this.#guard();
-    if (operation.action !== 'create-invitation' || operation.status !== 'result-retained'
+    if (operation.action !== this.action || operation.status !== 'result-retained'
       || operation.completionId !== this.#selectedCompletionId) {
       throw this.#invalidResult();
     }

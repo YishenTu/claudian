@@ -187,6 +187,8 @@
       "title": "프로젝트 관리"
     },
     "access": {
+      "copyRecoveryLink": "복구 링크 복사",
+      "recoveryLinkCopied": "복구 링크를 복사했습니다.",
       "activeInvitations": "활성 초대",
       "loadingInvitations": "초대 불러오는 중…",
       "noInvitations": "활성 초대가 없습니다.",

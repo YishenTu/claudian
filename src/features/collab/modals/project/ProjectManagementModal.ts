@@ -18,7 +18,6 @@ import {
   type CollabLocalProjectSummary,
   type CollabManagementOperationView,
   type CollabManagerResponsibilityOfferSummary,
-  type CollabMemberSummaryView,
   type CollabOperationOptions,
   type CollabProjectCapabilities,
   type CollabProjectSnapshot,
@@ -147,7 +146,6 @@ export class ProjectManagementModal extends Modal {
   get #hostMemberId(): CollabMemberId | null { return this.#lanSnapshot()?.project.hostMemberId ?? null; }
   get #members(): readonly CollabMember[] { return this.#snapshot?.members.filter(member => member.status !== 'left') ?? []; }
   get #managerOffers(): readonly CollabManagerResponsibilityOfferSummary[] { return this.#session.data?.managerOffers ?? []; }
-  get #memberSummaries(): ReadonlyMap<CollabMemberId, CollabMemberSummaryView> { return this.#session.data?.memberSummaries ?? new Map(); }
   get #managementState(): 'loading' | 'ready' | 'unavailable' { return this.#session.status; }
   get #operationPending(): boolean { return this.#session.busy; }
   get #cloudTransferView(): CollabCloudToLanTransferView | null { return this.#session.recovery.cloudToLan; }
@@ -496,44 +494,6 @@ export class ProjectManagementModal extends Modal {
     if (!lanSnapshot && !canManageMembership && !canManageResponsibility) return;
 
     const actions = item.createDiv({ cls: 'claudian-collab-access-actions' });
-    const summary = this.#memberSummaries.get(member.id);
-    if (
-      isManager
-      && this.#capabilities?.importedMemberClaims
-      && summary?.importedClaim
-      && summary.importedClaim.bindingState === 'unbound'
-    ) {
-      const reissue = actions.createEl('button', {
-        attr: {
-          'aria-label': `${t('collab.access.reissueMemberClaim')}: ${member.displayName}`,
-          'data-action': 'reissue-member-claim',
-          'data-member-id': member.id,
-          type: 'button',
-        },
-        text: t('collab.access.reissueMemberClaim'),
-      });
-      reissue.disabled = this.#managementActionBlocked();
-      reissue.addEventListener('click', () => void this.#reissueMemberClaim(member.id));
-      if (!lanSnapshot) {
-      const revokeClaim = actions.createEl('button', {
-        attr: {
-          'aria-label': `${t('collab.access.revokeMemberClaim')}: ${member.displayName}`,
-          'data-action': 'revoke-member-claim',
-          'data-member-id': member.id,
-          type: 'button',
-        },
-        text: t('collab.access.revokeMemberClaim'),
-      });
-      revokeClaim.disabled = this.#managementActionBlocked()
-        || summary.importedClaim.state === 'revoked';
-      revokeClaim.addEventListener('click', () => {
-        void this.#runLifecycleAction(() => this.#port.revokeMemberClaim({
-          memberId: member.id,
-          projectId: this.#options.project.id,
-        }));
-      });
-      }
-    }
     if (
       isManager
       && canManageMembership
@@ -755,6 +715,16 @@ export class ProjectManagementModal extends Modal {
           this.#openInvitationModal(intent);
         });
       }
+      const recoversLink = this.#managementOperation?.action === 'create-recovery-link';
+      if (isManager && (this.#capabilities?.projectRecovery || recoversLink)) {
+        const copy = invitationActions.createEl('button', {
+          attr: { 'data-action': 'copy-recovery-link', type: 'button' },
+          text: t('collab.access.copyRecoveryLink'),
+        });
+        copy.disabled = this.#operationPending || !!this.#invitationModal || !this.#options.copyText
+          || (this.#managementOperation !== null && !recoversLink);
+        copy.addEventListener('click', () => void this.#copyRecoveryLink(recoversLink && this.#managementOperation?.status === 'pending' ? 'resume' : 'create'));
+      }
       if (this.#capabilities?.leave) this.#renderLeaveAction(lifecycleActions);
       if (isManager && this.#capabilities?.retirement) {
         const row = lifecycleActions.createDiv({ cls: 'claudian-collab-management-action-row' });
@@ -794,6 +764,32 @@ export class ProjectManagementModal extends Modal {
     this.#invitationModal = modal;
     modal.open();
     this.#refreshProjectActions();
+  }
+
+  async #copyRecoveryLink(intent: 'create' | 'resume'): Promise<void> {
+    const command = this.#session.beginCommand();
+    if (!command || !this.#options.copyText) { command?.complete(); return; }
+    const operation = this.#port.openInvitation({ projectId: this.#options.project.id, intent, purpose: 'recovery' });
+    try {
+      this.#status = null;
+      this.#render();
+      const result = await operation.run();
+      if (!command.isCurrent()) return;
+      if (result.status !== 'success' || result.value.status !== 'ready') throw new Error();
+      const current = await operation.read();
+      if (!command.isCurrent()) return;
+      if (current.status !== 'success' || current.value.status !== 'ready') throw new Error();
+      await this.#options.copyText(current.value.invitation.encodedInvitation);
+      const acknowledged = await operation.acknowledge();
+      if (acknowledged.status !== 'success') throw new Error();
+      if (command.isCurrent()) this.#status = { kind: 'success', text: t('collab.access.recoveryLinkCopied') };
+    } catch {
+      if (command.isCurrent()) this.#status = { kind: 'error', text: t('collab.access.copyFailed') };
+    } finally {
+      operation.dispose();
+      try { if (command.isCurrent()) await this.#session.refresh(); }
+      finally { command.complete(); if (this.#opened) this.#render(); }
+    }
   }
 
   #refreshProjectActions(): void {
@@ -1697,7 +1693,7 @@ export class ProjectManagementModal extends Modal {
 
   #renderPendingManagementOperation(): void {
     const operation = this.#managementOperation;
-    if (!operation || operation.action === 'create-invitation') return;
+    if (!operation || operation.action === 'create-invitation' || operation.action === 'create-recovery-link') return;
     if (operation.status === 'pending') {
       this.#createLifecycleButton(
         this.#requireAccessContent(),
@@ -1737,17 +1733,7 @@ export class ProjectManagementModal extends Modal {
 
   #renderRetainedInvitation(): void {
     if (!this.#retainedInvitation) return;
-    const region = this.#requireAccessContent().createDiv({
-      cls: 'claudian-collab-access-claim',
-    });
-    region.createEl('textarea', {
-      attr: {
-        'aria-label': t('collab.access.memberClaim'),
-        readonly: 'true',
-        rows: '4',
-      },
-      text: this.#retainedInvitation.encodedInvitation,
-    });
+    const region = this.#invitationActionsEl ?? this.#requireAccessContent();
     const copy = region.createEl('button', {
       attr: { 'data-action': 'copy-member-claim', type: 'button' },
       text: t('collab.access.copyMemberClaim'),
@@ -1759,42 +1745,6 @@ export class ProjectManagementModal extends Modal {
       || this.#managementOperation.invitation?.encodedInvitation
         !== this.#retainedInvitation.encodedInvitation;
     copy.addEventListener('click', () => void this.#copyRetainedInvitation());
-  }
-
-  async #reissueMemberClaim(memberId: CollabMemberId): Promise<void> {
-    const command = this.#session.beginCommand();
-    if (!command) return;
-    try {
-      this.#status = null;
-      this.#render();
-      const result = await this.#port.reissueMemberClaim({
-        memberId,
-        projectId: this.#options.project.id,
-      });
-      if (!command.isCurrent()) return;
-      if (result.status === 'success') {
-        const retained = await this.#port.readManagementOperation(
-          this.#options.project.id,
-          { signal: this.#session.signal },
-        );
-        if (!command.isCurrent()) return;
-        if (
-          retained.status === 'success'
-          && retained.value?.action === 'reissue-member-claim'
-          && retained.value.status === 'result-retained'
-          && retained.value.invitation?.encodedInvitation === result.value.encodedInvitation
-          && retained.value.invitation.expiresAt === result.value.expiresAt
-        ) {
-          this.#applyManagementOperation(retained.value);
-          this.#status = { kind: 'success', text: t('collab.access.memberClaimReady') };
-        } else {
-          this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
-        }
-      } else {
-        this.#status = { kind: 'error', text: t('collab.access.actionFailed') };
-      }
-      this.#render();
-    } finally { command.complete(); }
   }
 
   async #copyRetainedInvitation(): Promise<void> {
@@ -1927,6 +1877,7 @@ export class ProjectManagementModal extends Modal {
 
   #canReconnect(): boolean {
     return this.#options.onReconnect !== undefined
+      && this.#hostProject.connectionStatus !== 'connected'
       && this.#hostProject.lifecycle !== 'leaving'
       && this.#hostProject.lifecycle !== 'retired'
       && (this.#hostProject.authorityKind === 'cloud'

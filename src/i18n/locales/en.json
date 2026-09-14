@@ -237,6 +237,8 @@
       "revokeMemberClaim": "Revoke membership claim",
       "memberClaim": "Membership claim",
       "copyMemberClaim": "Copy membership claim",
+      "copyRecoveryLink": "Copy recovery link",
+      "recoveryLinkCopied": "Recovery link copied.",
       "memberClaimReady": "The replacement membership claim is ready.",
       "memberClaimCopied": "Membership claim copied.",
       "cloudHostingDescription": "Shared through a Cloud server.",

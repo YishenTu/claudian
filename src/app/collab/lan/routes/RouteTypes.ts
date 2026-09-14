@@ -1,5 +1,6 @@
 import type { ClaimTransferredMembershipRequest, CollabTransferredMembershipRedemptionReceipt, ListProjectMembersResponse, ReissueTransferredMembershipClaimRequest, ReissueTransferredMembershipClaimResponse } from '@claudian-collab/protocol';
 import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, ResolveTicketNumberRequest, ResolveTicketNumberResponse, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import type { CreateProjectRecoveryLinkRequest, CreateProjectRecoveryLinkResponse, RedeemProjectRecoveryLinkRequest, RedeemProjectRecoveryLinkResponse } from '@claudian-collab/protocol';
 
 import type {
   CollabControlOperationMatch,
@@ -24,6 +25,8 @@ import type { LifecycleGatewayPort } from '@/app/collab/lan/lifecycle/LifecycleG
 import type { CollabLanProjectSnapshot, CollabRetirementResult } from '@/core/collab';
 
 export interface CollabControlProjectService {
+  createProjectRecoveryLink?(memberCredential: string, request: CreateProjectRecoveryLinkRequest): Promise<CreateProjectRecoveryLinkResponse>;
+  redeemProjectRecoveryLink?(request: RedeemProjectRecoveryLinkRequest): Promise<RedeemProjectRecoveryLinkResponse>;
   listProjectMembers?(memberCredential: string, projectId: string): Promise<ListProjectMembersResponse>;
   reissueTransferredMembershipClaim?(memberCredential: string, request: ReissueTransferredMembershipClaimRequest): Promise<ReissueTransferredMembershipClaimResponse>;
   claimTransferredMembership?(request: Extract<ClaimTransferredMembershipRequest, { credentialHash: string }>): Promise<CollabTransferredMembershipRedemptionReceipt>;

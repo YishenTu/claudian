@@ -65,6 +65,16 @@ export class AuthorityTransferClaimantBindingResolver {
     if (!membership || membership.member.id !== record.memberId) {
       throw resolutionError('authority-transfer-claimant-membership-invalid');
     }
+    if (record.variant === 'project-recovery') {
+      if (membership.member.personalRef !== record.memberPersonalRef
+        || membership.authority.authorityGeneration > record.invitation.link.authorityGeneration
+        || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('project-recovery-membership-invalid');
+      const target = record.invitation.target;
+      return { direction: target.kind === 'cloud' ? 'lan-to-cloud' : 'cloud-to-lan', mode: 'project-recovery',
+        ...(target.kind === 'cloud' && record.convergence === null ? { cloudSession: await this.options.createCloudConnection({
+          allowCredentialCreation: false, projectId: record.projectId, serverUrl: target.serverUrl,
+        }) } : {}) };
+    }
     if (record.variant === 'manager-reissued') {
       if (membership.member.personalRef !== record.memberPersonalRef) {
         throw resolutionError('authority-transfer-claimant-membership-invalid');

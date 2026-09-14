@@ -14,6 +14,7 @@ import type {
 import {
   authorityTransferClaimantStatus,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type { ProjectRecoveryClaimantRecord, ProjectRecoveryConvergenceIntent } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
 import type {
   AuthorityProjectionTransitionPort,
 } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
@@ -51,6 +52,7 @@ interface AuthorityTransferConvergenceGit {
     readonly oldServerUrl: string | null;
     readonly projectId: CollabProjectId;
     readonly repositoryPath: string;
+    readonly exactBindings?: boolean;
     readonly retainedBindings?: readonly { readonly remoteUrl: string; readonly serverUrl: string | null }[];
   }): Promise<void>;
 }
@@ -198,6 +200,65 @@ export class AuthorityTransferLocalConvergence {
     ));
   }
 
+  async prepareProjectRecovery(record: ProjectRecoveryClaimantRecord,
+    input: Omit<ProjectRecoveryConvergenceIntent, 'previousBindings'>): Promise<ProjectRecoveryConvergenceIntent> {
+    const membership = await this.#requireMembership(record.projectId);
+    this.#assertProjectRecoveryIdentity(record, membership, input.identity);
+    const previousBindings = [{ remoteUrl: membership.authority.gitRemoteUrl!,
+      serverUrl: isCollabLocalCloudMembership(membership) ? membership.authority.serverUrl : null },
+      ...this.#retainedBindings(membership, record.invitation.link.authorityGeneration + 1, record.retainedAttempts)];
+    if (!previousBindings[0].remoteUrl) throw convergenceError('project-recovery-origin-missing');
+    return { ...input, previousBindings: previousBindings.filter((binding, index) =>
+      previousBindings.findIndex(other => other.remoteUrl === binding.remoteUrl && other.serverUrl === binding.serverUrl) === index) };
+  }
+
+  async restoreProjectRecovery(record: ProjectRecoveryClaimantRecord): Promise<void> {
+    const plan = record.convergence;
+    if (!record.redemptionReceipt || !plan) throw convergenceError('project-recovery-proof-missing');
+    return this.#transitionProject(record.projectId, async () => {
+      const membership = await this.#requireMembership(record.projectId);
+      this.#assertProjectRecoveryIdentity(record, membership, plan.identity);
+      const { identity, target } = plan;
+      const remoteUrl = target.kind === 'cloud' ? cloudRemoteUrl(target.serverUrl, record.projectId) : lanRemoteUrl(target.endpoint, record.projectId);
+      const serverUrl = target.kind === 'cloud' ? target.serverUrl : null;
+      if (!membership.authority.gitRemoteUrl || !plan.previousBindings.some(binding => binding.remoteUrl === membership.authority.gitRemoteUrl
+        && binding.serverUrl === (isCollabLocalCloudMembership(membership) ? membership.authority.serverUrl : null))
+        && membership.authority.gitRemoteUrl !== remoteUrl) throw convergenceError('project-recovery-origin-conflict');
+      await this.options.git.rotate({ projectId: record.projectId,
+        repositoryPath: await this.options.workspace.resolveManagedProjectPath(membership.project.workspacePath),
+        oldRemoteUrl: plan.previousBindings[0].remoteUrl, oldServerUrl: plan.previousBindings[0].serverUrl,
+        newRemoteUrl: remoteUrl, newServerUrl: serverUrl, retainedBindings: plan.previousBindings, exactBindings: true });
+      const common = { createdAt: membership.createdAt, updatedAt: this.timestamp(membership.updatedAt),
+        schemaVersion: membership.schemaVersion, project: membership.project, lastEventSequence: identity.eventSequence,
+        ...(membership.lifecycle === undefined ? {} : { lifecycle: membership.lifecycle }) };
+      if (target.kind === 'cloud') {
+        await this.options.projects.saveMembership({ ...common,
+          authority: { kind: 'cloud', authorityGeneration: identity.authorityGeneration, serverUrl: target.serverUrl,
+            gitRemoteUrl: remoteUrl, wireVersion: COLLAB_PROTOCOL_VERSION, bindingVersion: COLLAB_CLOUD_BINDING_VERSION },
+          member: { id: identity.currentMember.id, personalRef: identity.currentMember.personalRef,
+            role: identity.currentMember.role, displayName: identity.currentMember.displayName } });
+      } else {
+        if (!record.targetCredential) throw convergenceError('project-recovery-credential-missing');
+        await this.options.projects.saveMembership({ ...common,
+          authority: { kind: 'lan', authorityGeneration: identity.authorityGeneration, endpoint: new URL(target.endpoint).origin,
+            gitRemoteUrl: remoteUrl, hostCaCertificatePem: target.caCertificatePem, hostCaFingerprint: target.caFingerprint },
+          hostOwnership: { autoStart: false, ownsAuthority: false },
+          member: { id: identity.currentMember.id, personalRef: identity.currentMember.personalRef,
+            role: identity.currentMember.role, displayName: identity.currentMember.displayName, credential: record.targetCredential } });
+      }
+      await this.finish(record.projectId, target.kind);
+    });
+  }
+
+  #assertProjectRecoveryIdentity(record: ProjectRecoveryClaimantRecord, membership: CollabLocalMembershipRecord,
+    identity: AuthorityTransferImportedTargetIdentity): void {
+    if (membership.member.id !== record.memberId || membership.member.personalRef !== record.memberPersonalRef
+      || identity.project.id !== record.projectId || identity.currentMember.id !== record.memberId
+      || identity.currentMember.personalRef !== record.memberPersonalRef || identity.authorityGeneration !== record.invitation.link.authorityGeneration
+      || membership.authority.authorityGeneration > identity.authorityGeneration
+      || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw convergenceError('project-recovery-identity-invalid');
+  }
+
   async restoreCloudMembership(input: LanToCloudHostConvergenceInput, retainedAttempts: readonly AuthorityTransferClaimantRecord[] = []): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
     return this.#transitionProject(input.status.projectId, async () => {
@@ -243,6 +304,7 @@ export class AuthorityTransferLocalConvergence {
   }
 
   async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
+    if (record.variant === 'project-recovery') return this.restoreProjectRecovery(record);
     if (record.variant === 'manager-reissued' && record.lanTarget) {
       return this.#transitionProject(record.projectId, async () => {
         const membership = await this.#requireMembership(record.projectId);
@@ -500,6 +562,12 @@ export class AuthorityTransferLocalConvergence {
     return attempts.flatMap(attempt => {
       if (attempt.projectId !== membership.project.id || attempt.memberId !== membership.member.id) {
         throw convergenceError('authority-transfer-retained-identity-mismatch');
+      }
+      if (attempt.variant === 'project-recovery') {
+        if (!attempt.convergence || attempt.invitation.link.authorityGeneration >= generation) return [];
+        const { target } = attempt.convergence;
+        return [...attempt.convergence.previousBindings, { remoteUrl: target.kind === 'lan' ? lanRemoteUrl(target.endpoint, attempt.projectId)
+          : cloudRemoteUrl(target.serverUrl, attempt.projectId), serverUrl: target.kind === 'lan' ? null : target.serverUrl }];
       }
       const confirmed = attempt.variant === 'source-issued'
         ? ['source-acknowledged', 'membership-converged', 'completed'].includes(attempt.phase)

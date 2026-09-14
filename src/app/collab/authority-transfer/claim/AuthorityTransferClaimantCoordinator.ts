@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import type { RedeemProjectRecoveryLinkResponse } from '@claudian-collab/protocol';
 import type {
   ClaimTransferredMembershipRequest,
   CollabAuthorityTransferStatus,
@@ -22,6 +23,8 @@ import {
   type ManagerReissuedAuthorityTransferClaimantRecord,
   type SourceIssuedAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type { ProjectRecoveryClaimantRecord, ProjectRecoveryConvergenceIntent } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
+import type { ProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
 import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -38,6 +41,8 @@ export interface AuthorityTransferClaimantSource {
 
 export interface AuthorityTransferClaimantTarget {
   readonly cloudPrincipalId: string | null;
+  redeemProjectRecoveryLink?(record: ProjectRecoveryClaimantRecord, options: CollabOperationOptions): Promise<RedeemProjectRecoveryLinkResponse>;
+  confirmProjectRecoveryBinding?(record: ProjectRecoveryClaimantRecord, options: CollabOperationOptions): Promise<ProjectRecoveryConvergenceIntent>;
   claimTransferredMembership(
     record: AuthorityTransferClaimantRecord,
     request: ClaimTransferredMembershipRequest,
@@ -149,7 +154,7 @@ function sameManagerReissuedAttempt(
     && descriptor.transferId === input.descriptor.transferId;
 }
 
-/** Owns both bounded claimant variants without treating a reissue as source custody. */
+/** Owns bounded claimant variants without treating a reissue as source custody. */
 export class AuthorityTransferClaimantCoordinator {
   private readonly createCredential: () => string;
   private readonly now: () => Date;
@@ -194,7 +199,7 @@ export class AuthorityTransferClaimantCoordinator {
     if (!existing || !sameManagerReissuedAttempt(existing, input)) {
       if (existing && (existing.projectId !== input.descriptor.projectId || existing.memberId !== input.descriptor.memberId
         || input.descriptor.targetAuthorityGeneration < (existing.variant === 'source-issued'
-          ? existing.status.targetAuthority.generation : existing.descriptor.targetAuthorityGeneration)
+          ? existing.status.targetAuthority.generation : existing.variant === 'project-recovery' ? existing.invitation.link.authorityGeneration : existing.descriptor.targetAuthorityGeneration)
         || existing.variant === 'source-issued' && (existing.managerPredecessor !== null
           || input.descriptor.targetAuthorityGeneration === existing.status.targetAuthority.generation
             && ['source-acknowledged', 'membership-converged', 'completed'].includes(existing.phase))
@@ -204,8 +209,8 @@ export class AuthorityTransferClaimantCoordinator {
         throw claimantError('authority-transfer-claimant-attempt-conflict');
       }
       const retainedAttempts = existing ? [
-        ...(existing.variant === 'manager-reissued' ? existing.retainedAttempts : []),
-        existing.variant === 'manager-reissued' ? { ...existing, retainedAttempts: [] } : existing,
+        ...(existing.variant !== 'source-issued' ? existing.retainedAttempts : []),
+        existing.variant !== 'source-issued' ? { ...existing, retainedAttempts: [] } : existing,
       ] : [];
       // Explicit replacement preserves ambiguous requests; successful local convergence releases them.
       const retained = retainedAttempts.find(attempt => sameManagerReissuedAttempt(attempt, input));
@@ -226,12 +231,88 @@ export class AuthorityTransferClaimantCoordinator {
     await this.resume(input.descriptor.projectId, options);
   }
 
+  async startProjectRecovery(input: {
+    invitation: ProjectRecoveryInvitation; memberId: string; memberPersonalRef: string;
+    proofCredential: string; targetCredential?: string; operationIntentId?: string;
+  }, options: CollabOperationOptions = {}): Promise<void> {
+    assertNotCancelled(options);
+    const projectId = input.invitation.link.projectId;
+    const existing = await this.options.store.load(projectId);
+    const same = (record: AuthorityTransferClaimantRecord): boolean =>
+      record.variant === 'project-recovery' && JSON.stringify(record.invitation) === JSON.stringify(input.invitation)
+      && record.memberId === input.memberId && record.memberPersonalRef === input.memberPersonalRef;
+    if (!existing || !same(existing)) {
+      const generation = existing?.variant === 'source-issued' ? existing.status.targetAuthority.generation
+        : existing?.variant === 'manager-reissued' ? existing.descriptor.targetAuthorityGeneration : existing?.invitation.link.authorityGeneration;
+      if (existing && (existing.memberId !== input.memberId || generation! > input.invitation.link.authorityGeneration
+        || existing.variant === 'source-issued' && existing.managerPredecessor !== null)) throw claimantError('project-recovery-predecessor-conflict');
+      const retainedAttempts = existing ? [
+        ...(existing.variant === 'source-issued' ? [] : existing.retainedAttempts),
+        existing.variant === 'source-issued' ? existing : { ...existing, retainedAttempts: [] },
+      ] : [];
+      const retained = retainedAttempts.find(same);
+      const operationIntentId = input.operationIntentId ?? `recovery-${randomBytes(16).toString('hex')}`;
+      const targetCredential = input.invitation.target.kind === 'lan' ? input.targetCredential ?? this.createCredential() : null;
+      const timestamp = this.now().toISOString();
+      const candidate = retained ?? {
+        schemaVersion: 5, kind: 'authority-transfer-claimant', variant: 'project-recovery',
+        projectId, memberId: input.memberId, memberPersonalRef: input.memberPersonalRef,
+        operationIntentId, cloudPrincipalId: this.options.target.cloudPrincipalId, targetCredential,
+        createdAt: timestamp, updatedAt: timestamp, phase: 'redemption-prepared', invitation: input.invitation,
+        redemptionRequest: { projectId, idempotencyKey: operationIntentId, expectedAuthorityGeneration: input.invitation.link.authorityGeneration,
+          recoveryLinkId: input.invitation.link.recoveryLinkId, token: input.invitation.link.token, proofCredential: input.proofCredential,
+          ...(targetCredential === null ? {} : { targetCredentialHash: createHash('sha256').update(targetCredential, 'utf8').digest('hex') }) },
+        redemptionReceipt: null, convergence: null,
+      };
+      await this.options.store.save(decodeAuthorityTransferClaimantRecord({ ...candidate,
+        retainedAttempts: retainedAttempts.filter(attempt => attempt !== retained) }));
+    }
+    await this.resume(projectId, options);
+  }
+
+  async #resumeProjectRecovery(initial: ProjectRecoveryClaimantRecord, options: CollabOperationOptions): Promise<void> {
+    let record = initial;
+    while (record.phase !== 'completed') {
+      assertNotCancelled(options);
+      let update: Partial<ProjectRecoveryClaimantRecord>;
+      switch (record.phase) {
+        case 'redemption-prepared': {
+          this.#assertTargetPrincipal(record);
+          if (!this.options.target.redeemProjectRecoveryLink) throw claimantError('project-recovery-target-unavailable');
+          const redemptionReceipt = await this.options.target.redeemProjectRecoveryLink(record, options);
+          update = { phase: 'target-claimed', redemptionReceipt };
+          break;
+        }
+        case 'target-claimed': {
+          this.#assertTargetPrincipal(record);
+          if (!this.options.target.confirmProjectRecoveryBinding) throw claimantError('project-recovery-target-unavailable');
+          update = { phase: 'target-confirmed', convergence: await this.options.target.confirmProjectRecoveryBinding(record, options) };
+          break;
+        }
+        case 'target-confirmed':
+          await this.options.convergence.converge(record, options);
+          update = { phase: 'membership-converged', retainedAttempts: [] };
+          break;
+        case 'membership-converged': update = { phase: 'completed' }; break;
+      }
+      const candidate = decodeAuthorityTransferClaimantRecord({ ...record, ...update, updatedAt: this.#monotonicTimestamp(record.updatedAt) });
+      if (candidate.variant !== 'project-recovery') throw claimantError('project-recovery-variant-invalid');
+      await this.options.store.save(candidate);
+      record = candidate;
+    }
+    await this.complete(record, options);
+  }
+
   async resume(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<void> {
     const record = await this.options.store.load(projectId);
     if (!record) throw claimantError('authority-transfer-claimant-record-missing');
+    if (record.variant === 'project-recovery') {
+      await this.#resumeProjectRecovery(record, options);
+      return;
+    }
     if (record.variant === 'manager-reissued') {
       await this.#resumeManagerReissued(record, options);
       return;

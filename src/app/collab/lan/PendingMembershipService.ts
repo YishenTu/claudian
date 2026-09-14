@@ -9,10 +9,12 @@ import {
   type ClaimTransferredMembershipRequest,
   type CollabMember,
   type CollabMemberStatus,
+  type CreateProjectRecoveryLinkRequest,
   isCollabGitOid,
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
+  type RedeemProjectRecoveryLinkRequest,
   type ReissueTransferredMembershipClaimRequest,
 } from '@claudian-collab/protocol';
 
@@ -25,6 +27,7 @@ import {
   PendingMembershipRepository,
 } from '@/app/collab/authority/PendingMembershipRepository';
 import type { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
+import { ProjectRecoveryLinkRepository } from '@/app/collab/authority/ProjectRecoveryLinkRepository';
 import type {
   AuthorityDatabaseConnection,
   SqlJsMutationResult,
@@ -204,6 +207,22 @@ export class PendingMembershipService {
       if (!project || project.projectId !== projectId) throw serviceError('project-not-found', 'project-id-mismatch');
       return new ImportedMembershipClaimRepository().list(connection, actor.member.id, this.now());
     });
+  }
+
+  async createProjectRecoveryLink(memberCredential: string, request: CreateProjectRecoveryLinkRequest) {
+    return (await this.authority.database.mutate(connection => {
+      const actor = this.#authenticateInConnection(connection, memberCredential, ['active']);
+      return new ProjectRecoveryLinkRepository().create(connection, actor.member.id, request, this.now());
+    })).value;
+  }
+
+  async redeemProjectRecoveryLink(request: RedeemProjectRecoveryLinkRequest) {
+    return (await this.authority.database.mutate(connection => {
+      const result = new ProjectRecoveryLinkRepository().redeem(connection, request, this.now());
+      this.authority.events.append(connection, { actorMemberId: result.memberId, createdAt: this.now().toISOString(),
+        kind: 'membership.updated', payload: { memberId: result.memberId } });
+      return result;
+    })).value;
   }
 
   async reissueTransferredMembershipClaim(memberCredential: string, request: ReissueTransferredMembershipClaimRequest) {

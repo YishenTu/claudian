@@ -23,6 +23,7 @@ CollabLocalLanMembershipRecord,
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import {
 type CollabPublicationFoundationPort,
@@ -69,11 +70,11 @@ function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 7,
-      gitRemoteUrl: `${serverUrl}/v7/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      bindingVersion: 8,
+      gitRemoteUrl: `${serverUrl}/v8/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 11,
+      wireVersion: 12,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -248,7 +249,7 @@ describe('CollabPublicationService reconnect', () => {
           requests.push({ credential, endpoint: this.trust.endpoint, path: request.path });
           return Promise.resolve(
             request.path.endsWith('/snapshot')
-              ? lanSnapshot()
+              ? request.decode({ protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION, requestId: 'request-test', data: { ...lanSnapshot(), capabilities: [] } })
               : { ticket: { id: 'ticket-lane' } },
           ) as never;
         });
@@ -277,6 +278,7 @@ describe('CollabPublicationService reconnect', () => {
           authorityKind: 'lan',
           authorityTransfer: true,
           importedMemberClaims: false,
+          projectRecovery: false,
           invitations: true,
           leave: true,
           managerResponsibility: true,
@@ -689,6 +691,7 @@ describe('CollabPublicationService reconnect', () => {
         authorityKind: 'cloud',
         authorityTransfer: true,
         importedMemberClaims: false,
+        projectRecovery: false,
         invitations: true,
         leave: false,
         managerResponsibility: false,
@@ -701,10 +704,10 @@ describe('CollabPublicationService reconnect', () => {
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v7/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         '/collab/capabilities',
-        `/v7/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
-        `/v7/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
       await rm(cloudVaultRoot, { recursive: true, force: true });

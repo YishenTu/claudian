@@ -1,4 +1,4 @@
-import type { CollabProjectId, CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
+import type { CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
   CollabProjectWorkSessionRegistry,
@@ -7,6 +7,7 @@ import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
+import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CloudMembershipBinding,
   CloudMembershipOperation,
@@ -251,10 +252,10 @@ export class CollabAuthorityControlRouter implements
 
   cloudMembership<Operation extends CloudMembershipOperation>(
     operation: Operation,
-    request: CollabProjectMembershipOperationMap[Operation]['request'],
+    request: CloudMembershipOperationMap[Operation]['request'],
     binding: CloudMembershipBinding,
     options: CollabOperationOptions = {},
-  ): Promise<CollabProjectMembershipOperationMap[Operation]['response']> {
+  ): Promise<CloudMembershipOperationMap[Operation]['response']> {
     // A frozen Cloud intent must never enter LAN discovery or semantic reconnect retry.
     return this.session(request.projectId).then(session => {
       if (session.authorityKind !== 'cloud' || session.membership?.authorityKind !== 'cloud') {

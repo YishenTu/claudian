@@ -2597,7 +2597,7 @@ describe('production authority-transfer effects', () => {
             redeemedAt: '2026-08-28T00:03:00.000Z', signature: Buffer.alloc(64, 3).toString('base64url'), signatureAlgorithm: 'ed25519' } });
         pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'source-acknowledged', updatedAt: pending.updatedAt });
         await clientFoundation.local.projects.authorityTransferClaimants.save(pending);
-        if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v7/projects/${PROJECT_ID}/repository.git`]);
+        if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v8/projects/${PROJECT_ID}/repository.git`]);
       }
       const client = createCollabFeatureSubcomposition({ foundation: clientFoundation,
         projectSetup: new CollabProjectSetupService(clientFoundation, { installationKey: TEST_INSTALLATION_B, vaultRoot: clientRoot }), vaultRoot: clientRoot });

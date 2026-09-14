@@ -187,6 +187,8 @@
       "title": "Gestión del proyecto"
     },
     "access": {
+      "copyRecoveryLink": "Copiar enlace de recuperación",
+      "recoveryLinkCopied": "Enlace de recuperación copiado.",
       "activeInvitations": "Invitaciones activas",
       "loadingInvitations": "Cargando invitaciones…",
       "noInvitations": "No hay invitaciones activas.",

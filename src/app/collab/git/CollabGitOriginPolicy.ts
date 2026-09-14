@@ -26,6 +26,7 @@ export interface CollabAuthorityTransferOriginTransition
   extends CollabTrustedOriginTransition {
   readonly newServerUrl: string | null;
   readonly oldServerUrl: string | null;
+  readonly exactBindings?: boolean;
   readonly retainedBindings?: readonly { readonly remoteUrl: string; readonly serverUrl: string | null }[];
 }
 
@@ -142,7 +143,7 @@ export async function rotateAuthorityTransferOrigin(
     transition.newRemoteUrl,
     transition.projectId,
   );
-  if (sourceIsLan && targetIsLan && !transition.retainedBindings?.length) return rotateTrustedCollabOrigin(git, transition);
+  if (sourceIsLan && targetIsLan && !transition.exactBindings && !transition.retainedBindings?.length) return rotateTrustedCollabOrigin(git, transition);
   let sourceIsCloud: boolean;
   let targetIsCloud: boolean;
   try {
@@ -172,15 +173,15 @@ export async function rotateAuthorityTransferOrigin(
   }
   if (urls.length !== 1) throw originError('collab-origin-transition-mismatch');
   if (urls[0] === transition.newRemoteUrl) return;
-  const sourceWasFencedLanHost = sourceIsLan
+  const sourceWasFencedLanHost = !transition.exactBindings && sourceIsLan
     && urls[0] === `https://127.0.0.1:1/claudian-collab/host-stopped/${transition.projectId}`;
   // Git may have reached an earlier authenticated LAN locator before the
   // corresponding membership write; a listener move does not undo that cutover.
-  const targetWasAlreadyLan = targetIsLan && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
+  const targetWasAlreadyLan = !transition.exactBindings && targetIsLan && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
   // LAN locators can move while installation trust stays fixed. Recovery never contacts this old origin.
   const hasRetainedLanBinding = transition.retainedBindings?.some(binding => binding.serverUrl === null
     && isGeneratedLanHostRemoteUrl(binding.remoteUrl, transition.projectId)) ?? false;
-  const recoveredLanOrigin = (sourceIsLan || hasRetainedLanBinding)
+  const recoveredLanOrigin = !transition.exactBindings && (sourceIsLan || hasRetainedLanBinding)
     && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
   const retainedOrigin = transition.retainedBindings?.some(binding => {
     if (urls[0] !== binding.remoteUrl) return false;

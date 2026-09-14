@@ -56,11 +56,11 @@ describe('Pending Cloud Leave lost-response recovery', () => {
       await projects.saveMembership({
         authority: {
           authorityGeneration: 4,
-          bindingVersion: 7,
-          gitRemoteUrl: 'https://cloud.example.test/v7/projects/project-cloud/repository.git',
+          bindingVersion: 8,
+          gitRemoteUrl: 'https://cloud.example.test/v8/projects/project-cloud/repository.git',
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test',
-          wireVersion: 11,
+          wireVersion: 12,
         },
         createdAt: NOW,
         lastEventSequence: 3,

@@ -32,6 +32,20 @@ function parseRemoval(request: CollabControlRouteRequest, memberId: string) {
 
 export const handleMembershipRoute: CollabControlRouteHandler = async request => {
   const match = request.operationMatch;
+  if (match.operation === 'createProjectRecoveryLink') {
+    const decoded = lanCollabControlOperationCodec(match.operation).decodeRequest(request.body);
+    if (decoded.status !== 'ok') throw decoded.error;
+    if (decoded.value.projectId !== request.projectId || decoded.value.idempotencyKey !== request.idempotencyKey) throw routeError('membership-mutation-request-mismatch');
+    if (!request.service.createProjectRecoveryLink) throw routeError('project-recovery-unavailable');
+    return { data: await request.service.createProjectRecoveryLink(requireOperationCredential(request.authorization, match.operation), decoded.value) };
+  }
+  if (match.operation === 'redeemProjectRecoveryLink') {
+    const decoded = lanCollabControlOperationCodec(match.operation).decodeRequest(request.body);
+    if (decoded.status !== 'ok') throw decoded.error;
+    if (decoded.value.projectId !== request.projectId || decoded.value.idempotencyKey !== request.idempotencyKey) throw routeError('membership-mutation-request-mismatch');
+    if (!request.service.redeemProjectRecoveryLink) throw routeError('project-recovery-unavailable');
+    return { data: await request.service.redeemProjectRecoveryLink(decoded.value) };
+  }
   if (match.operation === 'listProjectMembers') {
     if (!request.service.listProjectMembers) throw routeError('membership-claims-unavailable');
     return { data: await request.service.listProjectMembers(requireOperationCredential(request.authorization, match.operation), request.projectId) };

@@ -187,6 +187,8 @@
       "title": "プロジェクト管理"
     },
     "access": {
+      "copyRecoveryLink": "復旧リンクをコピー",
+      "recoveryLinkCopied": "復旧リンクをコピーしました。",
       "activeInvitations": "有効な招待",
       "loadingInvitations": "招待を読み込み中…",
       "noInvitations": "有効な招待はありません。",
