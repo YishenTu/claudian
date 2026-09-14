@@ -118,8 +118,9 @@ describe('CloudProjectEntryCoordinator', () => {
       const secondPath = 'Shared/Projects/Second rename';
       await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, firstPath));
       const filesystemRename = fs.rename;
+      const indexPath = path.join(fixture.vaultRoot, '.claudian', 'collab', 'index.json');
       const cut = jest.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
-        if (String(destination).endsWith('/.claudian/collab/index.json')) throw new Error('Injected index write failure');
+        if (String(destination) === indexPath) throw new Error('Injected index write failure');
         return filesystemRename(source, destination);
       });
       try {
