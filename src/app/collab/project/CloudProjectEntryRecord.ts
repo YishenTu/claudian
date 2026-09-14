@@ -7,6 +7,7 @@ import { type CollabCloudProjectSnapshot, parseCollabProjectsFolder } from '@/co
 
 interface CloudProjectEntryBase {
   readonly schemaVersion: 2;
+  readonly selectOnCompletion?: boolean;
   readonly principalId: string;
   readonly operationId: string;
   readonly projectId: string;
@@ -46,9 +47,9 @@ export type CloudProjectEntryRecord = CloudProjectEntryBase & (
   }
 );
 
-function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
+function record(value: unknown, keys: readonly string[], optionalKeys: readonly string[] = []): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) {
+    || keys.some(key => !Object.hasOwn(value, key)) || Object.keys(value).some(key => !keys.includes(key) && !optionalKeys.includes(key))) {
     throw new TypeError('Invalid Cloud entry record');
   }
   return value as Record<string, unknown>;
@@ -65,7 +66,10 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
   const source = record(value, [
     'schemaVersion', 'principalId', 'operationKind', 'operationId', 'projectId', 'serverUrl', 'projectsFolder',
     'slug', 'stagingDirectoryName', 'phase', 'request', 'admission', 'createdAt', 'updatedAt',
-  ]);
+  ], ['selectOnCompletion']);
+  if (Object.hasOwn(source, 'selectOnCompletion') && typeof source.selectOnCompletion !== 'boolean') {
+    throw new TypeError('Invalid Cloud entry selection intent');
+  }
   if (source.schemaVersion !== 2 || (source.operationKind !== 'cloud-create-project' && source.operationKind !== 'cloud-join-project' && source.operationKind !== 'cloud-existing-project')
     || typeof source.principalId !== 'string' || !/^vault-[0-9a-f]{64}$/u.test(source.principalId)
     || !isCollabOpaqueId(source.operationId) || !isCollabProjectId(source.projectId)
@@ -79,6 +83,7 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
   }
   if ((source.phase === 'intent') !== (source.admission === null)) throw new TypeError('Invalid Cloud entry phase');
   const base: CloudProjectEntryBase = {
+    ...(typeof source.selectOnCompletion === 'boolean' ? { selectOnCompletion: source.selectOnCompletion } : {}),
     createdAt: timestamp(source.createdAt), operationId: source.operationId,
     phase: source.phase, projectId: source.projectId,
     projectsFolder: source.projectsFolder, schemaVersion: 2, principalId: source.principalId,

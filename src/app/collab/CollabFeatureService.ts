@@ -924,7 +924,7 @@ class CollabFeatureServiceCore {
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     try {
-      const pending = await this.#findPendingOperation(request.operationId);
+      const pending = await this.#findPendingOperation(request.operationId, request.projectId);
       if (!pending) {
         return {
           error: new CollabError({
@@ -935,10 +935,10 @@ class CollabFeatureServiceCore {
         };
       }
       const result = pending.kind === 'join-project'
-        ? await this.options.join.resumeJoin(request, options)
+        ? await this.options.join.resumeJoin({ ...request, projectId: pending.projectId }, options)
         : pending.kind === 'cloud-entry'
         ? await this.options.cloudEntry.resumeSetup({ ...request, projectId: pending.projectId }, options)
-        : await this.projectSetup.resumeSetup(request, options);
+        : await this.projectSetup.resumeSetup({ ...request, projectId: pending.projectId }, options);
       await this.#refreshAfterMutation(result);
       return result;
     } catch (error) {
@@ -2258,7 +2258,8 @@ class CollabFeatureServiceCore {
   }
 
    async #refreshAfterMutation<T>(result: CollabResult<T>): Promise<void> {
-    if (result.status === 'success' || result.status === 'recovery-required') {
+    if (result.status === 'success' || result.status === 'recovery-required'
+      || (result.status === 'failure' && result.error.recoveryActions.includes('refresh-invitation'))) {
       await this.#refreshProjects().catch(error => {
         this.#publishState({
           ...this.#stateValue,
@@ -2297,8 +2298,9 @@ class CollabFeatureServiceCore {
 
    async #findPendingOperation(
     operationId: CollabOperationId,
+    selectedProjectId?: CollabProjectId,
   ): Promise<CollabPendingProjectOperation | null> {
-    const projectIds = await this.foundation.local.projects
+    const projectIds = selectedProjectId ? [selectedProjectId] : await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: CollabPendingProjectOperation | null = null;
     for (const projectId of projectIds) {
@@ -2308,7 +2310,8 @@ class CollabFeatureServiceCore {
         decodeCollabPendingProjectOperation,
       );
       if (
-        pending?.kind !== 'cloud-relocation'
+        pending?.projectId === projectId
+        && pending.kind !== 'cloud-relocation'
         && pending?.record.operationId === operationId
       ) {
         if (match) throw operationError('pending-operation-duplicate');

@@ -145,7 +145,7 @@ export class CloudProjectEntryCoordinator {
           await this.#setup.assertFinalized(existing);
           await this.options.activateProject(existing, { signal });
           signal.throwIfAborted();
-          await this.foundation.local.projects.selectProject(projectId);
+          if (invitationInput) await this.foundation.local.projects.selectProject(projectId);
           return this.#success(existing);
         }
         const operationId = this.#createId('operation');
@@ -154,6 +154,7 @@ export class CloudProjectEntryCoordinator {
           principalId: credential.principalId,
           admission: existingSnapshot ? { response: null, snapshot: existingSnapshot } : null,
           createdAt: timestamp, operationId, operationKind: existingSnapshot ? 'cloud-existing-project' : 'cloud-join-project',
+          selectOnCompletion: invitationInput !== null,
           phase: existingSnapshot ? 'admitted' : 'intent', projectId, projectsFolder: parsedFolder.value,
           request: existingSnapshot || !invitationInput ? null : {
             displayName: invitationInput.memberDisplayName.trim(), idempotencyKey: operationId,
@@ -175,9 +176,10 @@ export class CloudProjectEntryCoordinator {
     return this.#queue.run(async () => {
       try {
         let found: CloudProjectEntryRecord | null = null;
-        for (const projectId of await this.foundation.local.projects.listPendingOperationProjectIds()) {
+        const projectIds = request.projectId ? [request.projectId] : await this.foundation.local.projects.listPendingOperationProjectIds();
+        for (const projectId of projectIds) {
           const pending = await this.foundation.local.projects.loadProjectDocument(projectId, 'pending-operation', decodeCollabPendingProjectOperation);
-          if (pending?.record.operationId !== operationId) continue;
+          if (pending?.projectId !== projectId || pending.record.operationId !== operationId) continue;
           if (found || pending.kind !== 'cloud-entry') throw entryError('entry-operation-mismatch');
           found = pending.record;
         }
@@ -243,7 +245,10 @@ export class CloudProjectEntryCoordinator {
             } catch (removalError) {
               if (await projects.loadProjectDocument(record.projectId, 'pending-operation', decodeCloudProjectEntryRecord)) throw removalError;
             }
-            return { error, status: 'failure' };
+            return {
+              error: new CollabError({ code: error.code, recoveryActions: ['refresh-invitation'], safeContext: error.safeContext }),
+              status: 'failure',
+            };
           }
           const snapshot = await connection.readSnapshot(record.projectId, { signal });
           record = await this.#update(record, { admission: { response, snapshot }, phase: 'admitted', request: null });
@@ -287,6 +292,10 @@ export class CloudProjectEntryCoordinator {
       };
       if (record.phase === 'placed') {
         await this.#setup.finalize(membership, signal);
+        // Older existing-entry journals do not retain the initiating UI intent. Preserve selection for those records.
+        if (record.selectOnCompletion ?? record.operationKind !== 'cloud-existing-project') {
+          await this.foundation.local.projects.selectProject(record.projectId);
+        }
         record = await this.#update(record, { phase: 'locally-finalized' });
       }
       signal?.throwIfAborted();

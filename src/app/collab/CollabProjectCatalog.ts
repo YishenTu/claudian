@@ -9,16 +9,17 @@ import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
-import { type CollabConnectionStatus, type CollabHostStatus, type CollabLocalProjectSummary, type CollabOperationOptions, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabConnectionStatus, type CollabHostStatus, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPendingSetupSummary, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabProjectProjection {
+  readonly pendingSetups: readonly CollabPendingSetupSummary[];
   readonly projects: readonly CollabLocalProjectSummary[];
   readonly selectedProjectId: CollabProjectId | null;
 }
 
 export interface CollabProjectCatalogOptions {
-  readonly projects: Pick<CollabLocalProjectRepository, 'loadIndex' | 'loadMembership' | 'loadProjectDocument' | 'selectProject'>;
+  readonly projects: Pick<CollabLocalProjectRepository, 'loadIndex' | 'loadMembership' | 'loadProjectDocument' | 'selectProject' | 'listPendingOperationProjectIds'>;
   readonly workspace: Pick<CollabWorkspaceService, 'resolveManagedProjectPath'>;
   readonly pendingLeaves: {
     listProjectIds(): Promise<readonly CollabProjectId[]>;
@@ -47,7 +48,7 @@ export class CollabProjectCatalog {
   #fullRevision = 0;
   #selecting = false;
   #closed = false;
-  #projection: CollabProjectProjection = { projects: [], selectedProjectId: null };
+  #projection: CollabProjectProjection = { pendingSetups: [], projects: [], selectedProjectId: null };
 
   constructor(private readonly options: CollabProjectCatalogOptions) {}
 
@@ -87,13 +88,18 @@ export class CollabProjectCatalog {
   ): CollabProjectProjection {
     const current = new Map(this.#projection.projects.map(project => [project.id, project]));
     const next = new Map(incoming.projects.map(project => [project.id, project]));
-    const affected = onlyProjectId ? [onlyProjectId] : new Set([...current.keys(), ...next.keys()]);
+    const currentSetups = new Map(this.#projection.pendingSetups.map(setup => [setup.projectId, setup]));
+    const nextSetups = new Map(incoming.pendingSetups.map(setup => [setup.projectId, setup]));
+    const affected = onlyProjectId ? [onlyProjectId] : new Set([...current.keys(), ...next.keys(), ...currentSetups.keys(), ...nextSetups.keys()]);
     for (const projectId of affected) {
       if (Math.max(this.#projectRevisions.get(projectId) ?? 0, this.#fullRevision) > revision) continue;
       this.#projectRevisions.set(projectId, revision);
       const project = next.get(projectId);
       if (project) current.set(projectId, project);
       else current.delete(projectId);
+      const setup = nextSetups.get(projectId);
+      if (setup) currentSetups.set(projectId, setup);
+      else currentSetups.delete(projectId);
     }
     if (!onlyProjectId) this.#fullRevision = Math.max(this.#fullRevision, revision);
     let selected = this.#projection.selectedProjectId;
@@ -106,6 +112,7 @@ export class CollabProjectCatalog {
     }
     const projects = [...current.values()];
     const projection = Object.freeze({
+      pendingSetups: Object.freeze([...currentSetups.values()]),
       projects: Object.freeze(projects),
       selectedProjectId: resolveEffectiveCollabProjectId(projects, selected),
     });
@@ -146,25 +153,34 @@ export class CollabProjectCatalog {
     }));
     const pendingByProject = new Map(pendingLeaves.map(entry => [entry.projectId, entry]));
     const cloudRetirementProjects = new Set(cloudRetirementProjectIds);
+    const setupProjectIds = onlyProjectId ? [onlyProjectId] : [...new Set([
+      ...index.projects.map(project => project.id),
+      ...await this.options.projects.listPendingOperationProjectIds(),
+    ])];
+    const setupEntries = await Promise.all(setupProjectIds.map(async projectId => {
+      try {
+        const pending = await this.options.projects.loadProjectDocument(projectId, 'pending-operation', decodeCollabPendingProjectOperation);
+        return { projectId, unavailable: false, pending };
+      } catch {
+        return { projectId, unavailable: true, pending: null };
+      }
+    }));
+    const setupsByProject = new Map(setupEntries.map(entry => [entry.projectId, entry]));
     const projects = await Promise.all(index.projects.filter(project => !onlyProjectId || project.id === onlyProjectId).map(async project => {
       const pendingLeave = pendingByProject.get(project.id) ?? null;
       const hasCloudRetirementIntent = cloudRetirementProjects.has(project.id);
-      const [membership, pending, workingCopyHealthy] = await Promise.all([
+      const setup = setupsByProject.get(project.id);
+      const [membership, workingCopyHealthy] = await Promise.all([
         this.options.projects.loadMembership(project.id).catch(error => {
           if (isUnsupportedLocalMembership(error)) return null;
           throw error;
         }),
-        this.options.projects.loadProjectDocument(
-          project.id,
-          'pending-operation',
-          decodeCollabPendingProjectOperation,
-        ),
         this.#hasWorkingCopy(project.workspacePath),
       ]);
       const summary = await this.#projectSummary(
         project,
         membership,
-        pending !== null || pendingLeave !== null || hasCloudRetirementIntent,
+        setup?.unavailable === true || setup?.pending != null || pendingLeave !== null || hasCloudRetirementIntent,
         workingCopyHealthy,
       );
       pendingByProject.delete(project.id);
@@ -202,7 +218,21 @@ export class CollabProjectCatalog {
         role: record.localRole,
         workspacePath: record.workspacePath,
       }));
-    return { projects: [...projects, ...journalOnly], selectedProjectId: index.selectedProjectId };
+    const pendingSetups: CollabPendingSetupSummary[] = [];
+    for (const { projectId, pending, unavailable } of setupEntries) {
+      if (unavailable) {
+        pendingSetups.push(Object.freeze({ operationId: null, projectId, name: index.projects.find(project => project.id === projectId)?.name ?? projectId }));
+        continue;
+      }
+      if (!pending || pending.kind === 'cloud-relocation') continue;
+      const record = pending.record;
+      const name = pending.kind === 'create-project' ? pending.record.name
+        : pending.kind === 'join-project' ? pending.record.projectName ?? pending.record.slug
+        : pending.record.admission?.snapshot.project.name
+          ?? (pending.record.operationKind === 'cloud-create-project' ? pending.record.request.projectName : pending.record.slug);
+      pendingSetups.push(Object.freeze({ operationId: record.operationId, projectId, name }));
+    }
+    return { pendingSetups, projects: [...projects, ...journalOnly], selectedProjectId: index.selectedProjectId };
   }
 
    async #hasWorkingCopy(workspacePath: string): Promise<boolean> {

@@ -94,7 +94,6 @@ it('finishes Cloud Retire in one confirmation and presents local file choices wi
     configuredGitPath: () => '',
     onSaveConfiguredGitPath: jest.fn(),
     port,
-    projectSetup: { getPendingSetupOperationId: async () => null },
     resolveGit: async () => ({ status: 'available', version: '2.45.1' }),
   });
   try {

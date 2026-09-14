@@ -2660,16 +2660,17 @@ describe('CollabDetailView', () => {
 
 describe('CollabDetailViewCoordinator', () => {
   it('closes the active detail leaf after a completed external action', async () => {
-    const leaf = { detach: jest.fn() };
+    let attached = true;
+    const leaf = { detach: () => { attached = false; } };
     const workspace = {
       getLeaf: jest.fn(),
-      getLeavesOfType: jest.fn().mockReturnValue([leaf]),
+      getLeavesOfType: () => attached ? [leaf as unknown as WorkspaceLeaf] : [],
       revealLeaf: jest.fn().mockResolvedValue(undefined),
     };
 
     await new CollabDetailViewCoordinator(workspace).close();
 
-    expect(leaf.detach).toHaveBeenCalledTimes(1);
+    expect(attached).toBe(false);
   });
 
   it('reuses the existing detail leaf and persists identifiers without credentials', async () => {

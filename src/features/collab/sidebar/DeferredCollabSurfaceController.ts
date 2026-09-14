@@ -50,6 +50,7 @@ export class DeferredCollabSurfaceController implements CollabSidebarSurfaceCont
   }
 
   #startLoading(): void {
+    this.statusEl?.remove();
     this.statusEl = this.hostEl.createDiv({
       cls: 'claudian-collab-panel-status',
       text: this.options.loadingText,

@@ -350,7 +350,7 @@ export class JoinProjectCoordinator {
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     let record: JoinProjectRecord | null = null;
     try {
-      record = await this.#findPending(request.operationId);
+      record = await this.#findPending(request.operationId, request.projectId);
       if (!record) throw joinError('project-not-found', 'pending-join-not-found');
       await this.foundation.local.workspace.claimProjectsFolder(record.projectsFolder);
       throwIfCancelled(intent.controller.signal);
@@ -505,6 +505,7 @@ export class JoinProjectCoordinator {
     throwIfCancelled(signal);
     const membership = this.#membership(record, record.authorityGeneration!);
     await this.#workingCopy.finalize(membership, signal);
+    await this.foundation.local.projects.selectProject(record.projectId);
     await this.foundation.local.projects.removeProjectDocument(
       record.projectId,
       'pending-operation',
@@ -710,9 +711,9 @@ export class JoinProjectCoordinator {
     return pending.record;
   }
 
-   async #findPending(operationId: string): Promise<JoinProjectRecord | null> {
+   async #findPending(operationId: string, selectedProjectId?: string): Promise<JoinProjectRecord | null> {
     if (!isCollabOpaqueId(operationId)) return null;
-    const projectIds = await this.foundation.local.projects
+    const projectIds = selectedProjectId ? [selectedProjectId] : await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: JoinProjectRecord | null = null;
     for (const projectId of projectIds) {
@@ -721,7 +722,7 @@ export class JoinProjectCoordinator {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending?.kind === 'join-project' && pending.record.operationId === operationId) {
+      if (pending?.projectId === projectId && pending.kind === 'join-project' && pending.record.operationId === operationId) {
         if (match) throw joinError('repository-invalid', 'pending-operation-duplicate');
         match = pending.record;
       }

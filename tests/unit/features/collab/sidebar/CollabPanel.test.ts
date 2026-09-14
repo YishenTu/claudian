@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { getByRole, queryByRole } from '@testing-library/dom';
+import { fireEvent, getByRole, queryByRole } from '@testing-library/dom';
 import { type App, Menu } from 'obsidian';
 
 import { type CollabFeatureState, type CollabLocalProjectSummary } from '@/core/collab';
@@ -306,6 +306,7 @@ function createPort(initialState: CollabFeatureState) {
         value: { project: state.projects.find(item => item.id === projectId)! },
       };
     }),
+    joinProject: jest.fn().mockResolvedValue({ status: 'success', value: project() }),
     resumeSetup: jest.fn().mockResolvedValue({
       status: 'success',
       value: project(),
@@ -371,6 +372,7 @@ function createPort(initialState: CollabFeatureState) {
     }),
   } as unknown as CollabPanelPort & {
     initialize: jest.Mock;
+    joinProject: jest.Mock;
     resumeSetup: jest.Mock;
     selectProject: jest.Mock;
     subscribe: jest.Mock;
@@ -447,7 +449,7 @@ describe('CollabPanel', () => {
     const review = { kind: 'publication' as const, intent: 'update' as const, projectId: currentProject.id, operationId: 'update-a', baseMainOid: 'a'.repeat(40), currentMainOid: 'b'.repeat(40), contributionHeadOid: 'c'.repeat(40), candidateOid: 'd'.repeat(40), comparisonBaseOid: 'c'.repeat(40), comparisonTargetOid: 'd'.repeat(40), files: [{ binary: false, kind: 'modified' as const, largeForReview: false, path: 'team.md' }], canConfirm: true };
     port.updateProject = jest.fn().mockResolvedValue({ status: 'success', value: { projectId: currentProject.id, state: 'review-required', localHeadOid: review.contributionHeadOid, review } });
     const container = document.body.createDiv();
-    const panel = new CollabPanel(container, {} as never, { app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, projectSetup: { getPendingSetupOperationId: jest.fn() }, resolveGit: async () => AVAILABLE, onOpenPublicationReview });
+    const panel = new CollabPanel(container, {} as never, { app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, resolveGit: async () => AVAILABLE, onOpenPublicationReview });
     panel.setActive(true);
     await new Promise(resolve => setTimeout(resolve, 0));
     const update = getByRole(container, 'button', { name: 'Review' });
@@ -475,7 +477,7 @@ describe('CollabPanel', () => {
       initialGitResolution: Promise.resolve(AVAILABLE),
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
 
@@ -495,7 +497,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
 
@@ -522,7 +524,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
 
@@ -555,7 +557,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
 
@@ -597,7 +599,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -628,7 +630,7 @@ describe('CollabPanel', () => {
       copyText,
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -683,7 +685,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -717,7 +719,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue({ status: 'missing' }),
     });
 
@@ -739,7 +741,7 @@ describe('CollabPanel', () => {
         projects: [],
         selectedProjectId: null,
       }),
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn(() => new Promise(() => undefined)),
     });
 
@@ -764,7 +766,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port: failedPort,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -773,20 +775,128 @@ describe('CollabPanel', () => {
     expect(failedContainer.querySelector('[role="alert"]')).not.toBeNull();
   });
 
+  it('restores a missing Cloud working copy using the retained Project identity', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({ lifecycle: 'ready', projects: [project({ authorityKind: 'cloud', health: 'missing' })], selectedProjectId: 'project-alpha' });
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, resolveGit: async () => AVAILABLE,
+    });
+    panel.setActive(true); await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Restore working copy' }));
+    await flush();
+    expect(port.joinProject).toHaveBeenCalledWith({ existingCloudProjectId: 'project-alpha' });
+    expect(port.selectProject).not.toHaveBeenCalled();
+    expect(queryByRole(container, 'button', { name: 'Restore working copy' })).toBeNull();
+    expect(getByRole(container, 'button', { name: 'Refresh' })).not.toBeNull();
+    panel.destroy(); container.remove();
+  });
+
+  it('starts a fresh missing-copy repair after its earlier setup completes elsewhere', async () => {
+    const container = document.body.createDiv();
+    const state: CollabFeatureState = { lifecycle: 'ready', projects: [project({ authorityKind: 'cloud', health: 'missing' })], selectedProjectId: 'project-alpha' };
+    const port = createPort(state);
+    port.joinProject.mockResolvedValue({ status: 'recovery-required', operationId: 'repair-one', durableProgress: true, durablePhase: 'committed', error: new CollabError({ code: 'endpoint-unreachable' }) });
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, resolveGit: async () => AVAILABLE,
+    });
+    panel.setActive(true); await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Restore working copy' }));
+    await flush();
+    Object.assign(port.state, { projects: [project({ authorityKind: 'cloud', health: 'needs-attention' })], pendingSetups: [{ operationId: 'repair-one', projectId: 'project-alpha', name: 'Alpha' }] });
+    await port.initialize(); await flush();
+    panel.setActive(false);
+    Object.assign(port.state, { projects: [project({ authorityKind: 'cloud' })], pendingSetups: [] });
+    await port.initialize(); await flush();
+    Object.assign(port.state, { projects: [project({ authorityKind: 'cloud', health: 'missing' })] });
+    await port.initialize(); await flush();
+    panel.setActive(true); await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Restore working copy' }));
+    await flush();
+    expect(port.joinProject).toHaveBeenCalledTimes(2);
+    panel.destroy(); container.remove();
+  });
+
+  it('lets users resume each unindexed setup independently', async () => {
+    const container = document.body.createDiv();
+    const state = {
+      lifecycle: 'ready' as const, projects: [], selectedProjectId: null,
+      pendingSetups: [
+        { operationId: 'setup-alpha', projectId: 'project-alpha', name: 'Alpha' },
+        { operationId: 'setup-beta', projectId: 'project-beta', name: 'Beta' },
+      ],
+    };
+    const port = createPort(state);
+    port.resumeSetup.mockResolvedValueOnce({ status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) });
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(),
+      port, resolveGit: async () => AVAILABLE,
+    });
+    panel.setActive(true); await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Resume setup: Alpha' }));
+    await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Resume setup: Beta' }));
+    await flush();
+    expect(port.resumeSetup).toHaveBeenLastCalledWith({ operationId: 'setup-beta', projectId: 'project-beta' });
+    expect(port.selectProject).not.toHaveBeenCalled();
+    panel.destroy(); container.remove();
+  });
+
+  it('retains completed setup when its catalog projection is stale', async () => {
+    const container = document.body.createDiv();
+    const port = createPort({ lifecycle: 'ready', projects: [], selectedProjectId: null,
+      pendingSetups: [{ operationId: 'setup-alpha', projectId: 'project-alpha', name: 'Alpha' }] });
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, resolveGit: async () => AVAILABLE,
+    });
+    panel.setActive(true); await flush();
+    fireEvent.click(getByRole(container, 'button', { name: 'Resume setup: Alpha' }));
+    await flush();
+    expect(queryByRole(container, 'button', { name: 'Resume setup: Alpha' })).toBeNull();
+    fireEvent.click(getByRole(container, 'button', { name: 'Refresh' }));
+    await flush();
+    expect(queryByRole(container, 'button', { name: 'Resume setup: Alpha' })).toBeNull();
+    panel.destroy(); container.remove();
+  });
+
+  it.each(['setup', 'working-copy'] as const)('shows %s failure settled while hidden on reactivation', async kind => {
+    const container = document.body.createDiv();
+    const port = createPort({ lifecycle: 'ready',
+      projects: kind === 'setup' ? [] : [project({ authorityKind: 'cloud', health: 'missing' })],
+      selectedProjectId: kind === 'setup' ? null : 'project-alpha',
+      pendingSetups: kind === 'setup' ? [{ operationId: 'setup-alpha', projectId: 'project-alpha', name: 'Alpha' }] : [],
+    });
+    let settle!: (value: unknown) => void;
+    const command = kind === 'setup' ? port.resumeSetup : port.joinProject;
+    command.mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }));
+    const panel = new CollabPanel(container, {} as never, {
+      app: createApp(), configuredGitPath: () => '', onSaveConfiguredGitPath: jest.fn(), port, resolveGit: async () => AVAILABLE,
+    });
+    panel.setActive(true); await flush();
+    const name = kind === 'setup' ? 'Resume setup: Alpha' : 'Restore working copy';
+    fireEvent.click(getByRole(container, 'button', { name }));
+    panel.setActive(false);
+    settle({ status: 'failure', error: new CollabError({ code: 'endpoint-unreachable' }) });
+    await flush();
+    panel.setActive(true); await flush();
+    expect((getByRole(container, 'button', { name }) as HTMLButtonElement).disabled).toBe(false);
+    expect(getByRole(container, 'alert')).not.toBeNull();
+    panel.destroy(); container.remove();
+  });
+
   it('renders the local Project home, collapsed management, footer, and Resume setup', async () => {
     const container = document.body.createDiv();
     const port = createPort({
       lifecycle: 'ready',
       projects: [project({ health: 'needs-attention' })],
+      pendingSetups: [{ operationId: 'create-project-alpha', projectId: 'project-alpha', name: 'Alpha' }],
       selectedProjectId: 'project-alpha',
     });
-    const getPendingSetupOperationId = jest.fn().mockResolvedValue('create-project-alpha');
     const panel = new CollabPanel(container, {} as never, {
       app: createApp(),
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -821,7 +931,7 @@ describe('CollabPanel', () => {
     expect(resume).not.toBeNull();
     resume.click();
     await flush();
-    expect(port.resumeSetup).toHaveBeenCalledWith({ operationId: 'create-project-alpha' });
+    expect(port.resumeSetup).toHaveBeenCalledWith({ operationId: 'create-project-alpha', projectId: 'project-alpha' });
   });
 
   it('labels and resumes a journal-only Leave without treating it as setup', async () => {
@@ -835,14 +945,13 @@ describe('CollabPanel', () => {
       })],
       selectedProjectId: 'project-alpha',
     });
-    const getPendingSetupOperationId = jest.fn().mockResolvedValue(null);
     const panel = new CollabPanel(container, {} as never, {
       app: createApp(),
       configuredGitPath: () => '',
       initialGitResolution: Promise.resolve(AVAILABLE),
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -852,7 +961,6 @@ describe('CollabPanel', () => {
 
     expect(container.textContent).toContain('Leaving this project needs attention');
     expect(container.textContent).not.toContain('setup is incomplete');
-    expect(getPendingSetupOperationId).not.toHaveBeenCalled();
     const resume = container.querySelector<HTMLButtonElement>('[data-action="resume-leave"]')!;
     expect(resume).not.toBeNull();
     resume.click();
@@ -881,7 +989,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -938,7 +1046,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
       transientSurfaces,
     });
@@ -979,7 +1087,7 @@ describe('CollabPanel', () => {
       onOpenWorkingTreeReview,
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1127,7 +1235,7 @@ describe('CollabPanel', () => {
       onOpenRequest,
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1239,7 +1347,7 @@ describe('CollabPanel', () => {
       onOpenWorkingTreeReview,
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1268,7 +1376,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1314,7 +1422,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1355,7 +1463,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue({ status: 'missing' }),
     });
 
@@ -1389,7 +1497,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1416,7 +1524,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
 
@@ -1448,7 +1556,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
     panel.setActive(true);
@@ -1478,30 +1586,25 @@ describe('CollabPanel', () => {
       projects: [project({ health: 'needs-attention' })],
       selectedProjectId: 'project-alpha',
     });
-    let finishLookup!: (operationId: string) => void;
-    const getPendingSetupOperationId = jest.fn(() => new Promise<string>(resolve => {
-      finishLookup = resolve;
-    }));
     const panel = new CollabPanel(container, {} as never, {
       app: createApp(),
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
     panel.setActive(true);
     await flush();
 
     panel.setActive(false);
-    finishLookup('create-project-alpha');
+    Object.assign(port.state, { pendingSetups: [{ operationId: 'create-project-alpha', projectId: 'project-alpha', name: 'Alpha' }] });
     await flush();
     expect(container.querySelector('[data-action="resume-setup"]')).toBeNull();
 
     panel.setActive(true);
     await flush();
 
-    expect(getPendingSetupOperationId).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-action="resume-setup"]')).not.toBeNull();
   });
 
@@ -1534,7 +1637,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
     panel.setActive(true);
@@ -1566,7 +1669,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
     panel.setActive(true);
@@ -1591,7 +1694,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit: jest.fn().mockResolvedValue(AVAILABLE),
     });
     panel.setActive(true);
@@ -1628,7 +1731,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
     panel.setActive(true);
@@ -1662,7 +1765,7 @@ describe('CollabPanel', () => {
       configuredGitPath: () => '',
       onSaveConfiguredGitPath: jest.fn(),
       port,
-      projectSetup: { getPendingSetupOperationId: jest.fn() },
+
       resolveGit,
     });
     panel.setActive(true);

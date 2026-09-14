@@ -423,21 +423,24 @@ export class CollabDetailView extends ItemView {
 
 export class CollabDetailViewCoordinator {
   private generation = 0;
+  private closed = false;
   private transitionTail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly workspace: CollabDetailWorkspacePort,
     private readonly preparedReviews?: CollabPreparedReviewCache,
+    private readonly isAvailable: () => boolean = () => true,
   ) {}
 
-  async close(): Promise<void> {
-    const generation = ++this.generation;
-    const transition = this.transitionTail.then(() => {
-      if (generation !== this.generation) return;
-      for (const leaf of this.workspace.getLeavesOfType(COLLAB_DETAIL_VIEW_TYPE)) {
-        leaf.detach();
-      }
-    });
+  close(): Promise<void> {
+    if (this.closed) return this.transitionTail;
+    this.closed = true;
+    this.generation += 1;
+    const detach = (): void => {
+      for (const leaf of this.workspace.getLeavesOfType(COLLAB_DETAIL_VIEW_TYPE)) leaf.detach();
+    };
+    detach();
+    const transition = this.transitionTail.then(detach);
     this.transitionTail = transition.catch(() => undefined);
     return transition;
   }
@@ -446,26 +449,27 @@ export class CollabDetailViewCoordinator {
     state: CollabDetailViewState,
     prepared?: CollabPreparedReviewEntry,
   ): Promise<void> {
+    if (this.closed || !this.isAvailable()) return;
     const safeState = parseState(state);
     if (safeState.kind === 'request' && prepared) {
       assertReviewMatchesState(prepared.review, safeState);
     }
     const generation = ++this.generation;
     const transition = this.transitionTail.then(async () => {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       if (safeState.kind === 'request' && prepared) {
         this.preparedReviews?.store(prepared);
       }
       const existing = this.workspace.getLeavesOfType(COLLAB_DETAIL_VIEW_TYPE)[0];
       const leaf = existing ?? this.workspace.getLeaf('tab');
       if (!leaf) throw viewError('review-leaf-unavailable');
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       await leaf.setViewState({
         active: true,
         state: { ...safeState },
         type: COLLAB_DETAIL_VIEW_TYPE,
       });
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       await this.workspace.revealLeaf(leaf);
     });
     this.transitionTail = transition.catch(() => undefined);
@@ -473,19 +477,20 @@ export class CollabDetailViewCoordinator {
   }
 
   async openInNewTab(state: CollabDetailViewState): Promise<void> {
+    if (this.closed || !this.isAvailable()) return;
     const safeState = parseState(state);
     const generation = ++this.generation;
     const transition = this.transitionTail.then(async () => {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       const leaf = this.workspace.getLeaf('tab');
       if (!leaf) throw viewError('review-leaf-unavailable');
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       await leaf.setViewState({
         active: true,
         state: { ...safeState },
         type: COLLAB_DETAIL_VIEW_TYPE,
       });
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || this.closed || !this.isAvailable()) return;
       await this.workspace.revealLeaf(leaf);
     });
     this.transitionTail = transition.catch(() => undefined);

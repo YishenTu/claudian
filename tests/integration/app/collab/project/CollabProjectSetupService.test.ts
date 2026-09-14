@@ -426,7 +426,10 @@ describe('CollabProjectSetupService', () => {
       reopened = createFoundation();
       recovery = new CollabProjectSetupService(reopened, setupOptions(vaultRoot));
     }
-    await expect(recovery.resumeSetup({ operationId: OPERATION_ID })).resolves.toMatchObject({
+    const brokenPath = path.join(vaultRoot, foundation.local.projects.getProjectPaths('project-broken').pendingOperation);
+    await mkdir(path.dirname(brokenPath), { recursive: true });
+    await writeFile(brokenPath, '{invalid');
+    await expect(recovery.resumeSetup({ operationId: OPERATION_ID, projectId: PROJECT_ID })).resolves.toMatchObject({
       status: 'success',
       value: { id: PROJECT_ID },
     });

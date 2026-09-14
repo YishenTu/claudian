@@ -89,10 +89,78 @@ describe('CollabComposerReferenceService', () => {
     enabled = false;
     service.refreshAvailability();
     await expect(service.getSelection()).resolves.toBeNull();
-    await expect(service.listOpenTickets('project-1')).rejects.toMatchObject({
+    await expect(service.readOpenTicketPage({ projectId: 'project-1' })).rejects.toMatchObject({
       name: 'AbortError',
     });
     expect(listener).toHaveBeenLastCalledWith(null);
+    service.dispose();
+  });
+
+  it('discards a selection read from the previous enablement lifetime', async () => {
+    const previous = createFeature();
+    const current = createFeature();
+    current.feature.readProjectSelection = jest.fn().mockResolvedValue(success({
+      projects: [{ id: 'project-new', name: 'New Project' }], selectedProjectId: 'project-new',
+    }));
+    let settle!: (value: unknown) => void;
+    let started!: () => void;
+    const reading = new Promise<void>(resolve => { started = resolve; });
+    previous.feature.readProjectSelection = jest.fn(() => {
+      started(); return new Promise<unknown>(resolve => { settle = resolve; });
+    }) as CollabFeaturePort['readProjectSelection'];
+    let enabled = true;
+    let feature = previous.feature;
+    const service = new CollabComposerReferenceService(async () => feature, () => enabled);
+    const oldSelection = service.getSelection();
+    await reading;
+    enabled = false; service.refreshAvailability();
+    enabled = true; feature = current.feature; service.refreshAvailability();
+    settle(success({ projects: [{ id: 'project-old', name: 'Old Project' }], selectedProjectId: 'project-old' }));
+    await expect(oldSelection).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(service.getSelection()).resolves.toEqual({ projectId: 'project-new', projectName: 'New Project' });
+    service.dispose();
+  });
+
+  it('does not resubscribe a retired feature between async resolution continuations', async () => {
+    const previous = createFeature();
+    const current = createFeature();
+    current.feature.readProjectSelection = jest.fn().mockResolvedValue(success({
+      projects: [{ id: 'project-new', name: 'New Project' }], selectedProjectId: 'project-new',
+    }));
+    let enabled = true;
+    let feature = previous.feature;
+    const service = new CollabComposerReferenceService(async () => feature, () => enabled);
+    const pending = service.getSelection();
+    queueMicrotask(() => {
+      enabled = false; service.refreshAvailability();
+      enabled = true; feature = current.feature; service.refreshAvailability();
+    });
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(service.getSelection()).resolves.toEqual({ projectId: 'project-new', projectName: 'New Project' });
+    previous.publishState({ lifecycle: 'ready', selectedProjectId: null, projects: [] });
+    await expect(service.getSelection()).resolves.toEqual({ projectId: 'project-new', projectName: 'New Project' });
+    current.publishState({ lifecycle: 'ready', selectedProjectId: null, projects: [] });
+    await expect(service.getSelection()).resolves.toBeNull();
+    service.dispose();
+  });
+
+  it.each(['members', 'tickets'] as const)('discards a late %s result when disabled', async kind => {
+    const { feature } = createFeature();
+    let settle!: (value: unknown) => void;
+    let started!: () => void;
+    const reading = new Promise<void>(resolve => { started = resolve; });
+    const method = kind === 'members' ? 'readSnapshot' : 'listTickets';
+    const original = await (feature[method] as jest.Mock)();
+    (feature[method] as jest.Mock).mockImplementation(() => {
+      started(); return new Promise<unknown>(resolve => { settle = resolve; });
+    });
+    let enabled = true;
+    const service = new CollabComposerReferenceService(async () => feature, () => enabled);
+    const pending = kind === 'members' ? service.listMemberChanges('project-1') : service.readOpenTicketPage({ projectId: 'project-1' });
+    await reading;
+    enabled = false; service.refreshAvailability();
+    settle(original);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     service.dispose();
   });
 
@@ -182,7 +250,7 @@ describe('CollabComposerReferenceService', () => {
     service.dispose();
   });
 
-  it('joins active Members to open Requests and reads every page of open Tickets', async () => {
+  it('joins active Members to open Requests and returns one explicit Ticket page', async () => {
     const { feature } = createFeature();
     feature.listTickets = jest.fn()
       .mockResolvedValueOnce(success({
@@ -211,25 +279,13 @@ describe('CollabComposerReferenceService', () => {
       source: 'online',
       stale: false,
     });
-    await expect(service.listOpenTickets('project-1')).resolves.toEqual({
-      items: [
-        { number: 7, ticketId: 'ticket-1', title: 'Runtime menu' },
-        { number: 8, ticketId: 'ticket-2', title: 'Follow-up' },
-      ],
-      source: 'cache',
-      stale: true,
+    await expect(service.readOpenTicketPage({ projectId: 'project-1' })).resolves.toEqual({
+      items: [{ number: 7, ticketId: 'ticket-1', title: 'Runtime menu' }],
+      nextCursor: 'page-2', source: 'online', stale: false,
     });
-    expect(feature.listTickets).toHaveBeenNthCalledWith(1, {
-      limit: 100,
-      projectId: 'project-1',
-      status: 'open',
-    }, { signal: undefined });
-    expect(feature.listTickets).toHaveBeenNthCalledWith(2, {
-      cursor: 'page-2',
-      limit: 100,
-      projectId: 'project-1',
-      status: 'open',
-    }, { signal: undefined });
+    await expect(service.readOpenTicketPage({ projectId: 'project-1', cursor: 'page-2' })).resolves.toEqual({
+      items: [{ number: 8, ticketId: 'ticket-2', title: 'Follow-up' }], source: 'cache', stale: true,
+    });
     service.dispose();
   });
 });

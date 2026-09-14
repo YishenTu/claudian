@@ -151,7 +151,6 @@ export class CollabWorkingCopySetup {
       updatedAt: membership.updatedAt,
       workspacePath: membership.project.workspacePath,
     });
-    await this.foundation.local.projects.selectProject(projectId);
   }
 
   childPath(projectsFolder: string, child: string): Promise<string> {

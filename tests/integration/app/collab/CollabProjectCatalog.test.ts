@@ -144,7 +144,7 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>, initialize 
       request: async input => {
         networkRequests += 1;
         if (!enabled) throw new CollabError({ code: 'endpoint-unreachable' });
-        const projectId = input.url.includes('beta.example.test') ? 'project-beta' : 'project-alpha';
+        const projectId = `project-${new URL(input.url).hostname.split('.')[0]}`;
         const currentMember = { activatedAt: CREATED_AT, createdAt: CREATED_AT, displayName: 'Alice', id: 'member-alice', personalRef: PERSONAL_REF, role: 'member', status: 'active' };
         return {
           body: input.method === 'GET' ? collabCloudCapabilityDocument(['project-events', 'project-snapshot'], limits) : collabCloudSuccessEnvelope(
@@ -312,6 +312,19 @@ it('resumes live observation after a Project suspension without reopening its vi
       await bounded(resumed, 'Observation did not resume');
       expect(sockets.filter(socket => socket.projectId === 'project-alpha')).toHaveLength(2);
     } finally { observation.dispose(); }
+  });
+});
+
+it.each([false, true])('keeps unrelated Projects available when a setup journal cannot be decoded (indexed: %s)', async indexed => {
+  await withFixture(async ({ service, foundation }) => {
+    if (indexed) await foundation.local.projects.upsertProject({ id: 'project-broken', name: 'Broken', authorityKind: 'cloud', workspacePath: 'workspace/broken', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' });
+    await foundation.local.projects.saveProjectDocument('project-broken', 'pending-operation', { projectId: 'project-broken', schemaVersion: 999 });
+    const result = await service.initialize();
+    expect(result).toMatchObject({ status: 'success', value: {
+      pendingSetups: [{ operationId: null, projectId: 'project-broken', name: indexed ? 'Broken' : 'project-broken' }],
+    } });
+    expect(service.state.projects.map(project => project.id)).toEqual(indexed ? ['project-alpha', 'project-beta', 'project-gamma', 'project-broken'] : ['project-alpha', 'project-beta', 'project-gamma']);
+    expect(service.state.projects.find(project => project.id === 'project-broken')?.health).toBe(indexed ? 'needs-attention' : undefined);
   });
 });
 
@@ -508,5 +521,40 @@ it('registers maintenance for main accepted while an observed Project was suspen
       await publication.resumeProject(suspension);
       expect(await bounded(result, 'Resumed snapshot missing')).toBe(true);
     } finally { observation.dispose(); }
+  }, false);
+});
+
+it('converges independent Project observers after a 600-event burst and releases their subscriptions', async () => {
+  await withFixture(async ({ service, enableNetwork, advance, sockets }) => {
+    enableNetwork();
+    const ids = ['project-alpha', 'project-beta', 'project-gamma'];
+    const observations = ids.map(projectId => {
+      let ready!: () => void;
+      let complete!: () => void;
+      const initial = new Promise<void>(resolve => { ready = resolve; });
+      const final = new Promise<void>(resolve => { complete = resolve; });
+      const sequences: number[] = [];
+      const subscription = service.observeProject(projectId, projection => {
+        if (!projection) return;
+        expect(projection.snapshot.project.id).toBe(projectId);
+        sequences.push(projection.snapshot.eventSequence);
+        if (projection.snapshot.eventSequence === 2) ready();
+        if (projection.snapshot.eventSequence === 202) complete();
+      });
+      return { initial, final, sequences, subscription };
+    });
+    try {
+      await bounded(Promise.all(observations.map(value => value.initial)), 'Initial Project snapshots missing');
+      for (let index = 0; index < 200; index++) for (const projectId of ids) advance(projectId);
+      await bounded(Promise.all(observations.map(value => value.final)), 'Event burst did not converge');
+      for (const observation of observations) {
+        expect(observation.sequences.at(-1)).toBe(202);
+        expect(observation.sequences.every((value, index, values) => index === 0 || value >= values[index - 1])).toBe(true);
+      }
+    } finally {
+      for (const observation of observations) observation.subscription.dispose();
+    }
+    await service.close();
+    expect(sockets.every(socket => socket.closed)).toBe(true);
   }, false);
 });

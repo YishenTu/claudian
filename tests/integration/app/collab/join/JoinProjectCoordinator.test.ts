@@ -232,7 +232,10 @@ describe('JoinProjectCoordinator', () => {
 
     harness.setCloneFailure(false);
     projectsFolder = 'Shared/Second Projects';
-    await expect(harness.coordinator.resumeJoin({ operationId: 'join-alpha' }))
+    const brokenPath = path.join(harness.root, harness.projects.getProjectPaths('project-broken').pendingOperation);
+    await mkdir(path.dirname(brokenPath), { recursive: true });
+    await writeFile(brokenPath, '{invalid');
+    await expect(harness.coordinator.resumeJoin({ operationId: 'join-alpha', projectId: 'project-alpha' }))
       .resolves.toMatchObject({
         status: 'success',
         value: { workspacePath: 'Shared/First Projects/project-alpha' },

@@ -1,5 +1,7 @@
 /** @jest-environment jsdom */
 
+import { queryByText } from '@testing-library/dom';
+
 import { DeferredCollabSurfaceController } from '@/features/collab/sidebar/DeferredCollabSurfaceController';
 
 async function flush(): Promise<void> {
@@ -66,6 +68,21 @@ describe('DeferredCollabSurfaceController', () => {
     expect(concrete.destroy).toHaveBeenCalledTimes(1);
     expect(concrete.setActive).not.toHaveBeenCalled();
     expect(host.textContent).toBe('');
+  });
+
+  it('replaces the failed loading surface when reactivation succeeds', async () => {
+    const host = document.body.createDiv();
+    const concrete = { destroy: jest.fn(), setActive: jest.fn() };
+    const create = jest.fn().mockRejectedValueOnce(new Error('temporary load failure')).mockResolvedValue(concrete);
+    const controller = new DeferredCollabSurfaceController(host, {
+      create, errorText: 'Failed to load', loadingText: 'Loading',
+    });
+    controller.setActive(true); await flush(); await flush();
+    controller.setActive(false);
+    controller.setActive(true); await flush(); await flush();
+    expect(queryByText(host, 'Failed to load')).toBeNull();
+    expect(queryByText(host, 'Loading')).toBeNull();
+    controller.destroy(); host.remove();
   });
 
   it('renders a stable local error when dynamic loading fails', async () => {

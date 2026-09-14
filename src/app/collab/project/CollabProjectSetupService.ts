@@ -267,7 +267,7 @@ export class CollabProjectSetupService {
     let record: CollabProjectSetupRecord | null = null;
     try {
       throwIfCancelled(options.signal);
-      const pending = await this.#findPending(request.operationId);
+      const pending = await this.#findPending(request.operationId, request.projectId);
       if (!pending) throw setupError('project-not-found', 'pending-setup-not-found');
       this.#assertRecoveryOwner(pending);
       record = pending;
@@ -699,8 +699,8 @@ export class CollabProjectSetupService {
     }
   }
 
-   async #findPending(operationId: string): Promise<CollabProjectSetupRecord | null> {
-    const projectIds = await this.foundation.local.projects
+   async #findPending(operationId: string, selectedProjectId?: string): Promise<CollabProjectSetupRecord | null> {
+    const projectIds = selectedProjectId ? [selectedProjectId] : await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: CollabProjectSetupRecord | null = null;
     for (const projectId of projectIds) {
@@ -709,7 +709,7 @@ export class CollabProjectSetupService {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending?.kind === 'create-project' && pending.record.operationId === operationId) {
+      if (pending?.projectId === projectId && pending.kind === 'create-project' && pending.record.operationId === operationId) {
         if (match) throw setupError('repository-invalid', 'pending-operation-duplicate');
         match = pending.record;
       }

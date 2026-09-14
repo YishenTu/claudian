@@ -165,6 +165,12 @@ export class JoinProjectModal extends Modal {
       this.close();
       return;
     }
+    if (result.status === 'failure' && result.error.recoveryActions.includes('refresh-invitation')) {
+      this.#setSubmitting(false);
+      this.#renderStatus(t('collab.joinProject.joinFailed'), true);
+      this.#invitationInput?.focus();
+      return;
+    }
     this.#renderResume(operationId, true);
   }
 

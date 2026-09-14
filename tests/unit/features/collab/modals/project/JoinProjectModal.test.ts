@@ -1,8 +1,10 @@
 /** @jest-environment jsdom */
 
+import { fireEvent, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
 import type { CollabFeaturePort } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 jest.mock('obsidian', () => ({
   Modal: class MockModal {
@@ -107,7 +109,7 @@ describe('JoinProjectModal', () => {
       joinProject: jest.fn().mockResolvedValue({
         durablePhase: 'committed',
         durableProgress: true,
-        error: { code: 'durable-progress-recovery-required' },
+        error: new CollabError({ code: 'durable-progress-recovery-required' }),
         operationId: 'join-alpha',
         status: 'recovery-required',
       }),
@@ -133,13 +135,13 @@ describe('JoinProjectModal', () => {
       joinProject: jest.fn().mockResolvedValue({
         durablePhase: 'committed',
         durableProgress: true,
-        error: { code: 'durable-progress-recovery-required' },
+        error: new CollabError({ code: 'durable-progress-recovery-required' }),
         operationId: 'join-alpha',
         status: 'recovery-required',
       }),
       resumeSetup: jest.fn()
         .mockResolvedValueOnce({
-          error: { code: 'endpoint-unreachable' },
+          error: new CollabError({ code: 'endpoint-unreachable' }),
           status: 'failure',
         })
         .mockResolvedValueOnce({ status: 'success', value: project() }),
@@ -159,6 +161,36 @@ describe('JoinProjectModal', () => {
 
     expect(port.resumeSetup).toHaveBeenCalledTimes(2);
     expect(modal.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a fresh explicit invitation after the application settles a rejected Join', async () => {
+    const port = createPort({
+      joinProject: jest.fn().mockResolvedValueOnce({
+        status: 'recovery-required', operationId: 'join-alpha', durableProgress: true,
+        durablePhase: 'committed', error: new CollabError({ code: 'endpoint-unreachable' }),
+      }).mockResolvedValue({ status: 'success', value: project() }),
+      resumeSetup: jest.fn().mockResolvedValue({
+        status: 'failure', error: new CollabError({ code: 'authorization-denied', recoveryActions: ['refresh-invitation'] }),
+      }),
+    });
+    const modal = new JoinProjectModal({} as never, port);
+    modal.onOpen(); fill(modal);
+    const ui = within(modal.contentEl);
+    fireEvent.click(ui.getByRole('button', { name: 'Join project' }));
+    await flush();
+    fireEvent.click(ui.getByRole('button', { name: 'Resume joining' }));
+    await flush();
+    const invitation = ui.getByRole('textbox', { name: 'Invitation' }) as HTMLTextAreaElement;
+    expect(invitation.disabled).toBe(false);
+    expect(ui.queryByRole('button', { name: 'Resume joining' })).toBeNull();
+    fireEvent.input(invitation, { target: { value: 'claudian-cloud:fresh' } });
+    fireEvent.click(ui.getByRole('button', { name: 'Join project' }));
+    await flush();
+    expect(port.joinProject).toHaveBeenLastCalledWith(
+      { encodedInvitation: 'claudian-cloud:fresh', memberDisplayName: 'Alice' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    modal.onClose();
   });
 
   it('cannot be re-enabled by input while a Join request is unresolved', async () => {
@@ -216,7 +248,7 @@ describe('JoinProjectModal', () => {
   it('announces Join failures and has no detectable accessibility violations', async () => {
     const port = createPort({
       joinProject: jest.fn().mockResolvedValue({
-        error: { code: 'endpoint-unreachable' },
+        error: new CollabError({ code: 'endpoint-unreachable' }),
         status: 'failure',
       }),
     });

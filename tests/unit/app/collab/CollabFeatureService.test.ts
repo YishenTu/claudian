@@ -1734,8 +1734,7 @@ describe('CollabFeatureService', () => {
     await service.resumeSetup({ operationId: 'create-project-alpha' });
 
     expect(foundation.local.projects.loadIndex).toHaveBeenCalledTimes(2);
-    expect(foundation.local.projects.listPendingOperationProjectIds)
-      .toHaveBeenCalledTimes(1);
+    expect(service.state.pendingSetups).toMatchObject([{ operationId: 'create-project-alpha', projectId: 'project-alpha' }]);
     expect(service.state.projects[0]).toMatchObject({ health: 'needs-attention' });
   });
 
@@ -1826,7 +1825,7 @@ describe('CollabFeatureService', () => {
     await expect(service.resumeSetup({ operationId: 'join-alpha' }))
       .resolves.toMatchObject({ status: 'success' });
     expect(join.resumeJoin).toHaveBeenCalledWith(
-      { operationId: 'join-alpha' },
+      { operationId: 'join-alpha', projectId: 'project-alpha' },
       undefined,
     );
     expect(setup.resumeSetup).not.toHaveBeenCalled();

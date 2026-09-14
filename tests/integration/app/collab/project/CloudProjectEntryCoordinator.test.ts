@@ -201,7 +201,7 @@ describe('CloudProjectEntryCoordinator', () => {
     } finally { await feature.close(); await fixture.close(); }
   });
 
-  it.each([false, true])('resumes missing-copy setup from a synchronized binding (retained publication: %s)', async retainPublication => {
+  it.each([['join', false], ['join', true], ['restore', false], ['restore', true], ['legacy-restore', true]] as const)('resumes missing-copy setup for %s (retained publication: %s)', async (entryIntent, retainPublication) => {
     const fixture = await createFixture({ join: true, alreadyBound: true, remoteContribution: true });
     await new CloudProjectCredentialStore(fixture.vaultRoot).getOrCreate(PROJECT_ID);
     const feature = createFeatureFixture(fixture);
@@ -226,7 +226,7 @@ describe('CloudProjectEntryCoordinator', () => {
       if (args[1] === 'pending-operation' && (args[2] as { phase?: string }).phase === 'admitted') throw new Error('Injected missing-copy admission cut');
     });
     try {
-      const entry = await feature.joinProject(retainPublication
+      const entry = await feature.joinProject(entryIntent !== 'join'
         ? { existingCloudProjectId: PROJECT_ID }
         : { encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Do not rename', projectSlug: 'do-not-create' });
       expect(entry).toMatchObject({ status: 'recovery-required' });
@@ -235,14 +235,27 @@ describe('CloudProjectEntryCoordinator', () => {
         .toMatchObject({ operationKind: 'cloud-existing-project', phase: 'admitted', projectsFolder: 'Original/Projects', slug: 'recovered-notes', request: null });
       expect(await projects.loadMembership(PROJECT_ID)).toEqual(retained);
       cut.mockRestore();
-      await expect(feature.resumeSetup({ operationId: entry.operationId })).resolves.toMatchObject({ status: 'success', value: { workspacePath: membership.project.workspacePath } });
+      if (entryIntent === 'legacy-restore') {
+        const retainedRecord = await projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord);
+        const { selectOnCompletion: _intent, ...legacyRecord } = retainedRecord!;
+        await projects.saveProjectDocument(PROJECT_ID, 'pending-operation', legacyRecord);
+      }
+      await projects.upsertProject({ authorityKind: 'cloud', id: 'project-other', name: 'Other', workspacePath: 'Shared/Projects/other', createdAt: CREATED_AT, updatedAt: CREATED_AT });
+      await projects.selectProject('project-other');
+      const brokenPath = path.join(fixture.vaultRoot, projects.getProjectPaths('project-broken').pendingOperation);
+      await mkdir(path.dirname(brokenPath), { recursive: true });
+      await writeFile(brokenPath, '{invalid');
+      await expect(feature.resumeSetup({ operationId: 'wrong-operation', projectId: PROJECT_ID })).resolves.toMatchObject({ status: 'failure' });
+      const recovery = { operationId: entry.operationId, projectId: PROJECT_ID };
+      await expect((entryIntent === 'join' ? fixture.createCoordinator() : feature).resumeSetup(recovery)).resolves.toMatchObject({ status: 'success', value: { workspacePath: membership.project.workspacePath } });
       expect(await projects.loadMembership(PROJECT_ID)).toEqual(retained);
+      expect((await projects.loadIndex()).selectedProjectId).toBe(entryIntent === 'join' ? PROJECT_ID : 'project-other');
       expect(await readFile(path.join(fixture.vaultRoot, membership.project.workspacePath, 'personal.md'), 'utf8')).toBe('Remote personal contribution\n');
       const finalPublication = await projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord);
       const initialPublication = expect.objectContaining({ baseMainOid: fixture.mainOid, operation: null });
       expect(finalPublication).toEqual(retainPublication ? publication : initialPublication);
       expect(fixture.joinRequests).toEqual([]);
-      expect(await projects.listPendingOperationProjectIds()).toEqual([]);
+      expect(await projects.listPendingOperationProjectIds()).toEqual(['project-broken']);
       await expect(lstat(path.join(fixture.vaultRoot, 'Shared/Projects/do-not-create'))).rejects.toMatchObject({ code: 'ENOENT' });
     } finally { cut.mockRestore(); await feature.close(); await fixture.close(); }
   });
@@ -303,12 +316,27 @@ describe('CloudProjectEntryCoordinator', () => {
     const fixture = await createFixture({ join: true, joinFailure });
     const feature = createFeatureFixture(fixture);
     try {
-      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'recovery-required' });
+      const started = await feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob', projectSlug: 'cloud-notes' });
+      expect(started).toMatchObject({ status: 'recovery-required' });
+      if (started.status !== 'recovery-required') throw started;
       expect(await fixture.foundation.local.projects.loadMembership(PROJECT_ID)).toBeNull();
       expect(await fixture.foundation.local.projects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeCloudProjectEntryRecord)).toMatchObject({ phase: 'intent', operationKind: 'cloud-join-project' });
       expect((await fixture.foundation.local.projects.loadIndex()).projects).toEqual([]);
+      expect(feature.state).toMatchObject({ projects: [], pendingSetups: [{ operationId: started.operationId, projectId: PROJECT_ID, name: 'cloud-notes' }] });
       expect(fixture.joinRequests).toHaveLength(1);
       expect(fixture.failures).toEqual([]);
+      await feature.close();
+      await fixture.foundation.close();
+      const restartedFoundation = new ClaudianCollabService({
+        getConfiguredGitPath: () => '', installationKey: TEST_INSTALLATION_A,
+        obsidianConfigDirectory: '.obsidian', vaultRoot: fixture.vaultRoot,
+      });
+      const reopened = createFeatureFixture({ ...fixture, foundation: restartedFoundation });
+      try {
+        await expect(reopened.initialize()).resolves.toMatchObject({ status: 'success', value: {
+          projects: [], pendingSetups: [{ operationId: started.operationId, projectId: PROJECT_ID, name: 'cloud-notes' }],
+        } });
+      } finally { await reopened.close(); await restartedFoundation.close(); }
     } finally { await feature.close(); await fixture.close(); }
   });
 
@@ -360,11 +388,12 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(result).toMatchObject({ status: point === 'before' ? 'recovery-required' : 'failure' });
       const settled = point === 'before' && result.status === 'recovery-required'
         ? await feature.resumeSetup({ operationId: result.operationId }) : result;
-      expect(settled).toMatchObject({ status: 'failure', error: { code: 'authorization-denied' } });
+      expect(settled).toMatchObject({ status: 'failure', error: { code: 'authorization-denied', recoveryActions: ['refresh-invitation'] } });
       const requests = fixture.joinRequests as { idempotencyKey: string }[];
       expect(requests).toHaveLength(point === 'before' ? 2 : 1);
       expect(requests.at(-1)!.idempotencyKey).toBe(requests[0].idempotencyKey);
       expect(await projects.listPendingOperationProjectIds()).toEqual([]);
+      expect(feature.state.pendingSetups ?? []).toEqual([]);
       expect(await projects.loadMembership(PROJECT_ID)).toBeNull();
       expect(fixture.failures).toEqual([]);
     } finally { cut.mockRestore(); await feature.close(); await fixture.close(); }
@@ -473,8 +502,11 @@ describe('CloudProjectEntryCoordinator', () => {
     const fixture = await createFixture({ join: true, alreadyBound: true, remoteContribution: true });
     const feature = createFeatureFixture(fixture);
     try {
+      await fixture.foundation.local.projects.upsertProject({ authorityKind: 'cloud', id: 'project-other', name: 'Other', workspacePath: 'Shared/Projects/other', createdAt: CREATED_AT, updatedAt: CREATED_AT });
+      await fixture.foundation.local.projects.selectProject('project-other');
       await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Ignored new name', projectSlug: 'existing-notes' }))
         .resolves.toMatchObject({ status: 'success', value: { role: 'member', workspacePath: 'Shared/Projects/existing-notes' } });
+      expect((await fixture.foundation.local.projects.loadIndex()).selectedProjectId).toBe(PROJECT_ID);
       expect(fixture.joinRequests).toEqual([]);
       expect(await fixture.foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({
         authority: { authorityGeneration: 7 }, member: { displayName: 'Bob', id: MEMBER_ID },
@@ -1173,7 +1205,7 @@ async function createFixture(options: {
         projectId, 'publication-state', decodeCollabPublicationStateRecord,
       )).toMatchObject({ baseMainOid: mainOid });
       expect((await foundation.local.projects.loadIndex()).projects)
-        .toEqual([expect.objectContaining({ authorityKind: 'cloud', id: projectId })]);
+        .toEqual(expect.arrayContaining([expect.objectContaining({ authorityKind: 'cloud', id: projectId })]));
       const session = await sessions.acquire(projectId).ensureAuthoritySession<CollabAuthoritySession>(
         () => adapter.create(membership),
       );

@@ -7,7 +7,7 @@ import {
   type WorkspaceLeaf,
 } from 'obsidian';
 
-import { type CollabCoordinationSnapshot, type CollabFeaturePort, type CollabFeatureState, type CollabLocalCleanupChoice, type CollabLocalProjectSummary, type CollabPublicationReview, type CollabRequestReview, type CollabWorkingTreeReview, resolveEffectiveCollabProjectId } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabFeaturePort, type CollabFeatureState, type CollabLocalCleanupChoice, type CollabLocalProjectSummary, type CollabPendingSetupSummary, type CollabPublicationReview, type CollabRequestReview, type CollabWorkingTreeReview, resolveEffectiveCollabProjectId } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import type {
   CollabTransientSurfaceFactory,
@@ -30,10 +30,6 @@ import {
 } from '@/features/collab/sidebar/tickets/TicketListPanel';
 import type { CollabSidebarSurfaceController } from '@/features/FeatureHost';
 import { t } from '@/i18n/i18n';
-
-export interface CollabPanelProjectSetupPort {
-  getPendingSetupOperationId(projectId: string): Promise<CollabOperationId | null>;
-}
 
 export interface CollabPanelPort extends CollabFeaturePort {
   readonly state: CollabFeatureState;
@@ -77,7 +73,6 @@ export interface CollabPanelOptions {
   ) => Promise<GitSetupResolution | void>;
   readonly port: CollabPanelPort;
   readonly preparedReviews?: CollabPreparedReviewCache;
-  readonly projectSetup: CollabPanelProjectSetupPort;
   readonly resolveGit: (rescan: boolean) => Promise<GitSetupResolution>;
   readonly ticketFocus?: TicketFocusPort;
   readonly transientSurfaces?: Pick<
@@ -94,9 +89,12 @@ interface CollabPanelViewState {
   readonly scrollTop: number;
 }
 
-interface PendingRecoveryAction {
-  readonly recoveryEl: HTMLDivElement;
-  operationId: CollabOperationId | null;
+interface WorkingCopyRecoveryAction {
+  readonly projectId: string;
+  completed?: boolean;
+  pending: boolean;
+  failed: boolean;
+  operationId?: CollabOperationId;
 }
 
 interface RetiredActionState {
@@ -120,8 +118,9 @@ export class CollabPanel implements CollabSidebarSurfaceController {
   private initializationPromise: Promise<void> | null = null;
   private updatePanel: ProjectUpdatePanel | null = null;
   private personalPanel: PersonalChangesPanel | null = null;
-  private pendingRecoveryAction: PendingRecoveryAction | null = null;
+  private readonly setupActions = new Map<string, 'pending' | 'failed' | 'completed'>();
   private retiredAction: RetiredActionState | null = null;
+  private workingCopyRecovery: WorkingCopyRecoveryAction | null = null;
   private readonly rootEl: HTMLDivElement;
   private shellStateSignature: string | null = null;
   private readonly subscription: { dispose(): void };
@@ -137,6 +136,12 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     this.initialGitResolution = options.initialGitResolution ?? null;
     this.rootEl = containerEl.createDiv({ cls: 'claudian-collab-panel' });
     this.subscription = options.port.subscribe(state => {
+      if (this.workingCopyRecovery && state.projects.some(project => (
+        project.id === this.workingCopyRecovery?.projectId && project.health === 'healthy'
+      ))) {
+        this.workingCopyRecovery = null;
+        this.shellStateSignature = null;
+      }
       if (this.active && this.#shellSignature(state) !== this.shellStateSignature) {
         this.render();
       }
@@ -170,7 +175,6 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     }
     const state = this.#readState();
     if (this.#shellSignature(state) === this.shellStateSignature) {
-      this.#renderPendingRecoveryAction();
       this.updatePanel?.setActive(true);
       const personalRefreshScheduled = this.personalPanel?.setActive(true) ?? false;
       this.teamPanel?.setActive(true, !personalRefreshScheduled);
@@ -342,6 +346,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
   #renderProjects(state: CollabFeatureState): void {
     if (state.projects.length === 0) {
       this.#renderEmptyProjectHeader();
+      this.#renderPendingSetups(state);
       this.#renderEmptyState();
       return;
     }
@@ -391,6 +396,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     });
     setIcon(addButton, 'plus');
     addButton.addEventListener('click', () => this.#showAddProjectMenu(addButton));
+    this.#renderPendingSetups(state);
     this.#renderProjectHome(selected, projectActions);
   }
 
@@ -522,28 +528,11 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     } else if (project.lifecycle === 'leaving') {
       this.#renderLeaveRecovery(home, project);
     } else if (project.health === 'needs-attention') {
-      const recovery = home.createDiv({ cls: 'claudian-collab-project-recovery' });
-      recovery.createDiv({ text: t('collab.panel.setupIncomplete') });
-      const pendingRecoveryAction: PendingRecoveryAction = {
-        operationId: null,
-        recoveryEl: recovery,
-      };
-      this.pendingRecoveryAction = pendingRecoveryAction;
-      void this.options.projectSetup.getPendingSetupOperationId(project.id)
-        .then(operationId => {
-          if (
-            this.pendingRecoveryAction !== pendingRecoveryAction
-            || !recovery.isConnected
-          ) return;
-          pendingRecoveryAction.operationId = operationId;
-          if (this.active) this.#renderPendingRecoveryAction();
-        })
-        .catch(() => undefined);
+      if (!this.#readState().pendingSetups?.some(setup => setup.projectId === project.id)) {
+        home.createDiv({ cls: 'claudian-collab-project-recovery', text: t('collab.panel.setupIncomplete') });
+      }
     } else if (project.health === 'missing') {
-      home.createDiv({
-        cls: 'claudian-collab-project-recovery',
-        text: t('collab.panel.workingCopyMissing'),
-      });
+      this.#renderMissingWorkingCopy(home, project);
     } else {
       this.updatePanel = new ProjectUpdatePanel(home.createDiv(), {
         projectId: project.id,
@@ -603,6 +592,45 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         projectHeaderActions,
       );
     }
+  }
+
+  #renderMissingWorkingCopy(home: HTMLElement, project: CollabLocalProjectSummary): void {
+    const recovery = home.createDiv({ cls: 'claudian-collab-project-recovery' });
+    const action = this.workingCopyRecovery?.projectId === project.id ? this.workingCopyRecovery : null;
+    if (action?.completed) {
+      this.#renderCompletedSetup(recovery, project.name);
+      return;
+    }
+    recovery.createDiv({ text: t('collab.panel.workingCopyMissing') });
+    if (project.authorityKind !== 'cloud') return;
+    const repair = recovery.createEl('button', {
+      attr: { 'data-action': 'restore-working-copy', type: 'button' },
+      text: t(action?.operationId ? 'collab.createProject.resume' : 'collab.panel.restoreWorkingCopy'),
+    });
+    repair.disabled = this.workingCopyRecovery?.pending === true;
+    repair.addEventListener('click', () => { void this.#restoreWorkingCopy(project.id); });
+    if (action?.failed) recovery.createDiv({ attr: { role: 'alert' }, text: t('collab.panel.restoreWorkingCopyFailed') });
+  }
+
+  async #restoreWorkingCopy(projectId: string): Promise<void> {
+    if (this.destroyed || this.workingCopyRecovery?.pending) return;
+    const action: WorkingCopyRecoveryAction = {
+      projectId, pending: true, failed: false,
+      ...(this.workingCopyRecovery?.projectId === projectId && this.workingCopyRecovery.operationId
+        ? { operationId: this.workingCopyRecovery.operationId } : {}),
+    };
+    this.workingCopyRecovery = action;
+    this.render();
+    const result = action.operationId
+      ? await this.options.port.resumeSetup({ operationId: action.operationId, projectId })
+      : await this.options.port.joinProject({ existingCloudProjectId: projectId });
+    if (this.destroyed || this.workingCopyRecovery !== action) return;
+    action.pending = false;
+    action.failed = result.status !== 'success';
+    if (result.status === 'success') { action.completed = true; delete action.operationId; }
+    if (result.status === 'recovery-required') action.operationId = result.operationId;
+    this.shellStateSignature = null;
+    this.render();
   }
 
   #renderRetiredProject(
@@ -761,14 +789,55 @@ export class CollabPanel implements CollabSidebarSurfaceController {
     factory(() => undefined).open();
   }
 
-  private async resumeSetup(
-    operationId: CollabOperationId,
-    button: HTMLButtonElement,
-  ): Promise<void> {
-    button.disabled = true;
-    const result = await this.options.port.resumeSetup({ operationId });
-    if (result.status !== 'success') button.disabled = false;
-    if (this.active) this.render();
+  #renderCompletedSetup(container: HTMLElement, name: string): void {
+    container.createDiv({ attr: { role: 'status' }, text: t('collab.notices.setupReady', { name }) });
+    const refresh = container.createEl('button', { attr: { type: 'button' }, text: t('common.refresh') });
+    refresh.addEventListener('click', () => {
+      refresh.disabled = true;
+      void this.options.port.initialize().finally(() => { refresh.disabled = false; });
+    });
+  }
+
+  #renderPendingSetups(state: CollabFeatureState): void {
+    const setups = state.pendingSetups ?? [];
+    for (const operationId of this.setupActions.keys()) {
+      if (!setups.some(setup => setup.operationId === operationId)) this.setupActions.delete(operationId);
+    }
+    for (const setup of setups) {
+      const recovery = this.rootEl.createDiv({ cls: 'claudian-collab-project-recovery' });
+      recovery.createEl('h4', { text: setup.name });
+      if (!setup.operationId) {
+        recovery.createDiv({ attr: { role: 'alert' }, text: t('collab.panel.setupRecoveryUnavailable') });
+        const retry = recovery.createEl('button', { attr: { type: 'button' }, text: t('collab.access.retry') });
+        retry.addEventListener('click', () => { retry.disabled = true; void this.options.port.initialize(); });
+        continue;
+      }
+      if (this.setupActions.get(setup.operationId) === 'completed') {
+        this.#renderCompletedSetup(recovery, setup.name);
+        continue;
+      }
+      recovery.createDiv({ text: t('collab.panel.setupIncomplete') });
+      const resume = recovery.createEl('button', {
+        attr: { 'aria-label': `${t('collab.createProject.resume')}: ${setup.name}`, 'data-action': 'resume-setup', type: 'button' },
+        text: t('collab.createProject.resume'),
+      });
+      resume.disabled = this.setupActions.get(setup.operationId) === 'pending';
+      resume.addEventListener('click', () => { void this.#resumeSetup(setup); });
+      if (this.setupActions.get(setup.operationId) === 'failed') {
+        recovery.createDiv({ attr: { role: 'alert' }, text: t('collab.createProject.resumeFailed') });
+      }
+    }
+  }
+
+  async #resumeSetup(setup: CollabPendingSetupSummary): Promise<void> {
+    if (this.destroyed || !setup.operationId || ['pending', 'completed'].includes(this.setupActions.get(setup.operationId) ?? '')) return;
+    this.setupActions.set(setup.operationId, 'pending');
+    this.render();
+    const result = await this.options.port.resumeSetup({ operationId: setup.operationId, projectId: setup.projectId });
+    if (this.destroyed) return;
+    this.setupActions.set(setup.operationId, result.status === 'success' ? 'completed' : 'failed');
+    this.shellStateSignature = null;
+    this.render();
   }
 
   #renderLeaveRecovery(
@@ -796,24 +865,6 @@ export class CollabPanel implements CollabSidebarSurfaceController {
         }
         if (this.active) this.render();
       });
-    });
-  }
-
-  #renderPendingRecoveryAction(): void {
-    const pending = this.pendingRecoveryAction;
-    const operationId = pending?.operationId;
-    if (
-      !pending
-      || !operationId
-      || !pending.recoveryEl.isConnected
-      || pending.recoveryEl.querySelector('[data-action="resume-setup"]')
-    ) return;
-    const resume = pending.recoveryEl.createEl('button', {
-      attr: { 'data-action': 'resume-setup', type: 'button' },
-      text: t('collab.createProject.resume'),
-    });
-    resume.addEventListener('click', () => {
-      void this.resumeSetup(operationId, resume);
     });
   }
 
@@ -896,7 +947,6 @@ export class CollabPanel implements CollabSidebarSurfaceController {
   }
 
   #clearRoot(): void {
-    this.pendingRecoveryAction = null;
     this.updatePanel?.destroy();
     this.updatePanel = null;
     this.#destroyPersonalPanel();
@@ -925,6 +975,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       error: state.error?.code ?? null,
       lifecycle: state.lifecycle,
       projects: state.projects,
+      pendingSetups: state.pendingSetups,
       selectedProjectId: state.selectedProjectId,
     });
   }

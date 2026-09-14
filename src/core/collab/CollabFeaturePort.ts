@@ -69,7 +69,14 @@ export type CollabFeatureLifecycle =
   | 'ready'
   | 'failed';
 
+export interface CollabPendingSetupSummary {
+  readonly operationId: CollabOperationId | null;
+  readonly projectId: CollabProjectId;
+  readonly name: string;
+}
+
 export interface CollabFeatureState {
+  readonly pendingSetups?: readonly CollabPendingSetupSummary[];
   lifecycle: CollabFeatureLifecycle;
   projects: readonly CollabLocalProjectSummary[];
   selectedProjectId: CollabProjectId | null;
@@ -136,6 +143,7 @@ export type CollabReconnectProjectRequest = {
 
 export interface CollabResumeSetupRequest {
   operationId: CollabOperationId;
+  projectId?: CollabProjectId;
 }
 
 export interface CollabPendingReconnectView {
