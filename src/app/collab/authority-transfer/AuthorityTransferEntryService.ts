@@ -15,6 +15,7 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import {
   type CollabLocalMembershipRecord,
+  isCollabLocalCloudMembership,
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
@@ -143,12 +144,21 @@ export class AuthorityTransferEntryService {
     });
   }
 
-  readCloudToLanTransfer(
+  async readCloudToLanTransfer(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabCloudToLanTransferView | null> {
     throwIfCancelled(options.signal);
-    return this.#module.readCloudToLanTransfer(projectId);
+    const local = await this.#module.readCloudToLanTransfer(projectId);
+    const membership = await this.#loadMembership(projectId);
+    if (!membership || !isCollabLocalCloudMembership(membership)) return local;
+    try {
+      const preparations = await this.#module.readCloudToLanPreparations(projectId, options);
+      if (!local && preparations.length === 0) return null;
+      return { manager: local?.manager ?? null, target: local?.target ?? null,
+        preparations: preparations.map(item => ({ preparationId: item.preparationId, targetMemberId: item.selectedTargetMemberId })) };
+    } catch { return local; }
+
   }
 
   async acceptLanToCloudTransfer(
@@ -271,26 +281,31 @@ export class AuthorityTransferEntryService {
     let handle = current?.target?.handle;
     if (!handle) {
       const descriptor = await this.prepareCloudToLanTarget({ projectId }, options);
-      handle = await this.beginCloudToLanTransfer({ descriptor }, options);
+      handle = await this.beginCloudToLanTransfer({ projectId, preparationId: descriptor.preparationId }, options);
     }
     return this.acceptCloudToLanTransfer({ handle }, options);
   }
 
-  prepareCloudToLanTarget(
+  async prepareCloudToLanTarget(
     input: CollabPrepareCloudToLanTargetRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTargetPreparationDescriptor> {
-    return this.#module.prepareCloudToLanTarget({
-      ...input, operationIntentId: `cloud-to-lan-target-${randomUUID().replaceAll('-', '')}`,
-    }, options);
+    try {
+      return await this.#module.prepareCloudToLanTarget({
+        ...input, operationIntentId: `cloud-to-lan-target-${randomUUID().replaceAll('-', '')}`,
+      }, options);
+    } finally {
+      this.#module.waitForCloudToLanApproval(input.projectId);
+    }
   }
 
-  beginCloudToLanTransfer(
+  async beginCloudToLanTransfer(
     input: CollabBeginCloudToLanTransferRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferHandle> {
+    const descriptor = await this.#module.resolveCloudToLanPreparation(input.projectId, input.preparationId, options);
     return this.#module.beginCloudToLanTransfer({
-      ...input, operationIntentId: `cloud-to-lan-manager-${randomUUID().replaceAll('-', '')}`,
+      descriptor, operationIntentId: descriptor.preparationId,
     }, options);
   }
 

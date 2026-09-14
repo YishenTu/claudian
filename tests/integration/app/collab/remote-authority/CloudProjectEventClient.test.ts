@@ -100,8 +100,8 @@ describe('Cloud event default transport liveness', () => {
       client.start();
       expect(await waitFor(() => server.requests.length >= 2, 32_000)).toBe(true);
       expect(server.requests.slice(0, 2)).toEqual([
-        '/v8/projects/project-events/events?afterSequence=7',
-        '/v8/projects/project-events/events?afterSequence=7',
+        '/v9/projects/project-events/events?afterSequence=7',
+        '/v9/projects/project-events/events?afterSequence=7',
       ]);
       expect(invalidations).toEqual([]);
     } finally {
@@ -122,8 +122,8 @@ describe('Cloud event default transport liveness', () => {
       client.start();
       expect(await waitFor(() => server.requests.length >= 2, 62_000)).toBe(true);
       expect(server.requests.slice(0, 2)).toEqual([
-        '/v8/projects/project-events/events?afterSequence=3',
-        '/v8/projects/project-events/events?afterSequence=5',
+        '/v9/projects/project-events/events?afterSequence=3',
+        '/v9/projects/project-events/events?afterSequence=5',
       ]);
     } finally {
       await client.dispose();

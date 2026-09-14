@@ -320,7 +320,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     } finally { release?.(); modal.onClose(); modal.contentEl.remove(); await flush(); }
   });
 
-  it.each(['descriptor', 'destination', 'actor-change'] as const)('preserves identity-bound transfer form state for %s', async scenario => {
+  it.each(['destination', 'actor-change'] as const)('preserves identity-bound transfer form state for %s', async scenario => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
     let publish!: (state: CollabFeatureState) => void;
@@ -339,10 +339,6 @@ it.each([false, true])('automatically restores management after Host startup wit
       const ui = within(modal.contentEl);
       fireEvent.click(ui.getByRole('button', { name: 'Move to LAN' }));
       fireEvent.change(ui.getByRole('combobox', { name: 'LAN host' }), { target: { value: 'another-device' } });
-      const input = ui.getByRole('textbox', { name: 'LAN target descriptor' });
-      input.focus();
-      const draft = '{"preparationId":"draft-not-yet-submitted"}';
-      fireEvent.input(input, { target: { value: draft } });
       const destination = ui.getByRole('combobox', { name: 'LAN host' });
       if (scenario === 'destination') destination.focus();
       if (scenario === 'actor-change') {
@@ -358,13 +354,11 @@ it.each([false, true])('automatically restores management after Host startup wit
         const toggle = ui.getByRole('button', { name: 'Move to LAN' });
         if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle);
       }
-      const descriptor = ui.queryByRole('textbox', { name: 'LAN target descriptor' }) as HTMLTextAreaElement | null;
-      expect(descriptor?.value ?? null).toBe(scenario === 'actor-change' ? null : draft);
       expect((ui.getByRole('combobox', { name: 'LAN host' }) as HTMLSelectElement).value)
         .toBe(scenario === 'actor-change' ? 'this-device' : 'another-device');
       const focusedField = document.activeElement?.getAttribute('data-field') ?? null;
       expect(focusedField).toBe(scenario === 'actor-change' ? null
-        : scenario === 'destination' ? 'lan-destination' : 'cloud-to-lan-descriptor');
+        : 'lan-destination');
       expect(port.beginCloudToLanTransfer).not.toHaveBeenCalled();
     } finally { modal.onClose(); modal.contentEl.remove(); }
   });
@@ -400,9 +394,9 @@ it.each([false, true])('automatically restores management after Host startup wit
       } as never));
       publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
       await flush();
-      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Copy transfer data: Transfer handle' }));
+      fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Refresh transfer status' }));
       await flush();
-      expect(copyText).toHaveBeenCalledWith(JSON.stringify(handle));
+      expect(port.observeCloudToLanTransfer).toHaveBeenCalledWith(summary.id);
       expect(port.moveCloudToLan).not.toHaveBeenCalled();
     } finally { modal.onClose(); modal.contentEl.remove(); }
   });
@@ -1433,8 +1427,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     modal.onOpen();
     await flush();
 
-    expect(modal.contentEl.textContent).toContain('preparation-manager-recovery');
-    expect(modal.contentEl.textContent).toContain('Pending');
+    expect(within(modal.contentEl).getByText('Pending')).not.toBeNull();
   });
 
   it('keeps pending invitation recovery reachable when the current capability is disabled', async () => {
@@ -1872,9 +1865,9 @@ it.each([false, true])('automatically restores management after Host startup wit
     )?.click();
     await flush();
     expect(port.moveCloudToLan).toHaveBeenCalledWith('project-alpha');
-    await waitFor(() => expect(ui.queryByRole('button', { name: 'Retry' }) !== null).toBe(retry));
+    await waitFor(() => expect(ui.queryByRole('button', { name: 'Resume' }) !== null).toBe(retry));
     if (retry) {
-      fireEvent.click(ui.getByRole('button', { name: 'Retry' }));
+      fireEvent.click(ui.getByRole('button', { name: 'Resume' }));
       await flush();
     }
     expect(port.moveCloudToLan).toHaveBeenLastCalledWith('project-alpha');
@@ -1884,7 +1877,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(modal.close).toHaveBeenCalledTimes(1);
   });
 
-  it('shows only the target input and returned handle when moving to another device', async () => {
+  it('approves the Cloud-held receiving-device request by identity', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const descriptor = {
       expiresAt: '2026-09-10T00:00:00.000Z',
@@ -1913,7 +1906,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     const port = createPort(members, {
       acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success(completedStatus)),
       beginCloudToLanTransfer: jest.fn().mockResolvedValue(success(handle)),
-      readCloudToLanTransfer: jest.fn().mockResolvedValueOnce(success(null)).mockResolvedValue(success({
+      readCloudToLanTransfer: jest.fn().mockResolvedValueOnce(success({ manager: null, target: null, preparations: [{ preparationId: 'preparation-one', targetMemberId: 'member-manager' }] })).mockResolvedValue(success({
         manager: { descriptor, handle, status: null }, target: null,
       })),
       listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
@@ -1956,25 +1949,10 @@ it.each([false, true])('automatically restores management after Host startup wit
 
     document.body.appendChild(modal.contentEl);
     const ui = within(modal.contentEl);
-    fireEvent.click(ui.getByRole('button', { name: 'Move to LAN' }));
-    fireEvent.change(ui.getByRole('combobox', { name: 'LAN host' }), {
-      target: { value: 'another-device' },
-    });
-    expect(ui.queryByRole('button', { name: 'Prepare LAN target' })).toBeNull();
-    expect(ui.queryByRole('textbox', { name: 'Transfer handle' })).toBeNull();
-    fireEvent.input(ui.getByRole('textbox', { name: 'LAN target descriptor' }), {
-      target: { value: JSON.stringify(descriptor) },
-    });
     fireEvent.click(ui.getByRole('button', { name: 'Begin move to LAN' }));
     await flush();
-    expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ descriptor });
-    await waitFor(() => expect(ui.queryByRole('textbox', { name: 'LAN target descriptor' })).toBeNull());
-    expect(ui.queryByRole('button', { name: 'Accept transfer on this device' })).toBeNull();
-    expect((ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement).value)
-      .toBe(JSON.stringify(handle));
-    fireEvent.click(ui.getByRole('button', { name: 'Copy transfer data: Transfer handle' }));
-    await flush();
-    expect(copyText).toHaveBeenCalledWith(JSON.stringify(handle));
+    expect(port.beginCloudToLanTransfer).toHaveBeenCalledWith({ projectId: 'project-alpha', preparationId: 'preparation-one' });
+    expect(ui.getByText('Approved. The receiving device will continue automatically, or its user can select Resume.')).not.toBeNull();
     expect(await axe(modal.contentEl)).toHaveNoViolations();
     modal.onClose();
     modal.contentEl.remove();
@@ -2037,7 +2015,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(modal.contentEl.querySelector('[data-action="begin-cloud-to-lan"]')).not.toBeNull();
   });
 
-  it('preserves offline recovery editing while a background management read is pending', async () => {
+  it('keeps pending recovery available while a background management read is pending', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'offline' });
     const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
@@ -2057,23 +2035,14 @@ it.each([false, true])('automatically restores management after Host startup wit
     try {
       modal.onOpen(); await flush();
       const ui = within(modal.contentEl);
-      const input = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
-      const draft = '{"transferId":"in-progress"}';
-      fireEvent.input(input, { target: { value: draft } });
-      input.focus();
-      input.setSelectionRange(3, 9);
+      expect(ui.getByRole('button', { name: 'Resume' })).toBeDefined();
       port.readSnapshot.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
       publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
       await flush();
-      const pendingInput = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
-      expect(document.activeElement).toBe(pendingInput);
-      expect(pendingInput.value).toBe(draft);
-      expect([pendingInput.selectionStart, pendingInput.selectionEnd]).toEqual([3, 9]);
+      expect(ui.getByRole('button', { name: 'Resume' })).toBeDefined();
       finish(offline); await flush();
-      const settledInput = ui.getByRole('textbox', { name: 'Transfer handle' }) as HTMLTextAreaElement;
-      expect(document.activeElement).toBe(settledInput);
-      expect(settledInput.value).toBe(draft);
-      expect([settledInput.selectionStart, settledInput.selectionEnd]).toEqual([3, 9]);
+      fireEvent.click(ui.getByRole('button', { name: 'Resume' })); await flush();
+      expect(port.prepareCloudToLanTarget).toHaveBeenCalledWith({ projectId: summary.id });
     } finally { modal.onClose(); modal.contentEl.remove(); }
   });
 

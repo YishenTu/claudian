@@ -40,6 +40,35 @@ describe('CollabProjectConnection', () => {
     await connection.close();
   });
 
+  it('keeps HTTP fallback usable while retrying events and stops fallback after WS recovery', async () => {
+    const reconnect = jest.fn(async () => 'polling' as const);
+    const connection = new CollabProjectConnection({ onStatusChange: jest.fn(), reconnect });
+    connection.observeEvents(new CollabError({ code: 'endpoint-unreachable' }));
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(connection.status).toBe('connected');
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(reconnect).toHaveBeenCalledTimes(2);
+    connection.observeEvents('connected');
+    await jest.advanceTimersByTimeAsync(90_000);
+    expect(reconnect).toHaveBeenCalledTimes(2);
+    await connection.close();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('does not report HTTP offline merely because the next WS retry fails', async () => {
+    const connection = new CollabProjectConnection({ onStatusChange: jest.fn(), reconnect: async () => 'polling' });
+    connection.observeEvents(new CollabError({ code: 'endpoint-unreachable' }));
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(connection.status).toBe('connected');
+    connection.observeEvents('connecting');
+    expect(connection.status).toBe('connected');
+    connection.observeEvents(new CollabError({ code: 'endpoint-unreachable' }));
+    expect(connection.status).toBe('connected');
+    connection.observeFailure(new CollabError({ code: 'endpoint-unreachable' }));
+    expect(connection.status).toBe('offline');
+    await connection.close();
+  });
+
   it('converges after a failed old route and a trusted rotation within the same attempt', async () => {
     const connection = new CollabProjectConnection({
       onStatusChange: jest.fn(),

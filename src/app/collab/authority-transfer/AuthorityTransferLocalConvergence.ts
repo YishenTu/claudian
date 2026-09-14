@@ -65,6 +65,9 @@ export interface AuthorityTransferLocalConvergenceOptions {
   readonly git: AuthorityTransferConvergenceGit;
   readonly now?: () => Date;
   readonly projects: AuthorityTransferConvergenceProjects;
+  readonly settleRequesterAfterAuthorityAdvance?: (identity: {
+    projectId: CollabProjectId; memberId: string; authorityGeneration: number;
+  }) => Promise<void>;
   readonly workspace: AuthorityTransferConvergenceWorkspace;
 }
 
@@ -547,6 +550,12 @@ export class AuthorityTransferLocalConvergence {
     const index = await this.options.projects.repairIndexFromMemberships();
     if (index.projects.find(project => project.id === projectId)?.authorityKind !== authorityKind) {
       throw convergenceError('authority-transfer-index-convergence-failed');
+    }
+    if (this.options.settleRequesterAfterAuthorityAdvance) {
+      const membership = await this.#requireMembership(projectId);
+      await this.options.settleRequesterAfterAuthorityAdvance({
+        projectId, memberId: membership.member.id, authorityGeneration: membership.authority.authorityGeneration,
+      });
     }
   }
 

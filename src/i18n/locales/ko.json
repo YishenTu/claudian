@@ -216,7 +216,13 @@
       "createNewInvitation": "새 초대 만들기",
       "invitationManagementPending": "먼저 프로젝트 관리에서 대기 중인 작업을 완료하세요.",
       "invitationFailed": "초대 작업을 완료하지 못했습니다.",
-      "invitationStatus": { "active": "활성", "redeeming": "사용 중", "redeemed": "사용됨", "revoked": "취소됨", "expired": "만료됨" },
+      "invitationStatus": {
+        "active": "활성",
+        "redeeming": "사용 중",
+        "redeemed": "사용됨",
+        "revoked": "취소됨",
+        "expired": "만료됨"
+      },
       "copyFailed": "초대를 복사하지 못했습니다.",
       "reissueMemberClaim": "멤버십 자격 정보 재발급",
       "revokeMemberClaim": "멤버십 자격 정보 취소",
@@ -243,8 +249,8 @@
       "anotherDevice": "다른 기기",
       "prepareLanHelp": "이 기기에서 로컬 네트워크를 통해 프로젝트를 호스팅할 준비를 합니다.",
       "lanTargetReady": "이 기기가 프로젝트를 받을 준비가 되었습니다.",
-      "shareLanTargetHelp": "이 대상 데이터를 Manager에게 보낸 다음, 받은 전송 핸들을 붙여넣으세요.",
-      "otherLanTargetHelp": "대상 기기에서 LAN으로 이동을 열어 준비한 후, 대상 데이터를 여기에 붙여넣으세요.",
+      "shareLanTargetHelp": "요청을 보냈습니다. Manager가 승인하면 이 기기에서 자동으로 계속합니다.",
+      "otherLanTargetHelp": "수신 기기에서 LAN으로 이동을 열고 호스팅을 요청하세요. 요청이 여기에 표시됩니다.",
       "shareLanHandleHelp": "이 핸들을 대상 기기로 보내 해당 기기에서 전송을 수락하세요.",
       "prepareCloudToLan": "LAN 대상 준비",
       "withdrawCloudToLan": "대상 철회",
@@ -256,7 +262,12 @@
       "copyTransferData": "전송 데이터 복사",
       "transferUpdated": "이동 상태가 업데이트되었습니다.",
       "transferConnectionRequired": "저장된 전송을 계속하려면 호환되는 서버 연결이 필요합니다.",
-      "transferStatus": { "pending": "대기 중", "active": "진행 중", "completed": "완료됨", "cancelled": "취소됨" },
+      "transferStatus": {
+        "pending": "대기 중",
+        "active": "진행 중",
+        "completed": "완료됨",
+        "cancelled": "취소됨"
+      },
       "finishOperation": "완료된 작업 마치기",
       "manager": "Manager",
       "managerCount": "Manager: {count}",
@@ -302,7 +313,10 @@
       "offlineLeaveCloud": "You are offline. You will leave this Project locally now. Your departure will be synced when this device reconnects to the server.",
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
-      "actionComplete": "접근 권한을 업데이트했습니다."
+      "actionComplete": "접근 권한을 업데이트했습니다.",
+      "waitingCloudToLanApproval": "승인 대기 중입니다. 이 창을 닫아도 이전은 자동으로 계속됩니다.",
+      "resumeCloudToLan": "재개",
+      "cloudToLanApproved": "승인되었습니다. 수신 기기에서 자동으로 계속하거나 사용자가 재개를 선택할 수 있습니다."
     },
     "host": {
       "hostedHereSummary": "LAN Host (이 기기)",
@@ -862,9 +876,40 @@
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
-      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
-      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
+      "sectionTitle": "Skills",
+      "fixedRoot": "Managed in .agents/skills",
+      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
+      "noSkills": "No shared skills configured. Click + to create one.",
+      "skillBadge": "skill",
+      "diagnosticsTitle": "Skills needing attention",
+      "loadFailed": "Could not load shared skills.",
+      "savedRefreshFailed": "Saved, but provider refresh failed.",
+      "validationFailed": "Invalid skill: {message}",
+      "collisionFailed": "A skill named \"{name}\" already exists.",
+      "saveFailed": "Failed to save shared skill: {message}",
+      "deleteFailed": "Failed to move shared skill to trash: {message}",
+      "staleConflict": "This skill changed elsewhere; refresh before saving.",
+      "created": "Shared skill \"{name}\" created.",
+      "updated": "Shared skill \"{name}\" updated.",
+      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": {
+        "titleEdit": "Edit Shared Skill",
+        "titleAdd": "Add Shared Skill",
+        "name": "Skill name",
+        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "namePlaceholder": "code-reviewer",
+        "description": "Description",
+        "descriptionDesc": "Required portable description used by providers to select the skill",
+        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
+        "instructions": "Instructions",
+        "instructionsDesc": "Required SKILL.md instructions",
+        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+      },
+      "delete": {
+        "title": "Delete Shared Skill",
+        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
+        "confirm": "Move to trash"
+      }
     },
     "codexSubagents": {
       "modal": {

@@ -2777,7 +2777,7 @@ export class CollabFeatureService implements CollabFeaturePort {
   );
   beginCloudToLanTransfer: CollabFeaturePort['beginCloudToLanTransfer'] = (...args) => (
     this.#projectTransition(
-      () => args[0].descriptor.projectId,
+      () => args[0].projectId,
       () => this.core.beginCloudToLanTransfer(...args),
     )
   );

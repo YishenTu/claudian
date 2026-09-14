@@ -103,6 +103,7 @@ export interface CollabPublicationFoundationPort {
 }
 
 export interface CollabPublicationServiceOptions {
+  readonly onAuthorityTransferHint?: (projectId: CollabProjectId) => void;
   readonly onAuthorityMigrationHint?: (projectId: CollabProjectId) => void;
   readonly cloudAuthority: CollabAuthorityAdapter;
   readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidatesForTrustTransition'>;
@@ -222,6 +223,7 @@ export class CollabPublicationService {
     );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
       authoritySessions: this.authoritySessions,
+      onProjectInvalidated: options.onAuthorityTransferHint,
       onSnapshotResult: (projectId, error) => {
         if (error) {
           this.#connection(projectId).observeFailure(error);
@@ -1042,7 +1044,7 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     signal: AbortSignal,
     eventsRequired: boolean,
-  ): Promise<'connected' | 'retry' | 'unavailable'> {
+  ): Promise<'connected' | 'polling' | 'retry' | 'unavailable'> {
     try {
       if (eventsRequired) await this.#ensureEventSubscription(projectId);
       await this.projection.reconnectProject(projectId, { signal });
@@ -1053,7 +1055,11 @@ export class CollabPublicationService {
         || (error.group !== 'connectivity' && error.code !== 'operation-timeout')
         || error.code === 'tls-untrusted' || error.code === 'tls-ca-mismatch') throw error;
       const membership = await this.foundation.local.projects.loadMembership(projectId);
-      if (!membership || !isCollabLocalLanMembership(membership)) throw error;
+      if (!membership) throw error;
+      if (!isCollabLocalLanMembership(membership)) {
+        await this.projection.refreshObservedProject(projectId, { signal });
+        return 'polling';
+      }
       const restored = await this.#reconnectLanProject(projectId, { signal });
       if (restored !== 'connected') return restored;
       // The trusted route was persisted before reset. Capture and apply the new

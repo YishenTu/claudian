@@ -219,6 +219,7 @@
 
 .claudian-collab-project-invitation-action {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
   min-width: 0;
 }

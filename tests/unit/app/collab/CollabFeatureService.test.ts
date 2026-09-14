@@ -156,16 +156,16 @@ function pendingRelocation() {
     createdAt: CREATED_AT,
     memberId: 'member-host',
     newAuthority: {
-      bindingVersion: 8,
-      gitRemoteUrl: 'https://new.example.test/v8/projects/project-alpha/repository.git',
+      bindingVersion: 9,
+      gitRemoteUrl: 'https://new.example.test/v9/projects/project-alpha/repository.git',
       serverUrl: 'https://new.example.test/',
-      wireVersion: 12,
+      wireVersion: 13,
     },
     oldAuthority: {
-      bindingVersion: 8,
-      gitRemoteUrl: 'https://old.example.test/v8/projects/project-alpha/repository.git',
+      bindingVersion: 9,
+      gitRemoteUrl: 'https://old.example.test/v9/projects/project-alpha/repository.git',
       serverUrl: 'https://old.example.test/',
-      wireVersion: 12,
+      wireVersion: 13,
     },
     operationId: 'relocate-project-alpha',
     operationKind: 'cloud-relocation' as const,
@@ -656,7 +656,7 @@ describe('CollabFeatureService', () => {
       projectId: descriptor.projectId,
     })).resolves.toEqual({ status: 'success', value: descriptor });
     await expect(service.beginCloudToLanTransfer({
-      descriptor,
+      projectId: descriptor.projectId, preparationId: descriptor.preparationId,
     })).resolves.toEqual({ status: 'success', value: handle });
     await expect(service.acceptCloudToLanTransfer(handle))
       .resolves.toEqual({ status: 'success', value: status });
@@ -678,7 +678,7 @@ describe('CollabFeatureService', () => {
     );
     expect(authorityTransfer.beginCloudToLanTransfer).toHaveBeenCalledWith(
       {
-        descriptor,
+        projectId: descriptor.projectId, preparationId: descriptor.preparationId,
       },
       {},
     );
@@ -930,18 +930,7 @@ describe('CollabFeatureService', () => {
     const readsBefore = (foundation.local.projects.loadIndex as jest.Mock).mock.calls.length;
 
     await expect(service.beginCloudToLanTransfer({
-      descriptor: {
-        caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
-        caFingerprint: 'c'.repeat(64),
-        preparationId: 'intent-target-preparation',
-        projectId: 'project-alpha',
-        publishedAt: CREATED_AT,
-        schemaVersion: 1,
-        selectedTargetMemberId: 'member-target',
-        sourceAuthorityGeneration: 1,
-        sourceCloudUrl: 'https://cloud.example.test/',
-        targetUrl: 'https://192.168.1.20:54545',
-      },
+      projectId: 'project-alpha', preparationId: 'intent-target-preparation',
     })).resolves.toEqual({
       durablePhase: 'committed',
       durableProgress: true,
@@ -954,6 +943,7 @@ describe('CollabFeatureService', () => {
 
   it('projects durable Cloud-to-LAN responsibility without requiring an active authority read', async () => {
     const transfer = {
+      preparations: [],
       manager: null,
       target: {
         canWithdraw: false,
@@ -1200,7 +1190,7 @@ describe('CollabFeatureService', () => {
 
     const accepting = service.acceptCloudToLanTransfer(handle);
     await laneAcquired.promise;
-    const beginning = service.beginCloudToLanTransfer({ descriptor });
+    const beginning = service.beginCloudToLanTransfer({ projectId: descriptor.projectId, preparationId: descriptor.preparationId });
     await beginQueued.promise;
     startDrain.resolve();
     await new Promise<void>(resolve => setImmediate(resolve));
@@ -1347,11 +1337,11 @@ describe('CollabFeatureService', () => {
     foundation.local.projects.loadMembership = jest.fn(async () => ({
       authority: {
         authorityGeneration: 3,
-        bindingVersion: 8 as const,
+        bindingVersion: 9 as const,
         gitRemoteUrl: 'https://cloud.example.test/operator/projects/project-alpha/repository.git',
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/operator',
-        wireVersion: 12 as const,
+        wireVersion: 13 as const,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 1,

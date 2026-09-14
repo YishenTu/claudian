@@ -514,7 +514,7 @@ export class LanAuthorityTransferRouter {
         : decodeCollabAuthorityTransferOperationRequest(route.operation, parseJsonBody(body));
       const registration = this.routes.resolve(
         route.projectId,
-        'transferId' in decodedRequest ? decodedRequest.transferId : undefined,
+        'transferId' in decodedRequest && typeof decodedRequest.transferId === 'string' ? decodedRequest.transferId : undefined,
       ) ?? this.routes.resolve(route.projectId);
       if (
         !registration

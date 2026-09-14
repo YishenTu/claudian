@@ -1077,11 +1077,11 @@ describe('LanHostCoordinator production transport', () => {
     await localProjects.saveMembership({
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 8,
-        gitRemoteUrl: `http://127.0.0.1:8787/v8/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 9,
+        gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud',
         serverUrl: 'http://127.0.0.1:8787/',
-        wireVersion: 12,
+        wireVersion: 13,
       },
       createdAt: existing.createdAt,
       lastEventSequence: existing.lastEventSequence,

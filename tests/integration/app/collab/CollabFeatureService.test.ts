@@ -51,7 +51,7 @@ describe('CollabFeatureService selection ordering', () => {
       const workspacePath = `workspace/${name}`;
       const repositoryPath = path.join(vaultRoot, workspacePath);
       const serverUrl = `https://${name}.example.test`;
-      const gitRemoteUrl = `${serverUrl}/v8/projects/${projectId}/repository.git`;
+      const gitRemoteUrl = `${serverUrl}/v9/projects/${projectId}/repository.git`;
       await mkdir(repositoryPath);
       await git.repositories.initializeWorkingRepository(repositoryPath);
       await git.repositories.configureLocalRepository(repositoryPath, {
@@ -70,7 +70,7 @@ describe('CollabFeatureService selection ordering', () => {
       await git.repositories.createRef(repositoryPath, 'refs/remotes/origin/main', mainOid);
       await git.repositories.addRemote(repositoryPath, 'origin', gitRemoteUrl);
       await foundation.local.projects.saveMembership({
-        authority: { authorityGeneration: 1, bindingVersion: 8, gitRemoteUrl, kind: 'cloud', serverUrl, wireVersion: 12 },
+        authority: { authorityGeneration: 1, bindingVersion: 9, gitRemoteUrl, kind: 'cloud', serverUrl, wireVersion: 13 },
         createdAt: CREATED_AT,
         lastEventSequence: 0,
         lifecycle: 'active',

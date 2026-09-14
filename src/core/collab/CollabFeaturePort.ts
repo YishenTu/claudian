@@ -536,6 +536,7 @@ export interface CollabCloudToLanTransferHandle {
 }
 
 export interface CollabCloudToLanTransferView {
+  readonly preparations: readonly { readonly preparationId: string; readonly targetMemberId: CollabMemberId }[];
   readonly manager: Readonly<{
     readonly descriptor: CollabCloudToLanTargetPreparationDescriptor;
     readonly handle: CollabCloudToLanTransferHandle | null;
@@ -554,7 +555,8 @@ export interface CollabPrepareCloudToLanTargetRequest {
 }
 
 export interface CollabBeginCloudToLanTransferRequest {
-  readonly descriptor: CollabCloudToLanTargetPreparationDescriptor;
+  readonly projectId: CollabProjectId;
+  readonly preparationId: string;
 }
 
 export interface CollabWithdrawCloudToLanTargetRequest {

@@ -180,6 +180,7 @@ export function createCollabFeatureSubcomposition(
 
   let lifecycle: CollabProjectLifecycleSubsystem | null = null;
   let publication: CollabPublicationService | null = null;
+  let notifyAuthorityTransfer: (projectId: string) => void = () => undefined;
   let migrationFollower: AuthorityMigrationFollower | null = null;
   let feature: CollabFeatureService | null = null;
   const requireLifecycle = (): CollabProjectLifecycleSubsystem => {
@@ -414,6 +415,7 @@ export function createCollabFeatureSubcomposition(
   terminalRetirementHandler = retirementHandler;
   foundation.setRetirementHandler(retirementHandler);
   publication = new CollabPublicationService(foundation, {
+    onAuthorityTransferHint: projectId => notifyAuthorityTransfer(projectId),
     onAuthorityMigrationHint: projectId => migrationFollower?.notify(projectId),
     cloudAuthority,
     discovery: foundation.discovery,
@@ -813,6 +815,7 @@ export function createCollabFeatureSubcomposition(
       ),
     },
     projects: foundation.local.projects,
+    settleRequesterAfterAuthorityAdvance: identity => foundation.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity),
     workspace: foundation.local.workspace,
   });
   const createLanTransferClient = (trust: LanAuthorityTransferTrustedHost) => (
@@ -833,6 +836,7 @@ export function createCollabFeatureSubcomposition(
     persistence: foundation.authorityTransfers, projectId: target.projectId,
   }).retainCommittedRedemptions(target, source, members);
   const authorityTransfer = new AuthorityTransferModule({
+    observeProject: projectId => requirePublication().observeProject(projectId),
     createLanToCloudClaimantClient: createLanTransferClient,
     createLanToCloudConnection: async ({ allowCredentialCreation, ...input }, operationOptions) => {
       if (allowCredentialCreation) await cloudCredentials.getOrCreate(input.projectId);
@@ -1079,6 +1083,8 @@ export function createCollabFeatureSubcomposition(
       return changed;
     },
   });
+  notifyAuthorityTransfer = projectId => authorityTransfer.notifyCloudToLanApproval(projectId);
+
   const authorityTransferEntry = new AuthorityTransferEntryService({
     createLanClient: createLanTransferClient,
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),

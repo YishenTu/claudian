@@ -249,6 +249,7 @@ export class ProjectManagementSession {
     if (!view) return;
     this.updateRecovery({
       cloudToLan: {
+        preparations: view.preparations,
         manager: view.manager ? { ...view.manager, status } : null,
         target: view.target ? { ...view.target, status } : null,
       }

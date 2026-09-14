@@ -184,7 +184,7 @@ describe('GitRepositoryService integration', () => {
     const repositoryPath = path.join(root, 'working');
     await mkdir(repositoryPath);
     await service.initializeWorkingRepository(repositoryPath);
-    const remoteUrl = 'http://192.0.2.25:8080/operator/cloud/v8/projects/project-alpha/repository.git';
+    const remoteUrl = 'http://192.0.2.25:8080/operator/cloud/v9/projects/project-alpha/repository.git';
     await service.addRemote(repositoryPath, 'origin', remoteUrl);
     expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([remoteUrl]);
   });

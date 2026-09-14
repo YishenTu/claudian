@@ -70,11 +70,11 @@ function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 8,
-      gitRemoteUrl: `${serverUrl}/v8/projects/${CLOUD_PROJECT_ID}/repository.git`,
+      bindingVersion: 9,
+      gitRemoteUrl: `${serverUrl}/v9/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 12,
+      wireVersion: 13,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,
@@ -704,10 +704,10 @@ describe('CollabPublicationService reconnect', () => {
       });
       expect(routes).toEqual([
         '/collab/capabilities',
-        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v9/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
         '/collab/capabilities',
-        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
-        `/v8/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v9/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
+        `/v9/projects/${CLOUD_PROJECT_ID}/operations/getProjectSnapshot`,
       ]);
     } finally {
       await rm(cloudVaultRoot, { recursive: true, force: true });

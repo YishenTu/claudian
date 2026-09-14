@@ -216,7 +216,13 @@
       "createNewInvitation": "Crear nueva invitación",
       "invitationManagementPending": "Completa primero la acción pendiente en la gestión del proyecto.",
       "invitationFailed": "No se pudo completar la acción de invitación.",
-      "invitationStatus": { "active": "Activa", "redeeming": "En uso", "redeemed": "Usada", "revoked": "Revocada", "expired": "Caducada" },
+      "invitationStatus": {
+        "active": "Activa",
+        "redeeming": "En uso",
+        "redeemed": "Usada",
+        "revoked": "Revocada",
+        "expired": "Caducada"
+      },
       "copyFailed": "No se pudo copiar la invitación.",
       "reissueMemberClaim": "Volver a emitir credencial de membresía",
       "revokeMemberClaim": "Revocar credencial de membresía",
@@ -243,8 +249,8 @@
       "anotherDevice": "Otro dispositivo",
       "prepareLanHelp": "Prepara este dispositivo para alojar el proyecto en tu red local.",
       "lanTargetReady": "Este dispositivo está listo para recibir el proyecto.",
-      "shareLanTargetHelp": "Envía estos datos de destino a un Manager y pega el identificador de transferencia que te devuelva.",
-      "otherLanTargetHelp": "En el dispositivo de destino, abre Mover a LAN y prepáralo. Pega aquí sus datos de destino.",
+      "shareLanTargetHelp": "Solicitud enviada. Este dispositivo continuará automáticamente cuando un Manager la apruebe.",
+      "otherLanTargetHelp": "En el dispositivo receptor, abre Mover a LAN y solicita el alojamiento. La solicitud aparecerá aquí.",
       "shareLanHandleHelp": "Envía este identificador al dispositivo de destino para aceptar allí la transferencia.",
       "prepareCloudToLan": "Preparar destino LAN",
       "withdrawCloudToLan": "Retirar destino",
@@ -256,7 +262,12 @@
       "copyTransferData": "Copiar datos de transferencia",
       "transferUpdated": "Estado del traslado actualizado.",
       "transferConnectionRequired": "Esta transferencia guardada necesita una conexión de servidor compatible antes de continuar.",
-      "transferStatus": { "pending": "Pendiente", "active": "En curso", "completed": "Completada", "cancelled": "Cancelada" },
+      "transferStatus": {
+        "pending": "Pendiente",
+        "active": "En curso",
+        "completed": "Completada",
+        "cancelled": "Cancelada"
+      },
       "finishOperation": "Finalizar acción completada",
       "manager": "Manager",
       "managerCount": "Cantidad de Managers: {count}",
@@ -302,7 +313,10 @@
       "offlineLeaveCloud": "You are offline. You will leave this Project locally now. Your departure will be synced when this device reconnects to the server.",
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
-      "actionComplete": "Acceso actualizado."
+      "actionComplete": "Acceso actualizado.",
+      "waitingCloudToLanApproval": "Esperando aprobación. Puedes cerrar esta ventana; el traslado continuará automáticamente.",
+      "resumeCloudToLan": "Reanudar",
+      "cloudToLanApproved": "Aprobado. El dispositivo receptor continuará automáticamente o su usuario puede seleccionar Reanudar."
     },
     "host": {
       "hostedHereSummary": "Host LAN (en este dispositivo)",
@@ -862,9 +876,40 @@
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
-      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
-      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
+      "sectionTitle": "Skills",
+      "fixedRoot": "Managed in .agents/skills",
+      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
+      "noSkills": "No shared skills configured. Click + to create one.",
+      "skillBadge": "skill",
+      "diagnosticsTitle": "Skills needing attention",
+      "loadFailed": "Could not load shared skills.",
+      "savedRefreshFailed": "Saved, but provider refresh failed.",
+      "validationFailed": "Invalid skill: {message}",
+      "collisionFailed": "A skill named \"{name}\" already exists.",
+      "saveFailed": "Failed to save shared skill: {message}",
+      "deleteFailed": "Failed to move shared skill to trash: {message}",
+      "staleConflict": "This skill changed elsewhere; refresh before saving.",
+      "created": "Shared skill \"{name}\" created.",
+      "updated": "Shared skill \"{name}\" updated.",
+      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": {
+        "titleEdit": "Edit Shared Skill",
+        "titleAdd": "Add Shared Skill",
+        "name": "Skill name",
+        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "namePlaceholder": "code-reviewer",
+        "description": "Description",
+        "descriptionDesc": "Required portable description used by providers to select the skill",
+        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
+        "instructions": "Instructions",
+        "instructionsDesc": "Required SKILL.md instructions",
+        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+      },
+      "delete": {
+        "title": "Delete Shared Skill",
+        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
+        "confirm": "Move to trash"
+      }
     },
     "codexSubagents": {
       "modal": {

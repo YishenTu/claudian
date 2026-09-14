@@ -5,7 +5,7 @@ export type CollabEventConnectionState = 'connecting' | 'connected' | 'unsubscri
 
 export interface CollabProjectConnectionOptions {
   readonly onStatusChange: (status: CollabConnectionStatus) => void;
-  readonly reconnect: (signal: AbortSignal, eventsRequired: boolean) => Promise<'connected' | 'retry' | 'unavailable'>;
+  readonly reconnect: (signal: AbortSignal, eventsRequired: boolean) => Promise<'connected' | 'polling' | 'retry' | 'unavailable'>;
 }
 
 function isRetryableConnectionFailure(error: unknown): boolean {
@@ -53,14 +53,19 @@ export class CollabProjectConnection {
       if (attemptController.signal.aborted) return false;
       if (revision === this.revision) {
         if (result === 'connected') this.observeSuccess();
-        else if (result === 'retry') {
+        else if (result === 'polling') {
+          this.lastFailure = null;
+          this.successRevision += 1;
+          this.retryRequested = true;
+          this.#setStatus('connected');
+        } else if (result === 'retry') {
           this.retryRequested = true;
           this.#setStatus('offline');
         } else {
           this.retryRequested = false;
         }
       }
-      return result === 'connected' && this.observedStatus === 'connected';
+      return (result === 'connected' || result === 'polling') && this.observedStatus === 'connected';
     }, error => {
       if (!attemptController.signal.aborted && (revision === this.revision
         || (!isRetryableConnectionFailure(error) && successRevision === this.successRevision))) {
@@ -109,11 +114,16 @@ export class CollabProjectConnection {
   observeEvents(state: CollabEventConnectionState): void {
     if (this.controller.signal.aborted) return;
     if (state === 'unsubscribed') { this.releaseEvents(); return; }
+    const httpAvailable = this.observedStatus === 'connected' && !this.eventsConverged;
     this.eventsRequired = true;
     this.eventsConverged = state === 'connected';
-    if (state instanceof CollabError) this.observeFailure(state);
-    else if (state === 'connected') this.observeSuccess();
-    else if (state === 'connecting' && this.observedStatus !== 'needs-attention') this.#setStatus('offline');
+    if (state instanceof CollabError) {
+      if (httpAvailable && isRetryableConnectionFailure(state)) {
+        this.retryRequested = true;
+        this.#scheduleRetry();
+      } else this.observeFailure(state);
+    } else if (state === 'connected') this.observeSuccess();
+    else if (!httpAvailable && this.observedStatus !== 'needs-attention') this.#setStatus('offline');
   }
 
   invalidate(preserveAttempt = false): void {

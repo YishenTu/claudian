@@ -18,6 +18,7 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
+  reconcileRequester?(projectId: CollabProjectId): Promise<void>;
   managerHandoffEstablished?(
     projectId: CollabProjectId,
   ): Promise<boolean>;
@@ -80,6 +81,7 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       await this.lifecycle.runAuthorityTransferRecovery(
         projectId,
         async () => {
+          await this.handler.reconcileRequester?.(projectId);
           for (const retained of await this.persistence.listRetained(projectId)) {
             if (retained.terminalCleanupCompleted) continue;
             await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);

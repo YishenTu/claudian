@@ -166,7 +166,7 @@ describe('LanAuthorityTransferRouter', () => {
     expect(await responseJson(proposed)).toMatchObject({
       bindingVersion: 3,
       data: { projectId: PROJECT_ID, transferId: 'transfer-alpha' },
-      protocolVersion: 12,
+      protocolVersion: 13,
       requestId: 'request-alpha',
     });
     expect(service.requestLanToCloudTransfer).toHaveBeenCalledWith(
@@ -223,7 +223,7 @@ describe('LanAuthorityTransferRouter', () => {
         code: 'protocol-version-unsupported',
         safeContext: { receivedVersion: 1, supportedVersion: 3 },
       },
-      protocolVersion: 12,
+      protocolVersion: 13,
     });
     expect(service.authenticateMemberCredential).not.toHaveBeenCalled();
   });
@@ -268,7 +268,7 @@ describe('LanAuthorityTransferRouter', () => {
           code: 'protocol-version-unsupported',
           safeContext: { receivedVersion: 1, supportedVersion: 3 },
         },
-        protocolVersion: 12,
+        protocolVersion: 13,
       },
     });
   });

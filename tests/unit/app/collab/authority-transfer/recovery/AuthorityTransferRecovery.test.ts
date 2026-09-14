@@ -15,6 +15,7 @@ import {
 
 import {
   createAuthorityTransferEntryRecord as createOwnedAuthorityTransferEntryRecord,
+  createAuthorityTransferRequesterEntry,
   prepareAuthorityTransferSourceCancellation,
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import {
@@ -143,6 +144,27 @@ describe('AuthorityTransferRecovery', () => {
 
   afterEach(async () => {
     await rm(vaultRoot, { force: true, recursive: true });
+  });
+
+  it('settles a requester-only project after a completed roundtrip during startup recovery', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+    });
+    await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
+      installationKey: TEST_INSTALLATION_A, proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedByMemberId: 'member-alpha', request: { projectId: PROJECT_ID, expectedAuthorityGeneration: 1,
+        idempotencyKey: 'intent-before-roundtrip', targetUrl: 'http://127.0.0.1:8787/' },
+    }));
+    const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
+      reconcileRequester: projectId => persistence.settleRequesterAfterAuthorityAdvance({
+        projectId, memberId: 'member-alpha', authorityGeneration: 3,
+      }),
+    }), () => undefined);
+    recovery.register(lifecycle());
+    await recovery.run();
+    await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A)).resolves.toBeNull();
   });
 
   it('retains Manager lifecycle ownership until the exact claimant handoff is durable', async () => {

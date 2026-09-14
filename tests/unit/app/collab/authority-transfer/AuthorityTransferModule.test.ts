@@ -943,12 +943,12 @@ describe('AuthorityTransferModule', () => {
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
-          bindingVersion: 8,
+          bindingVersion: 9,
           developmentActorId: 'member-host',
-          gitRemoteUrl: `https://cloud.example.test/v8/projects/${PROJECT_ID}/repository.git`,
+          gitRemoteUrl: `https://cloud.example.test/v9/projects/${PROJECT_ID}/repository.git`,
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test/',
-          wireVersion: 12,
+          wireVersion: 13,
         },
         createdAt: '2026-08-27T00:00:00.000Z',
         lastEventSequence: 1,
@@ -1757,7 +1757,9 @@ describe('AuthorityTransferModule', () => {
     })).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-target-handle-mismatch' },
     });
-    expect(targetCloud.lifecycle.authorityTransfer).not.toHaveBeenCalled();
+    expect(targetCloud.lifecycle.authorityTransfer.mock.calls.map(call => call[0])).toEqual([
+      'registerCloudToLanPreparation', 'registerCloudToLanPreparation',
+    ]);
 
     await expect(targetModule.withdrawCloudToLanTarget({
       preparationId: 'intent-stale-target-preparation',
@@ -1775,7 +1777,9 @@ describe('AuthorityTransferModule', () => {
     await expect(targetModule.acceptCloudToLanTransfer({ handle })).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-target-handle-mismatch' },
     });
-    expect(targetCloud.lifecycle.authorityTransfer).not.toHaveBeenCalled();
+    expect(targetCloud.lifecycle.authorityTransfer).not.toHaveBeenCalledWith(
+      'acceptCloudToLanTransferTarget', expect.anything(), expect.anything(),
+    );
     await expect(managerModule.prepareCloudToLanTarget({
       operationIntentId: descriptor.preparationId,
       projectId: PROJECT_ID,
@@ -2914,7 +2918,7 @@ describe('AuthorityTransferModule', () => {
     expect(connections[1].dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('releases a failed pre-handoff acceptance binding when the target withdraws', async () => {
+  it('requires transfer recovery before withdrawing a possibly accepted target', async () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
       load: jest.fn(async () => null),
@@ -2964,9 +2968,7 @@ describe('AuthorityTransferModule', () => {
       })),
       serverUrl: 'https://cloud.example.test/',
     };
-    const disposeTarget = jest.fn()
-      .mockRejectedValueOnce(new Error('listener-dispose-failed'))
-      .mockResolvedValue(undefined);
+    const disposeTarget = jest.fn().mockResolvedValue(undefined);
     const module = new AuthorityTransferModule({
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
@@ -3021,25 +3023,11 @@ describe('AuthorityTransferModule', () => {
       safeContext: { reason: 'cloud-to-lan-prepared-status-mismatch' },
     });
     await expect(module.withdrawCloudToLanTarget({
-      preparationId: descriptor.preparationId,
-      projectId: PROJECT_ID,
-    })).rejects.toMatchObject({
-      result: {
-        durableProgress: true,
-        operationId: descriptor.preparationId,
-        status: 'recovery-required',
-      },
-    });
-    await expect(module.withdrawCloudToLanTarget({
-      preparationId: descriptor.preparationId,
-      projectId: PROJECT_ID,
-    })).resolves.toBeUndefined();
-
-    expect(targetEntry).toMatchObject({ phase: 'withdrawn' });
-    expect(disposeTarget).toHaveBeenCalledTimes(2);
-    expect(connection.dispose).toHaveBeenCalledTimes(1);
+      preparationId: descriptor.preparationId, projectId: PROJECT_ID,
+    })).rejects.toMatchObject({ safeContext: { reason: 'authority-transfer-target-already-accepted' } });
+    expect(targetEntry).toMatchObject({ phase: 'published' });
+    expect(disposeTarget).not.toHaveBeenCalled();
     await module.close();
-    expect(disposeTarget).toHaveBeenCalledTimes(2);
   });
 
   it('retries retained target cleanup when cancelled acceptance settlement fails', async () => {
@@ -3542,6 +3530,7 @@ describe('AuthorityTransferModule', () => {
     let physicalRecord: AuthorityTransferRecord | null = null;
     let managerSettlementAttempts = 0;
     const persistence = {
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => managerEntry === null
         ? 'absent'
         : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
@@ -3753,6 +3742,7 @@ describe('AuthorityTransferModule', () => {
       }),
     );
     const persistence = {
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -3917,6 +3907,7 @@ describe('AuthorityTransferModule', () => {
       lifecycle,
       now: () => new Date('2026-09-01T00:00:00.000Z'),
       persistence: {
+        settleRequesterAfterAuthorityAdvance: async () => undefined,
         inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
         load: jest.fn(async () => null),
         loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -4512,6 +4503,7 @@ describe('AuthorityTransferModule', () => {
     });
     const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
     const persistence = {
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => physical),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -4751,6 +4743,7 @@ describe('AuthorityTransferModule', () => {
       stage: jest.fn(),
     }));
     const persistence = {
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       completeTerminalCleanup: jest.fn(async () => undefined),
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => record),
@@ -4824,6 +4817,7 @@ describe('AuthorityTransferModule', () => {
       targetUrl,
     });
     const persistence = {
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       loadCloudToLanManagerEntry: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => published),

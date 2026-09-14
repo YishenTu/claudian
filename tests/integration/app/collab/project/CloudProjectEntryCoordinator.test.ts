@@ -419,8 +419,8 @@ describe('CloudProjectEntryCoordinator', () => {
     const projects = fixture.foundation.local.projects;
     const membership = {
       schemaVersion: 3 as const, createdAt: CREATED_AT, updatedAt: CREATED_AT, lastEventSequence: 7,
-      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 8 as const, wireVersion: 12 as const,
-        serverUrl: fixture.serverUrl, gitRemoteUrl: `${fixture.serverUrl}/v8/projects/${PROJECT_ID}/repository.git` },
+      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 9 as const, wireVersion: 13 as const,
+        serverUrl: fixture.serverUrl, gitRemoteUrl: `${fixture.serverUrl}/v9/projects/${PROJECT_ID}/repository.git` },
       member: { id: MEMBER_ID, displayName: 'Bob', role: 'member' as const, personalRef: `refs/heads/members/${MEMBER_ID}` },
       project: { id: PROJECT_ID, name: 'Cloud Notes', workspacePath: 'Original/Projects/recovered-notes' },
     };
@@ -1056,7 +1056,7 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(await foundation.local.projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord))
         .toMatchObject({ baseMainOid: mainOid, operation: null });
       expect(await foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({
-        authority: { authorityGeneration: 7, bindingVersion: 8, kind: 'cloud', serverUrl, wireVersion: 12 },
+        authority: { authorityGeneration: 7, bindingVersion: 9, kind: 'cloud', serverUrl, wireVersion: 13 },
         member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}`, role: 'manager' },
       });
       const workingCopy = path.join(vaultRoot, 'Shared', 'Projects', 'cloud-notes');
@@ -1272,7 +1272,7 @@ async function createFixture(options: {
           barePath,
           executablePath: 'git',
           remoteUser: MEMBER_ID,
-        }, new URL(routeTarget, 'http://localhost').pathname.slice(`/v8/projects/${projectId}/repository.git`.length));
+        }, new URL(routeTarget, 'http://localhost').pathname.slice(`/v9/projects/${projectId}/repository.git`.length));
       }
       response.setHeader('content-type', 'application/json');
       if (route?.kind === 'capabilities') {

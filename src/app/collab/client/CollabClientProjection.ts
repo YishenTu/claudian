@@ -91,6 +91,7 @@ export interface CollabClientCommentInput {
 }
 
 interface CollabClientProjectionBaseOptions {
+  readonly onProjectInvalidated?: (projectId: string) => void;
   readonly onSnapshotResult?: (projectId: string, error?: CollabError) => void;
   readonly onEventConnectionState?: (projectId: string, state: CollabEventConnectionState) => void;
   readonly authoritySessions: CollabAuthoritySessionFactory;
@@ -743,6 +744,7 @@ export class CollabClientProjection {
     await work.currentEventRefresh()?.catch(() => undefined);
     work.assertGeneration(generation);
     throwIfCancelled(options.signal);
+    this.options.onProjectInvalidated?.(projectId);
     const previous = work.getEventConnection<ProjectionEventSession>();
     if (previous?.failed) {
       work.clearEventConnection(previous);
@@ -754,6 +756,20 @@ export class CollabClientProjection {
     }
     work.assertGeneration(generation);
     throwIfCancelled(options.signal);
+  }
+
+  async refreshObservedProject(projectId: string, options: CollabOperationOptions = {}): Promise<void> {
+    this.#assertOpen();
+    throwIfCancelled(options.signal);
+    this.options.onProjectInvalidated?.(projectId);
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    const snapshot = await this.#readOnlineCoalesced(projectId);
+    work.assertGeneration(generation);
+    throwIfCancelled(options.signal);
+    for (const listener of work.getEventConnection<ProjectionEventSession>()?.listeners ?? []) {
+      try { listener(snapshot); } catch { /* Observers do not own refresh settlement. */ }
+    }
   }
 
   async #connectEvents(
@@ -796,6 +812,7 @@ export class CollabClientProjection {
         onInvalidation: invalidation => {
           work.assertGeneration(generation);
           if (!current || work.observationRevision !== observationRevision) throw new CollabError({ code: 'cancelled' });
+          this.options.onProjectInvalidated?.(projectId);
           return this.#refreshFromEvent(projectId, invalidation);
         },
       });

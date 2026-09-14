@@ -536,13 +536,7 @@ export class AuthorityTransferPersistence {
       ]);
       let record = loadedRecord;
       let document = await this.#removeExpiredEntry(loadedEntry, record);
-      if (record && !this.#isForeignPhysical(record)
-        && record.localRole === 'source' && record.status.direction === 'lan-to-cloud'
-        && record.status.state === 'completed' && record.restartFence === 'permanent'
-        && record.status.targetAuthority.generation === decoded.sourceAuthorityGeneration
-        && record.status.targetUrl === decoded.sourceCloudUrl
-        && custody !== null && commitment !== null) {
-        await this.#retainCompleted(record, custody);
+      if (await this.#retainLanToCloudPredecessor({ record, custody, commitment }, decoded)) {
         record = null;
         document = await this.stores.authorityTransferEntries.load(decoded.projectId);
       }
@@ -726,12 +720,18 @@ export class AuthorityTransferPersistence {
       );
     }
     return this.runProject(decoded.projectId, async () => {
-      const [document, record, custody, commitment] = await Promise.all([
+      const [loadedEntry, loadedRecord, custody, commitment] = await Promise.all([
         this.stores.authorityTransferEntries.load(decoded.projectId),
         this.stores.authorityTransferRecords.load(decoded.projectId),
         this.stores.authorityTransferClaims.load(decoded.projectId),
         this.stores.authorityTransferClaimCommitments.load(decoded.projectId),
       ]);
+      let document = loadedEntry;
+      let record = loadedRecord;
+      if (await this.#retainLanToCloudPredecessor({ record, custody, commitment }, decoded.descriptor)) {
+        record = null;
+        document = await this.stores.authorityTransferEntries.load(decoded.projectId);
+      }
       const settledPredecessor = record !== null
         && custody === null
         && commitment === null
@@ -938,6 +938,25 @@ export class AuthorityTransferPersistence {
       }
       await this.stores.authorityTransferEntries.saveRequester(completed);
       return completed;
+    });
+  }
+
+  settleRequesterAfterAuthorityAdvance(
+    identity: Readonly<{ projectId: CollabProjectId; memberId: CollabMemberId; authorityGeneration: number }>,
+  ): Promise<void> {
+    return this.runProject(identity.projectId, async () => {
+      if (!Number.isSafeInteger(identity.authorityGeneration) || identity.authorityGeneration < 1) {
+        throw transferError('authority-transfer-stale', 'authority-transfer-requester-convergence-invalid');
+      }
+      const document = await this.stores.authorityTransferEntries.load(identity.projectId);
+      for (const requester of Object.values(document?.requesters ?? {})) {
+        if (!this.#isRecoveryOwner(requester.requesterInstallationKey)
+          || requester.proposedByMemberId !== identity.memberId
+          || requester.request.expectedAuthorityGeneration >= identity.authorityGeneration) continue;
+        if (!await this.stores.authorityTransferEntries.removeRequester(requester)) {
+          throw transferError('authority-transfer-stale', 'authority-transfer-requester-entry-stale');
+        }
+      }
     });
   }
 
@@ -2504,6 +2523,22 @@ export class AuthorityTransferPersistence {
     return this.runProject(projectId, async () => (
       await this.stores.authorityTransferRecords.listRetained(projectId)
     ).filter(retained => !this.#isForeignPhysical(retained.record)).map(retained => retained.record));
+  }
+
+  async #retainLanToCloudPredecessor(
+    previous: { record: AuthorityTransferRecord | null; custody: AuthorityTransferClaimCustodyRecord | null;
+      commitment: AuthorityTransferClaimBatchCommitmentRecord | null },
+    next: { sourceAuthorityGeneration: number; sourceCloudUrl: string },
+  ): Promise<boolean> {
+    const { record, custody, commitment } = previous;
+    if (!record || this.#isForeignPhysical(record)
+      || record.localRole !== 'source' || record.status.direction !== 'lan-to-cloud'
+      || record.status.state !== 'completed' || record.restartFence !== 'permanent'
+      || record.status.targetAuthority.generation !== next.sourceAuthorityGeneration
+      || record.status.targetUrl !== next.sourceCloudUrl
+      || custody === null || commitment === null) return false;
+    await this.#retainCompleted(record, custody);
+    return true;
   }
 
   async #retainCompleted(record: AuthorityTransferRecord, custody: AuthorityTransferClaimCustodyRecord): Promise<void> {

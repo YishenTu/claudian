@@ -85,6 +85,7 @@ import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmissio
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
+import type { CollabAuthorityEventConnectionInput } from '@/app/collab/remote-authority/CollabAuthoritySession';
 
 const PROJECT_ID = 'project-production-effects';
 const MEMBER_ID = 'member-production-host';
@@ -372,6 +373,7 @@ describe('production authority-transfer effects', () => {
               dispose: () => undefined,
               lifecycle: {
                 authorityTransfer: async (operation: string) => {
+                  if (operation === 'registerCloudToLanPreparation') return { withdrawnAt: null };
                   if (operation === 'confirmCloudToLanTargetInvalidated'
                     || operation === 'getProjectAuthorityTransfer') return observed;
                   throw new Error(`Unexpected recovery operation ${operation}`);
@@ -2597,7 +2599,7 @@ describe('production authority-transfer effects', () => {
             redeemedAt: '2026-08-28T00:03:00.000Z', signature: Buffer.alloc(64, 3).toString('base64url'), signatureAlgorithm: 'ed25519' } });
         pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'source-acknowledged', updatedAt: pending.updatedAt });
         await clientFoundation.local.projects.authorityTransferClaimants.save(pending);
-        if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v8/projects/${PROJECT_ID}/repository.git`]);
+        if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v9/projects/${PROJECT_ID}/repository.git`]);
       }
       const client = createCollabFeatureSubcomposition({ foundation: clientFoundation,
         projectSetup: new CollabProjectSetupService(clientFoundation, { installationKey: TEST_INSTALLATION_B, vaultRoot: clientRoot }), vaultRoot: clientRoot });
@@ -3313,7 +3315,9 @@ describe('production authority-transfer effects', () => {
       Buffer.from(encodeCollabProjectCheckpointManifestCanonicalJson(manifest), 'utf8'),
     );
 
+    const observers = new Set<CollabAuthorityEventConnectionInput>();
     let begun = false;
+    let hostingPreparation: Record<string, unknown> | null = null;
     let transferredClaimBatch: CollabTransferredMembershipClaimBatch | null = null;
     let transferStatus: CollabAuthorityTransferStatus | null = null;
     const members = [
@@ -3340,6 +3344,15 @@ describe('production authority-transfer effects', () => {
     const transferLifecycle = {
       authorityTransfer: jest.fn(async (operation: string, request: never) => {
         const input = request as Record<string, unknown>;
+        if (operation === 'registerCloudToLanPreparation') {
+          hostingPreparation ??= { caCertificatePem: input.caCertificatePem, caFingerprint: input.caFingerprint,
+            createdAt: '2026-08-28T00:00:00.000Z', expiresAt: input.expiresAt,
+            preparationId: input.idempotencyKey, projectId: PROJECT_ID, sourceAuthorityGeneration: 2,
+            targetHostMemberId: targetMemberId, targetUrl: input.targetUrl, withdrawnAt: null };
+          return hostingPreparation;
+        }
+        if (operation === 'listCloudToLanPreparations') return { preparations: begun || !hostingPreparation ? [] : [hostingPreparation] };
+        if (operation === 'getCloudToLanPreparationApproval') return { approval: transferStatus };
         if (operation === 'beginCloudToLanTransfer') {
           begun = true;
           transferStatus = status(
@@ -3347,6 +3360,7 @@ describe('production authority-transfer effects', () => {
             'collecting-readiness',
             input.targetUrl as string,
           );
+          for (const observer of observers) void observer.onInvalidation({ kind: 'snapshot', sequence: 1 }).catch(() => undefined);
           return transferStatus;
         }
         if (operation === 'getAuthorityTransferReceiptVerifier') {
@@ -3527,6 +3541,11 @@ describe('production authority-transfer effects', () => {
         const memberId = membership.member.id;
         return {
           authorityKind: 'cloud' as const,
+          events: { connect: (input: CollabAuthorityEventConnectionInput) => {
+            observers.add(input);
+            queueMicrotask(() => input.onConnectionResult?.());
+            return { dispose: () => { observers.delete(input); } };
+          } },
           control: { readSnapshot: jest.fn(async () => snapshot(memberId)) },
           dispose: jest.fn(),
           lifecycle: transferLifecycle,
@@ -3642,17 +3661,23 @@ describe('production authority-transfer effects', () => {
         value: { selectedTargetMemberId: targetMemberId },
       });
       const begunResult = await manager.composition.feature.beginCloudToLanTransfer({
-        descriptor: prepared.value,
+        projectId: PROJECT_ID, preparationId: prepared.value.preparationId,
       });
       expect(begunResult).toMatchObject({
         status: 'success',
         value: { selectedTargetMemberId: targetMemberId },
       });
       if (begunResult.status !== 'success') throw new Error('Manager begin failed');
-      return {
-        accepted: await target.composition.feature.acceptCloudToLanTransfer(begunResult.value),
-        handle: begunResult.value,
-      };
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline) {
+        const record = await target.foundation.local.projects.authorityTransferRecords.load(PROJECT_ID);
+        if (record?.status.state === 'completed') return {
+          accepted: { status: 'success' as const, value: record.status }, handle: begunResult.value,
+        };
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      const stalled = await target.foundation.local.projects.authorityTransferRecords.load(PROJECT_ID);
+      throw new Error(JSON.stringify({ reason: 'receiver-stalled', observers: observers.size, phase: stalled?.status.phase, operations: transferLifecycle.authorityTransfer.mock.calls.map(call => call[0]) }));
       })();
       expect(accepted).toMatchObject({ status: 'success' });
       if (accepted.status !== 'success') {
