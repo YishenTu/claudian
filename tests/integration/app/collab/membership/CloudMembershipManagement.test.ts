@@ -1025,7 +1025,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
       const target = request.url.slice('/operator/cloud'.length);
       response.setHeader('content-type', 'application/json');
       if (target === collabCloudCapabilitiesRoute().target) {
-        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-recovery', 
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-recovery',
           'project-snapshot', 'project-events', 'cloud-project-invitations', 'cloud-project-membership', 'cloud-project-manager-responsibility', 'cloud-imported-membership-claims',
         ], {
           maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
