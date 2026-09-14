@@ -574,6 +574,37 @@ it.each([false, true])('automatically restores management after Host startup wit
     }
   });
 
+  it('shows LAN imported-member recovery and retains its result across refresh', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' }), member('member-maya', 'Maya')];
+    const invitation = { encodedInvitation: 'claudian-lan-claim:v1:replacement', expiresAt: '2030-09-10T00:00:00.000Z' };
+    const port = createPort(members, {
+      listMembers: jest.fn().mockResolvedValue(success([
+        { memberId: 'member-manager', displayName: 'Alice', role: 'manager', importedClaim: null },
+        { memberId: 'member-maya', displayName: 'Maya', role: 'member', importedClaim: { bindingState: 'unbound', state: 'expired' } },
+      ])),
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'lan', authorityTransfer: true, importedMemberClaims: true,
+        invitations: true, leave: true, managerResponsibility: true, membershipManagement: true, retirement: true,
+      })),
+      reissueMemberClaim: jest.fn().mockResolvedValue(success(invitation)),
+    });
+    const modal = new ProjectManagementModal({} as never, port, { project: project({ connectionStatus: 'connected' }) });
+    modal.onOpen();
+    await flush();
+    const button = within(modal.contentEl).getByRole('button', { name: /reissue.*Maya/i });
+    port.readManagementOperation.mockResolvedValue(success({
+      action: 'reissue-member-claim', completionId: 'lan-claim-result', invitation,
+      secretAvailableUntil: invitation.expiresAt, status: 'result-retained',
+    }));
+    fireEvent.click(button);
+    await flush();
+    expect(modal.contentEl.textContent).toContain(invitation.encodedInvitation);
+    port.subscribe.mock.calls[0][0]({ lifecycle: 'ready', selectedProjectId: 'project-alpha', projects: [project({ connectionStatus: 'connected' })] } as CollabFeatureState);
+    await flush();
+    expect(modal.contentEl.textContent).toContain(invitation.encodedInvitation);
+    modal.onClose();
+  });
+
   it('renders negotiated Cloud lifecycle, membership, and imported-claim actions', async () => {
     const members = [
       member('member-manager', 'Alice', { role: 'manager' }),
@@ -977,6 +1008,37 @@ it.each([false, true])('automatically restores management after Host startup wit
     );
     expect(modal.contentEl.querySelector('[data-action="complete-management-operation"]'))
       .not.toBeNull();
+  });
+
+  it('keeps recovery navigation available when a migrated Project no longer loads members', async () => {
+    const failure = { status: 'failure' as const, error: new CollabError({ code: 'project-not-found' }) };
+    const summary = project({ role: 'member', connectionStatus: 'needs-attention' });
+    const port = createPort([], {
+      readSnapshot: jest.fn().mockResolvedValue(failure),
+      readProjectCapabilities: jest.fn().mockResolvedValue(failure),
+      readLanToCloudTransfer: jest.fn().mockResolvedValue(success({
+        proposedByMemberId: 'member-maya', serverUrl: 'https://cloud.example', sourceOwned: false,
+        status: { phase: 'collecting-readiness', state: 'active' } as never,
+      })),
+    });
+    let openedProject: CollabLocalProjectSummary | undefined;
+    let wasClosed = false;
+    const options = {
+      project: summary,
+      onClosed: () => { wasClosed = true; },
+      onReconnect: (selected: CollabLocalProjectSummary) => {
+        expect(wasClosed).toBe(true);
+        openedProject = selected;
+      },
+    };
+    const modal = new ProjectManagementModal({} as never, port, options);
+    modal.onOpen();
+    await flush();
+    within(modal.contentEl).getByText('Members could not be loaded.');
+    const recovery = within(modal.contentEl).getByRole('button', { name: 'Use a link to restore connection' });
+    expect(recovery.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(recovery);
+    expect(openedProject?.id).toBe(summary.id);
   });
 
   it('restores a pending LAN-to-Cloud requester intent while the LAN Host is offline', async () => {

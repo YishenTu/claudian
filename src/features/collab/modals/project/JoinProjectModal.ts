@@ -217,7 +217,7 @@ export class JoinProjectModal extends Modal {
 
   #materialKind(): 'claim' | 'cloud' | 'lan' | 'unknown' {
     const value = this.#invitationInput?.value.trim() ?? '';
-    if (value.startsWith('claudian-cloud-claim:')) return 'claim';
+    if (/^claudian-(?:cloud|lan)-claim:/.test(value)) return 'claim';
     if (value.startsWith('claudian-cloud:')) return 'cloud';
     if (value.startsWith('claudian-collab:')) return 'lan';
     return 'unknown';

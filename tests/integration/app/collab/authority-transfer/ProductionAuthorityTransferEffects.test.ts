@@ -55,6 +55,7 @@ import {
   expireAuthorityTransferTerminalResponder,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
+import { advanceAuthorityTransferClaimantRecord, createAuthorityTransferClaimantRecord } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import {
   cloudToLanTransferHandle,
   createCloudToLanManagerEntry,
@@ -75,8 +76,11 @@ import {
 } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { MembershipControlClient } from '@/app/collab/membership/MembershipControlClient';
+import { decodeLanMembershipClaimInvitation, encodeLanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
 import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
@@ -2536,6 +2540,84 @@ describe('production authority-transfer effects', () => {
       claimClient, claimRequest, firstReceipt, recoveredRegistration, restartedComposition,
     });
   }
+
+  it.each(['none', 'confirmed', 'origin-written'] as const)('restores an older LAN Member through a current recovery string without changing local work (previous attempt: %s)', async previousAttempt => {
+    const target = await activateCloudToLanTarget();
+    await target.recoveringEffects().restoreCompleted(target.completedRecord);
+    await target.targetAuthority.database.mutate(connection => {
+      connection.run("UPDATE members SET role = 'manager' WHERE member_id = 'member-production-peer'");
+      connection.run('UPDATE project SET manager_set_generation = manager_set_generation + 1');
+    });
+    const host = await target.foundation.local.projects.loadMembership(PROJECT_ID);
+    if (!host || host.authority.kind !== 'lan' || !('credential' in host.member)) throw new Error('Missing current LAN Host');
+    const targetHost = { caCertificatePem: host.authority.hostCaCertificatePem!, caFingerprint: host.authority.hostCaFingerprint!, endpoint: host.authority.endpoint! };
+    const control = new MembershipControlClient(new PinnedCollabHttpClient({ ...targetHost, projectId: PROJECT_ID }, 10_000));
+    const members = await control.listProjectMembers({ projectId: PROJECT_ID, memberCredential: host.member.credential });
+    const offline = members.members.find(member => member.memberId === MEMBER_ID)!;
+    const issued = await control.reissueTransferredMembershipClaim({ projectId: PROJECT_ID, memberId: MEMBER_ID,
+      expectedClaimGeneration: offline.importedClaimGeneration!, expectedMembershipRevision: offline.membershipRevision,
+      expectedManagerSetGeneration: members.managerSetGeneration, idempotencyKey: 'restore-offline-member', memberCredential: host.member.credential });
+    const encoded = encodeLanMembershipClaimInvitation({ claim: issued, targetHost });
+    expect(decodeLanMembershipClaimInvitation(encoded).claim.memberId).toBe(MEMBER_ID);
+    const clientRoot = await mkdtemp(path.join(tmpdir(), 'claudian-restoring-member-'));
+    const clientFoundation = foundation(clientRoot, TEST_INSTALLATION_B);
+    try {
+      await clientFoundation.local.workspace.claimProjectsFolder('workspace');
+      const old = await target.sourceFoundation.local.projects.loadMembership(PROJECT_ID);
+      if (!old || old.authority.kind !== 'lan') throw new Error('Missing old LAN membership');
+      const worktree = path.join(clientRoot, old.project.workspacePath);
+      await fsPromises.cp(path.join(sourceRoot, old.project.workspacePath), worktree, { recursive: true });
+      await writeFile(path.join(worktree, 'uncommitted.md'), 'Local work survives recovery.\n');
+      const before = git(worktree, ['status', '--porcelain']);
+      const head = git(worktree, ['rev-parse', 'HEAD']);
+      await clientFoundation.local.projects.saveMembership({ ...old, hostOwnership: { ownsAuthority: false, autoStart: false } } as CollabLocalLanMembershipRecord);
+      await clientFoundation.local.projects.repairIndexFromMemberships();
+      if (previousAttempt !== 'none') {
+        const priorStatus: CollabAuthorityTransferStatus = {
+          ...status('lan-to-cloud', 'completed', 'https://intermediate.example.test/'),
+          state: 'completed', batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
+          relinquishmentProof: {
+            batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
+            certificate: Buffer.alloc(64, 2).toString('base64url'), certificateAlgorithm: 'ed25519',
+            committedAt: '2026-08-28T00:02:00.000Z', operationIntentId: OPERATION_ID, projectId: PROJECT_ID,
+            sourceAuthority: { generation: 1, kind: 'lan' }, sourceHostMemberId: MEMBER_ID,
+            targetAuthority: { generation: 2, kind: 'cloud' }, transferId: TRANSFER_ID,
+          },
+        };
+        const claim = { claim: Buffer.alloc(32, 4).toString('base64url'), expiresAt: priorStatus.expiresAt,
+          memberId: MEMBER_ID, projectId: PROJECT_ID, targetAuthorityGeneration: 2, transferId: TRANSFER_ID };
+        let pending = createAuthorityTransferClaimantRecord({ cloudPrincipalId: 'vault-' + 'a'.repeat(64),
+          createdAt: priorStatus.createdAt, memberId: MEMBER_ID, operationIntentId: 'old-automatic-claim', status: priorStatus });
+        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'claim-retained', claim, updatedAt: priorStatus.updatedAt });
+        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'credential-persisted', updatedAt: priorStatus.updatedAt });
+        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'target-claimed', updatedAt: '2026-08-28T00:03:00.000Z',
+          redemptionReceipt: { checkpointSha256: 'a'.repeat(64), claimSha256: createHash('sha256').update(claim.claim).digest('hex'),
+            memberId: MEMBER_ID, projectId: PROJECT_ID, transferId: TRANSFER_ID, targetAuthorityGeneration: 2,
+            operationIntentId: 'old-automatic-claim', receiptId: 'old-receipt', receiptKeyId: 'old-key',
+            redeemedAt: '2026-08-28T00:03:00.000Z', signature: Buffer.alloc(64, 3).toString('base64url'), signatureAlgorithm: 'ed25519' } });
+        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'source-acknowledged', updatedAt: pending.updatedAt });
+        await clientFoundation.local.projects.authorityTransferClaimants.save(pending);
+        if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v7/projects/${PROJECT_ID}/repository.git`]);
+      }
+      const client = createCollabFeatureSubcomposition({ foundation: clientFoundation,
+        projectSetup: new CollabProjectSetupService(clientFoundation, { installationKey: TEST_INSTALLATION_B, vaultRoot: clientRoot }), vaultRoot: clientRoot });
+      await client.feature.initialize();
+      const restored = await client.feature.reconnectProject({ projectId: PROJECT_ID, encodedInvitation: encoded });
+      expect(restored.status).toBe('success');
+      expect(await clientFoundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({
+        authority: { kind: 'lan', authorityGeneration: 3, hostCaFingerprint: targetHost.caFingerprint },
+        member: { id: MEMBER_ID, personalRef: old.member.personalRef }, project: old.project,
+      });
+      expect(git(worktree, ['status', '--porcelain'])).toBe(before);
+      expect(git(worktree, ['rev-parse', 'HEAD'])).toBe(head);
+      expect(await readFile(path.join(worktree, 'uncommitted.md'), 'utf8')).toBe('Local work survives recovery.\n');
+      expect(await clientFoundation.local.projects.authorityTransferClaimants.load(PROJECT_ID)).toBeNull();
+      await client.feature.close();
+    } finally {
+      await clientFoundation.close();
+      await rm(clientRoot, { force: true, recursive: true });
+    }
+  });
 
   it.each([false, true])('activates Cloud-to-LAN and recovers its route (address movement: %s)', async (moveAddress) => {
     const target = await activateCloudToLanTarget(

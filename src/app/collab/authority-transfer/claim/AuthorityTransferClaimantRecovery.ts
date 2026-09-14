@@ -43,7 +43,7 @@ export function authorityTransferClaimantRequiresSource(
     record.phase === 'prepared'
     || record.phase === 'claim-retained'
     || (record.phase === 'credential-persisted' && (
-      record.status.direction !== 'lan-to-cloud' || now.getTime() < Date.parse(record.status.expiresAt)
+      now.getTime() < Date.parse(record.status.expiresAt)
     ))
   ) return true;
   return record.phase === 'target-claimed'
@@ -58,8 +58,7 @@ export function authorityTransferClaimantRequiresNoRuntime(
   if (record.variant === 'manager-reissued') return false;
   if (now.getTime() < Date.parse(record.status.expiresAt)) return false;
   return record.phase === 'prepared'
-    || record.phase === 'claim-retained'
-    || (record.phase === 'credential-persisted' && record.status.direction !== 'lan-to-cloud');
+    || record.phase === 'claim-retained';
 }
 
 export class AuthorityTransferClaimantRecovery

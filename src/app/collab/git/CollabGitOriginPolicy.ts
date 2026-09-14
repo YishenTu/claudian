@@ -26,6 +26,7 @@ export interface CollabAuthorityTransferOriginTransition
   extends CollabTrustedOriginTransition {
   readonly newServerUrl: string | null;
   readonly oldServerUrl: string | null;
+  readonly retainedBindings?: readonly { readonly remoteUrl: string; readonly serverUrl: string | null }[];
 }
 
 function isGeneratedLanHostRemoteUrl(remoteUrl: string, projectId: string): boolean {
@@ -141,7 +142,7 @@ export async function rotateAuthorityTransferOrigin(
     transition.newRemoteUrl,
     transition.projectId,
   );
-  if (sourceIsLan && targetIsLan) return rotateTrustedCollabOrigin(git, transition);
+  if (sourceIsLan && targetIsLan && !transition.retainedBindings?.length) return rotateTrustedCollabOrigin(git, transition);
   let sourceIsCloud: boolean;
   let targetIsCloud: boolean;
   try {
@@ -161,7 +162,6 @@ export async function rotateAuthorityTransferOrigin(
   if (
     (sourceIsLan === sourceIsCloud)
     || (targetIsLan === targetIsCloud)
-    || sourceIsLan === targetIsLan
   ) {
     throw originError('collab-origin-transition-invalid');
   }
@@ -177,7 +177,19 @@ export async function rotateAuthorityTransferOrigin(
   // Git may have reached an earlier authenticated LAN locator before the
   // corresponding membership write; a listener move does not undo that cutover.
   const targetWasAlreadyLan = targetIsLan && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
-  if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost && !targetWasAlreadyLan) {
+  // LAN locators can move while installation trust stays fixed. Recovery never contacts this old origin.
+  const hasRetainedLanBinding = transition.retainedBindings?.some(binding => binding.serverUrl === null
+    && isGeneratedLanHostRemoteUrl(binding.remoteUrl, transition.projectId)) ?? false;
+  const recoveredLanOrigin = (sourceIsLan || hasRetainedLanBinding)
+    && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
+  const retainedOrigin = transition.retainedBindings?.some(binding => {
+    if (urls[0] !== binding.remoteUrl) return false;
+    try {
+      return binding.serverUrl === null ? isGeneratedLanHostRemoteUrl(binding.remoteUrl, transition.projectId)
+        : binding.remoteUrl === cloudProjectGitRemoteUrl(binding.serverUrl, transition.projectId);
+    } catch { return false; }
+  }) ?? false;
+  if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost && !targetWasAlreadyLan && !retainedOrigin && !recoveredLanOrigin) {
     throw originError('collab-origin-transition-mismatch');
   }
   await writeVerifiedOrigin(git, transition.repositoryPath, transition.newRemoteUrl);

@@ -774,6 +774,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
           onChanged: () => {
             void this.options.port.inspectProject(project.id);
           },
+          onReconnect: selected => this.openReconnectProject(selected),
           onClosed,
           project,
         },

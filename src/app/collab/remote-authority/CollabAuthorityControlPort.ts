@@ -27,6 +27,7 @@ import type {
 } from '@/core/collab';
 
 export interface CollabAuthorityControlPort {
+  readLanCapabilities?(projectId: string, options?: CollabOperationOptions): Promise<readonly string[]>;
   ensure(input: PublishRequestEnsureInput): Promise<CollabChangeRequest>;
   acceptRequest(input: {
     readonly expectedHeadOid: string;

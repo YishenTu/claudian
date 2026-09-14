@@ -1106,7 +1106,7 @@ describe('CollabClientProjection', () => {
       occurredAt: CREATED_AT,
       payload: { retiredAt: CREATED_AT, retirementId: 'retirement-project-a' },
       projectId: 'project-a',
-      protocolVersion: 10,
+      protocolVersion: 11,
       sequence: 6,
     });
     await flushEvents();
@@ -1623,11 +1623,11 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 6,
-      gitRemoteUrl: 'https://cloud.example.test/v6/projects/project-a/repository.git',
+      bindingVersion: 7,
+      gitRemoteUrl: 'https://cloud.example.test/v7/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 10,
+      wireVersion: 11,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

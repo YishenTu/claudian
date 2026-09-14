@@ -26,7 +26,7 @@ describe('LAN authority-transfer binding', () => {
   it.each([
     ['GET', '/authority-transfer/v1/projects/project-alpha/operations/getProjectAuthorityTransfer'],
     ['POST', '/v9/projects/project-alpha/snapshot'],
-    ['POST', '/v6/host-transfers/transfer-alpha/probe'],
+    ['POST', '/v7/host-transfers/transfer-alpha/probe'],
     ['POST', '/v1/projects/project-alpha/repository.git/git-upload-pack'],
     ['POST', '/authority-transfer/v1/projects/project-alpha/operations/notAnOperation'],
     ['POST', '/authority-transfer/v1/projects/project-alpha/operations/getProjectAuthorityTransfer?extra=true'],

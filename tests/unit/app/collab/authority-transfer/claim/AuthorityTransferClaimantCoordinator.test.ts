@@ -158,6 +158,66 @@ class MemoryStore implements AuthorityTransferClaimantStore {
 }
 
 describe('AuthorityTransferClaimantCoordinator', () => {
+  it.each([false, true])('keeps an automatic attempt while a current Manager string restores membership (confirmed: %s)', async confirmed => {
+    const store = new MemoryStore();
+    let predecessor = createAuthorityTransferClaimantRecord({
+      cloudPrincipalId: null, createdAt: CREATED_AT, lanTarget: LAN_TARGET,
+      memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed('cloud-to-lan'),
+    });
+    predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'claim-retained', claim: claim(), updatedAt: CREATED_AT });
+    predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'credential-persisted', targetCredential: TARGET_CREDENTIAL, updatedAt: CREATED_AT });
+    if (confirmed) {
+      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'target-claimed', redemptionReceipt: receipt(), updatedAt: '2026-08-27T00:01:00.000Z' });
+      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'source-acknowledged', updatedAt: '2026-08-27T00:01:00.000Z' });
+    }
+    await store.save(predecessor);
+    const descriptor = { ...reissuedClaim(), targetAuthorityGeneration: 4 };
+    const input = { descriptor, memberPersonalRef: `refs/heads/members/${MEMBER_ID}`, operationIntentId: 'replacement-intent', serverUrl: LAN_TARGET.endpoint };
+    let loseResponse = true;
+    let retainedRequest: ClaimTransferredMembershipRequest | undefined;
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      store, lanTarget: LAN_TARGET, now: () => new Date('2026-10-01T00:00:10.000Z'),
+      target: { cloudPrincipalId: null, claimTransferredMembership: async (record, request) => {
+        expect(store.record).toEqual(record);
+        expect(record).toMatchObject({ retainedAttempts: [predecessor] });
+        if (loseResponse) { retainedRequest = request; throw new Error('response lost'); }
+        expect(request).toEqual(retainedRequest);
+        return { ...receipt('replacement-intent'), targetAuthorityGeneration: 4, redeemedAt: '2026-10-01T00:01:00.000Z' };
+      }, confirmTargetBinding: async () => null },
+      convergence: { converge: async record => {
+        expect(record).toMatchObject({ phase: 'target-confirmed', retainedAttempts: [predecessor] });
+      } },
+    });
+    await expect(coordinator.startManagerReissued(input)).rejects.toThrow('response lost');
+    store.record = decodeAuthorityTransferClaimantRecord(JSON.parse(JSON.stringify(store.record)));
+    loseResponse = false;
+    await coordinator.startManagerReissued(input);
+    expect(store.record).toBeNull();
+  });
+
+  it('persists a LAN recovery credential before redeeming a Manager string without source history', async () => {
+    const store = new MemoryStore();
+    const coordinator = new AuthorityTransferClaimantCoordinator({
+      store, lanTarget: LAN_TARGET, createCredential: () => TARGET_CREDENTIAL,
+      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      target: {
+        cloudPrincipalId: null,
+        claimTransferredMembership: async (record, request) => {
+          expect(store.record).toEqual(record);
+          expect(request.credentialHash).toBe(createHash('sha256').update(TARGET_CREDENTIAL).digest('hex'));
+          return { ...receipt(), redeemedAt: '2026-10-01T00:01:00.000Z' };
+        },
+        confirmTargetBinding: async () => null,
+      },
+      convergence: { converge: async record => {
+        expect(record).toMatchObject({ lanTarget: LAN_TARGET, targetCredential: TARGET_CREDENTIAL, phase: 'target-confirmed' });
+      } },
+    });
+    await coordinator.startManagerReissued({ descriptor: reissuedClaim(), memberPersonalRef: `refs/heads/members/${MEMBER_ID}`,
+      operationIntentId: INTENT_ID, serverUrl: LAN_TARGET.endpoint });
+    expect(store.record).toBeNull();
+  });
+
   it('persists a Manager-reissued descriptor and exact request before target redemption without resolving the source', async () => {
     const store = new MemoryStore();
     const source = {
@@ -595,11 +655,12 @@ describe('AuthorityTransferClaimantCoordinator', () => {
   });
 
   it.each([
-    ['lan-to-cloud', false],
-    ['cloud-to-lan', true],
+    ['lan-to-cloud', false, false],
+    ['cloud-to-lan', true, true],
+    ['cloud-to-lan', true, false],
   ] as const)(
     'durably redeems an offline Member for %s without Join or prebinding',
-    async (direction, expectsCredential) => {
+    async (direction, expectsCredential, managerInitiated) => {
       const operationIntentId = direction === 'cloud-to-lan'
         ? CLOUD_TO_LAN_INTENT_ID
         : INTENT_ID;
@@ -633,7 +694,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       });
 
       await coordinator.start({
-        managerPredecessor: direction === 'cloud-to-lan' ? MANAGER_PREDECESSOR : null,
+        managerPredecessor: managerInitiated ? MANAGER_PREDECESSOR : null,
         memberId: MEMBER_ID,
         operationIntentId,
         status: completed(direction),
@@ -774,24 +835,25 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     expect(target).toHaveBeenCalledTimes(1);
   });
 
-  it.each([true, false])('recovers an expired ambiguous Cloud claim only with target binding proof: %s', async bound => {
+  it.each([['lan-to-cloud', true], ['lan-to-cloud', false], ['cloud-to-lan', true], ['cloud-to-lan', false]] as const)('recovers an expired ambiguous %s claim only with target binding proof: %s', async (direction, bound) => {
     const store = new MemoryStore();
     let record = createAuthorityTransferClaimantRecord({
-      cloudPrincipalId: 'vault-' + 'a'.repeat(64), createdAt: CREATED_AT,
-      memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed('lan-to-cloud'),
+      cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null, createdAt: CREATED_AT,
+      lanTarget: direction === 'cloud-to-lan' ? LAN_TARGET : null,
+      memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed(direction),
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
       phase: 'claim-retained', claim: claim(), updatedAt: '2026-08-27T00:00:01.000Z',
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
-      phase: 'credential-persisted', targetCredential: null, updatedAt: '2026-08-27T00:00:02.000Z',
+      phase: 'credential-persisted', targetCredential: direction === 'cloud-to-lan' ? TARGET_CREDENTIAL : null, updatedAt: '2026-08-27T00:00:02.000Z',
     });
     store.record = record;
     const converged: AuthorityTransferClaimantRecord[] = [];
     const target = {
       cloudPrincipalId: record.cloudPrincipalId,
       claimTransferredMembership: async () => { throw new Error('Expired claim must not be redeemed again'); },
-      confirmCloudTargetBinding: async () => {
+      confirmSourceTargetBinding: async () => {
         if (!bound) throw new CollabError({ code: 'authorization-denied' });
       },
     };

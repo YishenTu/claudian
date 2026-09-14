@@ -595,10 +595,11 @@ export class LanAuthorityTransferClient {
       throw clientError('protocol-payload-invalid', 'authority-transfer-response-invalid');
     }
     if (
-      decodedResponse.projectId !== this.trust.projectId
+      !('projectId' in decodedResponse)
+      || decodedResponse.projectId !== this.trust.projectId
       || (
         'transferId' in decodedRequest
-        && decodedResponse.transferId !== decodedRequest.transferId
+        && (!('transferId' in decodedResponse) || decodedResponse.transferId !== decodedRequest.transferId)
       )
     ) {
       throw clientError('protocol-payload-invalid', 'authority-transfer-response-mismatch');

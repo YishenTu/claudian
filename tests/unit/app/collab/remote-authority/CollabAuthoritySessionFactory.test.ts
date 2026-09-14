@@ -6,11 +6,11 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 6,
-      gitRemoteUrl: 'https://cloud.example.test/v6/projects/project-cloud/repository.git',
+      bindingVersion: 7,
+      gitRemoteUrl: 'https://cloud.example.test/v7/projects/project-cloud/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 10,
+      wireVersion: 11,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 0,

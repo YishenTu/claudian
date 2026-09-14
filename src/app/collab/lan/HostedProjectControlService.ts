@@ -43,6 +43,9 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export type HostedMembershipControlPort = Pick<
   CollabControlProjectService,
+  | 'listProjectMembers'
+  | 'reissueTransferredMembershipClaim'
+  | 'claimTransferredMembership'
   | 'activateJoinAttempt'
   | 'authenticateMemberCredential'
   | 'confirmEndpoint'
@@ -232,6 +235,21 @@ export class HostedProjectControlService implements CollabControlProjectService 
       lifecycle: lifecycleGateway,
     });
   }
+
+  listProjectMembers: CollabControlProjectService['listProjectMembers'] = (...args) => {
+    if (!this.membership.listProjectMembers) throw new CollabError({ code: 'operation-failed' });
+    return this.membership.listProjectMembers(...args);
+  };
+
+  reissueTransferredMembershipClaim: CollabControlProjectService['reissueTransferredMembershipClaim'] = (...args) => {
+    if (!this.membership.reissueTransferredMembershipClaim) throw new CollabError({ code: 'operation-failed' });
+    return this.membership.reissueTransferredMembershipClaim(...args);
+  };
+
+  claimTransferredMembership: CollabControlProjectService['claimTransferredMembership'] = (...args) => {
+    if (!this.membership.claimTransferredMembership) throw new CollabError({ code: 'operation-failed' });
+    return this.membership.claimTransferredMembership(...args);
+  };
 
   activateJoinAttempt: HostedMembershipControlPort['activateJoinAttempt'] = (...args) => (
     this.membership.activateJoinAttempt(...args)

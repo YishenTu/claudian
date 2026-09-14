@@ -18,6 +18,7 @@ import {
   type CloudToLanManagerClaimantPredecessor,
   createAuthorityTransferClaimantRecord,
   createManagerReissuedAuthorityTransferClaimantRecord,
+  decodeAuthorityTransferClaimantRecord,
   type ManagerReissuedAuthorityTransferClaimantRecord,
   type SourceIssuedAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
@@ -42,7 +43,7 @@ export interface AuthorityTransferClaimantTarget {
     request: ClaimTransferredMembershipRequest,
     options: CollabOperationOptions,
   ): Promise<CollabTransferredMembershipRedemptionReceipt>;
-  confirmCloudTargetBinding?(
+  confirmSourceTargetBinding?(
     record: SourceIssuedAuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
   ): Promise<void>;
@@ -50,7 +51,7 @@ export interface AuthorityTransferClaimantTarget {
     record: ManagerReissuedAuthorityTransferClaimantRecord,
     proof: 'receipt' | 'existing-binding',
     options: CollabOperationOptions,
-  ): Promise<CollabAuthorityTransferStatus>;
+  ): Promise<CollabAuthorityTransferStatus | null>;
 }
 
 export interface AuthorityTransferClaimantConvergence {
@@ -190,20 +191,37 @@ export class AuthorityTransferClaimantCoordinator {
   ): Promise<void> {
     assertNotCancelled(options);
     const existing = await this.options.store.load(input.descriptor.projectId);
-    if (existing) {
-      if (!sameManagerReissuedAttempt(existing, input)) {
+    if (!existing || !sameManagerReissuedAttempt(existing, input)) {
+      if (existing && (existing.projectId !== input.descriptor.projectId || existing.memberId !== input.descriptor.memberId
+        || input.descriptor.targetAuthorityGeneration < (existing.variant === 'source-issued'
+          ? existing.status.targetAuthority.generation : existing.descriptor.targetAuthorityGeneration)
+        || existing.variant === 'source-issued' && (existing.managerPredecessor !== null
+          || input.descriptor.targetAuthorityGeneration === existing.status.targetAuthority.generation
+            && ['source-acknowledged', 'membership-converged', 'completed'].includes(existing.phase))
+        || existing.variant === 'manager-reissued'
+          && input.descriptor.targetAuthorityGeneration === existing.descriptor.targetAuthorityGeneration
+          && ['target-confirmed', 'membership-converged', 'completed'].includes(existing.phase))) {
         throw claimantError('authority-transfer-claimant-attempt-conflict');
       }
-    } else {
+      const retainedAttempts = existing ? [
+        ...(existing.variant === 'manager-reissued' ? existing.retainedAttempts : []),
+        existing.variant === 'manager-reissued' ? { ...existing, retainedAttempts: [] } : existing,
+      ] : [];
+      // Explicit replacement preserves ambiguous requests; successful local convergence releases them.
+      const retained = retainedAttempts.find(attempt => sameManagerReissuedAttempt(attempt, input));
       const cloudPrincipalId = this.options.target.cloudPrincipalId;
-      if (cloudPrincipalId === null) throw claimantError('authority-transfer-claimant-cloud-principal-missing');
-      const candidate = createManagerReissuedAuthorityTransferClaimantRecord({
+      if (cloudPrincipalId === null && !this.options.lanTarget) throw claimantError('authority-transfer-claimant-cloud-principal-missing');
+      const candidate = retained ?? createManagerReissuedAuthorityTransferClaimantRecord({
         cloudPrincipalId,
+        lanTarget: this.options.lanTarget ?? null,
+        targetCredential: this.options.lanTarget ? this.createCredential() : null,
         ...input,
         operationIntentId: input.operationIntentId
           ?? `manager-reissued-${randomBytes(16).toString('hex')}`,
       });
-      await this.options.store.save(candidate);
+      await this.options.store.save(decodeAuthorityTransferClaimantRecord({
+        ...candidate, retainedAttempts: retainedAttempts.filter(attempt => attempt !== retained),
+      }));
     }
     await this.resume(input.descriptor.projectId, options);
   }
@@ -237,15 +255,11 @@ export class AuthorityTransferClaimantCoordinator {
             await this.complete(record, options);
             return;
           case 'credential-persisted':
-            if (record.status.direction !== 'lan-to-cloud') {
-              await this.complete(record, options);
-              return;
-            }
             this.#assertTargetPrincipal(record);
-            if (!this.options.target.confirmCloudTargetBinding) {
+            if (!this.options.target.confirmSourceTargetBinding) {
               throw claimantError('authority-transfer-claimant-target-confirmation-unavailable');
             }
-            await this.options.target.confirmCloudTargetBinding(record, options);
+            await this.options.target.confirmSourceTargetBinding(record, options);
             // Expiry ends source acknowledgement, but cannot disprove redemption.
             // Persist authenticated target evidence before changing local membership.
             record = await this.#advanceSource(record, 'source-acknowledged', {
@@ -396,7 +410,7 @@ export class AuthorityTransferClaimantCoordinator {
     record: ManagerReissuedAuthorityTransferClaimantRecord,
     proof: 'receipt' | 'existing-binding',
     options: CollabOperationOptions,
-  ): Promise<CollabAuthorityTransferStatus> {
+  ): Promise<CollabAuthorityTransferStatus | null> {
     const confirm = this.options.target.confirmTargetBinding?.bind(this.options.target);
     if (!confirm) {
       throw claimantError('authority-transfer-claimant-target-confirmation-unavailable');
@@ -432,11 +446,12 @@ export class AuthorityTransferClaimantCoordinator {
     update: Readonly<{
       convergenceProof?: 'receipt' | 'existing-binding';
       redemptionReceipt?: CollabTransferredMembershipRedemptionReceipt;
-      targetStatus?: CollabAuthorityTransferStatus;
+      targetStatus?: CollabAuthorityTransferStatus | null;
     }> = {},
   ): Promise<ManagerReissuedAuthorityTransferClaimantRecord> {
     const record = advanceAuthorityTransferClaimantRecord(previous, {
       ...update,
+      ...(phase === 'membership-converged' ? { retainedAttempts: [] } : {}),
       phase,
       updatedAt: this.#monotonicTimestamp(previous.updatedAt),
     });

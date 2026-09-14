@@ -103,6 +103,7 @@ export interface CollabPublicationFoundationPort {
 }
 
 export interface CollabPublicationServiceOptions {
+  readonly onAuthorityMigrationHint?: (projectId: CollabProjectId) => void;
   readonly cloudAuthority: CollabAuthorityAdapter;
   readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidatesForTrustTransition'>;
   readonly inspectHostInstallation: (
@@ -221,9 +222,16 @@ export class CollabPublicationService {
     );
     this.projection = new CollabClientProjection(foundation.local.projects, this.control, {
       authoritySessions: this.authoritySessions,
-      onSnapshotResult: (projectId, error) => error
-        ? this.#connection(projectId).observeFailure(error) : this.#connection(projectId).observeSuccess(),
-      onEventConnectionState: (projectId, state) => this.#connection(projectId).observeEvents(state),
+      onSnapshotResult: (projectId, error) => {
+        if (error) {
+          this.#connection(projectId).observeFailure(error);
+          options.onAuthorityMigrationHint?.(projectId);
+        } else this.#connection(projectId).observeSuccess();
+      },
+      onEventConnectionState: (projectId, state) => {
+        this.#connection(projectId).observeEvents(state);
+        if (state instanceof CollabError) options.onAuthorityMigrationHint?.(projectId);
+      },
       managerResponsibility: options.managerResponsibility,
       retirement: options.retirement,
       retirementAdmission: options.retirementAdmission,
@@ -269,10 +277,14 @@ export class CollabPublicationService {
     work.assertGeneration(generation);
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     if (authority.authorityKind === 'lan') {
+      const capabilities = await authority.control.readLanCapabilities?.(projectId, options) ?? [];
+      work.assertGeneration(generation);
       return Object.freeze({
         authorityKind: 'lan',
         authorityTransfer: true,
-        importedMemberClaims: false,
+        importedMemberClaims: membership.authority.kind === 'lan'
+          && membership.authority.authorityGeneration > 1
+          && capabilities.includes('imported-membership-claims-v1'),
         invitations: true,
         leave: true,
         managerResponsibility: true,
@@ -733,6 +745,7 @@ export class CollabPublicationService {
   }
 
   observeProject(projectId: CollabProjectId): { dispose(): void } {
+    this.options.onAuthorityMigrationHint?.(projectId);
     return this.sessions.observeProject(projectId, work => {
       this.#connection(projectId).requireEvents();
       const generation = work.generation;
@@ -1000,7 +1013,10 @@ export class CollabPublicationService {
   #observeConnection(projectId: CollabProjectId, error?: CollabError): void {
     if (this.disposed) return;
     const connection = this.#connection(projectId);
-    if (error) connection.observeFailure(error);
+    if (error) {
+      connection.observeFailure(error);
+      this.options.onAuthorityMigrationHint?.(projectId);
+    }
     else connection.observeControlSuccess();
   }
 

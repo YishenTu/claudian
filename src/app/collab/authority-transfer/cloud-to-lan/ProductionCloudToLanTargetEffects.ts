@@ -41,6 +41,7 @@ import {
   encodeCollabTransferredMembershipRedemptionReceiptSigningInput,
 } from '@claudian-collab/protocol';
 
+import { ImportedMembershipClaimRepository } from '@/app/collab/authority/ImportedMembershipClaimRepository';
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import type { AuthorityDatabaseConnection, SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -1361,6 +1362,15 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         projectId: record.projectId,
         targetAuthorityGeneration: record.status.targetAuthority.generation,
       });
+      new ImportedMembershipClaimRepository().initialize(connection, {
+        projectId: record.projectId,
+        authorityGeneration: record.status.targetAuthority.generation,
+        transferId: record.transferId,
+        checkpointSha256: state.claimBatch!.checkpointSha256,
+        sourceClaimsExpireAt: state.claimBatch!.expiresAt,
+        receiptKeyId: state.receiptKey.receiptKeyId,
+        receiptPrivateKey: state.receiptKey.privateKey,
+      });
     });
     return targetProof;
   }
@@ -1608,13 +1618,10 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (!activeState.pendingReceipts[receiptKeyId]) {
         await writeState(statePath, { ...activeState, pendingReceipts: { ...activeState.pendingReceipts, [receiptKeyId]: receipt } });
       }
-      await authority.database.mutate(connection => (
-        new PendingMembershipRepository().bindImportedActive(
-          connection,
-          item.memberId,
-          credentialHash,
-        )
-      ));
+      await authority.database.mutate(connection => {
+        new ImportedMembershipClaimRepository().assertSourceClaimAllowed(connection, item.memberId);
+        return new PendingMembershipRepository().bindImportedActive(connection, item.memberId, credentialHash);
+      });
       const pendingReceipts = { ...activeState.pendingReceipts };
       delete pendingReceipts[receiptKeyId];
       await writeState(statePath, { ...activeState, pendingReceipts, receipts: { ...activeState.receipts, [receiptKeyId]: receipt } });

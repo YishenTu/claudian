@@ -2,6 +2,7 @@ import {
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
+  type ReissueTransferredMembershipClaimRequest,
 } from '@claudian-collab/protocol';
 
 import {
@@ -281,6 +282,31 @@ function decodeInvitationRevocationResponse(
 
 export class MembershipControlClient {
   constructor(private readonly transport: MembershipControlTransport) {}
+
+  listProjectMembers(input: { projectId: string; memberCredential: string; signal?: AbortSignal }) {
+    return this.transport.requestWithMember({
+      method: 'GET', path: collabControlOperationPath('listProjectMembers', input.projectId),
+      decode: value => {
+        const response = lanCollabControlOperationCodec('listProjectMembers').decodeResponse(value);
+        if (response.projectId !== input.projectId) throw decodeError('projectId');
+        return response;
+      },
+    }, input.memberCredential, { signal: input.signal });
+  }
+
+  reissueTransferredMembershipClaim(input: ReissueTransferredMembershipClaimRequest & { memberCredential: string; signal?: AbortSignal }) {
+    const { memberCredential, signal, ...body } = input;
+    return this.transport.requestWithMember({
+      method: 'POST', path: collabControlOperationPath('reissueTransferredMembershipClaim', input.projectId),
+      body, idempotencyKey: input.idempotencyKey,
+      decode: value => {
+        const response = lanCollabControlOperationCodec('reissueTransferredMembershipClaim').decodeResponse(value);
+        if (response.projectId !== input.projectId || response.memberId !== input.memberId
+          || response.claimGeneration !== input.expectedClaimGeneration + 1) throw decodeError('membershipClaim');
+        return response;
+      },
+    }, memberCredential, { signal });
+  }
 
   confirmEndpoint(input: ConfirmEndpointInput): Promise<ConfirmEndpointResponse> {
     projectId(input.projectId, 'projectId');

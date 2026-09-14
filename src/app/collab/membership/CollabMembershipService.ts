@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { type CollabManagerResponsibilityOffer, type CollabMemberId, type CollabProjectId, type CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
-import { type CollabLocalProjectRepository, isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { type CollabLocalLanMembershipRecord,type CollabLocalProjectRepository, isCollabLocalCloudMembership, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type {
   CollabImportedClaimManagementIdentity,
   CollabProjectLifecycleAdmission,
@@ -18,6 +18,7 @@ import type {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import { encodeCloudMembershipClaimInvitation, encodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
+import { encodeLanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import type {
   CloudMembershipBinding,
@@ -32,6 +33,7 @@ import type {
   CollabManagerResponsibilityOfferSummary,
   CollabMemberSummaryView,
   CollabOpenInvitationRequest,
+  CollabProjectCapabilities,
   CollabProjectSnapshot,
   CollabResult,
   CollabRevokeInvitationRequest,
@@ -47,6 +49,7 @@ export class CollabMembershipOutcomeError extends Error {
 }
 
 export interface CollabMembershipSnapshotPort {
+  readProjectCapabilities?(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabProjectCapabilities>;
   readAuthoritySnapshot(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabCoordinationSnapshot>;
   readCoordinationSnapshot(
     projectId: CollabProjectId,
@@ -73,6 +76,12 @@ export class CollabMembershipService {
   private readonly lanManagementIntents = new Map<CollabProjectId, {
     readonly identity: string;
     readonly key: string;
+    claim?: {
+      readonly binding: CollabLocalLanMembershipRecord;
+      readonly request: CollabProjectMembershipOperationMap['reissueTransferredMembershipClaim']['request'];
+      readonly completionId: string;
+      result: CollabProjectMembershipOperationMap['reissueTransferredMembershipClaim']['response'] | null;
+    };
   }>();
   private readonly managementQueues = new Map<CollabProjectId, SerialTaskQueue>();
   private readonly createIdempotencyKey: NonNullable<
@@ -190,7 +199,16 @@ export class CollabMembershipService {
     }
   }
 
-  reissueMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<CollabInvitationView> {
+  async reissueMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<CollabInvitationView> {
+    const membership = await this.safety.projects.loadMembership(request.projectId);
+    if (membership && isCollabLocalLanMembership(membership)) {
+      return this.#runManagement(request.projectId, async () => {
+        await this.#reissueLanMemberClaim(request, options);
+        const invitation = this.#lanClaimView(request.projectId)?.invitation;
+        if (!invitation) throw new CollabError({ code: 'invitation-expired' });
+        return invitation;
+      });
+    }
     return this.#runCloudImportedClaimManagementMutation(
       request.projectId,
       request.memberId,
@@ -217,6 +235,48 @@ export class CollabMembershipService {
         return { encodedInvitation: encodeCloudMembershipClaimInvitation({ claim: intent.response, serverUrl: intent.serverUrl }), expiresAt: intent.response.expiresAt };
       },
     );
+  }
+
+  async #reissueLanMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions): Promise<void> {
+    const membership = await this.safety.projects.loadMembership(request.projectId);
+    if (!membership || !isCollabLocalLanMembership(membership) || membership.authority.authorityGeneration < 2) throw new CollabError({ code: 'authorization-denied' });
+    const identity = `reissue-member-claim:${request.memberId}`;
+    let intent = this.lanManagementIntents.get(request.projectId);
+    if (intent && intent.identity !== identity) throw managementPending('lan-management-operation-pending');
+    if (!intent) {
+      const members = await this.control.membership('listProjectMembers', { projectId: request.projectId }, options);
+      const member = members.members.find(member => member.memberId === request.memberId);
+      if (!member || member.bindingState !== 'unbound' || member.importedClaimGeneration === null) throw new CollabError({ code: 'authorization-denied' });
+      const key = this.createIdempotencyKey('reissue-member-claim');
+      intent = { identity, key, claim: { binding: membership, completionId: randomUUID(), result: null,
+        request: { projectId: request.projectId, memberId: request.memberId, idempotencyKey: key,
+          expectedClaimGeneration: member.importedClaimGeneration, expectedManagerSetGeneration: members.managerSetGeneration,
+          expectedMembershipRevision: member.membershipRevision } } };
+      this.lanManagementIntents.set(request.projectId, intent);
+    }
+    const claim = intent.claim;
+    if (!claim || !isDeepStrictEqual(claim.binding.authority, membership.authority) || claim.binding.member.id !== membership.member.id) throw managementPending('lan-management-binding-changed');
+    if (!claim.result) {
+      const result = await this.control.membership('reissueTransferredMembershipClaim', claim.request, options);
+      if (result.targetAuthorityGeneration !== membership.authority.authorityGeneration) throw new CollabError({ code: 'authority-integrity-error' });
+      claim.result = result;
+    }
+  }
+
+  #lanClaimView(projectId: CollabProjectId): CollabManagementOperationView | null {
+    const claim = this.lanManagementIntents.get(projectId)?.claim;
+    if (!claim) return null;
+    const result = claim.result;
+    const authority = claim.binding.authority;
+    const available = result && !retainedSecretExpired(result);
+    return {
+      action: 'reissue-member-claim', completionId: claim.completionId,
+      status: result ? 'result-retained' : 'pending', secretAvailableUntil: result?.secretReplayExpiresAt ?? null,
+      invitation: available && authority.hostCaCertificatePem && authority.hostCaFingerprint && authority.endpoint
+        ? { encodedInvitation: encodeLanMembershipClaimInvitation({ claim: result, targetHost: {
+          caCertificatePem: authority.hostCaCertificatePem, caFingerprint: authority.hostCaFingerprint, endpoint: authority.endpoint,
+        } }), expiresAt: result.expiresAt } : null,
+    };
   }
 
   revokeMemberClaim(request: CollabImportedMemberClaimRequest, options: CollabOperationOptions = {}): Promise<void> {
@@ -307,6 +367,12 @@ export class CollabMembershipService {
     }
     const projection = await this.snapshots.readCoordinationSnapshot(projectId, options);
     if (projection.source !== 'online' || projection.stale) throw new CollabError({ code: 'offline' });
+    if (membership && isCollabLocalLanMembership(membership) && membership.authority.authorityGeneration > 1
+      && (await this.snapshots.readProjectCapabilities?.(projectId, options))?.importedMemberClaims) {
+      const response = await this.control.membership('listProjectMembers', { projectId }, options);
+      return response.members.map(member => ({ memberId: member.memberId, displayName: member.displayName, role: member.role,
+        importedClaim: member.importedClaimState === 'not-applicable' ? null : { state: member.importedClaimState, bindingState: member.bindingState } }));
+    }
     return projection.snapshot.members.map(member => ({ memberId: member.id, displayName: member.displayName, role: member.role, importedClaim: null }));
   }
 
@@ -369,6 +435,8 @@ export class CollabMembershipService {
 
   readManagementOperation(projectId: CollabProjectId, options: CollabOperationOptions = {}): Promise<CollabManagementOperationView | null> {
     return this.#runManagement(projectId, async () => {
+      const lanClaim = this.#lanClaimView(projectId);
+      if (lanClaim) return lanClaim;
       const intent = await this.#loadCloudIntent(projectId);
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       if (!intent) return null;
@@ -380,6 +448,13 @@ export class CollabMembershipService {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabManagementOperationView> {
+    if (this.lanManagementIntents.get(projectId)?.claim) {
+      return this.#runManagement(projectId, async () => {
+        const claim = this.lanManagementIntents.get(projectId)!.claim!;
+        await this.#reissueLanMemberClaim({ projectId, memberId: claim.request.memberId }, options);
+        return this.#lanClaimView(projectId)!;
+      });
+    }
     return this.#resumeManagementOperation(projectId, options);
   }
 

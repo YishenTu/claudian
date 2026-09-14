@@ -92,7 +92,7 @@ describe('HostTransferPackage', () => {
     }))).toThrow();
   });
 
-  it.each([7, 14])('rejects unsupported recovery authority schema %s', authoritySchemaVersion => {
+  it.each([7, 15])('rejects unsupported recovery authority schema %s', authoritySchemaVersion => {
     expect(() => parseHostTransferRecoveryPackageManifest(JSON.stringify({
       ...manifest(),
       authoritySchemaVersion,

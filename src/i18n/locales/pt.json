@@ -128,6 +128,7 @@
       "resumeFailed": "A entrada ainda precisa de atenção. Tente novamente."
     },
     "reconnectProject": {
+      "restoreWithLink": "Restaurar a conexão com um link",
       "title": "Reconectar projeto",
       "descriptionLan": "Reconecte {name} com um novo convite ou comprovante de recuperação de membro. Após a migração para Cloud, use a URL do servidor Cloud enquanto o Host anterior estiver acessível e mantiver seu comprovante.",
       "descriptionCloud": "Reconecte {name} com um convite do Cloud, uma credencial de associação importada ou a nova URL do servidor.",

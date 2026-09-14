@@ -128,6 +128,7 @@
       "resumeFailed": "加入流程仍需處理，請重試。"
     },
     "reconnectProject": {
+      "restoreWithLink": "使用連結恢復連線",
       "title": "重新連線專案",
       "descriptionLan": "使用新的邀請或成員認領資訊重新連線 {name}。遷移至 Cloud 後，可在原 Host 仍可連線且保留你的認領資訊時，使用 Cloud 伺服器 URL 重新連線。",
       "descriptionCloud": "使用 Cloud 邀請、匯入的成員身分憑證或新伺服器 URL 重新連線 {name}。",

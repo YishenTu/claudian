@@ -1090,6 +1090,8 @@ function repairAndAssertAuthorityV11Schema(database: Database): boolean {
 }
 
 function authorityV12SchemaIsComplete(database: Database): boolean {
+  const hasRevision = tableColumns(database, 'members').has('membership_revision');
+  const membersSql = AUTHORITY_SCHEMA_V12_MEMBERS_SQL.replace('members_v12', 'members');
   return authorityV11SchemaIsComplete(database)
     && hasExactColumns(database, 'members', [
       'member_id',
@@ -1103,12 +1105,13 @@ function authorityV12SchemaIsComplete(database: Database): boolean {
       'created_at',
       'activated_at',
       'revoked_at',
+      ...(hasRevision ? ['membership_revision'] : []),
     ])
     && hasExactSchemaSql(
       database,
       'table',
       'members',
-      AUTHORITY_SCHEMA_V12_MEMBERS_SQL.replace('members_v12', 'members'),
+      hasRevision ? membersSql.replace('revoked_at TEXT,', `revoked_at TEXT, membership_revision INTEGER NOT NULL DEFAULT 1 CHECK(typeof(membership_revision) = 'integer' AND membership_revision >= 1),`) : membersSql,
     )
     && hasExactColumns(database, 'authority_metadata', [
       'singleton',
@@ -1418,6 +1421,49 @@ function applyAuthoritySchemaV12(database: Database): void {
   repairAndAssertAuthorityV12Schema(database);
 }
 
+const AUTHORITY_SCHEMA_V14_MEMBER_COLUMN_SQL = `
+  ALTER TABLE members ADD COLUMN membership_revision INTEGER NOT NULL DEFAULT 1
+    CHECK(typeof(membership_revision) = 'integer' AND membership_revision >= 1);
+`;
+
+const AUTHORITY_SCHEMA_V14_OBJECTS = [
+  { type: 'trigger', name: 'members_revision_update', sql: `  CREATE TRIGGER members_revision_update AFTER UPDATE OF role, status, access_state, credential_hash ON members
+    WHEN OLD.role != NEW.role OR OLD.status != NEW.status OR OLD.access_state != NEW.access_state
+      OR OLD.credential_hash IS NOT NEW.credential_hash
+    BEGIN
+      UPDATE members SET membership_revision = OLD.membership_revision + 1 WHERE member_id = NEW.member_id;
+    END;
+` },
+  { type: 'table', name: 'imported_claim_authority', sql: `  CREATE TABLE imported_claim_authority (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    context_json TEXT NOT NULL CHECK(json_valid(context_json))
+  );
+` },
+  { type: 'table', name: 'imported_member_claims', sql: `  CREATE TABLE imported_member_claims (
+    member_id TEXT PRIMARY KEY REFERENCES members(member_id),
+    claim_generation INTEGER NOT NULL CHECK(typeof(claim_generation) = 'integer' AND claim_generation >= 1),
+    claim_sha256 TEXT NOT NULL UNIQUE CHECK(length(claim_sha256) = 64),
+    expires_at TEXT NOT NULL,
+    actor_member_id TEXT NOT NULL REFERENCES members(member_id),
+    issued_key TEXT NOT NULL,
+    request_sha256 TEXT NOT NULL CHECK(length(request_sha256) = 64),
+    descriptor_json TEXT NOT NULL CHECK(json_valid(descriptor_json)),
+    credential_hash TEXT CHECK(credential_hash IS NULL OR length(credential_hash) = 64),
+    redemption_key TEXT,
+    receipt_json TEXT CHECK(receipt_json IS NULL OR json_valid(receipt_json)),
+    CHECK((receipt_json IS NULL AND credential_hash IS NULL AND redemption_key IS NULL)
+      OR (receipt_json IS NOT NULL AND credential_hash IS NOT NULL AND redemption_key IS NOT NULL))
+  );
+` },
+] as const;
+
+function assertAuthorityV14Schema(database: Database): void {
+  if (!tableColumns(database, 'members').has('membership_revision')
+    || AUTHORITY_SCHEMA_V14_OBJECTS.some(object => !hasExactSchemaSql(database, object.type, object.name, object.sql))) {
+    throw new Error('Authority V14 imported membership claim schema is incomplete');
+  }
+}
+
 export function applyAuthorityMigrations(database: Database): boolean {
   const version = pragmaNumber(database, 'PRAGMA user_version');
   if (version > COLLAB_AUTHORITY_SCHEMA_VERSION) {
@@ -1428,6 +1474,7 @@ export function applyAuthorityMigrations(database: Database): boolean {
     try {
       const repaired = repairAndAssertAuthorityV12Schema(database);
       assertAuthorityV13Schema(database);
+      assertAuthorityV14Schema(database);
       database.run('COMMIT');
       return repaired;
     } catch (error) {
@@ -1453,6 +1500,11 @@ export function applyAuthorityMigrations(database: Database): boolean {
     if (version < 12) applyAuthoritySchemaV12(database);
     if (version < 13) applyAuthoritySchemaV13(database);
     assertAuthorityV13Schema(database);
+    if (version < 14 && !tableExists(database, 'imported_claim_authority')) {
+      database.run(AUTHORITY_SCHEMA_V14_MEMBER_COLUMN_SQL);
+      for (const object of AUTHORITY_SCHEMA_V14_OBJECTS) database.run(object.sql);
+    }
+    assertAuthorityV14Schema(database);
     database.run(`PRAGMA user_version = ${COLLAB_AUTHORITY_SCHEMA_VERSION}`);
     database.run('COMMIT');
     transactionStarted = false;

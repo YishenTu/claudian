@@ -28,7 +28,7 @@ import {
   parseInstallationKey,
 } from '@/core/device/InstallationKey';
 
-export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 4 as const;
+export const AUTHORITY_TRANSFER_CLAIMANT_RECORD_SCHEMA_VERSION = 5 as const;
 
 export const SOURCE_ISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES = [
   'prepared',
@@ -100,6 +100,9 @@ export interface ManagerReissuedAuthorityTransferClaimantRecord
   extends AuthorityTransferClaimantRecordBase {
   readonly convergenceProof: 'receipt' | 'existing-binding' | null;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
+  readonly retainedAttempts: readonly AuthorityTransferClaimantRecord[];
+  readonly lanTarget: AuthorityTransferClaimantLanTarget | null;
+  readonly targetCredential: string | null;
   readonly memberPersonalRef: string;
   readonly phase: ManagerReissuedAuthorityTransferClaimantPhase;
   readonly redemptionReceipt: CollabTransferredMembershipRedemptionReceipt | null;
@@ -119,6 +122,8 @@ const SOURCE_KEYS = new Set([
   'status', 'targetCredential', 'transferId', 'updatedAt', 'variant',
 ]);
 const MANAGER_KEYS = new Set([
+  'retainedAttempts',
+  'lanTarget', 'targetCredential',
   'cloudPrincipalId', 'convergenceProof', 'createdAt', 'descriptor', 'kind', 'memberId',
   'memberPersonalRef', 'operationIntentId', 'phase', 'projectId', 'redemptionReceipt',
   'redemptionRequest', 'schemaVersion', 'serverUrl', 'targetStatus', 'transferId',
@@ -182,7 +187,7 @@ function decodeCloudPrincipal(value: unknown): string | null {
 
 function decodeLanTarget(
   value: unknown,
-  status: CollabAuthorityTransferStatus,
+  status: Pick<CollabAuthorityTransferStatus, 'targetUrl'>,
 ): AuthorityTransferClaimantLanTarget | null {
   if (value === null) return null;
   if (
@@ -215,9 +220,6 @@ function decodeManagerPredecessor(
   status: CollabAuthorityTransferStatus,
 ): CloudToLanManagerClaimantPredecessor | null {
   if (value === null) {
-    if (status.direction === 'cloud-to-lan') {
-      throw new TypeError('Invalid authority-transfer claimant Manager predecessor');
-    }
     return null;
   }
   if (
@@ -325,7 +327,7 @@ function decodeSourceIssuedRecord(
     || (status.targetAuthority.kind === 'cloud' && targetCredential !== null)
     || (index >= 3 && convergenceProof === null) !== (redemptionReceipt !== null)
     || (convergenceProof === 'existing-binding' && (
-      status.direction !== 'lan-to-cloud' || index < 4
+      index < 4
       || Date.parse(source.updatedAt as string) < Date.parse(status.expiresAt)
     ))
     || (claim !== null && (
@@ -377,15 +379,25 @@ function decodeManagerReissuedRecord(
 ): ManagerReissuedAuthorityTransferClaimantRecord {
   assertKeys(source, MANAGER_KEYS);
   assertBase(source);
+  if (!Array.isArray(source.retainedAttempts)) throw new TypeError('Invalid retained claimant attempts');
+  const retainedAttempts = source.retainedAttempts.map((value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || ('retainedAttempts' in value && (!Array.isArray(value.retainedAttempts) || value.retainedAttempts.length !== 0))) {
+      throw new TypeError('Invalid nested claimant attempt');
+    }
+    const attempt = decodeAuthorityTransferClaimantRecord(value);
+    if (attempt.projectId !== source.projectId || attempt.memberId !== source.memberId
+      || attempt.variant === 'source-issued' && attempt.managerPredecessor !== null) {
+      throw new TypeError('Invalid retained claimant identity');
+    }
+    return attempt;
+  });
   const phase = source.phase;
   if (
     typeof phase !== 'string'
     || !MANAGER_REISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES.includes(phase as never)
   ) throw new TypeError('Invalid authority-transfer claimant phase');
   const cloudPrincipalId = decodeCloudPrincipal(source.cloudPrincipalId);
-  if (cloudPrincipalId === null) {
-    throw new TypeError('Invalid authority-transfer claimant Cloud principal');
-  }
   const descriptor = collabControlOperationCodec(
     'reissueTransferredMembershipClaim',
   ).decodeResponse(source.descriptor);
@@ -397,6 +409,10 @@ function decodeManagerReissuedRecord(
     throw new TypeError('Invalid Manager-reissued authority-transfer claimant endpoint');
   }
   const serverUrl = validateCloudServerUrl(source.serverUrl, 'serverUrl');
+  const lanTarget = decodeLanTarget(source.lanTarget, { targetUrl: serverUrl });
+  const targetCredential = decodeCredential(source.targetCredential);
+  if ((lanTarget === null) !== (cloudPrincipalId !== null)
+    || (lanTarget !== null) !== (targetCredential !== null)) throw new TypeError('Invalid claimant target binding');
   const targetStatus = source.targetStatus === null
     ? null
     : decodeCollabAuthorityTransferStatus(source.targetStatus);
@@ -417,10 +433,12 @@ function decodeManagerReissuedRecord(
     || redemptionRequest.transferId !== descriptor.transferId
     || redemptionRequest.idempotencyKey !== source.operationIntentId
     || redemptionRequest.claim !== descriptor.claim
-    || ('credentialHash' in redemptionRequest && redemptionRequest.credentialHash !== undefined)
+    || (lanTarget === null ? redemptionRequest.credentialHash !== undefined
+      : redemptionRequest.credentialHash !== createHash('sha256').update(targetCredential!).digest('hex'))
     || (index === 0 && (redemptionReceipt !== null || targetStatus !== null || convergenceProof !== null))
     || (index === 1 && (redemptionReceipt === null || targetStatus !== null || convergenceProof !== null))
-    || (index >= 2 && targetStatus === null)
+    || (index >= 2 && lanTarget === null && targetStatus === null)
+    || (lanTarget !== null && targetStatus !== null)
     || (index >= 2 && convergenceProof !== 'receipt' && convergenceProof !== 'existing-binding')
     || (convergenceProof === 'receipt' && redemptionReceipt === null)
     || (convergenceProof === 'existing-binding' && redemptionReceipt !== null)
@@ -455,6 +473,9 @@ function decodeManagerReissuedRecord(
     convergenceProof,
     createdAt: source.createdAt,
     descriptor,
+    retainedAttempts: Object.freeze(retainedAttempts),
+    lanTarget,
+    targetCredential,
     kind: 'authority-transfer-claimant',
     memberId: source.memberId,
     memberPersonalRef: source.memberPersonalRef,
@@ -516,7 +537,9 @@ export function createAuthorityTransferClaimantRecord(input: {
 }
 
 export function createManagerReissuedAuthorityTransferClaimantRecord(input: {
-  readonly cloudPrincipalId: string;
+  readonly cloudPrincipalId: string | null;
+  readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
+  readonly targetCredential?: string | null;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
   readonly memberPersonalRef: string;
   readonly operationIntentId: string;
@@ -524,9 +547,12 @@ export function createManagerReissuedAuthorityTransferClaimantRecord(input: {
 }): ManagerReissuedAuthorityTransferClaimantRecord {
   return decodeAuthorityTransferClaimantRecord({
     cloudPrincipalId: input.cloudPrincipalId,
+    lanTarget: input.lanTarget ?? null,
+    targetCredential: input.targetCredential ?? null,
     convergenceProof: null,
     createdAt: input.descriptor.createdAt,
     descriptor: input.descriptor,
+    retainedAttempts: [],
     kind: 'authority-transfer-claimant',
     memberId: input.descriptor.memberId,
     memberPersonalRef: input.memberPersonalRef,
@@ -535,6 +561,7 @@ export function createManagerReissuedAuthorityTransferClaimantRecord(input: {
     projectId: input.descriptor.projectId,
     redemptionReceipt: null,
     redemptionRequest: {
+      ...(input.targetCredential ? { credentialHash: createHash('sha256').update(input.targetCredential).digest('hex') } : {}),
       claim: input.descriptor.claim,
       idempotencyKey: input.operationIntentId,
       projectId: input.descriptor.projectId,
@@ -565,7 +592,6 @@ export function advanceAuthorityTransferClaimantRecord(
     ? SOURCE_ISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES
     : MANAGER_REISSUED_AUTHORITY_TRANSFER_CLAIMANT_PHASES;
   const isExistingBindingRecovery = (previous.variant === 'source-issued'
-    && previous.status.direction === 'lan-to-cloud'
     && previous.phase === 'credential-persisted'
     && update.phase === 'source-acknowledged'
     && update.convergenceProof === 'existing-binding')
@@ -573,8 +599,7 @@ export function advanceAuthorityTransferClaimantRecord(
     && previous.phase === 'redemption-prepared'
     && update.phase === 'target-confirmed'
     && update.convergenceProof === 'existing-binding'
-    && update.targetStatus !== null
-    && update.targetStatus !== undefined;
+    && (previous.lanTarget !== null || update.targetStatus !== null && update.targetStatus !== undefined);
   if (
     !isExistingBindingRecovery
     && phases.indexOf(update.phase) !== phases.indexOf(previous.phase) + 1
@@ -585,6 +610,7 @@ export function advanceAuthorityTransferClaimantRecord(
 }
 
 interface AuthorityTransferClaimantRecordUpdate {
+  readonly retainedAttempts?: readonly AuthorityTransferClaimantRecord[];
   readonly claim?: CollabTransferredMembershipClaim | null;
   readonly convergenceProof?: 'receipt' | 'existing-binding' | null;
   readonly phase: AuthorityTransferClaimantPhase;

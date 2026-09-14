@@ -85,6 +85,7 @@ export interface ProjectManagementModalOptions {
   readonly copyText?: (text: string) => Promise<void>;
   readonly onChanged?: () => void;
   readonly onClosed?: () => void;
+  readonly onReconnect?: (project: CollabLocalProjectSummary) => void;
   readonly project: CollabLocalProjectSummary;
 }
 
@@ -129,6 +130,7 @@ export class ProjectManagementModal extends Modal {
   #lifecycleActionsEl: HTMLDivElement | null = null;
   #opened = false;
   #projectActionsEl: HTMLDivElement | null = null;
+  #reconnectActionEl: HTMLButtonElement | null = null;
   #secretExpiryTimer: number | null = null;
   #transferExpanded: boolean | null = null;
   #transferDrafts: Partial<Record<TransferDraftField, string>> = {};
@@ -248,6 +250,7 @@ export class ProjectManagementModal extends Modal {
     this.#invitationActionsEl = null;
     this.#lifecycleActionsEl = null;
     this.#projectActionsEl = null;
+    this.#reconnectActionEl = null;
     this.contentEl.replaceChildren();
     this.#options.onClosed?.();
   }
@@ -272,6 +275,18 @@ export class ProjectManagementModal extends Modal {
       cls: 'claudian-collab-project-actions',
     });
     this.#projectActionsEl.createEl('h3', { text: t('collab.access.projectActions') });
+    if (this.#options.onReconnect) {
+      this.#reconnectActionEl = this.#projectActionsEl.createEl('button', {
+        attr: { 'data-action': 'restore-connection', type: 'button' },
+        text: t('collab.reconnectProject.restoreWithLink'),
+      });
+      this.#reconnectActionEl.addEventListener('click', () => {
+        if (!this.#canReconnect()) return;
+        const project = this.#hostProject;
+        this.close();
+        this.#options.onReconnect?.(project);
+      });
+    }
     this.#lifecycleActionsEl = this.#projectActionsEl.createDiv({
       cls: 'claudian-collab-project-actions-lifecycle',
     });
@@ -499,6 +514,7 @@ export class ProjectManagementModal extends Modal {
       });
       reissue.disabled = this.#managementActionBlocked();
       reissue.addEventListener('click', () => void this.#reissueMemberClaim(member.id));
+      if (!lanSnapshot) {
       const revokeClaim = actions.createEl('button', {
         attr: {
           'aria-label': `${t('collab.access.revokeMemberClaim')}: ${member.displayName}`,
@@ -516,6 +532,7 @@ export class ProjectManagementModal extends Modal {
           projectId: this.#options.project.id,
         }));
       });
+      }
     }
     if (
       isManager
@@ -1908,9 +1925,19 @@ export class ProjectManagementModal extends Modal {
     this.#syncProjectActionsVisibility();
   }
 
+  #canReconnect(): boolean {
+    return this.#options.onReconnect !== undefined
+      && this.#hostProject.lifecycle !== 'leaving'
+      && this.#hostProject.lifecycle !== 'retired'
+      && (this.#hostProject.authorityKind === 'cloud'
+        || this.#hostProject.hostInstallationStatus === 'not-host'
+        || this.#hostProject.hostInstallationStatus === 'hosted-elsewhere');
+  }
+
   #syncProjectActionsVisibility(): void {
     if (!this.#projectActionsEl || !this.#lifecycleActionsEl) return;
-    this.#projectActionsEl.hidden = this.#lifecycleActionsEl.childElementCount === 0;
+    if (this.#reconnectActionEl) this.#reconnectActionEl.hidden = !this.#canReconnect();
+    this.#projectActionsEl.hidden = this.#lifecycleActionsEl.childElementCount === 0 && !this.#canReconnect();
   }
 
   #currentMember(): CollabMember | undefined {

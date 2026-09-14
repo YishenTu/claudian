@@ -141,6 +141,7 @@ export interface LanHostProjectRuntime {
       lastSequence: number,
     ): Promise<void>;
     hasAuthenticatedPresence(projectId: string, memberId: string): boolean;
+    publishAuthorityChange?(): Promise<void>;
     publishRetirement?(
       result: CollabRetirementResult,
     ): Promise<void>;
@@ -1002,6 +1003,7 @@ export class LanHostCoordinator {
       this.#connectionProjection?.resetProjectConnection(projectId);
       this.#transferredProjects.set(projectId, hosted);
       let firstError: unknown;
+      await hosted.events?.publishAuthorityChange?.().catch(error => { firstError ??= error; });
       hosted.events?.close();
       await hosted.gitProxy.close().catch(error => {
         firstError ??= error;

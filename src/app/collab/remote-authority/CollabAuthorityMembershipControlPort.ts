@@ -21,6 +21,15 @@ interface MemberRoleInput extends MembershipMutationInput {
 }
 
 export interface CollabAuthorityMembershipOperationMap {
+  readonly listProjectMembers: {
+    readonly input: CollabProjectMembershipOperationMap['listProjectMembers']['request'];
+    readonly result: CollabProjectMembershipOperationMap['listProjectMembers']['response'];
+  };
+  readonly reissueTransferredMembershipClaim: {
+    readonly input: CollabProjectMembershipOperationMap['reissueTransferredMembershipClaim']['request'];
+    readonly result: CollabProjectMembershipOperationMap['reissueTransferredMembershipClaim']['response'];
+  };
+
   readonly acknowledgeManagerResponsibility: {
     readonly input: ManagerResponsibilityOfferInput;
     readonly result: CollabManagerResponsibilityOfferSummary;

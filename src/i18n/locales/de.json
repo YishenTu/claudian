@@ -128,6 +128,7 @@
       "resumeFailed": "Der Beitritt benötigt weiterhin Aufmerksamkeit. Versuche es erneut."
     },
     "reconnectProject": {
+      "restoreWithLink": "Verbindung mit einem Link wiederherstellen",
       "title": "Projekt neu verbinden",
       "descriptionLan": "Verbinde {name} mit einer neuen Einladung oder einem Mitgliedschaftsnachweis erneut. Nach dem Umzug zu Cloud kannst du die Cloud-Server-URL verwenden, solange der bisherige Host erreichbar ist und deinen Nachweis aufbewahrt.",
       "descriptionCloud": "Verbinde {name} mit einer Cloud-Einladung, einem importierten Mitgliedschaftsanspruch oder der neuen Server-URL neu.",

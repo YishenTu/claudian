@@ -6,6 +6,7 @@ import {
 import type {
   CollabProjectWorkSessionSuspension,
 } from '@/app/collab/activity/CollabProjectWorkSession';
+import { AuthorityMigrationFollower } from '@/app/collab/authority-transfer/AuthorityMigrationFollower';
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
 import {
   AuthorityTransferLocalConvergence,
@@ -179,6 +180,7 @@ export function createCollabFeatureSubcomposition(
 
   let lifecycle: CollabProjectLifecycleSubsystem | null = null;
   let publication: CollabPublicationService | null = null;
+  let migrationFollower: AuthorityMigrationFollower | null = null;
   let feature: CollabFeatureService | null = null;
   const requireLifecycle = (): CollabProjectLifecycleSubsystem => {
     if (!lifecycle) {
@@ -412,6 +414,7 @@ export function createCollabFeatureSubcomposition(
   terminalRetirementHandler = retirementHandler;
   foundation.setRetirementHandler(retirementHandler);
   publication = new CollabPublicationService(foundation, {
+    onAuthorityMigrationHint: projectId => migrationFollower?.notify(projectId),
     cloudAuthority,
     discovery: foundation.discovery,
     inspectHostInstallation: projectId => foundation.hostInstallations.inspect(projectId),
@@ -443,6 +446,7 @@ export function createCollabFeatureSubcomposition(
   const membership = new CollabMembershipService(
     publication.membershipControl,
     {
+      readProjectCapabilities: (...args) => publication.readProjectCapabilities(...args),
       readCoordinationSnapshot: (...args) => publication.readCoordinationSnapshot(...args),
       readAuthoritySnapshot: (...args) => publication.readAuthoritySnapshot(...args),
     },
@@ -1060,6 +1064,15 @@ export function createCollabFeatureSubcomposition(
     },
   });
   foundation.bindAuthorityTransferModule(authorityTransfer);
+  migrationFollower = new AuthorityMigrationFollower({
+    follow: async (projectId, options) => {
+      const changed = await requireFeature().runProjectLifecycleTransition(projectId, () => (
+        authorityTransfer.followAuthoritySuccessor(projectId, options)
+      ));
+      if (changed) await requireFeature().refreshLifecycleProjection();
+      return changed;
+    },
+  });
   const authorityTransferEntry = new AuthorityTransferEntryService({
     createLanClient: createLanTransferClient,
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
@@ -1083,6 +1096,7 @@ export function createCollabFeatureSubcomposition(
     )),
   });
   feature = new CollabFeatureService(foundation, projectSetup, {
+    migrationFollower,
     workingCopyLocations,
     authorityTransfer: authorityTransferEntry,
     cloudEntry: {

@@ -589,10 +589,11 @@ export class LanAuthorityTransferRouter {
             result,
           );
           if (
-            decodedResponse.projectId !== decoded.projectId
+            !('projectId' in decodedResponse)
+            || decodedResponse.projectId !== decoded.projectId
             || (
               'transferId' in decoded
-              && decodedResponse.transferId !== decoded.transferId
+              && (!('transferId' in decodedResponse) || decodedResponse.transferId !== decoded.transferId)
             )
           ) {
             throw routeError('operation-failed', 'authority-transfer-response-mismatch');

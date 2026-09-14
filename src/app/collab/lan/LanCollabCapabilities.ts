@@ -3,6 +3,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 // Capabilities describe optional LAN bindings, not Member authorization.
 export const LAN_COLLAB_CAPABILITIES = Object.freeze([
   'ticket-number-lookup-v1',
+  'imported-membership-claims-v1',
 ] as const);
 
 export type LanCollabCapability = typeof LAN_COLLAB_CAPABILITIES[number];

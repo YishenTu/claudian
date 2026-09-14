@@ -69,7 +69,23 @@ export class AuthorityTransferClaimantBindingResolver {
       if (membership.member.personalRef !== record.memberPersonalRef) {
         throw resolutionError('authority-transfer-claimant-membership-invalid');
       }
-      if (isCollabLocalCloudMembership(membership)) {
+      if (record.lanTarget) {
+        if (membership.authority.authorityGeneration === record.descriptor.targetAuthorityGeneration) {
+          if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority
+            || membership.member.credential !== record.targetCredential
+            || membership.authority.hostCaFingerprint !== record.lanTarget.caFingerprint
+            || !['target-confirmed', 'membership-converged', 'completed'].includes(record.phase)) {
+            throw resolutionError('authority-transfer-claimant-target-invalid');
+          }
+          return { direction: 'cloud-to-lan', mode: 'local-only' };
+        }
+        if (membership.authority.authorityGeneration > record.descriptor.targetAuthorityGeneration
+          || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('authority-transfer-claimant-source-invalid');
+        return { direction: 'cloud-to-lan', mode: 'manager-reissued', targetHost: record.lanTarget,
+          authorityGeneration: record.descriptor.targetAuthorityGeneration };
+      }
+      if (isCollabLocalCloudMembership(membership)
+        && membership.authority.authorityGeneration === record.descriptor.targetAuthorityGeneration) {
         if (
           record.phase !== 'target-confirmed'
           && record.phase !== 'membership-converged'
@@ -82,7 +98,8 @@ export class AuthorityTransferClaimantBindingResolver {
         ) throw resolutionError('authority-transfer-claimant-target-invalid');
         return { direction: 'lan-to-cloud', mode: 'local-only' };
       }
-      if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority) {
+      if (membership.authority.authorityGeneration >= record.descriptor.targetAuthorityGeneration
+        || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
       return {

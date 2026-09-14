@@ -128,6 +128,7 @@
       "resumeFailed": "Joining still needs attention. Try again."
     },
     "reconnectProject": {
+      "restoreWithLink": "Use a link to restore connection",
       "title": "Reconnect project",
       "descriptionLan": "Reconnect {name} with a fresh invitation or membership claim. After migration to Cloud, use the Cloud server URL while the former Host is reachable and retains your claim.",
       "descriptionCloud": "Reconnect {name} with a Cloud invitation, imported membership claim, or its new server URL.",

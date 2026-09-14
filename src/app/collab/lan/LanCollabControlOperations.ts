@@ -185,7 +185,7 @@ export interface LanRefreshEndpointRequest {
 
 type SharedCollabControlOperationMap = Pick<
   CollabControlOperationMap,
-  CollabRequestTicketOperation
+  CollabRequestTicketOperation | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'
 >;
 
 export interface LanCollabControlOperationMap extends SharedCollabControlOperationMap {

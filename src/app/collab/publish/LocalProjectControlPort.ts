@@ -19,6 +19,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const CONTROL_TIMEOUT_MS = 10_000;
 
 export interface LocalProjectControlClientPort {
+  readCapabilities?: ProjectControlClient['readCapabilities'];
   addTicketComment: ProjectControlClient['addTicketComment'];
   acceptRequest(input: {
     readonly expectedHeadOid: string;
@@ -138,6 +139,11 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
       throw controlError('authority-integrity-error', 'control-request-response-mismatch');
     }
     return response.request;
+  }
+
+  async readLanCapabilities(projectId: string, options: { readonly signal?: AbortSignal } = {}): Promise<readonly string[]> {
+    const session = await this.loadSession(projectId);
+    return session.client.readCapabilities?.(projectId, session.memberCredential, options) ?? [];
   }
 
   async readSnapshot(

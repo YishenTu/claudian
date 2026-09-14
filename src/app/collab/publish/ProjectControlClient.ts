@@ -243,13 +243,8 @@ export class ProjectControlClient {
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 
-  async #requireCapability(
-    capability: LanCollabCapability,
-    projectId: string,
-    memberCredential: string,
-    options: CollabHttpOperationOptions,
-  ): Promise<void> {
-    const capabilities = await this.transport.requestWithMember({
+  readCapabilities(projectId: string, memberCredential: string, options: CollabHttpOperationOptions = {}): Promise<readonly string[]> {
+    return this.transport.requestWithMember({
       decode: input => {
         const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse(input);
         if (snapshot.project.id !== projectId) {
@@ -261,6 +256,15 @@ export class ProjectControlClient {
       method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,
       path: collabControlOperationPath('getSnapshot', projectId),
     }, memberCredential, options);
+  }
+
+  async #requireCapability(
+    capability: LanCollabCapability,
+    projectId: string,
+    memberCredential: string,
+    options: CollabHttpOperationOptions,
+  ): Promise<void> {
+    const capabilities = await this.readCapabilities(projectId, memberCredential, options);
     if (!capabilities.includes(capability)) {
       throw new CollabError({
         code: 'operation-failed',

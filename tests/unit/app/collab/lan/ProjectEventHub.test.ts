@@ -160,6 +160,19 @@ describe('ProjectEventHub', () => {
     hub.close();
   });
 
+  it('broadcasts a supported Host hint before closing for authority movement', async () => {
+    const source = new FakeEventSource({ active: true, events: [], latestSequence: 0 });
+    const hub = new ProjectEventHub('project-a', source);
+    const socket = new FakeSocket();
+    await hub.connect(socket, 'member-a', 0);
+    await hub.publishAuthorityChange();
+    expect(socket.messages.map(parseMessage)).toEqual([{
+      kind: 'host-state-updated', occurredAt: expect.any(String), payload: {},
+      projectId: 'project-a', protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION, sequence: 1,
+    }]);
+    hub.close();
+  });
+
   it('broadcasts one redacted terminal retirement event to connected Members', async () => {
     const source = new FakeEventSource({ active: true, events: [], latestSequence: 0 });
     const hub = new ProjectEventHub('project-a', source);

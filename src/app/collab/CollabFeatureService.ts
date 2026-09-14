@@ -28,6 +28,7 @@ import {
 } from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import type { CollabWorkingCopyLocationService, CollabWorkingCopyRenameHint } from '@/app/collab/project/CollabWorkingCopyLocationService';
+import { decodeLanMembershipClaimInvitation, type LanMembershipClaimInvitation } from '@/app/collab/project/LanMembershipClaimInvitation';
 import {
   ProjectOperationAdmission,
   type ProjectOperationPolicy,
@@ -377,6 +378,10 @@ export interface CollabCloudProjectEntryPort {
 }
 
 export interface CollabFeatureServiceOptions {
+  readonly migrationFollower?: {
+    beginClose(): void;
+    close(): Promise<void>;
+  };
   readonly workingCopyLocations?: Pick<CollabWorkingCopyLocationService, 'reconcile'>;
   readonly authorityTransfer: CollabAuthorityTransferEntryPort;
   readonly cloudEntry: CollabCloudProjectEntryPort;
@@ -445,7 +450,7 @@ export interface CollabAuthorityTransferEntryPort {
     options?: CollabOperationOptions,
   ): Promise<CollabCloudToLanTransferView | null>;
   redeemManagerReissuedClaim(
-    invitation: CloudMembershipClaimInvitation,
+    invitation: CloudMembershipClaimInvitation | LanMembershipClaimInvitation,
     options?: CollabOperationOptions,
   ): Promise<void>;
   readPendingLanToCloudClaim(projectId: CollabProjectId): Promise<CollabPendingReconnectView | null>;
@@ -1047,7 +1052,7 @@ class CollabFeatureServiceCore {
     try {
       throwIfCancelled(controller.signal);
       let result: CollabResult<CollabLocalProjectSummary>;
-      if ('encodedInvitation' in request && request.encodedInvitation.startsWith('claudian-cloud-claim:')) {
+      if ('encodedInvitation' in request && /^claudian-(?:cloud|lan)-claim:/.test(request.encodedInvitation.trim())) {
         result = await this.#reconnectManagerReissuedClaim(request, { signal: controller.signal });
       } else if ('authority' in request && await this.options.authorityTransfer.reconnectLanToCloud(
         request.projectId, request.authority.serverUrl, { signal: controller.signal },
@@ -1120,7 +1125,9 @@ class CollabFeatureServiceCore {
     request: Extract<CollabReconnectProjectRequest, { encodedInvitation: string }>,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
-    const invitation = decodeCloudMembershipClaimInvitation(request.encodedInvitation.trim());
+    const encoded = request.encodedInvitation.trim();
+    const invitation = encoded.startsWith('claudian-lan-claim:')
+      ? decodeLanMembershipClaimInvitation(encoded) : decodeCloudMembershipClaimInvitation(encoded);
     if (invitation.claim.projectId !== request.projectId) {
       throw operationError('authority-transfer-claimant-project-mismatch');
     }
@@ -2153,6 +2160,7 @@ class CollabFeatureServiceCore {
     this.#catalog.beginClose();
     for (const demand of this.#maintenance.values()) demand.dispose();
     this.#maintenance.clear();
+    this.options.migrationFollower?.beginClose();
     this.operationAdmission.beginClose();
     this.options.authorityTransfer.beginClose();
     this.#activeOperationController?.abort();
@@ -2162,6 +2170,7 @@ class CollabFeatureServiceCore {
     const close = (async () => {
       await this.options.cloudEntry.close();
       await this.operationAdmission.drain();
+      await this.options.migrationFollower?.close();
       await lifecycleRecoveryDrain;
       await Promise.resolve()
         .then(() => this.options.lifecycleRecovery.close())

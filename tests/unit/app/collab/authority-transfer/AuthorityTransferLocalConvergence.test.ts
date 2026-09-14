@@ -11,7 +11,7 @@ import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import type { CollabProjectSnapshot } from '@/core/collab';
+import type { CollabCloudProjectSnapshot, CollabProjectSnapshot } from '@/core/collab';
 
 const PROJECT_ID = 'project-convergence';
 const CREATED_AT = '2026-08-27T00:00:00.000Z';
@@ -114,6 +114,46 @@ function lanMembership(): CollabLocalMembershipRecord {
 }
 
 describe('AuthorityTransferLocalConvergence', () => {
+  it.each(['lan', 'cloud'] as const)('restores an older %s membership directly to the current Cloud generation', async kind => {
+    const local = { ...lanMembership(), hostOwnership: { ownsAuthority: false } };
+    let membership: CollabLocalMembershipRecord = kind === 'lan' ? local : {
+      ...local,
+      authority: {
+        authorityGeneration: 1, kind: 'cloud', bindingVersion: 7, wireVersion: 11,
+        serverUrl: 'https://old-cloud.example.test/',
+        gitRemoteUrl: `https://old-cloud.example.test/v7/projects/${PROJECT_ID}/repository.git`,
+      },
+      member: snapshot('cloud').currentMember,
+    };
+    const rotate = jest.fn(async () => undefined);
+    const convergence = new AuthorityTransferLocalConvergence({
+      activity: { transitionProject: async (_projectId, operation) => operation() },
+      authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
+      git: { rotate },
+      projects: {
+        loadMembership: async () => membership,
+        saveMembership: async next => { membership = next; },
+        repairIndexFromMemberships: async () => ({
+          projects: [{ ...membership.project, authorityKind: membership.authority.kind }] as never,
+          schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION, selectedProjectId: PROJECT_ID,
+        }),
+      },
+      workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
+    });
+    const targetSnapshot = snapshot('cloud') as CollabCloudProjectSnapshot;
+    const status = completed('lan-to-cloud');
+    await convergence.restoreCloudMembership({
+      snapshot: { ...targetSnapshot, project: { ...targetSnapshot.project, authorityGeneration: 4 } },
+      status: { ...status, sourceAuthority: { generation: 3, kind: 'lan' }, targetAuthority: { generation: 4, kind: 'cloud' } },
+    });
+    expect(membership).toMatchObject({
+      authority: { authorityGeneration: 4, kind: 'cloud' },
+      member: { id: local.member.id, personalRef: local.member.personalRef },
+      project: local.project,
+    });
+    expect(rotate).toHaveBeenCalledWith(expect.objectContaining({ repositoryPath: '/vault/workspace/convergence' }));
+  });
+
   it('holds the shared authority projection lane across origin and membership convergence', async () => {
     let membership = lanMembership();
     let releaseRotate!: () => void;
@@ -207,10 +247,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 6,
+        bindingVersion: 7,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -249,10 +289,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 6,
+        bindingVersion: 7,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       lastEventSequence: 1,
       member: {
@@ -270,11 +310,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 6 as const,
-        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 7 as const,
+        gitRemoteUrl: `https://cloud.example.test/v7/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 10 as const,
+        wireVersion: 11 as const,
       },
       member: {
         displayName: 'Host',
@@ -405,11 +445,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 6 as const,
-        gitRemoteUrl: `https://cloud.example.test/v6/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 7 as const,
+        gitRemoteUrl: `https://cloud.example.test/v7/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 10 as const,
+        wireVersion: 11 as const,
       },
       member: {
         displayName: 'Host',

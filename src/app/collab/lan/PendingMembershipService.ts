@@ -6,16 +6,19 @@ import {
 } from 'node:crypto';
 
 import {
+  type ClaimTransferredMembershipRequest,
   type CollabMember,
   type CollabMemberStatus,
   isCollabGitOid,
   isCollabMemberId,
   isCollabOpaqueId,
   isCollabProjectId,
+  type ReissueTransferredMembershipClaimRequest,
 } from '@claudian-collab/protocol';
 
 import type { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import type { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
+import { ImportedMembershipClaimRepository } from '@/app/collab/authority/ImportedMembershipClaimRepository';
 import {
   type AuthorityInvitationRecord,
   type AuthorityMemberCredentialRecord,
@@ -192,6 +195,28 @@ export class PendingMembershipService {
     this.delay = options.delay ?? defaultDelay;
     this.now = options.now ?? (() => new Date());
     this.onPendingExpired = options.onPendingExpired;
+  }
+
+  async listProjectMembers(memberCredential: string, projectId: string) {
+    return this.authority.database.read(connection => {
+      const actor = this.#authenticateInConnection(connection, memberCredential, ['active']);
+      const project = this.authority.projects.get(connection);
+      if (!project || project.projectId !== projectId) throw serviceError('project-not-found', 'project-id-mismatch');
+      return new ImportedMembershipClaimRepository().list(connection, actor.member.id, this.now());
+    });
+  }
+
+  async reissueTransferredMembershipClaim(memberCredential: string, request: ReissueTransferredMembershipClaimRequest) {
+    return (await this.authority.database.mutate(connection => {
+      const actor = this.#authenticateInConnection(connection, memberCredential, ['active']);
+      return new ImportedMembershipClaimRepository().reissue(connection, actor.member.id, request, this.now());
+    })).value;
+  }
+
+  async claimTransferredMembership(request: Extract<ClaimTransferredMembershipRequest, { credentialHash: string }>) {
+    return (await this.authority.database.mutate(connection =>
+      new ImportedMembershipClaimRepository().redeem(connection, request, this.now())
+    )).value;
   }
 
   async createInvitation(

@@ -41,7 +41,8 @@ describe('Authority event retention', () => {
       expect(migrateLegacyAuthorityDatabaseToCurrent(database)).toBe(1);
       expect(database.exec('SELECT COUNT(*), MAX(sequence) FROM events')[0].values)
         .toEqual([[500, latest]]);
-      expect(database.export().byteLength).toBeLessThan(bytes.byteLength);
+      // New canonical tables can exceed the old image size; compaction must leave no free pages.
+      expect(database.exec('PRAGMA freelist_count')[0].values).toEqual([[0]]);
     } finally { database.close(); }
   });
 

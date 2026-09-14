@@ -16,6 +16,7 @@ import {
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
 
+import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import {
   type GitRepositoryReadSession,
@@ -49,6 +50,50 @@ describe('GitRepositoryService integration', () => {
 
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
+  });
+
+  it.each([false, true])('restores a Cloud origin across skipped generations (same server: %s)', async sameServer => {
+    const repositoryPath = path.join(root, 'working');
+    await mkdir(repositoryPath);
+    await service.initializeWorkingRepository(repositoryPath);
+    const oldServerUrl = 'https://old.example.test/';
+    const newServerUrl = sameServer ? oldServerUrl : 'https://current.example.test/';
+    const oldRemoteUrl = oldServerUrl + 'v7/projects/project-a/repository.git';
+    const newRemoteUrl = newServerUrl + 'v7/projects/project-a/repository.git';
+    await service.addRemote(repositoryPath, 'origin', oldRemoteUrl);
+    await rotateAuthorityTransferOrigin(service, { repositoryPath, projectId: 'project-a', oldRemoteUrl, oldServerUrl, newRemoteUrl, newServerUrl });
+    expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([newRemoteUrl]);
+  });
+
+  it('recovers an interrupted origin write only from an explicitly retained binding', async () => {
+    const repositoryPath = path.join(root, 'working');
+    await mkdir(repositoryPath);
+    await service.initializeWorkingRepository(repositoryPath);
+    const oldServerUrl = 'https://old.example.test/';
+    const interruptedServerUrl = 'https://intermediate.example.test/';
+    const newServerUrl = 'https://current.example.test/';
+    const suffix = 'v7/projects/project-a/repository.git';
+    await service.addRemote(repositoryPath, 'origin', interruptedServerUrl + suffix);
+    const transition = { repositoryPath, projectId: 'project-a', oldServerUrl, newServerUrl,
+      oldRemoteUrl: oldServerUrl + suffix, newRemoteUrl: newServerUrl + suffix };
+    await expect(rotateAuthorityTransferOrigin(service, transition)).rejects.toMatchObject({ code: 'repository-invalid' });
+    await rotateAuthorityTransferOrigin(service, { ...transition,
+      retainedBindings: [{ serverUrl: interruptedServerUrl, remoteUrl: interruptedServerUrl + suffix }] });
+    expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([newServerUrl + suffix]);
+  });
+
+  it('recovers a retained LAN origin after the authenticated listener changed address', async () => {
+    const repositoryPath = path.join(root, 'working');
+    await mkdir(repositoryPath);
+    await service.initializeWorkingRepository(repositoryPath);
+    const oldServerUrl = 'https://old.example.test/';
+    const newServerUrl = 'https://current.example.test/';
+    const suffix = 'v7/projects/project-a/repository.git';
+    await service.addRemote(repositoryPath, 'origin', 'https://192.168.1.44:54546/v1/git/project-a/repository.git');
+    await rotateAuthorityTransferOrigin(service, { repositoryPath, projectId: 'project-a', oldServerUrl, newServerUrl,
+      oldRemoteUrl: oldServerUrl + suffix, newRemoteUrl: newServerUrl + suffix,
+      retainedBindings: [{ serverUrl: null, remoteUrl: 'https://192.168.1.20:54545/v1/git/project-a/repository.git' }] });
+    expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([newServerUrl + suffix]);
   });
 
   it('retains parallel read operations until every cancelled native child settles', async () => {
@@ -139,7 +184,7 @@ describe('GitRepositoryService integration', () => {
     const repositoryPath = path.join(root, 'working');
     await mkdir(repositoryPath);
     await service.initializeWorkingRepository(repositoryPath);
-    const remoteUrl = 'http://192.0.2.25:8080/operator/cloud/v6/projects/project-alpha/repository.git';
+    const remoteUrl = 'http://192.0.2.25:8080/operator/cloud/v7/projects/project-alpha/repository.git';
     await service.addRemote(repositoryPath, 'origin', remoteUrl);
     expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([remoteUrl]);
   });

@@ -79,7 +79,7 @@ function lifecycleCodec<Operation extends LanCollabLifecycleControlOperation>(
   );
 }
 
-function sharedCodec<Operation extends CollabRequestTicketOperation>(
+function sharedCodec<Operation extends CollabRequestTicketOperation | 'listProjectMembers' | 'reissueTransferredMembershipClaim' | 'claimTransferredMembership'>(
   operation: Operation,
 ): LanCodecMap[Operation] {
   const shared = COLLAB_CONTROL_OPERATION_CODECS[operation];
@@ -92,6 +92,9 @@ function sharedCodec<Operation extends CollabRequestTicketOperation>(
 }
 
 export const LAN_COLLAB_CONTROL_OPERATION_CODECS = Object.freeze({
+  listProjectMembers: sharedCodec('listProjectMembers'),
+  reissueTransferredMembershipClaim: sharedCodec('reissueTransferredMembershipClaim'),
+  claimTransferredMembership: sharedCodec('claimTransferredMembership'),
   getRequest: sharedCodec('getRequest'),
   listRequestComments: sharedCodec('listRequestComments'),
   ensureMyRequest: sharedCodec('ensureMyRequest'),

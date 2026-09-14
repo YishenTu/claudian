@@ -128,6 +128,7 @@
       "resumeFailed": "参加処理にはまだ対応が必要です。再試行してください。"
     },
     "reconnectProject": {
+      "restoreWithLink": "リンクで接続を復元",
       "title": "プロジェクトを再接続",
       "descriptionLan": "新しい招待またはメンバーシップの引き継ぎ情報で {name} に再接続します。Cloud への移行後は、元の Host に接続でき、引き継ぎ情報が保持されている間、Cloud サーバー URL で再接続できます。",
       "descriptionCloud": "Cloud 招待、インポート済みメンバー資格情報、または新しいサーバー URL を使って {name} に再接続します。",

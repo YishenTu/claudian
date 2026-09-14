@@ -269,9 +269,7 @@ export class ProjectManagementSession {
         project.authorityKind === 'cloud'
           ? this.options.port.readCloudToLanTransfer(project.id, { signal: task.signal })
           : Promise.resolve({ status: 'success' as const, value: null }),
-        project.authorityKind === 'cloud'
-          ? this.options.port.readManagementOperation(project.id, { signal: task.signal })
-          : Promise.resolve({ status: 'success' as const, value: null }),
+        this.options.port.readManagementOperation(project.id, { signal: task.signal }),
       ]));
       if (!task.isCurrent()) return;
       const recovery: ManagementRecovery = {
@@ -305,7 +303,8 @@ export class ProjectManagementSession {
       }
       let memberSummaries: ReadonlyMap<CollabMemberId, CollabMemberSummaryView> = new Map();
       let managerOffers: readonly CollabManagerResponsibilityOfferSummary[] = [];
-      if (project.authorityKind === 'cloud' && capabilities.value.membershipManagement) {
+      if (capabilities.value.membershipManagement
+        && (project.authorityKind === 'cloud' || capabilities.value.importedMemberClaims)) {
         const listed = await waitForRead(task, this.options.port.listMembers(project.id, { signal: task.signal }));
         if (!task.isCurrent()) return;
         if (listed.status !== 'success') { fail(); return; }

@@ -29,6 +29,9 @@ type BindingMap = {
 };
 
 export const COLLAB_CONTROL_OPERATION_BINDINGS = {
+  listProjectMembers: binding('GET', 'imported-members', 'membership', 'active-member', 'active', 'path', 200),
+  reissueTransferredMembershipClaim: binding('POST', 'imported-members/claims', 'membership', 'active-member', 'active', 'body', 200),
+  claimTransferredMembership: binding('POST', 'imported-members/claims/redeem', 'membership', 'public', 'active', 'body', 200),
   createJoinAttempt: binding('POST', 'join-attempts', 'join', 'invitation', 'active', 'body', 201),
   activateJoinAttempt: binding('POST', 'join-attempts/:joinAttemptId/activate', 'join', 'active-member', 'active', 'path-and-body', 200),
   getSnapshot: binding('GET', 'snapshot', 'project', 'active-member', 'active', 'path', 200),

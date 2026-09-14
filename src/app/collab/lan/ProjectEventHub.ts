@@ -154,6 +154,17 @@ export class ProjectEventHub {
     ));
   }
 
+  async publishAuthorityChange(): Promise<void> {
+    const occurredAt = new Date().toISOString();
+    for (const connection of this.connections) {
+      this.send(connection, {
+        kind: 'host-state-updated', occurredAt, payload: {}, projectId: this.projectId,
+        protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION, sequence: connection.cursor + 1,
+      });
+    }
+    await Promise.resolve();
+  }
+
   async publishRetirement(result: CollabRetirementResult): Promise<void> {
     if (result.projectId !== this.projectId) return;
     const connections = [...this.connections];

@@ -39,9 +39,9 @@ async function setup(kind: 'lan' | 'cloud') {
   await projects.saveMembership(kind === 'cloud' ? {
     ...shared,
     authority: {
-      kind, authorityGeneration: 7, bindingVersion: 6, wireVersion: 10,
+      kind, authorityGeneration: 7, bindingVersion: 7, wireVersion: 11,
       serverUrl: 'https://cloud.example',
-      gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+      gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
     },
   } : {
     ...shared,

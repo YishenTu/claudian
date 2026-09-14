@@ -79,7 +79,7 @@ it.each(['unrelated-filesystem-fault', 'overlapping-lifecycle-refresh'])(
       const workspacePath = `workspace/${name}`;
       const repositoryPath = path.join(vaultRoot, workspacePath);
       const serverUrl = `https://${name}.example.test`;
-      const gitRemoteUrl = `${serverUrl}/v6/projects/${projectId}/repository.git`;
+      const gitRemoteUrl = `${serverUrl}/v7/projects/${projectId}/repository.git`;
       await mkdir(repositoryPath);
       await git.repositories.initializeWorkingRepository(repositoryPath);
       await git.repositories.configureLocalRepository(repositoryPath, {
@@ -99,7 +99,7 @@ it.each(['unrelated-filesystem-fault', 'overlapping-lifecycle-refresh'])(
       await git.repositories.createRef(repositoryPath, 'refs/remotes/origin/main', mainOid);
       await git.repositories.addRemote(repositoryPath, 'origin', gitRemoteUrl);
       await foundation.local.projects.saveMembership({
-        authority: { authorityGeneration: 1, bindingVersion: 6, gitRemoteUrl, kind: 'cloud', serverUrl, wireVersion: 10 },
+        authority: { authorityGeneration: 1, bindingVersion: 7, gitRemoteUrl, kind: 'cloud', serverUrl, wireVersion: 11 },
         createdAt: CREATED_AT,
         lastEventSequence: 0,
         lifecycle: 'active',

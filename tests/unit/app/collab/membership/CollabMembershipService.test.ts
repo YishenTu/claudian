@@ -88,6 +88,8 @@ type TestMembershipControl = jest.Mocked<CollabAuthorityMembershipRouterPort> & 
 
 function client(): TestMembershipControl {
   const operations = {
+    listProjectMembers: jest.fn(),
+    reissueTransferredMembershipClaim: jest.fn(),
     acknowledgeManagerResponsibility: jest.fn(),
     cancelManagerResponsibilityOffer: jest.fn(),
     createInvitation: jest.fn().mockResolvedValue({
@@ -167,11 +169,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -284,11 +286,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -382,11 +384,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -644,11 +646,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -742,11 +744,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -872,11 +874,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -1013,11 +1015,11 @@ describe('CollabMembershipService', () => {
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       createdAt: CREATED_AT,
       lastEventSequence: 7,
@@ -1108,11 +1110,11 @@ describe('CollabMembershipService', () => {
       lastEventSequence: 7,
       authority: {
         authorityGeneration: 7,
-        bindingVersion: 6,
-        gitRemoteUrl: 'https://cloud.example/v6/projects/project-alpha/repository.git',
+        bindingVersion: 7,
+        gitRemoteUrl: 'https://cloud.example/v7/projects/project-alpha/repository.git',
         kind: 'cloud',
         serverUrl: 'https://cloud.example',
-        wireVersion: 10,
+        wireVersion: 11,
       },
       member: {
         id: 'member-target',
@@ -1188,7 +1190,7 @@ describe('CollabMembershipService', () => {
       ...membership,
       authority: {
         ...membership.authority,
-        gitRemoteUrl: 'https://other.example/v6/projects/project-alpha/repository.git',
+        gitRemoteUrl: 'https://other.example/v7/projects/project-alpha/repository.git',
         serverUrl: 'https://other.example',
       },
     });

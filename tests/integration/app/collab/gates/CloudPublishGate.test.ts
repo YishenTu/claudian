@@ -195,7 +195,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
         || match.kind === 'git-receive-pack'
         || match.kind === 'git-upload-pack'
       ) {
-        const prefix = `/v6/projects/${PROJECT_ID}/repository.git`;
+        const prefix = `/v7/projects/${PROJECT_ID}/repository.git`;
         const pathname = new URL(target, 'http://127.0.0.1').pathname;
         await runGitHttpBackendFixture(
           request,
@@ -291,11 +291,11 @@ function membership(
   return {
     authority: {
       authorityGeneration: 1,
-      bindingVersion: 6,
-      gitRemoteUrl: `${origin}/v6/projects/${PROJECT_ID}/repository.git`,
+      bindingVersion: 7,
+      gitRemoteUrl: `${origin}/v7/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: origin,
-      wireVersion: 10,
+      wireVersion: 11,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,
@@ -425,7 +425,7 @@ describe('Cloud Publish gate', () => {
           'remote',
           'set-url',
           'origin',
-          `${server.origin}/v6/projects/${PROJECT_ID}/repository.git`,
+          `${server.origin}/v7/projects/${PROJECT_ID}/repository.git`,
         ]);
         await writeFile(path.join(repositoryPath, `${actor}.md`), `${actor}\n`);
 
