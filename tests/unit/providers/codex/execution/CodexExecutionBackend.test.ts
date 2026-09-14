@@ -2714,6 +2714,57 @@ describe('CodexExecutionBackend', () => {
     expect(() => session.execute(createRequest())).toThrow(/disposed/i);
   });
 
+  it('answers an MCP confirmation received during a native turn and completes that turn', async () => {
+    const interactionPort = createInteractionPort();
+    (interactionPort.askUserQuestion as jest.Mock).mockImplementation(async request => ({
+      interactionId: request.interactionId,
+      answers: { 'mcp-elicitation-confirmation': 'accept' },
+    }));
+    let nativeResponse: unknown;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-elicitation');
+      if (method === 'turn/start') {
+        queueMicrotask(async () => {
+          try {
+            nativeResponse = await serverRequestHandlers.get('mcpServer/elicitation/request')?.(
+              'elicitation-native',
+              {
+                threadId: 'thread-elicitation',
+                turnId: 'turn-elicitation',
+                serverName: 'cua_repl',
+                mode: 'form',
+                message: 'Allow Computer Use to use "Obsidian"?',
+                requestedSchema: { type: 'object', properties: {} },
+              },
+            );
+          } finally {
+            completeTurn('thread-elicitation', 'turn-elicitation');
+          }
+        });
+        return createTurnResult('turn-elicitation');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({ interactionPort }),
+    );
+    try {
+      const events = await collectEvents(session.execute(createRequest()).events);
+      expect(nativeResponse).toEqual({ action: 'accept', content: {} });
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally {
+      await session.dispose();
+    }
+  });
+
   it('routes approvals and questions with stable local identities', async () => {
     const interactionPort = createInteractionPort();
     mockTransportRequest.mockImplementation(async (method: string) => {

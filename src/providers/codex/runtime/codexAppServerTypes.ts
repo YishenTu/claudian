@@ -780,6 +780,22 @@ export interface PermissionsApprovalResponse {
   scope?: PermissionGrantScope;
 }
 
+// -- MCP elicitation (mcpServer/elicitation/request) -------------------------
+
+export interface McpElicitationRequest {
+  threadId: string;
+  turnId: string | null;
+  serverName: string;
+  mode: 'form' | 'openai/form' | 'url';
+  message: string;
+  requestedSchema?: unknown;
+}
+
+export interface McpElicitationResponse {
+  action: 'accept' | 'decline' | 'cancel';
+  content: Record<string, unknown> | null;
+}
+
 // -- Tool request user input (item/tool/requestUserInput) --------------------
 
 export interface UserInputQuestionOption {

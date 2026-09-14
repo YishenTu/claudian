@@ -15,6 +15,8 @@ import type {
   FileChangeApprovalDecision,
   FileChangeApprovalRequest,
   FileChangeApprovalResponse,
+  McpElicitationRequest,
+  McpElicitationResponse,
   PermissionsApprovalRequest,
   PermissionsApprovalResponse,
   RequestId,
@@ -85,6 +87,8 @@ export class CodexExecutionServerRequestRouter {
           requestId,
           params as UserInputRequest,
         );
+      case 'mcpServer/elicitation/request':
+        return this.handleMcpElicitation(requestId, params);
       case 'item/tool/call':
         return this.handleDynamicToolCall(params as DynamicToolCallParams);
       default:
@@ -304,6 +308,76 @@ export class CodexExecutionServerRequestRouter {
     }
   }
 
+  private async handleMcpElicitation(
+    requestId: RequestId,
+    params: unknown,
+  ): Promise<McpElicitationResponse> {
+    if (!isMcpElicitationRequest(params) || params.turnId === null) {
+      return { action: 'cancel', content: null };
+    }
+    if (
+      params.mode === 'url'
+      || !isEmptyConfirmationSchema(params.requestedSchema)
+    ) {
+      return { action: 'decline', content: null };
+    }
+
+    let pending: PendingInteraction | undefined;
+    try {
+      const turn = this.requireActiveTurn(params.threadId, params.turnId);
+      if (!shouldRouteApproval(turn.toolPolicy)) {
+        return { action: 'decline', content: null };
+      }
+      pending = this.createPending(requestId, params.threadId);
+      const response = await this.interactionPort.askUserQuestion({
+        interactionId: pending.interactionId,
+        sessionInstanceId: this.sessionInstanceId,
+        turnId: turn.localTurnId,
+        kind: 'question',
+        input: {
+          questions: [{
+            id: MCP_CONFIRMATION_QUESTION_ID,
+            header: 'MCP request',
+            question: `MCP server: ${params.serverName}\n\n${params.message}`,
+            options: [
+              { label: 'Cancel', description: 'Cancel this request.', value: 'cancel' },
+              { label: 'Decline', description: 'Decline this request.', value: 'decline' },
+              { label: 'Allow once', description: 'Accept this request only.', value: 'accept' },
+            ],
+            multiSelect: false,
+            isOther: false,
+            isSecret: false,
+          }],
+        },
+        nativeContext: {
+          requestId,
+          threadId: params.threadId,
+          nativeTurnId: params.turnId,
+          serverName: params.serverName,
+        },
+      }, pending.controller.signal);
+      if (
+        pending.controller.signal.aborted
+        || this.activeTurn !== turn
+        || this.pendingByLocalId.get(pending.interactionId) !== pending
+        || response.interactionId !== pending.interactionId
+        || !isPlainRecord(response.answers)
+        || Object.keys(response.answers).length !== 1
+      ) {
+        return { action: 'cancel', content: null };
+      }
+      const answer = response.answers[MCP_CONFIRMATION_QUESTION_ID];
+      if (answer === 'accept') return { action: 'accept', content: {} };
+      if (answer === 'decline') return { action: 'decline', content: null };
+      return { action: 'cancel', content: null };
+    } catch {
+      // Stale, aborted, and failed interactions must not grant MCP access.
+      return { action: 'cancel', content: null };
+    } finally {
+      if (pending) this.removePending(pending);
+    }
+  }
+
   private requireActiveTurn(
     threadId: string,
     nativeTurnId: string,
@@ -353,6 +427,36 @@ export class CodexExecutionServerRequestRouter {
       this.pendingByLocalId.delete(pending.interactionId);
     }
   }
+}
+
+const MCP_CONFIRMATION_QUESTION_ID = 'mcp-elicitation-confirmation';
+const EMPTY_CONFIRMATION_SCHEMA_KEYS = new Set([
+  'type', 'properties', 'required', 'additionalProperties',
+]);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isMcpElicitationRequest(value: unknown): value is McpElicitationRequest {
+  return isPlainRecord(value)
+    && typeof value.threadId === 'string' && value.threadId.length > 0
+    && (value.turnId === null || (typeof value.turnId === 'string' && value.turnId.length > 0))
+    && typeof value.serverName === 'string' && value.serverName.trim().length > 0
+    && typeof value.message === 'string'
+    && (value.mode === 'form' || value.mode === 'openai/form' || value.mode === 'url');
+}
+
+function isEmptyConfirmationSchema(value: unknown): boolean {
+  return isPlainRecord(value)
+    && Object.keys(value).every(key => EMPTY_CONFIRMATION_SCHEMA_KEYS.has(key))
+    && value.type === 'object'
+    && isPlainRecord(value.properties)
+    && Object.keys(value.properties).length === 0
+    && (!('required' in value) || (Array.isArray(value.required) && value.required.length === 0))
+    && (!('additionalProperties' in value) || typeof value.additionalProperties === 'boolean');
 }
 
 function nativeRequestKey(threadId: string, requestId: RequestId): string {

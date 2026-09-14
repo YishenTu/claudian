@@ -135,6 +135,12 @@ Either:
 1. Install the native binary (recommended).
 2. Add the Node.js path in Settings → Environment: `PATH=/path/to/node/bin`.
 
+### Codex MCP confirmation requests
+
+When an MCP server asks for confirmation during a Codex turn, Claudian shows the server name and its message in chat. Choose **Cancel**, **Decline**, or **Allow once**, then submit your choice. Tool permission settings do not automatically accept these requests.
+
+Only confirmation forms with an empty object schema are supported. Forms that request additional information and URL-based requests are declined; requests without an active turn are cancelled.
+
 ### More help
 
 For provider-specific installation and configuration guidance, refer to the provider documentation linked in the [Requirements](#requirements) section. If you have a feature request or run into a bug, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
