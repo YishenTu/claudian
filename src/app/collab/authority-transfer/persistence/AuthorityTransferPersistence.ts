@@ -305,6 +305,16 @@ export class AuthorityTransferPersistence {
       readonly importedMemberId: CollabMemberId;
     }>,
   ): Promise<void> {
+    return this.#assertCloudMembershipRecoveryPredecessor(projectId, identity);
+  }
+
+  assertProjectRecoveryPredecessor(projectId: CollabProjectId,
+    identity: Readonly<{ actorMemberId: CollabMemberId; authorityGeneration: number }>): Promise<void> {
+    return this.#assertCloudMembershipRecoveryPredecessor(projectId, identity);
+  }
+
+  #assertCloudMembershipRecoveryPredecessor(projectId: CollabProjectId,
+    identity: Readonly<{ actorMemberId: CollabMemberId; authorityGeneration: number; importedMemberId?: CollabMemberId }>): Promise<void> {
     return this.runProject(projectId, async () => {
       const [entry, record, custody] = await Promise.all([
         this.stores.authorityTransferEntries.load(projectId),
@@ -328,15 +338,16 @@ export class AuthorityTransferPersistence {
         || record.status.relinquishmentProof === null
         || record.status.relinquishmentProof.sourceHostMemberId
           !== identity.actorMemberId
-        || record.status.targetAuthority.generation !== identity.authorityGeneration
+        || (identity.importedMemberId === undefined
+          ? record.status.targetAuthority.generation > identity.authorityGeneration
+          : record.status.targetAuthority.generation !== identity.authorityGeneration)
         || record.restartFence !== 'permanent'
         || record.terminalResponder?.state !== 'active'
         || record.terminalCleanupCompleted
         || !custody
         || custody.purpose !== 'source-terminal'
         || !claimCustodyMatchesStatus(custody, record.status)
-        || retained?.disposition !== 'retained'
-        || retained.claim === null
+        || identity.importedMemberId !== undefined && (retained?.disposition !== 'retained' || retained.claim === null)
       ) {
         throw transferError(
           'durable-progress-recovery-required',

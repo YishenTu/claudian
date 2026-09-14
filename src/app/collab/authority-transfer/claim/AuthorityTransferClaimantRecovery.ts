@@ -4,6 +4,7 @@ import type {
   AuthorityTransferClaimantRecord,
   AuthorityTransferClaimantStore,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
+import type { ProjectRecoveryClaimantRecord } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
 import type {
   CollabProjectLifecycleDurableOwner,
   CollabProjectLifecycleRecoveryStage,
@@ -13,6 +14,7 @@ import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantRecoveryHandler {
+  assertProjectRecoveryPredecessor?(record: ProjectRecoveryClaimantRecord): Promise<void>;
   beforeProject(
     record: AuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
@@ -90,10 +92,16 @@ implements CollabProjectLifecycleRecoveryStage {
     let firstError: unknown;
     for (const projectId of await this.store.listProjectIds()) {
       assertNotCancelled(options);
-      await this.lifecycle.runExclusive(
-        projectId,
-        this.durableOwner.name,
-        'recovery',
+      const selected = await this.store.load(projectId);
+      const admit = selected?.variant === 'project-recovery'
+        ? (operation: () => Promise<void>) => this.lifecycle!.runProjectRecoveryClaimant(projectId, async () => {
+          if (!this.handler.assertProjectRecoveryPredecessor) throw new CollabError({ code: 'durable-progress-recovery-required' });
+          const current = await this.store.load(projectId);
+          if (!current || current.variant !== 'project-recovery' || current.operationIntentId !== selected.operationIntentId) throw new CollabError({ code: 'durable-progress-recovery-required' });
+          await this.handler.assertProjectRecoveryPredecessor(current);
+        }, operation)
+        : (operation: () => Promise<void>) => this.lifecycle!.runExclusive(projectId, this.durableOwner.name, 'recovery', operation);
+      await admit(
         async () => {
           const record = await this.store.load(projectId);
           if (!record) return;

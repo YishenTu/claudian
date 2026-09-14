@@ -205,6 +205,18 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
+  runProjectRecoveryClaimant<T>(projectId: CollabProjectId,
+    assertAuthorityTransferPredecessor: () => Promise<void>, operation: () => Promise<T>): Promise<T> {
+    return this.#runExclusiveWithPredecessor(projectId, 'authority-transfer-claimant', ['authority-transfer'], 'continuation',
+      operation, assertAuthorityTransferPredecessor, 'when-present');
+  }
+
+  runCloudRecoveryLinkManagement<T>(projectId: CollabProjectId,
+    assertAuthorityTransferPredecessor: () => Promise<void>, operation: () => Promise<T>): Promise<T> {
+    return this.#runExclusiveWithPredecessor(projectId, 'cloud-management', ['authority-transfer'], 'continuation',
+      operation, assertAuthorityTransferPredecessor, 'when-present');
+  }
+
   runCloudImportedClaimManagement<T>(
     projectId: CollabProjectId,
     assertAuthorityTransferPredecessor: () => Promise<void>,
@@ -267,6 +279,7 @@ export class CollabProjectLifecycleSubsystem {
     mode: CollabProjectLifecycleAdmissionMode,
     operation: () => Promise<T>,
     assertAuthorityTransferPredecessor?: () => Promise<void>,
+    authorityTransferProof: 'always' | 'when-present' = 'always',
   ): Promise<T> {
     if (this.closed) {
       return Promise.reject(new CollabError({
@@ -335,6 +348,11 @@ export class CollabProjectLifecycleSubsystem {
         && mode === 'continuation'
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'authority-transfer-claimant';
+      const permitsProjectRecoveryTransferPair = pendingOwners.length === 2
+        && pendingOwners.includes('authority-transfer-claimant') && pendingOwners.includes('authority-transfer')
+        && ownerName === 'authority-transfer-claimant' && mode === 'continuation'
+        && predecessorOwnerNames.length === 1 && predecessorOwnerNames[0] === 'authority-transfer'
+        && assertAuthorityTransferPredecessor !== undefined;
       const permitsCloudImportedClaimTransferPair = pendingOwners.length === 2
         && pendingOwners.includes('cloud-management')
         && pendingOwners.includes('authority-transfer')
@@ -349,6 +367,7 @@ export class CollabProjectLifecycleSubsystem {
         && !permitsCloudManagerLeaveContinuation
         && !permitsManagerLeaveOfferRetry
         && !permitsAuthorityTransferManagerClaimantPair
+        && !permitsProjectRecoveryTransferPair
         && !permitsCloudImportedClaimTransferPair
       ) {
         throw new CollabError({
@@ -401,7 +420,7 @@ export class CollabProjectLifecycleSubsystem {
         });
       }
       if (
-        ownerName === 'cloud-management'
+        (ownerName === 'cloud-management' || ownerName === 'authority-transfer-claimant')
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'authority-transfer'
       ) {
@@ -412,7 +431,7 @@ export class CollabProjectLifecycleSubsystem {
             safeContext: { reason: 'lifecycle-owner-pending' },
           });
         }
-        await assertAuthorityTransferPredecessor();
+        if (authorityTransferProof === 'always' || pendingOwners.includes('authority-transfer')) await assertAuthorityTransferPredecessor();
       }
       return operation();
     });

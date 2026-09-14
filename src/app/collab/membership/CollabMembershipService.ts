@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { type CollabManagerResponsibilityOffer, type CollabMemberId, type CollabProjectId, type CollabProjectMembershipOperationMap } from '@claudian-collab/protocol';
 
 import { type CollabLocalLanMembershipRecord,type CollabLocalProjectRepository, isCollabLocalCloudMembership, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabProjectLifecycleRecoveryLinkAdmission } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
 import type {
   CollabImportedClaimManagementIdentity,
   CollabProjectLifecycleAdmission,
@@ -64,6 +65,7 @@ export interface CollabMembershipServiceOptions {
 }
 
 export interface CollabMembershipSafetyContext {
+  readonly recoveryLinkCloudManagementAdmission?: CollabProjectLifecycleRecoveryLinkAdmission;
   readonly cloudManagementAdmission: CollabProjectLifecycleAuthorityAdmission;
   readonly importedClaimCloudManagementAdmission: CollabProjectLifecycleImportedClaimAdmission;
   readonly managerLeaveCloudManagementAdmission: CollabProjectLifecycleAuthorityAdmission;
@@ -131,14 +133,24 @@ export class CollabMembershipService {
         return { encodedInvitation: encodeProjectRecoveryInvitation({ link, target: { kind: 'lan', endpoint,
           caCertificatePem: hostCaCertificatePem, caFingerprint: hostCaFingerprint } }), expiresAt: link.expiresAt };
       },
-      createCloud: select => this.#runCloudManagementMutation(
-        projectId, {}, () => request.purpose === 'recovery'
-          ? this.#createCloudRecoveryLink(projectId, select) : this.#createCloudInvitation(projectId, {}, select),
-      ),
+      createCloud: select => request.purpose === 'recovery'
+        ? this.#runCloudRecoveryLinkMutation(projectId, () => this.#createCloudRecoveryLink(projectId, select))
+        : this.#runCloudManagementMutation(projectId, {}, () => this.#createCloudInvitation(projectId, {}, select)),
       readManagement: options => this.readManagementOperation(projectId, options),
       resumeManagement: completionId => this.#resumeManagementOperation(projectId, {}, completionId),
       completeManagement: completionId => this.completeManagementOperation({ projectId, completionId }),
     }, intent, request.purpose === 'recovery' ? 'create-recovery-link' : 'create-invitation');
+  }
+
+  async #runCloudRecoveryLinkMutation<T>(projectId: CollabProjectId, operation: () => Promise<T>): Promise<T> {
+    const binding = await this.#loadCloudMembershipBinding(projectId);
+    return this.#recoveryLinkAdmission(binding)(projectId, () => this.#runCloudMutation(projectId, {}, operation));
+  }
+
+  #recoveryLinkAdmission(binding: Pick<CloudMembershipBinding, 'authorityGeneration' | 'memberId'>): CollabProjectLifecycleAuthorityAdmission {
+    const admission = this.safety.recoveryLinkCloudManagementAdmission;
+    return admission ? (projectId, operation) => admission(projectId,
+      { actorMemberId: binding.memberId, authorityGeneration: binding.authorityGeneration }, operation) : this.safety.cloudManagementAdmission;
   }
 
   async #createCloudRecoveryLink(projectId: CollabProjectId, select: (completionId: string) => void): Promise<CollabInvitationView> {
@@ -611,6 +623,7 @@ export class CollabMembershipService {
   #cloudManagementAdmissionFor(
     intent: CloudManagementIntent,
   ): CollabProjectLifecycleAuthorityAdmission {
+    if (intent.operation === 'createProjectRecoveryLink') return this.#recoveryLinkAdmission(intent);
     if (isManagerLeaveCloudManagementIntent(intent)) {
       return this.safety.managerLeaveCloudManagementAdmission;
     }

@@ -21,3 +21,9 @@ export type CollabProjectLifecycleImportedClaimAdmission = <T>(
   identity: CollabImportedClaimManagementIdentity,
   operation: () => Promise<T>,
 ) => Promise<T>;
+
+export type CollabProjectLifecycleRecoveryLinkAdmission = <T>(
+  projectId: CollabProjectId,
+  identity: Pick<CollabImportedClaimManagementIdentity, 'actorMemberId' | 'authorityGeneration'>,
+  operation: () => Promise<T>,
+) => Promise<T>;

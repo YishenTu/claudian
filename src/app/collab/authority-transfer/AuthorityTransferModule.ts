@@ -166,6 +166,7 @@ export interface AuthorityTransferModuleOptions {
     options: CollabOperationOptions,
   ) => Promise<() => Promise<void>>;
   readonly lifecycle: CollabProjectLifecycleSubsystem;
+  readonly assertProjectRecoveryPredecessor?: (projectId: string, identity: { actorMemberId: string; authorityGeneration: number }) => Promise<void>;
   readonly loadClaimantProofCredential?: (projectId: string) => Promise<string>;
   readonly loadClaimantMembership?: (
     projectId: CollabProjectId,
@@ -505,6 +506,7 @@ export class AuthorityTransferModule {
     this.claimantRecovery = new AuthorityTransferClaimantRecovery(
       options.claimantStore,
       {
+        assertProjectRecoveryPredecessor: record => this.#assertProjectRecoveryPredecessor(record.projectId, record.memberId, record.invitation.link.authorityGeneration),
         beforeProject: record => this.#assertClaimantManagerPredecessor(record),
         complete: record => this.#completeAuthorityTransferClaimant(record),
         isLocalOwner: record => this.#isAuthorityTransferClaimantLocalOwner(record),
@@ -2545,8 +2547,17 @@ export class AuthorityTransferModule {
     });
   }
 
+  #assertProjectRecoveryPredecessor(projectId: string, actorMemberId: string, authorityGeneration: number): Promise<void> {
+    if (!this.options.assertProjectRecoveryPredecessor) throw moduleError('project-recovery-predecessor-unavailable');
+    return this.options.assertProjectRecoveryPredecessor(projectId, { actorMemberId, authorityGeneration });
+  }
+
   redeemProjectRecoveryLink(invitation: ProjectRecoveryInvitation, options: CollabOperationOptions = {}): Promise<void> {
-    return this.options.lifecycle.runExclusive(invitation.link.projectId, this.claimantRecovery.durableOwner.name, 'continuation', async () => {
+    return this.options.lifecycle.runProjectRecoveryClaimant(invitation.link.projectId, async () => {
+      const membership = await this.options.loadClaimantMembership?.(invitation.link.projectId);
+      if (!membership) throw moduleError('project-recovery-membership-invalid');
+      await this.#assertProjectRecoveryPredecessor(invitation.link.projectId, membership.member.id, invitation.link.authorityGeneration);
+    }, async () => {
       const projectId = invitation.link.projectId;
       const membership = await this.options.loadClaimantMembership?.(projectId);
       if (!membership || membership.authority.authorityGeneration > invitation.link.authorityGeneration

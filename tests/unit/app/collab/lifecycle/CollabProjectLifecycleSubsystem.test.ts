@@ -15,6 +15,19 @@ function ports() {
 }
 
 describe('CollabProjectLifecycleSubsystem', () => {
+  it('resumes a Project recovery claimant beside a proved completed transfer but rejects an unproved predecessor', async () => {
+    const subsystem = new CollabProjectLifecycleSubsystem({ ...ports(), recoveryStages: [], durableOwners: [
+      { name: 'authority-transfer', inspect: async () => 'nonterminal' },
+      { name: 'authority-transfer-claimant', inspect: async () => 'nonterminal' },
+    ] });
+    let restored = false;
+    await expect(subsystem.runProjectRecoveryClaimant('project-alpha', async () => { throw new Error('Source still writable'); },
+      async () => { restored = true; })).rejects.toThrow('Source still writable');
+    expect(restored).toBe(false);
+    await subsystem.runProjectRecoveryClaimant('project-alpha', async () => undefined, async () => { restored = true; });
+    expect(restored).toBe(true);
+  });
+
   it('isolates recovery stages and reports the first failure after later stages run', async () => {
     const order: string[] = [];
     const firstError = new Error('terminal responder unavailable');

@@ -458,6 +458,10 @@ export function createCollabFeatureSubcomposition(
           operation,
         )
       ),
+      recoveryLinkCloudManagementAdmission: (projectId, identity, operation) => (
+        requireLifecycle().runCloudRecoveryLinkManagement(projectId,
+          () => foundation.authorityTransfers.assertProjectRecoveryPredecessor(projectId, identity), operation)
+      ),
       importedClaimCloudManagementAdmission: (projectId, identity, operation) => (
         requireLifecycle().runCloudImportedClaimManagement(
           projectId,
@@ -894,6 +898,7 @@ export function createCollabFeatureSubcomposition(
       })
     ),
     lifecycle,
+    assertProjectRecoveryPredecessor: (projectId, identity) => foundation.authorityTransfers.assertProjectRecoveryPredecessor(projectId, identity),
     loadClaimantProofCredential: async projectId => (await cloudCredentials.require(projectId)).credential,
     loadClaimantMembership: projectId => foundation.local.projects.loadMembership(projectId),
     installationKey: foundation.installationKey,

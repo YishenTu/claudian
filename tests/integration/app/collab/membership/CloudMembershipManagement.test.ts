@@ -328,6 +328,32 @@ describe('Cloud membership management', () => {
     } finally { await client.close(); await fixture.close(); }
   });
 
+  it.each([false, true])('creates and resumes general recovery links with retained source custody=%s', async retainedSource => {
+    const fixture = await createFixture();
+    let client = fixture.client();
+    try {
+      await fixture.seed(client.foundation);
+      if (retainedSource) await seedCompletedLanToCloudClaimOwner(client.foundation, fixture.serverUrl, fixture.createdAt);
+      const first = client.feature.openInvitation({ projectId: PROJECT_ID, intent: 'create', purpose: 'recovery' });
+      expect((await first.run()).status).not.toBe('success');
+      first.dispose();
+      await client.close(); client = fixture.client();
+      const resumed = client.feature.openInvitation({ projectId: PROJECT_ID, intent: 'resume', purpose: 'recovery' });
+      const result = await resumed.run();
+      expect(result).toMatchObject({ status: 'success', value: { status: 'ready' } });
+      if (result.status !== 'success' || result.value.status !== 'ready') throw new Error('Recovery link unavailable');
+      expect(await resumed.acknowledge()).toMatchObject({ status: 'success' }); resumed.dispose();
+      const second = client.feature.openInvitation({ projectId: PROJECT_ID, intent: 'create', purpose: 'recovery' });
+      const next = await second.run();
+      expect(next).toMatchObject({ status: 'success', value: { status: 'ready' } });
+      if (next.status !== 'success' || next.value.status !== 'ready') throw new Error('Second recovery link unavailable');
+      expect(next.value.invitation.encodedInvitation).not.toBe(result.value.invitation.encodedInvitation);
+      expect(await second.acknowledge()).toMatchObject({ status: 'success' }); second.dispose();
+      expect(await client.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID)).toBe(retainedSource ? 'nonterminal' : 'absent');
+      expect(fixture.failures).toEqual([]);
+    } finally { await client.close(); await fixture.close(); }
+  });
+
   it('recovers a reissued claim beside the exact completed LAN-to-Cloud source owner', async () => {
     const fixture = await createFixture();
     let client = fixture.client();
@@ -945,6 +971,8 @@ describe('Cloud membership management', () => {
 });
 
 async function createFixture(options: { provedStaleDemotion?: boolean; blockReadsAfterRejection?: boolean; onDemotionRejection?: (intentPath: string) => Promise<void>; onInvitationRequest?: () => void; onInvitationResult?: (intentPath: string) => Promise<void>; staleInvitation?: boolean; deniedInvitation?: boolean; blockBarrier?: boolean; hiddenImportedMember?: boolean; receiptTarget?: boolean; rejectAcknowledgement?: boolean; rejectedAcknowledgementCommitted?: boolean; multipleReceiptOffers?: boolean; managerLeaveOffer?: boolean } = {}) {
+  const recoveryLinks = new Map<string, unknown>();
+  let loseRecoveryResponse = true;
   const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-management-'));
   await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
   const createdAt = new Date().toISOString();
@@ -997,7 +1025,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
       const target = request.url.slice('/operator/cloud'.length);
       response.setHeader('content-type', 'application/json');
       if (target === collabCloudCapabilitiesRoute().target) {
-        response.end(JSON.stringify(collabCloudCapabilityDocument([
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-recovery', 
           'project-snapshot', 'project-events', 'cloud-project-invitations', 'cloud-project-membership', 'cloud-project-manager-responsibility', 'cloud-imported-membership-claims',
         ], {
           maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
@@ -1018,6 +1046,21 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
       if (options.blockReadsAfterRejection && demotions.length > 0
         && (target === collabCloudProjectOperationRoute(PROJECT_ID, 'getProjectSnapshot').target
           || target === collabCloudProjectOperationRoute(PROJECT_ID, 'listProjectMembers').target)) { request.socket.destroy(); return; }
+      if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'createProjectRecoveryLink').target) {
+        const decoded = collabControlOperationCodec('createProjectRecoveryLink').decodeRequest(envelope.value.data);
+        assert.equal(decoded.status, 'ok');
+        if (decoded.status !== 'ok') throw new Error('Invalid recovery request');
+        const request = decoded.value;
+        let link = recoveryLinks.get(request.idempotencyKey);
+        if (!link) {
+          link = { projectId: PROJECT_ID, authorityGeneration: 7, recoveryLinkId: `recovery-${recoveryLinks.size + 1}`,
+            token: String(recoveryLinks.size + 1).repeat(64), expiresAt: new Date(Date.now() + 900000).toISOString(),
+            secretReplayExpiresAt: new Date(Date.now() + 600000).toISOString() };
+          recoveryLinks.set(request.idempotencyKey, link);
+        }
+        if (loseRecoveryResponse) { loseRecoveryResponse = false; response.destroy(); return; }
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, link))); return;
+      }
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'getProjectSnapshot').target) {
         response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
           ...snapshot,
