@@ -1,5 +1,6 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
+import { isCollabWorkingCopyDirectoryName } from '@/app/collab/project/CollabWorkingCopySlug';
 import type { CollabLocalCleanupChoice } from '@/core/collab';
 import { parseCollabProjectsFolder } from '@/core/collab';
 
@@ -30,7 +31,6 @@ export interface LocalCleanupRecord {
   readonly updatedAt: CollabIsoTimestamp;
 }
 type Value = Readonly<Record<string, unknown>>;
-const WORKSPACE_CHILD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const NONCE = /^[A-Za-z0-9_-]{43}$/;
 const KEYS = new Set(['schemaVersion', 'kind', 'projectId', 'memberId', 'operationId', 'workspacePath', 'choice', 'purpose', 'phase', 'markerNonce', 'createdAt', 'updatedAt']);
 function text(value: Value, key: string, max: number, pattern?: RegExp): string {
@@ -46,7 +46,7 @@ function time(value: Value, key: string): string {
 function workspace(value: Value): string {
   const result = text(value, 'workspacePath', 240);
   const split = result.lastIndexOf('/');
-  if (split <= 0 || !parseCollabProjectsFolder(result.slice(0, split)).ok || !WORKSPACE_CHILD_PATTERN.test(result.slice(split + 1))) throw new TypeError('Invalid workspacePath');
+  if (split <= 0 || !parseCollabProjectsFolder(result.slice(0, split)).ok || !isCollabWorkingCopyDirectoryName(result.slice(split + 1))) throw new TypeError('Invalid workspacePath');
   return result;
 }
 export function decodeLocalCleanupRecord(value: unknown): LocalCleanupRecord {

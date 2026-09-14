@@ -755,8 +755,6 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     entries,
     /\[A-Za-z0-9\]\[A-Za-z0-9_-\]\{0,63\}/,
     new Map([
-      ['src/app/collab/CollabLocalProjectRepository.ts', 1],
-      ['src/app/collab/exit/PendingLeaveRecord.ts', 1],
       ['src/app/collab/lan/LanHostCoordinator.ts', 1],
       ['src/app/collab/project/CollabWorkingCopySlug.ts', 1],
     ]),
@@ -767,7 +765,6 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     entries,
     /\[A-Za-z0-9\]\[A-Za-z0-9_-\]\{0,127\}/,
     new Map([
-      ['src/app/collab/exit/LocalCleanupRecord.ts', 1],
       ['src/app/collab/host-transfer/HostTransferRecoveryRecord.ts', 1],
     ]),
   ), []);

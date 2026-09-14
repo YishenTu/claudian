@@ -146,6 +146,7 @@
       "failedRelocation": "無法重新連線專案，請檢查 Cloud 伺服器 URL 後再試一次。"
     },
     "panel": {
+      "projectFolderRenameFailed": "無法更新專案資料夾位置。請開啟 Collab 重試。",
       "title": "協作",
       "addProject": "新增專案",
       "createProject": "建立",

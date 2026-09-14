@@ -25,6 +25,7 @@
 
 ## Session and lifecycle interaction
 
+- Startup may inspect existing local working-copy identities to recover user directory renames without a pending journal; this is an exception to the application startup I/O rule. It must not contact an authority or rewrite Git state.
 - Keep ordinary-operation admission separate from irreversible lifecycle arbitration. Every public operation declares admission explicitly; operation-ID-only conflict reads are global, while Project-ID operations require active admission except explicit local Retired actions.
 - A session-owned snapshot/event/inspection must never await lifecycle work that closes or drains that same session. Schedule it outside the read and revalidate generation. Shutdown still owns both admitted operations and scheduled transitions.
 - Projection reset detaches stale results but does not abandon their settlement. Leave drains before cleanup; terminal Retirement must separate close from drain to avoid reentrant deadlock.

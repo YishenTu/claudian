@@ -264,6 +264,7 @@ export default class ClaudianPlugin extends Plugin {
       );
       registerFileMenu(this);
       this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+        if (file instanceof TFolder) void this.handleCollabFolderRename(oldPath, file.path);
         void this.handleLinkedContentRename(file, oldPath).catch(() => {
           new Notice('Failed to update linked content paths');
         });
@@ -2272,6 +2273,21 @@ export default class ClaudianPlugin extends Plugin {
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
     await this.conversationRepository.setArchived(id, isArchived);
     this.notifyConversationViewsChanged();
+  }
+
+  private async handleCollabFolderRename(oldPath: string, newPath: string): Promise<void> {
+    if (!this.collabLayoutReady || !this.isCollabEnabled()) return;
+    const generation = this.collabLifecycleGeneration;
+    try {
+      const feature = await this.getCollabFeatureService();
+      if (!feature || !this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) return;
+      const result = await feature.reconcileWorkingCopyLocations({ oldPath, newPath });
+      if (result.status !== 'success') throw new Error('Collab folder reconciliation failed');
+    } catch {
+      if (this.isCollabEnabled() && generation === this.collabLifecycleGeneration) {
+        new Notice(t('collab.panel.projectFolderRenameFailed'));
+      }
+    }
   }
 
   private async handleLinkedContentRename(

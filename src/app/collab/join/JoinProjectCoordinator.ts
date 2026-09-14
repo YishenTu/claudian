@@ -42,7 +42,7 @@ import {
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import { type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
-import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
+import { collabWorkingCopySlugBase, isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabInvitationJoinRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabResult, type CollabResumeSetupRequest, parseCollabProjectsFolder } from '@/core/collab';
@@ -310,6 +310,7 @@ export class JoinProjectCoordinator {
         );
         const timestamp = this.now().toISOString();
         record = {
+          ...(request.projectSlug === undefined ? { namedPlacement: 'awaiting-name' as const } : {}),
           authorityGeneration: null,
           createdAt: timestamp,
           encodedInvitation: request.encodedInvitation.trim(),
@@ -407,6 +408,8 @@ export class JoinProjectCoordinator {
 
     if (
       record.phase !== 'activated'
+      // A validated automatic Join may already be active remotely; replay activation before expiring it.
+      && !(record.phase === 'clone-completed' && record.namedPlacement === 'awaiting-name')
       && Date.parse(record.membershipExpiresAt!) <= this.now().getTime()
     ) {
       await this.expire(record);
@@ -418,10 +421,11 @@ export class JoinProjectCoordinator {
     if (record.phase === 'membership-created') {
       record = await this.#cloneIntoStaging(record, signal);
     }
-    if (record.phase === 'clone-completed') {
+    if (record.phase === 'clone-completed' && !record.namedPlacement) {
       record = await this.#placeWorkingCopy(record, signal);
     }
-    if (record.phase === 'placed' || (record.phase === 'activated' && record.authorityGeneration === null)) {
+    if ((record.phase === 'clone-completed' && record.namedPlacement === 'awaiting-name')
+      || record.phase === 'placed' || (record.phase === 'activated' && record.authorityGeneration === null)) {
       throwIfCancelled(signal);
       httpClient = this.#httpClientFor(record.projectId);
       pinnedClient = await httpClient.fromStoredTrust(record.projectId);
@@ -456,6 +460,14 @@ export class JoinProjectCoordinator {
     }
     if (record.phase !== 'activated' || record.authorityGeneration === null) {
       throw joinError('repository-invalid', 'join-phase-invalid');
+    }
+    if (record.namedPlacement === 'awaiting-name') {
+      const slug = await this.#claimSlug(record.projectsFolder, undefined, record.projectId, record.projectName!);
+      record = await this.#updateRecord(record, { namedPlacement: 'ready', slug });
+    }
+    if (record.namedPlacement === 'ready') {
+      await this.#workingCopy.place(this.#workingCopyInput(record), signal);
+      record = await this.#updateRecord(record, { namedPlacement: 'placed' });
     }
     return this.finish(record, signal);
   }
@@ -734,12 +746,14 @@ export class JoinProjectCoordinator {
     projectsFolder: string,
     requestedSlug: string | undefined,
     projectId: string,
+    projectName?: string,
   ): Promise<string> {
     const index = await this.foundation.local.projects.loadIndex();
-    const reserved = new Set(index.projects.map(project => project.workspacePath));
+    const reserved = new Set(index.projects.filter(project => projectName === undefined || project.id !== projectId).map(project => project.workspacePath));
     const pendingProjectIds = await this.foundation.local.projects
       .listPendingOperationProjectIds();
     for (const pendingProjectId of pendingProjectIds) {
+      if (projectName !== undefined && pendingProjectId === projectId) continue;
       const pending = await this.foundation.local.projects.loadProjectDocument(
         pendingProjectId,
         'pending-operation',
@@ -751,7 +765,8 @@ export class JoinProjectCoordinator {
     }
     if (requestedSlug !== undefined) {
       const slug = requestedSlug.trim();
-      if (!isCollabWorkingCopySlug(slug)) {
+      if (!isCollabWorkingCopySlug(slug)
+        || !this.foundation.local.pathPolicy.validateRepositoryPath(slug).ok) {
         throw joinError('workspace-boundary-invalid', 'project-slug-invalid');
       }
       if (
@@ -763,9 +778,12 @@ export class JoinProjectCoordinator {
       }
       return slug;
     }
-    const base = isCollabWorkingCopySlug(projectId) ? projectId : 'project';
-    for (let suffix = 1; suffix <= 9_999; suffix += 1) {
-      const slug = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
+    const base = projectName === undefined
+      ? isCollabWorkingCopySlug(projectId) ? projectId : 'project'
+      : collabWorkingCopySlugBase(projectName);
+    for (let suffix = 0; suffix <= 9_999; suffix += 1) {
+      const slug = suffix === 0 ? base : `${base.slice(0, 58)}-${suffix}`;
+      if (!this.foundation.local.pathPolicy.validateRepositoryPath(slug).ok) continue;
       if (reserved.has(`${projectsFolder}/${slug}`)) continue;
       if (!await lstat(this.#workspaceChildPathForRoot(projectsFolder, slug))
         .then(() => true, () => false)) {

@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -39,6 +40,7 @@ import { GitHttpBackendProxy } from '@/app/collab/lan/GitHttpBackendProxy';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { PendingMembershipService } from '@/app/collab/lan/PendingMembershipService';
+import { CollabWorkingCopyLocationService } from '@/app/collab/project/CollabWorkingCopyLocationService';
 
 const PROJECT_ID = 'project-alpha';
 const HOST_CREDENTIAL = Buffer.alloc(32, 1).toString('base64url');
@@ -77,6 +79,7 @@ describe('Join Project same-device LAN integration', () => {
     { generation: 3, legacyPhase: 'membership-created', recovery: null },
     { generation: 3, legacyPhase: 'clone-completed', recovery: null },
     { generation: 3, legacyPhase: null, recovery: 'activated' },
+    { generation: 3, legacyPhase: null, recovery: 'activation-save-lost-expired' },
     { generation: 3, legacyPhase: null, recovery: 'legacy-activated' },
     { generation: 3, legacyPhase: null, recovery: 'legacy-membership-saved' },
     { generation: 3, legacyPhase: null, recovery: 'legacy-response-lost' },
@@ -223,6 +226,7 @@ describe('Join Project same-device LAN integration', () => {
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: memberRoot,
     });
+    let clientNow = new Date();
     const createCoordinator = () => new JoinProjectCoordinator(memberFoundation, {
       createHttpClient: trustStore => new CollabHttpClient(trustStore, {
         invitationCodec,
@@ -230,6 +234,7 @@ describe('Join Project same-device LAN integration', () => {
       createJoinAttemptId: () => 'join-member-alpha',
       invitationCodec,
       vaultRoot: memberRoot,
+      now: () => clientNow,
     });
 
     let interruptClone = legacyPhase !== null;
@@ -237,6 +242,11 @@ describe('Join Project same-device LAN integration', () => {
     const localProjects = memberFoundation.local.projects;
     const save = localProjects.saveProjectDocument.bind(localProjects);
     const cut = jest.spyOn(localProjects, 'saveProjectDocument').mockImplementation(async (...args) => {
+      if (interruptActivation && recovery === 'activation-save-lost-expired'
+        && args[1] === 'pending-operation' && (args[2] as { phase?: string }).phase === 'activated') {
+        interruptActivation = false;
+        throw new Error('Injected lost activation save');
+      }
       await save(...args);
       if (interruptActivation && args[1] === 'pending-operation' && (args[2] as { phase?: string }).phase === 'activated') {
         interruptActivation = false;
@@ -250,6 +260,7 @@ describe('Join Project same-device LAN integration', () => {
     let result = await createCoordinator().joinProject({
       encodedInvitation: invitationCodec.encode(invitation),
       memberDisplayName: 'Alice',
+      ...(legacyPhase || recovery?.startsWith('legacy-') ? { projectSlug: PROJECT_ID } : {}),
     });
     if (legacyPhase) {
       if (result.status !== 'recovery-required') throw new Error('Expected interrupted staged Join');
@@ -272,7 +283,9 @@ describe('Join Project same-device LAN integration', () => {
       if (result.status !== 'recovery-required') throw new Error('Expected interrupted activated Join');
       const pending = await localProjects.loadProjectDocument(PROJECT_ID, 'pending-operation', decodeJoinProjectRecord);
       if (!pending) throw new Error('Missing activated Join');
-      if (recovery === 'activated') {
+      if (recovery === 'activation-save-lost-expired') {
+        clientNow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      } else if (recovery === 'activated') {
         server.closeAllConnections();
         await new Promise<void>(resolve => server.close(() => resolve()));
       } else {
@@ -376,7 +389,9 @@ describe('Join Project same-device LAN integration', () => {
       id: localMembership.member.id,
       status: 'active',
     });
-    const workingCopy = path.join(memberRoot, 'workspace', PROJECT_ID);
+    const expectedSlug = legacyPhase || recovery?.startsWith('legacy-') ? PROJECT_ID : 'alpha';
+    expect(localMembership.project.workspacePath).toBe(`workspace/${expectedSlug}`);
+    const workingCopy = path.join(memberRoot, 'workspace', expectedSlug);
     expect(await readFile(path.join(workingCopy, 'note.md'), 'utf8')).toBe('shared\n');
     expect(await hostGit.resolveRef(
       workingCopy,
@@ -413,5 +428,16 @@ describe('Join Project same-device LAN integration', () => {
     ))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(hostGit.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
     expect(proxy.activeChildCount).toBe(0);
+    const renamedPath = 'workspace/我的 LAN Demo';
+    await rename(workingCopy, path.join(memberRoot, renamedPath));
+    const locations = new CollabWorkingCopyLocationService(memberFoundation, {
+      vaultRoot: memberRoot, transitionProject: async (_projectId, operation) => operation(),
+    });
+    await locations.reconcile({ oldPath: localMembership.project.workspacePath, newPath: renamedPath });
+    expect(await localProjects.loadMembership(PROJECT_ID)).toMatchObject({
+      authority: localMembership.authority, member: localMembership.member,
+      project: { name: 'Alpha', workspacePath: renamedPath },
+    });
+    expect(await readFile(path.join(memberRoot, renamedPath, 'note.md'), 'utf8')).toBe('shared\n');
   });
 });

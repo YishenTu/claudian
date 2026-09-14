@@ -1,6 +1,6 @@
 import { collabControlOperationCodec, type CollabControlOperationMap, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
+import { isCollabWorkingCopyDirectoryName, isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import { type CollabCloudProjectSnapshot, parseCollabProjectsFolder } from '@/core/collab';
@@ -8,6 +8,7 @@ import { type CollabCloudProjectSnapshot, parseCollabProjectsFolder } from '@/co
 interface CloudProjectEntryBase {
   readonly schemaVersion: 2;
   readonly selectOnCompletion?: boolean;
+  readonly resolveProjectName?: boolean;
   readonly principalId: string;
   readonly operationId: string;
   readonly projectId: string;
@@ -66,7 +67,12 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
   const source = record(value, [
     'schemaVersion', 'principalId', 'operationKind', 'operationId', 'projectId', 'serverUrl', 'projectsFolder',
     'slug', 'stagingDirectoryName', 'phase', 'request', 'admission', 'createdAt', 'updatedAt',
-  ], ['selectOnCompletion']);
+  ], ['selectOnCompletion', 'resolveProjectName']);
+  if (Object.hasOwn(source, 'resolveProjectName') && (typeof source.resolveProjectName !== 'boolean'
+    || source.operationKind !== 'cloud-join-project'
+    || (source.resolveProjectName && source.phase !== 'intent' && source.phase !== 'admitted'))) {
+    throw new TypeError('Invalid Cloud entry directory naming intent');
+  }
   if (Object.hasOwn(source, 'selectOnCompletion') && typeof source.selectOnCompletion !== 'boolean') {
     throw new TypeError('Invalid Cloud entry selection intent');
   }
@@ -75,7 +81,8 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
     || !isCollabOpaqueId(source.operationId) || !isCollabProjectId(source.projectId)
     || typeof source.serverUrl !== 'string' || typeof source.projectsFolder !== 'string'
     || !parseCollabProjectsFolder(source.projectsFolder).ok
-    || !isCollabWorkingCopySlug(source.slug)
+    || typeof source.slug !== 'string'
+    || !(source.operationKind === 'cloud-existing-project' ? isCollabWorkingCopyDirectoryName(source.slug) : isCollabWorkingCopySlug(source.slug))
     || source.stagingDirectoryName !== `.claudian-clone-${source.projectId}`
     || (source.phase !== 'intent' && source.phase !== 'admitted' && source.phase !== 'clone-validated'
       && source.phase !== 'placed' && source.phase !== 'locally-finalized')) {
@@ -83,6 +90,7 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
   }
   if ((source.phase === 'intent') !== (source.admission === null)) throw new TypeError('Invalid Cloud entry phase');
   const base: CloudProjectEntryBase = {
+    ...(typeof source.resolveProjectName === 'boolean' ? { resolveProjectName: source.resolveProjectName } : {}),
     ...(typeof source.selectOnCompletion === 'boolean' ? { selectOnCompletion: source.selectOnCompletion } : {}),
     createdAt: timestamp(source.createdAt), operationId: source.operationId,
     phase: source.phase, projectId: source.projectId,

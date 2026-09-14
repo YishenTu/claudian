@@ -35,6 +35,11 @@ describe('PendingLeaveRecord', () => {
     expect(decodePendingLeaveRecord(record)).toEqual(record);
   });
 
+  it('retains a user-renamed directory in the frozen Leave intent', () => {
+    const renamed = { ...record, workspacePath: 'workspace/我的 Demo' };
+    expect(decodePendingLeaveRecord(renamed)).toEqual(renamed);
+  });
+
   it('migrates schema 1 Manager identity into private fingerprint continuity material', () => {
     expect(decodePendingLeaveRecord({
       ...record,

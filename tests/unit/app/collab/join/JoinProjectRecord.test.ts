@@ -75,6 +75,10 @@ describe('JoinProjectRecord', () => {
 
   it.each([
     { ...baseRecord, projectId: '../project' },
+    { ...baseRecord, namedPlacement: 'ready' },
+    { ...baseRecord, namedPlacement: 'placed' },
+    { ...baseRecord, namedPlacement: 'unknown' },
+    { ...baseRecord, namedPlacement: 'awaiting-name', schemaVersion: 1 },
     { ...baseRecord, slug: 'nested/project' },
     { ...baseRecord, stagingDirectoryName: 'project-alpha' },
     { ...baseRecord, phase: 'trusted', hostCaCertificatePem: null },

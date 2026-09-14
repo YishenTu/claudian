@@ -146,6 +146,7 @@
       "failedRelocation": "无法重新连接项目，请检查 Cloud 服务器 URL 后重试。"
     },
     "panel": {
+      "projectFolderRenameFailed": "未能更新项目文件夹位置。请打开 Collab 重试。",
       "title": "协作",
       "addProject": "添加项目",
       "createProject": "创建",

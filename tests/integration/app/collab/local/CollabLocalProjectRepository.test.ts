@@ -1142,10 +1142,10 @@ describe('CollabLocalProjectRepository', () => {
     expect(index.selectedProjectId).toBe('project-beta');
   });
 
-  it('accepts portable multi-segment completed Project paths', async () => {
+  it.each(['Shared/Collab Projects/project-alpha', 'Shared/Projects/我的 Demo'])('accepts a portable completed Project path: %s', async (workspacePath) => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const nested = indexEntry({
-      workspacePath: 'Shared/Collab Projects/project-alpha',
+      workspacePath,
     });
 
     await repository.upsertProject(nested);
@@ -1169,7 +1169,6 @@ describe('CollabLocalProjectRepository', () => {
     '/absolute/project-alpha',
     '../outside/project-alpha',
     'Shared/.git/project-alpha',
-    'Shared/Projects/project alpha',
   ])('rejects an unsafe completed Project path: %s', async (workspacePath) => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
 

@@ -146,6 +146,7 @@
       "failedRelocation": "Impossible de reconnecter le projet. Vérifiez l’URL du serveur Cloud et réessayez."
     },
     "panel": {
+      "projectFolderRenameFailed": "Impossible de mettre à jour l’emplacement du dossier du projet. Ouvrez Collab et réessayez.",
       "title": "Collab",
       "addProject": "Ajouter un projet",
       "createProject": "Créer",

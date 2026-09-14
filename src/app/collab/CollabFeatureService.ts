@@ -27,6 +27,7 @@ import {
   decodeCloudProjectInvitation,
 } from '@/app/collab/project/CloudProjectInvitation';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
+import type { CollabWorkingCopyLocationService, CollabWorkingCopyRenameHint } from '@/app/collab/project/CollabWorkingCopyLocationService';
 import {
   ProjectOperationAdmission,
   type ProjectOperationPolicy,
@@ -376,6 +377,7 @@ export interface CollabCloudProjectEntryPort {
 }
 
 export interface CollabFeatureServiceOptions {
+  readonly workingCopyLocations?: Pick<CollabWorkingCopyLocationService, 'reconcile'>;
   readonly authorityTransfer: CollabAuthorityTransferEntryPort;
   readonly cloudEntry: CollabCloudProjectEntryPort;
   readonly hostTransfer: CollabHostTransferPort;
@@ -706,6 +708,18 @@ class CollabFeatureServiceCore {
     };
     void pending.then(clearPending, clearPending);
     return pending;
+  }
+
+  async reconcileWorkingCopyLocations(hint?: CollabWorkingCopyRenameHint): Promise<CollabResult<void>> {
+    try {
+      const changed = await this.options.workingCopyLocations?.reconcile(hint) ?? [];
+      await this.#refreshProjects();
+      for (const projectId of changed) this.#notifyProject(projectId);
+      return { status: 'success', value: undefined };
+    } catch (error) {
+      await this.#refreshProjects();
+      return this.#failureResult(error);
+    }
   }
 
   async listProjects(
@@ -2060,8 +2074,13 @@ class CollabFeatureServiceCore {
     this.#lifecycleRecoveryController = controller;
     const recovery = (async () => {
       try {
+        let locationFailure: Error | undefined;
+        await this.options.workingCopyLocations?.reconcile().catch(error => {
+          locationFailure = error instanceof Error ? error : operationError('working-copy-location-reconciliation-failed');
+        });
         await this.options.lifecycleRecovery.resume({ signal: controller.signal });
         await this.#refreshProjects();
+        if (locationFailure) throw locationFailure;
       } finally {
         controller.abort();
         if (this.#lifecycleRecoveryController === controller) {
@@ -2190,6 +2209,8 @@ class CollabFeatureServiceCore {
         () => ({ status: 'fulfilled' as const }),
         (reason: unknown) => ({ reason, status: 'rejected' as const }),
       );
+      // A missing or ambiguous working copy must not prevent unrelated Projects from opening.
+      await this.options.workingCopyLocations?.reconcile().catch(() => undefined);
       const projects = await this.#refreshProjects();
       const gitFoundationResult = await gitFoundation;
       this.#throwIfDisposed();
@@ -2780,6 +2801,10 @@ export class CollabFeatureService implements CollabFeaturePort {
 
   refreshLifecycleProjection(): Promise<void> {
     return this.runGlobal(() => this.core.refreshLifecycleProjection());
+  }
+
+  reconcileWorkingCopyLocations(hint?: CollabWorkingCopyRenameHint): Promise<CollabResult<void>> {
+    return this.runGlobal(() => this.core.reconcileWorkingCopyLocations(hint));
   }
 
   closeProjectAdmission(projectId: CollabProjectId): void {

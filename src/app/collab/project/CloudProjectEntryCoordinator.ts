@@ -13,7 +13,7 @@ import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProject
 import { type CloudProjectEntryRecord, decodeCloudProjectEntryRecord } from '@/app/collab/project/CloudProjectEntryRecord';
 import type { CloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { type CollabWorkingCopyFoundation, type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
-import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
+import { collabWorkingCopySlugBase, isCollabWorkingCopyDirectoryName, isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { type CloudAuthorityAdapter, type CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import { cloudProjectGitRemoteUrl, validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
@@ -139,8 +139,8 @@ export class CloudProjectEntryCoordinator {
         if (!parsedFolder.ok) throw new CollabError({ code: 'workspace-boundary-invalid' });
         await this.foundation.local.workspace.claimProjectsFolder(parsedFolder.value);
         const slug = existing ? path.posix.basename(existing.project.workspacePath)
-          : await this.#claimSlug(parsedFolder.value, projectId, projectId, invitationInput?.projectSlug);
-        if (!isCollabWorkingCopySlug(slug)) throw new CollabError({ code: 'path-invalid' });
+          : await this.#claimSlug(parsedFolder.value, existingSnapshot?.project.name ?? projectId, projectId, invitationInput?.projectSlug);
+        if (!(existing ? isCollabWorkingCopyDirectoryName(slug) : isCollabWorkingCopySlug(slug))) throw new CollabError({ code: 'path-invalid' });
         if (existing && await this.#isOccupied(parsedFolder.value, slug)) {
           await this.#setup.assertFinalized(existing);
           await this.options.activateProject(existing, { signal });
@@ -155,6 +155,7 @@ export class CloudProjectEntryCoordinator {
           admission: existingSnapshot ? { response: null, snapshot: existingSnapshot } : null,
           createdAt: timestamp, operationId, operationKind: existingSnapshot ? 'cloud-existing-project' : 'cloud-join-project',
           selectOnCompletion: invitationInput !== null,
+          ...(!existing && !existingSnapshot && invitationInput?.projectSlug === undefined ? { resolveProjectName: true } : {}),
           phase: existingSnapshot ? 'admitted' : 'intent', projectId, projectsFolder: parsedFolder.value,
           request: existingSnapshot || !invitationInput ? null : {
             displayName: invitationInput.memberDisplayName.trim(), idempotencyKey: operationId,
@@ -256,6 +257,10 @@ export class CloudProjectEntryCoordinator {
       }
       const admission = record.admission;
       if (!admission) throw entryError('entry-admission-missing');
+      if (record.resolveProjectName) {
+        const slug = await this.#claimSlug(record.projectsFolder, admission.snapshot.project.name, record.projectId, undefined, true);
+        record = await this.#update(record, { resolveProjectName: false, slug });
+      }
       const placement: CollabWorkingCopyPlacement = {
         memberId: admission.snapshot.currentMember.id, personalRef: admission.snapshot.currentMember.personalRef, projectId: record.projectId,
         projectsFolder: record.projectsFolder, slug: record.slug,
@@ -329,10 +334,11 @@ export class CloudProjectEntryCoordinator {
     };
   }
 
-  async #claimSlug(projectsFolder: string, name: string, projectId: string, requestedSlug?: string): Promise<string> {
+  async #claimSlug(projectsFolder: string, name: string, projectId: string, requestedSlug?: string, resolvingName = false): Promise<string> {
     const index = await this.foundation.local.projects.loadIndex();
-    const reserved = new Set(index.projects.map(project => project.workspacePath));
+    const reserved = new Set(index.projects.filter(project => !resolvingName || project.id !== projectId).map(project => project.workspacePath));
     for (const pendingId of await this.foundation.local.projects.listPendingOperationProjectIds()) {
+      if (resolvingName && pendingId === projectId) continue;
       const pending = await this.foundation.local.projects.loadProjectDocument(pendingId, 'pending-operation', decodeCollabPendingProjectOperation);
       if (pending && pending.kind !== 'cloud-relocation') {
         reserved.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
@@ -340,15 +346,17 @@ export class CloudProjectEntryCoordinator {
     }
     if (requestedSlug !== undefined) {
       if (!isCollabWorkingCopySlug(requestedSlug)
+        || !this.foundation.local.pathPolicy.validateRepositoryPath(requestedSlug).ok
         || reserved.has(`${projectsFolder}/${requestedSlug}`)
         || await this.#isOccupied(projectsFolder, requestedSlug)) {
         throw new CollabError({ code: 'workspace-boundary-invalid', safeContext: { reason: 'cloud-entry-slug-unavailable' } });
       }
       return requestedSlug;
     }
-    const base = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|-+$/g, '').slice(0, 58) || projectId.slice(0, 58);
-    for (let suffix = 1; suffix < 10_000; suffix++) {
-      const slug = suffix === 1 ? base : `${base}-${suffix}`;
+    const base = collabWorkingCopySlugBase(name);
+    for (let suffix = 0; suffix < 10_000; suffix++) {
+      const slug = suffix === 0 ? base : `${base}-${suffix}`;
+      if (!this.foundation.local.pathPolicy.validateRepositoryPath(slug).ok) continue;
       if (reserved.has(`${projectsFolder}/${slug}`)) continue;
       if (!await this.#isOccupied(projectsFolder, slug)) return slug;
     }
@@ -366,7 +374,7 @@ export class CloudProjectEntryCoordinator {
     return this.foundation.local.projects.saveProjectDocument(record.projectId, 'pending-operation', record);
   }
 
-  async #update(record: CloudProjectEntryRecord, changes: Partial<Pick<CloudProjectEntryRecord, 'admission' | 'phase' | 'request'>>): Promise<CloudProjectEntryRecord> {
+  async #update(record: CloudProjectEntryRecord, changes: Partial<Pick<CloudProjectEntryRecord, 'admission' | 'phase' | 'request' | 'slug' | 'resolveProjectName'>>): Promise<CloudProjectEntryRecord> {
     const next = decodeCloudProjectEntryRecord({ ...record, ...changes, updatedAt: this.#now().toISOString() });
     await this.#save(next);
     return next;

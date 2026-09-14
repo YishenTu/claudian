@@ -69,6 +69,7 @@ import {
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
+import { CollabWorkingCopyLocationService } from '@/app/collab/project/CollabWorkingCopyLocationService';
 import {
   ProjectOperationAdmission,
   type ProjectOperationSuspension,
@@ -1064,7 +1065,25 @@ export function createCollabFeatureSubcomposition(
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
     module: authorityTransfer,
   });
+  const workingCopyLocations = new CollabWorkingCopyLocationService(foundation, {
+    vaultRoot,
+    transitionProject: (projectId, operation) => requireFeature().runProjectLifecycleTransition(projectId, () => (
+      requireLifecycle().runExclusive(projectId, 'working-copy-location', 'operation', async () => {
+        const admission = requireFeature().suspendProjectAdmission(projectId);
+        let workSession: CollabProjectWorkSessionSuspension | undefined;
+        try {
+          workSession = await requirePublication().suspendProject(projectId);
+          await requireFeature().drainAdmittedOperations(projectId);
+          await foundation.runAuthorityProjectionTransition(projectId, operation);
+        } finally {
+          if (workSession) await requirePublication().resumeProject(workSession);
+          requireFeature().resumeProjectAdmission(admission);
+        }
+      })
+    )),
+  });
   feature = new CollabFeatureService(foundation, projectSetup, {
+    workingCopyLocations,
     authorityTransfer: authorityTransferEntry,
     cloudEntry: {
       close: () => cloudEntry.close(),

@@ -146,6 +146,7 @@
       "failedRelocation": "プロジェクトを再接続できませんでした。Cloud サーバー URL を確認して再試行してください。"
     },
     "panel": {
+      "projectFolderRenameFailed": "プロジェクトフォルダーの場所を更新できませんでした。Collab を開いて再試行してください。",
       "title": "Collab",
       "addProject": "プロジェクトを追加",
       "createProject": "作成",

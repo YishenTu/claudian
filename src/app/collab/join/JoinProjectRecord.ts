@@ -26,6 +26,8 @@ export interface JoinProjectRecord {
   readonly lastEventSequence: number | null;
   /** Transient decoder flag used only for safe version-1 staging recovery. */
   readonly legacyJoinRecord?: true;
+  /** New automatic joins activate the validated staging copy before choosing its final directory. */
+  readonly namedPlacement?: 'awaiting-name' | 'ready' | 'placed';
   readonly memberCredential: string | null;
   readonly memberDisplayName: string;
   readonly memberId: CollabMemberId | null;
@@ -157,6 +159,13 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   }
   const decodedPhase = phase(value.phase);
   const legacy = value.schemaVersion === 1;
+  const namedPlacement = value.namedPlacement;
+  if (namedPlacement !== undefined && (legacy
+    || (namedPlacement !== 'awaiting-name' && namedPlacement !== 'ready' && namedPlacement !== 'placed')
+    || decodedPhase === 'placed'
+    || (namedPlacement !== 'awaiting-name' && decodedPhase !== 'activated'))) {
+    throw new TypeError('Invalid named Join placement');
+  }
   const projectsFolder = legacy ? 'workspace' : value.projectsFolder;
   if (typeof projectsFolder !== 'string' || !parseCollabProjectsFolder(projectsFolder).ok) {
     throw new TypeError('Invalid Projects folder');
@@ -245,6 +254,7 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   }
 
   return {
+    ...(namedPlacement === undefined ? {} : { namedPlacement }),
     authorityGeneration,
     createdAt: timestamp(value, 'createdAt')!,
     encodedInvitation,

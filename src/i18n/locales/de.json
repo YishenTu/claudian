@@ -146,6 +146,7 @@
       "failedRelocation": "Das Projekt konnte nicht neu verbunden werden. Prüfe die Cloud-Server-URL und versuche es erneut."
     },
     "panel": {
+      "projectFolderRenameFailed": "Der Projektordner konnte nicht aktualisiert werden. Öffne Collab und versuche es erneut.",
       "title": "Collab",
       "addProject": "Projekt hinzufügen",
       "createProject": "Erstellen",

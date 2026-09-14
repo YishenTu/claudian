@@ -25,6 +25,7 @@ import {
   COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   type CollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
+import { collabWorkingCopySlugBase } from '@/app/collab/project/CollabWorkingCopySlug';
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
@@ -142,17 +143,7 @@ function projectSummary(record: CollabProjectSetupRecord): CollabLocalProjectSum
   };
 }
 
-function slugBase(name: string): string {
-  const slug = name
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 56)
-    .replace(/-+$/g, '');
-  return slug || 'project';
-}
+
 
 export class CollabProjectSetupService {
    readonly #createCredential: () => string;
@@ -718,7 +709,7 @@ export class CollabProjectSetupService {
   }
 
    async #claimSlug(projectsFolder: string, name: string): Promise<string> {
-    const base = slugBase(name);
+    const base = collabWorkingCopySlugBase(name);
     const index = await this.foundation.local.projects.loadIndex();
     const reservedPaths = new Set(index.projects.map(project => project.workspacePath));
     const pendingProjectIds = await this.foundation.local.projects
@@ -735,6 +726,7 @@ export class CollabProjectSetupService {
     }
     for (let suffix = 1; suffix <= 9_999; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
+      if (!this.foundation.local.pathPolicy.validateRepositoryPath(candidate).ok) continue;
       if (reservedPaths.has(`${projectsFolder}/${candidate}`)) continue;
       const absolutePath = this.#workspaceChildPathForRoot(projectsFolder, candidate);
       if (!await lstat(absolutePath).then(() => true, () => false)) return candidate;

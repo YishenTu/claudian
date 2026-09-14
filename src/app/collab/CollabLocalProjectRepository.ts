@@ -65,6 +65,7 @@ import {
   decodeHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { decodeHostTrustCheckpoint, type HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
+import { isCollabWorkingCopyDirectoryName } from '@/app/collab/project/CollabWorkingCopySlug';
 import {
   canonicalCloudUrl,
   cloudProjectGitRemoteUrl,
@@ -103,7 +104,6 @@ const LEGACY_AUTHORITY_ROOT_ENTRIES = new Set([
   'collab.db.tmp',
   'repository.git',
 ]);
-const PROJECT_DIRECTORY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MEMBER_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT_PATTERN = /^(?:[A-Fa-f0-9]{64}|(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2})$/;
 
@@ -117,6 +117,13 @@ export interface CollabLocalProjectIndexEntry {
   readonly authorityKind: CollabAuthorityKind;
   readonly createdAt: CollabIsoTimestamp;
   readonly updatedAt: CollabIsoTimestamp;
+}
+
+export interface CollabWorkingCopyLocationUpdate {
+  readonly projectId: CollabProjectId;
+  readonly memberId: CollabMemberId;
+  readonly expectedWorkspacePath: string;
+  readonly workspacePath: string;
 }
 
 export interface CollabLocalProjectIndex {
@@ -480,7 +487,7 @@ function requireWorkspacePath(record: UnknownRecord): string {
   const projectDirectoryName = workspacePath.slice(separatorIndex + 1);
   if (
     !parseCollabProjectsFolder(projectsFolder).ok
-    || !PROJECT_DIRECTORY_PATTERN.test(projectDirectoryName)
+    || !isCollabWorkingCopyDirectoryName(projectDirectoryName)
   ) {
     throw new TypeError('Invalid workspacePath');
   }
@@ -1140,6 +1147,41 @@ export class CollabLocalProjectRepository {
     });
   }
 
+  updateWorkingCopyLocations(updates: readonly CollabWorkingCopyLocationUpdate[]): Promise<void> {
+    return this.#operationQueue.run(async () => {
+      const index = await this.#loadIndexUnlocked(false);
+      const memberships = new Map<CollabProjectId, CollabLocalMembershipRecord>();
+      for (const update of updates) {
+        const membership = await this.#loadMembershipUnlocked(update.projectId, true);
+        const entry = index.projects.find(project => project.id === update.projectId);
+        if (!membership || !entry || memberships.has(update.projectId)
+          || (membership.lifecycle && membership.lifecycle !== 'active')
+          || (entry.lifecycle && entry.lifecycle !== 'active')
+          || membership.member.id !== update.memberId
+          || membership.project.workspacePath !== update.expectedWorkspacePath) {
+          throw localRecordError('working-copy-location-project-changed', 'index', update.projectId);
+        }
+        memberships.set(update.projectId, normalizeMembership({
+          ...membership, project: { ...membership.project, workspacePath: update.workspacePath }, updatedAt: new Date().toISOString(),
+        }));
+      }
+      // Validate the complete projection before any writes; swaps cannot be published one entry at a time.
+      let projected: CollabLocalProjectIndex;
+      try {
+        projected = normalizeIndex({ ...index, projects: index.projects.map(entry => {
+          const membership = memberships.get(entry.id);
+          return membership ? {
+            ...entry, authorityKind: membership.authority.kind, name: membership.project.name,
+            workspacePath: membership.project.workspacePath, updatedAt: membership.updatedAt,
+          } : entry;
+        }) });
+      } catch { throw localRecordError('working-copy-location-collision', 'index'); }
+      // Memberships are individually durable. Interrupted publication recovers forward from their Git identities.
+      for (const membership of memberships.values()) await this.#saveMembershipUnlocked(membership);
+      await this.#saveIndexUnlocked(projected);
+    });
+  }
+
   selectProject(projectId: CollabProjectId | null): Promise<void> {
     return this.#operationQueue.run(async () => {
       const index = await this.#loadIndexUnlocked(false);
@@ -1484,15 +1526,7 @@ export class CollabLocalProjectRepository {
           : undefined,
       ));
     }
-    return this.#operationQueue.run(async () => {
-      await this.#ensurePrivateProjectDirectory(normalized.project.id);
-      await writeCollabFileAtomically(
-        this.vaultRoot,
-        this.getProjectPaths(normalized.project.id).membership,
-        serializeJson(normalized),
-        { mode: 0o600, onDiagnostic: this.#onDiagnostic },
-      );
-    });
+    return this.#operationQueue.run(() => this.#saveMembershipUnlocked(normalized));
   }
 
   updateMembershipProjection(
@@ -3259,6 +3293,14 @@ export class CollabLocalProjectRepository {
       if (error instanceof CollabError) throw error;
       throw localRecordError('local-record-corrupt', 'membership', projectId);
     }
+  }
+
+   async #saveMembershipUnlocked(membership: CollabLocalMembershipRecord): Promise<void> {
+    await this.#ensurePrivateProjectDirectory(membership.project.id);
+    await writeCollabFileAtomically(
+      this.vaultRoot, this.getProjectPaths(membership.project.id).membership, serializeJson(membership),
+      { mode: 0o600, onDiagnostic: this.#onDiagnostic },
+    );
   }
 
    async #saveIndexUnlocked(index: CollabLocalProjectIndex): Promise<void> {

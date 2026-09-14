@@ -26,11 +26,13 @@ import { WebSocketServer } from 'ws';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
+import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { decodeManagerResponsibilityReceiptRecord } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
 import { decodeCloudProjectEntryRecord } from '@/app/collab/project/CloudProjectEntryRecord';
 import { decodeCloudProjectInvitation, encodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
+import { CollabWorkingCopyLocationService } from '@/app/collab/project/CollabWorkingCopyLocationService';
 import { decodeCollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
@@ -51,6 +53,214 @@ jest.setTimeout(30_000);
 
 
 describe('CloudProjectEntryCoordinator', () => {
+  it.each(['event', 'startup', 'background-startup'] as const)('follows a user directory rename through %s without losing personal work', async trigger => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    const projects = fixture.foundation.local.projects;
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' }))
+        .resolves.toMatchObject({ status: 'success' });
+      const before = await projects.loadMembership(PROJECT_ID);
+      const publication = await projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord);
+      const oldPath = 'Shared/Projects/cloud-notes';
+      const newPath = 'Shared/Projects/我的 Demo';
+      await writeFile(path.join(fixture.vaultRoot, oldPath, 'local.md'), 'Uncommitted work');
+      await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, newPath));
+      const recoveryResult = trigger === 'background-startup'
+        ? await feature.restoreLifecycle().then(() => feature.restoreHosts()).then(() => ({ status: 'success' }))
+        : await (trigger === 'event' ? feature.reconcileWorkingCopyLocations({ oldPath, newPath }) : feature.initialize());
+      expect(recoveryResult).toMatchObject({ status: 'success' });
+      expect(await projects.loadMembership(PROJECT_ID)).toEqual({ ...before, project: { ...before!.project, workspacePath: newPath }, updatedAt: expect.any(String) });
+      expect(feature.state.projects).toEqual(expect.arrayContaining([expect.objectContaining({ id: PROJECT_ID, name: 'Cloud Notes', workspacePath: newPath, health: 'healthy' })]));
+      expect(await projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord)).toEqual(publication);
+      expect(await readFile(path.join(fixture.vaultRoot, newPath, 'local.md'), 'utf8')).toBe('Uncommitted work');
+      expect(await git(path.join(fixture.vaultRoot, newPath), ['status', '--porcelain'])).toContain('local.md');
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it('recovers the actual directory spelling after a case-only rename while offline', async () => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const newPath = 'Shared/Projects/Cloud-Notes';
+      await rename(path.join(fixture.vaultRoot, 'Shared/Projects/cloud-notes'), path.join(fixture.vaultRoot, newPath));
+      await feature.restoreLifecycle();
+      expect(await fixture.foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({ project: { workspacePath: newPath } });
+      expect(feature.state.projects).toEqual(expect.arrayContaining([expect.objectContaining({ workspacePath: newPath, health: 'healthy' })]));
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it('rediscovers a renamed Project at startup when its old name has been reused', async () => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const oldPath = 'Shared/Projects/cloud-notes';
+      const newPath = 'Shared/Projects/renamed';
+      await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, newPath));
+      await mkdir(path.join(fixture.vaultRoot, oldPath));
+      await writeFile(path.join(fixture.vaultRoot, oldPath, 'keep.md'), 'Unrelated folder');
+      await expect(feature.initialize()).resolves.toMatchObject({ status: 'success' });
+      expect(await fixture.foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({ project: { workspacePath: newPath } });
+      expect(await readFile(path.join(fixture.vaultRoot, oldPath, 'keep.md'), 'utf8')).toBe('Unrelated folder');
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it('repairs an interrupted rename projection and follows a second rename', async () => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    const projects = fixture.foundation.local.projects;
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const oldPath = 'Shared/Projects/cloud-notes';
+      const firstPath = 'Shared/Projects/First rename';
+      const secondPath = 'Shared/Projects/Second rename';
+      await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, firstPath));
+      const filesystemRename = fs.rename;
+      const cut = jest.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+        if (String(destination).endsWith('/.claudian/collab/index.json')) throw new Error('Injected index write failure');
+        return filesystemRename(source, destination);
+      });
+      try {
+        await expect(feature.reconcileWorkingCopyLocations({ oldPath, newPath: firstPath })).resolves.toMatchObject({ status: 'failure' });
+      } finally { cut.mockRestore(); }
+      await rename(path.join(fixture.vaultRoot, firstPath), path.join(fixture.vaultRoot, secondPath));
+      await expect(feature.reconcileWorkingCopyLocations({ oldPath: firstPath, newPath: secondPath })).resolves.toMatchObject({ status: 'success' });
+      expect(await projects.loadMembership(PROJECT_ID)).toMatchObject({ project: { workspacePath: secondPath } });
+      expect(feature.state.projects).toEqual(expect.arrayContaining([expect.objectContaining({ workspacePath: secondPath, health: 'healthy' })]));
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it.each(['none', 'membership', 'index'] as const)('recovers exchanged Project directories with a %s persistence interruption', async cutAt => {
+    const fixture = await createFixture({ join: true });
+    const projects = fixture.foundation.local.projects;
+    try {
+      await expect(fixture.coordinator.joinProject({ invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const first = (await projects.loadMembership(PROJECT_ID))!;
+      assert(isCollabLocalCloudMembership(first));
+      const firstEntry = (await projects.loadIndex()).projects.find(entry => entry.id === PROJECT_ID)!;
+      const otherId = 'project-other-rename';
+      const firstPath = first.project.workspacePath;
+      const otherPath = 'Shared/Projects/other-notes';
+      const temporaryPath = path.join(fixture.vaultRoot, 'Shared/Projects/temporary');
+      await fs.cp(path.join(fixture.vaultRoot, firstPath), path.join(fixture.vaultRoot, otherPath), { recursive: true });
+      await (await fixture.foundation.requireGitFoundation()).repositories.configureLocalRepository(path.join(fixture.vaultRoot, otherPath), {
+        projectId: otherId, memberId: first.member.id, personalRef: first.member.personalRef, userDisplayName: first.member.displayName,
+      });
+      await projects.saveMembership({ ...first, authority: { ...first.authority, gitRemoteUrl: first.authority.gitRemoteUrl!.replace(PROJECT_ID, otherId) }, project: { ...first.project, id: otherId, workspacePath: otherPath } });
+      await projects.upsertProject({ ...firstEntry, id: otherId, workspacePath: otherPath });
+      await writeFile(path.join(fixture.vaultRoot, firstPath, 'local.md'), 'First personal work');
+      await writeFile(path.join(fixture.vaultRoot, otherPath, 'local.md'), 'Second personal work');
+      await rename(path.join(fixture.vaultRoot, firstPath), temporaryPath);
+      await rename(path.join(fixture.vaultRoot, otherPath), path.join(fixture.vaultRoot, firstPath));
+      await rename(temporaryPath, path.join(fixture.vaultRoot, otherPath));
+      const locations = new CollabWorkingCopyLocationService(fixture.foundation, {
+        vaultRoot: fixture.vaultRoot, transitionProject: async (_projectId, operation) => operation(),
+      });
+
+      let interruption = 'not-injected';
+      if (cutAt !== 'none') {
+        const filesystemRename = fs.rename;
+        const interruptedPath = cutAt === 'membership'
+          ? path.join(fixture.vaultRoot, projects.getProjectPaths(otherId).membership)
+          : path.join(fixture.vaultRoot, '.claudian/collab/index.json');
+        const cut = jest.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+          if (String(destination) === interruptedPath) throw new Error('Injected location persistence failure');
+          return filesystemRename(source, destination);
+        });
+        try { interruption = await locations.reconcile().then(() => 'unexpected-completion', () => 'interrupted'); } finally { cut.mockRestore(); }
+      }
+      expect(interruption).toBe(cutAt === 'none' ? 'not-injected' : 'interrupted');
+      expect((await projects.loadIndex()).projects).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: PROJECT_ID, workspacePath: firstPath }),
+        expect.objectContaining({ id: otherId, workspacePath: otherPath }),
+      ]));
+      await expect(locations.reconcile()).resolves.toEqual(expect.arrayContaining([PROJECT_ID, otherId]));
+      expect(await projects.loadMembership(PROJECT_ID)).toMatchObject({ project: { workspacePath: otherPath } });
+      expect(await projects.loadMembership(otherId)).toMatchObject({ project: { workspacePath: firstPath } });
+      expect((await projects.loadIndex()).projects).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: PROJECT_ID, workspacePath: otherPath }),
+        expect.objectContaining({ id: otherId, workspacePath: firstPath }),
+      ]));
+      expect(await readFile(path.join(fixture.vaultRoot, otherPath, 'local.md'), 'utf8')).toBe('First personal work');
+      expect(await readFile(path.join(fixture.vaultRoot, firstPath, 'local.md'), 'utf8')).toBe('Second personal work');
+    } finally { await fixture.close(); }
+  });
+
+  it('preserves both copies when a missing working copy has ambiguous matching directories', async () => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    const projects = fixture.foundation.local.projects;
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const before = await projects.loadMembership(PROJECT_ID);
+      const oldPath = 'Shared/Projects/cloud-notes';
+      const newPath = 'Shared/Projects/renamed';
+      await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, newPath));
+      await fs.cp(path.join(fixture.vaultRoot, newPath), path.join(fixture.vaultRoot, 'Shared/Projects/duplicate'), { recursive: true });
+      await expect(feature.reconcileWorkingCopyLocations({ oldPath, newPath })).resolves.toMatchObject({ status: 'failure' });
+      expect(await projects.loadMembership(PROJECT_ID)).toEqual(before);
+      expect(await git(path.join(fixture.vaultRoot, newPath), ['rev-parse', 'HEAD'])).toBe(fixture.mainOid);
+      expect(await git(path.join(fixture.vaultRoot, 'Shared/Projects/duplicate'), ['rev-parse', 'HEAD'])).toBe(fixture.mainOid);
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it('restores a missing Cloud working copy under its user-renamed directory', async () => {
+    const fixture = await createFixture({ join: true });
+    const feature = createFeatureFixture(fixture);
+    try {
+      await expect(feature.joinProject({ encodedInvitation: fixture.encodedInvitation, memberDisplayName: 'Bob' })).resolves.toMatchObject({ status: 'success' });
+      const oldPath = 'Shared/Projects/cloud-notes';
+      const newPath = 'Shared/Projects/My renamed Project';
+      await rename(path.join(fixture.vaultRoot, oldPath), path.join(fixture.vaultRoot, newPath));
+      await expect(feature.reconcileWorkingCopyLocations({ oldPath, newPath })).resolves.toMatchObject({ status: 'success' });
+      await rm(path.join(fixture.vaultRoot, newPath), { recursive: true });
+      await expect(feature.joinProject({ existingCloudProjectId: PROJECT_ID })).resolves.toMatchObject({ status: 'success', value: { workspacePath: newPath } });
+      expect(await git(path.join(fixture.vaultRoot, newPath), ['rev-parse', 'HEAD'])).toBe(fixture.mainOid);
+    } finally { await feature.close(); await fixture.close(); }
+  });
+
+  it('uses the authenticated Project name for an invitation Join directory', async () => {
+    const fixture = await createFixture({ join: true });
+    try {
+      await expect(fixture.coordinator.joinProject({
+        invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob',
+      })).resolves.toMatchObject({ status: 'success', value: { workspacePath: 'Shared/Projects/cloud-notes' } });
+      expect(await git(path.join(fixture.vaultRoot, 'Shared/Projects/cloud-notes'), ['rev-parse', 'HEAD'])).toBe(fixture.mainOid);
+    } finally { await fixture.close(); }
+  });
+
+  it.each([
+    ['Collab Demo', 'collab-demo'],
+    ['Café Notes', 'cafe-notes'],
+    ['项目', 'project'],
+  ])('resolves a portable directory for %s and preserves occupied paths', async (projectName, slug) => {
+    const fixture = await createFixture({ join: true, projectName });
+    const occupied = path.join(fixture.vaultRoot, 'Shared/Projects', slug);
+    await fixture.foundation.local.workspace.claimProjectsFolder('Shared/Projects');
+    await mkdir(occupied);
+    await writeFile(path.join(occupied, 'keep.md'), 'Existing work');
+    try {
+      await expect(fixture.coordinator.joinProject({
+        invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob',
+      })).resolves.toMatchObject({ status: 'success', value: { workspacePath: `Shared/Projects/${slug}-1` } });
+      expect(await readFile(path.join(occupied, 'keep.md'), 'utf8')).toBe('Existing work');
+    } finally { await fixture.close(); }
+  });
+
+  it.each([
+    ['Workspace', 'workspace-1'],
+    ['CON', 'con-1'],
+  ])('joins a Project named %s using an admissible directory', async (projectName, slug) => {
+    const fixture = await createFixture({ join: true, projectName });
+    try {
+      await expect(fixture.coordinator.joinProject({
+        invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob',
+      })).resolves.toMatchObject({ status: 'success', value: { workspacePath: `Shared/Projects/${slug}` } });
+    } finally { await fixture.close(); }
+  });
+
   it.each(['directory', 'symlink', 'pending'] as const)('rejects an explicit Join slug already occupied by a %s before remote admission', async collision => {
     const fixture = await createFixture({ join: true });
     const feature = createFeatureFixture(fixture);
@@ -905,7 +1115,7 @@ describe('CloudProjectEntryCoordinator', () => {
       ];
       try {
         await expect(entry === 'join' ? fixture.coordinator.joinProject({
-          invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob', projectSlug: 'cloud-notes',
+          invitation: decodeCloudProjectInvitation(fixture.encodedInvitation), memberDisplayName: 'Bob',
         }) : fixture.coordinator.createProject({
           authority: { kind: 'cloud', serverUrl: fixture.serverUrl }, memberDisplayName: 'Alice', name: 'Cloud Notes',
         })).resolves.toMatchObject({ status: 'recovery-required', operationId: OPERATION_ID });

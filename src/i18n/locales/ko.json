@@ -146,6 +146,7 @@
       "failedRelocation": "프로젝트에 다시 연결할 수 없습니다. Cloud 서버 URL을 확인하고 다시 시도하세요."
     },
     "panel": {
+      "projectFolderRenameFailed": "프로젝트 폴더 위치를 업데이트하지 못했습니다. Collab을 열고 다시 시도하세요.",
       "title": "Collab",
       "addProject": "프로젝트 추가",
       "createProject": "만들기",

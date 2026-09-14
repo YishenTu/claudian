@@ -146,6 +146,7 @@
       "failedRelocation": "Не удалось переподключить проект. Проверьте URL Cloud-сервера и повторите попытку."
     },
     "panel": {
+      "projectFolderRenameFailed": "Не удалось обновить расположение папки проекта. Откройте Collab и повторите попытку.",
       "title": "Collab",
       "addProject": "Добавить проект",
       "createProject": "Создать",

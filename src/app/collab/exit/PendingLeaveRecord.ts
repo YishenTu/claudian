@@ -11,6 +11,7 @@ import {
   isCollabProjectId,
 } from '@claudian-collab/protocol';
 
+import { isCollabWorkingCopyDirectoryName } from '@/app/collab/project/CollabWorkingCopySlug';
 import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
 import type { CollabLocalCleanupChoice } from '@/core/collab';
 import { parseCollabProjectsFolder } from '@/core/collab';
@@ -108,7 +109,6 @@ export function isLanPendingLeaveRecord(
 }
 
 type RecordValue = Readonly<Record<string, unknown>>;
-const WORKSPACE_CHILD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT = /^[0-9a-f]{64}$/;
 const LAN_KEYS = new Set([
@@ -175,7 +175,7 @@ function workspace(value: RecordValue): string {
   if (
     split <= 0
     || !parseCollabProjectsFolder(result.slice(0, split)).ok
-    || !WORKSPACE_CHILD_PATTERN.test(result.slice(split + 1))
+    || !isCollabWorkingCopyDirectoryName(result.slice(split + 1))
   ) throw new TypeError('Invalid workspacePath');
   return result;
 }
