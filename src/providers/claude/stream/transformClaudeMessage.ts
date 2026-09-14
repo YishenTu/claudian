@@ -619,7 +619,11 @@ export function* transformSDKMessage(
         const modelUsage = message.modelUsage as Record<string, { contextWindow?: number }>;
         const selectedEntry = selectContextWindowEntry(modelUsage, options?.intendedModel);
         if (selectedEntry) {
-          yield { type: 'context_window', contextWindow: selectedEntry.contextWindow };
+          yield {
+            type: 'context_window',
+            contextWindow: selectedEntry.contextWindow,
+            model: selectedEntry.model,
+          };
         }
       }
       if (isResultError(message)) {
