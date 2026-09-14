@@ -25,11 +25,13 @@ import {
   type CollabCheckpointArtifactFact,
   type CollabCheckpointGitRef,
   type CollabProjectCheckpointManifest,
+  decodeCollabProjectCheckpointCoordinationNdjson,
   encodeCollabAuthorityRelinquishmentProofSigningInput,
   encodeCollabProjectCheckpointManifestCanonicalJson,
   isCollabGitOid,
   isCollabMemberId,
   isCollabOpaqueId,
+  validateCollabProjectCheckpointConsistency,
 } from '@claudian-collab/protocol';
 
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
@@ -610,13 +612,18 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         }
         return { refs, objectFormat } as const;
       });
-      const { refs, objectFormat } = physical;
-      const expectedMainOid = refs[0].oid;
+      const { refs: sourceRefs, objectFormat } = physical;
+      const expectedMainOid = sourceRefs[0].oid;
       const coordination = await authority.database.read(connection => (
         new AuthorityTransferCheckpointRepository().exportCoordination(connection, {
           expectedMainOid,
         })
       ));
+      const records = decodeCollabProjectCheckpointCoordinationNdjson(coordination, 'authority-transfer');
+      const activeMemberRefs = new Set(records.flatMap(record => (
+        record.kind === 'member' && record.value.status === 'active' ? [record.value.personalRef] : []
+      )));
+      const refs = sourceRefs.filter(ref => ref.name === COLLAB_MAIN_REF || activeMemberRefs.has(ref.name));
       const coordinationBytes = Buffer.from(coordination, 'utf8');
       await writeFile(path.join(stagingPath, COORDINATION_FILE), coordinationBytes, {
         flag: 'wx',
@@ -639,6 +646,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
         sourceAuthority: record.status.sourceAuthority,
         targetAuthority: record.status.targetAuthority,
       });
+      validateCollabProjectCheckpointConsistency(manifest, records);
       await writePrivateFileAtomically(
         path.join(stagingPath, MANIFEST_FILE),
         encodeCollabProjectCheckpointManifestCanonicalJson(manifest),

@@ -22,11 +22,13 @@ import {
   type CollabCloudAuthorityTransferArtifact,
   type CollabCloudCapability,
   type CollabTransferredMembershipClaimBatch,
+  decodeCollabProjectCheckpointCoordinationNdjson,
   decodeCollabProjectCheckpointManifest,
   encodeCollabAuthorityRelinquishmentProofSigningInput,
   encodeCollabCloudToLanTargetCleanupProofSigningInput,
   encodeCollabProjectCheckpointManifestCanonicalJson,
   encodeCollabTransferredMembershipClaimBatchDigestInput,
+  validateCollabProjectCheckpointConsistency,
 } from '@claudian-collab/protocol';
 import {
   TEST_INSTALLATION_A,
@@ -1628,7 +1630,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  async function captureSource(includePeer = true) {
+  async function captureSource(includePeer = true, departedStatus?: 'left' | 'revoked') {
     const sourceFoundation = foundation(sourceRoot);
     const sourceSetup = new CollabProjectSetupService(sourceFoundation, {
       installationKey: TEST_INSTALLATION_A,
@@ -1669,6 +1671,23 @@ describe('production authority-transfer effects', () => {
         'refs/heads/members/member-production-peer',
         authorityMainOid,
       ]);
+    }
+    if (departedStatus) {
+      await sourceAuthority.database.mutate(connection => {
+        connection.run(`
+          INSERT INTO members (
+            member_id, display_name, personal_ref, role, status, credential_hash,
+            join_attempt_id, created_at, activated_at, revoked_at
+          ) VALUES (
+            'member-departed', 'Departed', 'refs/heads/members/member-departed',
+            'member', ?, ?, NULL, '2026-08-08T00:00:00.000Z',
+            '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z'
+          )
+        `, [departedStatus, Buffer.alloc(32, 9)]);
+      });
+      const repository = path.join(sourceAuthority.authorityDirectory, 'repository.git');
+      git(repository, ['update-ref', 'refs/heads/members/member-departed',
+        git(repository, ['rev-parse', 'refs/heads/main'])]);
     }
     const sourceMembership = await sourceFoundation.local.projects.loadMembership(PROJECT_ID);
     if (!sourceMembership || sourceMembership.authority.kind !== 'lan') {
@@ -1779,6 +1798,27 @@ describe('production authority-transfer effects', () => {
       sourceStaging,
     };
   }
+
+  it.each(['left', 'revoked'] as const)('exports a valid checkpoint while retaining %s member history and source refs', async departedStatus => {
+    const captured = await captureSource(true, departedStatus);
+    try {
+      const manifest = decodeCollabProjectCheckpointManifest(JSON.parse(captured.sourceManifestBytes.toString('utf8')));
+      const records = decodeCollabProjectCheckpointCoordinationNdjson(captured.sourceCoordinationBytes.toString('utf8'), manifest.profile);
+      expect(() => validateCollabProjectCheckpointConsistency(manifest, records)).not.toThrow();
+      expect(manifest.refs.map(ref => ref.name)).toEqual([
+        'refs/heads/main', 'refs/heads/members/member-production-host', 'refs/heads/members/member-production-peer',
+      ]);
+      expect(records).toContainEqual(expect.objectContaining({
+        kind: 'member', value: expect.objectContaining({ memberId: 'member-departed', status: departedStatus }),
+      }));
+      const authority = await captured.sourceFoundation.openAuthority(PROJECT_ID);
+      const repository = path.join(authority.authorityDirectory, 'repository.git');
+      expect(git(repository, ['rev-parse', 'refs/heads/members/member-departed'])).toBe(manifest.expectedMainOid);
+    } finally {
+      await captured.sourceFeature.close();
+      await captured.sourceFoundation.close();
+    }
+  });
 
   it('preserves the real LAN binding and origin when the target snapshot generation mismatches its proof', async () => {
     const { sourceFeature, sourceFoundation, sourceMembership } = await captureSource();
