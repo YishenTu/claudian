@@ -58,8 +58,8 @@ describe('GitRepositoryService integration', () => {
     await service.initializeWorkingRepository(repositoryPath);
     const oldServerUrl = 'https://old.example.test/';
     const newServerUrl = sameServer ? oldServerUrl : 'https://current.example.test/';
-    const oldRemoteUrl = oldServerUrl + 'v8/projects/project-a/repository.git';
-    const newRemoteUrl = newServerUrl + 'v8/projects/project-a/repository.git';
+    const oldRemoteUrl = oldServerUrl + 'v9/projects/project-a/repository.git';
+    const newRemoteUrl = newServerUrl + 'v9/projects/project-a/repository.git';
     await service.addRemote(repositoryPath, 'origin', oldRemoteUrl);
     await rotateAuthorityTransferOrigin(service, { repositoryPath, projectId: 'project-a', oldRemoteUrl, oldServerUrl, newRemoteUrl, newServerUrl });
     expect(await service.listRemoteUrls(repositoryPath, 'origin')).toEqual([newRemoteUrl]);
@@ -72,7 +72,7 @@ describe('GitRepositoryService integration', () => {
     const oldServerUrl = 'https://old.example.test/';
     const interruptedServerUrl = 'https://intermediate.example.test/';
     const newServerUrl = 'https://current.example.test/';
-    const suffix = 'v8/projects/project-a/repository.git';
+    const suffix = 'v9/projects/project-a/repository.git';
     await service.addRemote(repositoryPath, 'origin', interruptedServerUrl + suffix);
     const transition = { repositoryPath, projectId: 'project-a', oldServerUrl, newServerUrl,
       oldRemoteUrl: oldServerUrl + suffix, newRemoteUrl: newServerUrl + suffix };
@@ -88,7 +88,7 @@ describe('GitRepositoryService integration', () => {
     await service.initializeWorkingRepository(repositoryPath);
     const oldServerUrl = 'https://old.example.test/';
     const newServerUrl = 'https://current.example.test/';
-    const suffix = 'v8/projects/project-a/repository.git';
+    const suffix = 'v9/projects/project-a/repository.git';
     await service.addRemote(repositoryPath, 'origin', 'https://192.168.1.44:54546/v1/git/project-a/repository.git');
     await rotateAuthorityTransferOrigin(service, { repositoryPath, projectId: 'project-a', oldServerUrl, newServerUrl,
       oldRemoteUrl: oldServerUrl + suffix, newRemoteUrl: newServerUrl + suffix,
