@@ -71,6 +71,22 @@ describeWithServer('real Cloud authority roundtrip gate', () => {
       if (!initial) throw new Error('Missing created roundtrip membership');
       const repositoryPath = await foundation.local.workspace.resolveManagedProjectPath(initial.project.workspacePath);
       const initialHead = git(repositoryPath, ['rev-parse', 'HEAD']);
+      const authority = await foundation.openAuthority(PROJECT_ID);
+      const departedAt = new Date().toISOString();
+      for (const status of ['left', 'revoked'] as const) {
+        const memberId = `member-roundtrip-${status}`;
+        await authority.database.mutate(connection => connection.run(`
+          INSERT INTO members (
+            member_id, display_name, personal_ref, role, status, credential_hash,
+            join_attempt_id, created_at, activated_at, revoked_at
+          ) VALUES (?, ?, ?, 'member', ?, ?, NULL, ?, ?, ?)
+        `, [memberId, memberId, `refs/heads/members/${memberId}`, status,
+          Buffer.alloc(32, status === 'left' ? 8 : 9), departedAt, departedAt, departedAt]));
+        git(path.join(authority.authorityDirectory, 'repository.git'), [
+          'update-ref', `refs/heads/members/${memberId}`, initialHead,
+        ]);
+      }
+
       const localFile = path.join(repositoryPath, 'unpublished-local-note.md');
       await writeFile(localFile, 'Unpublished local work survives every authority move.\n');
       await expect(composition.feature.createTicket({ projectId: PROJECT_ID, title: 'Surviving ticket', body: 'Coordination survives every authority move.' }))
@@ -109,6 +125,10 @@ describeWithServer('real Cloud authority roundtrip gate', () => {
           currentMember: { id: MEMBER_ID }, project: { authorityGeneration: generation, authorityKind: 'cloud' }, openTicketCount: 1,
         } } });
 
+        await expect(composition.feature.listMembers(PROJECT_ID)).resolves.toMatchObject({
+          status: 'success', value: [{ memberId: MEMBER_ID, role: 'manager' }],
+        });
+
         const lan = await composition.feature.moveCloudToLan(PROJECT_ID);
         if (lan.status !== 'success') {
           const reason = 'error' in lan ? `${lan.error.code}:${lan.error.safeContext.reason}` : lan.status;
@@ -122,6 +142,14 @@ describeWithServer('real Cloud authority roundtrip gate', () => {
           authority: { authorityGeneration: generation + 1, kind: 'lan' },
           hostOwnership: { autoStart: true, ownsAuthority: true }, member: { id: MEMBER_ID },
         });
+        const restoredAuthority = await foundation.openAuthority(PROJECT_ID);
+        const departedMembers = await restoredAuthority.database.read(connection => connection.all(
+          "SELECT member_id, status, revoked_at FROM members WHERE status IN ('left', 'revoked') ORDER BY member_id",
+        ));
+        expect(departedMembers).toEqual([
+          { member_id: 'member-roundtrip-left', status: 'left', revoked_at: departedAt },
+          { member_id: 'member-roundtrip-revoked', status: 'revoked', revoked_at: departedAt },
+        ]);
         const route = foundation.lanHost.getActiveProjectRoute(PROJECT_ID);
         expect(membership?.authority).toMatchObject({ endpoint: route?.endpoint });
         expect(git(repositoryPath, ['remote', 'get-url', 'origin']))
