@@ -77,7 +77,9 @@ export class SlashCommandSource implements ComposerDropdownSource {
       this.startDiscovery('load');
       result = { status: 'loading' };
     }
-    const providerEntries = result?.status === 'ready' ? result.items : [];
+    const providerEntries = result?.status === 'ready'
+      ? result.items.filter(entry => entry.displayPrefix === match.trigger)
+      : [];
     const includeBuiltIns = this.includeBuiltIns
       && match.atInputStart
       && match.trigger === '/';
