@@ -1475,7 +1475,7 @@ describe('production authority-transfer effects', () => {
           source: new ProductionLanToCloudSourceEffects({
             cloudSession: null,
             convergence: new AuthorityTransferLocalConvergence({
-      settleRequesterAfterAuthorityAdvance: identity => reopenedFoundation.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity),
+      settleLocalAuthorityAdvance: identity => reopenedFoundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
               projects: reopenedFoundation.local.projects,
               workspace: reopenedFoundation.local.workspace,
               activity: { transitionProject: (_projectId, operation) => operation() },
@@ -1851,7 +1851,7 @@ describe('production authority-transfer effects', () => {
     try {
       const repositories = (await sourceFoundation.requireGitFoundation()).repositories;
       const convergence = new AuthorityTransferLocalConvergence({
-      settleRequesterAfterAuthorityAdvance: identity => sourceFoundation.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity),
+      settleLocalAuthorityAdvance: identity => sourceFoundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
         activity: { transitionProject: (projectId, operation) => fence.run(projectId, operation) },
         authorityProjectionTransitions: {
           run: (projectId, operation) => sourceFoundation.runAuthorityProjectionTransition(
@@ -1952,6 +1952,7 @@ describe('production authority-transfer effects', () => {
       head: git(directory, ['rev-parse', 'HEAD']), status: git(directory, ['status', '--porcelain']),
       draft: await readFile(path.join(directory, 'private-draft.md'), 'utf8'),
     })));
+    const pastSources: Parameters<AuthorityTransferLocalConvergence['lanToCloudHost']>[0][][] = [[], []];
     let host = 0;
     let failSettlement = false;
     const run = async (index: number, operation: (convergence: AuthorityTransferLocalConvergence) => Promise<void>) => {
@@ -1960,17 +1961,33 @@ describe('production authority-transfer effects', () => {
         closeRecovery: () => undefined, recoveryStages: [], hostTransfer: {} as never, localExit: {} as never, retirement: {} as never,
         durableOwners: [{ name: 'authority-transfer', inspect: projectId => device.authorityTransfers.inspectLifecycleOwner(projectId) }],
       });
+      const admission = new ProjectOperationAdmission();
+      const sessions = new CollabProjectWorkSessionRegistry();
+      const fence = new AuthorityTransferLocalFence({
+        admission: {
+          suspendProjectAdmission: id => admission.suspendProject(id),
+          resumeProjectAdmission: token => admission.resumeProject(token),
+          drainAdmittedOperations: id => admission.drainAdmittedOperations(id),
+        },
+        workSessions: {
+          suspendProject: id => sessions.suspendProject(id),
+          resumeProject: async token => { if (!await sessions.resumeProject(token)) throw new Error('Session did not resume'); },
+        },
+      });
       const convergence = new AuthorityTransferLocalConvergence({
-        activity: { transitionProject: (projectId, effect) => lifecycle.runExclusive(projectId, 'authority-transfer', 'continuation', effect) },
+        activity: { transitionProject: (projectId, effect) => lifecycle.runExclusive(projectId, 'authority-transfer', 'continuation', () => fence.run(projectId, effect)) },
         authorityProjectionTransitions: { run: (projectId, effect) => device.runAuthorityProjectionTransition(projectId, effect) },
         git: { rotate: async input => rotateAuthorityTransferOrigin((await device.requireGitFoundation()).repositories, input) },
         projects: device.local.projects, workspace: device.local.workspace,
-        settleRequesterAfterAuthorityAdvance: async identity => {
+        settleLocalAuthorityAdvance: async identity => {
           if (failSettlement) throw new Error('interrupted requester settlement');
-          await device.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity);
+          await device.authorityTransfers.settleLocalAuthorityAdvance(identity);
         },
       });
-      await operation(convergence);
+      try {
+        await operation(convergence);
+        await expect(admission.runProject(() => PROJECT_ID, 'active', async () => 'readable')).resolves.toBe('readable');
+      } finally { await sessions.close(); }
     };
     for (const generation of [2, 4, 6]) {
       const requester = 1 - host;
@@ -1992,6 +2009,7 @@ describe('production authority-transfer effects', () => {
           openTicketCount: 0, ticketHighlights: [], project: { id: PROJECT_ID, name: membership.project.name,
             createdAt: membership.createdAt, authorityKind: 'cloud' as const, authorityGeneration: generation,
             mainOid: before[i].head, mainRef: 'refs/heads/main' as const } } };
+        if (i === host) pastSources[i].push(input);
         failSettlement = i === requester;
         const failure = await run(i, convergence => i === host ? convergence.lanToCloudHost(input) : convergence.lanToCloudMember(input))
           .then(() => null, (error: Error) => error.message);
@@ -2005,6 +2023,11 @@ describe('production authority-transfer effects', () => {
           await run(i, convergence => convergence.restoreCloudMembership(input));
         }
         expect(await devices[i].authorityTransfers.loadRequesterEntry(PROJECT_ID, keys[i])).toBeNull();
+        for (const previous of pastSources[i].filter(move => move.status.targetAuthority.generation < generation)) {
+          await run(i, convergence => convergence.lanToCloudHost(previous));
+          await run(i, convergence => convergence.lanToCloudHostOffline(previous.status));
+        }
+        expect((await devices[i].local.projects.loadMembership(PROJECT_ID))?.authority).toMatchObject({ kind: 'cloud', authorityGeneration: generation });
       }
       host = requester;
       const endpoint = `https://127.0.0.1:${54545 + host}`;
@@ -2019,6 +2042,10 @@ describe('production authority-transfer effects', () => {
           identity: { project: membership.project, authorityGeneration: generation + 1, eventSequence: generation + 1, currentMember: membership.member } };
         if (i === host) await run(i, convergence => convergence.cloudToLanHost({ ...input, withEndpoint: effect => effect(endpoint) }));
         else await run(i, convergence => convergence.cloudToLanMember(input));
+        for (const previous of pastSources[i]) {
+          await run(i, convergence => convergence.lanToCloudHost(previous));
+          await run(i, convergence => convergence.lanToCloudHostOffline(previous.status));
+        }
         await devices[i].close();
         devices[i] = foundation(roots[i], keys[i]);
         expect(await devices[i].local.projects.loadMembership(PROJECT_ID)).toMatchObject({
@@ -2318,7 +2345,7 @@ describe('production authority-transfer effects', () => {
     const createRecoveryConvergence = async () => {
       const gitFoundation = await targetFoundation.requireGitFoundation();
       return new AuthorityTransferLocalConvergence({
-      settleRequesterAfterAuthorityAdvance: identity => targetFoundation.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity),
+      settleLocalAuthorityAdvance: identity => targetFoundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
         activity: { transitionProject: async (_projectId, operation) => {
           await environment.beforeConvergence?.();
           await operation();

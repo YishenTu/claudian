@@ -555,8 +555,7 @@ export class AuthorityTransferPersistence {
             && record.status.state === 'cancelled'
             && record.terminalCleanupCompleted)
           || (this.#isSettledLanToCloudPredecessor(record)
-            && record.status.targetAuthority.generation === decoded.sourceAuthorityGeneration
-            && record.status.targetUrl === decoded.sourceCloudUrl)
+            && this.#precedesCloudEntry(record, decoded))
         )
       ) {
         if (!await this.stores.authorityTransferRecords.removeExact(record)) {
@@ -945,7 +944,7 @@ export class AuthorityTransferPersistence {
     });
   }
 
-  settleRequesterAfterAuthorityAdvance(
+  settleLocalAuthorityAdvance(
     identity: Readonly<{ projectId: CollabProjectId; memberId: CollabMemberId; authorityGeneration: number }>,
   ): Promise<void> {
     return this.runProject(identity.projectId, async () => {
@@ -961,6 +960,21 @@ export class AuthorityTransferPersistence {
           throw transferError('authority-transfer-stale', 'authority-transfer-requester-entry-stale');
         }
       }
+      const record = await this.stores.authorityTransferRecords.load(identity.projectId);
+      if (!record || this.#isForeignPhysical(record)
+        || record.localRole !== 'source' || record.status.direction !== 'lan-to-cloud'
+        || record.status.state !== 'completed' || record.restartFence !== 'permanent'
+        || record.status.relinquishmentProof?.sourceHostMemberId !== identity.memberId
+        || record.status.targetAuthority.generation >= identity.authorityGeneration) return;
+      const [custody, commitment] = await Promise.all([
+        this.stores.authorityTransferClaims.load(identity.projectId),
+        this.stores.authorityTransferClaimCommitments.load(identity.projectId),
+      ]);
+      if (custody === null && commitment === null && record.terminalCleanupCompleted) return;
+      if (custody === null || commitment === null) {
+        throw transferError('durable-progress-recovery-required', 'authority-transfer-claim-custody-incomplete');
+      }
+      await this.#retainCompleted(record, custody);
     });
   }
 
@@ -2538,11 +2552,20 @@ export class AuthorityTransferPersistence {
     if (!record || this.#isForeignPhysical(record)
       || record.localRole !== 'source' || record.status.direction !== 'lan-to-cloud'
       || record.status.state !== 'completed' || record.restartFence !== 'permanent'
-      || record.status.targetAuthority.generation !== next.sourceAuthorityGeneration
-      || record.status.targetUrl !== next.sourceCloudUrl
+      || !this.#precedesCloudEntry(record, next)
       || custody === null || commitment === null) return false;
     await this.#retainCompleted(record, custody);
     return true;
+  }
+
+  #precedesCloudEntry(
+    record: AuthorityTransferRecord,
+    next: { sourceAuthorityGeneration: number; sourceCloudUrl: string },
+  ): boolean {
+    const previousGeneration = record.status.targetAuthority.generation;
+    return previousGeneration < next.sourceAuthorityGeneration
+      || (previousGeneration === next.sourceAuthorityGeneration
+        && record.status.targetUrl === next.sourceCloudUrl);
   }
 
   async #retainCompleted(record: AuthorityTransferRecord, custody: AuthorityTransferClaimCustodyRecord): Promise<void> {

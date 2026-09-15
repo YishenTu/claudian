@@ -815,7 +815,7 @@ export function createCollabFeatureSubcomposition(
       ),
     },
     projects: foundation.local.projects,
-    settleRequesterAfterAuthorityAdvance: identity => foundation.authorityTransfers.settleRequesterAfterAuthorityAdvance(identity),
+    settleLocalAuthorityAdvance: identity => foundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
     workspace: foundation.local.workspace,
   });
   const createLanTransferClient = (trust: LanAuthorityTransferTrustedHost) => (

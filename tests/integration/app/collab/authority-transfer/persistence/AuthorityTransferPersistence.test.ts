@@ -2047,13 +2047,13 @@ describe('AuthorityTransferPersistence', () => {
     });
     await repository.authorityTransferEntries.saveRequester(foreign);
     await repository.authorityTransferEntries.saveSource(source);
-    await persistence.settleRequesterAfterAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 1 });
-    await persistence.settleRequesterAfterAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_ALICE, authorityGeneration: 2 });
+    await persistence.settleLocalAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 1 });
+    await persistence.settleLocalAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_ALICE, authorityGeneration: 2 });
     expect(await persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A)).not.toBeNull();
-    await persistence.settleRequesterAfterAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 2 });
+    await persistence.settleLocalAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 2 });
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A)).resolves.toBeNull();
     await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toMatchObject({ source, requesters: { [TEST_INSTALLATION_B]: foreign } });
-    await persistence.settleRequesterAfterAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 3 });
+    await persistence.settleLocalAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_BOB, authorityGeneration: 3 });
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_B)).resolves.toEqual(foreign);
   });
 
@@ -3423,7 +3423,9 @@ describe('AuthorityTransferPersistence', () => {
     await expect(repository.authorityTransferRecords.load(PROJECT_ID)).resolves.toBeNull();
   });
 
-  it.each(['target', 'manager'] as const)('retains an unexpired source claim while preparing the next LAN %s', async role => {
+  it.each([
+    ['target', 2], ['manager', 2], ['target', 4], ['manager', 4], ['advance', 3], ['advance', 4],
+  ] as const)('retains an unexpired source claim while preparing the next LAN %s at generation %s', async (role, generation) => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
@@ -3463,8 +3465,8 @@ describe('AuthorityTransferPersistence', () => {
       projectId: PROJECT_ID,
       selectedTargetMemberId: MEMBER_ALICE,
       selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
-      sourceAuthorityGeneration: 2,
-      sourceCloudUrl: predecessor.status.targetUrl,
+      sourceAuthorityGeneration: generation,
+      sourceCloudUrl: generation === 2 ? predecessor.status.targetUrl : 'https://later-cloud.example.test/',
     });
     const published = publishCloudToLanTargetEntry({ ...next,
       ownerInstallationKey: TEST_INSTALLATION_B, selectedTargetMemberId: MEMBER_BOB,
@@ -3484,15 +3486,17 @@ describe('AuthorityTransferPersistence', () => {
         targetUrl: predecessor.status.targetUrl }, status: proposalStatus(),
     });
     await repository.authorityTransferEntries.saveSource(handoffAuthorityTransferEntry(sourceEntry, { ...predecessor, status: sourceEntry.status }));
-    await expect(role === 'target' ? persistence.prepareCloudToLanTargetEntry(next)
-      : persistence.prepareCloudToLanManagerEntry(manager)).resolves.toEqual(role === 'target' ? next : manager);
+    const prepare = role === 'advance'
+      ? persistence.settleLocalAuthorityAdvance({ projectId: PROJECT_ID, memberId: MEMBER_ALICE, authorityGeneration: generation })
+      : role === 'target' ? persistence.prepareCloudToLanTargetEntry(next) : persistence.prepareCloudToLanManagerEntry(manager);
+    await expect(prepare).resolves.toEqual(role === 'advance' ? undefined : role === 'target' ? next : manager);
     const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
       now: () => new Date('2026-08-26T00:12:00.000Z'),
     });
     await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
-    await expect(role === 'target' ? reopened.loadCloudToLanTargetEntry(PROJECT_ID)
-      : reopened.prepareCloudToLanManagerEntry(manager)).resolves.toEqual(role === 'target' ? next : manager);
+    await expect(role === 'manager' ? reopened.prepareCloudToLanManagerEntry(manager)
+      : reopened.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(role === 'target' ? next : role === 'manager' ? manager : null);
     await expect(reopened.loadSourceEntry(PROJECT_ID)).resolves.toBeNull();
     await expect(reopened.loadClaim(PROJECT_ID, TRANSFER_ID, MEMBER_BOB))
       .resolves.toMatchObject({ memberId: MEMBER_BOB, claim: claimBatch().claims[1].claim });
@@ -3601,7 +3605,7 @@ describe('AuthorityTransferPersistence', () => {
         projectId: PROJECT_ID,
         selectedTargetMemberId: MEMBER_ALICE,
         selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
-        sourceAuthorityGeneration: conflict === 'wrong-generation' ? 3 : 2,
+        sourceAuthorityGeneration: conflict === 'wrong-generation' ? 1 : 2,
         sourceCloudUrl: conflict === 'wrong-cloud' ? 'https://other.example.test/' : predecessor.status.targetUrl,
       });
       await expect(persistence.prepareCloudToLanTargetEntry(replacement)).rejects.toMatchObject({

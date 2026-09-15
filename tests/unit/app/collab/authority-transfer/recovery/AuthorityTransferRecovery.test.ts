@@ -158,7 +158,7 @@ describe('AuthorityTransferRecovery', () => {
         idempotencyKey: 'intent-before-roundtrip', targetUrl: 'http://127.0.0.1:8787/' },
     }));
     const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
-      reconcileRequester: projectId => persistence.settleRequesterAfterAuthorityAdvance({
+      reconcileRequester: projectId => persistence.settleLocalAuthorityAdvance({
         projectId, memberId: 'member-alpha', authorityGeneration: 3,
       }),
     }), () => undefined);

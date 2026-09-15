@@ -399,7 +399,7 @@ describe('AuthorityTransferModule', () => {
         return receipt;
       }, readSnapshot: async () => managerClaimantSnapshot() } as unknown as CloudAuthorityConnection;
     const convergence = new AuthorityTransferLocalConvergence({
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_id, operation) => operation() }, authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       projects: repository, workspace: { resolveManagedProjectPath: async () => vaultRoot }, git: { rotate: async () => undefined }, now,
     });
@@ -3534,7 +3534,7 @@ describe('AuthorityTransferModule', () => {
     let physicalRecord: AuthorityTransferRecord | null = null;
     let managerSettlementAttempts = 0;
     const persistence = {
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => managerEntry === null
         ? 'absent'
         : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
@@ -3746,7 +3746,7 @@ describe('AuthorityTransferModule', () => {
       }),
     );
     const persistence = {
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -3911,7 +3911,7 @@ describe('AuthorityTransferModule', () => {
       lifecycle,
       now: () => new Date('2026-09-01T00:00:00.000Z'),
       persistence: {
-        settleRequesterAfterAuthorityAdvance: async () => undefined,
+        settleLocalAuthorityAdvance: async () => undefined,
         inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
         load: jest.fn(async () => null),
         loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -4507,7 +4507,7 @@ describe('AuthorityTransferModule', () => {
     });
     const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
     const persistence = {
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => physical),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
@@ -4747,7 +4747,7 @@ describe('AuthorityTransferModule', () => {
       stage: jest.fn(),
     }));
     const persistence = {
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       completeTerminalCleanup: jest.fn(async () => undefined),
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => record),
@@ -4821,7 +4821,7 @@ describe('AuthorityTransferModule', () => {
       targetUrl,
     });
     const persistence = {
-      settleRequesterAfterAuthorityAdvance: async () => undefined,
+      settleLocalAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       loadCloudToLanManagerEntry: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => published),

@@ -548,7 +548,7 @@ export class AuthorityTransferModule {
         reconcileRequester: async projectId => {
           const membership = await this.options.loadClaimantMembership?.(projectId);
           if (!membership || membership.project.id !== projectId) return;
-          await this.options.persistence.settleRequesterAfterAuthorityAdvance({
+          await this.options.persistence.settleLocalAuthorityAdvance({
             projectId, memberId: membership.member.id, authorityGeneration: membership.authority.authorityGeneration,
           });
         },

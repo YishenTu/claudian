@@ -65,7 +65,7 @@ export interface AuthorityTransferLocalConvergenceOptions {
   readonly git: AuthorityTransferConvergenceGit;
   readonly now?: () => Date;
   readonly projects: AuthorityTransferConvergenceProjects;
-  readonly settleRequesterAfterAuthorityAdvance: (identity: {
+  readonly settleLocalAuthorityAdvance: (identity: {
     projectId: CollabProjectId; memberId: string; authorityGeneration: number;
   }) => Promise<void>;
   readonly workspace: AuthorityTransferConvergenceWorkspace;
@@ -162,16 +162,15 @@ export class AuthorityTransferLocalConvergence {
 
   async lanToCloudHost(input: LanToCloudHostConvergenceInput): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.#transitionProject(
-      input.status.projectId,
-      'cloud',
+    return this.#transitionSourceToCloud(
+      input.status,
       () => this.#lanToCloud(input, true),
     );
   }
 
   async lanToCloudHostOffline(status: CollabAuthorityTransferStatus): Promise<void> {
     assertCompleted(status, 'lan-to-cloud');
-    return this.#transitionProject(status.projectId, 'cloud', async () => {
+    return this.#transitionSourceToCloud(status, async () => {
       const membership = await this.#requireMembership(status.projectId);
       if (status.relinquishmentProof?.sourceHostMemberId !== membership.member.id) {
         throw convergenceError('authority-transfer-source-member-mismatch');
@@ -385,6 +384,24 @@ export class AuthorityTransferLocalConvergence {
     ));
   }
 
+  #transitionSourceToCloud(status: CollabAuthorityTransferStatus, operation: () => Promise<void>): Promise<void> {
+    return this.options.activity.transitionProject(status.projectId, () => (
+      this.options.authorityProjectionTransitions.run(status.projectId, async () => {
+        const membership = await this.#requireMembership(status.projectId);
+        if (membership.member.id !== status.relinquishmentProof?.sourceHostMemberId) {
+          throw convergenceError('authority-transfer-source-member-mismatch');
+        }
+        // A retained source still owes cleanup, but later authority bindings
+        // already include this move and must not be projected back to its target.
+        if (membership.authority.authorityGeneration > status.targetAuthority.generation) {
+          await this.finish(status.projectId, membership.authority.kind);
+          return;
+        }
+        await this.#completeProjection(status.projectId, 'cloud', operation);
+      })
+    ));
+  }
+
   async #completeProjection(projectId: CollabProjectId, authorityKind: 'cloud' | 'lan', operation: () => Promise<void>): Promise<void> {
     await operation();
     await this.finish(projectId, authorityKind);
@@ -561,7 +578,7 @@ export class AuthorityTransferLocalConvergence {
       throw convergenceError('authority-transfer-index-convergence-failed');
     }
     const membership = await this.#requireMembership(projectId);
-    await this.options.settleRequesterAfterAuthorityAdvance({
+    await this.options.settleLocalAuthorityAdvance({
       projectId, memberId: membership.member.id, authorityGeneration: membership.authority.authorityGeneration,
     });
   }
