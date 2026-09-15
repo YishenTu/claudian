@@ -21,10 +21,10 @@ describe('CollabProjectLifecycleSubsystem', () => {
       { name: 'authority-transfer-claimant', inspect: async () => 'nonterminal' },
     ] });
     let restored = false;
-    await expect(subsystem.runProjectRecoveryClaimant('project-alpha', async () => { throw new Error('Source still writable'); },
+    await expect(subsystem.runAuthorityTransferClaimant('project-alpha', async () => { throw new Error('Source still writable'); },
       async () => { restored = true; })).rejects.toThrow('Source still writable');
     expect(restored).toBe(false);
-    await subsystem.runProjectRecoveryClaimant('project-alpha', async () => undefined, async () => { restored = true; });
+    await subsystem.runAuthorityTransferClaimant('project-alpha', async () => undefined, async () => { restored = true; });
     expect(restored).toBe(true);
   });
 

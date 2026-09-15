@@ -16,12 +16,15 @@ import {
 } from '@test/helpers/installations';
 
 import {
+  completeAuthorityTransferRequesterEntry,
   createAuthorityTransferEntryDocument,
   createAuthorityTransferEntryRecord as createOwnedAuthorityTransferEntryRecord,
   createAuthorityTransferRequesterEntry as createOwnedAuthorityTransferRequesterEntry,
   handoffAuthorityTransferEntry,
   prepareAuthorityTransferSourceCancellation,
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
+import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
+import { AuthorityTransferModule } from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
@@ -32,6 +35,7 @@ import {
   expireAuthorityTransferTerminalResponder,
   markAuthorityTransferTerminalCleanupCompleted,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import { createAuthorityTransferClaimantRecord } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import {
   createCloudToLanManagerEntry,
   createCloudToLanTargetEntry,
@@ -237,6 +241,56 @@ function cloudToLanStatus(
   };
 }
 
+async function retainCompletedSource(repository: CollabLocalProjectRepository, persistence: AuthorityTransferPersistence): Promise<void> {
+    const entry = createAuthorityTransferEntryRecord({
+      proposedByMemberId: MEMBER_BOB,
+      request: {
+        expectedAuthorityGeneration: 1,
+        idempotencyKey: OPERATION_INTENT_ID,
+        projectId: PROJECT_ID,
+        targetUrl: 'http://127.0.0.1:8787/',
+      },
+      status: proposalStatus(),
+    });
+    await persistence.proposeEntry(entry);
+    await persistence.handoffEntry(entry, createAuthorityTransferRecord({
+      lifecycleOwnership: 'owned',
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: entry.status,
+    }));
+    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+      localRole: 'source',
+      operationIntentId: OPERATION_INTENT_ID,
+      ownerInstallationKey: TEST_INSTALLATION_A,
+      sourceLanEndpoint: 'https://127.0.0.1:54545',
+      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
+      status: transferStatus('completed'),
+    }));
+    await persistence.retainClaimBatch({
+      batch: claimBatch(),
+      operationIntentId: OPERATION_INTENT_ID,
+      purpose: 'source-terminal',
+    });
+    await persistence.acknowledgeClaimBatch({
+      batchRevision: 1,
+      batchSha256: claimBatch().batchSha256,
+      checkpointSha256: CHECKPOINT_SHA256,
+      committedAt: '2026-08-26T00:03:00.000Z',
+      custodyAuthority: { generation: 1, kind: 'lan' },
+      operationIntentId: OPERATION_INTENT_ID,
+      projectId: PROJECT_ID,
+      receiptId: 'custody-receipt-imported-management',
+      submittedByMemberId: MEMBER_ALICE,
+      targetAuthorityGeneration: 2,
+      transferId: TRANSFER_ID,
+    });
+
+}
+
 describe('AuthorityTransferPersistence', () => {
   let vaultRoot: string;
 
@@ -314,57 +368,135 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
   });
 
+  it.each(['discovery', 'lan-reconnect', 'pending', 'restart', 'wrong-member'] as const)(
+    'admits %s only alongside a proved relinquished source', async scenario => {
+      jest.setSystemTime(new Date('2026-08-26T01:00:00.000Z'));
+      const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+      const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+      await retainCompletedSource(repository, persistence);
+      const originalSource = await persistence.load(PROJECT_ID);
+      const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
+      const memberId = scenario === 'wrong-member' ? MEMBER_BOB : MEMBER_ALICE;
+      await repository.saveMembership({ schemaVersion: 3, createdAt: '2026-08-26T00:00:00.000Z',
+        updatedAt: '2026-08-26T00:00:00.000Z', lastEventSequence: 1,
+        authority: { kind: 'cloud', bindingVersion: 9, wireVersion: 13, authorityGeneration: 2, serverUrl: 'http://127.0.0.1:8787/',
+          gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git` },
+        member: { id: memberId, displayName: 'Former host', personalRef: `refs/heads/members/${memberId}`, role: 'manager' },
+        project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
+      });
+      if (scenario === 'lan-reconnect') {
+        const membership = (await repository.loadMembership(PROJECT_ID))!;
+        await repository.saveMembership({ ...membership, hostOwnership: { ownsAuthority: false },
+          member: { ...membership.member, credential: 'A'.repeat(43) },
+          authority: { kind: 'lan', authorityGeneration: 3, endpoint: 'https://192.168.1.20:27001/',
+            gitRemoteUrl: `https://192.168.1.20:27001/v1/git/${PROJECT_ID}/repository.git`,
+            hostCaFingerprint: 'a'.repeat(64), hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----' },
+        });
+      }
+      if (scenario === 'pending' || scenario === 'restart') {
+        await repository.authorityTransferClaimants.save(createAuthorityTransferClaimantRecord({
+          cloudPrincipalId: null, memberId, operationIntentId: 'claim-next-generation',
+          createdAt: '2026-08-26T00:10:00.000Z',
+          status: { ...cloudToLanStatus('completed'), expiresAt: '2026-08-26T00:11:00.000Z',
+            sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 },
+            relinquishmentProof: { ...cloudToLanStatus('completed').relinquishmentProof!, sourceHostMemberId: null,
+              sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 } },
+          },
+          lanTarget: { endpoint: 'https://192.168.1.20:27001/', caFingerprint: 'a'.repeat(64),
+            caCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----' },
+        }));
+      }
+      let discoveryReached = false;
+      const lifecycle = new CollabProjectLifecycleSubsystem({ closeRecovery: () => undefined,
+        durableOwners: [], recoveryStages: [], hostTransfer: {} as never, localExit: {} as never, retirement: {} as never });
+      const module = new AuthorityTransferModule({ claimantStore: repository.authorityTransferClaimants, persistence, lifecycle,
+        installationKey: TEST_INSTALLATION_A, convergence: {} as never,
+        assertRecoveryOwner: () => undefined, assertLanToCloudSourceOwner: () => undefined,
+        createLanToCloudSource: () => { throw new Error('Unexpected source action'); },
+        createLanToCloudClaimantClient: () => ({ readCurrentTransferStatus: async () => {
+          discoveryReached = true; return { ...transferStatus('completed'), projectId: 'project-unrelated' };
+        } }) as never,
+        createCloudToLanTarget: () => { throw new Error('Unexpected target action'); },
+        loadClaimantMembership: id => repository.loadMembership(id),
+        assertProjectRecoveryPredecessor: (id, identity) => persistence.assertProjectRecoveryPredecessor(id, identity),
+        now: () => new Date('2026-08-26T01:00:00.000Z'),
+        createCloudToLanConnection: async () => ({ dispose: () => undefined,
+          lifecycle: { authorityTransfer: async () => { discoveryReached = true; return { successor: null }; } },
+        }) as never,
+      });
+      try {
+        const operation = scenario === 'lan-reconnect'
+          ? module.reconnectLanToCloud(PROJECT_ID, 'http://127.0.0.1:8787/')
+          : scenario === 'restart' ? lifecycle.lifecycleRecovery.resume() : module.followAuthoritySuccessor(PROJECT_ID);
+        const outcome = await operation.then(result => ({ result, reason: null }),
+          error => ({ result: null, reason: error.safeContext?.reason }));
+        const expected = {
+          discovery: { result: false, reason: null },
+          'lan-reconnect': { result: null, reason: 'authority-transfer-claimant-source-mismatch' },
+          pending: { result: true, reason: null },
+          restart: { result: null, reason: 'lifecycle-owner-ambiguous' },
+          'wrong-member': { result: null, reason: 'authority-transfer-imported-claim-predecessor-invalid' },
+        };
+        expect(outcome).toEqual(expected[scenario]);
+        expect(discoveryReached).toBe(scenario === 'discovery' || scenario === 'lan-reconnect');
+        expect(await repository.authorityTransferClaimants.load(PROJECT_ID)).toBeNull();
+        expect(await persistence.load(PROJECT_ID)).toEqual(originalSource);
+        expect(await repository.authorityTransferClaims.load(PROJECT_ID)).toEqual(originalCustody);
+      } finally { await module.close(); await persistence.close(); }
+    },
+  );
+
+  it.each(['cloud', 'returned-lan', 'current-source', 'new-request'] as const)(
+    'projects current migration state for %s while retaining old source recovery', async scenario => {
+      const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
+      const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
+      await retainCompletedSource(repository, persistence);
+      const originalSource = await persistence.load(PROJECT_ID);
+      const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
+      const base = { schemaVersion: 3 as const, createdAt: '2026-08-26T00:00:00.000Z', updatedAt: '2026-08-26T00:00:00.000Z',
+        lastEventSequence: 1, member: { id: MEMBER_ALICE, displayName: 'Alice', role: 'manager' as const,
+          personalRef: `refs/heads/members/${MEMBER_ALICE}` },
+        project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' } };
+      await repository.saveMembership(scenario === 'cloud' ? { ...base,
+        authority: { kind: 'cloud', authorityGeneration: 2, bindingVersion: 9, wireVersion: 13,
+          serverUrl: 'http://127.0.0.1:8787/', gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git` },
+      } : { ...base, member: { ...base.member, credential: 'A'.repeat(43) }, hostOwnership: { ownsAuthority: scenario === 'current-source' },
+        authority: { kind: 'lan', authorityGeneration: scenario === 'current-source' ? 1 : 3,
+          endpoint: 'https://192.168.1.20:27001/', gitRemoteUrl: `https://192.168.1.20:27001/v1/git/${PROJECT_ID}/repository.git`,
+          hostCaFingerprint: 'a'.repeat(64), hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----' },
+      });
+      if (scenario === 'new-request') {
+        await repository.authorityTransferEntries.saveRequester(completeAuthorityTransferRequesterEntry(createAuthorityTransferRequesterEntry({
+          proposedAt: '2026-08-26T00:01:00.000Z', proposedByMemberId: MEMBER_ALICE,
+          request: { expectedAuthorityGeneration: 3, projectId: PROJECT_ID, idempotencyKey: 'intent-new-request', targetUrl: 'http://127.0.0.1:8787/' },
+        }), proposalStatus({ sourceAuthority: { kind: 'lan', generation: 3 }, targetAuthority: { kind: 'cloud', generation: 4 }, transferId: 'transfer-new' })));
+      }
+      const lifecycle = new CollabProjectLifecycleSubsystem({ closeRecovery: () => undefined, durableOwners: [], recoveryStages: [],
+        hostTransfer: {} as never, localExit: {} as never, retirement: {} as never });
+      const module = new AuthorityTransferModule({ installationKey: TEST_INSTALLATION_A, persistence, lifecycle,
+        claimantStore: repository.authorityTransferClaimants, convergence: {} as never,
+        assertRecoveryOwner: () => undefined, assertLanToCloudSourceOwner: () => undefined,
+        createLanToCloudSource: () => { throw new Error('Read must not start source effects'); },
+        createCloudToLanTarget: () => { throw new Error('Read must not start target effects'); },
+        createCloudToLanConnection: async () => { throw new Error('Read must not connect'); },
+      });
+      const service = new AuthorityTransferEntryService({ module, loadMembership: id => repository.loadMembership(id) });
+      try {
+        const view = await service.readLanToCloudTransfer(PROJECT_ID);
+        const expected = { cloud: null, 'returned-lan': null, 'current-source': TRANSFER_ID, 'new-request': 'transfer-new' };
+        expect(view?.status?.transferId ?? null).toBe(expected[scenario]);
+        expect(await persistence.load(PROJECT_ID)).toEqual(originalSource);
+        expect(await repository.authorityTransferClaims.load(PROJECT_ID)).toEqual(originalCustody);
+      } finally { await service.close(); await persistence.close(); }
+    },
+  );
+
   it('proves imported-claim management only for the matching completed LAN-to-Cloud source custody', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const entry = createAuthorityTransferEntryRecord({
-      proposedByMemberId: MEMBER_BOB,
-      request: {
-        expectedAuthorityGeneration: 1,
-        idempotencyKey: OPERATION_INTENT_ID,
-        projectId: PROJECT_ID,
-        targetUrl: 'http://127.0.0.1:8787/',
-      },
-      status: proposalStatus(),
-    });
-    await persistence.proposeEntry(entry);
-    await persistence.handoffEntry(entry, createAuthorityTransferRecord({
-      lifecycleOwnership: 'owned',
-      localRole: 'source',
-      operationIntentId: OPERATION_INTENT_ID,
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      sourceLanEndpoint: 'https://127.0.0.1:54545',
-      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: entry.status,
-    }));
-    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
-      localRole: 'source',
-      operationIntentId: OPERATION_INTENT_ID,
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      sourceLanEndpoint: 'https://127.0.0.1:54545',
-      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: transferStatus('completed'),
-    }));
-    await persistence.retainClaimBatch({
-      batch: claimBatch(),
-      operationIntentId: OPERATION_INTENT_ID,
-      purpose: 'source-terminal',
-    });
-    await persistence.acknowledgeClaimBatch({
-      batchRevision: 1,
-      batchSha256: claimBatch().batchSha256,
-      checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:00.000Z',
-      custodyAuthority: { generation: 1, kind: 'lan' },
-      operationIntentId: OPERATION_INTENT_ID,
-      projectId: PROJECT_ID,
-      receiptId: 'custody-receipt-imported-management',
-      submittedByMemberId: MEMBER_ALICE,
-      targetAuthorityGeneration: 2,
-      transferId: TRANSFER_ID,
-    });
+    await retainCompletedSource(repository, persistence);
 
     await expect(persistence.assertCloudImportedClaimManagementPredecessor(
       PROJECT_ID,

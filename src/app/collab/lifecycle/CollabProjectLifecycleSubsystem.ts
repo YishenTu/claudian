@@ -205,7 +205,7 @@ export class CollabProjectLifecycleSubsystem {
     );
   }
 
-  runProjectRecoveryClaimant<T>(projectId: CollabProjectId,
+  runAuthorityTransferClaimant<T>(projectId: CollabProjectId,
     assertAuthorityTransferPredecessor: () => Promise<void>, operation: () => Promise<T>): Promise<T> {
     return this.#runExclusiveWithPredecessor(projectId, 'authority-transfer-claimant', ['authority-transfer'], 'continuation',
       operation, assertAuthorityTransferPredecessor, 'when-present');
@@ -348,7 +348,7 @@ export class CollabProjectLifecycleSubsystem {
         && mode === 'continuation'
         && predecessorOwnerNames.length === 1
         && predecessorOwnerNames[0] === 'authority-transfer-claimant';
-      const permitsProjectRecoveryTransferPair = pendingOwners.length === 2
+      const permitsAuthorityTransferClaimantPair = pendingOwners.length === 2
         && pendingOwners.includes('authority-transfer-claimant') && pendingOwners.includes('authority-transfer')
         && ownerName === 'authority-transfer-claimant' && mode === 'continuation'
         && predecessorOwnerNames.length === 1 && predecessorOwnerNames[0] === 'authority-transfer'
@@ -367,7 +367,7 @@ export class CollabProjectLifecycleSubsystem {
         && !permitsCloudManagerLeaveContinuation
         && !permitsManagerLeaveOfferRetry
         && !permitsAuthorityTransferManagerClaimantPair
-        && !permitsProjectRecoveryTransferPair
+        && !permitsAuthorityTransferClaimantPair
         && !permitsCloudImportedClaimTransferPair
       ) {
         throw new CollabError({

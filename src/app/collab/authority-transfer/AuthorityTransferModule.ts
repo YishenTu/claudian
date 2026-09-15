@@ -580,7 +580,7 @@ export class AuthorityTransferModule {
     this.claimantRecovery = new AuthorityTransferClaimantRecovery(
       options.claimantStore,
       {
-        assertProjectRecoveryPredecessor: record => this.#assertProjectRecoveryPredecessor(record.projectId, record.memberId, record.invitation.link.authorityGeneration),
+        assertTransferPredecessor: record => this.#assertClaimantTransferPredecessor(record),
         beforeProject: record => this.#assertClaimantManagerPredecessor(record),
         complete: record => this.#completeAuthorityTransferClaimant(record),
         isLocalOwner: record => this.#isAuthorityTransferClaimantLocalOwner(record),
@@ -709,11 +709,16 @@ export class AuthorityTransferModule {
 
   async readLanToCloudTransfer(
     projectId: CollabProjectId,
+    sourceAuthorityGeneration?: number,
   ): Promise<LanToCloudTransferView | null> {
-    const [source, requester] = await Promise.all([
+    const [retainedSource, retainedRequester] = await Promise.all([
       this.options.persistence.loadSourceEntry(projectId),
       this.options.persistence.loadRequesterEntry(projectId, this.options.installationKey),
     ]);
+    const source = sourceAuthorityGeneration === undefined
+      || retainedSource?.request.expectedAuthorityGeneration === sourceAuthorityGeneration ? retainedSource : null;
+    const requester = sourceAuthorityGeneration === undefined
+      || retainedRequester?.request.expectedAuthorityGeneration === sourceAuthorityGeneration ? retainedRequester : null;
     const entry = source ?? requester;
     if (!entry) return null;
     const record = source?.phase === 'handed-off'
@@ -2355,7 +2360,11 @@ export class AuthorityTransferModule {
     if (!membership) return false;
     const pending = await this.options.claimantStore.load(projectId);
     if (pending) {
-      return this.options.lifecycle.runExclusive(projectId, this.claimantRecovery.durableOwner.name, 'continuation', async () => {
+      return this.options.lifecycle.runAuthorityTransferClaimant(projectId, async () => {
+        const retained = await this.options.claimantStore.load(projectId);
+        if (!retained || retained.operationIntentId !== pending.operationIntentId) throw moduleError('authority-transfer-claimant-attempt-conflict');
+        await this.#assertClaimantTransferPredecessor(retained);
+      }, async () => {
         const retained = await this.options.claimantStore.load(projectId);
         if (!retained || await this.#assertClaimantManagerPredecessor(retained) === 'skip') return false;
         if (authorityTransferClaimantRequiresNoRuntime(retained, this.now())) {
@@ -2395,7 +2404,11 @@ export class AuthorityTransferModule {
       }
       return this.reconnectLanToCloud(projectId, status.targetUrl, options);
     }
-    return this.options.lifecycle.runExclusive(projectId, this.claimantRecovery.durableOwner.name, 'continuation', async () => {
+    return this.options.lifecycle.runAuthorityTransferClaimant(projectId, async () => {
+      const current = await loadMembership(projectId);
+      if (!current) throw moduleError('authority-transfer-claimant-membership-invalid');
+      await this.#assertProjectRecoveryPredecessor(projectId, current.member.id, current.authority.authorityGeneration);
+    }, async () => {
       const current = await loadMembership(projectId);
       if (!current || !isCollabLocalCloudMembership(current)
         || current.member.id !== membership.member.id
@@ -2444,8 +2457,12 @@ export class AuthorityTransferModule {
     if ((!membership || !isCollabLocalLanMembership(membership))
       && !(pending?.variant === 'source-issued' && pending.status.direction === 'lan-to-cloud')) return false;
     const serverUrl = validateCloudServerUrl(selectedServerUrl, 'serverUrl');
-    return this.options.lifecycle.runExclusive(
-      projectId, this.claimantRecovery.durableOwner.name, 'continuation',
+    return this.options.lifecycle.runAuthorityTransferClaimant(
+      projectId, async () => {
+        const current = await loadMembership(projectId);
+        if (!current) throw moduleError('authority-transfer-claimant-membership-invalid');
+        await this.#assertProjectRecoveryPredecessor(projectId, current.member.id, current.authority.authorityGeneration);
+      },
       async () => {
         throwIfCancelled(options.signal);
         const current = await loadMembership(projectId);
@@ -2692,13 +2709,20 @@ export class AuthorityTransferModule {
     });
   }
 
+  #assertClaimantTransferPredecessor(record: AuthorityTransferClaimantRecord): Promise<void> {
+    const generation = record.variant === 'source-issued' ? record.status.targetAuthority.generation
+      : record.variant === 'manager-reissued' ? record.descriptor.targetAuthorityGeneration
+        : record.invitation.link.authorityGeneration;
+    return this.#assertProjectRecoveryPredecessor(record.projectId, record.memberId, generation);
+  }
+
   #assertProjectRecoveryPredecessor(projectId: string, actorMemberId: string, authorityGeneration: number): Promise<void> {
     if (!this.options.assertProjectRecoveryPredecessor) throw moduleError('project-recovery-predecessor-unavailable');
     return this.options.assertProjectRecoveryPredecessor(projectId, { actorMemberId, authorityGeneration });
   }
 
   redeemProjectRecoveryLink(invitation: ProjectRecoveryInvitation, options: CollabOperationOptions = {}): Promise<void> {
-    return this.options.lifecycle.runProjectRecoveryClaimant(invitation.link.projectId, async () => {
+    return this.options.lifecycle.runAuthorityTransferClaimant(invitation.link.projectId, async () => {
       const membership = await this.options.loadClaimantMembership?.(invitation.link.projectId);
       if (!membership) throw moduleError('project-recovery-membership-invalid');
       await this.#assertProjectRecoveryPredecessor(invitation.link.projectId, membership.member.id, invitation.link.authorityGeneration);
@@ -2766,10 +2790,9 @@ export class AuthorityTransferModule {
     invitation: CloudMembershipClaimInvitation | LanMembershipClaimInvitation,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    return this.options.lifecycle.runExclusive(
+    return this.options.lifecycle.runAuthorityTransferClaimant(
       invitation.claim.projectId,
-      this.claimantRecovery.durableOwner.name,
-      'continuation',
+      () => this.#assertProjectRecoveryPredecessor(invitation.claim.projectId, invitation.claim.memberId, invitation.claim.targetAuthorityGeneration),
       () => this.#redeemManagerReissuedClaimOwned(invitation, options),
     );
   }

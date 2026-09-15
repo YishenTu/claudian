@@ -98,6 +98,9 @@ class AuthorityTransferModule extends ProductionAuthorityTransferModule {
       ? options.lifecycle
       : {
           ...options.lifecycle,
+          runAuthorityTransferClaimant: <Result>(projectId: CollabProjectId, _assertPredecessor: () => Promise<void>, operation: () => Promise<Result>) => (
+            options.lifecycle.runExclusive(projectId, 'authority-transfer-claimant', 'recovery', operation)
+          ),
           runAuthorityTransferManagerContinuation: <Result>(
             projectId: CollabProjectId,
             operation: () => Promise<Result>,

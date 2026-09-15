@@ -126,18 +126,16 @@ export class AuthorityTransferEntryService {
     options: CollabOperationOptions = {},
   ): Promise<CollabLanToCloudTransferView | null> {
     throwIfCancelled(options.signal);
-    const [proposal, membership] = await Promise.all([
-      this.#module.readLanToCloudTransfer(projectId),
-      this.#loadMembership(projectId),
-    ]);
+    const membership = await this.#loadMembership(projectId);
+    throwIfCancelled(options.signal);
+    if (!membership || !isCollabLocalLanMembership(membership)) return null;
+    const proposal = await this.#module.readLanToCloudTransfer(projectId, membership.authority.authorityGeneration);
     throwIfCancelled(options.signal);
     if (!proposal) return null;
     return Object.freeze({
       proposedByMemberId: proposal.proposedByMemberId,
       serverUrl: proposal.request.targetUrl,
       sourceOwned: proposal.entryRole === 'source'
-        && membership !== null
-        && isCollabLocalLanMembership(membership)
         && membership.project.id === projectId
         && membership.hostOwnership.ownsAuthority,
       status: proposal.status,

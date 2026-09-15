@@ -114,7 +114,7 @@ export class HostInstallationBindingService {
 
   async captureStoppedAuthority(
     projectId: CollabProjectId,
-    expectedGeneration: number,
+    maximumGeneration: number,
     facts: {
       readonly isServing: () => boolean;
       readonly readProject: (resource: OwnedAuthorityDirectoryCapability) => Promise<{
@@ -128,7 +128,7 @@ export class HostInstallationBindingService {
     const capability = await this.assertOwned(projectId, 'cleanup');
     const project = await facts.readProject(capability);
     if (facts.isServing() || !project || project.projectId !== projectId
-      || project.authorityGeneration !== expectedGeneration) {
+      || project.authorityGeneration > maximumGeneration) {
       throw bindingError('authority-transfer-former-source-not-replaceable', 'durable-progress-recovery-required');
     }
     await this.options.projects.validateOwnedAuthorityDirectory(capability);

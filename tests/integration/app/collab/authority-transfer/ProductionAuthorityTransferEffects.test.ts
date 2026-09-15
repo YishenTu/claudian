@@ -134,6 +134,7 @@ function status(
   phase: CollabAuthorityTransferStatus['phase'],
   targetUrl: string,
   checkpointSha256: string | null = null,
+  cloudGeneration = 2,
 ): CollabAuthorityTransferStatus {
   return {
     batchRevision: null,
@@ -147,11 +148,11 @@ function status(
     relinquishmentProof: null,
     sourceAuthority: direction === 'lan-to-cloud'
       ? { generation: 1, kind: 'lan' }
-      : { generation: 2, kind: 'cloud' },
+      : { generation: cloudGeneration, kind: 'cloud' },
     state: 'active',
     targetAuthority: direction === 'lan-to-cloud'
       ? { generation: 2, kind: 'cloud' }
-      : { generation: 3, kind: 'lan' },
+      : { generation: cloudGeneration + 1, kind: 'lan' },
     targetUrl,
     transferId: TRANSFER_ID,
     updatedAt: phase === 'collecting-readiness'
@@ -2054,7 +2055,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  async function prepareCloudToLanTarget(moveAddress = false) {
+  async function prepareCloudToLanTarget(moveAddress = false, cloudGeneration = 2) {
     const {
       artifactBytes,
       recoveryRecord,
@@ -2103,7 +2104,7 @@ describe('production authority-transfer effects', () => {
     const records = sourceCoordinationBytes.toString('utf8').trimEnd().split('\n')
       .map(line => JSON.parse(line) as Record<string, unknown>);
     const project = records[0] as { value: Record<string, unknown> };
-    project.value.authorityGeneration = 2;
+    project.value.authorityGeneration = cloudGeneration;
     const targetCoordinationBytes = Buffer.from(
       `${records.map(record => JSON.stringify(record)).join('\n')}\n`,
       'utf8',
@@ -2127,8 +2128,8 @@ describe('production authority-transfer effects', () => {
       operationId: TRANSFER_ID,
       projectId: PROJECT_ID,
       refs: sourceManifest.refs,
-      sourceAuthority: { generation: 2, kind: 'cloud' },
-      targetAuthority: { generation: 3, kind: 'lan' },
+      sourceAuthority: { generation: cloudGeneration, kind: 'cloud' },
+      targetAuthority: { generation: cloudGeneration + 1, kind: 'lan' },
     });
     artifactBytes.set('coordination.ndjson', targetCoordinationBytes);
     artifactBytes.set(
@@ -2163,7 +2164,7 @@ describe('production authority-transfer effects', () => {
     ]);
     await targetFoundation.local.projects.saveMembership({
       authority: {
-        authorityGeneration: 2,
+        authorityGeneration: cloudGeneration,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
         gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
         kind: 'cloud',
@@ -2246,7 +2247,7 @@ describe('production authority-transfer effects', () => {
       localRole: 'target',
       operationIntentId: OPERATION_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: status('cloud-to-lan', 'collecting-readiness', prepared.targetUrl),
+      status: status('cloud-to-lan', 'collecting-readiness', prepared.targetUrl, null, cloudGeneration),
     });
     const targetStaging = await targetFoundation.local.workspace.reserveProjectsFolderChild(
       'workspace',
@@ -2277,6 +2278,7 @@ describe('production authority-transfer effects', () => {
         'checkpoint-captured',
         prepared.targetUrl,
         targetManifest.manifestSha256,
+        cloudGeneration,
       ),
     });
     const stageArtifacts = () => [
@@ -2757,6 +2759,34 @@ describe('production authority-transfer effects', () => {
       safeContext: { reason: 'authority-transfer-target-imported-identity-mismatch' },
     });
     await target.foundation.local.projects.saveMembership(exactPreparedMembership);
+  });
+
+  it.each(['stage', 'cancel'] as const)('handles an older local LAN authority after skipped generations during %s', async action => {
+    const target = await prepareCloudToLanTarget(false, 4);
+    const former = await target.foundation.createAuthority(PROJECT_ID);
+    await former.database.mutate(connection => former.projects.initialize(connection, {
+      createdAt: '2026-08-08T00:00:00.000Z',
+      hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
+      hostDisplayName: 'Former Host', hostMemberId: MEMBER_ID, name: 'Portable', projectId: PROJECT_ID,
+    }));
+    git(former.authorityDirectory, ['init', '--bare', 'repository.git']);
+    const record = action === 'stage' ? target.stagedRecord : createAuthorityTransferRecord({
+      ...target.stagedRecord, status: { ...target.stagedRecord.status, phase: 'cancel-intent' },
+    });
+    await target.foundation.local.projects.authorityTransferRecords.save(record);
+    let outcome: unknown;
+    if (action === 'stage') {
+      const staged = await target.targetEffects.stage(record, target.stageArtifacts());
+      outcome = { checkpointSha256: staged.checkpointSha256 };
+    } else {
+      const before = await readFile(path.join(former.authorityDirectory, 'collab.db'));
+      const proof = await target.targetEffects.invalidateStaging(record);
+      outcome = { sourceGeneration: proof.sourceAuthority.generation, targetGeneration: proof.targetAuthority.generation,
+        formerAuthorityUnchanged: (await readFile(path.join(former.authorityDirectory, 'collab.db'))).equals(before) };
+    }
+    expect(outcome).toEqual(action === 'stage' ? { checkpointSha256: target.targetManifest.manifestSha256 }
+      : { sourceGeneration: 4, targetGeneration: 5, formerAuthorityUnchanged: true });
+    expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
   });
 
   it('replaces only the retired predecessor and recovers interrupted removal', async () => {
