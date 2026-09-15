@@ -66,11 +66,11 @@ function cloudMembership(
   return {
     authority: {
       authorityGeneration: 4,
-      bindingVersion: 9,
-      gitRemoteUrl: 'http://127.0.0.1:8787/v9/projects/project-alpha/repository.git',
+      bindingVersion: 10,
+      gitRemoteUrl: 'http://127.0.0.1:8787/v10/projects/project-alpha/repository.git',
       kind: 'cloud',
       serverUrl: 'http://127.0.0.1:8787',
-      wireVersion: 13,
+      wireVersion: 14,
     },
     createdAt: NOW,
     lastEventSequence: 1,

@@ -792,14 +792,7 @@ describe('LanHostCoordinator production transport', () => {
     await expect(memberAccess.service.createInvitation(PROJECT_ID)).rejects.toMatchObject({
       code: 'authorization-denied',
     });
-    const memberOffer = await hostAccess.service.createManagerResponsibilityOffer({
-      projectId: PROJECT_ID,
-      purpose: 'manager-promotion',
-      targetMemberId: join.joinAttempt.member.id,
-    });
-    await memberAccess.projection.readSnapshot(PROJECT_ID);
     await hostAccess.service.promoteManager({
-      managerResponsibilityOfferId: memberOffer.offerId,
       projectId: PROJECT_ID,
       targetMemberId: join.joinAttempt.member.id,
     });
@@ -1077,11 +1070,11 @@ describe('LanHostCoordinator production transport', () => {
     await localProjects.saveMembership({
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 9,
-        gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 10,
+        gitRemoteUrl: `http://127.0.0.1:8787/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud',
         serverUrl: 'http://127.0.0.1:8787/',
-        wireVersion: 13,
+        wireVersion: 14,
       },
       createdAt: existing.createdAt,
       lastEventSequence: existing.lastEventSequence,

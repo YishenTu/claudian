@@ -93,6 +93,24 @@ describe('MembershipAdminService', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('directly promotes an offline active member and settles an earlier promotion offer', async () => {
+    const offer = await managerResponsibilities.create('member-host', {
+      idempotencyKey: 'earlier-offer', projectId: 'project-alpha',
+      purpose: 'manager-promotion', targetMemberId: 'member-a',
+    });
+    connected.clear();
+    const request = { idempotencyKey: 'direct-promotion', projectId: 'project-alpha', targetMemberId: 'member-a' };
+    const result = await service.promoteManager('member-host', request);
+    await expect(service.promoteManager('member-host', request)).resolves.toEqual(result);
+    await expect(readManagerState(database)).resolves.toEqual({ generation: 1, managers: ['member-a', 'member-host'] });
+    await expect(database.read(connection => connection.get(
+      'SELECT status FROM manager_responsibility_offers WHERE offer_id = ?', [offer.offerId],
+    ))).resolves.toEqual({ status: 'cancelled' });
+    await expect(service.promoteManager('member-b', {
+      ...request, idempotencyKey: 'unauthorized-promotion', targetMemberId: 'member-host',
+    })).rejects.toMatchObject({ code: 'authorization-denied' });
+  });
+
   it('promotes a target while retaining the source Manager and replays exactly', async () => {
     const request = await promotionRequest('member-host', 'member-a', 'promote-one');
 

@@ -24,10 +24,12 @@ import {
   type CollabResult,
   isCollabLanProjectSnapshot,
 } from '@/core/collab';
+import { HostDestinationModal } from '@/features/collab/modals/project/HostDestinationModal';
 import { HostDiagnosticsModal } from '@/features/collab/modals/project/HostDiagnosticsModal';
 import {
   type LanHostDiagnostics,
   LanHostSection,
+  type LanHostTransferAction,
 } from '@/features/collab/modals/project/LanHostSection';
 import { ProjectInvitationModal } from '@/features/collab/modals/project/ProjectInvitationModal';
 import { ProjectManagementSession } from '@/features/collab/modals/project/ProjectManagementSession';
@@ -98,15 +100,9 @@ type AccessConfirmation =
   | { readonly kind: 'remove'; readonly member: CollabMember }
   | { readonly kind: 'retire'; readonly member: CollabMember }
   | { readonly kind: 'demote'; readonly member: CollabMember }
-  | {
-    readonly kind: 'promote';
-    readonly member: CollabMember;
-    readonly operation:
-      | { readonly kind: 'create-offer' }
-      | {
-        readonly kind: 'complete-promotion';
-        readonly managerResponsibilityOfferId: string;
-      };
+  | { readonly kind: 'promote'; readonly member: CollabMember; readonly operation:
+    | { readonly kind: 'direct' | 'create-offer' }
+    | { readonly kind: 'complete-promotion'; readonly managerResponsibilityOfferId: string };
   };
 
 type TransferDraftField = 'lan-to-cloud-server-url';
@@ -121,9 +117,11 @@ export class ProjectManagementModal extends Modal {
   readonly #appInstance: App;
   #confirmation: AccessConfirmation | null = null;
   #cloudLanDestination: 'this-device' | 'another-device' | null = null;
+  #hostDestinationModal: HostDestinationModal | null = null;
   #hostDiagnosticsModal: HostDiagnosticsModal | null = null;
   #hostActionEl: HTMLDivElement | null = null;
   #hostSection: LanHostSection | null = null;
+  #membersSectionEl: HTMLDivElement | null = null;
   #invitationActionsEl: HTMLDivElement | null = null;
   #invitationModal: ProjectInvitationModal | null = null;
   #lifecycleActionsEl: HTMLDivElement | null = null;
@@ -208,6 +206,7 @@ export class ProjectManagementModal extends Modal {
         this.#renderCurrentView();
       },
       onResetInteraction: () => {
+        this.#hostDestinationModal?.close();
         this.#abandonLanManagementIntent();
         this.#confirmation = null;
         this.#transferDrafts = {};
@@ -240,10 +239,13 @@ export class ProjectManagementModal extends Modal {
     this.#hostSection?.destroy();
     this.#hostSection = null;
     this.#hostActionEl = null;
+    this.#hostDestinationModal?.close();
+    this.#hostDestinationModal = null;
     this.#hostDiagnosticsModal?.close();
     this.#hostDiagnosticsModal = null;
     this.#invitationModal?.close();
     this.#invitationModal = null;
+    this.#membersSectionEl = null;
     this.#accessContentEl = null;
     this.#invitationActionsEl = null;
     this.#lifecycleActionsEl = null;
@@ -295,12 +297,13 @@ export class ProjectManagementModal extends Modal {
   #updateHostProject(): void {
     if (this.#hostProject.authorityKind === 'lan' && this.#hostProject.hostInstallationStatus !== 'not-host') {
       if (this.#hostSection) {
-        this.#hostSection.setState(this.#session.host);
+        this.#hostSection.setState(this.#session.host, this.#hostTransferAction());
         return;
       }
       this.#hostActionEl = createDiv({ cls: 'claudian-collab-project-host-action' });
       this.#hostSection = new LanHostSection(this.#hostActionEl, {
         state: this.#session.host,
+        transferHost: this.#hostTransferAction(),
         onAction: action => { void this.#session.runHostAction(action); },
         onOpenDiagnostics: diagnostics => this.#openHostDiagnostics(diagnostics),
       });
@@ -310,6 +313,46 @@ export class ProjectManagementModal extends Modal {
       this.#hostActionEl?.remove();
       this.#hostActionEl = null;
     }
+  }
+
+  #hostTransferMembers(): readonly CollabMember[] {
+    const snapshot = this.#lanSnapshot();
+    if (this.#managementState !== 'ready'
+      || this.#hostProject.hostInstallationStatus !== 'hosted-here'
+      || !snapshot || snapshot.hostTransfer
+      || this.#currentMemberId !== this.#hostMemberId
+      || this.#currentMember()?.status !== 'active') return [];
+    return this.#members.filter(member => member.status === 'active' && member.id !== this.#hostMemberId);
+  }
+
+  #hostTransferAction(): LanHostTransferAction | undefined {
+    if (!this.#hostTransferMembers().length) return undefined;
+    return {
+      disabled: this.#managementActionBlocked(),
+      onClick: () => this.#openHostDestination(),
+    };
+  }
+
+  #openHostDestination(): void {
+    const members = this.#hostTransferMembers();
+    if (this.#hostDestinationModal || !members.length || this.#managementActionBlocked()) return;
+    const isCurrent = this.#session.capture();
+    const modal = new HostDestinationModal(this.#appInstance, {
+      members,
+      onClosed: () => {
+        if (this.#hostDestinationModal === modal) this.#hostDestinationModal = null;
+      },
+      onSelect: memberId => {
+        if (!isCurrent() || this.#managementActionBlocked()
+          || !this.#hostTransferMembers().some(member => member.id === memberId)) return;
+        void this.#runLifecycleAction(() => this.#port.createHostTransfer({
+          projectId: this.#options.project.id,
+          targetMemberId: memberId,
+        }, ...this.#transientOperationOptions()));
+      },
+    });
+    this.#hostDestinationModal = modal;
+    modal.open();
   }
 
   #openHostDiagnostics(diagnostics: LanHostDiagnostics): void {
@@ -373,6 +416,11 @@ export class ProjectManagementModal extends Modal {
 
   #render(): void {
     if (!this.#opened) return;
+    if (this.#hostDestinationModal) {
+      const members = this.#hostTransferMembers();
+      if (!members.length || this.#managementActionBlocked()) this.#hostDestinationModal.close();
+      else this.#hostDestinationModal.setMembers(members);
+    }
     const active = this.contentEl.ownerDocument.activeElement;
     const focusedControl = active && this.contentEl.contains(active) && active.hasAttribute('data-field')
       ? active as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement : null;
@@ -420,6 +468,7 @@ export class ProjectManagementModal extends Modal {
       attr: { 'aria-label': t('collab.access.members'), role: 'region' },
       cls: 'claudian-collab-access-members',
     });
+    this.#membersSectionEl = section;
     const header = section.createDiv({ cls: 'claudian-collab-management-section-header' });
     const title = header.createDiv();
     title.createEl('h3', { text: t('collab.access.members') });
@@ -497,47 +546,9 @@ export class ProjectManagementModal extends Modal {
     if (
       isManager
       && canManageMembership
-      && canManageResponsibility
       && member.role !== 'manager'
     ) {
-      const matchingPromotion = this.#managerResponsibilityOffer(offer => (
-        offer.purpose === 'manager-promotion'
-        && offer.sourceManagerMemberId === this.#currentMemberId
-        && offer.targetMemberId === member.id
-      ));
-      if (matchingPromotion?.status === 'offered') {
-        const waiting = actions.createEl('button', {
-          attr: {
-            'aria-label': `${t('collab.access.promotionPending')}: ${member.displayName}`,
-            'data-action': 'promotion-pending',
-            'data-member-id': member.id,
-            type: 'button',
-          },
-          text: t('collab.access.promotionPending'),
-        });
-        waiting.disabled = true;
-      } else if (matchingPromotion?.status === 'acknowledged') {
-        const complete = actions.createEl('button', {
-          attr: {
-            'aria-label': `${t('collab.access.completePromotion')}: ${member.displayName}`,
-            'data-action': 'complete-promotion',
-            'data-member-id': member.id,
-            type: 'button',
-          },
-          text: t('collab.access.completePromotion'),
-        });
-        complete.disabled = this.#managementActionBlocked();
-        complete.addEventListener('click', () => {
-          this.#showConfirmation({
-            kind: 'promote',
-            member,
-            operation: {
-              kind: 'complete-promotion',
-              managerResponsibilityOfferId: matchingPromotion.offerId,
-            },
-          });
-        });
-      } else {
+      if (this.#capabilities?.managerPromotion === true) {
         const promote = actions.createEl('button', {
           attr: {
             'aria-label': `${t('collab.access.makeManager')}: ${member.displayName}`,
@@ -548,32 +559,10 @@ export class ProjectManagementModal extends Modal {
           text: t('collab.access.makeManager'),
         });
         promote.disabled = this.#managementActionBlocked();
-        promote.addEventListener('click', () => {
-          this.#showConfirmation({
-            kind: 'promote',
-            member,
-            operation: { kind: 'create-offer' },
-          });
-        });
+        promote.addEventListener('click', () => this.#showConfirmation({ kind: 'promote', member, operation: { kind: 'direct' } }));
+      } else if (canManageResponsibility) {
+        this.#renderLegacyManagerPromotion(actions, member);
       }
-    }
-    if (lanSnapshot && this.#currentMemberId === this.#hostMemberId && !lanSnapshot.hostTransfer) {
-      const transferHost = actions.createEl('button', {
-        attr: {
-          'aria-label': `${t('collab.access.transferHost')}: ${member.displayName}`,
-          'data-action': 'offer-host-transfer',
-          'data-member-id': member.id,
-          type: 'button',
-        },
-        text: t('collab.access.transferHost'),
-      });
-      transferHost.disabled = this.#managementActionBlocked();
-      transferHost.addEventListener('click', () => {
-        void this.#runLifecycleAction(() => this.#port.createHostTransfer({
-          projectId: this.#options.project.id,
-          targetMemberId: member.id,
-        }, ...this.#transientOperationOptions()));
-      });
     }
     if (!isManager || !canManageMembership) return;
     if (member.role === 'manager') {
@@ -609,6 +598,65 @@ export class ProjectManagementModal extends Modal {
       item.createDiv({
         cls: 'claudian-collab-access-note',
         text: t('collab.access.hostRemovalBlocked'),
+      });
+    }
+  }
+
+  #renderLegacyManagerPromotion(actions: HTMLElement, member: CollabMember): void {
+    const matchingPromotion = this.#managerResponsibilityOffer(offer => (
+      offer.purpose === 'manager-promotion'
+      && offer.sourceManagerMemberId === this.#currentMemberId
+      && offer.targetMemberId === member.id
+    ));
+    if (matchingPromotion?.status === 'offered') {
+      const waiting = actions.createEl('button', {
+        attr: {
+          'aria-label': `${t('collab.access.promotionPending')}: ${member.displayName}`,
+          'data-action': 'promotion-pending',
+          'data-member-id': member.id,
+          type: 'button',
+        },
+        text: t('collab.access.promotionPending'),
+      });
+      waiting.disabled = true;
+    } else if (matchingPromotion?.status === 'acknowledged') {
+      const complete = actions.createEl('button', {
+        attr: {
+          'aria-label': `${t('collab.access.completePromotion')}: ${member.displayName}`,
+          'data-action': 'complete-promotion',
+          'data-member-id': member.id,
+          type: 'button',
+        },
+        text: t('collab.access.completePromotion'),
+      });
+      complete.disabled = this.#managementActionBlocked();
+      complete.addEventListener('click', () => {
+        this.#showConfirmation({
+          kind: 'promote',
+          member,
+          operation: {
+            kind: 'complete-promotion',
+            managerResponsibilityOfferId: matchingPromotion.offerId,
+          },
+        });
+      });
+    } else {
+      const promote = actions.createEl('button', {
+        attr: {
+          'aria-label': `${t('collab.access.makeManager')}: ${member.displayName}`,
+          'data-action': 'make-manager',
+          'data-member-id': member.id,
+          type: 'button',
+        },
+        text: t('collab.access.makeManager'),
+      });
+      promote.disabled = this.#managementActionBlocked();
+      promote.addEventListener('click', () => {
+        this.#showConfirmation({
+          kind: 'promote',
+          member,
+          operation: { kind: 'create-offer' },
+        });
       });
     }
   }
@@ -653,6 +701,11 @@ export class ProjectManagementModal extends Modal {
           projectId: this.#options.project.id,
         }, ...this.#transientOperationOptions()));
     }
+  }
+
+  #renderHostTransferActions(item: HTMLElement): void {
+    const member = this.#currentMember();
+    if (member?.status !== 'active') return;
     const hostTransfer = this.#lanSnapshot()?.hostTransfer;
     if (member.id === this.#hostMemberId && hostTransfer?.canCancel) {
       const actions = item.createDiv({ cls: 'claudian-collab-access-actions' });
@@ -934,16 +987,17 @@ export class ProjectManagementModal extends Modal {
   async #createManagerPromotion(
     confirmation: Extract<AccessConfirmation, { readonly kind: 'promote' }>,
   ) {
-    if (confirmation.operation.kind === 'complete-promotion') {
-      return this.#port.promoteManager({
-        managerResponsibilityOfferId: confirmation.operation.managerResponsibilityOfferId,
+    if (confirmation.operation.kind === 'create-offer') {
+      return this.#port.createManagerResponsibilityOffer({
         projectId: this.#options.project.id,
+        purpose: 'manager-promotion',
         targetMemberId: confirmation.member.id,
       }, ...this.#transientOperationOptions());
     }
-    return this.#port.createManagerResponsibilityOffer({
+    return this.#port.promoteManager({
+      ...(confirmation.operation.kind === 'complete-promotion'
+        ? { managerResponsibilityOfferId: confirmation.operation.managerResponsibilityOfferId } : {}),
       projectId: this.#options.project.id,
-      purpose: 'manager-promotion',
       targetMemberId: confirmation.member.id,
     }, ...this.#transientOperationOptions());
   }
@@ -964,7 +1018,8 @@ export class ProjectManagementModal extends Modal {
   #renderConfirmation(confirmation: AccessConfirmation): void {
     const container = confirmation.kind === 'leave' || confirmation.kind === 'retire'
       ? this.#requireLifecycleActions()
-      : this.#requireAccessContent();
+      : this.#membersSectionEl;
+    if (!container) return;
     const region = container.createDiv({
       attr: { 'aria-live': 'polite' },
       cls: 'claudian-collab-access-confirmation',
@@ -1078,12 +1133,11 @@ export class ProjectManagementModal extends Modal {
     if (confirmation.kind === 'leave') {
       return `leave:${this.#options.project.id}`;
     }
-    if (confirmation.kind !== 'promote') {
-      return `${confirmation.kind}:${confirmation.member.id}`;
+    if (confirmation.kind === 'promote') {
+      const operation = confirmation.operation;
+      return `promote:${confirmation.member.id}:${operation.kind}:${operation.kind === 'complete-promotion' ? operation.managerResponsibilityOfferId : ''}`;
     }
-    return confirmation.operation.kind === 'complete-promotion'
-      ? `${confirmation.kind}:${confirmation.member.id}:${confirmation.operation.kind}:${confirmation.operation.managerResponsibilityOfferId}`
-      : `${confirmation.kind}:${confirmation.member.id}:${confirmation.operation.kind}`;
+    return `${confirmation.kind}:${confirmation.member.id}`;
   }
 
   #abandonLanManagementIntent(): void {
@@ -1200,12 +1254,13 @@ export class ProjectManagementModal extends Modal {
     const actionsAvailable = this.#capabilities?.authorityTransfer === true;
     const lanToCloudProposal = this.#presentableLanToCloudProposal();
     const transferPresent = !!lanToCloudProposal || !!this.#cloudTransferView;
+    const hostTransferPresent = !!this.#lanSnapshot()?.hostTransfer;
     const transferAvailable = (
       current?.status === 'active'
       && (actionsAvailable || transferPresent)
     ) || (recovery && transferPresent);
     const hostAvailable = (this.#hostActionEl?.childElementCount ?? 0) > 0;
-    if (!hostAvailable && !transferAvailable) return;
+    if (!hostAvailable && !transferAvailable && !hostTransferPresent) return;
 
     const hosting = container.createDiv({
       attr: { 'aria-label': t('collab.access.hosting'), role: 'region' },
@@ -1218,6 +1273,7 @@ export class ProjectManagementModal extends Modal {
       });
       currentHosting.appendChild(this.#hostActionEl);
     }
+    this.#renderHostTransferActions(hosting);
     if (!transferAvailable) return;
 
     const section = hosting.createDiv({

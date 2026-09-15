@@ -291,6 +291,7 @@ export class CollabPublicationService {
         projectRecovery: capabilities.includes('project-recovery-v1'),
         leave: true,
         managerResponsibility: true,
+        managerPromotion: capabilities.includes('direct-manager-promotion-v1'),
         membershipManagement: true,
         retirement: true,
       });
@@ -303,6 +304,7 @@ export class CollabPublicationService {
       projectRecovery: authority.supports('project-recovery'),
       leave: authority.supports('cloud-project-leave'),
       managerResponsibility: authority.supports('cloud-project-manager-responsibility'),
+      managerPromotion: authority.supports('cloud-project-membership'),
       membershipManagement: authority.supports('cloud-project-membership'),
       retirement: authority.supports('project-retirement'),
     });

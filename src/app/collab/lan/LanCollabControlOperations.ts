@@ -88,7 +88,7 @@ export interface CancelManagerResponsibilityOfferRequest extends CollabMutationC
 
 export interface PromoteManagerRequest extends CollabMutationContext {
   readonly targetMemberId: CollabMemberId;
-  readonly managerResponsibilityOfferId: CollabOperationId;
+  readonly managerResponsibilityOfferId?: CollabOperationId;
 }
 
 export interface PromoteManagerResponse {

@@ -417,17 +417,17 @@ describe('Cloud membership management', () => {
     } finally { await client.close(); await fixture.close(); }
   });
 
-  it('freezes promotion against the acknowledged offer and target membership, then replays exactly', async () => {
+  it('freezes direct promotion against the target membership and replays after response loss', async () => {
     const fixture = await createFixture();
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      const request = { projectId: PROJECT_ID, targetMemberId: 'member-carol', managerResponsibilityOfferId: 'offer-acknowledged' };
+      const request = { projectId: PROJECT_ID, targetMemberId: 'member-carol' };
       await expect(client.feature.promoteManager(request)).resolves.toMatchObject({ status: 'recovery-required' });
       const saved = JSON.parse(await readFile(fixture.intentPath, 'utf8'));
       expect(saved).toMatchObject({ operation: 'promoteManager', request: {
-        projectId: PROJECT_ID, targetMemberId: 'member-carol', managerResponsibilityOfferId: 'offer-acknowledged',
-        expectedTargetMembershipRevision: 8, expectedManagerSetGeneration: 9, expectedOfferRevision: 2,
+        projectId: PROJECT_ID, targetMemberId: 'member-carol',
+        expectedTargetMembershipRevision: 8, expectedManagerSetGeneration: 9,
       } });
       await client.close();
       client = fixture.client();
@@ -863,7 +863,7 @@ describe('Cloud membership management', () => {
       const serverUrl = drift === 'endpoint' ? `${fixture.serverUrl}/new` : fixture.serverUrl;
       await projects.saveMembership({
         ...membership,
-        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v9/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
+        authority: { ...membership.authority, serverUrl, gitRemoteUrl: `${serverUrl}/v10/projects/${PROJECT_ID}/repository.git`, authorityGeneration: drift === 'generation' ? 8 : 7 },
         member: drift === 'member' ? { ...membership.member, id: 'member-other', personalRef: 'refs/heads/members/member-other' } : membership.member,
       });
       await expect(client.feature.readManagementOperation(PROJECT_ID)).resolves.toMatchObject({ status: 'failure', error: { code: 'authority-integrity-error' } });
@@ -1176,7 +1176,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
         promotions.push(decoded.value);
         if (promotions.length === 1) { request.socket.destroy(); return; }
         response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, {
-          managerSetGeneration: 10, membershipRevision: 9, offerRevision: 3, projectId: PROJECT_ID, promotedMemberId: 'member-carol',
+          managerSetGeneration: 10, membershipRevision: 9, projectId: PROJECT_ID, promotedMemberId: 'member-carol',
         })));
         return;
       }
@@ -1304,7 +1304,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
     seed: async (foundation: ClaudianCollabService) => {
       await foundation.local.projects.saveMembership({
         schemaVersion: 3, createdAt, updatedAt: createdAt, lastEventSequence: options.receiptTarget ? 0 : 7,
-        authority: { authorityGeneration: 7, bindingVersion: 9, gitRemoteUrl: `${serverUrl}/v9/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 13 },
+        authority: { authorityGeneration: 7, bindingVersion: 10, gitRemoteUrl: `${serverUrl}/v10/projects/${PROJECT_ID}/repository.git`, kind: 'cloud', serverUrl, wireVersion: 14 },
         member: { id: MEMBER_ID, displayName: 'Alice', role: 'manager', personalRef: member.personalRef },
         project: { id: PROJECT_ID, name: 'Management', workspacePath: 'Projects/management' },
       });

@@ -63,7 +63,7 @@ export interface CollabAuthorityMembershipOperationMap {
     readonly result: CollabManagerResponsibilityOfferSummary;
   };
   readonly promoteManager: {
-    readonly input: MemberRoleInput & { readonly managerResponsibilityOfferId: CollabOperationId };
+    readonly input: MemberRoleInput & { readonly managerResponsibilityOfferId?: CollabOperationId };
     readonly result: void;
   };
   readonly removeMember: {

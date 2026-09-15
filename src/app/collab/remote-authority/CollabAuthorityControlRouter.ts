@@ -11,7 +11,6 @@ import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/
 import type {
   CloudMembershipBinding,
   CloudMembershipOperation,
-  CollabAuthorityMembershipControlPort,
   CollabAuthorityMembershipOperation,
   CollabAuthorityMembershipOperationMap,
   CollabAuthorityMembershipRouterPort,
@@ -245,9 +244,18 @@ export class CollabAuthorityControlRouter implements
     input: CollabAuthorityMembershipOperationMap[Operation]['input'],
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityMembershipOperationMap[Operation]['result']> {
-    return this.#executeMembership(input.projectId, options, control => (
-      control.membership(operation, input, options)
-    ));
+    return this.#executeSession(input.projectId, options, async session => {
+      if (session.authorityKind !== 'lan' || session.membership?.authorityKind !== 'lan') {
+        throw routerError('authority-session-membership-control-unavailable');
+      }
+      if (operation === 'promoteManager' && !('managerResponsibilityOfferId' in input)) {
+        const capabilities = await session.control.readLanCapabilities?.(input.projectId, options) ?? [];
+        if (!capabilities.includes('direct-manager-promotion-v1')) {
+          throw new CollabError({ code: 'protocol-version-unsupported' });
+        }
+      }
+      return session.membership.membership(operation, input, options);
+    });
   }
 
   cloudMembership<Operation extends CloudMembershipOperation>(
@@ -271,19 +279,6 @@ export class CollabAuthorityControlRouter implements
     operation: (control: CollabAuthorityControlPort) => Promise<T>,
   ): Promise<T> {
     return this.#executeSession(projectId, options, session => operation(session.control));
-  }
-
-  #executeMembership<T>(
-    projectId: CollabProjectId,
-    options: CollabOperationOptions | undefined,
-    operation: (control: CollabAuthorityMembershipControlPort) => Promise<T>,
-  ): Promise<T> {
-    return this.#executeSession(projectId, options, session => {
-      if (session.authorityKind !== 'lan' || session.membership?.authorityKind !== 'lan') {
-        throw routerError('authority-session-membership-control-unavailable');
-      }
-      return operation(session.membership);
-    });
   }
 
   async #executeSession<T>(

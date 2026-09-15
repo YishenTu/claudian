@@ -50,7 +50,7 @@ interface MembershipMutationInput {
 }
 
 export interface PromoteManagerInput extends MembershipMutationInput {
-  readonly managerResponsibilityOfferId: string;
+  readonly managerResponsibilityOfferId?: string;
   readonly targetMemberId: string;
 }
 
@@ -388,12 +388,12 @@ export class MembershipControlClient {
 
   promoteManager(input: PromoteManagerInput): Promise<PromoteManagerResponse> {
     projectId(input.projectId, 'projectId');
-    opaqueId(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId');
+    if (input.managerResponsibilityOfferId !== undefined) opaqueId(input.managerResponsibilityOfferId, 'managerResponsibilityOfferId');
     memberId(input.targetMemberId, 'targetMemberId');
     return this.transport.requestWithMember({
       body: {
         idempotencyKey: input.idempotencyKey,
-        managerResponsibilityOfferId: input.managerResponsibilityOfferId,
+        ...(input.managerResponsibilityOfferId ? { managerResponsibilityOfferId: input.managerResponsibilityOfferId } : {}),
         projectId: input.projectId,
         targetMemberId: input.targetMemberId,
       },

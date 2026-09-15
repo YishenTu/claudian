@@ -76,7 +76,7 @@ export class MembershipAdminRepository {
     input: {
       readonly actorMemberId: CollabMemberId;
       readonly consumedAt: string;
-      readonly managerResponsibilityOfferId: CollabOperationId;
+      readonly managerResponsibilityOfferId?: CollabOperationId;
       readonly projectId: CollabProjectId;
       readonly targetMemberId: CollabMemberId;
     },
@@ -88,13 +88,20 @@ export class MembershipAdminRepository {
     if (input.targetMemberId === input.actorMemberId) {
       throw membershipError('stale-project-selection', 'membership-target-already-manager', ['retry']);
     }
-    this.managerResponsibilities.consume(connection, {
-      consumedAt: input.consumedAt,
-      expectedPurpose: 'manager-promotion',
-      expectedSourceManagerMemberId: input.actorMemberId,
-      expectedTargetMemberId: input.targetMemberId,
-      offerId: input.managerResponsibilityOfferId,
-    });
+    if (input.managerResponsibilityOfferId !== undefined) {
+      this.managerResponsibilities.consume(connection, {
+        consumedAt: input.consumedAt,
+        expectedPurpose: 'manager-promotion',
+        expectedSourceManagerMemberId: input.actorMemberId,
+        expectedTargetMemberId: input.targetMemberId,
+        offerId: input.managerResponsibilityOfferId,
+      });
+    } else {
+      this.managerResponsibilities.cancelRelatedNonterminal(connection, {
+        cancelledAt: input.consumedAt,
+        memberId: input.targetMemberId,
+      });
+    }
     const updated = this.managerSet.promote(connection, {
       expectedGeneration: managerSet.generation,
       targetMemberId: input.targetMemberId,

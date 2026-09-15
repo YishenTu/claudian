@@ -380,8 +380,8 @@ describe('AuthorityTransferPersistence', () => {
       const memberId = scenario === 'wrong-member' ? MEMBER_BOB : MEMBER_ALICE;
       await repository.saveMembership({ schemaVersion: 3, createdAt: '2026-08-26T00:00:00.000Z',
         updatedAt: '2026-08-26T00:00:00.000Z', lastEventSequence: 1,
-        authority: { kind: 'cloud', bindingVersion: 9, wireVersion: 13, authorityGeneration: 2, serverUrl: 'http://127.0.0.1:8787/',
-          gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git` },
+        authority: { kind: 'cloud', bindingVersion: 10, wireVersion: 14, authorityGeneration: 2, serverUrl: 'http://127.0.0.1:8787/',
+          gitRemoteUrl: `http://127.0.0.1:8787/v10/projects/${PROJECT_ID}/repository.git` },
         member: { id: memberId, displayName: 'Former host', personalRef: `refs/heads/members/${memberId}`, role: 'manager' },
         project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
       });
@@ -460,8 +460,8 @@ describe('AuthorityTransferPersistence', () => {
           personalRef: `refs/heads/members/${MEMBER_ALICE}` },
         project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' } };
       await repository.saveMembership(scenario === 'cloud' ? { ...base,
-        authority: { kind: 'cloud', authorityGeneration: 2, bindingVersion: 9, wireVersion: 13,
-          serverUrl: 'http://127.0.0.1:8787/', gitRemoteUrl: `http://127.0.0.1:8787/v9/projects/${PROJECT_ID}/repository.git` },
+        authority: { kind: 'cloud', authorityGeneration: 2, bindingVersion: 10, wireVersion: 14,
+          serverUrl: 'http://127.0.0.1:8787/', gitRemoteUrl: `http://127.0.0.1:8787/v10/projects/${PROJECT_ID}/repository.git` },
       } : { ...base, member: { ...base.member, credential: 'A'.repeat(43) }, hostOwnership: { ownsAuthority: scenario === 'current-source' },
         authority: { kind: 'lan', authorityGeneration: scenario === 'current-source' ? 1 : 3,
           endpoint: 'https://192.168.1.20:27001/', gitRemoteUrl: `https://192.168.1.20:27001/v1/git/${PROJECT_ID}/repository.git`,

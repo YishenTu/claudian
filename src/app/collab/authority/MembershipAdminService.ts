@@ -212,7 +212,9 @@ export class MembershipAdminService {
       const replay = this.authority.idempotency.find<unknown>(connection, idempotencyInput);
       if (replay) return decodePromote(replay.response, request);
       this.managerSet.requireActiveManager(connection, actorMemberId);
-      this.#requirePresence(request.projectId, request.targetMemberId);
+      if (request.managerResponsibilityOfferId !== undefined) {
+        this.#requirePresence(request.projectId, request.targetMemberId);
+      }
       const createdAt = this.now().toISOString();
       const result = this.repository.promoteManager(connection, {
         actorMemberId,

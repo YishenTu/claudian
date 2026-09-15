@@ -769,41 +769,19 @@ export class CollabMembershipService {
     request: CollabPromoteManagerRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
+    const membership = await this.safety.projects.loadMembership(request.projectId);
+    if (membership && isCollabLocalCloudMembership(membership)) {
+      return this.#changeCloudMember('promoteManager', request.projectId, request.targetMemberId, options);
+    }
     await this.safety.managerResponsibilityAdmission(request.projectId, async () => {
-      const membership = await this.safety.projects.loadMembership(request.projectId);
-      if (membership && isCollabLocalCloudMembership(membership)) {
-        return this.#runCloudMutation(request.projectId, options, async () => {
-          let intent = await this.#loadCloudIntent(request.projectId);
-          if (intent && (intent.operation !== 'promoteManager' || intent.request.targetMemberId !== request.targetMemberId
-            || intent.request.managerResponsibilityOfferId !== request.managerResponsibilityOfferId)) throw managementPending();
-          if (!intent) {
-            const { binding, members } = await this.#readCloudManagerMembers(request.projectId, options);
-            const target = members.members.find(member => member.memberId === request.targetMemberId);
-            const { offer } = await this.control.cloudMembership('getManagerResponsibilityOffer', { projectId: request.projectId, offerId: request.managerResponsibilityOfferId }, binding, options);
-            if (!target || target.role !== 'member' || offer.offerId !== request.managerResponsibilityOfferId
-              || offer.targetMemberId !== request.targetMemberId || offer.sourceManagerMemberId !== binding.memberId
-              || offer.purpose !== 'manager-promotion' || offer.state !== 'acknowledged') {
-              throw new CollabError({ code: 'authority-not-synchronized' });
-            }
-            intent = await this.#prepareCloudIntent(binding, 'promoteManager', {
-              expectedManagerSetGeneration: members.managerSetGeneration, expectedTargetMembershipRevision: target.membershipRevision,
-              expectedOfferRevision: offer.revision, managerResponsibilityOfferId: offer.offerId,
-              idempotencyKey: this.createIdempotencyKey('promote-manager'), targetMemberId: request.targetMemberId, projectId: request.projectId,
-            });
-          }
-          await this.#executeCloudIntent(intent, options);
-          await this.safety.projects.removeProjectDocument(request.projectId, 'cloud-management-intent');
-        });
-      }
-      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       await this.#runLanManagement(
         request.projectId,
-        `promote:${request.targetMemberId}:${request.managerResponsibilityOfferId}`,
+        `promote:${request.targetMemberId}:${request.managerResponsibilityOfferId ?? 'direct'}`,
         'promote-manager',
         options,
         idempotencyKey => this.control.membership('promoteManager', {
           idempotencyKey,
-          managerResponsibilityOfferId: request.managerResponsibilityOfferId,
+          ...(request.managerResponsibilityOfferId ? { managerResponsibilityOfferId: request.managerResponsibilityOfferId } : {}),
           projectId: request.projectId,
           targetMemberId: request.targetMemberId,
         }, options),
@@ -834,17 +812,18 @@ export class CollabMembershipService {
     await this.#refreshProjection(request.projectId, options);
   }
 
-  async #changeCloudMember(operation: 'demoteManager' | 'removeMember', projectId: CollabProjectId, targetMemberId: CollabMemberId, options: CollabOperationOptions): Promise<void> {
+  async #changeCloudMember(operation: 'promoteManager' | 'demoteManager' | 'removeMember', projectId: CollabProjectId, targetMemberId: CollabMemberId, options: CollabOperationOptions): Promise<void> {
       await this.#runCloudManagementMutation(projectId, options, async () => {
         let intent = await this.#loadCloudIntent(projectId);
         if (intent && (intent.operation !== operation || intent.request.targetMemberId !== targetMemberId)) throw managementPending();
         if (!intent) {
           const { binding, members } = await this.#readCloudManagerMembers(projectId, options);
           const target = members.members.find(member => member.memberId === targetMemberId);
-          if (!target || (operation === 'demoteManager' && target.role !== 'manager')) throw new CollabError({ code: 'authority-not-synchronized' });
+          if (!target || (operation === 'demoteManager' && target.role !== 'manager')
+            || (operation === 'promoteManager' && target.role !== 'member')) throw new CollabError({ code: 'authority-not-synchronized' });
           intent = await this.#prepareCloudIntent(binding, operation, {
             expectedManagerSetGeneration: members.managerSetGeneration, expectedTargetMembershipRevision: target.membershipRevision,
-            idempotencyKey: this.createIdempotencyKey(operation === 'demoteManager' ? 'demote-manager' : 'remove-member'), targetMemberId, projectId,
+            idempotencyKey: this.createIdempotencyKey(operation === 'promoteManager' ? 'promote-manager' : operation === 'demoteManager' ? 'demote-manager' : 'remove-member'), targetMemberId, projectId,
           });
         }
         await this.#executeCloudIntent(intent, options);

@@ -53,11 +53,11 @@ describe('Cloud Retirement lost-response recovery', () => {
     const membership = {
       authority: {
         authorityGeneration: 3,
-        bindingVersion: 9 as const,
-        gitRemoteUrl: `https://cloud.example.test/operator/v9/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 10 as const,
+        gitRemoteUrl: `https://cloud.example.test/operator/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/operator',
-        wireVersion: 13 as const,
+        wireVersion: 14 as const,
       },
       createdAt: NOW,
       lastEventSequence: 4,

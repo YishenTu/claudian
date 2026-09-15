@@ -167,6 +167,7 @@ export interface CollabProjectCapabilities {
   readonly invitations: boolean;
   readonly leave: boolean;
   readonly managerResponsibility: boolean;
+  readonly managerPromotion?: boolean;
   readonly membershipManagement: boolean;
   readonly retirement: boolean;
 }
@@ -460,9 +461,10 @@ export interface CollabAcceptOutcome {
 }
 
 export interface CollabPromoteManagerRequest {
+  /** Completes a promotion already offered through the published LAN protocol. */
+  managerResponsibilityOfferId?: CollabOperationId;
   projectId: CollabProjectId;
   targetMemberId: CollabMemberId;
-  managerResponsibilityOfferId: CollabOperationId;
 }
 
 export interface CollabDemoteManagerRequest {

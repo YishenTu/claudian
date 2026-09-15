@@ -8,7 +8,13 @@ export interface LanHostDiagnostics {
   readonly status: Exclude<CollabHostStatus, 'not-host'>;
 }
 
+export interface LanHostTransferAction {
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+}
+
 export interface LanHostSectionOptions {
+  readonly transferHost?: LanHostTransferAction;
   readonly state: ProjectHostView;
   readonly onAction: (action: ProjectHostAction) => void;
   readonly onOpenDiagnostics?: (diagnostics: LanHostDiagnostics) => void;
@@ -16,17 +22,20 @@ export interface LanHostSectionOptions {
 
 export class LanHostSection {
   private destroyed = false;
+  private transferHost: LanHostTransferAction | undefined;
   private state: ProjectHostView;
   private readonly rootEl: HTMLDivElement;
 
   constructor(private readonly containerEl: HTMLElement, private readonly options: LanHostSectionOptions) {
     this.state = options.state;
+    this.transferHost = options.transferHost;
     this.rootEl = createDiv({ cls: 'claudian-collab-host-section' });
     this.render();
   }
 
-  setState(state: ProjectHostView): void {
+  setState(state: ProjectHostView, transferHost?: LanHostTransferAction): void {
     this.state = state;
+    this.transferHost = transferHost;
     this.render();
   }
 
@@ -59,7 +68,16 @@ export class LanHostSection {
       return;
     }
     header.createSpan({ text: t('collab.host.hostedHereSummary') });
-    this.#renderStatusButton(header, hostStatus);
+    const controls = header.createDiv({ cls: 'claudian-collab-host-actions' });
+    this.#renderStatusButton(controls, hostStatus);
+    if (this.transferHost) {
+      const transfer = controls.createEl('button', {
+        attr: { 'data-action': 'select-host-destination', type: 'button' },
+        text: t('collab.access.transferHost'),
+      });
+      transfer.disabled = this.transferHost.disabled;
+      transfer.addEventListener('click', () => this.transferHost?.onClick());
+    }
     if (!warning) return;
 
     const body = this.rootEl.createDiv({ cls: 'claudian-collab-host-body' });

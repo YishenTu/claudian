@@ -132,7 +132,7 @@ function createPort(
     projectRecovery: true,
       invitations: true,
       leave: true,
-      managerResponsibility: true,
+      managerResponsibility: true, managerPromotion: true,
       membershipManagement: true,
       retirement: true,
     })),
@@ -171,6 +171,137 @@ async function flush(): Promise<void> {
 }
 
 describe('ProjectManagementModal', () => {
+  it('completes an acknowledged promotion without changing the source Manager', async () => {
+    const members = [
+      member('member-manager', 'Alice', { role: 'manager' }),
+      member('member-maya', 'Maya'),
+    ];
+    const port = createPort(members, {
+      readProjectCapabilities: jest.fn().mockResolvedValue(success({
+        authorityKind: 'lan', authorityTransfer: true, importedMemberClaims: false,
+        invitations: true, leave: true, managerResponsibility: true, managerPromotion: false,
+        membershipManagement: true, retirement: true,
+      })),
+      readSnapshot: jest.fn().mockResolvedValue(success({
+        snapshot: {
+          currentMember: members[0],
+          managerResponsibilityOffer: {
+            acknowledgedAt: CREATED_AT,
+            offerId: 'promotion-one',
+            offeredAt: CREATED_AT,
+            purpose: 'manager-promotion',
+            sourceManagerMemberId: 'member-manager',
+            status: 'acknowledged',
+            targetMemberId: 'member-maya',
+          },
+          members,
+          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
+        },
+        source: 'online',
+        stale: false,
+        syncState: { status: 'synchronized' },
+      } as never)),
+    }, { currentMemberId: 'member-manager', hostMemberId: 'member-manager' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ hostStatus: 'stopped' }),
+    });
+
+    modal.onOpen();
+    await flush();
+
+    const complete = modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="complete-promotion"][data-member-id="member-maya"]',
+    );
+    expect(complete?.textContent).toBe('Complete promotion');
+    complete?.click();
+    expect(modal.contentEl.textContent).toContain('You will both remain Managers');
+    modal.contentEl.querySelector<HTMLButtonElement>(
+      '[data-action="confirm-access-action"]',
+    )?.click();
+    await flush();
+
+    expect(port.promoteManager).toHaveBeenCalledWith({
+      managerResponsibilityOfferId: 'promotion-one',
+      projectId: 'project-alpha',
+      targetMemberId: 'member-maya',
+    }, { signal: expect.any(AbortSignal) });
+    expect(port.createManagerResponsibilityOffer).not.toHaveBeenCalled();
+  });
+
+
+  it('confirms promotion inside Members and applies it with one Manager action', async () => {
+    const members = [member('member-manager', 'Alice', { role: 'manager' }), member('member-maya', 'Maya')];
+    const port = createPort(members);
+    const modal = new ProjectManagementModal({} as never, port, { project: project() });
+    modal.open();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Make Manager: Maya' }));
+    const section = within(modal.contentEl).getByRole('region', { name: 'Members' });
+    fireEvent.click(within(section).getByRole('button', { name: 'Confirm' }));
+    await flush();
+    expect(port.promoteManager).toHaveBeenCalledWith({ projectId: 'project-alpha', targetMemberId: 'member-maya' }, { signal: expect.any(AbortSignal) });
+    modal.close();
+  });
+
+  it('offers eligible Host destinations from Hosting and submits the selected member', async () => {
+    const members = [member('member-host', 'Host operator'), member('member-maya', 'Maya'),
+      member('member-lee', 'Lee'), member('member-left', 'Former member', { status: 'left' })];
+    const port = createPort(members, {}, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ hostInstallationStatus: 'hosted-here', hostStatus: 'running', role: 'member' }),
+    });
+    modal.open();
+    await flush();
+    const hosting = within(modal.contentEl).getByRole('region', { name: 'Hosting' });
+    const transfer = within(hosting).getByRole('button', { name: 'Transfer Host' });
+    expect(transfer.parentElement).toBe(within(hosting).getByRole('button', { name: 'Stop Host' }).parentElement);
+    fireEvent.click(transfer);
+    const picker = mockModals[mockModals.length - 1];
+    expect(within(picker.contentEl).getAllByRole('button').map(button => button.textContent)).toEqual(['Maya', 'Lee']);
+    expect((await axe(picker.contentEl)).violations).toEqual([]);
+    fireEvent.click(within(picker.contentEl).getByRole('button', { name: 'Maya' }));
+    await flush();
+    expect(port.createHostTransfer).toHaveBeenCalledWith({ projectId: 'project-alpha', targetMemberId: 'member-maya' }, { signal: expect.any(AbortSignal) });
+    expect(picker.close).toHaveBeenCalled();
+    modal.close();
+  });
+
+  it('keeps keyboard focus in Host destinations during background refresh', async () => {
+    const members = [member('member-host', 'Host operator'), member('member-maya', 'Maya')];
+    const summary = project({ hostInstallationStatus: 'hosted-here', hostStatus: 'running', role: 'member' });
+    const port = createPort(members, {}, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, { project: summary });
+    modal.open();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Transfer Host' }));
+    const picker = mockModals[mockModals.length - 1];
+    document.body.appendChild(picker.contentEl);
+    const destination = within(picker.contentEl).getByRole('button', { name: 'Maya' });
+    destination.focus();
+    port.subscribe.mock.calls[0][0]({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    await flush();
+    expect(document.activeElement).toBe(within(picker.contentEl).getByRole('button', { name: 'Maya' }));
+    modal.close();
+    picker.contentEl.remove();
+  });
+
+  it('closes Host destination selection with its management surface', async () => {
+    const members = [member('member-host', 'Host operator'), member('member-maya', 'Maya')];
+    const port = createPort(members, {}, { currentMemberId: 'member-host', hostMemberId: 'member-host' });
+    const modal = new ProjectManagementModal({} as never, port, {
+      project: project({ hostInstallationStatus: 'hosted-here', hostStatus: 'running', role: 'member' }),
+    });
+    modal.open();
+    await flush();
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Transfer Host' }));
+    const picker = mockModals[mockModals.length - 1];
+    const destination = within(picker.contentEl).getByRole('button', { name: 'Maya' });
+    modal.close();
+    expect(picker.close).toHaveBeenCalled();
+    fireEvent.click(destination);
+    expect(port.createHostTransfer).not.toHaveBeenCalled();
+  });
+
   it('copies a fresh general recovery link next to Invite without displaying the string', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     let count = 0;
@@ -618,7 +749,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         importedMemberClaims: true,
         invitations: true,
         leave: true,
-        managerResponsibility: true,
+        managerResponsibility: true, managerPromotion: true,
         membershipManagement: true,
         retirement: true,
       })),
@@ -681,7 +812,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         })),
         readProjectCapabilities: jest.fn().mockResolvedValue(success({
           authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
-          invitations: true, leave: true, managerResponsibility: true,
+          invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
           membershipManagement: true, retirement: true,
         })),
         readSnapshot: jest.fn().mockResolvedValue(success({
@@ -735,7 +866,7 @@ it.each([false, true])('automatically restores management after Host startup wit
           .mockResolvedValueOnce(success({ ...retained, invitation: null })),
         readProjectCapabilities: jest.fn().mockResolvedValue(success({
           authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
-          invitations: true, leave: true, managerResponsibility: true,
+          invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
           membershipManagement: true, retirement: true,
         })),
         readSnapshot: jest.fn().mockResolvedValue(success({
@@ -791,7 +922,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       ])),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
-        invitations: false, leave: false, managerResponsibility: true,
+        invitations: false, leave: false, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: false,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -1177,7 +1308,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       readProjectCapabilities: jest.fn()
         .mockResolvedValueOnce(success({
           authorityKind: 'lan', authorityTransfer: false, importedMemberClaims: false,
-          invitations: true, leave: true, managerResponsibility: true,
+          invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
           membershipManagement: true, retirement: true,
         }))
         .mockResolvedValueOnce({
@@ -1277,7 +1408,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: false,
-        invitations: true, leave: true, managerResponsibility: true,
+        invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: true,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -1823,7 +1954,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         importedMemberClaims: false,
         invitations: false,
         leave: false,
-        managerResponsibility: true,
+        managerResponsibility: true, managerPromotion: true,
         membershipManagement: true,
         retirement: false,
       })),
@@ -1921,7 +2052,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         importedMemberClaims: false,
         invitations: false,
         leave: false,
-        managerResponsibility: true,
+        managerResponsibility: true, managerPromotion: true,
         membershipManagement: true,
         retirement: false,
       })),
@@ -1989,7 +2120,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       })),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: false,
-        invitations: false, leave: false, managerResponsibility: true,
+        invitations: false, leave: false, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: false,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -2144,7 +2275,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         : null)),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: true,
-        invitations: true, leave: true, managerResponsibility: true,
+        invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: true,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -2209,7 +2340,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       }])),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: true, importedMemberClaims: true,
-        invitations: true, leave: true, managerResponsibility: true,
+        invitations: true, leave: true, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: true,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -2443,62 +2574,9 @@ it.each([false, true])('automatically restores management after Host startup wit
       '[data-action="confirm-access-action"]',
     )?.click();
     await flush();
-    expect(port.createManagerResponsibilityOffer).toHaveBeenCalledWith({
+    expect(port.promoteManager).toHaveBeenCalledWith({
       projectId: 'project-alpha',
-      purpose: 'manager-promotion',
       targetMemberId: 'member-maya',
-    }, { signal: expect.any(AbortSignal) });
-  });
-
-  it('shows pending promotion acknowledgement and lets only the source cancel it', async () => {
-    const members = [
-      member('member-manager', 'Alice', { role: 'manager' }),
-      member('member-maya', 'Maya'),
-    ];
-    const port = createPort(members, {
-      readSnapshot: jest.fn().mockResolvedValue(success({
-        snapshot: {
-          currentMember: members[0],
-          managerResponsibilityOffer: {
-            offerId: 'promotion-one',
-            offeredAt: CREATED_AT,
-            purpose: 'manager-promotion',
-            sourceManagerMemberId: 'member-manager',
-            status: 'offered',
-            targetMemberId: 'member-maya',
-          },
-          members,
-          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
-        },
-        source: 'online',
-        stale: false,
-        syncState: { status: 'synchronized' },
-      } as never)),
-    }, { currentMemberId: 'member-manager', hostMemberId: 'member-manager' });
-    const modal = new ProjectManagementModal({} as never, port, {
-      project: project({ hostStatus: 'stopped' }),
-    });
-
-    modal.onOpen();
-    await flush();
-
-    const targetRow = modal.contentEl.querySelector('[data-member-id="member-maya"]')!;
-    expect(targetRow.querySelector('[data-action="make-manager"]')).toBeNull();
-    expect(targetRow.querySelector<HTMLButtonElement>(
-      '[data-action="promotion-pending"]',
-    )?.disabled).toBe(true);
-    expect(targetRow.textContent).toContain('Waiting for acknowledgement');
-
-    const sourceRow = modal.contentEl.querySelector('[data-member-id="member-manager"]')!;
-    const cancel = sourceRow.querySelector<HTMLButtonElement>(
-      '[data-action="cancel-manager-responsibility"]',
-    );
-    expect(cancel?.textContent).toBe('Cancel promotion');
-    cancel?.click();
-    await flush();
-    expect(port.cancelManagerResponsibilityOffer).toHaveBeenCalledWith({
-      offerId: 'promotion-one',
-      projectId: 'project-alpha',
     }, { signal: expect.any(AbortSignal) });
   });
 
@@ -2539,7 +2617,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       })))),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
-        invitations: false, leave: false, managerResponsibility: true,
+        invitations: false, leave: false, managerResponsibility: true, managerPromotion: true,
         membershipManagement: true, retirement: false,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -2559,7 +2637,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     await flush();
 
     expect(modal.contentEl.querySelector(
-      '[data-action="complete-promotion"][data-member-id="member-maya"]',
+      '[data-action="make-manager"][data-member-id="member-maya"]',
     )).not.toBeNull();
     const current = modal.contentEl.querySelector('[data-member-id="member-manager"]')!;
     current.querySelector<HTMLButtonElement>(
@@ -2581,7 +2659,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       listManagerResponsibilityOffers: jest.fn().mockResolvedValue(success([])),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: false, importedMemberClaims: false,
-        invitations: false, leave: false, managerResponsibility: true,
+        invitations: false, leave: false, managerResponsibility: true, managerPromotion: true,
         membershipManagement: false, retirement: false,
       })),
       readSnapshot: jest.fn().mockResolvedValue(success({
@@ -2603,136 +2681,9 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(modal.contentEl.querySelector('[data-action="make-manager"]')).toBeNull();
   });
 
-  it('completes an acknowledged promotion without changing the source Manager', async () => {
-    const members = [
-      member('member-manager', 'Alice', { role: 'manager' }),
-      member('member-maya', 'Maya'),
-    ];
-    const port = createPort(members, {
-      readSnapshot: jest.fn().mockResolvedValue(success({
-        snapshot: {
-          currentMember: members[0],
-          managerResponsibilityOffer: {
-            acknowledgedAt: CREATED_AT,
-            offerId: 'promotion-one',
-            offeredAt: CREATED_AT,
-            purpose: 'manager-promotion',
-            sourceManagerMemberId: 'member-manager',
-            status: 'acknowledged',
-            targetMemberId: 'member-maya',
-          },
-          members,
-          project: { authorityKind: 'lan', hostMemberId: 'member-manager' },
-        },
-        source: 'online',
-        stale: false,
-        syncState: { status: 'synchronized' },
-      } as never)),
-    }, { currentMemberId: 'member-manager', hostMemberId: 'member-manager' });
-    const modal = new ProjectManagementModal({} as never, port, {
-      project: project({ hostStatus: 'stopped' }),
-    });
 
-    modal.onOpen();
-    await flush();
 
-    const complete = modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="complete-promotion"][data-member-id="member-maya"]',
-    );
-    expect(complete?.textContent).toBe('Complete promotion');
-    complete?.click();
-    expect(modal.contentEl.textContent).toContain('You will both remain Managers');
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="confirm-access-action"]',
-    )?.click();
-    await flush();
-
-    expect(port.promoteManager).toHaveBeenCalledWith({
-      managerResponsibilityOfferId: 'promotion-one',
-      projectId: 'project-alpha',
-      targetMemberId: 'member-maya',
-    }, { signal: expect.any(AbortSignal) });
-    expect(port.createManagerResponsibilityOffer).not.toHaveBeenCalled();
-  });
-
-  it('retries offer creation with its frozen intent after acknowledgement appears', async () => {
-    const manager = member('member-manager', 'Alice', { role: 'manager' });
-    const target = member('member-maya', 'Maya');
-    let acknowledged = false;
-    let listener: ((state: CollabFeatureState) => void) | undefined;
-    let attempt = 0;
-    const port = createPort([manager, target], {
-      createManagerResponsibilityOffer: jest.fn().mockImplementation(async () => {
-        attempt += 1;
-        if (attempt === 1) {
-          acknowledged = true;
-          return {
-            error: new CollabError({ code: 'operation-timeout' }),
-            status: 'failure',
-          };
-        }
-        return success({} as never);
-      }),
-      readSnapshot: jest.fn().mockImplementation(async () => success({
-        snapshot: {
-          currentMember: manager,
-          ...(acknowledged ? {
-            managerResponsibilityOffer: {
-              acknowledgedAt: CREATED_AT,
-              offerId: 'promotion-one',
-              offeredAt: CREATED_AT,
-              purpose: 'manager-promotion',
-              sourceManagerMemberId: manager.id,
-              status: 'acknowledged',
-              targetMemberId: target.id,
-            },
-          } : {}),
-          members: [manager, target],
-          project: { authorityKind: 'lan', hostMemberId: 'member-host' },
-        },
-        source: 'online',
-        stale: false,
-        syncState: { status: 'synchronized' },
-      } as never)),
-      subscribe: jest.fn().mockImplementation(callback => {
-        listener = callback;
-        return { dispose: jest.fn() };
-      }),
-    });
-    const modal = new ProjectManagementModal({} as never, port, {
-      project: project(),
-    });
-
-    modal.onOpen();
-    await flush();
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="make-manager"][data-member-id="member-maya"]',
-    )?.click();
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="confirm-access-action"]',
-    )?.click();
-    await flush();
-    listener?.({
-      lifecycle: 'ready',
-      projects: [project()],
-      selectedProjectId: 'project-alpha',
-    });
-    await flush();
-    modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="confirm-access-action"]',
-    )?.click();
-    await flush();
-
-    expect(port.createManagerResponsibilityOffer).toHaveBeenCalledTimes(2);
-    expect(port.createManagerResponsibilityOffer.mock.calls[1]?.[0]).toEqual({
-      projectId: 'project-alpha',
-      purpose: 'manager-promotion',
-      targetMemberId: 'member-maya',
-    });
-    expect(port.promoteManager).not.toHaveBeenCalled();
-  });
-
-  it('retries promotion completion with its frozen offer after snapshot consumption', async () => {
+  it('retries direct promotion after its updated role appears in the snapshot', async () => {
     const manager = member('member-manager', 'Alice', { role: 'manager' });
     const target = member('member-maya', 'Maya');
     let promoted = false;
@@ -2787,7 +2738,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     modal.onOpen();
     await flush();
     modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="complete-promotion"][data-member-id="member-maya"]',
+      '[data-action="make-manager"][data-member-id="member-maya"]',
     )?.click();
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="confirm-access-action"]',
@@ -2806,7 +2757,6 @@ it.each([false, true])('automatically restores management after Host startup wit
 
     expect(port.promoteManager).toHaveBeenCalledTimes(2);
     expect(port.promoteManager.mock.calls[1]?.[0]).toEqual({
-      managerResponsibilityOfferId: 'promotion-one',
       projectId: 'project-alpha',
       targetMemberId: 'member-maya',
     });
@@ -3221,7 +3171,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         .mockResolvedValueOnce(success(undefined)),
     });
     const hostModal = new ProjectManagementModal({} as never, hostPort, {
-      project: project({ hostStatus: 'stopped', role: 'member' }),
+      project: project({ hostInstallationStatus: 'hosted-here', hostStatus: 'stopped', role: 'member' }),
     });
     hostModal.onOpen();
     await flush();
@@ -3236,7 +3186,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     )?.click();
     await flush();
     expect(hostModal.contentEl.textContent).toContain('Transfer Host before leaving');
-    expect(hostModal.contentEl.querySelector('[data-action="offer-host-transfer"]'))
+    expect(hostModal.contentEl.querySelector('[data-action="select-host-destination"]'))
       .not.toBeNull();
 
     const managerModal = new ProjectManagementModal({} as never, port, {
@@ -3611,7 +3561,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(ownRow.querySelector('[data-action="decline-manager-responsibility"]')).toBeNull();
   });
 
-  it('shows Host Accept and Decline only on the offered target own row', async () => {
+  it('shows the offered target Host Accept and Decline in Hosting', async () => {
     const members = [
       member('member-host', 'Host operator'),
       member('member-maya', 'Maya'),
@@ -3645,12 +3595,9 @@ it.each([false, true])('automatically restores management after Host startup wit
     modal.onOpen();
     await flush();
 
-    const ownRow = modal.contentEl.querySelector('[data-member-id="member-maya"]')!;
-    const otherRow = modal.contentEl.querySelector('[data-member-id="member-lee"]')!;
-    expect(ownRow.querySelector('[data-action="accept-host-transfer"]')).not.toBeNull();
-    expect(ownRow.querySelector('[data-action="decline-host-transfer"]')).not.toBeNull();
-    expect(otherRow.querySelector('[data-action="accept-host-transfer"]')).toBeNull();
-    ownRow.querySelector<HTMLButtonElement>('[data-action="decline-host-transfer"]')?.click();
+    const hosting = within(modal.contentEl).getByRole('region', { name: 'Hosting' });
+    expect(within(hosting).getByRole('button', { name: 'Accept Host' })).not.toBeNull();
+    fireEvent.click(within(hosting).getByRole('button', { name: 'Decline' }));
     await flush();
     expect(port.declineHostTransfer).toHaveBeenCalledWith({
       projectId: 'project-alpha',
@@ -3865,7 +3812,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     await flush();
 
     modal.contentEl.querySelector<HTMLButtonElement>(
-      '[data-action="complete-promotion"]',
+      '[data-action="make-manager"]',
     )?.click();
     modal.contentEl.querySelector<HTMLButtonElement>(
       '[data-action="confirm-access-action"]',

@@ -5,6 +5,7 @@ export const LAN_COLLAB_CAPABILITIES = Object.freeze([
   'ticket-number-lookup-v1',
   'imported-membership-claims-v1',
   'project-recovery-v1',
+  'direct-manager-promotion-v1',
 ] as const);
 
 export type LanCollabCapability = typeof LAN_COLLAB_CAPABILITIES[number];

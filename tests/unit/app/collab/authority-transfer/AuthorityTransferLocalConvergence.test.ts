@@ -170,9 +170,9 @@ describe('AuthorityTransferLocalConvergence', () => {
     let membership: CollabLocalMembershipRecord = kind === 'lan' ? local : {
       ...local,
       authority: {
-        authorityGeneration: 1, kind: 'cloud', bindingVersion: 9, wireVersion: 13,
+        authorityGeneration: 1, kind: 'cloud', bindingVersion: 10, wireVersion: 14,
         serverUrl: 'https://old-cloud.example.test/',
-        gitRemoteUrl: `https://old-cloud.example.test/v9/projects/${PROJECT_ID}/repository.git`,
+        gitRemoteUrl: `https://old-cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
       },
       member: snapshot('cloud').currentMember,
     };
@@ -301,10 +301,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 9,
+        bindingVersion: 10,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 13,
+        wireVersion: 14,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -344,10 +344,10 @@ describe('AuthorityTransferLocalConvergence', () => {
     expect(membership).toMatchObject({
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 9,
+        bindingVersion: 10,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 13,
+        wireVersion: 14,
       },
       lastEventSequence: 1,
       member: {
@@ -365,11 +365,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 2,
-        bindingVersion: 9 as const,
-        gitRemoteUrl: `https://cloud.example.test/v9/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 10 as const,
+        gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 13 as const,
+        wireVersion: 14 as const,
       },
       member: {
         displayName: 'Host',
@@ -502,11 +502,11 @@ describe('AuthorityTransferLocalConvergence', () => {
       ...lanMembership(),
       authority: {
         authorityGeneration: 1,
-        bindingVersion: 9 as const,
-        gitRemoteUrl: `https://cloud.example.test/v9/projects/${PROJECT_ID}/repository.git`,
+        bindingVersion: 10 as const,
+        gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 13 as const,
+        wireVersion: 14 as const,
       },
       member: {
         displayName: 'Host',

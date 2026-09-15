@@ -947,12 +947,12 @@ describe('AuthorityTransferModule', () => {
       loadMembership: async () => ({
         authority: {
           authorityGeneration: 1,
-          bindingVersion: 9,
+          bindingVersion: 10,
           developmentActorId: 'member-host',
-          gitRemoteUrl: `https://cloud.example.test/v9/projects/${PROJECT_ID}/repository.git`,
+          gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test/',
-          wireVersion: 13,
+          wireVersion: 14,
         },
         createdAt: '2026-08-27T00:00:00.000Z',
         lastEventSequence: 1,
