@@ -108,8 +108,8 @@ function privateKeyFromPem(pem: string): ReturnType<typeof forgePki.privateKeyFr
 
 function certificateSerial(): string {
   const bytes = randomBytes(16);
-  bytes[0] &= 0x7f;
-  if (bytes.every(value => value === 0)) bytes[bytes.length - 1] = 1;
+  // A positive, nonzero first octet keeps the serial minimally DER-encoded.
+  bytes[0] = (bytes[0] & 0x7f) | 0x01;
   return bytes.toString('hex');
 }
 

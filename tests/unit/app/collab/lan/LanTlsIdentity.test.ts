@@ -1,7 +1,8 @@
-import { X509Certificate } from 'node:crypto';
+import { randomBytes, X509Certificate } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createSecureContext } from 'node:tls';
 
 import {
   fingerprintCertificatePem,
@@ -11,6 +12,11 @@ import type { CollabError } from '@/core/collab/ClaudianCollabError';
 import { parseInstallationKey } from '@/core/device/InstallationKey';
 
 jest.setTimeout(60_000);
+
+jest.mock('node:crypto', () => ({
+  ...jest.requireActual('node:crypto'),
+  randomBytes: jest.fn(jest.requireActual('node:crypto').randomBytes),
+}));
 
 const INSTALLATION_A = parseInstallationKey(`device-${'a'.repeat(64)}`);
 const INSTALLATION_B = parseInstallationKey(`device-${'b'.repeat(64)}`);
@@ -23,7 +29,28 @@ describe('LanTlsIdentity', () => {
   });
 
   afterEach(async () => {
+    jest.mocked(randomBytes).mockReset();
+    jest.mocked(randomBytes).mockImplementation(jest.requireActual('node:crypto').randomBytes);
     await rm(vaultRoot, { force: true, recursive: true });
+  });
+
+  it.each([
+    '00010000000000000000000000000000',
+    '00000100000000000000000000000000',
+    '00800000000000000000000000000000',
+    '80010000000000000000000000000000',
+    '00000000000000000000000000000000',
+  ])('issues a TLS-usable chain with serial entropy %s', async (entropy) => {
+    jest.mocked(randomBytes).mockImplementation(() => Buffer.from(entropy, 'hex'));
+    const issued = await new LanTlsIdentity(vaultRoot, {
+      installationKey: INSTALLATION_A,
+    }).issueServerIdentity('192.168.1.42');
+
+    expect(() => createSecureContext({
+      cert: issued.certificateChainPem,
+      key: issued.privateKeyPem,
+      ca: issued.caCertificatePem,
+    })).not.toThrow();
   });
 
   it('persists one Vault Host CA behind the private Collab guard', async () => {
