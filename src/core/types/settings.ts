@@ -145,6 +145,10 @@ export interface ClaudianSettings {
   mediaFolder: string;
   systemPrompt: string;
 
+  // When enabled, `@` mentions can browse and reference files/folders outside
+  // the vault by absolute or `~` path. Disabled by default; opt-in only.
+  enableExternalFileMentions: boolean;
+
   // Environment
   sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];

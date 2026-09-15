@@ -42,6 +42,31 @@ describe('MentionSource', () => {
     value.destroy();
   });
 
+  it('dismisses once a trailing space closes the mention', () => {
+    const { source: value } = source();
+    // A folder mention like "@notes/ " is finished — the dropdown must not reopen.
+    expect(value.match('@notes/ ', 8)).toBeNull();
+    expect(value.match('@Alpha note ', 12)).toBeNull();
+    // Interior spaces while still typing keep the mention active.
+    expect(value.match('@Alpha note', 11)).toEqual(expect.objectContaining({
+      query: 'Alpha note',
+    }));
+    value.destroy();
+  });
+
+  it('declines external filesystem-path queries so the fs source owns them', () => {
+    const { source: value } = source();
+    // Absolute/relative/home/Windows path shapes belong to FilesystemMentionSource;
+    // the vault source must not reopen on them after a completed external mention.
+    expect(value.match('@/Users/alice/x', 15)).toBeNull();
+    expect(value.match('@~/Documents', 12)).toBeNull();
+    expect(value.match('@./sub', 6)).toBeNull();
+    expect(value.match('@../up', 6)).toBeNull();
+    // Ordinary vault names still match.
+    expect(value.match('@notes', 6)).toEqual(expect.objectContaining({ query: 'notes' }));
+    value.destroy();
+  });
+
   it('lists and selects Vault files and folders', async () => {
     const { source: value } = source();
     const match = value.match('@alp', 4)!;

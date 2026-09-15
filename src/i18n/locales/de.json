@@ -435,6 +435,10 @@
       "name": "Medienordner",
       "desc": "Ordner mit Anhängen/Bildern. Wenn Notizen ![[image.jpg]] verwenden, sucht Claude hier. Leer lassen für Vault-Stammverzeichnis."
     },
+    "externalFileMentions": {
+      "name": "@-Erwähnungen außerhalb des Vaults zulassen",
+      "desc": "Erlaubt @, Dateien und Ordner außerhalb deines Vaults per absolutem oder ~-Pfad zu durchsuchen und zu referenzieren. Das Verzeichnis der erwähnten Datei erhält Lesezugriff für den Agenten. Standardmäßig aus."
+    },
     "systemPrompt": {
       "name": "Benutzerdefinierter System-Prompt",
       "desc": "Zusätzliche Anweisungen, die an den Standard-System-Prompt angehängt werden"

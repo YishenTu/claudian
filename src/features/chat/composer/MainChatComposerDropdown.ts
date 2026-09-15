@@ -7,6 +7,7 @@ import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/P
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
 import type { SlashCommand } from '@/core/types';
+import type { FilesystemMentionSource } from '@/shared/composer-dropdown';
 import {
   ComposerDropdownController,
   SlashCommandSource,
@@ -16,6 +17,7 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import type { FileContextManager } from '../ui/FileContext';
 import { CollabMemberChangesFolder } from './CollabMemberChangesFolder';
 import { CollabTicketReferenceSource } from './CollabTicketReferenceSource';
+import { createExternalFileMentionSource } from './externalFileMentionSource';
 
 export interface MainChatComposerDropdownOptions {
   readonly hiddenCommands?: ReadonlySet<string>;
@@ -24,12 +26,17 @@ export interface MainChatComposerDropdownOptions {
   readonly providerConfig?: ProviderCommandDropdownConfig;
   readonly providerDiscovery?: ProviderCommandDiscoverySource<ProviderCommandEntry>;
   readonly providerId: ProviderId;
+  /** Enables browsing files outside the vault via `@`. Re-read on every keystroke. */
+  readonly isExternalFileMentionsEnabled?: () => boolean;
+  /** Absolute vault root, used to resolve relative (`./`, `../`) `@` mentions. */
+  readonly resolveExternalMentionBase?: () => string | null;
 }
 
 export class MainChatComposerDropdown {
   private readonly controller: ComposerDropdownController;
   private readonly slashSource: SlashCommandSource;
   private readonly mentionSource: ReturnType<FileContextManager['getMentionSource']>;
+  private readonly externalFileSource: FilesystemMentionSource | null;
   private readonly selectionSubscription: CollabComposerReferenceSubscription | null;
   private readonly ticketSource: CollabTicketReferenceSource | null;
 
@@ -53,6 +60,14 @@ export class MainChatComposerDropdown {
     if (memberChanges) {
       this.mentionSource.setExtensionFoldersLoader(signal => memberChanges.getRootItems(signal));
     }
+    // Outside-vault browsing owns absolute-path `@` queries; register it before
+    // the vault mention source so it wins the longest-match tie for those.
+    this.externalFileSource = options.isExternalFileMentionsEnabled
+      ? createExternalFileMentionSource({
+        isEnabled: options.isExternalFileMentionsEnabled,
+        resolveBase: options.resolveExternalMentionBase,
+      })
+      : null;
     this.selectionSubscription = options.collabReferences?.subscribeSelection(
       () => this.mentionSource.invalidate(),
     ) ?? null;
@@ -62,7 +77,12 @@ export class MainChatComposerDropdown {
     this.controller = new ComposerDropdownController(
       containerEl,
       inputEl,
-      [this.slashSource, this.mentionSource, ...(this.ticketSource ? [this.ticketSource] : [])],
+      [
+        this.slashSource,
+        ...(this.externalFileSource ? [this.externalFileSource] : []),
+        this.mentionSource,
+        ...(this.ticketSource ? [this.ticketSource] : []),
+      ],
     );
   }
 

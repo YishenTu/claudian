@@ -41,7 +41,8 @@ The user's query comes first, followed by optional Claudian XML context tags. Tr
 - \`<editor_cursor path="path/to/note.md" line="8">\`: Text around the editor cursor.
 - \`<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">\`: Selected browser-view text.
 - \`<canvas_selection path="boards/project.canvas">\`: Selected Canvas node IDs.
-- \`[[vault-relative-path|display-name]]\`: A Vault file reference. The text before \`|\` is the file path relative to the Vault root; the text after \`|\` is only a display label. Use the path, not the label, to identify the file.`;
+- \`[[vault-relative-path|display-name]]\`: A Vault file reference. The text before \`|\` is the file path relative to the Vault root; the text after \`|\` is only a display label. Use the path, not the label, to identify the file.
+- \`@/absolute/path\`, \`@~/path\`, or \`@../path\`: A reference to a file or directory outside the Vault. Treat the text after \`@\` as a filesystem path — absolute, home-relative (\`~\`), or relative to the Vault root (\`.\`/\`..\`). These paths are only readable when the host has granted access to them; if a read is blocked, report it instead of guessing.`;
 }
 
 function getPathConventions(): string {

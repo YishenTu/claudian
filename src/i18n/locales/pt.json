@@ -435,6 +435,10 @@
       "name": "Pasta de mídia",
       "desc": "Pasta contendo anexos/imagens. Quando notas usam ![[image.jpg]], Claude procurará aqui. Deixe vazio para a raiz do repositório."
     },
+    "externalFileMentions": {
+      "name": "Permitir menções @ fora do cofre",
+      "desc": "Permite que @ navegue e referencie arquivos e pastas fora do seu cofre por caminho absoluto ou ~. O diretório do arquivo mencionado recebe acesso de leitura para o agente. Desativado por padrão."
+    },
     "systemPrompt": {
       "name": "Prompt de sistema personalizado",
       "desc": "Instruções adicionais anexadas ao prompt de sistema padrão"
