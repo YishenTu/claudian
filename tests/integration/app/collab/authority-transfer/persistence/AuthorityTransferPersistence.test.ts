@@ -370,7 +370,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it.each(['discovery', 'lan-reconnect', 'pending', 'restart', 'wrong-member'] as const)(
     'admits %s only alongside a proved relinquished source', async scenario => {
-      jest.setSystemTime(new Date('2026-08-26T01:00:00.000Z'));
+      jest.setSystemTime(Date.parse('2026-08-26T01:00:00.000Z'));
       const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
       const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
       await retainCompletedSource(repository, persistence);
