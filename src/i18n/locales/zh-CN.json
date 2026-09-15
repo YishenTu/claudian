@@ -187,7 +187,7 @@
       "title": "项目管理"
     },
     "access": {
-      "copyRecoveryLink": "复制恢复链接",
+      "copyRecoveryLink": "恢复链接",
       "recoveryLinkCopied": "已复制恢复链接。",
       "activeInvitations": "有效邀请",
       "loadingInvitations": "正在加载邀请…",
@@ -249,7 +249,6 @@
       "anotherDevice": "另一台设备",
       "prepareLanHelp": "准备在本机上通过局域网托管项目。",
       "lanTargetReady": "本机已准备好接收项目。",
-      "shareLanTargetHelp": "请求已发送。Manager 批准后，本设备会自动继续。",
       "otherLanTargetHelp": "在接收设备上打开“迁移到局域网”并申请托管，请求会显示在这里。",
       "shareLanHandleHelp": "将此句柄发给目标设备，在目标设备上接受迁移。",
       "prepareCloudToLan": "准备局域网目标",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "本地文件将立即删除。",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "权限已更新。",
-      "waitingCloudToLanApproval": "正在等待批准。可以关闭此窗口，迁移会自动继续。",
+      "waitingCloudToLanApproval": "等待 Manager 批准，随后本设备会自动继续。",
       "resumeCloudToLan": "继续",
       "cloudToLanApproved": "已批准。接收设备会自动继续，也可以点击“继续”。"
     },

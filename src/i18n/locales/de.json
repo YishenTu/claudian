@@ -187,7 +187,7 @@
       "title": "Projektverwaltung"
     },
     "access": {
-      "copyRecoveryLink": "Wiederherstellungslink kopieren",
+      "copyRecoveryLink": "Wiederherstellungslink",
       "recoveryLinkCopied": "Wiederherstellungslink kopiert.",
       "activeInvitations": "Aktive Einladungen",
       "loadingInvitations": "Einladungen werden geladen…",
@@ -249,7 +249,6 @@
       "anotherDevice": "Anderes Gerät",
       "prepareLanHelp": "Bereiten Sie dieses Gerät vor, um das Projekt im lokalen Netzwerk zu hosten.",
       "lanTargetReady": "Dieses Gerät ist bereit, das Projekt zu empfangen.",
-      "shareLanTargetHelp": "Anfrage gesendet. Dieses Gerät fährt nach der Genehmigung durch einen Manager automatisch fort.",
       "otherLanTargetHelp": "Öffnen Sie auf dem empfangenden Gerät „Ins LAN verschieben“ und beantragen Sie das Hosting. Die Anfrage erscheint hier.",
       "shareLanHandleHelp": "Senden Sie diesen Handle an das Zielgerät, um dort den Transfer anzunehmen.",
       "prepareCloudToLan": "LAN-Ziel vorbereiten",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "Zugriff aktualisiert.",
-      "waitingCloudToLanApproval": "Warte auf Genehmigung. Sie können dieses Fenster schließen; der Umzug wird automatisch fortgesetzt.",
+      "waitingCloudToLanApproval": "Warte auf die Genehmigung eines Managers. Dieses Gerät fährt danach automatisch fort.",
       "resumeCloudToLan": "Fortsetzen",
       "cloudToLanApproved": "Genehmigt. Das Zielgerät fährt automatisch fort; alternativ kann dessen Benutzer Fortsetzen wählen."
     },

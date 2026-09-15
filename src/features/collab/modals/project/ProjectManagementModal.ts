@@ -1434,9 +1434,8 @@ export class ProjectManagementModal extends Modal {
         section.appendChild(actions);
         return;
       }
-      section.createDiv({ text: t('collab.access.lanTargetReady') });
-      if (!isManager && !this.#cloudTransferHandle) {
-        section.createDiv({ text: t('collab.access.shareLanTargetHelp') });
+      if (isManager && !this.#cloudTransferHandle) {
+        section.createDiv({ text: t('collab.access.lanTargetReady') });
       }
       if (this.#cloudTransferHandle || !isManager) {
         this.#renderCloudToLanAcceptance(section, actions, isManager);

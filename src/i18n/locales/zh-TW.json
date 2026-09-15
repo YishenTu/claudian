@@ -187,7 +187,7 @@
       "title": "專案管理"
     },
     "access": {
-      "copyRecoveryLink": "複製復原連結",
+      "copyRecoveryLink": "復原連結",
       "recoveryLinkCopied": "已複製復原連結。",
       "activeInvitations": "有效邀請",
       "loadingInvitations": "正在載入邀請…",
@@ -249,7 +249,6 @@
       "anotherDevice": "另一台裝置",
       "prepareLanHelp": "準備在本機上透過區域網路託管專案。",
       "lanTargetReady": "本機已準備好接收專案。",
-      "shareLanTargetHelp": "請求已傳送。Manager 核准後，本裝置會自動繼續。",
       "otherLanTargetHelp": "在接收裝置上開啟「遷移到區域網路」並申請託管，請求會顯示在這裡。",
       "shareLanHandleHelp": "將此控制代碼傳給目標裝置，在目標裝置上接受遷移。",
       "prepareCloudToLan": "準備區域網路目標",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "本機檔案將立即刪除。",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "權限已更新。",
-      "waitingCloudToLanApproval": "正在等待核准。可以關閉此視窗，遷移會自動繼續。",
+      "waitingCloudToLanApproval": "等待 Manager 核准，隨後本裝置會自動繼續。",
       "resumeCloudToLan": "繼續",
       "cloudToLanApproved": "已核准。接收裝置會自動繼續，也可以點選「繼續」。"
     },

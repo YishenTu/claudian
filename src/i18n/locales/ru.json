@@ -187,7 +187,7 @@
       "title": "Управление проектом"
     },
     "access": {
-      "copyRecoveryLink": "Скопировать ссылку восстановления",
+      "copyRecoveryLink": "Ссылка восстановления",
       "recoveryLinkCopied": "Ссылка восстановления скопирована.",
       "activeInvitations": "Активные приглашения",
       "loadingInvitations": "Загрузка приглашений…",
@@ -249,7 +249,6 @@
       "anotherDevice": "Другое устройство",
       "prepareLanHelp": "Подготовьте это устройство для размещения проекта в локальной сети.",
       "lanTargetReady": "Это устройство готово принять проект.",
-      "shareLanTargetHelp": "Запрос отправлен. После одобрения Manager это устройство продолжит автоматически.",
       "otherLanTargetHelp": "На принимающем устройстве откройте «Перенести в LAN» и запросите размещение. Запрос появится здесь.",
       "shareLanHandleHelp": "Отправьте этот дескриптор на целевое устройство, чтобы принять на нём перенос.",
       "prepareCloudToLan": "Подготовить цель LAN",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "Доступ обновлён.",
-      "waitingCloudToLanApproval": "Ожидание одобрения. Можно закрыть это окно; перенос продолжится автоматически.",
+      "waitingCloudToLanApproval": "Ожидание одобрения Manager. Это устройство продолжит автоматически.",
       "resumeCloudToLan": "Продолжить",
       "cloudToLanApproved": "Одобрено. Принимающее устройство продолжит автоматически; пользователь также может нажать «Продолжить»."
     },

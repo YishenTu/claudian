@@ -187,7 +187,7 @@
       "title": "プロジェクト管理"
     },
     "access": {
-      "copyRecoveryLink": "復旧リンクをコピー",
+      "copyRecoveryLink": "復旧リンク",
       "recoveryLinkCopied": "復旧リンクをコピーしました。",
       "activeInvitations": "有効な招待",
       "loadingInvitations": "招待を読み込み中…",
@@ -249,7 +249,6 @@
       "anotherDevice": "別のデバイス",
       "prepareLanHelp": "このデバイスでローカルネットワーク上のプロジェクトをホストする準備をします。",
       "lanTargetReady": "このデバイスでプロジェクトを受け取る準備ができました。",
-      "shareLanTargetHelp": "リクエストを送信しました。Manager の承認後、このデバイスは自動的に続行します。",
       "otherLanTargetHelp": "受信デバイスで「LAN に移動」を開き、ホストを申請してください。申請はここに表示されます。",
       "shareLanHandleHelp": "このハンドルを移動先のデバイスに送り、そのデバイスで転送を受け入れてください。",
       "prepareCloudToLan": "LAN 移動先を準備",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "アクセスを更新しました。",
-      "waitingCloudToLanApproval": "承認を待っています。このウィンドウを閉じても、移行は自動的に続行します。",
+      "waitingCloudToLanApproval": "Manager の承認待ちです。承認後、このデバイスで自動的に続行します。",
       "resumeCloudToLan": "再開",
       "cloudToLanApproved": "承認済みです。受信デバイスは自動的に続行するか、ユーザーが「再開」を選択できます。"
     },

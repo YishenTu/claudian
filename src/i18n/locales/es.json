@@ -187,7 +187,7 @@
       "title": "Gestión del proyecto"
     },
     "access": {
-      "copyRecoveryLink": "Copiar enlace de recuperación",
+      "copyRecoveryLink": "Enlace de recuperación",
       "recoveryLinkCopied": "Enlace de recuperación copiado.",
       "activeInvitations": "Invitaciones activas",
       "loadingInvitations": "Cargando invitaciones…",
@@ -249,7 +249,6 @@
       "anotherDevice": "Otro dispositivo",
       "prepareLanHelp": "Prepara este dispositivo para alojar el proyecto en tu red local.",
       "lanTargetReady": "Este dispositivo está listo para recibir el proyecto.",
-      "shareLanTargetHelp": "Solicitud enviada. Este dispositivo continuará automáticamente cuando un Manager la apruebe.",
       "otherLanTargetHelp": "En el dispositivo receptor, abre Mover a LAN y solicita el alojamiento. La solicitud aparecerá aquí.",
       "shareLanHandleHelp": "Envía este identificador al dispositivo de destino para aceptar allí la transferencia.",
       "prepareCloudToLan": "Preparar destino LAN",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "Acceso actualizado.",
-      "waitingCloudToLanApproval": "Esperando aprobación. Puedes cerrar esta ventana; el traslado continuará automáticamente.",
+      "waitingCloudToLanApproval": "Esperando la aprobación de un Manager. Este dispositivo continuará automáticamente.",
       "resumeCloudToLan": "Reanudar",
       "cloudToLanApproved": "Aprobado. El dispositivo receptor continuará automáticamente o su usuario puede seleccionar Reanudar."
     },

@@ -187,7 +187,7 @@
       "title": "프로젝트 관리"
     },
     "access": {
-      "copyRecoveryLink": "복구 링크 복사",
+      "copyRecoveryLink": "복구 링크",
       "recoveryLinkCopied": "복구 링크를 복사했습니다.",
       "activeInvitations": "활성 초대",
       "loadingInvitations": "초대 불러오는 중…",
@@ -249,7 +249,6 @@
       "anotherDevice": "다른 기기",
       "prepareLanHelp": "이 기기에서 로컬 네트워크를 통해 프로젝트를 호스팅할 준비를 합니다.",
       "lanTargetReady": "이 기기가 프로젝트를 받을 준비가 되었습니다.",
-      "shareLanTargetHelp": "요청을 보냈습니다. Manager가 승인하면 이 기기에서 자동으로 계속합니다.",
       "otherLanTargetHelp": "수신 기기에서 LAN으로 이동을 열고 호스팅을 요청하세요. 요청이 여기에 표시됩니다.",
       "shareLanHandleHelp": "이 핸들을 대상 기기로 보내 해당 기기에서 전송을 수락하세요.",
       "prepareCloudToLan": "LAN 대상 준비",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "접근 권한을 업데이트했습니다.",
-      "waitingCloudToLanApproval": "승인 대기 중입니다. 이 창을 닫아도 이전은 자동으로 계속됩니다.",
+      "waitingCloudToLanApproval": "Manager 승인을 기다리는 중입니다. 승인 후 이 기기에서 자동으로 계속합니다.",
       "resumeCloudToLan": "재개",
       "cloudToLanApproved": "승인되었습니다. 수신 기기에서 자동으로 계속하거나 사용자가 재개를 선택할 수 있습니다."
     },

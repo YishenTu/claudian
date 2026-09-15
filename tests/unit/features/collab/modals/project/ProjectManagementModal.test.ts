@@ -183,12 +183,12 @@ describe('ProjectManagementModal', () => {
     modal.open();
     await flush();
     const invite = within(modal.contentEl).getByRole('button', { name: 'Create invitation' });
-    const copy = within(modal.contentEl).getByRole('button', { name: 'Copy recovery link' });
+    const copy = within(modal.contentEl).getByRole('button', { name: 'Recovery link' });
     expect(copy.parentElement).toBe(invite.parentElement);
     fireEvent.click(copy);
     await flush();
     expect(copyText).toHaveBeenLastCalledWith('recovery-1');
-    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Copy recovery link' }));
+    fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Recovery link' }));
     await flush();
     expect(copyText).toHaveBeenLastCalledWith('recovery-2');
     expect(modal.contentEl.textContent).not.toContain('recovery-2');

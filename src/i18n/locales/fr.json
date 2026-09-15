@@ -187,7 +187,7 @@
       "title": "Gestion du projet"
     },
     "access": {
-      "copyRecoveryLink": "Copier le lien de récupération",
+      "copyRecoveryLink": "Lien de récupération",
       "recoveryLinkCopied": "Lien de récupération copié.",
       "activeInvitations": "Invitations actives",
       "loadingInvitations": "Chargement des invitations…",
@@ -249,7 +249,6 @@
       "anotherDevice": "Un autre appareil",
       "prepareLanHelp": "Préparez cet appareil à héberger le projet sur votre réseau local.",
       "lanTargetReady": "Cet appareil est prêt à recevoir le projet.",
-      "shareLanTargetHelp": "Demande envoyée. Cet appareil continuera automatiquement après approbation par un Manager.",
       "otherLanTargetHelp": "Sur l’appareil destinataire, ouvrez Déplacer vers le LAN et demandez l’hébergement. La demande apparaîtra ici.",
       "shareLanHandleHelp": "Envoyez ce handle à l’appareil cible pour y accepter le transfert.",
       "prepareCloudToLan": "Préparer la cible LAN",
@@ -314,7 +313,7 @@
       "immediateLocalDeletion": "Local files will be deleted immediately.",
       "retireWarning": "This ends collaboration for every Member. Visible files remain on each device, but collaboration history and Git-only work are not recoverable.",
       "actionComplete": "Accès mis à jour.",
-      "waitingCloudToLanApproval": "En attente d’approbation. Vous pouvez fermer cette fenêtre ; le transfert continuera automatiquement.",
+      "waitingCloudToLanApproval": "En attente de l’approbation d’un Manager. Cet appareil continuera automatiquement.",
       "resumeCloudToLan": "Reprendre",
       "cloudToLanApproved": "Approuvé. L’appareil destinataire continuera automatiquement, ou son utilisateur peut choisir Reprendre."
     },
