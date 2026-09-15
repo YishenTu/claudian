@@ -342,7 +342,7 @@ export class CodexExecutionServerRequestRouter {
             options: [
               { label: 'Cancel', description: 'Cancel this request.', value: 'cancel' },
               { label: 'Decline', description: 'Decline this request.', value: 'decline' },
-              { label: 'Allow once', description: 'Accept this request only.', value: 'accept' },
+              { label: 'Allow', description: 'Accept this request.', value: 'accept' },
             ],
             multiSelect: false,
             isOther: false,

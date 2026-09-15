@@ -137,7 +137,7 @@ describe('CodexExecutionServerRequestRouter', () => {
     await expect(result).resolves.toEqual({ action: 'accept', content: {} });
   });
 
-  it.each(['form', 'openai/form'])('accepts an explicitly answered %s confirmation without persistent metadata', async mode => {
+  it.each(['form', 'openai/form'])('accepts an explicitly answered %s confirmation without echoing server metadata', async mode => {
     const router = createRouter(async request => ({
       interactionId: request.interactionId,
       answers: { 'mcp-elicitation-confirmation': 'accept' },
@@ -156,7 +156,7 @@ describe('CodexExecutionServerRequestRouter', () => {
     ['dismissed', null, 'cancel'],
     ['empty', {}, 'cancel'],
     ['blank', { 'mcp-elicitation-confirmation': '' }, 'cancel'],
-    ['label instead of value', { 'mcp-elicitation-confirmation': 'Allow once' }, 'cancel'],
+    ['label instead of value', { 'mcp-elicitation-confirmation': 'Allow' }, 'cancel'],
     ['free text', { 'mcp-elicitation-confirmation': 'yes please' }, 'cancel'],
     ['array', { 'mcp-elicitation-confirmation': ['accept'] }, 'cancel'],
     ['multiple choices', { 'mcp-elicitation-confirmation': ['accept', 'decline'] }, 'cancel'],
