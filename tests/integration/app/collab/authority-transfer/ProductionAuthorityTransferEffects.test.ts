@@ -1253,11 +1253,21 @@ describe('production authority-transfer effects', () => {
       await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
         .resolves.toEqual(completed);
       await sourceFoundation.lanHost.stopAuthorityTransferRoute(PROJECT_ID, 'terminal-source', exact.transferId);
+      const routeStart = jest.spyOn(sourceFoundation.lanHost, 'startAuthorityTransferRoute');
       await new ProductionLanToCloudSourceEffects({
         cloudSession: null, foundation: sourceFoundation, persistence: sourceFoundation.authorityTransfers,
         convergence: {} as AuthorityTransferLocalConvergence, projectId: PROJECT_ID,
       }).restoreRetained(exact);
-      await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
+      const restoredSession = await routeStart.mock.results[0]?.value;
+      routeStart.mockRestore();
+      if (!restoredSession) throw new Error('Missing restored terminal listener');
+      const restoredClient = new LanAuthorityTransferClient({
+        caCertificatePem: membership.authority.hostCaCertificatePem!,
+        caFingerprint: membership.authority.hostCaFingerprint!,
+        endpoint: restoredSession.endpoint,
+        projectId: PROJECT_ID,
+      });
+      await expect(restoredClient.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
         .resolves.toEqual(completed);
       await expect(sourceFoundation.authorityTransfers.loadCloudToLanTargetEntry(PROJECT_ID)).resolves.toEqual(nextTarget);
     } finally {
