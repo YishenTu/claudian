@@ -118,6 +118,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     let membership: CollabLocalMembershipRecord = { ...lanMembership(), hostOwnership: { autoStart: false, ownsAuthority: false } };
     const original = membership;
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_id, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: async () => undefined },
@@ -177,6 +178,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     };
     const rotate = jest.fn(async () => undefined);
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
@@ -212,6 +214,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     const release = new Promise<void>(resolve => { releaseRotate = resolve; });
     const authorityProjectionTransitions = new AuthorityProjectionTransitionCoordinator();
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions,
       git: {
@@ -271,6 +274,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       }),
     };
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
@@ -325,6 +329,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       }),
     };
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
@@ -386,6 +391,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       }),
     };
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
@@ -472,6 +478,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => { membership = next; }),
     };
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },
@@ -518,6 +525,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       saveMembership: jest.fn(async (next: CollabLocalMembershipRecord) => { membership = next; }),
     };
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_projectId, operation) => operation() },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate: jest.fn(async () => undefined) },

@@ -374,6 +374,7 @@ describe('AuthorityTransferPersistence', () => {
       const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
       const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
       await retainCompletedSource(repository, persistence);
+      expect(await persistence.inspectLifecycleOwner(PROJECT_ID)).toBe('retained');
       const originalSource = await persistence.load(PROJECT_ID);
       const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
       const memberId = scenario === 'wrong-member' ? MEMBER_BOB : MEMBER_ALICE;
@@ -451,6 +452,7 @@ describe('AuthorityTransferPersistence', () => {
       const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
       const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
       await retainCompletedSource(repository, persistence);
+      expect(await persistence.inspectLifecycleOwner(PROJECT_ID)).toBe('retained');
       const originalSource = await persistence.load(PROJECT_ID);
       const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
       const base = { schemaVersion: 3 as const, createdAt: '2026-08-26T00:00:00.000Z', updatedAt: '2026-08-26T00:00:00.000Z',
@@ -1010,7 +1012,7 @@ describe('AuthorityTransferPersistence', () => {
       terminalCleanupCompleted: !pendingClaims,
       transferId: TRANSFER_ID,
     });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe(pendingClaims ? 'nonterminal' : 'terminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe(pendingClaims ? 'retained' : 'terminal');
     const nextProposal = (generation: number) => createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
       request: {
@@ -3255,10 +3257,10 @@ describe('AuthorityTransferPersistence', () => {
     }
 
     await expect(persistence.assertAuthorityRestartAllowed(PROJECT_ID)).resolves.toBeUndefined();
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('retained');
     await repository.authorityTransferClaims.remove(PROJECT_ID);
     persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('retained');
     const completeTerminalCleanup = () => (
       persistence as unknown as {
         completeTerminalCleanup(input: {
@@ -3763,7 +3765,7 @@ describe('AuthorityTransferPersistence', () => {
       terminalCleanupCompleted: false,
       terminalResponder: { state: 'expired' },
     });
-    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
+    await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('retained');
     persistence = new AuthorityTransferPersistence({
       ...repository,
       authorityTransferClaims: {

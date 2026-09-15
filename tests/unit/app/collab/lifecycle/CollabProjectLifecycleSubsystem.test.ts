@@ -15,9 +15,9 @@ function ports() {
 }
 
 describe('CollabProjectLifecycleSubsystem', () => {
-  it('resumes a Project recovery claimant beside a proved completed transfer but rejects an unproved predecessor', async () => {
+  it.each(['nonterminal', 'retained'] as const)('admits a claimant beside a proved %s transfer but rejects an unproved predecessor', async state => {
     const subsystem = new CollabProjectLifecycleSubsystem({ ...ports(), recoveryStages: [], durableOwners: [
-      { name: 'authority-transfer', inspect: async () => 'nonterminal' },
+      { name: 'authority-transfer', inspect: async () => state },
       { name: 'authority-transfer-claimant', inspect: async () => 'nonterminal' },
     ] });
     let restored = false;

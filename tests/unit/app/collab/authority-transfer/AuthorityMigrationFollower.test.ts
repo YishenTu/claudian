@@ -1,6 +1,24 @@
 import { AuthorityMigrationFollower } from '@/app/collab/authority-transfer/AuthorityMigrationFollower';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 describe('AuthorityMigrationFollower', () => {
+  it('does not repeatedly retry a proof failure, but accepts a later recovery hint', async () => {
+    jest.useFakeTimers();
+    const follow = jest.fn().mockRejectedValue(new CollabError({ code: 'durable-progress-recovery-required' }));
+    const follower = new AuthorityMigrationFollower({ follow });
+    follower.notify('project-one');
+    await jest.advanceTimersByTimeAsync(29_000);
+    expect(follow).toHaveBeenCalledTimes(1);
+    follower.notify('project-one');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(follow).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1_000);
+    follower.notify('project-one');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(follow).toHaveBeenCalledTimes(2);
+    await follower.close();
+  });
+
   afterEach(() => jest.useRealTimers());
 
   it('defers hints outside the caller and coalesces them while one transition settles', async () => {
@@ -9,7 +27,7 @@ describe('AuthorityMigrationFollower', () => {
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const follower = new AuthorityMigrationFollower({
-      follow: async projectId => { await gate; settled.push(projectId); return true; },
+      follow: async projectId => { await gate; settled.push(projectId); return { kind: 'completed' }; },
     });
     follower.notify('project-one');
     follower.notify('project-one');
@@ -47,7 +65,7 @@ describe('AuthorityMigrationFollower', () => {
       follow: async (_projectId, options) => {
         signal = options.signal;
         await new Promise<void>(resolve => { release = resolve; });
-        return true;
+        return { kind: 'completed' };
       },
     });
     follower.notify('project-one');

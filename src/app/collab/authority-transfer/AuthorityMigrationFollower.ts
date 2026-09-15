@@ -1,5 +1,6 @@
 import type { CollabProjectId } from '@claudian-collab/protocol';
 
+import { attemptAuthorityRecovery, type AuthorityRecoveryOutcome } from '@/app/collab/authority-transfer/AuthorityRecoveryOutcome';
 import type { CollabOperationOptions } from '@/core/collab';
 
 interface PendingFollow {
@@ -15,7 +16,7 @@ export class AuthorityMigrationFollower {
   private readonly retryAfter = new Map<CollabProjectId, number>();
 
   constructor(private readonly options: {
-    readonly follow: (projectId: CollabProjectId, options: CollabOperationOptions) => Promise<boolean>;
+    readonly follow: (projectId: CollabProjectId, options: CollabOperationOptions) => Promise<AuthorityRecoveryOutcome>;
   }) {}
 
   notify(projectId: CollabProjectId): void {
@@ -51,18 +52,20 @@ export class AuthorityMigrationFollower {
 
   private async follow(projectId: CollabProjectId, pending: PendingFollow): Promise<void> {
     pending.attempts += 1;
-    try {
-      await this.options.follow(projectId, { signal: this.controller.signal });
-      this.pending.delete(projectId);
+    const outcome = await attemptAuthorityRecovery(
+      () => this.options.follow(projectId, { signal: this.controller.signal }),
+      this.controller.signal,
+    );
+    if (this.controller.signal.aborted) return;
+    if (outcome.kind === 'retryable' && pending.attempts < 3) {
+      this.schedule(projectId, pending, pending.attempts * 2_000);
+      return;
+    }
+    this.pending.delete(projectId);
+    if (outcome.kind === 'retryable' || outcome.kind === 'blocked') {
+      this.retryAfter.set(projectId, Date.now() + 30_000);
+    } else {
       this.retryAfter.delete(projectId);
-    } catch {
-      if (this.controller.signal.aborted) return;
-      if (pending.attempts < 3) {
-        this.schedule(projectId, pending, pending.attempts * 2_000);
-      } else {
-        this.pending.delete(projectId);
-        this.retryAfter.set(projectId, Date.now() + 30_000);
-      }
     }
   }
 }

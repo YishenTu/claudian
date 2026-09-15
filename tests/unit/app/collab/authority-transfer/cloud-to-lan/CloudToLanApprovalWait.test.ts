@@ -9,9 +9,9 @@ describe('Cloud-to-LAN shared event observation', () => {
     let reads = 0;
     const wait = new CloudToLanApprovalWait(async () => {
       reads++;
-      if (!approved) return false;
+      if (!approved) return { kind: 'waiting' };
       continued = true;
-      return true;
+      return { kind: 'completed' };
     });
     wait.start('project-1');
     await jest.advanceTimersByTimeAsync(0);
@@ -30,9 +30,9 @@ describe('Cloud-to-LAN shared event observation', () => {
     let approved = false;
     let continued = false;
     const wait = new CloudToLanApprovalWait(async () => {
-      if (approved) { continued = true; return true; }
+      if (approved) { continued = true; return { kind: 'completed' }; }
       await new Promise<void>(resolve => { finish = resolve; });
-      return false;
+      return { kind: 'waiting' };
     });
     wait.start('project-1');
     await jest.advanceTimersByTimeAsync(0);
@@ -48,7 +48,7 @@ describe('Cloud-to-LAN shared event observation', () => {
     const release = jest.fn();
     const observe = jest.fn(() => ({ dispose: release }));
     const check = jest.fn().mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }))
-      .mockResolvedValue(true);
+      .mockResolvedValue({ kind: 'completed' });
     const wait = new CloudToLanApprovalWait(check, observe);
     wait.start('project-1');
     await jest.advanceTimersByTimeAsync(0);
@@ -63,7 +63,7 @@ describe('Cloud-to-LAN shared event observation', () => {
   it('drains outbound work before shutdown finishes', async () => {
     let settled = false;
     const wait = new CloudToLanApprovalWait(async (_projectId, signal) => new Promise(resolve => {
-      signal.addEventListener('abort', () => { settled = true; resolve(false); }, { once: true });
+      signal.addEventListener('abort', () => { settled = true; resolve({ kind: 'cancelled' }); }, { once: true });
     }));
     wait.start('project-1');
     await jest.advanceTimersByTimeAsync(0);

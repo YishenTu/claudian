@@ -881,8 +881,8 @@ export class ClaudianCollabService {
     return { kind: 'setup', operationId, transferId: null, sourceGeneration: null, targetGeneration: 1 };
   }
 
-  captureStoppedAuthority(projectId: CollabProjectId, maximumGeneration: number): Promise<OwnedAuthorityDirectoryCapability | null> {
-    return this.hostInstallations.captureStoppedAuthority(projectId, maximumGeneration, {
+  captureFormerLanAuthority(projectId: CollabProjectId, cloudSource: { readonly kind: 'cloud'; readonly generation: number }): Promise<OwnedAuthorityDirectoryCapability | null> {
+    return this.hostInstallations.captureFormerLanAuthority(projectId, cloudSource, {
       isServing: () => this.lanHost.isProjectRunning(projectId),
       readProject: async resource => {
         const foundation = await this.#openOwnedAuthority(resource);

@@ -703,7 +703,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || membership.authority.serverUrl !== sourceCloudUrl
       || membership.authority.authorityGeneration !== current.status.sourceAuthority.generation
     ) throw targetError('authority-transfer-former-source-not-replaceable');
-    return foundation.captureStoppedAuthority(record.projectId, current.status.sourceAuthority.generation - 1);
+    return foundation.captureFormerLanAuthority(record.projectId, { kind: 'cloud', generation: current.status.sourceAuthority.generation });
   }
 
   async #removeSupersededLanAuthority(record: AuthorityTransferRecord): Promise<void> {

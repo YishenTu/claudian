@@ -1080,7 +1080,7 @@ export function createCollabFeatureSubcomposition(
         authorityTransfer.followAuthoritySuccessor(projectId, options)
       ));
       if (changed) await requireFeature().refreshLifecycleProjection();
-      return changed;
+      return { kind: changed ? 'completed' : 'idle' };
     },
   });
   notifyAuthorityTransfer = projectId => authorityTransfer.notifyCloudToLanApproval(projectId);

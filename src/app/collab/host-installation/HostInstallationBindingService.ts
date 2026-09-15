@@ -112,9 +112,9 @@ export class HostInstallationBindingService {
     return this.options.projects.removeOwnedAuthorityDirectory(capability, operation);
   }
 
-  async captureStoppedAuthority(
+  async captureFormerLanAuthority(
     projectId: CollabProjectId,
-    maximumGeneration: number,
+    cloudSource: { readonly kind: 'cloud'; readonly generation: number },
     facts: {
       readonly isServing: () => boolean;
       readonly readProject: (resource: OwnedAuthorityDirectoryCapability) => Promise<{
@@ -128,7 +128,7 @@ export class HostInstallationBindingService {
     const capability = await this.assertOwned(projectId, 'cleanup');
     const project = await facts.readProject(capability);
     if (facts.isServing() || !project || project.projectId !== projectId
-      || project.authorityGeneration > maximumGeneration) {
+      || project.authorityGeneration >= cloudSource.generation) {
       throw bindingError('authority-transfer-former-source-not-replaceable', 'durable-progress-recovery-required');
     }
     await this.options.projects.validateOwnedAuthorityDirectory(capability);

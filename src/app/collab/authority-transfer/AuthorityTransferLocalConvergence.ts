@@ -65,7 +65,7 @@ export interface AuthorityTransferLocalConvergenceOptions {
   readonly git: AuthorityTransferConvergenceGit;
   readonly now?: () => Date;
   readonly projects: AuthorityTransferConvergenceProjects;
-  readonly settleRequesterAfterAuthorityAdvance?: (identity: {
+  readonly settleRequesterAfterAuthorityAdvance: (identity: {
     projectId: CollabProjectId; memberId: string; authorityGeneration: number;
   }) => Promise<void>;
   readonly workspace: AuthorityTransferConvergenceWorkspace;
@@ -164,13 +164,14 @@ export class AuthorityTransferLocalConvergence {
     assertCompleted(input.status, 'lan-to-cloud');
     return this.#transitionProject(
       input.status.projectId,
+      'cloud',
       () => this.#lanToCloud(input, true),
     );
   }
 
   async lanToCloudHostOffline(status: CollabAuthorityTransferStatus): Promise<void> {
     assertCompleted(status, 'lan-to-cloud');
-    return this.#transitionProject(status.projectId, async () => {
+    return this.#transitionProject(status.projectId, 'cloud', async () => {
       const membership = await this.#requireMembership(status.projectId);
       if (status.relinquishmentProof?.sourceHostMemberId !== membership.member.id) {
         throw convergenceError('authority-transfer-source-member-mismatch');
@@ -189,6 +190,7 @@ export class AuthorityTransferLocalConvergence {
     assertCompleted(input.status, 'lan-to-cloud');
     return this.#transitionProject(
       input.status.projectId,
+      'cloud',
       () => this.#lanToCloud(input, false),
     );
   }
@@ -198,7 +200,7 @@ export class AuthorityTransferLocalConvergence {
     return this.options.activity.transitionProject(input.status.projectId, () => (
       input.withEndpoint(endpoint => this.options.authorityProjectionTransitions.run(
         input.status.projectId,
-        () => this.#cloudToLan({ ...input, endpoint }, true),
+        () => this.#completeProjection(input.status.projectId, 'lan', () => this.#cloudToLan({ ...input, endpoint }, true)),
       ))
     ));
   }
@@ -218,7 +220,7 @@ export class AuthorityTransferLocalConvergence {
   async restoreProjectRecovery(record: ProjectRecoveryClaimantRecord): Promise<void> {
     const plan = record.convergence;
     if (!record.redemptionReceipt || !plan) throw convergenceError('project-recovery-proof-missing');
-    return this.#transitionProject(record.projectId, async () => {
+    return this.#transitionProject(record.projectId, plan.target.kind, async () => {
       const membership = await this.#requireMembership(record.projectId);
       this.#assertProjectRecoveryIdentity(record, membership, plan.identity);
       const { identity, target } = plan;
@@ -249,7 +251,7 @@ export class AuthorityTransferLocalConvergence {
           member: { id: identity.currentMember.id, personalRef: identity.currentMember.personalRef,
             role: identity.currentMember.role, displayName: identity.currentMember.displayName, credential: record.targetCredential } });
       }
-      await this.finish(record.projectId, target.kind);
+
     });
   }
 
@@ -264,7 +266,7 @@ export class AuthorityTransferLocalConvergence {
 
   async restoreCloudMembership(input: LanToCloudHostConvergenceInput, retainedAttempts: readonly AuthorityTransferClaimantRecord[] = []): Promise<void> {
     assertCompleted(input.status, 'lan-to-cloud');
-    return this.#transitionProject(input.status.projectId, async () => {
+    return this.#transitionProject(input.status.projectId, 'cloud', async () => {
       const membership = await this.#requireMembership(input.status.projectId);
       assertSnapshot(membership, input.snapshot);
       const targetGeneration = input.status.targetAuthority.generation;
@@ -280,12 +282,12 @@ export class AuthorityTransferLocalConvergence {
         return;
       }
       await this.#writeCloudMembership(membership, input.status, input.snapshot.currentMember, input.snapshot.eventSequence, this.#retainedBindings(membership, targetGeneration, retainedAttempts));
-      await this.finish(input.status.projectId, 'cloud');
+
     });
   }
 
   async restoreLanMembership(input: Omit<CloudToLanMemberConvergenceInput, 'status'>, retainedAttempts: readonly AuthorityTransferClaimantRecord[] = []): Promise<void> {
-    return this.#transitionProject(input.identity.project.id, async () => {
+    return this.#transitionProject(input.identity.project.id, 'lan', async () => {
       const membership = await this.#requireMembership(input.identity.project.id);
       if (membership.project.name !== input.identity.project.name
         || membership.member.id !== input.identity.currentMember.id
@@ -302,6 +304,7 @@ export class AuthorityTransferLocalConvergence {
     assertCompleted(input.status, 'cloud-to-lan');
     return this.#transitionProject(
       input.status.projectId,
+      'lan',
       () => this.#cloudToLan(input, false),
     );
   }
@@ -309,7 +312,7 @@ export class AuthorityTransferLocalConvergence {
   async recoverConvertedClaimant(record: AuthorityTransferClaimantRecord): Promise<void> {
     if (record.variant === 'project-recovery') return this.restoreProjectRecovery(record);
     if (record.variant === 'manager-reissued' && record.lanTarget) {
-      return this.#transitionProject(record.projectId, async () => {
+      return this.#transitionProject(record.projectId, 'lan', async () => {
         const membership = await this.#requireMembership(record.projectId);
         if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority
           || membership.member.id !== record.memberId || membership.member.personalRef !== record.memberPersonalRef
@@ -321,14 +324,14 @@ export class AuthorityTransferLocalConvergence {
           || membership.authority.gitRemoteUrl !== lanRemoteUrl(membership.authority.endpoint, record.projectId)) {
           throw convergenceError('authority-transfer-lan-membership-conflict');
         }
-        await this.finish(record.projectId, 'lan');
+
       });
     }
 
     const status = authorityTransferClaimantStatus(record);
     if (!status) throw convergenceError('authority-transfer-claimant-status-missing');
     assertCompleted(status, status.direction);
-    return this.#transitionProject(record.projectId, async () => {
+    return this.#transitionProject(record.projectId, status.targetAuthority.kind, async () => {
       const membership = await this.#requireMembership(record.projectId);
       if (membership.member.id !== record.memberId) {
         throw convergenceError('authority-transfer-claimant-member-conflict');
@@ -346,7 +349,7 @@ export class AuthorityTransferLocalConvergence {
           || membership.authority.gitRemoteUrl
             !== cloudRemoteUrl(status.targetUrl, record.projectId)
         ) throw convergenceError('authority-transfer-cloud-membership-conflict');
-        await this.finish(record.projectId, 'cloud');
+
         return;
       }
       if (record.variant !== 'source-issued') {
@@ -368,17 +371,23 @@ export class AuthorityTransferLocalConvergence {
         || membership.hostOwnership.autoStart
         || membership.hostOwnership.ownsAuthority
       ) throw convergenceError('authority-transfer-lan-membership-conflict');
-      await this.finish(record.projectId, 'lan');
+
     });
   }
 
   #transitionProject(
     projectId: CollabProjectId,
+    authorityKind: 'cloud' | 'lan',
     operation: () => Promise<void>,
   ): Promise<void> {
     return this.options.activity.transitionProject(projectId, () => (
-      this.options.authorityProjectionTransitions.run(projectId, operation)
+      this.options.authorityProjectionTransitions.run(projectId, () => this.#completeProjection(projectId, authorityKind, operation))
     ));
+  }
+
+  async #completeProjection(projectId: CollabProjectId, authorityKind: 'cloud' | 'lan', operation: () => Promise<void>): Promise<void> {
+    await operation();
+    await this.finish(projectId, authorityKind);
   }
 
   async #lanToCloud(
@@ -429,7 +438,7 @@ export class AuthorityTransferLocalConvergence {
         || membership.authority.serverUrl !== serverUrl
       ) throw convergenceError('authority-transfer-cloud-membership-conflict');
     }
-    await this.finish(status.projectId, 'cloud');
+
   }
 
   async #writeCloudMembership(
@@ -543,7 +552,7 @@ export class AuthorityTransferLocalConvergence {
         });
       }
     }
-    await this.finish(identity.project.id, 'lan');
+
   }
 
   private async finish(projectId: CollabProjectId, authorityKind: 'cloud' | 'lan'): Promise<void> {
@@ -551,12 +560,10 @@ export class AuthorityTransferLocalConvergence {
     if (index.projects.find(project => project.id === projectId)?.authorityKind !== authorityKind) {
       throw convergenceError('authority-transfer-index-convergence-failed');
     }
-    if (this.options.settleRequesterAfterAuthorityAdvance) {
-      const membership = await this.#requireMembership(projectId);
-      await this.options.settleRequesterAfterAuthorityAdvance({
-        projectId, memberId: membership.member.id, authorityGeneration: membership.authority.authorityGeneration,
-      });
-    }
+    const membership = await this.#requireMembership(projectId);
+    await this.options.settleRequesterAfterAuthorityAdvance({
+      projectId, memberId: membership.member.id, authorityGeneration: membership.authority.authorityGeneration,
+    });
   }
 
   async #requireMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord> {

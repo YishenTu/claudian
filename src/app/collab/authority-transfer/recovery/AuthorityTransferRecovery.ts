@@ -131,10 +131,10 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
 
   private async inspect(
     projectId: CollabProjectId,
-  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
+  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'retained' | 'terminal'> {
     const state = await this.persistence.inspectLifecycleOwner(projectId);
     if (
-      state === 'nonterminal'
+      (state === 'nonterminal' || state === 'retained')
       && await this.handler.managerHandoffEstablished?.(projectId)
     ) return 'terminal';
     return state;

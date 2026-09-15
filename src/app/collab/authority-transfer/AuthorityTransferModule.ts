@@ -12,6 +12,7 @@ import {
   COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES,
 } from '@claudian-collab/protocol';
 
+import type { AuthorityRecoveryOutcome } from '@/app/collab/authority-transfer/AuthorityRecoveryOutcome';
 import {
   authorityTransferEntryExpiresAt,
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
@@ -21,6 +22,7 @@ import type {
 import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
+import { AuthorityTransferReadModel, type LanToCloudTransferView } from '@/app/collab/authority-transfer/AuthorityTransferReadModel';
 import type {
   AuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
@@ -226,12 +228,6 @@ export interface LanToCloudSourceProposalView {
   readonly status: CollabAuthorityTransferStatus;
 }
 
-export interface LanToCloudTransferView {
-  readonly entryRole: 'requester' | 'source';
-  readonly proposedByMemberId: LanAuthorityTransferActor['memberId'];
-  readonly request: Readonly<RequestLanToCloudTransferRequest>;
-  readonly status: CollabAuthorityTransferStatus | null;
-}
 
 export interface PrepareCloudToLanTargetInput {
   readonly operationIntentId: string;
@@ -453,6 +449,7 @@ function sameCloudToLanTransferHandle(
  * recovery; the durable records remain owned by the existing local repository.
  */
 export class AuthorityTransferModule {
+  private readonly readModel: AuthorityTransferReadModel;
   readonly #approvalWait = new CloudToLanApprovalWait((projectId, signal) => (
     this.#pollCloudToLanApproval(projectId, signal)
   ), projectId => this.options.observeProject?.(projectId) ?? { dispose() {} });
@@ -465,7 +462,7 @@ export class AuthorityTransferModule {
     this.#approvalWait.start(projectId);
   }
 
-  async #pollCloudToLanApproval(projectId: CollabProjectId, signal: AbortSignal): Promise<boolean> {
+  async #pollCloudToLanApproval(projectId: CollabProjectId, signal: AbortSignal): Promise<AuthorityRecoveryOutcome> {
     const handle = await this.options.lifecycle.runExclusive(
       projectId, 'authority-transfer', 'continuation', async () => {
         const entry = await this.options.persistence.loadCloudToLanTargetEntry(projectId);
@@ -512,9 +509,11 @@ export class AuthorityTransferModule {
         });
       },
     );
-    if (handle === null) return false;
-    if (handle && !signal.aborted) await this.acceptCloudToLanTransfer({ handle }, { signal });
-    return true;
+    if (handle === null) return { kind: 'waiting' };
+    if (signal.aborted) return { kind: 'cancelled' };
+    if (!handle) return { kind: 'idle' };
+    await this.acceptCloudToLanTransfer({ handle }, { signal });
+    return { kind: 'completed' };
   }
 
   readonly claimants: AuthorityTransferClaimantRuntimeRegistry;
@@ -530,6 +529,7 @@ export class AuthorityTransferModule {
   private readonly now: () => Date;
 
   constructor(private readonly options: AuthorityTransferModuleOptions) {
+    this.readModel = new AuthorityTransferReadModel(options.persistence, options.installationKey);
     this.now = options.now ?? (() => new Date());
     this.convergence = options.convergence;
     this.runtimes = new AuthorityTransferRuntimeDispatch({
@@ -707,93 +707,12 @@ export class AuthorityTransferModule {
     });
   }
 
-  async readLanToCloudTransfer(
-    projectId: CollabProjectId,
-    sourceAuthorityGeneration?: number,
-  ): Promise<LanToCloudTransferView | null> {
-    const [retainedSource, retainedRequester] = await Promise.all([
-      this.options.persistence.loadSourceEntry(projectId),
-      this.options.persistence.loadRequesterEntry(projectId, this.options.installationKey),
-    ]);
-    const source = sourceAuthorityGeneration === undefined
-      || retainedSource?.request.expectedAuthorityGeneration === sourceAuthorityGeneration ? retainedSource : null;
-    const requester = sourceAuthorityGeneration === undefined
-      || retainedRequester?.request.expectedAuthorityGeneration === sourceAuthorityGeneration ? retainedRequester : null;
-    const entry = source ?? requester;
-    if (!entry) return null;
-    const record = source?.phase === 'handed-off'
-      ? await this.options.persistence.load(projectId)
-      : null;
-    if (source?.phase === 'handed-off' && !record) {
-      throw moduleError('authority-transfer-source-successor-missing');
-    }
-    if (
-      source
-      && record
-      && (record.transferId !== source.status.transferId
-        || record.operationIntentId !== source.request.idempotencyKey)
-    ) throw moduleError('authority-transfer-source-successor-mismatch');
-    return Object.freeze({
-      entryRole: entry.entryRole,
-      proposedByMemberId: entry.proposedByMemberId,
-      request: entry.request,
-      status: record?.status ?? entry.status,
-    });
+  readLanToCloudTransfer(projectId: CollabProjectId, sourceAuthorityGeneration: number): Promise<LanToCloudTransferView | null> {
+    return this.readModel.readLanToCloudTransfer(projectId, sourceAuthorityGeneration);
   }
 
-  async readCloudToLanTransfer(
-    projectId: CollabProjectId,
-  ): Promise<CollabCloudToLanTransferView | null> {
-    const [manager, target, physical] = await Promise.all([
-      this.options.persistence.loadCloudToLanManagerEntry(projectId),
-      this.options.persistence.loadCloudToLanTargetEntry(projectId),
-      this.options.persistence.load(projectId),
-    ]);
-    const activeManager = manager
-      && manager.phase !== 'rejected'
-      && manager.phase !== 'settled'
-      ? manager
-      : null;
-    const activeTarget = target && target.phase !== 'withdrawn' ? target : null;
-    if (!activeManager && !activeTarget) return null;
-    const targetHandle = activeTarget?.phase === 'handed-off'
-      && activeTarget.descriptor
-      && activeTarget.successor
-      ? Object.freeze({
-          operationIntentId: activeTarget.successor.operationIntentId,
-          preparationId: activeTarget.descriptor.preparationId,
-          projectId: activeTarget.projectId,
-          schemaVersion: activeTarget.descriptor.schemaVersion,
-          selectedTargetMemberId: activeTarget.selectedTargetMemberId,
-          sourceAuthorityGeneration: activeTarget.sourceAuthorityGeneration,
-          sourceCloudUrl: activeTarget.sourceCloudUrl,
-          targetUrl: activeTarget.descriptor.targetUrl,
-          transferId: activeTarget.successor.transferId,
-        })
-      : null;
-    const targetStatus = targetHandle
-      && physical?.transferId === targetHandle.transferId
-      && physical.operationIntentId === targetHandle.operationIntentId
-      ? physical.status
-      : null;
-    return Object.freeze({
-      preparations: [],
-      manager: activeManager
-        ? Object.freeze({
-            descriptor: activeManager.descriptor,
-            handle: activeManager.status ? cloudToLanTransferHandle(activeManager) : null,
-            status: activeManager.status,
-          })
-        : null,
-      target: activeTarget
-        ? Object.freeze({
-            canWithdraw: activeTarget.phase === 'published',
-            descriptor: activeTarget.descriptor,
-            handle: targetHandle,
-            status: targetStatus,
-          })
-        : null,
-    });
+  readCloudToLanTransfer(projectId: CollabProjectId): Promise<CollabCloudToLanTransferView | null> {
+    return this.readModel.readCloudToLanTransfer(projectId);
   }
 
   async #bindOwnedLanToCloudSource(

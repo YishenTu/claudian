@@ -229,7 +229,7 @@ export class AuthorityTransferPersistence {
 
   inspectLifecycleOwner(
     projectId: CollabProjectId,
-  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
+  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'retained' | 'terminal'> {
     return this.runProject(projectId, async () => {
       const [loadedEntry, record, custody, commitment] = await Promise.all([
         this.stores.authorityTransferEntries.load(projectId),
@@ -284,6 +284,10 @@ export class AuthorityTransferPersistence {
       }
       if (localManager) return 'nonterminal';
       if (foreignPhysical) return 'absent';
+      // A completed authority can still owe local convergence, claims, or cleanup.
+      // Keep that work visible to recovery without describing it as an active move.
+      if (record.status.state === 'completed' && record.status.relinquishmentProof
+        && !record.terminalCleanupCompleted) return 'retained';
       if (custody || commitment) {
         return 'nonterminal';
       }

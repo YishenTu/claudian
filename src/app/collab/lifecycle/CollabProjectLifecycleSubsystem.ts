@@ -24,6 +24,8 @@ export type CollabProjectLifecycleDurableState =
   | 'absent'
   | 'nonterminal'
   | 'proposal'
+  // Authority has moved, but retained recovery work still needs guarded admission.
+  | 'retained'
   | 'terminal';
 
 export interface CollabProjectLifecycleDurableOwner {
@@ -304,6 +306,7 @@ export class CollabProjectLifecycleSubsystem {
         if (
           state !== 'absent'
           && state !== 'nonterminal'
+          && state !== 'retained'
           && state !== 'proposal'
           && state !== 'terminal'
         ) {
@@ -313,7 +316,7 @@ export class CollabProjectLifecycleSubsystem {
             safeContext: { reason: 'lifecycle-owner-inspection-invalid' },
           });
         }
-        if (state === 'nonterminal') pendingOwners.push(owner.name);
+        if (state === 'nonterminal' || state === 'retained') pendingOwners.push(owner.name);
       }
       const isCloudManagementResponsibilityPair = pendingOwners.length === 2
         && pendingOwners.includes('cloud-management')

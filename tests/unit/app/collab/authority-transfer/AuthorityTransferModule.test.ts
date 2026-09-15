@@ -399,6 +399,7 @@ describe('AuthorityTransferModule', () => {
         return receipt;
       }, readSnapshot: async () => managerClaimantSnapshot() } as unknown as CloudAuthorityConnection;
     const convergence = new AuthorityTransferLocalConvergence({
+      settleRequesterAfterAuthorityAdvance: async () => undefined,
       activity: { transitionProject: async (_id, operation) => operation() }, authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       projects: repository, workspace: { resolveManagedProjectPath: async () => vaultRoot }, git: { rotate: async () => undefined }, now,
     });
@@ -686,7 +687,7 @@ describe('AuthorityTransferModule', () => {
       } as unknown as AuthorityTransferPersistence,
     });
 
-    await expect(module.readLanToCloudTransfer(PROJECT_ID)).resolves.toEqual({
+    await expect(module.readLanToCloudTransfer(PROJECT_ID, 1)).resolves.toEqual({
       entryRole: 'requester',
       proposedByMemberId: 'member-requester',
       request,

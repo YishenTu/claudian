@@ -1,3 +1,5 @@
+import { attemptAuthorityRecovery, type AuthorityRecoveryOutcome } from '@/app/collab/authority-transfer/AuthorityRecoveryOutcome';
+
 interface ApprovalObservation {
   readonly controller: AbortController;
   resource?: { dispose(): void };
@@ -12,7 +14,7 @@ export class CloudToLanApprovalWait {
   #closed = false;
 
   constructor(
-    private readonly check: (projectId: string, signal: AbortSignal) => Promise<boolean>,
+    private readonly check: (projectId: string, signal: AbortSignal) => Promise<AuthorityRecoveryOutcome>,
     private readonly observe: (projectId: string) => { dispose(): void } = () => ({ dispose() {} }),
   ) {}
 
@@ -35,7 +37,10 @@ export class CloudToLanApprovalWait {
     const pending = Promise.resolve().then(async () => {
       while (observation.requested && !observation.controller.signal.aborted) {
         observation.requested = false;
-        if (await this.check(projectId, observation.controller.signal)) {
+        const outcome = await attemptAuthorityRecovery(
+          () => this.check(projectId, observation.controller.signal), observation.controller.signal,
+        );
+        if (outcome.kind === 'completed' || outcome.kind === 'idle') {
           this.#projects.delete(projectId);
           observation.resource?.dispose();
           return;

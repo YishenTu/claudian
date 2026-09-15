@@ -349,7 +349,7 @@ describe('Cloud membership management', () => {
       if (next.status !== 'success' || next.value.status !== 'ready') throw new Error('Second recovery link unavailable');
       expect(next.value.invitation.encodedInvitation).not.toBe(result.value.invitation.encodedInvitation);
       expect(await second.acknowledge()).toMatchObject({ status: 'success' }); second.dispose();
-      expect(await client.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID)).toBe(retainedSource ? 'nonterminal' : 'absent');
+      expect(await client.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID)).toBe(retainedSource ? 'retained' : 'absent');
       expect(fixture.failures).toEqual([]);
     } finally { await client.close(); await fixture.close(); }
   });
@@ -365,7 +365,7 @@ describe('Cloud membership management', () => {
         fixture.createdAt,
       );
       await expect(client.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID))
-        .resolves.toBe('nonterminal');
+        .resolves.toBe('retained');
       const request = { projectId: PROJECT_ID, memberId: 'member-imported' };
 
       await expect(client.feature.reissueMemberClaim(request)).resolves.toMatchObject({
