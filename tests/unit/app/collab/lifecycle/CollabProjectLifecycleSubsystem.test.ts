@@ -15,6 +15,28 @@ function ports() {
 }
 
 describe('CollabProjectLifecycleSubsystem', () => {
+  it('creates a physical Host offer while settling its completed authority predecessor', async () => {
+    let retained = true;
+    let offered = false;
+    const owner = {
+      name: 'authority-transfer',
+      inspect: async () => retained ? 'retained' as const : 'absent' as const,
+      runHostTransferOffer: async (_projectId: string, _options: unknown, createOffer: () => Promise<void>) => {
+        await createOffer();
+        retained = false;
+        return true;
+      },
+    };
+    const subsystem = new CollabProjectLifecycleSubsystem({
+      ...ports(), recoveryStages: [], durableOwners: [owner],
+      hostTransfer: { createHostTransfer: async () => { offered = true; } } as never,
+    });
+    await expect(subsystem.hostTransfer.createHostTransfer({
+      projectId: 'project-alpha', targetMemberId: 'member-beta',
+    })).resolves.toBeUndefined();
+    expect(offered).toBe(true);
+  });
+
   it.each(['nonterminal', 'retained'] as const)('admits a claimant beside a proved %s transfer but rejects an unproved predecessor', async state => {
     const subsystem = new CollabProjectLifecycleSubsystem({ ...ports(), recoveryStages: [], durableOwners: [
       { name: 'authority-transfer', inspect: async () => state },

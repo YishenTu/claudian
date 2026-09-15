@@ -18,6 +18,11 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferRecoveryHandler {
+  runHostTransferOffer?(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+    createOffer: () => Promise<void>,
+  ): Promise<boolean>;
   reconcileRequester?(projectId: CollabProjectId): Promise<void>;
   managerHandoffEstablished?(
     projectId: CollabProjectId,
@@ -56,6 +61,9 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
     this.durableOwner = Object.freeze({
       name: 'authority-transfer',
       inspect: (projectId: CollabProjectId) => this.inspect(projectId),
+      runHostTransferOffer: (projectId: CollabProjectId, options: CollabOperationOptions, createOffer: () => Promise<void>) => (
+        this.handler.runHostTransferOffer?.(projectId, options, createOffer) ?? Promise.resolve(false)
+      ),
     });
   }
 
@@ -78,15 +86,24 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
       : undefined;
     for (const projectId of catalog.projectIds) {
       throwIfCancelled(options.signal);
-      await this.lifecycle.runAuthorityTransferRecovery(
-        projectId,
-        async () => {
+      try {
+        await this.lifecycle.runRetainedAuthorityTransferRecovery(projectId, async () => {
           await this.handler.reconcileRequester?.(projectId);
           for (const retained of await this.persistence.listRetained(projectId)) {
             if (retained.terminalCleanupCompleted) continue;
             await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);
             await this.handler.resumeRetained(retained, options);
           }
+        });
+        const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
+        if (ownerState === 'absent' || ownerState === 'terminal') continue;
+      } catch (error) {
+        firstError ??= error;
+        continue;
+      }
+      await this.lifecycle.runAuthorityTransferRecovery(
+        projectId,
+        async () => {
           await this.handler.resumeManager(projectId, options);
           let ownerState = await this.persistence.inspectLifecycleOwner(projectId);
           if (ownerState === 'absent' || ownerState === 'terminal') return;

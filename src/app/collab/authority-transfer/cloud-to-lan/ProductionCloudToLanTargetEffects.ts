@@ -41,6 +41,7 @@ import {
   encodeCollabTransferredMembershipRedemptionReceiptSigningInput,
 } from '@claudian-collab/protocol';
 
+import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { ImportedMembershipClaimRepository } from '@/app/collab/authority/ImportedMembershipClaimRepository';
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -1519,29 +1520,56 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       || source.status.sourceAuthority.generation !== record.status.targetAuthority.generation) {
       throw targetError('authority-transfer-target-generation-stale');
     }
-    await this.queue.run(async () => {
-      const statePath = await this.#operationStatePath(record);
-      const state = await readState(statePath);
-      if (!state) throw targetError('authority-transfer-target-claims-missing');
-      await this.#validateStateBindings(record, record.status.relinquishmentProof!, state);
-      const pendingReceipts = { ...state.pendingReceipts };
-      const receipts = { ...state.receipts };
-      for (const [key, pending] of Object.entries(pendingReceipts)) {
-        const receipt = decodeCollabTransferredMembershipRedemptionReceipt(pending);
-        const member = members.find(member => member.memberId === receipt.memberId);
-        if (!member || key !== `${receipt.memberId}:${receipt.operationIntentId}:${member.credentialHash}`) continue;
-        if (receipt.projectId !== record.projectId || receipt.transferId !== record.transferId
-          || receipt.targetAuthorityGeneration !== record.status.targetAuthority.generation
-          || !state.claimBatch?.claims.some(claim => claim.memberId === receipt.memberId && sha256(claim.claim) === receipt.claimSha256)) {
-          throw targetError('authority-transfer-target-state-invalid');
+    await this.queue.run(() => this.#retainCommittedRedemptions(record, members));
+  }
+
+  async retainForHostTransfer(record: AuthorityTransferRecord): Promise<boolean> {
+    return this.queue.run(() => this.options.persistence.retainCompletedCloudToLanTarget(record, async () => {
+      const authority = await this.options.foundation.openAuthority(record.projectId);
+      const members = await authority.database.read(connection => {
+        const project = authority.projects.get(connection);
+        if (!project || project.projectId !== record.projectId || project.state !== 'active'
+          || project.authorityGeneration !== record.status.targetAuthority.generation) {
+          throw targetError('authority-transfer-target-generation-stale');
         }
-        receipts[key] = receipt;
-        delete pendingReceipts[key];
+        const offer = new HostTransferRepository().getNonterminal(connection);
+        if (!offer || offer.phase !== 'offered' || offer.sourceHostMemberId !== project.hostMemberId
+          || offer.expiresAt <= this.now().toISOString()) return null;
+        return new PendingMembershipRepository().listCredentialRecords(connection, ['active'])
+          .filter(member => member.accessState === 'bound' && member.credentialHash !== null)
+          .map(member => ({ memberId: member.member.id, credentialHash: Buffer.from(member.credentialHash!).toString('hex') }));
+      });
+      if (!members) return false;
+      if (!record.terminalCleanupCompleted) await this.#retainCommittedRedemptions(record, members);
+      return true;
+    }));
+  }
+
+  async #retainCommittedRedemptions(
+    record: AuthorityTransferRecord,
+    members: readonly { readonly memberId: string; readonly credentialHash: string }[],
+  ): Promise<void> {
+    const statePath = await this.#operationStatePath(record);
+    const state = await readState(statePath);
+    if (!state) throw targetError('authority-transfer-target-claims-missing');
+    await this.#validateStateBindings(record, record.status.relinquishmentProof!, state);
+    const pendingReceipts = { ...state.pendingReceipts };
+    const receipts = { ...state.receipts };
+    for (const [key, pending] of Object.entries(pendingReceipts)) {
+      const receipt = decodeCollabTransferredMembershipRedemptionReceipt(pending);
+      const member = members.find(member => member.memberId === receipt.memberId);
+      if (!member || key !== `${receipt.memberId}:${receipt.operationIntentId}:${member.credentialHash}`) continue;
+      if (receipt.projectId !== record.projectId || receipt.transferId !== record.transferId
+        || receipt.targetAuthorityGeneration !== record.status.targetAuthority.generation
+        || !state.claimBatch?.claims.some(claim => claim.memberId === receipt.memberId && sha256(claim.claim) === receipt.claimSha256)) {
+        throw targetError('authority-transfer-target-state-invalid');
       }
-      if (Object.keys(pendingReceipts).length !== Object.keys(state.pendingReceipts).length) {
-        await writeState(statePath, { ...state, pendingReceipts, receipts });
-      }
-    });
+      receipts[key] = receipt;
+      delete pendingReceipts[key];
+    }
+    if (Object.keys(pendingReceipts).length !== Object.keys(state.pendingReceipts).length) {
+      await writeState(statePath, { ...state, pendingReceipts, receipts });
+    }
   }
 
    async #bindClaim(
@@ -1626,6 +1654,11 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       delete pendingReceipts[receiptKeyId];
       await writeState(statePath, { ...activeState, pendingReceipts, receipts: { ...activeState.receipts, [receiptKeyId]: receipt } });
       return receipt;
+      }, current => {
+        if (!current || current.transferId !== record.transferId
+          || current.operationIntentId !== record.operationIntentId) {
+          throw targetError('authority-transfer-target-generation-stale');
+        }
       });
     });
   }

@@ -186,7 +186,7 @@ describe('AuthorityTransferRecovery', () => {
     await expect(recovery.durableOwner.inspect(PROJECT_ID)).resolves.toBe('terminal');
   });
 
-  it('restores retained transfer routes before recovering the current generation', async () => {
+  it.each(['semantic', 'physical'] as const)('restores retained routes while %s transfer recovery is pending', async owner => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     for (const generation of [1, 3]) {
       const transferId = `retained-transfer-${generation}`;
@@ -210,7 +210,7 @@ describe('AuthorityTransferRecovery', () => {
         schemaVersion: 1, record, custody: null, commitment: null, source: null, target: null,
       });
     }
-    await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+    if (owner === 'semantic') await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A, lifecycleOwnership: 'owned', localRole: 'source',
       operationIntentId: 'current-intent', stagingDirectoryName: '.claudian-authority-transfer-current-transfer',
       status: { ...status('collecting-readiness', PROJECT_ID, 'current-transfer'),
@@ -223,9 +223,10 @@ describe('AuthorityTransferRecovery', () => {
       resume: async record => { recovered.push(`current:${record.transferId}`); },
     }), () => undefined);
     const subsystem = lifecycle();
+    if (owner === 'physical') subsystem.registerDurableOwner({ name: 'host-transfer', inspect: async () => 'nonterminal' });
     recovery.register(subsystem);
     await subsystem.lifecycleRecovery.resume();
-    expect(recovered).toEqual(['retained:retained-transfer-1', 'retained:retained-transfer-3', 'current:current-transfer']);
+    expect(recovered).toEqual(['retained:retained-transfer-1', 'retained:retained-transfer-3', ...(owner === 'semantic' ? ['current:current-transfer'] : [])]);
   });
 
   it('enumerates startup state and reacquires the lifecycle arbiter for recovery', async () => {
@@ -258,7 +259,9 @@ describe('AuthorityTransferRecovery', () => {
 
   it('recovers the transfer predecessor while a same-Project claimant is pending', async () => {
     const persistence = {
-      inspectLifecycleOwner: jest.fn(async () => 'absent'),
+      inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
+      loadRecoveryOwnerRecord: jest.fn(async () => null),
+      loadCloudToLanTargetEntry: jest.fn(async () => null),
       listRetained: jest.fn(async () => []),
       scanProjectCatalog: jest.fn(async () => ({
         invalidEntryCount: 0,
@@ -268,7 +271,7 @@ describe('AuthorityTransferRecovery', () => {
     const resumeManager = jest.fn(async () => undefined);
     const recovery = new AuthorityTransferRecovery(
       persistence,
-      recoveryHandler({ resumeManager }),
+      recoveryHandler({ resumeManager, managerHandoffEstablished: async () => true }),
       () => undefined,
     );
     const subsystem = lifecycle();

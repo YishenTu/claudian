@@ -2543,6 +2543,40 @@ export class AuthorityTransferPersistence {
     ).filter(retained => !this.#isForeignPhysical(retained.record)).map(retained => retained.record));
   }
 
+  loadRetainedCloudToLanTarget(
+    projectId: CollabProjectId,
+    transferId: string,
+  ): Promise<Readonly<{ record: AuthorityTransferRecord; target: CloudToLanTargetEntryRecord }> | null> {
+    return this.runProject(projectId, async () => {
+      const retained = await this.stores.authorityTransferRecords.loadRetained(projectId, transferId);
+      if (!retained?.target || this.#isForeignPhysical(retained.record)
+        || retained.record.localRole !== 'target'
+        || retained.record.status.direction !== 'cloud-to-lan') return null;
+      return { record: retained.record, target: retained.target };
+    });
+  }
+
+  retainCompletedCloudToLanTarget(
+    expected: AuthorityTransferRecord,
+    settleCommittedReceipts: () => Promise<boolean>,
+  ): Promise<boolean> {
+    return this.runProject(expected.projectId, async () => {
+      const record = await this.stores.authorityTransferRecords.load(expected.projectId);
+      const entry = await this.stores.authorityTransferEntries.load(expected.projectId);
+      if (!record || !sameValue(record, expected) || this.#isForeignPhysical(record)
+        || record.localRole !== 'target' || record.status.direction !== 'cloud-to-lan'
+        || record.status.state !== 'completed' || !record.status.relinquishmentProof
+        || record.restartFence !== 'open'
+        || entry?.manager && this.#isRecoveryOwner(entry.manager.ownerInstallationKey)) {
+        throw transferError('durable-progress-recovery-required', 'authority-transfer-host-predecessor-unsettled');
+      }
+      const custody = await this.stores.authorityTransferClaims.load(record.projectId);
+      if (!await settleCommittedReceipts()) return false;
+      await this.#retainCompleted(record, custody);
+      return true;
+    });
+  }
+
   async #retainLanToCloudPredecessor(
     previous: { record: AuthorityTransferRecord | null; custody: AuthorityTransferClaimCustodyRecord | null;
       commitment: AuthorityTransferClaimBatchCommitmentRecord | null },
@@ -2568,9 +2602,9 @@ export class AuthorityTransferPersistence {
         && record.status.targetUrl === next.sourceCloudUrl);
   }
 
-  async #retainCompleted(record: AuthorityTransferRecord, custody: AuthorityTransferClaimCustodyRecord): Promise<void> {
-    await this.#assertClaimBatchOwner(custody, record);
-    if (!claimCustodyMatchesStatus(custody, record.status)) {
+  async #retainCompleted(record: AuthorityTransferRecord, custody: AuthorityTransferClaimCustodyRecord | null): Promise<void> {
+    if (custody) await this.#assertClaimBatchOwner(custody, record);
+    if (custody ? !claimCustodyMatchesStatus(custody, record.status) : !record.terminalCleanupCompleted) {
       throw transferError('durable-progress-recovery-required', 'authority-transfer-claim-custody-incomplete');
     }
     let entry = await this.stores.authorityTransferEntries.load(record.projectId);

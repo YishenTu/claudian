@@ -1417,6 +1417,7 @@ describe('AuthorityTransferModule', () => {
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
       persistence: {
+        loadRetainedCloudToLanTarget: jest.fn(async () => null),
         loadCloudToLanTargetEntry: jest.fn(async () => null),
         prepareCloudToLanTargetEntry,
       } as unknown as AuthorityTransferPersistence,
@@ -1451,6 +1452,7 @@ describe('AuthorityTransferModule', () => {
     };
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (entry: never) => {
         order.push('begin-frozen');
@@ -1931,6 +1933,7 @@ describe('AuthorityTransferModule', () => {
       throw new Error('listener-dispose-failed');
     });
     const persistence = {
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => entry),
       publishCloudToLanTargetEntry: jest.fn(async () => {
@@ -2153,6 +2156,7 @@ describe('AuthorityTransferModule', () => {
     let managerEntry: CloudToLanManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
         entry: CloudToLanManagerEntryRecord,
@@ -2355,11 +2359,7 @@ describe('AuthorityTransferModule', () => {
       save: async (record: AuthorityTransferClaimantRecord) => { claimant = record; },
     };
     const persistence = {
-      inspectLifecycleOwner: jest.fn(async () => managerEntry === null
-        ? 'absent'
-        : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
-          ? 'terminal'
-          : 'nonterminal'),
+      inspectLifecycleOwner: jest.fn(async () => managerEntry === null ? 'absent' : 'nonterminal'),
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
@@ -2641,7 +2641,7 @@ describe('AuthorityTransferModule', () => {
     }));
     const cloudToLanMember = jest.fn(async () => undefined);
     const persistence = {
-      inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
+      inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'nonterminal' : 'absent'),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
     } as unknown as AuthorityTransferPersistence;
@@ -2699,6 +2699,7 @@ describe('AuthorityTransferModule', () => {
   it('releases failed pre-publication target cleanup before rebuilding the preparation', async () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
         targetEntry = entry;
@@ -2799,6 +2800,7 @@ describe('AuthorityTransferModule', () => {
   it('retains a withdrawn preparation until listener disposal can be retried', async () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
         targetEntry = entry;
@@ -2926,6 +2928,7 @@ describe('AuthorityTransferModule', () => {
     let targetEntry: CloudToLanTargetEntryRecord | null = null;
     const persistence = {
       load: jest.fn(async () => null),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
         targetEntry = entry;
@@ -3095,6 +3098,7 @@ describe('AuthorityTransferModule', () => {
       completeTerminalCleanup,
       load: jest.fn(async () => physical),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       recordCloudToLanManagerStatus: jest.fn(async () => {
         throw new Error('simulated Manager status persistence failure');
@@ -3535,13 +3539,10 @@ describe('AuthorityTransferModule', () => {
     let managerSettlementAttempts = 0;
     const persistence = {
       settleLocalAuthorityAdvance: async () => undefined,
-      inspectLifecycleOwner: jest.fn(async () => managerEntry === null
-        ? 'absent'
-        : managerEntry.phase === 'settled' || managerEntry.phase === 'rejected'
-          ? 'terminal'
-          : 'nonterminal'),
+      inspectLifecycleOwner: jest.fn(async () => managerEntry === null ? 'absent' : 'nonterminal'),
       load: jest.fn(async () => physicalRecord),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       loadRecoveryOwnerRecord: jest.fn(async () => physicalRecord),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
@@ -3750,6 +3751,7 @@ describe('AuthorityTransferModule', () => {
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       loadRecoveryOwnerRecord: jest.fn(async () => null),
       listRetained: jest.fn(async () => []),
@@ -3912,9 +3914,10 @@ describe('AuthorityTransferModule', () => {
       now: () => new Date('2026-09-01T00:00:00.000Z'),
       persistence: {
         settleLocalAuthorityAdvance: async () => undefined,
-        inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'terminal' : 'absent'),
+        inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'nonterminal' : 'absent'),
         load: jest.fn(async () => null),
         loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+        loadRetainedCloudToLanTarget: jest.fn(async () => null),
         loadCloudToLanTargetEntry: jest.fn(async () => null),
         loadRecoveryOwnerRecord: jest.fn(async () => null),
         recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
@@ -3983,6 +3986,7 @@ describe('AuthorityTransferModule', () => {
     const persistence = {
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
         entry: CloudToLanManagerEntryRecord,
@@ -4631,6 +4635,7 @@ describe('AuthorityTransferModule', () => {
         ) => operation(),
       } as unknown as CollabProjectLifecycleSubsystem,
       persistence: {
+        loadRetainedCloudToLanTarget: jest.fn(async () => null),
         loadCloudToLanTargetEntry: jest.fn(async () => handedOff),
       } as unknown as AuthorityTransferPersistence,
       recoverCloudSession,
@@ -4752,6 +4757,7 @@ describe('AuthorityTransferModule', () => {
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       load: jest.fn(async () => record),
       loadCloudToLanManagerEntry: jest.fn(async () => null),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => handedOff),
       loadRecoveryOwnerRecord: jest.fn(async () => record),
       recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
@@ -4824,6 +4830,7 @@ describe('AuthorityTransferModule', () => {
       settleLocalAuthorityAdvance: async () => undefined,
       inspectLifecycleOwner: jest.fn(async () => 'nonterminal'),
       loadCloudToLanManagerEntry: jest.fn(async () => null),
+      loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => published),
       loadRecoveryOwnerRecord: jest.fn(async () => null),
       listRetained: jest.fn(async () => []),

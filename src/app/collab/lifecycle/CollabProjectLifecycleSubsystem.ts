@@ -31,6 +31,11 @@ export type CollabProjectLifecycleDurableState =
 export interface CollabProjectLifecycleDurableOwner {
   readonly name: string;
   inspect(projectId: CollabProjectId): Promise<CollabProjectLifecycleDurableState>;
+  runHostTransferOffer?(
+    projectId: CollabProjectId,
+    options: CollabOperationOptions,
+    createOffer: () => Promise<void>,
+  ): Promise<boolean>;
 }
 
 export type CollabProjectLifecycleAdmissionMode = 'continuation' | 'operation' | 'recovery';
@@ -81,12 +86,21 @@ export class CollabProjectLifecycleSubsystem {
         options.hostTransfer.cancelHostTransfer(request, operationOptions)
       ),
       close: () => options.hostTransfer.close(),
-      createHostTransfer: (request, operationOptions) => this.runExclusive(
-        request.projectId,
-        'host-transfer',
-        'operation',
-        () => options.hostTransfer.createHostTransfer(request, operationOptions),
-      ),
+      createHostTransfer: async (request, operationOptions = {}) => {
+        const predecessor = this.durableOwners.get('authority-transfer');
+        if (predecessor?.runHostTransferOffer) {
+          const handled = await this.runExclusive(request.projectId, 'authority-transfer', 'continuation',
+            () => predecessor.runHostTransferOffer!(request.projectId, operationOptions,
+              () => options.hostTransfer.createHostTransfer(request, operationOptions)));
+          if (handled) return;
+        }
+        return this.runExclusive(
+          request.projectId,
+          'host-transfer',
+          'operation',
+          () => options.hostTransfer.createHostTransfer(request, operationOptions),
+        );
+      },
       declineHostTransfer: (request, operationOptions) => this.runExclusive(
         request.projectId,
         'host-transfer',
@@ -164,6 +178,19 @@ export class CollabProjectLifecycleSubsystem {
       ownerName,
       [],
       mode,
+      operation,
+    );
+  }
+
+  runRetainedAuthorityTransferRecovery<T>(
+    projectId: CollabProjectId,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.#runExclusiveWithPredecessor(
+      projectId,
+      'authority-transfer',
+      ['authority-transfer-claimant', 'host-transfer'],
+      'recovery',
       operation,
     );
   }

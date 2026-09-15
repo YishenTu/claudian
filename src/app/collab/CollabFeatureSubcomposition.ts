@@ -921,6 +921,10 @@ export function createCollabFeatureSubcomposition(
       }, operationOptions);
     },
     recoverClaimant: record => claimantBindingResolver.resolve(record),
+    retainCompletedTargetForHostTransfer: record => new ProductionCloudToLanTargetEffects({
+      cloudSession: null, convergence: authorityTransferConvergence, foundation,
+      persistence: foundation.authorityTransfers, projectId: record.projectId,
+    }).retainForHostTransfer(record),
     restoreRetained: async record => {
       const effectsOptions = {
         cloudSession: null, convergence: authorityTransferConvergence, foundation,

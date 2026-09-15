@@ -164,6 +164,11 @@ function status(
   };
 }
 
+jest.mock('sql.js/dist/sql-wasm.wasm', () => ({
+  __esModule: true,
+  default: jest.requireActual('node:fs').readFileSync(require.resolve('sql.js/dist/sql-wasm.wasm')),
+}));
+
 describe('production authority-transfer effects', () => {
   let SQL: SqlJsStatic;
   let sourceRoot: string;
@@ -2686,6 +2691,154 @@ describe('production authority-transfer effects', () => {
       claimClient, claimRequest, firstReceipt, recoveredRegistration, restartedComposition,
     });
   }
+
+  it('offers a new physical Host handoff after Cloud import while retaining claim replay', async () => {
+    const target = await restoreStoppedCloudToLanTarget();
+    try {
+      await target.restartedComposition.feature.startHost(PROJECT_ID);
+      const handle = {
+        schemaVersion: 1 as const,
+        operationIntentId: target.completedRecord.operationIntentId,
+        preparationId: target.targetEntry.operationIntentId,
+        projectId: PROJECT_ID,
+        selectedTargetMemberId: target.targetEntry.selectedTargetMemberId,
+        sourceAuthorityGeneration: target.targetEntry.sourceAuthorityGeneration,
+        sourceCloudUrl: target.targetEntry.sourceCloudUrl,
+        targetUrl: target.completedRecord.status.targetUrl,
+        transferId: TRANSFER_ID,
+      };
+      await expect(target.restartedComposition.feature.createHostTransfer({
+        projectId: PROJECT_ID, targetMemberId: 'member-missing',
+      })).resolves.toMatchObject({ status: 'failure' });
+      await expect(target.restartedComposition.feature.acceptCloudToLanTransfer(handle))
+        .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      await expect(target.claimClient.claimTransferredMembership({
+        ...target.claimRequest, idempotencyKey: 'claim-after-rejected-host-offer',
+      })).resolves.toMatchObject({ memberId: MEMBER_ID });
+      const actualRename = fsPromises.rename;
+      const retentionWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        if (String(to).includes('/authority-transfer-history/')) throw new Error('simulated retention persistence failure');
+        return actualRename(from, to);
+      });
+      await expect(target.restartedComposition.feature.createHostTransfer({
+        projectId: PROJECT_ID, targetMemberId: MEMBER_ID,
+      })).resolves.toMatchObject({ status: 'failure' });
+      retentionWrite.mockRestore();
+      await expect(target.restartedComposition.feature.restoreLifecycle()).resolves.toBeUndefined();
+      const snapshot = await target.restartedComposition.feature.readSnapshot(PROJECT_ID);
+      if (snapshot.status !== 'success') throw new Error('Missing Host snapshot');
+      expect(snapshot.value.snapshot).toMatchObject({
+        hostTransfer: { targetMemberId: MEMBER_ID, phase: 'offered' },
+      });
+      expect(await target.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID)).toBe('absent');
+      expect(await target.foundation.authorityTransfers.listRetained(PROJECT_ID))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ transferId: TRANSFER_ID })]));
+      await expect(target.claimClient.claimTransferredMembership(target.claimRequest))
+        .resolves.toEqual(target.firstReceipt);
+    } finally {
+      await target.restartedComposition.feature.close();
+    }
+  });
+
+  it('completes physical Host handoff after Cloud import and preserves retained receipt replay', async () => {
+    const target = await restoreStoppedCloudToLanTarget();
+    const receiverRoot = await mkdtemp(path.join(tmpdir(), 'claudian-after-cloud-handoff-'));
+    const receiverFoundation = foundation(receiverRoot, TEST_INSTALLATION_B);
+    const receiver = createCollabFeatureSubcomposition({
+      foundation: receiverFoundation,
+      projectSetup: new CollabProjectSetupService(receiverFoundation, {
+        installationKey: TEST_INSTALLATION_B, vaultRoot: receiverRoot,
+      }),
+      vaultRoot: receiverRoot,
+    });
+    try {
+      await target.targetAuthority.database.mutate(connection => {
+        connection.run("UPDATE members SET role = 'manager' WHERE member_id = 'member-production-peer'");
+        connection.run('UPDATE project SET manager_set_generation = manager_set_generation + 1');
+      });
+      await target.restartedComposition.feature.startHost(PROJECT_ID);
+      await receiver.feature.initialize();
+      const invitation = await target.restartedComposition.feature.createInvitation(PROJECT_ID);
+      if (invitation.status !== 'success') throw new Error('Missing invitation');
+      const joined = await receiver.feature.joinProject({
+        encodedInvitation: invitation.value.encodedInvitation, memberDisplayName: 'Next Host',
+      });
+      if (joined.status !== 'success') throw new Error('Receiver join failed');
+      const interruptedRequest = { ...target.claimRequest, idempotencyKey: 'claim-before-physical-handoff' };
+      const actualRename = fsPromises.rename;
+      const receiptWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        if (String(to).endsWith('/target-private.json')) {
+          const partial = JSON.parse(await readFile(from, 'utf8')) as { receipts: Record<string, { operationIntentId: string }> };
+          if (Object.values(partial.receipts).some(receipt => receipt.operationIntentId === interruptedRequest.idempotencyKey)) {
+            throw new Error('simulated receipt persistence failure');
+          }
+        }
+        return actualRename(from, to);
+      });
+      await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
+        .rejects.toMatchObject({ code: 'operation-failed' });
+      receiptWrite.mockRestore();
+      const local = await receiverFoundation.local.projects.loadMembership(PROJECT_ID);
+      if (!local) throw new Error('Receiver membership missing');
+      await expect(target.restartedComposition.feature.createHostTransfer({
+        projectId: PROJECT_ID, targetMemberId: local.member.id,
+      })).resolves.toMatchObject({ status: 'success' });
+      await expect(target.claimClient.claimTransferredMembership({
+        ...target.claimRequest, idempotencyKey: 'late-claim-after-physical-offer',
+      })).rejects.toMatchObject({ code: 'operation-failed' });
+      const deadline = Date.now() + 20_000;
+      let transferId: string | undefined;
+      while (Date.now() < deadline) {
+        const snapshot = await receiver.feature.readSnapshot(PROJECT_ID);
+        if (snapshot.status === 'success' && 'hostTransfer' in snapshot.value.snapshot) {
+          transferId = snapshot.value.snapshot.hostTransfer?.transferId;
+          if (transferId) break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (!transferId) throw new Error('Host offer did not arrive');
+      await expect(receiver.feature.acceptHostTransfer({ projectId: PROJECT_ID, transferId }))
+        .resolves.toMatchObject({ status: 'success' });
+      while (Date.now() < deadline) {
+        const membership = await receiverFoundation.local.projects.loadMembership(PROJECT_ID);
+        const previousHost = await target.foundation.local.projects.loadMembership(PROJECT_ID);
+        if (membership && isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority
+          && previousHost && isCollabLocalLanMembership(previousHost) && !previousHost.hostOwnership.ownsAuthority) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      await expect(receiverFoundation.local.projects.loadMembership(PROJECT_ID))
+        .resolves.toMatchObject({ hostOwnership: { ownsAuthority: true }, authority: { authorityGeneration: 3 } });
+      await expect(target.foundation.local.projects.loadMembership(PROJECT_ID))
+        .resolves.toMatchObject({ hostOwnership: { ownsAuthority: false } });
+      await expect(target.claimClient.claimTransferredMembership(target.claimRequest))
+        .resolves.toEqual(target.firstReceipt);
+      await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
+        .resolves.toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey });
+      await target.restartedComposition.feature.close();
+      await target.restart();
+      const restarted = createCollabFeatureSubcomposition({
+        foundation: target.foundation,
+        projectSetup: new CollabProjectSetupService(target.foundation, {
+          installationKey: TEST_INSTALLATION_A, vaultRoot: targetRoot,
+        }),
+        vaultRoot: targetRoot,
+      });
+      try {
+        await restarted.feature.initialize();
+        await restarted.feature.restoreLifecycle();
+        await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
+          .resolves.toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey });
+        await expect(target.foundation.inspectAuthority(PROJECT_ID)).resolves.toBeNull();
+      } finally {
+        await restarted.feature.close();
+      }
+    } finally {
+      await receiver.feature.close();
+      await receiverFoundation.close();
+      await target.restartedComposition.feature.close();
+      await rm(receiverRoot, { recursive: true, force: true });
+    }
+  });
 
   it.each(['none', 'confirmed', 'origin-written'] as const)('restores an older LAN Member through a current recovery string without changing local work (previous attempt: %s)', async previousAttempt => {
     const target = await activateCloudToLanTarget();
